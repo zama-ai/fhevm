@@ -111,26 +111,52 @@ if (!address) {
 }
 
 const configPath = 'hardhat.config.ts';
-const contents = fs.readFileSync(configPath, 'utf8');
-const blockPattern = /(oftAdapter:\s*\{)([\s\S]*?)(\n\s*\},)/;
-const match = contents.match(blockPattern);
+let contents = fs.readFileSync(configPath, 'utf8');
+const blockPattern = /(oftAdapter:\s*\{)([\s\S]*?)(\n\s*\},)/g;
 
-if (!match) {
+let match;
+let updated = contents;
+let replacementCount = 0;
+const regex = new RegExp(blockPattern);
+
+const matches = [];
+while ((match = regex.exec(contents)) !== null) {
+  matches.push({
+    fullMatch: match[0],
+    opening: match[1],
+    content: match[2],
+    closing: match[3],
+    index: match.index
+  });
+}
+
+if (matches.length === 0) {
   console.error('Error: oftAdapter block not found.');
   process.exit(1);
 }
 
-const closingIndentMatch = match[3].match(/\n(\s*)\},/);
-const closingIndent = closingIndentMatch ? closingIndentMatch[1] : '';
-const innerIndent = `${closingIndent}  `;
-const replacement = `${match[1]}\n${innerIndent}tokenAddress: "${address}",${match[3]}`;
-const updated = contents.replace(blockPattern, replacement);
+console.log(`Found ${matches.length} oftAdapter block(s)`);
+
+for (let i = matches.length - 1; i >= 0; i--) {
+  const m = matches[i];
+  
+  const closingIndentMatch = m.closing.match(/\n(\s*)\},/);
+  const closingIndent = closingIndentMatch ? closingIndentMatch[1] : '';
+  const innerIndent = `${closingIndent}  `;
+  
+  const replacement = `${m.opening}\n${innerIndent}tokenAddress: "${address}",${m.closing}`;
+  
+  updated = updated.substring(0, m.index) + replacement + updated.substring(m.index + m.fullMatch.length);
+  replacementCount++;
+}
 
 if (updated === contents) {
+  console.log('No changes needed.');
   process.exit(0);
 }
 
 fs.writeFileSync(configPath, updated);
+console.log(`Updated ${replacementCount} oftAdapter block(s) with address: ${address}`);
 NODE
 
 current_token_address=$(
