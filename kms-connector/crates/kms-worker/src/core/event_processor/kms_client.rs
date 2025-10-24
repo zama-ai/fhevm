@@ -359,8 +359,15 @@ where
 {
     for i in 1..=retries {
         match request_fn().await {
-            Ok(_) => break,
-            Err(e) if e.code() == Code::AlreadyExists => return Ok(()),
+            Ok(_) => {
+                success_counter.inc();
+                info!("GRPC request successfully sent to the KMS!");
+                break;
+            }
+            Err(e) if e.code() == Code::AlreadyExists => {
+                info!("GRPC already sent to the KMS!");
+                break;
+            }
             Err(e) if [Code::ResourceExhausted, Code::Unknown].contains(&e.code()) => {
                 error_counter.inc();
                 warn!("#{i}/{retries} GRPC request attempt failed: {e}");
@@ -376,8 +383,6 @@ where
             }
         }
     }
-    success_counter.inc();
-    info!("GRPC request successfully sent to the KMS!");
     Ok(())
 }
 

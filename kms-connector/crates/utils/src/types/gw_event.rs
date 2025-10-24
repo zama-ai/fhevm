@@ -41,7 +41,7 @@ impl GatewayEvent {
             GatewayEventKind::PrepKeygen(e) => {
                 mark_prep_keygen_as_pending(db, e.prepKeygenId).await
             }
-            GatewayEventKind::Keygen(e) => mark_keygen_as_pending(db, e.prepKeygenId).await,
+            GatewayEventKind::Keygen(e) => mark_keygen_as_pending(db, e.keyId).await,
             GatewayEventKind::Crsgen(e) => mark_crsgen_as_pending(db, e.crsId).await,
         }
     }
