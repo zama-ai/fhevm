@@ -214,9 +214,9 @@ jobs:
           CHAIN_ID_GATEWAY: 54321
           RPC_URL: http://localhost:8546
         run: |
-          npx hardhat task:upgradeKmsGeneration \
-            --current-implementation previous-contracts/KmsGeneration.sol:KmsGeneration \
-            --new-implementation contracts/KmsGeneration.sol:KmsGeneration \
+          npx hardhat task:upgradeKMSGeneration \
+            --current-implementation previous-contracts/KMSGeneration.sol:KMSGeneration \
+            --new-implementation contracts/KMSGeneration.sol:KMSGeneration \
             --use-internal-proxy-address true \
             --verify-contract false
 

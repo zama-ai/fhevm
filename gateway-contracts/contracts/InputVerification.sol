@@ -161,13 +161,10 @@ contract InputVerification is
 
     /**
      * @notice Re-initializes the contract from V1.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
-        /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
-        $.zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IInputVerification-verifyProofRequest}.
