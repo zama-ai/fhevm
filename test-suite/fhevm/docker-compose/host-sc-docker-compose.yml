@@ -14,7 +14,7 @@ services:
     command:
       - npx hardhat task:deployAllHostContracts
     volumes:
-      - addresses-volume:/app/host-contracts/addresses  # workdir in host's Dockerfile is /app/host-contracts
+      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
 
   host-sc-add-pausers:
     container_name: host-sc-add-pausers
@@ -36,7 +36,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because the PauserSet
     # contract is compiled, and it imports these addresses.
     volumes:
-      - addresses-volume:/app/host-contracts/addresses  # workdir in host's Dockerfile is /app/host-contracts
+      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
 
 volumes:
   addresses-volume:

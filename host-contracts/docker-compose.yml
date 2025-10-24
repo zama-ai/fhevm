@@ -37,7 +37,7 @@ services:
     command:
       - npx hardhat task:deployAllHostContracts
     volumes:
-      - addresses-volume:/app/host-contracts/addresses
+      - addresses-volume:/app/addresses
 
   fhevm-sc-add-pausers:
     container_name: fhevm-sc-add-pausers
@@ -58,7 +58,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because the PauserSet
     # contract is compiled, and it imports these addresses.
     volumes:
-      - addresses-volume:/app/host-contracts/addresses
+      - addresses-volume:/app/addresses
 
 volumes:
   addresses-volume:
