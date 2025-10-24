@@ -3,7 +3,7 @@
   "workspaces": [
     "host-contracts",
     "library-solidity",
-    "library-solidity/codegen-v2",
+    "library-solidity/codegen",
     "test-suite/e2e"
   ],
   "devDependencies": {

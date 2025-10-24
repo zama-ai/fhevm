@@ -21,7 +21,7 @@ npm install
 # Help
 
 ```sh
-cd codegen-v2
+cd codegen
 ./codegen.mjs overloads --help
 ./codegen.mjs lib --help
 ```
@@ -29,49 +29,49 @@ cd codegen-v2
 # Generate overloads only
 
 ```sh
-cd codegen-v2
+cd codegen
 ./codegen.mjs overloads /path/to/your/new/overloads.json
 ```
 
 # Generate host-contracts tests
 
 ```sh
-cd codegen-v2
+cd codegen
 ./codegen.mjs lib --overloads ./overloads/host-contracts.json --config ./codegen.host-contracts.config.json --verbose
 ```
 
 or
 
 ```sh
-cd codegen-v2
+cd codegen
 npm run codegen:host-contracts
 ```
 
 # Generate library-solidity tests
 
 ```sh
-cd codegen-v2
+cd codegen
 ./codegen.mjs lib --overloads ./overloads/library-solidity.json --config ./codegen.library-solidity.config.json --verbose
 ```
 
 or
 
 ```sh
-cd codegen-v2
+cd codegen
 npm run codegen:library-solidity
 ```
 
 # Generate e2e tests
 
 ```sh
-cd codegen-v2
+cd codegen
 ./codegen.mjs lib --overloads ./overloads/e2e.json --config ./codegen.e2e.config.json --verbose
 ```
 
 or
 
 ```sh
-cd codegen-v2
+cd codegen
 npm run codegen:e2e
 ```
 
