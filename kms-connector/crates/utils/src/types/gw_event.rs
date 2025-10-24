@@ -90,7 +90,7 @@ impl GatewayEvent {
             GatewayEvent::PrepKeygen(e) => {
                 Self::mark_prep_keygen_as_pending(db, e.prepKeygenId).await
             }
-            GatewayEvent::Keygen(e) => Self::mark_keygen_as_pending(db, e.prepKeygenId).await,
+            GatewayEvent::Keygen(e) => Self::mark_keygen_as_pending(db, e.keyId).await,
             GatewayEvent::Crsgen(e) => Self::mark_crsgen_as_pending(db, e.crsId).await,
         }
     }
