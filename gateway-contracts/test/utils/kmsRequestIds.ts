@@ -6,6 +6,7 @@ const enum KmsRequestType {
   PrepKeygen = 3,
   Keygen = 4,
   Crsgen = 5,
+  Epoch = 6,
 }
 
 // Get the expected KMS request ID (uint256) for a counter and request type
@@ -41,4 +42,9 @@ export function getKeyId(counter: number): bigint {
 // Get the expected crsId for a crsgen request
 export function getCrsId(counter: number): bigint {
   return getKmsRequestIds(counter, KmsRequestType.Crsgen);
+}
+
+// Get the expected epochId for a key resharing epoch
+export function getEpochId(counter: number): bigint {
+  return getKmsRequestIds(counter, KmsRequestType.Epoch);
 }

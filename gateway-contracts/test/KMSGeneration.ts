@@ -14,6 +14,7 @@ import {
   createEIP712ResponsePrepKeygen,
   createRandomWallet,
   getCrsId,
+  getEpochId,
   getKeyId,
   getPrepKeygenId,
   getSignaturesCrsgen,
@@ -33,12 +34,14 @@ async function generateKey(
 ) {
   // Start a keygen with test parameters
   // This first triggers a preprocessing keygen request
-  const txRequestPrepKeygen = await kmsGeneration.connect(owner).keygen(ParamsTypeEnum.Test);
+  const paramsType = ParamsTypeEnum.Test;
+  const txRequestPrepKeygen = await kmsGeneration.connect(owner).keygen(paramsType);
 
   // Get the prepKeygenId from the event in the transaction receipt
   const receiptPrepKeygen = await txRequestPrepKeygen.wait();
   const eventPrepKeygen = receiptPrepKeygen?.logs[0] as EventLog;
   const prepKeygenId = BigInt(eventPrepKeygen?.args[0]);
+  const epochId = BigInt(eventPrepKeygen?.args[1]);
 
   const kmsGenerationAddress = await kmsGeneration.getAddress();
 
@@ -87,7 +90,10 @@ async function generateKey(
   }
 
   return {
+    prepKeygenId,
     keyId,
+    epochId,
+    paramsType,
     keyDigests,
   };
 }
@@ -149,9 +155,15 @@ describe("KMSGeneration", function () {
     const gatewayChainId = hre.network.config.chainId!;
 
     // Generate key.
-    const { keyId, keyDigests } = await generateKey(kmsGeneration, owner, gatewayChainId, kmsTxSenders, kmsSigners);
+    const { prepKeygenId, keyId, epochId, paramsType, keyDigests } = await generateKey(
+      kmsGeneration,
+      owner,
+      gatewayChainId,
+      kmsTxSenders,
+      kmsSigners,
+    );
 
-    return { ...fixtureData, keyId, keyDigests };
+    return { ...fixtureData, prepKeygenId, keyId, epochId, paramsType, keyDigests };
   }
 
   // Fixture running a CRS generation.
@@ -205,7 +217,7 @@ describe("KMSGeneration", function () {
 
   describe("Key generation", function () {
     it("Should revert because of access controls", async function () {
-      const { gatewayConfig, kmsGeneration } = await loadFixture(loadTestVariablesFixture);
+      const { kmsGeneration } = await loadFixture(loadTestVariablesFixture);
 
       // Check that only the owner can trigger a keygen request.
       await expect(kmsGeneration.connect(fakeOwner).keygen(ParamsTypeEnum.Default))
@@ -235,7 +247,7 @@ describe("KMSGeneration", function () {
 
       // Check for the PrepKeygenRequest event.
       const prepKeygenId = getPrepKeygenId(1);
-      const epochId = 0;
+      const epochId = getEpochId(1);
       await expect(txRequest).to.emit(kmsGeneration, "PrepKeygenRequest").withArgs(prepKeygenId, epochId, paramsType);
 
       // Define a keyId for keygen responses.
@@ -397,7 +409,7 @@ describe("KMSGeneration", function () {
 
   describe("CRS generation", async function () {
     it("Should revert because of access controls", async function () {
-      const { gatewayConfig, kmsGeneration } = await loadFixture(loadTestVariablesFixture);
+      const { kmsGeneration } = await loadFixture(loadTestVariablesFixture);
 
       // Check that only the owner can trigger a CRS generation request.
       await expect(kmsGeneration.connect(fakeOwner).crsgenRequest(maxBitLength, ParamsTypeEnum.Test))
@@ -524,6 +536,51 @@ describe("KMSGeneration", function () {
       // Check that the KMS transaction senders associated to the CRS are correct.
       const kmsTxSenderAddresses = kmsTxSenders.map((s) => s.address);
       expect(await kmsGeneration.getConsensusTxSenders(crsId)).to.deep.equal(kmsTxSenderAddresses);
+    });
+  });
+
+  describe("Key resharing", function () {
+    it("Should revert because of access controls", async function () {
+      const { kmsGeneration, keyId } = await loadFixture(prepareKMSGenerationKeygenFixture);
+
+      // Check that only the owner can trigger a PRSS initialization.
+      await expect(kmsGeneration.connect(fakeOwner).prssInit())
+        .to.be.revertedWithCustomError(kmsGeneration, "NotGatewayOwner")
+        .withArgs(fakeOwner.address);
+
+      // Check that only the owner can trigger a key resharing.
+      await expect(kmsGeneration.connect(fakeOwner).retryKeygenReshare(keyId))
+        .to.be.revertedWithCustomError(kmsGeneration, "NotGatewayOwner")
+        .withArgs(fakeOwner.address);
+    });
+
+    it("Should trigger the PRSS initialization", async function () {
+      const { owner, kmsGeneration } = await loadFixture(prepareKMSGenerationKeygenFixture);
+
+      await expect(kmsGeneration.connect(owner).prssInit()).to.emit(kmsGeneration, "PRSSInit");
+    });
+
+    it("Should trigger key resharing for the given key ID", async function () {
+      const { owner, kmsGeneration, prepKeygenId, keyId, epochId, paramsType } = await loadFixture(
+        prepareKMSGenerationKeygenFixture,
+      );
+
+      // Key resharing should increment the epoch ID by 1.
+      const newEpochId = epochId + 1n;
+
+      await expect(kmsGeneration.connect(owner).retryKeygenReshare(keyId))
+        .to.emit(kmsGeneration, "RetryKeygenReshare")
+        .withArgs(prepKeygenId, keyId, newEpochId, paramsType);
+    });
+
+    it("Should revert on reshare key because the key is not generated", async function () {
+      const { owner, kmsGeneration } = await loadFixture(loadTestVariablesFixture);
+
+      const fakeKeyId = getKeyId(5);
+
+      await expect(kmsGeneration.connect(owner).retryKeygenReshare(fakeKeyId))
+        .to.be.revertedWithCustomError(kmsGeneration, "KeyNotGenerated")
+        .withArgs(fakeKeyId);
     });
   });
 });
