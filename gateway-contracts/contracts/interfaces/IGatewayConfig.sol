@@ -182,6 +182,12 @@ interface IGatewayConfig {
     error ChainIdNotUint64(uint256 chainId);
 
     /**
+     * @notice Error emitted when a zero address is provided.
+     * @param addressType The type of address that was zero.
+     */
+    error InvalidZeroAddress(string addressType);
+
+    /**
      * @notice Add a new host chain metadata to the GatewayConfig contract.
      * @dev The associated chain ID must be non-zero and representable by a uint64.
      * @param hostChain The new host chain metadata to include.
