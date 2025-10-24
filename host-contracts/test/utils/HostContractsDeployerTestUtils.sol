@@ -42,12 +42,12 @@ contract DeployableERC1967Proxy is ERC1967Proxy {
  * Tests that inherit this contract can call the `_deploy*` helpers to stitch together a realistic environment
  * where cross-contract permission checks (ACLOwnable, slot reads, etc.) behave the same as on-chain.
  */
-abstract contract HostContractsDeployer is Test {
+abstract contract HostContractsDeployerTestUtils is Test {
     function _deployACL(address owner) internal returns (ACL aclProxy, address aclImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxyACL());
 
         deployCodeTo(
-            "test/utils/HostContractsDeployer.sol:DeployableERC1967Proxy",
+            "test/utils/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxyACL.initialize, (owner))),
             aclAdd
         );
@@ -72,7 +72,7 @@ abstract contract HostContractsDeployer is Test {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
-            "test/utils/HostContractsDeployer.sol:DeployableERC1967Proxy",
+            "test/utils/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
             fhevmExecutorAdd
         );
@@ -100,7 +100,7 @@ abstract contract HostContractsDeployer is Test {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
-            "test/utils/HostContractsDeployer.sol:DeployableERC1967Proxy",
+            "test/utils/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
             kmsVerifierAdd
         );
@@ -131,7 +131,7 @@ abstract contract HostContractsDeployer is Test {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
-            "test/utils/HostContractsDeployer.sol:DeployableERC1967Proxy",
+            "test/utils/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
             inputVerifierAdd
         );
@@ -156,7 +156,7 @@ abstract contract HostContractsDeployer is Test {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
-            "test/utils/HostContractsDeployer.sol:DeployableERC1967Proxy",
+            "test/utils/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
             hcuLimitAdd
         );

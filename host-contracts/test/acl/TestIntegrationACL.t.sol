@@ -2,14 +2,14 @@
 pragma solidity ^0.8.24;
 
 import {euint64} from 'encrypted-types/EncryptedTypes.sol';
-import {HostContractsDeployer} from "../utils/HostContractsDeployer.sol";
+import {HostContractsDeployerTestUtils} from "../utils/HostContractsDeployerTestUtils.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {FHE} from "../../lib/FHE.sol";
 import {CoprocessorConfig} from "../../lib/Impl.sol";
 import {aclAdd, fhevmExecutorAdd, kmsVerifierAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
-contract TestIntegrationACL is HostContractsDeployer {
+contract TestIntegrationACL is HostContractsDeployerTestUtils {
     ACL internal acl;
     PauserSet internal pauserSet;
     FHELibCaller internal caller;

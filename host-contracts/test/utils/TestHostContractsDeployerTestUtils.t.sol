@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
-import {HostContractsDeployer} from "./HostContractsDeployer.sol";
+import {HostContractsDeployerTestUtils} from "./HostContractsDeployerTestUtils.sol";
 import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
@@ -13,7 +13,7 @@ import {HCULimit} from "../../contracts/HCULimit.sol";
 import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
-contract HostContractsDeployerTest is HostContractsDeployer {
+contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     address private constant OWNER = address(0xBEEF);
     address private constant GATEWAY_SOURCE_CONTRACT = address(0x1234);
     uint64 private constant GATEWAY_CHAIN_ID = 31337;
