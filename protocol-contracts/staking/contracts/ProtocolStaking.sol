@@ -70,10 +70,6 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
 
     /// @dev Emitted when an account unstakes to the zero address.
     error InvalidUnstakeRecipient();
-    /// @dev The account is already an eligible account.
-    error EligibleAccountAlreadyExists(address account);
-    /// @dev The account is not an eligible account.
-    error EligibleAccountDoesNotExist(address account);
     /// @dev The account cannot be made eligible.
     error InvalidEligibleAccount(address account);
     /// @dev The tokens cannot be transferred.
@@ -100,6 +96,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         __AccessControlDefaultAdminRules_init(0, governor);
         _grantRole(UPGRADER_ROLE, upgrader);
         _grantRole(MANAGER_ROLE, manager);
+        _setRoleAdmin(ELIGIBLE_ACCOUNT_ROLE, MANAGER_ROLE);
         __ERC20_init(name, symbol);
         __EIP712_init(name, version);
         _getProtocolStakingStorage()._stakingToken = stakingToken_;
@@ -187,20 +184,22 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
 
     /**
      * @dev Adds the eligible account role to `account`. Only accounts with the eligible account
-     * role earn rewards for staked tokens. Only callable by the `MANAGER_ROLE` role.
+     * role earn rewards for staked tokens. Only callable by the role admin for 
+     * `ELIGIBLE_ACCOUNT_ROLE`. By default this is `MANAGER_ROLE`.
      * @param account The account to grant the `ELIGIBLE_ACCOUNT_ROLE` role to.
      */
-    function addEligibleAccount(address account) public onlyRole(MANAGER_ROLE) {
-        require(_grantRole(ELIGIBLE_ACCOUNT_ROLE, account), EligibleAccountAlreadyExists(account));
+    function addEligibleAccount(address account) public {
+        grantRole(ELIGIBLE_ACCOUNT_ROLE, account);
     }
 
     /**
      * @dev Removes the eligible account role from `account`. `account` stops to earn rewards
-     * but maintains all existing rewards. Only callable by the `MANAGER_ROLE` role.
+     * but maintains all existing rewards. Only callable by the role admin for 
+     * `ELIGIBLE_ACCOUNT_ROLE`. By default this is `MANAGER_ROLE`.
      * @param account The account to revoke the `ELIGIBLE_ACCOUNT_ROLE` role from.
      */
-    function removeEligibleAccount(address account) public onlyRole(MANAGER_ROLE) {
-        require(_revokeRole(ELIGIBLE_ACCOUNT_ROLE, account), EligibleAccountDoesNotExist(account));
+    function removeEligibleAccount(address account) public {
+        revokeRole(ELIGIBLE_ACCOUNT_ROLE, account);
     }
 
     /**
