@@ -11,7 +11,7 @@ import {
   getUserOverloadsFile,
   mkDir,
   resolveUserConfig,
-  toAbsoluteJsonFile,
+  toAbsoluteFileWithExtension,
   toAbsulteConfig,
   toImportsCode,
   writeFile,
@@ -84,6 +84,10 @@ export async function writeOverloadsIfChanged(
 }
 
 export async function forceRegenerateOverloads(outputFile: string) {
+  if (!outputFile || typeof outputFile !== "string" || outputFile.trim().length === 0) {
+    throw new Error(`Missing output file.`);
+  }
+
   if (isDirectory(outputFile)) {
     outputFile = path.join(outputFile, "overloads.json");
   }
@@ -96,7 +100,7 @@ export async function forceRegenerateOverloads(outputFile: string) {
   const defaultOverloadsJsonFile = absConfig.overloads;
 
   const overloadsJsonFile = userOverloadsJson
-    ? toAbsoluteJsonFile(userOverloadsJson, process.cwd())
+    ? toAbsoluteFileWithExtension(userOverloadsJson, '.json', process.cwd())
     : defaultOverloadsJsonFile;
 
   const overloadTests: OverloadTests = generateOverloads(ALL_FHE_TYPES, {});
@@ -143,7 +147,7 @@ export async function generateAllFiles(options: any) {
 
   const defaultOverloadsJsonFile = absConfig.overloads;
   const resolvedOverloadsJsonFile = userOverloadsJson
-    ? toAbsoluteJsonFile(userOverloadsJson, process.cwd())
+    ? toAbsoluteFileWithExtension(userOverloadsJson, '.json', process.cwd())
     : defaultOverloadsJsonFile;
 
   if (!existsSync(resolvedOverloadsJsonFile)) {
@@ -165,6 +169,7 @@ export async function generateAllFiles(options: any) {
   debugLog(`HCULimit.sol:       ${hcuLimitDotSol}`);
   debugLog(`solidityDir:        ${absConfig.solidity?.outDir ?? 'N/A'}`);
   debugLog(`typescriptDir:      ${absConfig.typescript?.outDir ?? 'N/A'}`);
+  debugLog(`parentContractName: ${absConfig.solidity?.parentContractName ?? 'N/A'}`);
 
   debugLog(`overloads.json (default):  ${defaultOverloadsJsonFile}`);
   debugLog(`overloads.json (resolved): ${resolvedOverloadsJsonFile}`);
@@ -257,7 +262,7 @@ export async function generateAllFiles(options: any) {
           generateSolidityUnitTestContracts(
             os,
             importsCode,
-            solidityTestGroup.parentContract?.name,
+            solidityTestGroup.parentContractName,
             config.publicDecrypt,
           ),
         ),

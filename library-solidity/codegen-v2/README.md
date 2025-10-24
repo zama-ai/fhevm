@@ -1,3 +1,9 @@
+# Install
+
+```sh
+npm install
+```
+
 # Config file
 
 - `generateHCULimit` (boolean, optional): `true` to generate HCULimit.sol. (default: `false`)
@@ -12,25 +18,61 @@
 - `directories.overloadsDir` (string, optional): If `--overloads` option is not used, this is the path to the directory where the `overloads.json` file is located. If the path is relative, the absolute path is resolved relatively to the config file. (default: `overloads`)
 - `directories.contractsDir` (string, optional): The path to the contracts directory (where to save `HCULimit.sol`). If the path is relative, the absolute path is resolved relatively to the config file. (default: `contracts`)
 
+# Help
+
+```sh
+cd codegen-v2
+./codegen.mjs overloads --help
+./codegen.mjs lib --help
+```
+
+# Generate overloads only
+
+```sh
+cd codegen-v2
+./codegen.mjs overloads /path/to/your/new/overloads.json
+```
+
 # Generate host-contracts tests
 
 ```sh
-cd codegen
-./codegen.mjs --overloads ./overloads/host-contracts.json --config ./codegen.host-contracts.config.json --debug
+cd codegen-v2
+./codegen.mjs lib --overloads ./overloads/host-contracts.json --config ./codegen.host-contracts.config.json --debug
+```
+
+or
+
+```sh
+cd codegen-v2
+npm run codegen:host-contracts
 ```
 
 # Generate library-solidity tests
 
 ```sh
-cd codegen
-./codegen.mjs --overloads ./overloads/library-solidity.json --config ./codegen.library-solidity.config.json --debug
+cd codegen-v2
+./codegen.mjs lib --overloads ./overloads/library-solidity.json --config ./codegen.library-solidity.config.json --debug
+```
+
+or
+
+```sh
+cd codegen-v2
+npm run codegen:library-solidity
 ```
 
 # Generate e2e tests
 
 ```sh
-cd codegen
-./codegen.mjs --overloads ./overloads/e2e.json --config ./codegen.e2e.config.json --debug
+cd codegen-v2
+./codegen.mjs lib --overloads ./overloads/e2e.json --config ./codegen.e2e.config.json --debug
+```
+
+or
+
+```sh
+cd codegen-v2
+npm run codegen:e2e
 ```
 
 # Dry Run

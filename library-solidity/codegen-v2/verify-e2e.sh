@@ -18,12 +18,16 @@ TS_DIR="${FHEVM_DIR}/test-suite/e2e/${TS_REL_DIR}-local.orig"
 OUT_SOL_DIR="${OUT_BASE_DIR}/${SOL_REL_DIR}"
 OUT_TS_DIR="${OUT_BASE_DIR}/${TS_REL_DIR}"
 
+FAILED=0
+
 for i in {1..7}; do
     FILE_A=${OUT_SOL_DIR}/FHEVMTestSuite${i}.sol
     FILE_B=${SOL_DIR}/FHEVMTestSuite${i}.sol
     diff "${FILE_A}" "${FILE_B}" 
     if [ $? -eq 0 ]; then
         echo "✅ Files are identical: '${FILE_A}' and '${FILE_B}'"
+    else
+        FAILED=1
     fi
 done
 
@@ -33,6 +37,13 @@ for i in {1..105}; do
     diff "${FILE_A}" "${FILE_B}" 
     if [ $? -eq 0 ]; then
         echo "✅ Files are identical: '${FILE_A}' and '${FILE_B}'"
+    else
+        FAILED=1
     fi
 done
 
+if [ $FAILED -eq 0 ]; then
+    echo "✅ All files are identical!"
+else
+    echo "❌ Some files are not identical!"
+fi
