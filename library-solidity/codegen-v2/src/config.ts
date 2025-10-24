@@ -45,6 +45,8 @@ export type UserConfig = {
   publicDecrypt?: boolean;
   numberOfTestSplits?: number;
   noLib?: boolean;
+  noTest?: boolean;
+  overloads?: string;
   directories?: DirectoriesUserConfig;
   solidity?: UserSolidityTestGroup;
   typescript?: UserTypescriptTestGroup;
@@ -57,6 +59,8 @@ export type ResolvedConfig = {
   publicDecrypt: boolean;
   numberOfTestSplits: number;
   noLib: boolean;
+  noTest: boolean;
+  overloads: string;
   directories: DirectoriesConfig;
   solidity?: SolidityTestGroup;
   typescript?: TypescriptTestGroup;
@@ -66,7 +70,6 @@ export type DirectoriesUserConfig = {
   baseDir?: string;
   fheTypeDir?: string;
   libDir?: string;
-  overloadsDir?: string;
   contractsDir?: string;
 };
 
@@ -79,11 +82,11 @@ export type DirectoriesConfig = {
   baseDir: string;
   fheTypeDir: string; // directory where the FheType.sol file is located
   libDir: string; // directory where the FHE.sol and Impl.sol files are located
-  overloadsDir: string;
   contractsDir: string;
 };
 
 export function getProgram(): Command {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (globalThis as any).program! as Command;
 }
 
@@ -118,8 +121,8 @@ export function isDryRun(): boolean {
   return getProgram().opts().dryRun === true;
 }
 
-export function getUserOverloadsFile(): string | undefined {
-  return getProgram().opts().overloads;
+export function getUserOverloadsFile(options: any): string | undefined {
+  return options.overloads;
 }
 
 export function debugLog(s: string) {
@@ -136,7 +139,6 @@ function assertDirectoriesConfig(resolved: DirectoriesConfig) {
   assertAbsolute(resolved.baseDir);
   assertRelative(resolved.fheTypeDir);
   assertRelative(resolved.libDir);
-  assertRelative(resolved.overloadsDir);
   assertRelative(resolved.contractsDir);
 }
 
@@ -176,6 +178,8 @@ export function resolveUserConfig(userConfig: UserConfig | undefined): ResolvedC
     shuffleWithPseuseRand: userConfig?.shuffleWithPseuseRand === true,
     publicDecrypt: userConfig?.publicDecrypt === true,
     noLib: userConfig?.noLib === true,
+    noTest: userConfig?.noTest === true,
+    overloads: userConfig?.overloads ?? './overloads.json',
     numberOfTestSplits: userConfig?.numberOfTestSplits ?? 12,
     directories: resolveDirectoriesConfig(userConfig?.directories),
     ...(userConfig?.solidity ? { solidity: resolveTestGroup(userConfig.solidity) } : {}),
@@ -193,7 +197,6 @@ function resolveDirectoriesConfig(userDirs: DirectoriesUserConfig | undefined): 
     baseDir,
     fheTypeDir: userDirs?.fheTypeDir ?? libDir,
     libDir,
-    overloadsDir: userDirs?.overloadsDir ?? './overloads',
     contractsDir: userDirs?.contractsDir ?? './contracts',
   };
   assertDirectoriesConfig(p);
@@ -217,6 +220,8 @@ export function toAbsulteConfig(resolved: ResolvedConfig): ResolvedConfig {
     shuffleWithPseuseRand: resolved.shuffleWithPseuseRand,
     publicDecrypt: resolved.publicDecrypt,
     noLib: resolved.noLib,
+    noTest: resolved.noTest,
+    overloads: toAbsoluteJsonFile(resolved.overloads, directories.baseDir),
     numberOfTestSplits: resolved.numberOfTestSplits,
     directories,
     ...(resolved.solidity ? { solidity: toAbsoluteTestGroup(resolved.solidity, directories) } : {}),
@@ -229,7 +234,6 @@ function toAbsultePaths(resolved: DirectoriesConfig): DirectoriesConfig {
     baseDir: resolved.baseDir,
     fheTypeDir: toAbsoluteDirectory(resolved.fheTypeDir, resolved.baseDir),
     libDir: toAbsoluteDirectory(resolved.libDir, resolved.baseDir),
-    overloadsDir: toAbsoluteDirectory(resolved.overloadsDir, resolved.baseDir),
     contractsDir: toAbsoluteDirectory(resolved.contractsDir, resolved.baseDir),
   };
 }
@@ -245,7 +249,7 @@ function toAbsoluteTestGroup(testGroup: TestGroup, directories: DirectoriesConfi
 }
 
 function toAbsoluteContratConfig(contractConfig: ContractConfig, directories: DirectoriesConfig): ContractConfig {
-  let baseDir = directories.baseDir;
+  const baseDir = directories.baseDir;
   assertAbsolute(baseDir);
   return {
     name: contractConfig.name,

@@ -9,7 +9,6 @@ import {
   generatePrettierConfig,
   getUserConfig,
   getUserOverloadsFile,
-  isDebug,
   mkDir,
   resolveUserConfig,
   toAbsoluteJsonFile,
@@ -30,7 +29,8 @@ import {
   splitOverloadsToShards,
 } from './testgen.js';
 import { ALL_FHE_TYPES } from './types.js';
-import { fromDirToFile, fromFileToFile } from './utils/paths.js';
+import { fromDirToFile, fromFileToFile, isDirectory } from './utils/paths.js';
+import { toBigInt } from './utils.js';
 
 export function validate() {
   // Validate the FHE types
@@ -39,26 +39,12 @@ export function validate() {
   validateOperators(ALL_OPERATORS);
 }
 
-function toBigInt(x: any): bigint | undefined {
-  if (typeof x === 'bigint') return x;
-  if (typeof x === 'number') return BigInt(x);
-  if (typeof x === 'string') {
-    const s = x.endsWith('n') ? x.slice(0, -1) : x; // strip trailing 'n'
-    try {
-      return BigInt(s);
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-
 export function readOverloads(overloadsJsonFile: string): OverloadTests | undefined {
   if (!existsSync(overloadsJsonFile)) {
     return undefined;
   }
 
-  console.log(`Read existing overloads file at ${overloadsJsonFile}`);
+  debugLog(`Read existing overloads file at ${overloadsJsonFile}`);
   const json = readFileSync(overloadsJsonFile, 'utf8');
 
   return JSON.parse(json, (_key, value) => {
@@ -85,7 +71,7 @@ export async function writeOverloadsIfChanged(
   overloadsFile: string,
 ): Promise<void> {
   if (!isDeepStrictEqual(newOverloads, existingOverloads)) {
-    console.log(`Save new overloads file at ${overloadsFile}`);
+    debugLog(`Save new overloads file at ${overloadsFile}`);
     await writeFile(
       overloadsFile,
       JSON.stringify(newOverloads, (_key, value) => {
@@ -93,8 +79,28 @@ export async function writeOverloadsIfChanged(
       }),
     );
   } else {
-    console.log(`Overloads is unchanged.`);
+    debugLog(`Overloads is unchanged.`);
   }
+}
+
+export async function forceRegenerateOverloads(outputFile: string) {
+  if (isDirectory(outputFile)) {
+    outputFile = path.join(outputFile, "overloads.json");
+  }
+
+  const userConfig = getUserConfig();
+  const userOverloadsJson = outputFile;
+  const config = resolveUserConfig(userConfig);
+  const absConfig = toAbsulteConfig(config);
+
+  const defaultOverloadsJsonFile = absConfig.overloads;
+
+  const overloadsJsonFile = userOverloadsJson
+    ? toAbsoluteJsonFile(userOverloadsJson, process.cwd())
+    : defaultOverloadsJsonFile;
+
+  const overloadTests: OverloadTests = generateOverloads(ALL_FHE_TYPES, {});
+  await writeOverloadsIfChanged(overloadTests, {}, overloadsJsonFile);
 }
 
 /**
@@ -109,10 +115,18 @@ export async function writeOverloadsIfChanged(
  * 6. Generates TypeScript test code for the split overloads and writes them to the test directory.
  *
  */
-export async function generateAllFiles() {
+export async function generateAllFiles(options: any) {
   const userConfig = getUserConfig();
-  const userOverloadsJson = getUserOverloadsFile();
+  const userOverloadsJson = getUserOverloadsFile(options);
   const config = resolveUserConfig(userConfig);
+
+  if (!options.test) {
+    config.noTest = true;
+  }
+  if (!options.lib) {
+    config.noLib = true;
+  }
+
   const absConfig = toAbsulteConfig(config);
 
   generatePrettierConfig(absConfig.directories.baseDir);
@@ -126,10 +140,15 @@ export async function generateAllFiles() {
   const implDotSol = `${path.join(absConfig.directories.libDir, 'Impl.sol')}`;
   const fheDotSol = `${path.join(absConfig.directories.libDir, 'FHE.sol')}`;
   const hcuLimitDotSol = `${path.join(absConfig.directories.contractsDir, 'HCULimit.sol')}`;
-  const overloadsJsonFile = `${path.join(absConfig.directories.overloadsDir, 'overloads.json')}`;
-  const existingOverloadsJsonFile = userOverloadsJson
+
+  const defaultOverloadsJsonFile = absConfig.overloads;
+  const resolvedOverloadsJsonFile = userOverloadsJson
     ? toAbsoluteJsonFile(userOverloadsJson, process.cwd())
-    : overloadsJsonFile;
+    : defaultOverloadsJsonFile;
+
+  if (!existsSync(resolvedOverloadsJsonFile)) {
+    throw new Error(`Missing overloads file: ${resolvedOverloadsJsonFile}`);
+  }
 
   const implRelFheTypesDotSol = fromFileToFile(implDotSol, fheTypesDotSol);
   const fheRelFheTypesDotSol = fromFileToFile(fheDotSol, fheTypesDotSol);
@@ -147,20 +166,18 @@ export async function generateAllFiles() {
   debugLog(`solidityDir:        ${absConfig.solidity?.outDir ?? 'N/A'}`);
   debugLog(`typescriptDir:      ${absConfig.typescript?.outDir ?? 'N/A'}`);
 
-  debugLog(`overloads.json:          ${overloadsJsonFile}`);
-  debugLog(`existing overloads.json: ${existingOverloadsJsonFile}`);
+  debugLog(`overloads.json (default):  ${defaultOverloadsJsonFile}`);
+  debugLog(`overloads.json (resolved): ${resolvedOverloadsJsonFile}`);
 
   const fheTypesCode = generateSolidityFheType(ALL_FHE_TYPES);
   const implCode = generateSolidityImplLib(ALL_OPERATORS, implRelFheTypesDotSol);
   const fheCode = generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPES, fheRelFheTypesDotSol, fheRelImplDotSol);
   const hcuCode = generateSolidityHCULimit(operatorsPrices);
 
-  if (isDebug()) {
-    console.log(`FheType.sol:  size=${fheTypesCode.length}`);
-    console.log(`Impl.sol:     size=${implCode.length}`);
-    console.log(`FHE.sol:      size=${fheCode.length}`);
-    console.log(`HCULimit.sol: size=${hcuCode.length}`);
-  }
+  debugLog(`FheType.sol:  size=${fheTypesCode.length}`);
+  debugLog(`Impl.sol:     size=${implCode.length}`);
+  debugLog(`FHE.sol:      size=${fheCode.length}`);
+  debugLog(`HCULimit.sol: size=${hcuCode.length}`);
 
   if (config.noLib !== true) {
     mkDir(path.dirname(fheTypesDotSol));
@@ -171,19 +188,32 @@ export async function generateAllFiles() {
     await writeFile(`${fheTypesDotSol}`, fheTypesCode);
     await writeFile(`${implDotSol}`, implCode);
     await writeFile(`${fheDotSol}`, fheCode);
+  } else {
+    debugLog(`Skipping lib generation.`);
   }
 
   if (config.generateHCULimit === true) {
     await writeFile(`${hcuLimitDotSol}`, hcuCode);
   }
 
-  const existingOverloadTests: OverloadTests = readOverloads(existingOverloadsJsonFile) ?? {};
+  if (config.noTest === true) {
+    debugLog(`Skipping test generation.`);
+    return;
+  }
+
+  const existingOverloadTests: OverloadTests = readOverloads(resolvedOverloadsJsonFile) ?? {};
+  // Generates a list of Overload Tests.
+  // 1. if one test one test already exists, keep it.
+  // 2. if one test does not exist, generate it.
+  // overloadTests === { existing tests } U { missing tests }
   const overloadTests: OverloadTests = generateOverloads(ALL_FHE_TYPES, existingOverloadTests);
   if (!userOverloadsJson) {
-    await writeOverloadsIfChanged(overloadTests, existingOverloadTests, overloadsJsonFile);
+    // No `--overloads` option: save the new overloads tests if changed
+    await writeOverloadsIfChanged(overloadTests, existingOverloadTests, defaultOverloadsJsonFile);
   } else {
+    // With `--overloads` option: we expect Card({ missing tests }) == 0
     if (!isDeepStrictEqual(overloadTests, existingOverloadTests)) {
-      throw new Error(`Invalid overloads.json file at ${existingOverloadsJsonFile}`);
+      throw new Error(`Invalid overloads.json file at ${resolvedOverloadsJsonFile}. Please regenerate 'overloads.json'. Type "codegen overloads --help" for more info.`);
     }
   }
 
