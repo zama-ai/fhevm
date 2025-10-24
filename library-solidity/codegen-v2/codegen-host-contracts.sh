@@ -6,4 +6,4 @@ if [ ! -d "${FHEVM_DIR}/.github" ]; then
   exit 1
 fi
 
-npm run build && ./codegen.mjs --overloads ./overloads/host-contracts.json --config ./codegen.host-contracts.config.json --verbose
+npm run build && ./codegen.mjs lib --overloads ./overloads/host-contracts.json --config ./codegen.host-contracts.config.json --verbose

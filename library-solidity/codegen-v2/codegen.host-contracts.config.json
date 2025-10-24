@@ -1,7 +1,8 @@
 {
+  "__comment": "All relative paths are resolved against directories.baseDir",
   "numberOfTestSplits": 12,
   "generateHCULimit": true,
-  "overloads": "./overloads/host-contracts.json",
+  "overloads": "../library-solidity/codegen-v2/overloads/host-contracts.json",
   "directories": {
     "baseDir": "../../host-contracts",
     "fheTypeDir": "./contracts/shared"

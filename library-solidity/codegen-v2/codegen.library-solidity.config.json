@@ -1,4 +1,7 @@
 {
+  "__comment": "All relative paths are resolved against directories.baseDir",
+  "numberOfTestSplits": 12,
+  "overloads": "./codegen-v2/overloads/library-solidity.json",
   "directories": {
     "baseDir": "../../library-solidity"
   },
