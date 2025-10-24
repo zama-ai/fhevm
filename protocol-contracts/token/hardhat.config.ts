@@ -60,7 +60,7 @@ const config: HardhatUserConfig = {
             url: process.env.RPC_URL_ARBITRUM_SEPOLIA || 'https://sepolia-rollup.arbitrum.io/rpc',
             accounts,
             oftAdapter: {
-              tokenAddress: "0xd8344b1a53eA591f337fE8548F16Be3d63FB819D",
+                tokenAddress: '0x',
             },
         },
         'ethereum-testnet': {
@@ -68,7 +68,7 @@ const config: HardhatUserConfig = {
             url: process.env.SEPOLIA_RPC_URL,
             accounts,
             oftAdapter: {
-              tokenAddress: "0xd8344b1a53eA591f337fE8548F16Be3d63FB819D",
+                tokenAddress: '0x',
             },
         },
         'gateway-testnet': {
