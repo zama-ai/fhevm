@@ -6,6 +6,7 @@ import path from "path";
 
 import { ADDRESSES_DIR } from "../../hardhat.config";
 import { getRequiredEnvVar } from "../../tasks/utils/loadVariables";
+import { approveContractWithMaxAllowance, fundSignerWithMockedZamaToken } from "./mockedZamaToken";
 import { fund } from "./wallets";
 
 // Loads the host chains' chain IDs
@@ -115,6 +116,11 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     custodianEncryptionKeys.push(custodianEncryptionKey);
   }
 
+  // Load the protocol payment prices
+  const inputVerificationPrice = BigInt(getRequiredEnvVar("INPUT_VERIFICATION_PRICE"));
+  const publicDecryptionPrice = BigInt(getRequiredEnvVar("PUBLIC_DECRYPTION_PRICE"));
+  const userDecryptionPrice = BigInt(getRequiredEnvVar("USER_DECRYPTION_PRICE"));
+
   return {
     owner,
     pauser,
@@ -128,7 +134,24 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     custodianTxSenders,
     custodianSigners,
     custodianEncryptionKeys,
+    inputVerificationPrice,
+    publicDecryptionPrice,
+    userDecryptionPrice,
   };
+}
+
+// Fund the signer with mocked $ZAMA tokens and approve the contracts with maximum allowance over its tokens
+async function fundSignerMockedToken(owner: Wallet, zamaFundedSigner: HardhatEthersSigner) {
+  // Fund the signer with mocked $ZAMA tokens using the owner's balance
+  await fundSignerWithMockedZamaToken(owner, zamaFundedSigner);
+
+  // Get the addresses of the contracts to approve
+  const decryptionAddress = getRequiredEnvVar("DECRYPTION_ADDRESS");
+  const inputVerificationAddress = getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS");
+
+  // Approve the contracts with maximum allowance over the signer's tokens
+  await approveContractWithMaxAllowance(zamaFundedSigner, decryptionAddress);
+  await approveContractWithMaxAllowance(zamaFundedSigner, inputVerificationAddress);
 }
 
 // Loads the addresses of the deployed contracts, and the values required for the tests.
@@ -174,6 +197,27 @@ export async function loadTestVariablesFixture() {
   // Load the PauserSet contract
   const pauserSet = await hre.ethers.getContractAt("PauserSet", getRequiredEnvVar("PAUSER_SET_ADDRESS"));
 
+  // Load the ProtocolPayment contract
+  const protocolPayment = await hre.ethers.getContractAt(
+    "ProtocolPayment",
+    getRequiredEnvVar("PROTOCOL_PAYMENT_ADDRESS"),
+  );
+
+  // Load the mocked payment bridging contracts
+  const mockedZamaOFT = await hre.ethers.getContractAt("ZamaOFT", getRequiredEnvVar("ZAMA_OFT_ADDRESS"));
+  const mockedFeesSenderToBurnerAddress = getRequiredEnvVar("FEES_SENDER_TO_BURNER_ADDRESS");
+
+  // Get the first hardhat signer, used for sending all transactions in non-payment related tests
+  const hardhatSigners = await hre.ethers.getSigners();
+  const zamaFundedSigner = hardhatSigners[0];
+
+  // Fund the signer with mocked $ZAMA tokens and approve the contracts with maximum allowance over its tokens
+  await fundSignerMockedToken(fixtureData.owner, zamaFundedSigner);
+
+  // Get the third hardhat signer and do not fund it with mocked $ZAMA tokens
+  // Note: the second signer is the owner, which is funded by default
+  const zamaUnfundedSigner = hardhatSigners[2];
+
   return {
     ...fixtureData,
     gatewayConfig,
@@ -187,5 +231,10 @@ export async function loadTestVariablesFixture() {
     nCoprocessors,
     nCustodians,
     pauserSet,
+    protocolPayment,
+    mockedZamaOFT,
+    mockedFeesSenderToBurnerAddress,
+    zamaFundedSigner,
+    zamaUnfundedSigner,
   };
 }

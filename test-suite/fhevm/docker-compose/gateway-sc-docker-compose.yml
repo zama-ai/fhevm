@@ -1,4 +1,21 @@
 services:
+  deploy-mocked-payment-bringing-contracts:
+    container_name: deploy-mocked-payment-bringing-contracts
+    image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
+    build:
+      context: ../../../gateway-contracts
+      dockerfile: Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
+    env_file:
+      - ../env/staging/.env.gateway-sc.local
+    command:
+      - npx hardhat task:deployMockedPaymentBridgingContracts
+    volumes:
+      - addresses-volume:/app/addresses # workdir in gateway's Dockerfile is /app
+
   gateway-sc-deploy:
     container_name: gateway-sc-deploy
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
@@ -13,8 +30,11 @@ services:
       - ../env/staging/.env.gateway-sc.local
     command:
       - npx hardhat task:deployAllGatewayContracts
+    depends_on:
+      deploy-mocked-payment-bringing-contracts:
+        condition: service_completed_successfully
     volumes:
-      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
+      - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-add-network:
     container_name: gateway-sc-add-network
@@ -36,7 +56,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
-      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
+      - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-add-pausers:
     container_name: gateway-sc-add-pausers
@@ -58,7 +78,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because the PauserSet
     # contract is compiled, and it imports these addresses.
     volumes:
-      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
+      - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-trigger-keygen:
     container_name: gateway-sc-trigger-keygen
@@ -80,7 +100,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
-      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
+      - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-trigger-crsgen:
     container_name: gateway-sc-trigger-crsgen
@@ -102,7 +122,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
-      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
+      - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
 volumes:
   addresses-volume:

@@ -21,3 +21,7 @@ export function pascalCaseToCamelCase(str: string) {
   // Otherwise just lowercase the first character (e.g. "GatewayConfig" -> "gatewayConfig")
   return str[0].toLowerCase() + str.slice(1);
 }
+
+export function pascalCaseToAddressEnvVar(str: string) {
+  return `${pascalCaseToSnakeCase(str).toUpperCase()}_ADDRESS`;
+}

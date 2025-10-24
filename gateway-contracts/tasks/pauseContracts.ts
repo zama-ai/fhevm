@@ -1,12 +1,8 @@
-import dotenv from "dotenv";
 import { Wallet } from "ethers";
-import fs from "fs";
 import { task, types } from "hardhat/config";
 import { HardhatEthersHelpers } from "hardhat/types";
-import path from "path";
 
-import { ADDRESSES_DIR } from "../hardhat.config";
-import { getRequiredEnvVar } from "./utils/loadVariables";
+import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 import { pascalCaseToSnakeCase } from "./utils/stringOps";
 
 // Helper function to get a Gateway contract and its proxy address
@@ -22,13 +18,7 @@ async function getGatewayContract(
 
   // Get contract factories
   if (useInternalAddress) {
-    const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
-
-    if (!fs.existsSync(envFilePath)) {
-      throw new Error(`Environment file not found: ${envFilePath}`);
-    }
-
-    dotenv.config({ path: envFilePath, override: true });
+    loadGatewayAddresses();
   }
 
   // Determine env variable name for the proxy contract address

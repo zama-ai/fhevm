@@ -2,9 +2,13 @@ import { Wallet } from "ethers";
 import { task } from "hardhat/config";
 
 import { getRequiredEnvVar } from "../utils/loadVariables";
+import { setGatewayContractAddress } from "./utils";
 
 // Deploy the PauserSet contract
 task("task:deployPauserSet").setAction(async function (_, hre) {
+  // Compile the PauserSet contract
+  await hre.run("compile:specific", { contract: "contracts/immutable" });
+
   // Get a deployer wallet
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
@@ -14,8 +18,5 @@ task("task:deployPauserSet").setAction(async function (_, hre) {
   const pauserSet = await pauserSetFactory.deploy();
   const pauserSetAddress = await pauserSet.getAddress();
 
-  await hre.run("task:setContractAddress", {
-    name: "PauserSet",
-    address: pauserSetAddress,
-  });
+  setGatewayContractAddress("PauserSet", pauserSetAddress);
 });

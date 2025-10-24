@@ -1,4 +1,3 @@
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { Wallet } from "ethers";
 import { ethers, upgrades } from "hardhat";
@@ -18,8 +17,10 @@ import {
   KMSGeneration__factory,
   MultichainACLV2Example__factory,
   MultichainACL__factory,
+  ProtocolPaymentV2Example__factory,
+  ProtocolPayment__factory,
 } from "../../typechain-types";
-import { createAndFundRandomWallet, loadTestVariablesFixture, toValues } from "../utils";
+import { createAndFundRandomWallet } from "../utils";
 
 describe("Upgrades", function () {
   let owner: Wallet;
@@ -37,6 +38,8 @@ describe("Upgrades", function () {
   let kmsGenerationFactoryV2: KMSGenerationV2Example__factory;
   let MultichainACLFactoryV1: MultichainACL__factory;
   let MultichainACLFactoryV2: MultichainACLV2Example__factory;
+  let protocolPaymentFactoryV1: ProtocolPayment__factory;
+  let protocolPaymentFactoryV2: ProtocolPaymentV2Example__factory;
 
   before(async function () {
     owner = new Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
@@ -60,6 +63,9 @@ describe("Upgrades", function () {
 
     MultichainACLFactoryV1 = await ethers.getContractFactory("MultichainACL", owner);
     MultichainACLFactoryV2 = await ethers.getContractFactory("MultichainACLV2Example", owner);
+
+    protocolPaymentFactoryV1 = await ethers.getContractFactory("ProtocolPayment", owner);
+    protocolPaymentFactoryV2 = await ethers.getContractFactory("ProtocolPaymentV2Example", owner);
   });
 
   it("Should deploy upgradable MultichainACL", async function () {
@@ -70,10 +76,13 @@ describe("Upgrades", function () {
     });
     const MultichainACL = await upgrades.upgradeProxy(emptyUUPS, MultichainACLFactoryV1);
     await MultichainACL.waitForDeployment();
-    expect(await MultichainACL.getVersion()).to.equal("MultichainACL v0.1.0");
+    const initialVersion = await MultichainACL.getVersion();
     const MultichainACLV2 = await upgrades.upgradeProxy(MultichainACL, MultichainACLFactoryV2);
     await MultichainACLV2.waitForDeployment();
-    expect(await MultichainACLV2.getVersion()).to.equal("MultichainACL v1000.0.0");
+    const newVersion = await MultichainACLV2.getVersion();
+    expect(newVersion).to.not.be.equal(initialVersion);
+    expect(newVersion).to.equal("MultichainACL v1000.0.0");
+
     const multichainACLAddress = ethers.getCreateAddress({
       from: owner.address,
       nonce: nonceBef, // using nonce of nonceBef instead of nonceBef+1 here, since the original implementation has already been deployer during the setup phase, and hardhat-upgrades plugin is able to detect this and not redeploy twice same contract
@@ -88,10 +97,12 @@ describe("Upgrades", function () {
     });
     const ciphertextCommits = await upgrades.upgradeProxy(emptyUUPS, ciphertextCommitsFactoryV1);
     await ciphertextCommits.waitForDeployment();
-    expect(await ciphertextCommits.getVersion()).to.equal("CiphertextCommits v0.1.0");
+    const initialVersion = await ciphertextCommits.getVersion();
     const ciphertextCommitsV2 = await upgrades.upgradeProxy(ciphertextCommits, ciphertextCommitsFactoryV2);
     await ciphertextCommitsV2.waitForDeployment();
-    expect(await ciphertextCommitsV2.getVersion()).to.equal("CiphertextCommits v1000.0.0");
+    const newVersion = await ciphertextCommitsV2.getVersion();
+    expect(newVersion).to.not.be.equal(initialVersion);
+    expect(newVersion).to.equal("CiphertextCommits v1000.0.0");
   });
 
   it("Should deploy upgradable Decryption", async function () {
@@ -101,10 +112,12 @@ describe("Upgrades", function () {
     });
     const decryption = await upgrades.upgradeProxy(emptyUUPS, decryptionFactoryV1);
     await decryption.waitForDeployment();
-    expect(await decryption.getVersion()).to.equal("Decryption v0.1.0");
+    const initialVersion = await decryption.getVersion();
     const decryptionV2 = await upgrades.upgradeProxy(decryption, decryptionFactoryV2);
     await decryptionV2.waitForDeployment();
-    expect(await decryptionV2.getVersion()).to.equal("Decryption v1000.0.0");
+    const newVersion = await decryptionV2.getVersion();
+    expect(newVersion).to.not.be.equal(initialVersion);
+    expect(newVersion).to.equal("Decryption v1000.0.0");
   });
 
   it("Should deploy upgradable GatewayConfig", async function () {
@@ -114,10 +127,12 @@ describe("Upgrades", function () {
     });
     const gatewayConfig = await upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactoryV1);
     await gatewayConfig.waitForDeployment();
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.2.0");
+    const initialVersion = await gatewayConfig.getVersion();
     const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigFactoryV2);
     await gatewayConfigV2.waitForDeployment();
-    expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v1000.0.0");
+    const newVersion = await gatewayConfigV2.getVersion();
+    expect(newVersion).to.not.be.equal(initialVersion);
+    expect(newVersion).to.equal("GatewayConfig v1000.0.0");
   });
 
   it("Should deploy upgradable KMSGeneration", async function () {
@@ -127,10 +142,12 @@ describe("Upgrades", function () {
     });
     const kmsGeneration = await upgrades.upgradeProxy(emptyUUPS, kmsGenerationFactoryV1);
     await kmsGeneration.waitForDeployment();
-    expect(await kmsGeneration.getVersion()).to.equal("KMSGeneration v0.1.0");
+    const initialVersion = await kmsGeneration.getVersion();
     const kmsGenerationV2 = await upgrades.upgradeProxy(kmsGeneration, kmsGenerationFactoryV2);
     await kmsGenerationV2.waitForDeployment();
-    expect(await kmsGenerationV2.getVersion()).to.equal("KMSGeneration v1000.0.0");
+    const newVersion = await kmsGenerationV2.getVersion();
+    expect(newVersion).to.not.be.equal(initialVersion);
+    expect(newVersion).to.equal("KMSGeneration v1000.0.0");
   });
 
   it("Should deploy upgradable InputVerification", async function () {
@@ -140,10 +157,27 @@ describe("Upgrades", function () {
     });
     const inputVerification = await upgrades.upgradeProxy(emptyUUPS, inputVerificationFactoryV1);
     await inputVerification.waitForDeployment();
-    expect(await inputVerification.getVersion()).to.equal("InputVerification v0.1.0");
+    const initialVersion = await inputVerification.getVersion();
     const inputVerificationV2 = await upgrades.upgradeProxy(inputVerification, inputVerificationFactoryV2);
     await inputVerificationV2.waitForDeployment();
-    expect(await inputVerificationV2.getVersion()).to.equal("InputVerification v1000.0.0");
+    const newVersion = await inputVerificationV2.getVersion();
+    expect(newVersion).to.not.be.equal(initialVersion);
+    expect(newVersion).to.equal("InputVerification v1000.0.0");
+  });
+
+  it("Should deploy upgradable ProtocolPayment", async function () {
+    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
+      initializer: "initialize",
+      kind: "uups",
+    });
+    const protocolPayment = await upgrades.upgradeProxy(emptyUUPS, protocolPaymentFactoryV1);
+    await protocolPayment.waitForDeployment();
+    const initialVersion = await protocolPayment.getVersion();
+    const protocolPaymentV2 = await upgrades.upgradeProxy(protocolPayment, protocolPaymentFactoryV2);
+    await protocolPaymentV2.waitForDeployment();
+    const newVersion = await protocolPaymentV2.getVersion();
+    expect(newVersion).to.not.be.equal(initialVersion);
+    expect(newVersion).to.equal("ProtocolPayment v1000.0.0");
   });
 
   it("Should allow original owner to upgrade the GatewayConfig, transfer ownership and no longer upgrade the contract", async function () {
@@ -155,7 +189,7 @@ describe("Upgrades", function () {
     });
     const gatewayConfig = await upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactoryV1);
     await gatewayConfig.waitForDeployment();
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.2.0");
+    const initialVersion = await gatewayConfig.getVersion();
 
     const newSigner = await createAndFundRandomWallet();
     await gatewayConfig.transferOwnership(newSigner);
@@ -170,6 +204,8 @@ describe("Upgrades", function () {
     const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigV2ExampleFactoryNewOwner);
 
     await gatewayConfigV2.waitForDeployment();
-    expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v1000.0.0");
+    const newVersion = await gatewayConfigV2.getVersion();
+    expect(newVersion).to.not.be.equal(initialVersion);
+    expect(newVersion).to.equal("GatewayConfig v1000.0.0");
   });
 });
