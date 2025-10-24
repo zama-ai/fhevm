@@ -33,26 +33,24 @@ COPY --chown=fhevm:fhevm host-contracts/package.json host-contracts/
 RUN npm ci --workspace=host-contracts  --include-workspace-root=false && \
     npm prune
 
-WORKDIR /install/host-contracts
+# Create addresses directory for storing proxy contract addresses
 
-# Copy the application files
+WORKDIR /app
+
+RUN mv /install/host-contracts/* . &&\
+    mv /install/node_modules ./node_modules
+
 COPY --chown=fhevm:fhevm host-contracts/*.ts host-contracts/tsconfig.json ./
 COPY --chown=fhevm:fhevm host-contracts/contracts ./contracts/
 COPY --chown=fhevm:fhevm host-contracts/tasks ./tasks/
 COPY --chown=fhevm:fhevm host-contracts/lib ./lib/
 COPY --chown=fhevm:fhevm host-contracts/decryptionOracle ./decryptionOracle/
 
-# Create addresses directory for storing proxy contract addresses
 RUN mkdir -p ./addresses && chown fhevm:fhevm ./addresses
 
 # Pre-compile proxy contracts
 RUN npx hardhat clean && \
     npx hardhat compile:specific --contract contracts/emptyProxyACL
-
-WORKDIR /app
-
-RUN mv /install/host-contracts /app &&\
-    mv /install/node_modules /app/node_modules
 
 ENTRYPOINT ["/bin/bash", "-c"]
 
