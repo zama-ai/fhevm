@@ -948,5 +948,4 @@ contract ACLTest is Test {
         vm.expectRevert(abi.encodeWithSelector(ACL.SenderDenied.selector, randomAccount));
         acl.allowForDecryption(handlesList);
     }
-
 }

@@ -11,14 +11,7 @@ import {HCULimit} from "../../contracts/HCULimit.sol";
 import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {
-    aclAdd,
-    fhevmExecutorAdd,
-    hcuLimitAdd,
-    inputVerifierAdd,
-    kmsVerifierAdd,
-    pauserSetAdd
-} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 /**
  * @dev Thin wrapper so `deployCodeTo` can load locally compiled bytecode for the OZ proxy.
@@ -57,18 +50,14 @@ abstract contract HostContractsDeployerTestUtils is Test {
         vm.label(aclImplementation, "ACL Implementation");
 
         vm.prank(owner);
-        EmptyUUPSProxyACL(aclAdd).upgradeToAndCall(
-            aclImplementation,
-            abi.encodeCall(ACL.initializeFromEmptyProxy, ())
-        );
+        EmptyUUPSProxyACL(aclAdd).upgradeToAndCall(aclImplementation, abi.encodeCall(ACL.initializeFromEmptyProxy, ()));
 
         aclProxy = ACL(aclAdd);
     }
 
-    function _deployFHEVMExecutor(address owner)
-        internal
-        returns (FHEVMExecutor fhevmExecutorProxy, address fhevmExecutorImplementation)
-    {
+    function _deployFHEVMExecutor(
+        address owner
+    ) internal returns (FHEVMExecutor fhevmExecutorProxy, address fhevmExecutorImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
@@ -185,9 +174,9 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address[] memory inputSigners,
         uint256 inputThreshold
     ) internal {
-        (ACL aclProxy,) = _deployACL(owner);
+        (ACL aclProxy, ) = _deployACL(owner);
         PauserSet pauserSet = _deployPauserSet();
-        (FHEVMExecutor fheExecutor,) = _deployFHEVMExecutor(owner);
+        (FHEVMExecutor fheExecutor, ) = _deployFHEVMExecutor(owner);
         _deployHCULimit(owner);
         _deployKMSVerifier(owner, kmsVerifyingSource, chainIDSource, kmsSigners, kmsThreshold);
         _deployInputVerifier(owner, inputVerifyingSource, chainIDSource, inputSigners, inputThreshold);

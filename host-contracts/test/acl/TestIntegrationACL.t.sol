@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
-import {euint64} from 'encrypted-types/EncryptedTypes.sol';
+import {euint64} from "encrypted-types/EncryptedTypes.sol";
 import {HostContractsDeployerTestUtils} from "../utils/HostContractsDeployerTestUtils.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
@@ -25,17 +25,7 @@ contract TestIntegrationACL is HostContractsDeployerTestUtils {
         inputSigners = new address[](1);
         inputSigners[0] = address(0x8888);
 
-        _deployFullHostStack(
-            OWNER,
-            PAUSER,
-            address(0x1234),
-            address(0x5678),
-            31337,
-            kmsSigners,
-            1,
-            inputSigners,
-            1
-        );
+        _deployFullHostStack(OWNER, PAUSER, address(0x1234), address(0x5678), 31337, kmsSigners, 1, inputSigners, 1);
 
         acl = ACL(aclAdd);
         pauserSet = PauserSet(pauserSetAdd);

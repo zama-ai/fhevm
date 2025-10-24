@@ -67,11 +67,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertEq(storedSigners.length, initialSigners.length, "Signers length mismatch");
         assertEq(storedSigners[0], initialSigners[0], "Signer[0] mismatch");
         assertEq(storedSigners[1], initialSigners[1], "Signer[1] mismatch");
-        assertEq(
-            _readImplementationSlot(kmsVerifierAdd),
-            kmsVerifierImplementation,
-            "Implementation slot mismatch"
-        );
+        assertEq(_readImplementationSlot(kmsVerifierAdd), kmsVerifierImplementation, "Implementation slot mismatch");
     }
 
     function test_DeployInputVerifier_UsesProxyUpgradeFlow() public {
@@ -120,7 +116,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
     function test_DeployPauserSet_UsesCanonicalAddress() public {
         // PauserSet relies on ACL ownership checks; ensure ACL proxy is in place.
-        (ACL aclProxy,) = _deployACL(OWNER);
+        (ACL aclProxy, ) = _deployACL(OWNER);
         PauserSet pauserSet = _deployPauserSet();
 
         assertEq(address(pauserSet), pauserSetAdd, "PauserSet address mismatch");
