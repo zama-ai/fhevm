@@ -58,6 +58,20 @@ abstract contract GatewayConfigChecks {
     error HostChainNotRegistered(uint256 chainId);
 
     /**
+     * @notice Error emitted when the KMS signer does not correspond to the KMS transaction sender.
+     * @param signerAddress The address of the KMS signer.
+     * @param txSenderAddress The address of the KMS transaction sender.
+     */
+    error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
+
+    /**
+     * @notice Error emitted when the coprocessor signer does not correspond to the coprocessor transaction sender.
+     * @param signerAddress The address of the coprocessor signer.
+     * @param txSenderAddress The address of the coprocessor transaction sender.
+     */
+    error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
+
+    /**
      * @notice Checks if the sender is a KMS transaction sender.
      */
     modifier onlyKmsTxSender() {
@@ -115,6 +129,33 @@ abstract contract GatewayConfigChecks {
     function _checkIsCoprocessorSigner(address signerAddress) internal view {
         if (!GATEWAY_CONFIG.isCoprocessorSigner(signerAddress)) {
             revert NotCoprocessorSigner(signerAddress);
+        }
+    }
+
+    /**
+     * @notice Checks if the signer is a KMS signer, and that it corresponds to the transaction
+     * sender of the same KMS node.
+     * @param signerAddress The signer address to check.
+     * @param txSenderAddress The address of the KMS transaction sender.
+     */
+    function _checkKmsSignerMatchesTxSender(address signerAddress, address txSenderAddress) internal view {
+        _checkIsKmsSigner(signerAddress);
+
+        if (GATEWAY_CONFIG.getKmsNode(txSenderAddress).signerAddress != signerAddress) {
+            revert KmsSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
+        }
+    }
+    /**
+     * @notice Checks if the signer is a coprocessor signer, and that it corresponds to the
+     * transaction sender of the same coprocessor.
+     * @param signerAddress The signer address to check.
+     * @param txSenderAddress The address of the coprocessor transaction sender.
+     */
+    function _checkCoprocessorSignerMatchesTxSender(address signerAddress, address txSenderAddress) internal view {
+        _checkIsCoprocessorSigner(signerAddress);
+
+        if (GATEWAY_CONFIG.getCoprocessor(txSenderAddress).signerAddress != signerAddress) {
+            revert CoprocessorSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
         }
     }
 }

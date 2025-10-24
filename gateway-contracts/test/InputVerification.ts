@@ -462,6 +462,23 @@ describe("InputVerification", function () {
     it("Should check that a proof has not been verified", async function () {
       expect(await inputVerification.isProofVerified(fakeZkProofId)).to.be.false;
     });
+
+    it("Should revert because the signer and the tx sender do not correspond to the same coprocessor", async function () {
+      // Create a fake signature from the first coprocessor signer
+      const firstCoprocessorSigner = coprocessorSigners[0];
+      const [fakeSignature] = await getSignaturesZKPoK(eip712Message, [firstCoprocessorSigner]);
+
+      // Check that triggering a proof response using a signature from the first coprocessor signer
+      // with the second coprocessor transaction sender reverts
+      const secondCoprocessorTxSender = coprocessorTxSenders[1];
+      await expect(
+        inputVerification
+          .connect(secondCoprocessorTxSender)
+          .verifyProofResponse(zkProofId, ctHandles, fakeSignature, extraDataV0),
+      )
+        .revertedWithCustomError(inputVerification, "CoprocessorSignerDoesNotMatchTxSender")
+        .withArgs(firstCoprocessorSigner.address, secondCoprocessorTxSender.address);
+    });
   });
 
   describe("Proof rejection response", async function () {
