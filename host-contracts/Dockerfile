@@ -14,13 +14,16 @@ RUN apk add --no-cache \
     ln -sf /usr/bin/gcc /usr/bin/cc && \
     rm -rf /var/cache/apk/*
 
+RUN mkdir /app && \
+    chown -R fhevm:fhevm /app
+
+RUN mkdir -p /install/host-contracts && \
+    chown -R fhevm:fhevm /home/fhevm && \
+    chown -R fhevm:fhevm /install
+
 USER fhevm:fhevm
 
-WORKDIR /app
-
-RUN mkdir /app/host-contracts && \
-    chown -R fhevm:fhevm /home/fhevm && \
-    chown -R fhevm:fhevm /app
+WORKDIR /install
 
 # Copy only necessary files
 COPY --chown=fhevm:fhevm package.json package-lock.json ./
@@ -31,7 +34,7 @@ COPY --chown=fhevm:fhevm host-contracts/package.json host-contracts/
 RUN npm ci --workspace=host-contracts  --include-workspace-root=false && \
     npm prune
 
-WORKDIR /app/host-contracts
+WORKDIR /install/host-contracts
 
 # Copy the application files
 COPY --chown=fhevm:fhevm host-contracts/*.ts host-contracts/tsconfig.json ./
@@ -46,6 +49,11 @@ RUN mkdir -p ./addresses && chown fhevm:fhevm ./addresses
 # Pre-compile proxy contracts
 RUN npx hardhat clean && \
     npx hardhat compile:specific --contract contracts/emptyProxyACL
+
+WORKDIR /app
+
+RUN mv /install/host-contracts /app
+RUN mv /install/node_modules /app/node_modules
 
 ENTRYPOINT ["/bin/bash", "-c"]
 
