@@ -26,8 +26,8 @@
     "clean": "rm -rf ./dist",
     "build": "tsc --project ./tsconfig.json",
     "tsc": "tsc --project ./tsconfig.json --noEmit",
-    "codegen:e2e": "npm run build && ./codegen.mjs lib --overloads ./overloads/e2e.json --config ./codegen.e2e.config.json --verbose",
-    "codegen:host-contracts": "npm run build && ./codegen.mjs lib --overloads ./overloads/host-contracts.json --config ./codegen.host-contracts.config.json --verbose",
-    "codegen:library-solidity": "npm run build && ./codegen.mjs lib --overloads ./overloads/library-solidity.json --config ./codegen.library-solidity.config.json --verbose"
+    "codegen:e2e": "npm run build && ./codegen.mjs lib --config ./codegen.e2e.config.json --verbose",
+    "codegen:host-contracts": "npm run build && ./codegen.mjs lib --config ./codegen.host-contracts.config.json --verbose",
+    "codegen:library-solidity": "npm run build && ./codegen.mjs lib --config ./codegen.library-solidity.config.json --verbose"
   }
 }
