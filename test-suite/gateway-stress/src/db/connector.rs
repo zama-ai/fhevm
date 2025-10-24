@@ -1,7 +1,7 @@
 use crate::{
+    blockchain::types::DecryptionRequest,
     config::DatabaseConfig,
     db::types::{DecryptionRequestDbMetadata, SnsCiphertextMaterialDbItem},
-    decryption::types::DecryptionRequest,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
     PublicDecryptionRequest, UserDecryptionRequest,

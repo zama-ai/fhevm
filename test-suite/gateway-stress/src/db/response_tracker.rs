@@ -1,6 +1,6 @@
 use crate::{
+    bench::BurstResult,
     db::types::{DecryptionRequestDbMetadata, DecryptionResponseDbMetadata},
-    decryption::BurstResult,
 };
 use alloy::primitives::U256;
 use anyhow::anyhow;

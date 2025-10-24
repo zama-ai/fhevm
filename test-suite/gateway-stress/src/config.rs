@@ -19,6 +19,8 @@ pub struct Config {
     pub blockchain: Option<BlockchainConfig>,
     #[serde(default)]
     pub database: Option<DatabaseConfig>,
+    #[serde(default)]
+    pub relayer: Option<RelayerConfig>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -46,6 +48,12 @@ pub struct DatabaseConfig {
     pub key_id: U256,
     pub copro_tx_sender_addr: Address,
     pub insertion_chunk_size: usize,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct RelayerConfig {
+    pub url: String,
+    pub user_address: Address,
 }
 
 impl Config {
