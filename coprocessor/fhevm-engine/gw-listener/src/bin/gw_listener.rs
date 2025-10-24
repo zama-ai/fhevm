@@ -41,9 +41,9 @@ struct Conf {
     #[arg(long, default_value = "10")]
     error_sleep_max_secs: u16,
 
-    /// HTTP server port for health checks
-    #[arg(long, default_value_t = 8080)]
-    health_check_port: u16,
+    /// HTTP server port
+    #[arg(long, alias = "health-check-port", default_value_t = 8080)]
+    http_server_port: u16,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     health_check_timeout: Duration,
@@ -152,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
         gw_url: conf.gw_url,
         error_sleep_initial_secs: conf.error_sleep_initial_secs,
         error_sleep_max_secs: conf.error_sleep_max_secs,
-        health_check_port: conf.health_check_port,
+        http_server_port: conf.http_server_port,
         health_check_timeout: conf.health_check_timeout,
         get_logs_poll_interval: conf.get_logs_poll_interval,
         get_logs_block_batch_size: conf.get_logs_block_batch_size,
@@ -173,7 +173,7 @@ async fn main() -> anyhow::Result<()> {
     // Create HTTP server with the Arc-wrapped listener
     let http_server = HttpServer::new(
         gw_listener.clone(),
-        conf.health_check_port,
+        conf.http_server_port,
         cancel_token.clone(),
     );
 
@@ -181,8 +181,8 @@ async fn main() -> anyhow::Result<()> {
     install_signal_handlers(cancel_token.clone())?;
 
     info!(
-        health_check_port = conf.health_check_port,
-        "Starting HTTP health check server"
+        http_server_port = conf.http_server_port,
+        "Starting HTTP server"
     );
 
     // Run both services concurrently - note we now have to deref the Arc for run()

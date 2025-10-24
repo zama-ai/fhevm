@@ -73,6 +73,7 @@ impl<
         let app = Router::new()
             .route("/healthz", get(health_handler))
             .route("/liveness", get(liveness_handler))
+            .route("/metrics", get(metrics_handler))
             .with_state(self.listener.clone());
 
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
@@ -128,4 +129,16 @@ async fn liveness_handler<
             "status": "alive"
         })),
     )
+}
+
+async fn metrics_handler() -> impl IntoResponse {
+    let encoder = prometheus::TextEncoder::new();
+    let metric_families = prometheus::gather();
+
+    info!(num_metrics = metric_families.len(), "Serving metrics");
+
+    match encoder.encode_to_string(&metric_families) {
+        Ok(encoded_metrics) => (StatusCode::OK, encoded_metrics),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
 }

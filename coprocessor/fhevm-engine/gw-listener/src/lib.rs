@@ -9,6 +9,7 @@ pub(crate) mod database;
 pub(crate) mod digest;
 pub mod gw_listener;
 pub mod http_server;
+pub(crate) mod metrics;
 pub(crate) mod sks_key;
 
 pub(crate) type ChainId = u64;
@@ -43,7 +44,9 @@ pub struct ConfigSettings {
 
     pub error_sleep_initial_secs: u16,
     pub error_sleep_max_secs: u16,
-    pub health_check_port: u16,
+
+    pub http_server_port: u16,
+
     pub health_check_timeout: Duration,
 
     pub get_logs_poll_interval: Duration,
@@ -70,7 +73,7 @@ impl Default for ConfigSettings {
             gw_url: "ws://127.0.0.1:8546".try_into().expect("Invalid URL"),
             error_sleep_initial_secs: 1,
             error_sleep_max_secs: 10,
-            health_check_port: 8080,
+            http_server_port: 8080,
             health_check_timeout: Duration::from_secs(4),
             get_logs_poll_interval: Duration::from_secs(1),
             get_logs_block_batch_size: 100,
