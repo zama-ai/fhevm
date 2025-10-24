@@ -15,9 +15,8 @@ RUN apk add --no-cache \
     rm -rf /var/cache/apk/*
 
 RUN mkdir /app && \
-    chown -R fhevm:fhevm /app
-
-RUN mkdir -p /install/host-contracts && \
+    chown -R fhevm:fhevm /app &&\
+    mkdir -p /install/host-contracts && \
     chown -R fhevm:fhevm /home/fhevm && \
     chown -R fhevm:fhevm /install
 
@@ -52,8 +51,8 @@ RUN npx hardhat clean && \
 
 WORKDIR /app
 
-RUN mv /install/host-contracts /app
-RUN mv /install/node_modules /app/node_modules
+RUN mv /install/host-contracts /app &&\
+    mv /install/node_modules /app/node_modules
 
 ENTRYPOINT ["/bin/bash", "-c"]
 
