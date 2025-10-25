@@ -17,8 +17,8 @@
     "test": "hardhat test",
     "coverage": "SOLIDITY_COVERAGE=true hardhat coverage",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
-    "codegen": "cd codegen && npm run codegen:library-solidity",
-    "codegen:overloads": "cd codegen && npm run codegen:library-solidity:overloads",
+    "codegen": "./codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
+    "codegen:overloads": "./codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "task:getEthereumAddress": "hardhat task:getEthereumAddress",
     "tsc": "tsc --project ./tsconfig.json --noEmit"
   },

@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import * as path from 'path';
 import * as prettier from 'prettier';
 
-import { assertAbsolute, assertRelative } from './utils/paths';
+import { assertRelative } from './utils/paths';
 
 export type UserSolidityTestGroup = {
   outDir: string;
@@ -28,50 +28,64 @@ export type SolidityTestGroup = TestGroup & {
 export type TypescriptTestGroup = TestGroup;
 
 export type UserConfig = {
+  baseDir?: string;
+  noLib?: boolean;
+  noHostContracts?: boolean;
+  noTest?: boolean;
+  lib?: LibUserConfig;
+  hostContracts?: HostContractsUserConfig;
+  tests: TestsUserConfig;
+};
+
+export type ResolvedConfig = {
+  baseDir: string;
+  noLib: boolean;
+  noHostContracts: boolean;
+  noTest: boolean;
+  lib: LibConfig;
+  hostContracts: HostContractsConfig;
+  tests: TestsConfig;
+};
+
+export type HostContractsUserConfig = {
+  outDir?: string;
   generateHCULimit?: boolean;
-  shuffle?: boolean;
-  shuffleWithPseuseRand?: boolean;
+};
+
+export type LibUserConfig = {
+  outDir?: string;
+  fheTypeDir?: string;
+};
+
+export type TestsUserConfig = {
+  overloads?: string;
   publicDecrypt?: boolean;
   numberOfTestSplits?: number;
-  noLib?: boolean;
-  noTest?: boolean;
-  overloads?: string;
-  directories?: DirectoriesUserConfig;
+  shuffle?: boolean;
+  shuffleWithPseuseRand?: boolean;
   solidity?: UserSolidityTestGroup;
   typescript?: UserTypescriptTestGroup;
 };
 
-export type ResolvedConfig = {
-  generateHCULimit: boolean;
-  shuffle: boolean;
-  shuffleWithPseuseRand: boolean;
+export type HostContractsConfig = {
+  outDir: string;
+};
+
+export type LibConfig = {
+  // directory where the FHE.sol and Impl.sol files are located
+  outDir: string;
+  // directory where the FheType.sol file is located
+  fheTypeDir: string;
+};
+
+export type TestsConfig = {
+  overloads: string;
   publicDecrypt: boolean;
   numberOfTestSplits: number;
-  noLib: boolean;
-  noTest: boolean;
-  overloads: string;
-  directories: DirectoriesConfig;
+  shuffle: boolean;
+  shuffleWithPseuseRand: boolean;
   solidity?: SolidityTestGroup;
   typescript?: TypescriptTestGroup;
-};
-
-export type DirectoriesUserConfig = {
-  baseDir?: string;
-  fheTypeDir?: string;
-  libDir?: string;
-  contractsDir?: string;
-};
-
-export type ContractConfig = {
-  name: string;
-  solidityFile: string;
-};
-
-export type DirectoriesConfig = {
-  baseDir: string;
-  fheTypeDir: string; // directory where the FheType.sol file is located
-  libDir: string; // directory where the FHE.sol and Impl.sol files are located
-  contractsDir: string;
 };
 
 export function getProgram(): Command {
@@ -94,6 +108,10 @@ export function getUserConfig(): UserConfig | undefined {
     debugLog(`Load config file: ${jsonFile}`);
     try {
       const o = JSON.parse(json);
+      // If baseDir is not specified, use config file containing directory as baseDir
+      if (!o.baseDir) {
+        o.baseDir = path.dirname(jsonFile);
+      }
       return o;
     } catch (e) {
       console.error(`Invalid json file ${p}.\${e}`);
@@ -126,15 +144,8 @@ export function errorLog(s: string) {
   console.error(RED_COLOR + s + RESET_COLOR);
 }
 
-export function debugLogDirectoriesUserConfig(config: DirectoriesUserConfig) {
+export function debugLogDirectoriesUserConfig(config: HostContractsUserConfig) {
   debugLog(JSON.stringify(config, null, 2));
-}
-
-function assertDirectoriesConfig(resolved: DirectoriesConfig) {
-  assertAbsolute(resolved.baseDir);
-  assertRelative(resolved.fheTypeDir);
-  assertRelative(resolved.libDir);
-  assertRelative(resolved.contractsDir);
 }
 
 function toAbsoluteDirectory(dir: string, baseDir: string): string {
@@ -155,35 +166,54 @@ export function toAbsoluteFileWithExtension(filePath: string, expectedFileExt: s
   return path.join(baseDir, filePath);
 }
 
-export function resolveUserConfig(userConfig: UserConfig | undefined): ResolvedConfig {
+function resolveTestsUserConfig(testsUserConfig: TestsUserConfig | undefined): TestsConfig {
   return {
-    generateHCULimit: userConfig?.generateHCULimit === true,
-    shuffle: userConfig?.shuffle === true,
-    shuffleWithPseuseRand: userConfig?.shuffleWithPseuseRand === true,
-    publicDecrypt: userConfig?.publicDecrypt === true,
-    noLib: userConfig?.noLib === true,
-    noTest: userConfig?.noTest === true,
-    overloads: userConfig?.overloads ?? './overloads.json',
-    numberOfTestSplits: userConfig?.numberOfTestSplits ?? 12,
-    directories: resolveDirectoriesConfig(userConfig?.directories),
-    ...(userConfig?.solidity ? { solidity: resolveSolidityTestGroup(userConfig.solidity) } : {}),
-    ...(userConfig?.typescript ? { typescript: resolveTypescriptTestGroup(userConfig.typescript) } : {}),
+    overloads: testsUserConfig?.overloads ?? './overloads.json',
+    numberOfTestSplits: testsUserConfig?.numberOfTestSplits ?? 12,
+    publicDecrypt: testsUserConfig?.publicDecrypt === true,
+    shuffle: testsUserConfig?.shuffle === true,
+    shuffleWithPseuseRand: testsUserConfig?.shuffleWithPseuseRand === true,
+    ...(testsUserConfig?.solidity ? { solidity: resolveSolidityTestGroup(testsUserConfig?.solidity) } : {}),
+    ...(testsUserConfig?.typescript ? { typescript: resolveTypescriptTestGroup(testsUserConfig?.typescript) } : {}),
   };
 }
 
-function resolveDirectoriesConfig(userDirs: DirectoriesUserConfig | undefined): DirectoriesConfig {
-  let baseDir = userDirs?.baseDir ?? process.cwd();
+export function resolveUserConfig(userConfig: UserConfig | undefined): ResolvedConfig {
+  return {
+    baseDir: resolveBaseDirectory(userConfig?.baseDir),
+    noLib: userConfig?.noLib === true,
+    noHostContracts: userConfig?.noHostContracts === true,
+    noTest: userConfig?.noTest === true,
+    hostContracts: resolveHostContractsConfig(userConfig?.hostContracts),
+    tests: resolveTestsUserConfig(userConfig?.tests),
+    lib: resolveLibConfig(userConfig?.lib),
+  };
+}
+
+function resolveBaseDirectory(baseDir: string | undefined): string {
+  baseDir = baseDir ?? process.cwd();
   if (!path.isAbsolute(baseDir)) {
     baseDir = path.normalize(path.join(process.cwd(), baseDir));
   }
-  const libDir = userDirs?.libDir ?? './lib';
-  const p: DirectoriesConfig = {
-    baseDir,
-    fheTypeDir: userDirs?.fheTypeDir ?? libDir,
-    libDir,
-    contractsDir: userDirs?.contractsDir ?? './contracts',
+  return baseDir;
+}
+
+function resolveHostContractsConfig(userConfig: HostContractsUserConfig | undefined): HostContractsConfig {
+  const p: HostContractsConfig = {
+    outDir: userConfig?.outDir ?? './contracts',
   };
-  assertDirectoriesConfig(p);
+  assertRelative(p.outDir);
+  return p;
+}
+
+function resolveLibConfig(userLibConfig: LibUserConfig | undefined): LibConfig {
+  const outDir = userLibConfig?.outDir ?? './lib';
+  const p: LibConfig = {
+    fheTypeDir: userLibConfig?.fheTypeDir ?? outDir,
+    outDir,
+  };
+  assertRelative(p.fheTypeDir);
+  assertRelative(p.outDir);
   return p;
 }
 
@@ -202,39 +232,53 @@ function resolveTypescriptTestGroup(userTestGroup: UserTypescriptTestGroup): Typ
   };
 }
 
-export function toAbsulteConfig(resolved: ResolvedConfig): ResolvedConfig {
-  const directories = toAbsultePaths(resolved.directories);
+function toAbsoluteTestsConfig(resolvedTestsConfig: TestsConfig, baseDir: string): TestsConfig {
   return {
-    generateHCULimit: resolved.generateHCULimit,
-    shuffle: resolved.shuffle,
-    shuffleWithPseuseRand: resolved.shuffleWithPseuseRand,
-    publicDecrypt: resolved.publicDecrypt,
-    noLib: resolved.noLib,
-    noTest: resolved.noTest,
-    overloads: toAbsoluteFileWithExtension(resolved.overloads, '.json', directories.baseDir),
-    numberOfTestSplits: resolved.numberOfTestSplits,
-    directories,
-    ...(resolved.solidity ? { solidity: toAbsoluteTestGroup(resolved.solidity, directories) } : {}),
-    ...(resolved.typescript ? { typescript: toAbsoluteTestGroup(resolved.typescript, directories) } : {}),
+    overloads: toAbsoluteFileWithExtension(resolvedTestsConfig.overloads, '.json', baseDir),
+    publicDecrypt: resolvedTestsConfig.publicDecrypt,
+    numberOfTestSplits: resolvedTestsConfig.numberOfTestSplits,
+    shuffle: resolvedTestsConfig.shuffle,
+    shuffleWithPseuseRand: resolvedTestsConfig.shuffleWithPseuseRand,
+    ...(resolvedTestsConfig?.solidity ? { solidity: toAbsoluteTestGroup(resolvedTestsConfig?.solidity, baseDir) } : {}),
+    ...(resolvedTestsConfig?.typescript
+      ? { typescript: toAbsoluteTestGroup(resolvedTestsConfig?.typescript, baseDir) }
+      : {}),
   };
 }
 
-function toAbsultePaths(resolved: DirectoriesConfig): DirectoriesConfig {
+export function toAbsulteConfig(resolved: ResolvedConfig): ResolvedConfig {
+  const hostContracts = toAbsoluteHostContractsConfig(resolved.hostContracts, resolved.baseDir);
+  const tests = toAbsoluteTestsConfig(resolved.tests, resolved.baseDir);
+  const lib = toAbsoluteLibConfig(resolved.lib, resolved.baseDir);
+
   return {
     baseDir: resolved.baseDir,
-    fheTypeDir: toAbsoluteDirectory(resolved.fheTypeDir, resolved.baseDir),
-    libDir: toAbsoluteDirectory(resolved.libDir, resolved.baseDir),
-    contractsDir: toAbsoluteDirectory(resolved.contractsDir, resolved.baseDir),
+    noLib: resolved.noLib,
+    noHostContracts: resolved.noHostContracts,
+    noTest: resolved.noTest,
+    hostContracts,
+    tests,
+    lib,
   };
 }
 
-function toAbsoluteTestGroup(
-  testGroup: SolidityTestGroup | TypescriptTestGroup,
-  directories: DirectoriesConfig,
-): TestGroup {
+function toAbsoluteHostContractsConfig(resolved: HostContractsConfig, baseDir: string): HostContractsConfig {
+  return {
+    outDir: toAbsoluteDirectory(resolved.outDir, baseDir),
+  };
+}
+
+function toAbsoluteLibConfig(resolved: LibConfig, baseDir: string): LibConfig {
+  return {
+    outDir: toAbsoluteDirectory(resolved.outDir, baseDir),
+    fheTypeDir: toAbsoluteDirectory(resolved.fheTypeDir, baseDir),
+  };
+}
+
+function toAbsoluteTestGroup(testGroup: SolidityTestGroup | TypescriptTestGroup, baseDir: string): TestGroup {
   return {
     ...testGroup,
-    outDir: toAbsoluteDirectory(testGroup.outDir, directories.baseDir),
+    outDir: toAbsoluteDirectory(testGroup.outDir, baseDir),
     ...((testGroup as SolidityTestGroup).parentContractName
       ? { parentContractName: (testGroup as SolidityTestGroup).parentContractName }
       : {}),
@@ -246,9 +290,11 @@ export function mkDir(dir: string) {
     throw new Error(`Path ${dir} is not absolute.`);
   }
   if (!existsSync(dir)) {
-    debugLog(`mkdir -p ${dir}`);
     if (!isDryRun()) {
+      debugLog(`mkdir -p ${dir}`);
       mkdirSync(dir, { recursive: true });
+    } else {
+      debugLog(`Skip create directory ${dir} (dry-run)`);
     }
   }
 }
