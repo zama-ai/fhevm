@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import * as path from 'path';
 import * as prettier from 'prettier';
 
-import { assertAbsolute, assertRelative } from './utils/paths.js';
+import { assertAbsolute, assertRelative } from './utils/paths';
 
 export type UserSolidityTestGroup = {
   outDir: string;

@@ -1,4 +1,4 @@
-import type { PriceData } from './common.js';
+import type { PriceData } from './common';
 
 export const ALL_OPERATORS_PRICES: PriceData = {
   fheAdd: {

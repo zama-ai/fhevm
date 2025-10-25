@@ -1,4 +1,4 @@
-import type { FheTypeInfo } from './common.js';
+import type { FheTypeInfo } from './common';
 
 /**
  * A constant array containing all Fully Homomorphic Encryption (FHE) types.

@@ -1,8 +1,8 @@
 import { assert } from 'console';
 
-import type { AdjustedFheType, FheType, Operator } from './common.js';
-import { OperatorArguments, ReturnType } from './common.js';
-import { getUint } from './utils.js';
+import type { AdjustedFheType, FheTypeInfo, Operator } from './common';
+import { OperatorArguments, ReturnType } from './common';
+import { getUint } from './utils';
 
 /**
  * Generates a Solidity enum definition from an array of FheType objects.
@@ -10,15 +10,15 @@ import { getUint } from './utils.js';
  * @param {FheType[]} fheTypes - An array of FheType objects to be converted into a Solidity enum.
  * @returns {string} A string representing the Solidity enum definition.
  */
-export function createSolidityEnumFromFheTypes(fheTypes: FheType[]): string {
+export function createSolidityEnumFromFheTypes(fheTypes: FheTypeInfo[]): string {
   return `enum FheType {
     ${fheTypes
-      .map((fheType: FheType, index: number) => `${fheType.type}${index < fheTypes.length - 1 ? ',' : ''}`)
+      .map((fheType: FheTypeInfo, index: number) => `${fheType.type}${index < fheTypes.length - 1 ? ',' : ''}`)
       .join('\n')}
 }`;
 }
 
-export function generateSolidityFheType(fheTypes: FheType[]): string {
+export function generateSolidityFheType(fheTypes: FheTypeInfo[]): string {
   return `
     // SPDX-License-Identifier: BSD-3-Clause-Clear
     pragma solidity ^0.8.24;
@@ -44,7 +44,7 @@ export function generateSolidityFheType(fheTypes: FheType[]): string {
  * - The `aliasType` property indicates the original type for an alias.
  * - The `clearMatchingTypeAlias` property is included for aliases to reference the original clear matching type.
  */
-function generateAdjustedFheTypeArray(fheTypes: FheType[]): AdjustedFheType[] {
+function generateAdjustedFheTypeArray(fheTypes: FheTypeInfo[]): AdjustedFheType[] {
   const adjustedFheTypes: AdjustedFheType[] = [];
 
   for (let i = 0; i < fheTypes.length; i++) {
@@ -422,7 +422,7 @@ function generateDecryptionOracleInterface(): string {
 
 export function generateSolidityFHELib(
   operators: Operator[],
-  fheTypes: FheType[],
+  fheTypes: FheTypeInfo[],
   fheTypeDotSol: string,
   implDotSol: string,
 ): string {
