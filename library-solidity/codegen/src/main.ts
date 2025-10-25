@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import { isDeepStrictEqual } from 'util';
 
-import { validateFHETypes, validateOperators } from './common.js';
 import {
   type TestGroup,
   debugLog,
@@ -17,10 +16,11 @@ import {
   toImportsCode,
   writeFile,
 } from './config.js';
+import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos.js';
 import { type OverloadTests, generateOverloads } from './generateOverloads.js';
 import { generateSolidityHCULimit } from './hcuLimitGenerator.js';
 import { ALL_OPERATORS } from './operators.js';
-import operatorsPrices from './operatorsPrices.json' with { type: 'json' };
+import { ALL_OPERATORS_PRICES } from './operatorsPrices.js';
 import { generateSolidityFHELib, generateSolidityFheType, generateSolidityImplLib } from './templates.js';
 import {
   type TypescriptTestGroupImports,
@@ -29,16 +29,9 @@ import {
   generateTypeScriptTestCode,
   splitOverloadsToShards,
 } from './testgen.js';
-import { ALL_FHE_TYPES } from './types.js';
-import { fromDirToFile, fromFileToFile, isDirectory } from './utils/paths.js';
 import { toBigInt } from './utils.js';
-
-export function validate() {
-  // Validate the FHE types
-  validateFHETypes(ALL_FHE_TYPES);
-  // Validate the operators
-  validateOperators(ALL_OPERATORS);
-}
+import { fromDirToFile, fromFileToFile, isDirectory } from './utils/paths.js';
+import { validate } from './validate.js';
 
 export function readOverloads(overloadsJsonFile: string): OverloadTests | undefined {
   if (!existsSync(overloadsJsonFile)) {
@@ -86,7 +79,7 @@ export async function writeOverloadsIfChanged(
 
 export async function commandRegenerateOverloads(outputFile: string, options: any) {
   if (isDirectory(outputFile)) {
-    outputFile = path.join(outputFile, "overloads.json");
+    outputFile = path.join(outputFile, 'overloads.json');
   }
 
   const userConfig = getUserConfig();
@@ -110,30 +103,10 @@ export async function commandRegenerateOverloads(outputFile: string, options: an
   }
 
   const update = options.update === true;
-  const existingOverloadTests: OverloadTests = update ? readOverloads(resolvedOverloadsJsonFile) ?? {} : {};
-  const overloadTests: OverloadTests = generateOverloads(ALL_FHE_TYPES, existingOverloadTests);
+  const existingOverloadTests: OverloadTests = update ? (readOverloads(resolvedOverloadsJsonFile) ?? {}) : {};
+  const overloadTests: OverloadTests = generateOverloads(ALL_FHE_TYPE_INFOS, existingOverloadTests);
 
   await writeOverloadsIfChanged(overloadTests, existingOverloadTests, resolvedOverloadsJsonFile);
-
-  /*
-    const existingOverloadTests: OverloadTests = readOverloads(resolvedOverloadsJsonFile) ?? {};
-  // Generates a list of Overload Tests.
-  // 1. if one test one test already exists, keep it.
-  // 2. if one test does not exist, generate it.
-  // overloadTests === { existing tests } U { missing tests }
-  const overloadTests: OverloadTests = generateOverloads(ALL_FHE_TYPES, existingOverloadTests);
-  if (!userOverloadsJson) {
-    // No `--overloads` option: save the new overloads tests if changed
-    await writeOverloadsIfChanged(overloadTests, existingOverloadTests, defaultOverloadsJsonFile);
-  } else {
-    // With `--overloads` option: we expect Card({ missing tests }) == 0
-    if (!isDeepStrictEqual(overloadTests, existingOverloadTests)) {
-      throw new Error(`Invalid overloads.json file at ${resolvedOverloadsJsonFile}. Please regenerate 'overloads.json'. Type "codegen overloads --help" for more info.`);
-    }
-  }
-
-
-  */
 }
 
 /**
@@ -203,10 +176,11 @@ export async function commandGenerateAllFiles(options: any) {
   debugLog(`overloads.json (default):  ${defaultOverloadsJsonFile}`);
   debugLog(`overloads.json (resolved): ${resolvedOverloadsJsonFile}`);
 
-  const fheTypesCode = generateSolidityFheType(ALL_FHE_TYPES);
+  const fheTypesCode = generateSolidityFheType(ALL_FHE_TYPE_INFOS);
   const implCode = generateSolidityImplLib(ALL_OPERATORS, implRelFheTypesDotSol);
-  const fheCode = generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPES, fheRelFheTypesDotSol, fheRelImplDotSol);
-  const hcuCode = generateSolidityHCULimit(operatorsPrices);
+  const fheCode = generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPE_INFOS, fheRelFheTypesDotSol, fheRelImplDotSol);
+
+  const hcuCode = generateSolidityHCULimit(ALL_OPERATORS_PRICES);
 
   debugLog(`FheType.sol:  size=${fheTypesCode.length}`);
   debugLog(`Impl.sol:     size=${implCode.length}`);
@@ -240,18 +214,20 @@ export async function commandGenerateAllFiles(options: any) {
   // 1. if one test one test already exists, keep it.
   // 2. if one test does not exist, generate it.
   // overloadTests === { existing tests } U { missing tests }
-  const overloadTests: OverloadTests = generateOverloads(ALL_FHE_TYPES, existingOverloadTests);
+  const overloadTests: OverloadTests = generateOverloads(ALL_FHE_TYPE_INFOS, existingOverloadTests);
   if (!userOverloadsJson) {
     // No `--overloads` option: save the new overloads tests if changed
     await writeOverloadsIfChanged(overloadTests, existingOverloadTests, defaultOverloadsJsonFile);
   } else {
     // With `--overloads` option: we expect Card({ missing tests }) == 0
     if (!isDeepStrictEqual(overloadTests, existingOverloadTests)) {
-      throw new Error(`Invalid overloads.json file at ${resolvedOverloadsJsonFile}. Please regenerate 'overloads.json'. Type "codegen overloads --help" for more info.`);
+      throw new Error(
+        `Invalid overloads.json file at ${resolvedOverloadsJsonFile}. Please regenerate 'overloads.json'. Type "codegen overloads --help" for more info.`,
+      );
     }
   }
 
-  const overloadTestFilesCode = generateSolidityOverloadTestFiles(ALL_OPERATORS, ALL_FHE_TYPES);
+  const overloadTestFilesCode = generateSolidityOverloadTestFiles(ALL_OPERATORS, ALL_FHE_TYPE_INFOS);
   const overloadShards = splitOverloadsToShards(overloadTestFilesCode, config);
 
   // Solidity

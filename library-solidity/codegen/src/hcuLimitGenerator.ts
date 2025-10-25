@@ -1,14 +1,10 @@
-export interface PriceData {
-  [key: string]: {
-    supportScalar: boolean;
-    numberInputs: number;
-    scalar?: { [key: string]: number };
-    nonScalar?: { [key: string]: number };
-    types?: { [key: string]: number };
-  };
-}
+import type { PriceData } from './common.js';
 
 export function generateSolidityHCULimit(priceData: PriceData): string {
+  if (!priceData) {
+    throw new Error('undefined or null priceData');
+  }
+
   let output = `// SPDX-License-Identifier: BSD-3-Clause-Clear
   pragma solidity ^0.8.24;
   

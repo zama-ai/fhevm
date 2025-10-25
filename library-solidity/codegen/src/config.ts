@@ -1,7 +1,7 @@
 import type { Command, OptionValues } from 'commander';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import * as path from 'path';
-import prettier from 'prettier';
+import * as prettier from 'prettier';
 
 import { assertAbsolute, assertRelative } from './utils/paths.js';
 
@@ -315,6 +315,24 @@ export function toImportsCode(imports: (string | [string, string])[]) {
   return importsCode;
 }
 
+function _isPromise(value: any) {
+  return typeof value === 'object' && value !== null && typeof value.then === 'function';
+}
+
+async function _resolveValue(value: any): Promise<string> {
+  if (_isPromise(value)) {
+    const res = await value;
+    if (typeof res !== 'string') {
+      throw new Error(`Unexpected type`);
+    }
+    return res;
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`Unexpected type`);
+  }
+  return value;
+}
+
 async function formatFileUsingPrettier(
   filePath: string,
   content: string,
@@ -324,10 +342,15 @@ async function formatFileUsingPrettier(
     return { result: 'ignored', fromattedCode: content };
   }
 
-  // const input = readFileSync(filePath, "utf8");
   const prettierConfig = await prettier.resolveConfig(filePath);
 
-  const output = prettier.format(content, { ...prettierConfig, filepath: filePath });
+  const output = await _resolveValue(
+    // Warning! prettier.format can return a Promise!
+    prettier.format(content, {
+      ...prettierConfig,
+      filepath: filePath,
+    }),
+  );
 
   if (output === content) {
     return { result: 'unchanged', fromattedCode: output };
