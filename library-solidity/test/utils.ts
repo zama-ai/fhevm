@@ -9,8 +9,6 @@ import type { Counter } from '../types';
 import { TypedContractMethod } from '../types/common';
 import { getSigners } from './signers';
 
-//const hre = require('hardhat');
-
 export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
   const signers: HardhatEthersSigner[] = await hre.ethers.getSigners();
   if (signers.findIndex((s) => s.address === signer.address) === -1) {
