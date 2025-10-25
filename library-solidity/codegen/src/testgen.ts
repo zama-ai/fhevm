@@ -1,20 +1,20 @@
 import { strict as assert } from 'node:assert';
 
-import { ArgumentType, OperatorArguments, ReturnType } from './common.js';
-import type { FheType, FunctionType, Operator, OverloadShard, OverloadSignature } from './common.js';
-import type { OverloadTests } from './generateOverloads.js';
-import { rndBit } from './pseudoRand.js';
-import { getUint } from './utils.js';
+import { ArgumentType, OperatorArguments, ReturnType } from './common';
+import type { FheTypeInfo, FunctionType, Operator, OverloadShard, OverloadSignature } from './common';
+import type { OverloadTests } from './generateOverloads';
+import { rndBit } from './pseudoRand';
+import { getUint } from './utils';
 
-export function generateSolidityOverloadTestFiles(operators: Operator[], fheTypes: FheType[]): OverloadSignature[] {
+export function generateSolidityOverloadTestFiles(operators: Operator[], fheTypes: FheTypeInfo[]): OverloadSignature[] {
   const signatures: OverloadSignature[] = [];
 
   // Exclude types that do not support any operators.
-  const adjustedFheTypes = fheTypes.filter((fheType: FheType) => fheType.supportedOperators.length > 0);
+  const adjustedFheTypes = fheTypes.filter((fheType: FheTypeInfo) => fheType.supportedOperators.length > 0);
 
   // Generate overloads for encrypted operators with two encrypted types.
-  adjustedFheTypes.forEach((lhsFheType: FheType) => {
-    adjustedFheTypes.forEach((rhsFheType: FheType) => {
+  adjustedFheTypes.forEach((lhsFheType: FheTypeInfo) => {
+    adjustedFheTypes.forEach((rhsFheType: FheTypeInfo) => {
       operators.forEach((operator) => {
         generateOverloadsForTFHEEncryptedOperatorForTwoEncryptedTypes(lhsFheType, rhsFheType, operator, signatures);
       });
@@ -22,21 +22,21 @@ export function generateSolidityOverloadTestFiles(operators: Operator[], fheType
   });
 
   // Generate overloads for scalar operators for all supported types.
-  adjustedFheTypes.forEach((fheType: FheType) => {
+  adjustedFheTypes.forEach((fheType: FheTypeInfo) => {
     operators.forEach((operator) => {
       generateOverloadsForTFHEScalarOperator(fheType, operator, signatures);
     });
   });
 
   // Generate overloads for handle shift & rotate operators for all supported types
-  adjustedFheTypes.forEach((fheType: FheType) => {
+  adjustedFheTypes.forEach((fheType: FheTypeInfo) => {
     operators.forEach((operator) => {
       generateOverloadsForTFHEShiftOperator(fheType, operator, signatures);
     });
   });
 
   // Generate overloads unary operators for all supported types.
-  adjustedFheTypes.forEach((fheType: FheType) =>
+  adjustedFheTypes.forEach((fheType: FheTypeInfo) =>
     generateOverloadsForTFHEUnaryOperators(fheType, operators, signatures),
   );
 
@@ -45,8 +45,8 @@ export function generateSolidityOverloadTestFiles(operators: Operator[], fheType
 }
 
 function generateOverloadsForTFHEEncryptedOperatorForTwoEncryptedTypes(
-  lhsFheType: FheType,
-  rhsFheType: FheType,
+  lhsFheType: FheTypeInfo,
+  rhsFheType: FheTypeInfo,
   operator: Operator,
   signatures: OverloadSignature[],
 ) {
@@ -87,7 +87,11 @@ function generateOverloadsForTFHEEncryptedOperatorForTwoEncryptedTypes(
   }
 }
 
-function generateOverloadsForTFHEScalarOperator(fheType: FheType, operator: Operator, signatures: OverloadSignature[]) {
+function generateOverloadsForTFHEScalarOperator(
+  fheType: FheTypeInfo,
+  operator: Operator,
+  signatures: OverloadSignature[],
+) {
   if (operator.shiftOperator || operator.rotateOperator) {
     return;
   }
@@ -133,7 +137,11 @@ function generateOverloadsForTFHEScalarOperator(fheType: FheType, operator: Oper
   }
 }
 
-function generateOverloadsForTFHEShiftOperator(fheType: FheType, operator: Operator, signatures: OverloadSignature[]) {
+function generateOverloadsForTFHEShiftOperator(
+  fheType: FheTypeInfo,
+  operator: Operator,
+  signatures: OverloadSignature[],
+) {
   if (!operator.shiftOperator && !operator.rotateOperator) {
     return;
   }
@@ -169,7 +177,7 @@ function generateOverloadsForTFHEShiftOperator(fheType: FheType, operator: Opera
 }
 
 function generateOverloadsForTFHEUnaryOperators(
-  fheType: FheType,
+  fheType: FheTypeInfo,
   operators: Operator[],
   signatures: OverloadSignature[],
 ) {
