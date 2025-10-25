@@ -182,7 +182,14 @@ info "Deploy ZamaOFT on Arbitrum Sepolia"
 note "Running lz:deploy in CI mode for ZamaOFT on arbitrum-testnet."
 npx hardhat lz:deploy --ci --networks arbitrum-testnet --tags ZamaOFT
 
-# Step 5: Optional verification
+# Step 5: Wire contracts
+info "Wire ZamaOFTAdapter (Ethereum Sepolia) with ZamaOFT (Arbitrum Sepolia)"
+note "Running lz:oapp:wire in CI mode using layerzero.config.arbitrumtestnet.ts."
+npx hardhat lz:oapp:wire --ci --oapp-config layerzero.config.arbitrumtestnet.ts
+
+info "Deployment flow complete"
+
+# Step 6: Optional verification
 if [[ $RUN_VERIFY == true ]]; then
 	info "Verifying ZamaERC20 and ZamaOFTAdapter on Ethereum Sepolia"
 	if ! pnpm verify:etherscan:ethereum:sepolia; then
@@ -196,10 +203,3 @@ if [[ $RUN_VERIFY == true ]]; then
 else
 	info "Skipping Etherscan verification"
 fi
-
-# Step 6: Wire contracts
-info "Wire ZamaOFTAdapter (Ethereum Sepolia) with ZamaOFT (Arbitrum Sepolia)"
-note "Running lz:oapp:wire in CI mode using layerzero.config.arbitrumtestnet.ts."
-npx hardhat lz:oapp:wire --ci --oapp-config layerzero.config.arbitrumtestnet.ts
-
-info "Deployment flow complete"
