@@ -1,27 +1,20 @@
 import { strict as assert } from 'node:assert';
 
-import {
-  ArgumentType,
-  FheType,
-  FunctionType,
-  Operator,
-  OperatorArguments,
-  OverloadShard,
-  OverloadSignature,
-  ReturnType,
-} from './common';
-import { overloadTests } from './overloadTests';
+import { ArgumentType, OperatorArguments, ReturnType } from './common';
+import type { FheTypeInfo, FunctionType, Operator, OverloadShard, OverloadSignature } from './common';
+import type { OverloadTests } from './generateOverloads';
+import { rndBit } from './pseudoRand';
 import { getUint } from './utils';
 
-export function generateSolidityOverloadTestFiles(operators: Operator[], fheTypes: FheType[]): OverloadSignature[] {
+export function generateSolidityOverloadTestFiles(operators: Operator[], fheTypes: FheTypeInfo[]): OverloadSignature[] {
   const signatures: OverloadSignature[] = [];
 
   // Exclude types that do not support any operators.
-  const adjustedFheTypes = fheTypes.filter((fheType: FheType) => fheType.supportedOperators.length > 0);
+  const adjustedFheTypes = fheTypes.filter((fheType: FheTypeInfo) => fheType.supportedOperators.length > 0);
 
   // Generate overloads for encrypted operators with two encrypted types.
-  adjustedFheTypes.forEach((lhsFheType: FheType) => {
-    adjustedFheTypes.forEach((rhsFheType: FheType) => {
+  adjustedFheTypes.forEach((lhsFheType: FheTypeInfo) => {
+    adjustedFheTypes.forEach((rhsFheType: FheTypeInfo) => {
       operators.forEach((operator) => {
         generateOverloadsForTFHEEncryptedOperatorForTwoEncryptedTypes(lhsFheType, rhsFheType, operator, signatures);
       });
@@ -29,21 +22,21 @@ export function generateSolidityOverloadTestFiles(operators: Operator[], fheType
   });
 
   // Generate overloads for scalar operators for all supported types.
-  adjustedFheTypes.forEach((fheType: FheType) => {
+  adjustedFheTypes.forEach((fheType: FheTypeInfo) => {
     operators.forEach((operator) => {
       generateOverloadsForTFHEScalarOperator(fheType, operator, signatures);
     });
   });
 
   // Generate overloads for handle shift & rotate operators for all supported types
-  adjustedFheTypes.forEach((fheType: FheType) => {
+  adjustedFheTypes.forEach((fheType: FheTypeInfo) => {
     operators.forEach((operator) => {
       generateOverloadsForTFHEShiftOperator(fheType, operator, signatures);
     });
   });
 
   // Generate overloads unary operators for all supported types.
-  adjustedFheTypes.forEach((fheType: FheType) =>
+  adjustedFheTypes.forEach((fheType: FheTypeInfo) =>
     generateOverloadsForTFHEUnaryOperators(fheType, operators, signatures),
   );
 
@@ -52,8 +45,8 @@ export function generateSolidityOverloadTestFiles(operators: Operator[], fheType
 }
 
 function generateOverloadsForTFHEEncryptedOperatorForTwoEncryptedTypes(
-  lhsFheType: FheType,
-  rhsFheType: FheType,
+  lhsFheType: FheTypeInfo,
+  rhsFheType: FheTypeInfo,
   operator: Operator,
   signatures: OverloadSignature[],
 ) {
@@ -94,7 +87,11 @@ function generateOverloadsForTFHEEncryptedOperatorForTwoEncryptedTypes(
   }
 }
 
-function generateOverloadsForTFHEScalarOperator(fheType: FheType, operator: Operator, signatures: OverloadSignature[]) {
+function generateOverloadsForTFHEScalarOperator(
+  fheType: FheTypeInfo,
+  operator: Operator,
+  signatures: OverloadSignature[],
+) {
   if (operator.shiftOperator || operator.rotateOperator) {
     return;
   }
@@ -140,7 +137,11 @@ function generateOverloadsForTFHEScalarOperator(fheType: FheType, operator: Oper
   }
 }
 
-function generateOverloadsForTFHEShiftOperator(fheType: FheType, operator: Operator, signatures: OverloadSignature[]) {
+function generateOverloadsForTFHEShiftOperator(
+  fheType: FheTypeInfo,
+  operator: Operator,
+  signatures: OverloadSignature[],
+) {
   if (!operator.shiftOperator && !operator.rotateOperator) {
     return;
   }
@@ -176,7 +177,7 @@ function generateOverloadsForTFHEShiftOperator(fheType: FheType, operator: Opera
 }
 
 function generateOverloadsForTFHEUnaryOperators(
-  fheType: FheType,
+  fheType: FheTypeInfo,
   operators: Operator[],
   signatures: OverloadSignature[],
 ) {
@@ -212,9 +213,23 @@ const stateVar = {
  * This is done because there's a limit on how big
  * of a smart contract you can deploy.
  */
-export function splitOverloadsToShards(overloads: OverloadSignature[]): OverloadShard[] {
+export function splitOverloadsToShards(
+  overloads: OverloadSignature[],
+  options: {
+    shuffle: boolean;
+    shuffleWithPseuseRand: boolean;
+  },
+): OverloadShard[] {
   const MAX_SHARD_SIZE = 90;
   const res: OverloadShard[] = [];
+
+  if (options.shuffle) {
+    if (options.shuffleWithPseuseRand) {
+      overloads.sort(() => (rndBit() === 0 ? -1 : 1));
+    } else {
+      overloads.sort(() => Math.random() - 0.5);
+    }
+  }
 
   let shardNo = 1;
   let accumulator: OverloadSignature[] = [];
@@ -240,6 +255,20 @@ export function splitOverloadsToShards(overloads: OverloadSignature[]): Overload
   return res;
 }
 
+function generateIntroTestCode(
+  shards: OverloadShard[],
+  idxSplit: number,
+  imports: TypescriptTestGroupImports,
+  options: {
+    publicDecrypt: boolean;
+  },
+): string {
+  if (options.publicDecrypt) {
+    return generateIntroTestCodePublicDecrypt(shards, idxSplit, imports);
+  } else {
+    return generateIntroTestCodeUserDecrypt(shards, idxSplit, imports);
+  }
+}
 /**
  * Generates the first part of the test code for FHEVM operations.
  *
@@ -252,18 +281,22 @@ export function splitOverloadsToShards(overloads: OverloadSignature[]): Overload
  * @param {number} idxSplit - The index split value used to differentiate the test suite.
  * @returns {string} The generated introductory test code as a string.
  */
-function generateIntroTestCode(shards: OverloadShard[], idxSplit: number): string {
+function generateIntroTestCodeUserDecrypt(
+  shards: OverloadShard[],
+  idxSplit: number,
+  imports: TypescriptTestGroupImports,
+): string {
   const intro: string[] = [];
   intro.push(`
     import { expect } from 'chai';
     import { ethers } from 'hardhat';
-    import { createInstances, decrypt8, decrypt16, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '../instance';
-    import { getSigners, initSigners } from '../signers';
+    import { createInstances, decrypt8, decrypt16, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '${imports.instance}';
+    import { getSigners, initSigners } from '${imports.signers}';
 
   `);
   shards.forEach((os) => {
     intro.push(`
-  import type { FHEVMTestSuite${os.shardNumber} } from '../../types/contracts/tests/FHEVMTestSuite${os.shardNumber}';
+  import type { FHEVMTestSuite${os.shardNumber} } from '${imports.typechain}/contracts/tests/FHEVMTestSuite${os.shardNumber}';
   `);
   });
 
@@ -303,8 +336,66 @@ async function deployFHEVMTestFixture${os.shardNumber}(): Promise<FHEVMTestSuite
   this.instances = instances;
         });
   `);
+
   return intro.join('');
 }
+
+function generateIntroTestCodePublicDecrypt(
+  shards: OverloadShard[],
+  idxSplit: number,
+  imports: TypescriptTestGroupImports,
+): string {
+  const intro: string[] = [];
+  intro.push(`
+    import { assert } from 'chai';
+    import { ethers } from 'hardhat';
+    import { createInstance } from '${imports.instance}';
+    import { getSigner, getSigners, initSigners } from '${imports.signers}';
+
+  `);
+  shards.forEach((os) => {
+    intro.push(`
+  import type { FHEVMTestSuite${os.shardNumber} } from '${imports.typechain}/contracts/tests/FHEVMTestSuite${os.shardNumber}';
+  `);
+  });
+
+  shards.forEach((os) => {
+    intro.push(`
+async function deployFHEVMTestFixture${os.shardNumber}(signer: HardhatEthersSigner): Promise<FHEVMTestSuite${os.shardNumber}> {
+  const admin = signer;
+
+  const contractFactory = await ethers.getContractFactory('FHEVMTestSuite${os.shardNumber}');
+  const contract = await contractFactory.connect(admin).deploy();
+  await contract.waitForDeployment();
+
+  return contract;
+}
+    `);
+  });
+
+  intro.push(`
+    describe('FHEVM operations ${idxSplit}', function () {
+        before(async function () {
+            this.signer = await getSigner(${idxSplit});
+  `);
+
+  shards.forEach((os) => {
+    intro.push(`
+            const contract${os.shardNumber} = await deployFHEVMTestFixture${os.shardNumber}(this.signer);
+            this.contract${os.shardNumber}Address = await contract${os.shardNumber}.getAddress();
+            this.contract${os.shardNumber} = contract${os.shardNumber};
+    `);
+  });
+
+  intro.push(`
+  const instance = await createInstance();
+  this.instance = instance;
+        });
+  `);
+  return intro.join('');
+}
+
+export type TypescriptTestGroupImports = { signers: string; instance: string; typechain: string };
 
 /**
  * Generates TypeScript test code for the given overload shards.
@@ -318,11 +409,21 @@ async function deployFHEVMTestFixture${os.shardNumber}(): Promise<FHEVMTestSuite
  * The generated test code includes assertions to verify the correctness of the inputs and outputs.
  * The function also ensures that there are no unused overload tests defined.
  */
-export function generateTypeScriptTestCode(shards: OverloadShard[], numTsSplits: number): string[] {
+export function generateTypeScriptTestCode(
+  shards: OverloadShard[],
+  numTsSplits: number,
+  overloadTests: OverloadTests,
+  imports: TypescriptTestGroupImports,
+  options: {
+    publicDecrypt: boolean;
+    shuffle: boolean;
+    shuffleWithPseuseRand: boolean;
+  },
+): string[] {
   const numSolTest = shards.reduce((sum, os) => sum + os.overloads.length, 0);
   let idxTsTest = 0;
 
-  let listRes: string[] = [];
+  const listRes: string[] = [];
 
   const sizeTsShard = Math.floor(numSolTest / numTsSplits);
 
@@ -330,8 +431,16 @@ export function generateTypeScriptTestCode(shards: OverloadShard[], numTsSplits:
 
   const overloadUsages: { [methodName: string]: boolean } = {};
   shards.forEach((os) => {
+    if (options.shuffle) {
+      if (options.shuffleWithPseuseRand) {
+        os.overloads.sort(() => (rndBit() === 0 ? -1 : 1));
+      } else {
+        os.overloads.sort(() => Math.random() - 0.5);
+      }
+    }
     os.overloads.forEach((o) => {
-      if (idxTsTest % sizeTsShard === 0) res.push(generateIntroTestCode(shards, idxTsTest / sizeTsShard + 1));
+      if (idxTsTest % sizeTsShard === 0)
+        res.push(generateIntroTestCode(shards, idxTsTest / sizeTsShard + 1, imports, options));
       const testName = `test operator "${o.name}" overload ${signatureContractEncryptedSignature(o)}`;
       const methodName = signatureContractMethodName(o);
       overloadUsages[methodName] = true;
@@ -346,9 +455,15 @@ export function generateTypeScriptTestCode(shards: OverloadShard[], numTsSplits:
           t.inputs.length == o.arguments.length,
           `Test argument count is different to operator arguments, arguments: ${t.inputs}, expected count: ${o.arguments.length}`,
         );
+
+        t.inputs.forEach((input, i) => {
+          if (typeof input === 'string') t.inputs[i] = BigInt(input);
+        });
+        if (typeof t.output === 'string') t.output = BigInt(t.output);
+
         t.inputs.forEach((input, inputIndex) => ensureNumberAcceptableInBitRange(o.arguments[inputIndex].bits, input));
         t.inputs.forEach((input, index) => ensureNumberAcceptableInBitRange(o.arguments[index].bits, input));
-        if (typeof t.output === 'number') {
+        if (typeof t.output === 'number' || typeof t.output === 'bigint') {
           ensureNumberAcceptableInBitRange(o.returnType.bits, t.output);
         }
         const testArgs = t.inputs.join(', ');
@@ -367,13 +482,32 @@ export function generateTypeScriptTestCode(shards: OverloadShard[], numTsSplits:
           .map((v, index) => {
             if (o.arguments[index].type == ArgumentType.Euint) {
               return `input.add${o.arguments[index].bits}(${v}n);`;
+            } else {
+              return '';
             }
           })
           .join('\n');
         let expectedOutput = t.output.toString();
-        if (typeof t.output === 'bigint') expectedOutput += 'n';
+        if (typeof t.output === 'bigint' || typeof t.output === 'number') expectedOutput += 'n';
 
-        res.push(`
+        if (options.publicDecrypt) {
+          res.push(`
+                it('${testName} test ${testIndex} (${testArgs})', async function () {
+                    const input = this.instance.createEncryptedInput(this.contract${os.shardNumber}Address, this.signer.address);
+                    ${inputsAdd}
+                    const encryptedAmount = await input.encrypt();
+                    const tx = await this.contract${os.shardNumber}.${methodName}(${testArgsEncrypted}, encryptedAmount.inputProof);
+                    await tx.wait();
+                    const handle = await this.contract${os.shardNumber}.res${o.returnType.type === 1 ? `Euint${o.returnType.bits}` : 'Ebool'}();
+                    const res = await this.instance.publicDecrypt([handle]);
+                    const expectedRes = {
+                      [handle]: ${expectedOutput},
+                    };
+                    assert.deepEqual(res, expectedRes);
+                });
+            `);
+        } else {
+          res.push(`
                 it('${testName} test ${testIndex} (${testArgs})', async function () {
                     const input = this.instances.alice.createEncryptedInput(this.contract${os.shardNumber}Address, this.signers.alice.address);
                     ${inputsAdd}
@@ -384,6 +518,8 @@ export function generateTypeScriptTestCode(shards: OverloadShard[], numTsSplits:
                     expect(res).to.equal(${expectedOutput});
                 });
             `);
+        }
+
         testIndex++;
       });
       idxTsTest++;
@@ -425,17 +561,32 @@ function ensureNumberAcceptableInBitRange(bits: number, input: number | bigint) 
  * @param {OverloadShard} os - The overload shard for which the test contract is generated.
  * @returns {string} The generated Solidity unit test contract as a string.
  */
-export function generateSolidityUnitTestContracts(os: OverloadShard): string {
+export function generateSolidityUnitTestContracts(
+  os: OverloadShard,
+  importsCode: string[],
+  parentContract: string | undefined,
+  usePublicDecrypt: boolean,
+): string {
   const res: string[] = [];
+
+  const c = importsCode.length > 0 ? importsCode.join(';\n') + ';' : '';
+  const isStatement = parentContract ? `is ${parentContract}` : '';
+
+  const constructor = parentContract
+    ? ''
+    : `
+            constructor() {
+            FHE.setCoprocessor(CoprocessorSetup.defaultConfig());
+          }
+`;
 
   res.push(`
         // SPDX-License-Identifier: BSD-3-Clause-Clear
         pragma solidity ^0.8.24;
 
-        import "../../lib/FHE.sol";
-        import {CoprocessorSetup} from "../CoprocessorSetup.sol";
+        ${c}
 
-        contract FHEVMTestSuite${os.shardNumber} {
+        contract FHEVMTestSuite${os.shardNumber} ${isStatement} {
           ebool public resEbool;
           euint8 public resEuint8;
           euint16 public resEuint16;
@@ -444,13 +595,10 @@ export function generateSolidityUnitTestContracts(os: OverloadShard): string {
           euint128 public resEuint128;
           euint256 public resEuint256;
 
-          constructor() {
-            FHE.setCoprocessor(CoprocessorSetup.defaultConfig());
-          }
-
+          ${constructor}
     `);
 
-  generateLibCallTest(os, res);
+  generateLibCallTest(os, res, usePublicDecrypt);
 
   res.push(`
         }
@@ -470,7 +618,7 @@ export function generateSolidityUnitTestContracts(os: OverloadShard): string {
  * argument processing, type casting, and the appropriate FHE library call. The result
  * of the library call is then allowed and assigned to the corresponding state variable.
  */
-function generateLibCallTest(os: OverloadShard, res: string[]) {
+function generateLibCallTest(os: OverloadShard, res: string[], usePublicDecrypt: boolean) {
   os.overloads.forEach((o) => {
     const methodName = signatureContractMethodName(o);
     const args = signatureContractArguments(o);
@@ -501,7 +649,12 @@ function generateLibCallTest(os: OverloadShard, res: string[]) {
       res.push(`${functionTypeToEncryptedType(o.returnType)} result = FHE.${o.name}(${tfheArgs});`);
       res.push('\n');
     }
-    res.push('FHE.allowThis(result);');
+    if (usePublicDecrypt) {
+      res.push('FHE.makePubliclyDecryptable(result);');
+    } else {
+      res.push('FHE.allowThis(result);');
+    }
+
     res.push(`${stateVar[functionTypeToEncryptedType(o.returnType) as keyof typeof stateVar]} = result;
         }
     `);
@@ -554,10 +707,8 @@ function signatureContractArguments(s: OverloadSignature): string {
  */
 function signatureContractEncryptedSignature(s: OverloadSignature): string {
   const res: string[] = [];
-  let argumentCharCode = 97; // letter 'a' in ascii
   s.arguments.forEach((a) => {
     res.push(`${functionTypeToString(a)}`);
-    argumentCharCode++;
   });
 
   const joined = res.join(', ');
@@ -585,8 +736,9 @@ function castExpressionToType(argExpr: string, outputType: FunctionType): string
       return argExpr;
     case ArgumentType.Ebool:
       return `FHE.asEbool(${argExpr})`;
-    // case ArgumentType.Ebytes:
-    //  return `FHE.asEbytes${outputType.bits / 8}(${argExpr})`;
+    default: {
+      throw new Error(`Unknown type ${outputType.type}`);
+    }
   }
 }
 
@@ -610,8 +762,9 @@ function functionTypeToCalldataType(t: FunctionType): string {
       return getUint(t.bits);
     case ArgumentType.Ebool:
       return `externalEbool`;
-    // case ArgumentType.Ebytes:
-    //  return `einput`;
+    default: {
+      throw new Error(`Unknown type ${t.type}`);
+    }
   }
 }
 
@@ -632,6 +785,9 @@ function functionTypeToEncryptedType(t: FunctionType): string {
       return `euint${t.bits}`;
     case ArgumentType.Ebool:
       return `ebool`;
+    default: {
+      throw new Error(`Unknown type ${t.type}`);
+    }
   }
 }
 
@@ -654,5 +810,8 @@ function functionTypeToString(t: FunctionType): string {
       return getUint(t.bits);
     case ArgumentType.Ebool:
       return `ebool`;
+    default: {
+      throw new Error(`Unknown type ${t.type}`);
+    }
   }
 }

@@ -1,6 +1,7 @@
 import { assert } from 'console';
 
-import { AdjustedFheType, FheType, Operator, OperatorArguments, ReturnType } from './common';
+import type { AdjustedFheType, FheTypeInfo, Operator } from './common';
+import { OperatorArguments, ReturnType } from './common';
 import { getUint } from './utils';
 
 /**
@@ -9,15 +10,15 @@ import { getUint } from './utils';
  * @param {FheType[]} fheTypes - An array of FheType objects to be converted into a Solidity enum.
  * @returns {string} A string representing the Solidity enum definition.
  */
-export function createSolidityEnumFromFheTypes(fheTypes: FheType[]): string {
+export function createSolidityEnumFromFheTypes(fheTypes: FheTypeInfo[]): string {
   return `enum FheType {
     ${fheTypes
-      .map((fheType: FheType, index: number) => `${fheType.type}${index < fheTypes.length - 1 ? ',' : ''}`)
+      .map((fheType: FheTypeInfo, index: number) => `${fheType.type}${index < fheTypes.length - 1 ? ',' : ''}`)
       .join('\n')}
 }`;
 }
 
-export function generateSolidityFheType(fheTypes: FheType[]): string {
+export function generateSolidityFheType(fheTypes: FheTypeInfo[]): string {
   return `
     // SPDX-License-Identifier: BSD-3-Clause-Clear
     pragma solidity ^0.8.24;
@@ -43,8 +44,8 @@ export function generateSolidityFheType(fheTypes: FheType[]): string {
  * - The `aliasType` property indicates the original type for an alias.
  * - The `clearMatchingTypeAlias` property is included for aliases to reference the original clear matching type.
  */
-function generateAdjustedFheTypeArray(fheTypes: FheType[]): AdjustedFheType[] {
-  let adjustedFheTypes: AdjustedFheType[] = [];
+function generateAdjustedFheTypeArray(fheTypes: FheTypeInfo[]): AdjustedFheType[] {
+  const adjustedFheTypes: AdjustedFheType[] = [];
 
   for (let i = 0; i < fheTypes.length; i++) {
     const fheType = fheTypes[i];
@@ -114,14 +115,14 @@ function handleSolidityBinaryOperatorForImpl(op: Operator): string {
  * @param operators - An array of Operator objects representing the supported operations.
  * @returns A string containing the Solidity implementation library code.
  */
-export function generateSolidityImplLib(operators: Operator[]): string {
+export function generateSolidityImplLib(operators: Operator[], fheTypeDotSol: string): string {
   const res: string[] = [];
 
   res.push(`
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {FheType} from "./FheType.sol";
+import {FheType} from "${fheTypeDotSol}";
 
 ${generateImplCoprocessorInterface(operators)}
 
@@ -419,14 +420,19 @@ function generateDecryptionOracleInterface(): string {
   `;
 }
 
-export function generateSolidityFHELib(operators: Operator[], fheTypes: FheType[]): string {
+export function generateSolidityFHELib(
+  operators: Operator[],
+  fheTypes: FheTypeInfo[],
+  fheTypeDotSol: string,
+  implDotSol: string,
+): string {
   const res: string[] = [];
 
   res.push(`// SPDX-License-Identifier: BSD-3-Clause-Clear
   pragma solidity ^0.8.24;
 
-  import "./Impl.sol";
-  import {FheType} from "./FheType.sol";
+  import "${implDotSol}";
+  import {FheType} from "${fheTypeDotSol}";
 
   import "encrypted-types/EncryptedTypes.sol";
 
@@ -565,7 +571,7 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
     const scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', false' : '';
     const leftExpr = castLeftToRight ? `asEuint${outputBits}(a)` : 'a';
     const rightExpr = castRightToLeft ? `asEuint${outputBits}(b)` : 'b';
-    let implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
+    const implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
 
     res.push(`
     /**
@@ -793,6 +799,18 @@ function handleSolidityTFHEShiftOperator(fheType: AdjustedFheType, operator: Ope
   return res.join('');
 }
 
+function checkInitialized(varname: string, type: string) {
+  if (type === 'Bool') {
+    return `if (!isInitialized(${varname})) { ${varname} = asEbool(false); }`;
+  } else if (type.startsWith('Uint') || type.startsWith('Uint')) {
+    return `if (!isInitialized(${varname})) { ${varname} = asE${type.toLowerCase()}(0); }`;
+  } else if (type.startsWith('Address')) {
+    return `if (!isInitialized(${varname})) { ${varname} = asEaddress(address(0)); }`;
+  } else {
+    throw new Error(`Unsupported type ${type}`);
+  }
+}
+
 function handleSolidityTFHESelect(fheType: AdjustedFheType): string {
   let res = '';
 
@@ -803,38 +821,14 @@ function handleSolidityTFHESelect(fheType: AdjustedFheType): string {
     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
     */
     function select(ebool control, e${fheType.type.toLowerCase()} a, e${fheType.type.toLowerCase()} b) internal returns (e${fheType.type.toLowerCase()}) {
-        if (!isInitialized(control)) {
-            control = asEbool(false);
-        }`;
-    if (fheType.type === 'Bool') {
-      res += `
-        if (!isInitialized(a)) {
-          a = asEbool(false);
-        }
-        if (!isInitialized(b)) {
-          b = asEbool(false);
-        }`;
-    } else if (fheType.type === 'Address') {
-      res += `
-        if (!isInitialized(a)) {
-          a = asEaddress(address(0));
-        }
-        if (!isInitialized(b)) {
-          b = asEaddress(address(0));
-        }`;
-    } else {
-      res += `
-        if (!isInitialized(a)) {
-          a = asE${fheType.type.toLowerCase()}(0);
-        }
-        if (!isInitialized(b)) {
-          b = asE${fheType.type.toLowerCase()}(0);
-        }`;
+        ${checkInitialized('control', 'Bool')}
+        ${checkInitialized('a', fheType.type)}
+        ${checkInitialized('b', fheType.type)}
+        return e${fheType.type.toLowerCase()}.wrap(Impl.select(ebool.unwrap(control), e${fheType.type.toLowerCase()}.unwrap(a), e${fheType.type.toLowerCase()}.unwrap(b)));
     }
-    res += `
-        return e${fheType.type.toLowerCase()}.wrap(Impl.select(ebool.unwrap(control), e${fheType.type.toLowerCase()}.unwrap(a), e${fheType.type.toLowerCase()}.unwrap(b)));}
     `;
   }
+
   return res;
 }
 
@@ -1173,7 +1167,7 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
      * @dev clearTexts is the abi-encoding of the list of all decrypted values assiociated to handlesList, in same order.
      * @dev Only static native solidity types for clear values are supported, so clearTexts is the concatenation of all clear values appended to 32 bytes.
      * @dev decryptionProof contains KMS signatures corresponding to clearTexts and associated handlesList, and needed metadata for KMS context.
-    **/
+     **/
     function verifySignatures(
         bytes32[] memory handlesList,
         bytes memory cleartexts,

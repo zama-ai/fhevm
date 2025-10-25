@@ -1,0 +1,23 @@
+{
+  // This configuration is used for local development and type checking.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // Modules
+    // =======
+    // Since the build config sets composite=false,
+    // rootDir only affects how files are emitted to outDir
+    "rootDir": "./src",
+    "outDir": "./dist/_esm",
+
+    // Emit
+    // ====
+    "declaration": true,
+    "declarationDir": "./dist/_types",
+    "declarationMap": true,
+    "noEmitOnError": true,
+    "sourceMap": true, // ignored in when compile types
+
+    "resolveJsonModule": true
+  },
+  "include": ["src"]
+}

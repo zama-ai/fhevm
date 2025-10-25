@@ -1,5 +1,5 @@
-import { FheType } from './common';
-import { findMinimumValueInBigIntArray, generateRandomNumber } from './utils';
+import type { FheTypeInfo } from './common';
+import { findMinimumValueInBigIntArray, generateRandomNumber as generateRandomBigInt } from './utils';
 
 /**
  * Represents a test structure with input and output types.
@@ -219,41 +219,52 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   },
 };
 
+export type OverloadTests = { [methodName: string]: OverloadTest[] };
+
+export type OverloadTest = {
+  inputs: (number | bigint)[];
+  output: boolean | number | bigint;
+};
+
 /**
  * Generates test cases for supported functions based on the provided FHE types.
  *
  * @param fheTypes - An array of FHE types, each containing information about type, bit length, and supported operators.
  * @returns An object containing generated test cases for each supported function and FHE type combination.
  */
-export const generateOverloads = (fheTypes: FheType[]) => {
-  const generatedTests: any = {};
+export const generateOverloads = (fheTypes: FheTypeInfo[], existingOverloads: OverloadTests): OverloadTests => {
+  const generatedTests: OverloadTests = {};
   Object.keys(SUPPORTED_FUNCTIONS).forEach((functionName: string) => {
     const test = SUPPORTED_FUNCTIONS[functionName];
 
-    fheTypes.forEach((lhsFheType: FheType) => {
+    fheTypes.forEach((lhsFheType: FheTypeInfo) => {
       if (lhsFheType.type.startsWith('Uint') && lhsFheType.supportedOperators.includes(functionName)) {
         if (test.unary) {
-          let lhsNumber = generateRandomNumber(lhsFheType.bitLength);
+          const lhsBigInt: bigint = generateRandomBigInt(lhsFheType.bitLength);
           const encryptedTestName = [functionName, `e${lhsFheType.type.toLowerCase()}`].join('_');
-          const encryptedTests: Test[] = [];
-          encryptedTests.push({
-            inputs: [lhsNumber],
-            output: test.evalTest(lhsNumber, lhsFheType.bitLength),
-          });
-          generatedTests[encryptedTestName] = encryptedTests;
+          if (existingOverloads[encryptedTestName]) {
+            generatedTests[encryptedTestName] = existingOverloads[encryptedTestName];
+          } else {
+            const encryptedTests: Test[] = [];
+            encryptedTests.push({
+              inputs: [lhsBigInt],
+              output: test.evalTest(lhsBigInt, lhsFheType.bitLength),
+            });
+            generatedTests[encryptedTestName] = encryptedTests;
+          }
         } else {
-          fheTypes.forEach((rhsFheType: FheType) => {
+          fheTypes.forEach((rhsFheType: FheTypeInfo) => {
             if (rhsFheType.type.startsWith('Uint') && rhsFheType.supportedOperators.includes(functionName)) {
               const bitResults = Math.min(lhsFheType.bitLength, rhsFheType.bitLength);
-              let lhsNumber = generateRandomNumber(lhsFheType.bitLength);
-              let rhsNumber = generateRandomNumber(rhsFheType.bitLength);
+              let lhsBigInt: bigint = generateRandomBigInt(lhsFheType.bitLength);
+              let rhsBigInt: bigint = generateRandomBigInt(rhsFheType.bitLength);
 
               if (test.limit === 'bits') {
                 // @dev We set the floor as 5 to prevent underflows since tests would use smallest - 4n.
-                rhsNumber = BigInt(5 + Math.floor(Math.random() * (rhsFheType.bitLength - 1)));
+                rhsBigInt = BigInt(5 + Math.floor(Math.random() * (rhsFheType.bitLength - 1)));
               }
 
-              const smallest = findMinimumValueInBigIntArray(lhsNumber, rhsNumber);
+              const smallest = findMinimumValueInBigIntArray(lhsBigInt, rhsBigInt);
               const only8bits = test.limit === 'bits' && rhsFheType.bitLength === 8;
 
               if ((test.limit !== 'bits' || only8bits) && !test.scalarOnly) {
@@ -262,138 +273,171 @@ export const generateOverloads = (fheTypes: FheType[]) => {
                   `e${lhsFheType.type.toLowerCase()}`,
                   `e${rhsFheType.type.toLowerCase()}`,
                 ].join('_');
-                const encryptedTests: Test[] = [];
-                if (!test.lhsHigher) {
+                if (existingOverloads[encryptedTestName]) {
+                  generatedTests[encryptedTestName] = existingOverloads[encryptedTestName];
+                } else {
+                  const encryptedTests: Test[] = [];
+                  if (!test.lhsHigher) {
+                    encryptedTests.push(
+                      safeEval(
+                        test.evalTest,
+                        lhsBigInt,
+                        rhsBigInt,
+                        lhsFheType.bitLength,
+                        rhsFheType.bitLength,
+                        test.safeMin,
+                      ),
+                    );
+                    encryptedTests.push(
+                      safeEval(
+                        test.evalTest,
+                        smallest - 4n,
+                        smallest,
+                        lhsFheType.bitLength,
+                        rhsFheType.bitLength,
+                        test.safeMin,
+                      ),
+                    );
+                  }
                   encryptedTests.push(
                     safeEval(
                       test.evalTest,
-                      lhsNumber,
-                      rhsNumber,
-                      lhsFheType.bitLength,
-                      rhsFheType.bitLength,
-                      test.safeMin,
-                    ),
-                  );
-                  encryptedTests.push(
-                    safeEval(
-                      test.evalTest,
-                      smallest - 4n,
+                      smallest,
                       smallest,
                       lhsFheType.bitLength,
                       rhsFheType.bitLength,
                       test.safeMin,
                     ),
                   );
+                  encryptedTests.push(
+                    safeEval(
+                      test.evalTest,
+                      smallest,
+                      smallest - 4n,
+                      lhsFheType.bitLength,
+                      rhsFheType.bitLength,
+                      test.safeMin,
+                    ),
+                  );
+                  generatedTests[encryptedTestName] = encryptedTests;
                 }
-                encryptedTests.push(
-                  safeEval(test.evalTest, smallest, smallest, lhsFheType.bitLength, rhsFheType.bitLength, test.safeMin),
-                );
-                encryptedTests.push(
-                  safeEval(
-                    test.evalTest,
-                    smallest,
-                    smallest - 4n,
-                    lhsFheType.bitLength,
-                    rhsFheType.bitLength,
-                    test.safeMin,
-                  ),
-                );
-                generatedTests[encryptedTestName] = encryptedTests;
               }
 
               const scalarCondition = !test.noScalar && lhsFheType.bitLength === rhsFheType.bitLength;
 
               if (only8bits || (test.limit !== 'bits' && scalarCondition)) {
                 if (test.limit !== 'bits') {
-                  rhsNumber = generateRandomNumber(bitResults);
+                  rhsBigInt = generateRandomBigInt(bitResults);
                 }
                 const encryptedTestName = [
                   functionName,
                   `e${lhsFheType.type.toLowerCase()}`,
                   `uint${rhsFheType.bitLength}`,
                 ].join('_');
-                const encryptedTests: Test[] = [];
-                if (!test.lhsHigher) {
+                if (existingOverloads[encryptedTestName]) {
+                  generatedTests[encryptedTestName] = existingOverloads[encryptedTestName];
+                } else {
+                  const encryptedTests: Test[] = [];
+                  if (!test.lhsHigher) {
+                    encryptedTests.push(
+                      safeEval(
+                        test.evalTest,
+                        lhsBigInt,
+                        rhsBigInt,
+                        lhsFheType.bitLength,
+                        rhsFheType.bitLength,
+                        test.safeMin,
+                      ),
+                    );
+                    encryptedTests.push(
+                      safeEval(
+                        test.evalTest,
+                        smallest - 4n,
+                        smallest,
+                        lhsFheType.bitLength,
+                        rhsFheType.bitLength,
+                        test.safeMin,
+                      ),
+                    );
+                  }
                   encryptedTests.push(
                     safeEval(
                       test.evalTest,
-                      lhsNumber,
-                      rhsNumber,
-                      lhsFheType.bitLength,
-                      rhsFheType.bitLength,
-                      test.safeMin,
-                    ),
-                  );
-                  encryptedTests.push(
-                    safeEval(
-                      test.evalTest,
-                      smallest - 4n,
+                      smallest,
                       smallest,
                       lhsFheType.bitLength,
                       rhsFheType.bitLength,
                       test.safeMin,
                     ),
                   );
+                  encryptedTests.push(
+                    safeEval(
+                      test.evalTest,
+                      smallest,
+                      smallest - 4n,
+                      lhsFheType.bitLength,
+                      rhsFheType.bitLength,
+                      test.safeMin,
+                    ),
+                  );
+                  generatedTests[encryptedTestName] = encryptedTests;
                 }
-                encryptedTests.push(
-                  safeEval(test.evalTest, smallest, smallest, lhsFheType.bitLength, rhsFheType.bitLength, test.safeMin),
-                );
-                encryptedTests.push(
-                  safeEval(
-                    test.evalTest,
-                    smallest,
-                    smallest - 4n,
-                    lhsFheType.bitLength,
-                    rhsFheType.bitLength,
-                    test.safeMin,
-                  ),
-                );
-                generatedTests[encryptedTestName] = encryptedTests;
               }
               if (test.limit !== 'bits' && scalarCondition && !test.scalarOnly) {
-                lhsNumber = generateRandomNumber(bitResults);
+                lhsBigInt = generateRandomBigInt(bitResults);
                 const encryptedTestName = [
                   functionName,
                   `uint${lhsFheType.bitLength}`,
                   `e${rhsFheType.type.toLowerCase()}`,
                 ].join('_');
-                const encryptedTests: Test[] = [];
-                if (!test.lhsHigher) {
+                if (existingOverloads[encryptedTestName]) {
+                  generatedTests[encryptedTestName] = existingOverloads[encryptedTestName];
+                } else {
+                  const encryptedTests: Test[] = [];
+                  if (!test.lhsHigher) {
+                    encryptedTests.push(
+                      safeEval(
+                        test.evalTest,
+                        lhsBigInt,
+                        rhsBigInt,
+                        lhsFheType.bitLength,
+                        rhsFheType.bitLength,
+                        test.safeMin,
+                      ),
+                    );
+                    encryptedTests.push(
+                      safeEval(
+                        test.evalTest,
+                        smallest - 4n,
+                        smallest,
+                        lhsFheType.bitLength,
+                        rhsFheType.bitLength,
+                        test.safeMin,
+                      ),
+                    );
+                  }
                   encryptedTests.push(
                     safeEval(
                       test.evalTest,
-                      lhsNumber,
-                      rhsNumber,
-                      lhsFheType.bitLength,
-                      rhsFheType.bitLength,
-                      test.safeMin,
-                    ),
-                  );
-                  encryptedTests.push(
-                    safeEval(
-                      test.evalTest,
-                      smallest - 4n,
+                      smallest,
                       smallest,
                       lhsFheType.bitLength,
                       rhsFheType.bitLength,
                       test.safeMin,
                     ),
                   );
+                  encryptedTests.push(
+                    safeEval(
+                      test.evalTest,
+                      smallest,
+                      smallest - 4n,
+                      lhsFheType.bitLength,
+                      rhsFheType.bitLength,
+                      test.safeMin,
+                    ),
+                  );
+                  generatedTests[encryptedTestName] = encryptedTests;
                 }
-                encryptedTests.push(
-                  safeEval(test.evalTest, smallest, smallest, lhsFheType.bitLength, rhsFheType.bitLength, test.safeMin),
-                );
-                encryptedTests.push(
-                  safeEval(
-                    test.evalTest,
-                    smallest,
-                    smallest - 4n,
-                    lhsFheType.bitLength,
-                    rhsFheType.bitLength,
-                    test.safeMin,
-                  ),
-                );
-                generatedTests[encryptedTestName] = encryptedTests;
               }
             }
           });

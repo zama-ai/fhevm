@@ -1,4 +1,4 @@
-import { FheType } from './common';
+import type { FheTypeInfo } from './common';
 
 /**
  * A constant array containing all Fully Homomorphic Encryption (FHE) types.
@@ -22,7 +22,7 @@ import { FheType } from './common';
  * - `Uint160`: Unsigned integer type with a bit length of 160.
  * - `Uint256`: Unsigned integer type with a bit length of 256.
  */
-export const ALL_FHE_TYPES: FheType[] = [
+export const ALL_FHE_TYPE_INFOS: FheTypeInfo[] = [
   {
     type: 'Bool',
     value: 0,

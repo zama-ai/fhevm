@@ -1,4 +1,5 @@
-import { Operator, OperatorArguments, ReturnType } from './common';
+import { OperatorArguments, ReturnType } from './common';
+import type { Operator } from './common';
 
 /**
  * A list of all supported operators with their respective properties.
