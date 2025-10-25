@@ -38,7 +38,7 @@ const pathways: TwoWayConfig[] = [
         arbitrumSepoliaContract, // Chain B contract
         // TODO: Add custom ZAMA DVN in next line?
         [['LayerZero Labs'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
-        [15, 100], // [A to B confirmations, B to A confirmations]
+        [15, 20], // [A to B confirmations, B to A confirmations]
         [EVM_ENFORCED_OPTIONS, EVM_ENFORCED_OPTIONS], // Chain B enforcedOptions, Chain A enforcedOptions
     ],
 ]
