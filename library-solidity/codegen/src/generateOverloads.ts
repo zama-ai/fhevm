@@ -1,5 +1,5 @@
-import type { FheTypeInfo } from './common.js';
-import { findMinimumValueInBigIntArray, generateRandomNumber as generateRandomBigInt } from './utils.js';
+import type { FheTypeInfo } from './common';
+import { findMinimumValueInBigIntArray, generateRandomNumber as generateRandomBigInt } from './utils';
 
 /**
  * Represents a test structure with input and output types.

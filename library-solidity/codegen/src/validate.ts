@@ -1,6 +1,6 @@
-import { type FheTypeInfo, type Operator, OperatorArguments, ReturnType } from './common.js';
-import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos.js';
-import { ALL_OPERATORS } from './operators.js';
+import { type FheTypeInfo, type Operator, OperatorArguments, ReturnType } from './common';
+import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos';
+import { ALL_OPERATORS } from './operators';
 
 /**
  * Validates the FHE (Fully Homomorphic Encryption) types.

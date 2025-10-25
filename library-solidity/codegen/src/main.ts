@@ -15,23 +15,23 @@ import {
   toAbsulteConfig,
   toImportsCode,
   writeFile,
-} from './config.js';
-import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos.js';
-import { type OverloadTests, generateOverloads } from './generateOverloads.js';
-import { generateSolidityHCULimit } from './hcuLimitGenerator.js';
-import { ALL_OPERATORS } from './operators.js';
-import { ALL_OPERATORS_PRICES } from './operatorsPrices.js';
-import { generateSolidityFHELib, generateSolidityFheType, generateSolidityImplLib } from './templates.js';
+} from './config';
+import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos';
+import { type OverloadTests, generateOverloads } from './generateOverloads';
+import { generateSolidityHCULimit } from './hcuLimitGenerator';
+import { ALL_OPERATORS } from './operators';
+import { ALL_OPERATORS_PRICES } from './operatorsPrices';
+import { generateSolidityFHELib, generateSolidityFheType, generateSolidityImplLib } from './templates';
 import {
   type TypescriptTestGroupImports,
   generateSolidityOverloadTestFiles,
   generateSolidityUnitTestContracts,
   generateTypeScriptTestCode,
   splitOverloadsToShards,
-} from './testgen.js';
-import { toBigInt } from './utils.js';
-import { fromDirToFile, fromFileToFile, isDirectory } from './utils/paths.js';
-import { validate } from './validate.js';
+} from './testgen';
+import { toBigInt } from './utils';
+import { fromDirToFile, fromFileToFile, isDirectory } from './utils/paths';
+import { validate } from './validate';
 
 export function readOverloads(overloadsJsonFile: string): OverloadTests | undefined {
   if (!existsSync(overloadsJsonFile)) {
