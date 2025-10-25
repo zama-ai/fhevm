@@ -1,4 +1,4 @@
-import type { PriceData } from './common.js';
+import type { PriceData } from './common';
 
 export function generateSolidityHCULimit(priceData: PriceData): string {
   if (!priceData) {
