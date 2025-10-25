@@ -11,7 +11,6 @@
   "scripts": {
     "codegen": "../../library-solidity/codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
     "codegen:overloads": "../../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
-    "codegen2": "npx ts-node codegen/main.ts && npm run prettier && npx hardhat compile",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
   },
   "dependencies": {
