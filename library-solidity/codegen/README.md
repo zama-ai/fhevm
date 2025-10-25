@@ -6,17 +6,18 @@ npm install
 
 # Config file
 
-- `generateHCULimit` (boolean, optional): `true` to generate HCULimit.sol. (default: `false`)
-- `shuffle` (boolean, optional): `true` to shuffle the tests. (default: `false`)
-- `shuffleWithPseuseRand` (boolean, optional): `true` to shuffle using a deterministic random sequence. (default: `false`)
-- `publicDecrypt` (boolean, optional): `true` to generate tests with publicly decryptable handles, `false` to generate tests with user decryptable handles. (default: `false`)
-- `numberOfTestSplits` (positive integer, required): the number of test splits to generate. (default: `12`)
-- `noLib` (boolean, optional): `true` to disable any FHEVM library contracts such as `FHE.sol`, `Impl.sol` ... This is required for e2e tests for example (default: `false`)
-- `directories.baseDir` (string, optional): The path the target directory used as the base directory for the generated tests. If the path is relative, the absolute path is resolved relatively to the config file. (default: `cwd`)
-- `directories.fheTypeDir` (string, optional): The path to the directory where `FheType.sol` is located. If not specified, use `directories.libDir`. If the path is relative, the absolute path is resolved relatively to the config file.
-- `directories.libDir` (string, optional): The path to the FHEVM lib directory where the `FHE.sol`, `Impl.sol` are located (default: `lib`). If the path is relative, the absolute path is resolved relatively to the config file.
-- `directories.overloadsDir` (string, optional): If `--overloads` option is not used, this is the path to the directory where the `overloads.json` file is located. If the path is relative, the absolute path is resolved relatively to the config file. (default: `overloads`)
-- `directories.contractsDir` (string, optional): The path to the contracts directory (where to save `HCULimit.sol`). If the path is relative, the absolute path is resolved relatively to the config file. (default: `contracts`)
+- `baseDir` (string, optional): The path the target directory used as the base directory. If the path is relative, the absolute path is resolved relatively to the config file. (default: config file directory)
+- `noLib` (boolean, optional): `true` to disable FHEVM library contracts generation (`FHE.sol`, `Impl.sol`) ... This is required for e2e tests for example (default: `false`)
+- `noTest` (boolean, optional): `true` to disable Tests generation (default: `false`)
+- `noHostContracts` (boolean, optional): `true` to disable host contracts generation (`HCULimit.sol`) (default: `false`)
+- `tests.shuffle` (boolean, optional): `true` to shuffle the tests. (default: `false`)
+- `tests.shuffleWithPseuseRand` (boolean, optional): `true` to shuffle using a deterministic random sequence. (default: `false`)
+- `tests.publicDecrypt` (boolean, optional): `true` to generate tests with publicly decryptable handles, `false` to generate tests with user decryptable handles. (default: `false`)
+- `tests.numberOfTestSplits` (positive integer, required): the number of test splits to generate. (default: `12`)
+- `tests.overloads` (string, optional): If `--overloads` option is not used, this is the path to the directory where the `overloads.json` file is located. If the path is relative, the absolute path is resolved relatively to the `baseDir`. (default: `./overloads.json`)
+- `lib.fheTypeDir` (string, optional): The path to the directory where `FheType.sol` is located. If not specified, use `lib.outDir`. If the path is relative, the absolute path is resolved relatively to the config file.
+- `lib.outDir` (string, optional): The path to the FHEVM lib directory where the `FHE.sol`, `Impl.sol` are generated (default: `lib`). If the path is relative, the absolute path is resolved relatively to the baseDir.
+- `hostContracts.outDir` (string, optional): The path to the contracts directory (where to save `HCULimit.sol`). If the path is relative, the absolute path is resolved relatively to the `baseDir`. (default: `./contracts`)
 
 # Help
 
@@ -31,6 +32,12 @@ cd codegen
 ```sh
 cd codegen
 ./codegen.mjs overloads /path/to/your/new/overloads.json
+```
+
+```sh
+# or by using the path of overloads.json specified in the config
+cd codegen
+./codegen.mjs overloads --config ./codegen.config.json
 ```
 
 # Generate host-contracts tests
@@ -78,7 +85,3 @@ npm run codegen:e2e
 # Dry Run
 
 Use the `--dry-run --verbose` options to check code generation in dry run mode.
-
-# Verification scripts
-
-`verify-e2e.sh`, `verify-host-contracts.sh`, `verify-library-solidity.sh` are meant to be deleted. These are temporary test scripts to make sure generated code is identical to the current codegen setup.
