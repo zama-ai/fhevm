@@ -17,7 +17,8 @@
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "test": "hardhat test",
     "coverage": "SOLIDITY_COVERAGE=true hardhat coverage",
-    "codegen": "npx ts-node codegen/main.ts && npm run prettier",
+    "codegen": "../library-solidity/codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
+    "codegen:overloads": "../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "test:gas": "hardhat test --grep Gas"
   },
   "author": "",

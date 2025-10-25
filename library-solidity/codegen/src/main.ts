@@ -87,7 +87,7 @@ export async function commandRegenerateOverloads(outputFile: string, options: an
   const config = resolveUserConfig(userConfig);
   const absConfig = toAbsulteConfig(config);
 
-  const defaultOverloadsJsonFile = absConfig.overloads;
+  const defaultOverloadsJsonFile = absConfig.tests.overloads;
   const resolvedOverloadsJsonFile = userOverloadsJson
     ? toAbsoluteFileWithExtension(userOverloadsJson, '.json', process.cwd())
     : defaultOverloadsJsonFile;
@@ -135,19 +135,19 @@ export async function commandGenerateAllFiles(options: any) {
 
   const absConfig = toAbsulteConfig(config);
 
-  generatePrettierConfig(absConfig.directories.baseDir);
+  generatePrettierConfig(absConfig.baseDir);
 
   debugLog(JSON.stringify(absConfig, null, 2));
-  const numberOfTestSplits = config.numberOfTestSplits;
+  const numberOfTestSplits = config.tests.numberOfTestSplits;
 
   validate();
 
-  const fheTypesDotSol = `${path.join(absConfig.directories.fheTypeDir, 'FheType.sol')}`;
-  const implDotSol = `${path.join(absConfig.directories.libDir, 'Impl.sol')}`;
-  const fheDotSol = `${path.join(absConfig.directories.libDir, 'FHE.sol')}`;
-  const hcuLimitDotSol = `${path.join(absConfig.directories.contractsDir, 'HCULimit.sol')}`;
+  const fheTypesDotSol = `${path.join(absConfig.lib.fheTypeDir, 'FheType.sol')}`;
+  const implDotSol = `${path.join(absConfig.lib.outDir, 'Impl.sol')}`;
+  const fheDotSol = `${path.join(absConfig.lib.outDir, 'FHE.sol')}`;
+  const hcuLimitDotSol = `${path.join(absConfig.hostContracts.outDir, 'HCULimit.sol')}`;
 
-  const defaultOverloadsJsonFile = absConfig.overloads;
+  const defaultOverloadsJsonFile = absConfig.tests.overloads;
   const resolvedOverloadsJsonFile = userOverloadsJson
     ? toAbsoluteFileWithExtension(userOverloadsJson, '.json', process.cwd())
     : defaultOverloadsJsonFile;
@@ -160,21 +160,36 @@ export async function commandGenerateAllFiles(options: any) {
   const fheRelFheTypesDotSol = fromFileToFile(fheDotSol, fheTypesDotSol);
   const fheRelImplDotSol = fromFileToFile(fheDotSol, implDotSol);
 
-  debugLog(`numberOfTestSplits: ${absConfig.numberOfTestSplits}`);
-  debugLog(`basePath:           ${absConfig.directories.baseDir}`);
-  debugLog(`fheTypeDir:         ${absConfig.directories.fheTypeDir}`);
-  debugLog(`libDir:             ${absConfig.directories.libDir}`);
+  debugLog(`============ Config ============`);
+  debugLog(`basePath:           ${absConfig.baseDir}`);
+  debugLog(`noLib:              ${absConfig.noLib}`);
+  debugLog(`noHostContracts:    ${absConfig.noHostContracts}`);
+  debugLog(`noTest:             ${absConfig.noTest}`);
+  debugLog(`============= Lib =============`);
+  debugLog(`libDir:             ${absConfig.lib.outDir}`);
   debugLog(`Impl.sol:           ${implDotSol}`);
   debugLog(`FHE.sol:            ${fheDotSol}`);
+  debugLog(`fheTypeDir:         ${absConfig.lib.fheTypeDir}`);
   debugLog(`FheType.sol (absolute):             ${fheTypesDotSol}`);
   debugLog(`FheType.sol (relative to Impl.sol): ${implRelFheTypesDotSol}`);
-  debugLog(`HCULimit.sol:       ${hcuLimitDotSol}`);
-  debugLog(`solidityDir:        ${absConfig.solidity?.outDir ?? 'N/A'}`);
-  debugLog(`typescriptDir:      ${absConfig.typescript?.outDir ?? 'N/A'}`);
-  debugLog(`parentContractName: ${absConfig.solidity?.parentContractName ?? 'N/A'}`);
+
+  if (!absConfig.noHostContracts) {
+    debugLog(`============= Host Contracts =============`);
+    debugLog(`hostContractsDir:   ${absConfig.hostContracts.outDir}`);
+    debugLog(`HCULimit.sol:       ${hcuLimitDotSol}`);
+  }
+
+  debugLog(`============ Tests ============`);
+  debugLog(`numberOfTestSplits: ${absConfig.tests.numberOfTestSplits}`);
+  debugLog(`publicDecrypt:      ${absConfig.tests.publicDecrypt}`);
+  debugLog(`solidityDir:        ${absConfig.tests?.solidity?.outDir ?? 'N/A'}`);
+  debugLog(`typescriptDir:      ${absConfig.tests?.typescript?.outDir ?? 'N/A'}`);
+  debugLog(`parentContractName: ${absConfig.tests?.solidity?.parentContractName ?? 'N/A'}`);
 
   debugLog(`overloads.json (default):  ${defaultOverloadsJsonFile}`);
   debugLog(`overloads.json (resolved): ${resolvedOverloadsJsonFile}`);
+
+  debugLog(`===============================`);
 
   const fheTypesCode = generateSolidityFheType(ALL_FHE_TYPE_INFOS);
   const implCode = generateSolidityImplLib(ALL_OPERATORS, implRelFheTypesDotSol);
@@ -182,17 +197,17 @@ export async function commandGenerateAllFiles(options: any) {
 
   const hcuCode = generateSolidityHCULimit(ALL_OPERATORS_PRICES);
 
-  debugLog(`FheType.sol:  size=${fheTypesCode.length}`);
-  debugLog(`Impl.sol:     size=${implCode.length}`);
-  debugLog(`FHE.sol:      size=${fheCode.length}`);
-  debugLog(`HCULimit.sol: size=${hcuCode.length}`);
+  debugLog(`FheType.sol:  code size=${fheTypesCode.length}`);
+  debugLog(`Impl.sol:     code size=${implCode.length}`);
+  debugLog(`FHE.sol:      code size=${fheCode.length}`);
+  debugLog(`HCULimit.sol: code size=${hcuCode.length}`);
 
   if (config.noLib !== true) {
     mkDir(path.dirname(fheTypesDotSol));
     mkDir(path.dirname(implDotSol));
     mkDir(path.dirname(fheDotSol));
 
-    /// Generate core Solidity contract files.
+    // Generate core Solidity contract files.
     await writeFile(`${fheTypesDotSol}`, fheTypesCode);
     await writeFile(`${implDotSol}`, implCode);
     await writeFile(`${fheDotSol}`, fheCode);
@@ -200,8 +215,12 @@ export async function commandGenerateAllFiles(options: any) {
     debugLog(`Skipping lib generation.`);
   }
 
-  if (config.generateHCULimit === true) {
+  if (config.noHostContracts !== true) {
+    // host contracts directory must exist.
+    // Generate Host contracts contract files.
     await writeFile(`${hcuLimitDotSol}`, hcuCode);
+  } else {
+    debugLog(`Skipping host contracts generation.`);
   }
 
   if (config.noTest === true) {
@@ -228,11 +247,11 @@ export async function commandGenerateAllFiles(options: any) {
   }
 
   const overloadTestFilesCode = generateSolidityOverloadTestFiles(ALL_OPERATORS, ALL_FHE_TYPE_INFOS);
-  const overloadShards = splitOverloadsToShards(overloadTestFilesCode, config);
+  const overloadShards = splitOverloadsToShards(overloadTestFilesCode, config.tests);
 
   // Solidity
-  if (absConfig.solidity) {
-    const solidityTestGroup = absConfig.solidity;
+  if (absConfig.tests?.solidity) {
+    const solidityTestGroup = absConfig.tests.solidity;
 
     const imports = [];
 
@@ -268,16 +287,18 @@ export async function commandGenerateAllFiles(options: any) {
             os,
             importsCode,
             solidityTestGroup.parentContractName,
-            config.publicDecrypt,
+            config.tests.publicDecrypt,
           ),
         ),
       ),
     );
+  } else {
+    debugLog(`No Solidity tests.`);
   }
 
   // Operations
-  if (absConfig.typescript) {
-    const typescriptTestGroup = absConfig.typescript;
+  if (absConfig.tests?.typescript) {
+    const typescriptTestGroup = absConfig.tests.typescript;
     const typescriptTestGroupImports = computeOperationsTestsGroupImports(typescriptTestGroup);
 
     mkDir(typescriptTestGroup.outDir);
@@ -286,11 +307,13 @@ export async function commandGenerateAllFiles(options: any) {
       numberOfTestSplits,
       overloadTests,
       typescriptTestGroupImports,
-      config,
+      config.tests,
     );
     tsSplits.forEach((split, splitIdx) =>
       writeFile(path.join(typescriptTestGroup.outDir, `fhevmOperations${splitIdx + 1}.ts`), split),
     );
+  } else {
+    debugLog(`No Typescript tests.`);
   }
 }
 
