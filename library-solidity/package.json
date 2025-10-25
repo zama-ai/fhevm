@@ -21,7 +21,8 @@
     "task:getEthereumAddress": "hardhat task:getEthereumAddress",
     "task:deployGateway": "hardhat task:deployGateway",
     "task:addRelayer": "hardhat task:addRelayer",
-    "task:removeRelayer": "hardhat task:removeRelayer"
+    "task:removeRelayer": "hardhat task:removeRelayer",
+    "tsc": "tsc --project ./tsconfig.json --noEmit"
   },
   "repository": {
     "type": "git",

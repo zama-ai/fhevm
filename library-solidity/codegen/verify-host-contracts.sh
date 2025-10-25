@@ -26,7 +26,7 @@ FAILED=0
 
 for i in {1..7}; do
     FILE_A=${OUT_SOL_DIR}/FHEVMTestSuite${i}.sol
-    FILE_B=${SOL_DIR}/FHEVMTestSuite${i}.sol
+    FILE_B=${SOL_DIR}/FHEVMTestSuite${i}-local.sol.orig
     diff "${FILE_A}" "${FILE_B}" 
     if [ $? -eq 0 ]; then
         echo "✅ Files are identical: '${FILE_A}' and '${FILE_B}'"
@@ -37,7 +37,7 @@ done
 
 for i in {1..13}; do
     FILE_A=${OUT_TS_DIR}/fhevmOperations${i}.ts
-    FILE_B=${TS_DIR}/fhevmOperations${i}.ts
+    FILE_B=${TS_DIR}/fhevmOperations${i}.ts.orig
     diff "${FILE_A}" "${FILE_B}" 
     if [ $? -eq 0 ]; then
         echo "✅ Files are identical: '${FILE_A}' and '${FILE_B}'"
@@ -58,7 +58,7 @@ else
 fi
 
 # Check FHE.sol
-FILE_A="${LIB_DIR}/FHE.sol"
+FILE_A="${LIB_DIR}/FHE.sol.orig"
 FILE_B="${OUT_BASE_DIR}/lib/FHE.sol"
 diff "${FILE_A}" "${FILE_B}" 
 if [ $? -eq 0 ]; then
@@ -68,7 +68,7 @@ else
 fi
 
 # Check Impl.sol
-FILE_A="${LIB_DIR}/Impl.sol"
+FILE_A="${LIB_DIR}/Impl.sol.orig"
 FILE_B="${OUT_BASE_DIR}/lib/Impl.sol"
 diff "${FILE_A}" "${FILE_B}" 
 if [ $? -eq 0 ]; then

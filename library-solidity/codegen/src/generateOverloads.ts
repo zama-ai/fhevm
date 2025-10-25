@@ -1,4 +1,4 @@
-import type { FheType } from './common.js';
+import type { FheTypeInfo } from './common.js';
 import { findMinimumValueInBigIntArray, generateRandomNumber as generateRandomBigInt } from './utils.js';
 
 /**
@@ -232,12 +232,12 @@ export type OverloadTest = {
  * @param fheTypes - An array of FHE types, each containing information about type, bit length, and supported operators.
  * @returns An object containing generated test cases for each supported function and FHE type combination.
  */
-export const generateOverloads = (fheTypes: FheType[], existingOverloads: OverloadTests): OverloadTests => {
+export const generateOverloads = (fheTypes: FheTypeInfo[], existingOverloads: OverloadTests): OverloadTests => {
   const generatedTests: OverloadTests = {};
   Object.keys(SUPPORTED_FUNCTIONS).forEach((functionName: string) => {
     const test = SUPPORTED_FUNCTIONS[functionName];
 
-    fheTypes.forEach((lhsFheType: FheType) => {
+    fheTypes.forEach((lhsFheType: FheTypeInfo) => {
       if (lhsFheType.type.startsWith('Uint') && lhsFheType.supportedOperators.includes(functionName)) {
         if (test.unary) {
           const lhsBigInt: bigint = generateRandomBigInt(lhsFheType.bitLength);
@@ -253,7 +253,7 @@ export const generateOverloads = (fheTypes: FheType[], existingOverloads: Overlo
             generatedTests[encryptedTestName] = encryptedTests;
           }
         } else {
-          fheTypes.forEach((rhsFheType: FheType) => {
+          fheTypes.forEach((rhsFheType: FheTypeInfo) => {
             if (rhsFheType.type.startsWith('Uint') && rhsFheType.supportedOperators.includes(functionName)) {
               const bitResults = Math.min(lhsFheType.bitLength, rhsFheType.bitLength);
               let lhsBigInt: bigint = generateRandomBigInt(lhsFheType.bitLength);

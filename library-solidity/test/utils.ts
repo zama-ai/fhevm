@@ -1,17 +1,18 @@
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { toBufferBE } from 'bigint-buffer';
-import { ContractMethodArgs, Typed } from 'ethers';
-import { Signer } from 'ethers';
+import { Typed } from 'ethers';
+import type { ContractMethodArgs, Signer } from 'ethers';
 import { ethers, network } from 'hardhat';
+import hre from 'hardhat';
 
 import type { Counter } from '../types';
 import { TypedContractMethod } from '../types/common';
 import { getSigners } from './signers';
 
-const hre = require('hardhat');
+//const hre = require('hardhat');
 
 export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
-  const signers = await hre.ethers.getSigners();
+  const signers: HardhatEthersSigner[] = await hre.ethers.getSigners();
   if (signers.findIndex((s) => s.address === signer.address) === -1) {
     throw new Error(
       `The provided address (${signer.address}) is not the address of a valid hardhat signer.
@@ -152,6 +153,8 @@ export const userDecryptSingleHandle = async (
     eip712.message,
   );
 
+  const signerAddress = await signer.getAddress();
+
   const decryptedValue = (
     await instance.userDecrypt(
       ctHandleContractPairs,
@@ -159,7 +162,7 @@ export const userDecryptSingleHandle = async (
       publicKey,
       signature.replace('0x', ''),
       contractAddresses,
-      signer.address,
+      signerAddress,
       startTimeStamp,
       durationDays,
     )
