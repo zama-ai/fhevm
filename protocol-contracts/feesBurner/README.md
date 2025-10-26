@@ -1,13 +1,4 @@
-# Sample Hardhat Project
-
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
-
-Try running some of the following tasks:
-
-```shell
-npx hardhat help
-npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat ignition deploy ./ignition/modules/Lock.ts
+After filling all values of the `.env` file until the `ZAMA_ERC20_ADDRESS` variable, run this command to deploy first the `ProtocolFeesBurner` contract on Ethereum testnet:
+```bash
+npx hardhat deploy --tags ProtocolFeesBurner --network ethereum-testnet
 ```
