@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import { isDeepStrictEqual } from 'util';
 
+import { OverloadSignature } from './common';
 import {
   type TestGroup,
   debugLog,
@@ -246,7 +247,10 @@ export async function commandGenerateAllFiles(options: any) {
     }
   }
 
-  const overloadTestFilesCode = generateSolidityOverloadTestFiles(ALL_OPERATORS, ALL_FHE_TYPE_INFOS);
+  const overloadTestFilesCode: OverloadSignature[] = generateSolidityOverloadTestFiles(
+    ALL_OPERATORS,
+    ALL_FHE_TYPE_INFOS,
+  );
   const overloadShards = splitOverloadsToShards(overloadTestFilesCode, config.tests);
 
   // Solidity
