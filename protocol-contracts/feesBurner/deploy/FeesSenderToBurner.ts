@@ -17,7 +17,7 @@ const deploy: DeployFunction = async (hre) => {
   console.log(`Deployer: ${deployer}`);
 
   const oftAddress = getRequiredEnvVar("ZAMA_OFT_ADDRESS");
-  const protocolFeesBurner = getRequiredEnvVar("PROTOCOL_FEES_ADDRESS");
+  const protocolFeesBurner = getRequiredEnvVar("PROTOCOL_FEES_BURNER_ADDRESS");
 
   const { address } = await deploy(contractName, {
     from: deployer,

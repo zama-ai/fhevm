@@ -23,9 +23,9 @@ contract FeesSenderToBurner {
         ZAMA_OFT = _oft;
         PROTOCOL_FEES_BURNER = _protocolFeesBurner;
         uint256 chainID = block.chainid;
-        if (chainID == 1) {
+        if (chainID == 261131) { // chainID of gateway-mainnet i.e linked to ethereum-mainnet
             DESTINATION_EID = 30101;
-        } else if (chainID == 11155111) {
+        } else if (chainID == 10901) { // chainID of gateway-testnet i.e linked to ethereum-testnet
             DESTINATION_EID = 40161;
         } else {
             revert UnsupportedChainID();
