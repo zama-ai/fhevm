@@ -1,18 +1,40 @@
-# Use codegen in every FHEVM package
+# How to Run `codegen` in the required FHEVM packages
+
+### To Generate FHEVM library & Tests,
 
 ```sh
+# @fhevm/solidity package
 cd library-solidity
 npm run codegen
 ```
 
 ```sh
+# @fhevm/host-contracts package
 cd host-contracts
 npm run codegen
 ```
 
 ```sh
+# End-to-End tests package
 cd tests-suite/e2e
 npm run codegen
+```
+
+### To Regenerate Random Overloads (optional)
+
+```sh
+cd library-solidity
+npm run codegen:overloads
+```
+
+```sh
+cd host-contracts
+npm run codegen:overloads
+```
+
+```sh
+cd tests-suite/e2e
+npm run codegen:overloads
 ```
 
 # Install
