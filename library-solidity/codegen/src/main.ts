@@ -22,7 +22,10 @@ import { type OverloadTests, generateOverloads } from './generateOverloads';
 import { generateSolidityHCULimit } from './hcuLimitGenerator';
 import { ALL_OPERATORS } from './operators';
 import { ALL_OPERATORS_PRICES } from './operatorsPrices';
-import { generateSolidityFHELib, generateSolidityFheType, generateSolidityImplLib } from './templates';
+import { fromDirToFile, fromFileToFile, isDirectory } from './paths';
+import { generateSolidityFHELib } from './templateFHEDotSol';
+import { generateSolidityFheType } from './templateFheTypeDotSol';
+import { generateSolidityImplLib } from './templateImpDotSol';
 import {
   type TypescriptTestGroupImports,
   generateSolidityOverloadTestFiles,
@@ -31,7 +34,6 @@ import {
   splitOverloadsToShards,
 } from './testgen';
 import { toBigInt } from './utils';
-import { fromDirToFile, fromFileToFile, isDirectory } from './utils/paths';
 import { validate } from './validate';
 
 export function readOverloads(overloadsJsonFile: string): OverloadTests | undefined {
@@ -192,18 +194,11 @@ export async function commandGenerateAllFiles(options: any) {
 
   debugLog(`===============================`);
 
-  const fheTypesCode = generateSolidityFheType(ALL_FHE_TYPE_INFOS);
-  const implCode = generateSolidityImplLib(ALL_OPERATORS, implRelFheTypesDotSol);
-  const fheCode = generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPE_INFOS, fheRelFheTypesDotSol, fheRelImplDotSol);
-
-  const hcuCode = generateSolidityHCULimit(ALL_OPERATORS_PRICES);
-
-  debugLog(`FheType.sol:  code size=${fheTypesCode.length}`);
-  debugLog(`Impl.sol:     code size=${implCode.length}`);
-  debugLog(`FHE.sol:      code size=${fheCode.length}`);
-  debugLog(`HCULimit.sol: code size=${hcuCode.length}`);
-
   if (config.noLib !== true) {
+    const fheTypesCode = generateSolidityFheType(ALL_FHE_TYPE_INFOS);
+    const implCode = generateSolidityImplLib(ALL_OPERATORS, implRelFheTypesDotSol);
+    const fheCode = generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPE_INFOS, fheRelFheTypesDotSol, fheRelImplDotSol);
+
     mkDir(path.dirname(fheTypesDotSol));
     mkDir(path.dirname(implDotSol));
     mkDir(path.dirname(fheDotSol));
@@ -217,6 +212,7 @@ export async function commandGenerateAllFiles(options: any) {
   }
 
   if (config.noHostContracts !== true) {
+    const hcuCode = generateSolidityHCULimit(ALL_OPERATORS_PRICES);
     // host contracts directory must exist.
     // Generate Host contracts contract files.
     await formatAndWriteFile(`${hcuLimitDotSol}`, hcuCode);
