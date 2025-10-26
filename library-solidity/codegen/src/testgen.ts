@@ -290,6 +290,7 @@ function generateIntroTestCodeUserDecrypt(
   intro.push(`
     import { expect } from 'chai';
     import { ethers } from 'hardhat';
+    import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
     import { createInstances, decrypt8, decrypt16, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '${imports.instance}';
     import { getSigners, initSigners } from '${imports.signers}';
 
@@ -349,6 +350,7 @@ function generateIntroTestCodePublicDecrypt(
   intro.push(`
     import { assert } from 'chai';
     import { ethers } from 'hardhat';
+    import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
     import { createInstance } from '${imports.instance}';
     import { getSigner, getSigners, initSigners } from '${imports.signers}';
 
