@@ -7,7 +7,7 @@
     "numberOfTestSplits": 96,
     "overloads": "../../library-solidity/codegen/overloads/e2e.json",
     "publicDecrypt": true,
-    "shuffle": false,
+    "shuffle": true,
     "shuffleWithPseuseRand": true,
     "solidity": {
       "__comment": "All imports paths are relative to outDir",
