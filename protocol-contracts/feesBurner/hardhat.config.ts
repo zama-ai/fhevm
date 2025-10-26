@@ -3,6 +3,8 @@ import "dotenv/config";
 import "hardhat-deploy";
 import type { HardhatUserConfig } from "hardhat/config";
 
+import "./tasks/blockExplorerVerify";
+
 // Set your preferred authentication method
 //
 // If you prefer using a mnemonic, set a MNEMONIC environment variable
@@ -39,6 +41,21 @@ const config: HardhatUserConfig = {
     deployer: {
       default: 0,
     },
+  },
+  etherscan: {
+    apiKey: {
+      "gateway-testnet": "empty",
+    },
+    customChains: [
+      {
+        network: "gateway-testnet",
+        chainId: 10901,
+        urls: {
+          apiURL: "https://explorer-zama-testnet-0.t.conduit.xyz/api",
+          browserURL: "https://explorer-zama-testnet-0.t.conduit.xyz/",
+        },
+      },
+    ],
   },
 };
 

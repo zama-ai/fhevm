@@ -1,16 +1,15 @@
-import { task, types } from 'hardhat/config'
+import { task } from "hardhat/config";
 
-task('task:verifyProtocolFeesBurner')
-    .addParam('protocolFeesBurnerAddress', 'address of deployed ProtocolFeesBurnerAddress', '0x00', types.string)
-    .addParam(
-        'zamaAddress',
-        'address of ZAMA token used in the constructor of ProtocolFeesBurnerAddress',
-        '0x00',
-        types.string
-    )
-    .setAction(async function ({ protocolFeesBurnerAddress, zamaAddress }, { run }) {
-        await run('verify:verify', {
-            address: protocolFeesBurnerAddress,
-            constructorArguments: [zamaAddress],
-        })
-    })
+import { getRequiredEnvVar } from "../deploy/utils/loadVariables";
+
+task("task:verifyFeesSenderToBurner")
+  .addParam("feesSenderToBurner", "address of the already deployed FeesSenderToBurner contract that should be verified")
+  .setAction(async function ({ feesSenderToBurner }, { run }) {
+    const oftAddress = getRequiredEnvVar("ZAMA_OFT_ADDRESS");
+    const protocolFeesBurnerAddress = getRequiredEnvVar("PROTOCOL_FEES_BURNER_ADDRESS");
+
+    await run("verify:verify", {
+      address: feesSenderToBurner,
+      constructorArguments: [oftAddress, protocolFeesBurnerAddress],
+    });
+  });
