@@ -102,7 +102,8 @@ export function getUserConfig(): UserConfig | undefined {
   if (p) {
     const jsonFile = toAbsoluteFileWithExtension(p, '.json', process.cwd());
     if (!existsSync(jsonFile)) {
-      throw new Error(`Codegen config file at ${jsonFile} does not exist.`);
+      errorLog(`Codegen config file at ${jsonFile} does not exist.`);
+      process.exit(1);
     }
     const json = readFileSync(jsonFile, 'utf8');
     debugLog(`Load config file: ${jsonFile}`);
@@ -326,18 +327,28 @@ export function generatePrettierConfig(baseDir: string) {
   }
 }
 
-export async function writeFile(file: string, content: string) {
+export async function formatAndWriteFile(file: string, content: string) {
   if (!path.isAbsolute(file)) {
     throw new Error(`Path ${file} is not absolute.`);
   }
+
+  const existingCode = readFileSync(file, 'utf8');
+
   debugLog(`format file ${file}`);
   const res = await formatFileUsingPrettier(file, content);
+
+  const dir = path.dirname(file);
+  if (!existsSync(dir)) {
+    mkDir(dir);
+  }
+
+  if (res.fromattedCode === existingCode) {
+    debugLog(`✅ file ${file} unchanged`);
+    return;
+  }
+
   if (!isDryRun()) {
-    debugLog(`write file ${file}`);
-    const dir = path.dirname(file);
-    if (!existsSync(dir)) {
-      mkDir(dir);
-    }
+    debugLog(`🚚 write file ${file}`);
     writeFileSync(file, res.fromattedCode);
   } else {
     debugLog(`Skip write file ${file} (dry-run)`);

@@ -1,4 +1,4 @@
-export const RND = [
+const RND: bigint[] = [
   BigInt('0x4fee8f3d9250b4f525617b333368b9ea'),
   BigInt('0xf33c8dc9bb60f76d612b0ed1228ec97d'),
   BigInt('0xd60aab2c9603f60e88c36ffee436d9c8'),
@@ -19,7 +19,7 @@ export const RND = [
 
 let counter = 0;
 export function rndBit(): 1 | 0 {
-  const i = (counter / 128) % RND.length;
+  const i = Math.floor(counter / 128) % RND.length;
   const j = counter % 128;
   counter++;
   return ((RND[i] >> BigInt(j)) & 1n) === 1n ? 1 : 0;
