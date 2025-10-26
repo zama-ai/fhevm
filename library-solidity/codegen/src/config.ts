@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import * as path from 'path';
 import * as prettier from 'prettier';
 
-import { assertRelative } from './utils/paths';
+import { assertRelative } from './paths';
 
 export type UserSolidityTestGroup = {
   outDir: string;
@@ -295,7 +295,7 @@ export function mkDir(dir: string) {
       debugLog(`mkdir -p ${dir}`);
       mkdirSync(dir, { recursive: true });
     } else {
-      debugLog(`Skip create directory ${dir} (dry-run)`);
+      debugLog(`[dry-run] Skip create directory ${dir}`);
     }
   }
 }
@@ -332,7 +332,10 @@ export async function formatAndWriteFile(file: string, content: string) {
     throw new Error(`Path ${file} is not absolute.`);
   }
 
-  const existingCode = readFileSync(file, 'utf8');
+  let existingCode: string | undefined = undefined;
+  if (existsSync(file)) {
+    existingCode = readFileSync(file, 'utf8');
+  }
 
   debugLog(`format file ${file}`);
   const res = await formatFileUsingPrettier(file, content);
@@ -342,8 +345,8 @@ export async function formatAndWriteFile(file: string, content: string) {
     mkDir(dir);
   }
 
-  if (res.fromattedCode === existingCode) {
-    debugLog(`✅ file ${file} unchanged`);
+  if (existingCode !== undefined && res.fromattedCode === existingCode) {
+    debugLog(`✅ Unchanged file ${file}`);
     return;
   }
 
@@ -351,7 +354,7 @@ export async function formatAndWriteFile(file: string, content: string) {
     debugLog(`🚚 write file ${file}`);
     writeFileSync(file, res.fromattedCode);
   } else {
-    debugLog(`Skip write file ${file} (dry-run)`);
+    debugLog(`[dry-run] Skip write file ${file}`);
   }
 }
 
