@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS prss_init (
     id BYTEA NOT NULL,
     under_process BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    otlp_context BYTEA NOT NULL,
     PRIMARY KEY (id)
 );
 

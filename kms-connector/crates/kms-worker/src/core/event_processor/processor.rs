@@ -54,7 +54,10 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
                 Ok(response)
             }
             (Err(ProcessingError::Irrecoverable(e)), _)
-            | (Err(ProcessingError::Recoverable(e)), GatewayEventKind::PrssInit(_)) => {
+            | (
+                Err(ProcessingError::Recoverable(e)),
+                GatewayEventKind::PrssInit(_) | GatewayEventKind::KeyReshareSameSet(_),
+            ) => {
                 event.delete_from_db(&self.db_pool).await;
                 Err(ProcessingError::Irrecoverable(e))
             }
@@ -116,24 +119,21 @@ impl<P: Provider> DbEventProcessor<P> {
                     )
                     .await
             }
-            GatewayEventKind::PrepKeygen(req) => {
-                self.kms_generation_processor
-                    .prepare_prep_keygen_request(req)
-                    .await
-            }
+            GatewayEventKind::PrepKeygen(req) => self
+                .kms_generation_processor
+                .prepare_prep_keygen_request(req),
             GatewayEventKind::Keygen(req) => {
-                self.kms_generation_processor
-                    .prepare_keygen_request(req)
-                    .await
+                self.kms_generation_processor.prepare_keygen_request(req)
             }
             GatewayEventKind::Crsgen(req) => {
-                self.kms_generation_processor
-                    .prepare_crsgen_request(req)
-                    .await
+                self.kms_generation_processor.prepare_crsgen_request(req)
             }
             GatewayEventKind::PrssInit(id) => {
                 Ok(self.kms_generation_processor.prepare_prss_init_request(id))
             }
+            GatewayEventKind::KeyReshareSameSet(req) => self
+                .kms_generation_processor
+                .prepare_initiate_resharing_request(req),
         }
         .map_err(ProcessingError::Recoverable)
     }

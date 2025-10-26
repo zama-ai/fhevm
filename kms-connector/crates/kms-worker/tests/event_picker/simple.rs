@@ -12,7 +12,9 @@ use connector_utils::{
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    kms_generation::KMSGeneration::{
+        CrsgenRequest, KeyReshareSameSet, KeygenRequest, PrepKeygenRequest,
+    },
 };
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
 use std::time::Duration;
@@ -248,8 +250,9 @@ async fn test_prss_init() -> anyhow::Result<()> {
 
     info!("Triggering Postgres notification with PrssInit insertion...");
     sqlx::query!(
-        "INSERT INTO prss_init(id) VALUES ($1) ON CONFLICT DO NOTHING",
+        "INSERT INTO prss_init(id, otlp_context) VALUES ($1, $2) ON CONFLICT DO NOTHING",
         PRSS_INIT_ID.as_le_slice(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
     )
     .execute(test_instance.db())
     .await?;
@@ -263,6 +266,51 @@ async fn test_prss_init() -> anyhow::Result<()> {
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
             kind: GatewayEventKind::PrssInit(PRSS_INIT_ID)
+        }]
+    );
+    info!("Data OK!");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_pick_key_reshare_same_set() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_setup().await?;
+
+    let mut event_picker =
+        DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
+
+    let prep_keygen_id = rand_u256();
+    let key_id = rand_u256();
+    let key_reshare_id = rand_u256();
+    let params_type = ParamsTypeDb::Test;
+
+    info!("Triggering Postgres notification with KeyReshareSameSet insertion...");
+    sqlx::query!(
+        "INSERT INTO key_reshare_same_set(prep_keygen_id, key_id, key_reshare_id, params_type, otlp_context) \
+        VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+        prep_keygen_id.as_le_slice(),
+        key_id.as_le_slice(),
+        key_reshare_id.as_le_slice(),
+        params_type as ParamsTypeDb,
+        bc2wrap::serialize(&PropagationContext::empty())?,
+    )
+    .execute(test_instance.db())
+    .await?;
+
+    info!("Picking KeyReshareSameSet...");
+    let events = event_picker.pick_events().await?;
+
+    info!("Checking KeyReshareSameSet data...");
+    assert_eq!(
+        events,
+        vec![GatewayEvent {
+            otlp_context: PropagationContext::empty(),
+            kind: GatewayEventKind::KeyReshareSameSet(KeyReshareSameSet {
+                prepKeygenId: prep_keygen_id,
+                keyId: key_id,
+                keyReshareId: key_reshare_id,
+                paramsType: params_type as u8,
+            })
         }]
     );
     info!("Data OK!");
