@@ -4,7 +4,9 @@ use connector_utils::types::KmsGrpcRequest;
 use fhevm_gateway_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
-use kms_grpc::kms::v1::{CrsGenRequest, KeyGenPreprocRequest, KeyGenRequest, RequestId};
+use kms_grpc::kms::v1::{
+    CrsGenRequest, InitRequest, KeyGenPreprocRequest, KeyGenRequest, RequestId,
+};
 use std::borrow::Cow;
 use tracing::{error, info};
 
@@ -109,5 +111,12 @@ impl KMSGenerationProcessor {
             max_num_bits,
             context_id: None,
         }))
+    }
+
+    pub fn prepare_prss_init_request(&self, id: U256) -> KmsGrpcRequest {
+        let request_id = Some(RequestId {
+            request_id: hex::encode(id.to_be_bytes::<32>()),
+        });
+        KmsGrpcRequest::PrssInit(InitRequest { request_id })
     }
 }

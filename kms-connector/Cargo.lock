@@ -1953,16 +1953,7 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.12.0#dcb36704f6852af6f042da3541228dff0fd297fd"
-dependencies = [
- "bincode 2.0.1",
- "serde",
-]
-
-[[package]]
-name = "bc2wrap"
-version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?rev=c22a3c5cfc6603114d411d0d3d5c5252b33ad0cb#c22a3c5cfc6603114d411d0d3d5c5252b33ad0cb"
+source = "git+https://github.com/zama-ai/kms.git?tag=v0.12.2#8a406de72886a469eef71ed590c114775f6ce653"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -2405,7 +2396,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-kms",
- "bc2wrap 2.0.1 (git+https://github.com/zama-ai/kms.git?tag=v0.12.0)",
+ "bc2wrap",
  "clap",
  "config",
  "fhevm_gateway_bindings",
@@ -2991,7 +2982,7 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.9.0#6f108f405b21beed28182a180a039aa77e030b4c"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=1d754ab76a962eeefe35b393e5f6bf583f492938#1d754ab76a962eeefe35b393e5f6bf583f492938"
 dependencies = [
  "alloy",
  "serde",
@@ -3327,7 +3318,7 @@ dependencies = [
  "actix-web",
  "alloy",
  "anyhow",
- "bc2wrap 2.0.1 (git+https://github.com/zama-ai/kms.git?tag=v0.12.0)",
+ "bc2wrap",
  "connector-utils",
  "fhevm_gateway_bindings",
  "opentelemetry",
@@ -3994,6 +3985,7 @@ dependencies = [
  "once_cell",
  "serdect",
  "sha2",
+ "signature",
 ]
 
 [[package]]
@@ -4017,8 +4009,8 @@ dependencies = [
 
 [[package]]
 name = "kms-grpc"
-version = "0.12.0"
-source = "git+https://github.com/zama-ai/kms.git?rev=c22a3c5cfc6603114d411d0d3d5c5252b33ad0cb#c22a3c5cfc6603114d411d0d3d5c5252b33ad0cb"
+version = "0.12.2"
+source = "git+https://github.com/zama-ai/kms.git?tag=v0.12.2#8a406de72886a469eef71ed590c114775f6ce653"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -4048,7 +4040,7 @@ dependencies = [
  "actix-web",
  "alloy",
  "anyhow",
- "bc2wrap 2.0.1 (git+https://github.com/zama-ai/kms.git?tag=v0.12.0)",
+ "bc2wrap",
  "config",
  "connector-utils",
  "dashmap",
@@ -6695,14 +6687,14 @@ dependencies = [
 
 [[package]]
 name = "threshold-fhe"
-version = "0.12.0"
-source = "git+https://github.com/zama-ai/kms.git?rev=c22a3c5cfc6603114d411d0d3d5c5252b33ad0cb#c22a3c5cfc6603114d411d0d3d5c5252b33ad0cb"
+version = "0.12.2"
+source = "git+https://github.com/zama-ai/kms.git?tag=v0.12.2#8a406de72886a469eef71ed590c114775f6ce653"
 dependencies = [
  "aes",
  "aes-prng",
  "anyhow",
  "async-trait",
- "bc2wrap 2.0.1 (git+https://github.com/zama-ai/kms.git?rev=c22a3c5cfc6603114d411d0d3d5c5252b33ad0cb)",
+ "bc2wrap",
  "bincode 2.0.1",
  "cfg-if",
  "clap",
@@ -6715,6 +6707,7 @@ dependencies = [
  "getrandom 0.2.15",
  "hex",
  "itertools 0.14.0",
+ "k256",
  "lazy_static",
  "mockall",
  "ndarray",
@@ -7201,7 +7194,7 @@ dependencies = [
  "actix-web",
  "alloy",
  "anyhow",
- "bc2wrap 2.0.1 (git+https://github.com/zama-ai/kms.git?tag=v0.12.0)",
+ "bc2wrap",
  "connector-utils",
  "fhevm_gateway_bindings",
  "prometheus",

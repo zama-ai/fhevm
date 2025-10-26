@@ -10,16 +10,18 @@ use crate::{
         KEY_MANAGEMENT_RESPONSE_COUNTER, KEY_MANAGEMENT_RESPONSE_ERRORS,
     },
 };
-use alloy::primitives::U256;
+use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
 use connector_utils::{
     conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
-    types::{KmsGrpcRequest, KmsGrpcResponse, decode_request_id, u256_to_u32},
+    types::{
+        KmsGrpcRequest, KmsGrpcResponse, decode_request_id, gw_event::PRSS_INIT_ID, u256_to_u32,
+    },
 };
 use kms_grpc::{
     kms::v1::{
-        CrsGenRequest, Empty, KeyGenPreprocRequest, KeyGenRequest, PublicDecryptionRequest,
-        RequestId, UserDecryptionRequest,
+        CrsGenRequest, Empty, InitRequest, KeyGenPreprocRequest, KeyGenRequest,
+        PublicDecryptionRequest, RequestId, UserDecryptionRequest,
     },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
@@ -127,6 +129,7 @@ impl KmsClient {
             KmsGrpcRequest::PrepKeygen(req) => self.request_prep_keygen(req).await,
             KmsGrpcRequest::Keygen(req) => self.request_keygen(req).await,
             KmsGrpcRequest::Crsgen(req) => self.request_crsgen(req).await,
+            KmsGrpcRequest::PrssInit(req) => self.request_prss_init(req).await,
         }
     }
 
@@ -330,6 +333,27 @@ impl KmsClient {
         .map_err(ProcessingError::from_response_status)?;
 
         Ok(KmsGrpcResponse::Crsgen(grpc_response.into_inner()))
+    }
+
+    async fn request_prss_init(
+        &self,
+        request: InitRequest,
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
+        let inner_client = self.choose_client(RequestId {
+            request_id: hex::encode(PRSS_INIT_ID.as_le_slice()),
+        });
+        send_request_with_retry(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.init(request).await }
+            },
+            &KEY_MANAGEMENT_REQUEST_SENT_COUNTER,
+            &KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
+        )
+        .await?;
+        Ok(KmsGrpcResponse::NoResponseExpected)
     }
 
     fn choose_client(&self, request_id: RequestId) -> CoreServiceEndpointClient<Channel> {

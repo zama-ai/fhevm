@@ -2,7 +2,10 @@ use alloy::{
     primitives::{Address, Bytes, U256},
     providers::Provider,
 };
-use connector_utils::{tests::rand::rand_signature, types::db::SnsCiphertextMaterialDbItem};
+use connector_utils::{
+    tests::rand::rand_signature,
+    types::{db::SnsCiphertextMaterialDbItem, gw_event::PRSS_INIT_ID},
+};
 use connector_utils::{
     tests::{
         rand::{rand_address, rand_public_key, rand_u256},
@@ -179,7 +182,7 @@ async fn test_publish_prep_keygen() -> anyhow::Result<()> {
     let epoch_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?);
     let params_type = row.try_get::<ParamsTypeDb, _>("params_type")?;
     assert_eq!(prep_id, PREP_KEY_COUNTER + U256::ONE);
-    assert_eq!(epoch_id, U256::default());
+    assert_eq!(epoch_id, EPOCH_ID_COUNTER + U256::ONE);
     assert_eq!(params_type, ParamsTypeDb::Test);
     info!("Event successfully stored! Stopping GatewayListener...");
 
@@ -280,6 +283,51 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
     assert_eq!(crs_id, CRS_COUNTER + U256::ONE);
     assert_eq!(max_bit_length, rand_max_bit_length);
     assert_eq!(params_type, ParamsTypeDb::Test);
+    info!("Event successfully stored! Stopping GatewayListener...");
+
+    cancel_token.cancel();
+    Ok(gw_listener_task?.await?)
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_publish_prss_init() -> anyhow::Result<()> {
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let cancel_token = CancellationToken::new();
+    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
+
+    // Wait for gw-listener to be ready + 2 anvil blocks
+    test_instance
+        .wait_for_log("Waiting for next PrssInit...")
+        .await;
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
+
+    info!("Mocking PrssInit on Anvil...");
+    let pending_tx = test_instance
+        .kms_generation_contract()
+        .prssInit()
+        .send()
+        .await?;
+    let receipt = pending_tx.get_receipt().await?;
+    let _tx = test_instance
+        .provider()
+        .get_transaction_by_hash(receipt.transaction_hash)
+        .await?
+        .unwrap();
+    info!("Tx successfully sent!");
+
+    test_instance
+        .wait_for_log("Event successfully stored in DB!")
+        .await;
+
+    info!("Checking event is stored in DB...");
+    let row = sqlx::query("SELECT id FROM prss_init")
+        .fetch_one(test_instance.db())
+        .await?;
+
+    let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("id")?);
+    assert_eq!(id, PRSS_INIT_ID);
     info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
@@ -413,4 +461,8 @@ const KEY_COUNTER: U256 = U256::from_be_bytes([
 
 const CRS_COUNTER: U256 = U256::from_be_bytes([
     5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+]);
+
+const EPOCH_ID_COUNTER: U256 = U256::from_be_bytes([
+    6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]);

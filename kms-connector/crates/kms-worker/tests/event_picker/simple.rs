@@ -7,6 +7,7 @@ use connector_utils::{
     types::{
         GatewayEvent, GatewayEventKind,
         db::{ParamsTypeDb, SnsCiphertextMaterialDbItem},
+        gw_event::PRSS_INIT_ID,
     },
 };
 use fhevm_gateway_bindings::{
@@ -232,6 +233,36 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
                 maxBitLength: max_bit_length,
                 paramsType: params_type as u8,
             })
+        }]
+    );
+    info!("Data OK!");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_prss_init() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_setup().await?;
+
+    let mut event_picker =
+        DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
+
+    info!("Triggering Postgres notification with PrssInit insertion...");
+    sqlx::query!(
+        "INSERT INTO prss_init(id) VALUES ($1) ON CONFLICT DO NOTHING",
+        PRSS_INIT_ID.as_le_slice(),
+    )
+    .execute(test_instance.db())
+    .await?;
+
+    info!("Picking PrssInit...");
+    let events = event_picker.pick_events().await?;
+
+    info!("Checking PrssInit data...");
+    assert_eq!(
+        events,
+        vec![GatewayEvent {
+            otlp_context: PropagationContext::empty(),
+            kind: GatewayEventKind::PrssInit(PRSS_INIT_ID)
         }]
     );
     info!("Data OK!");

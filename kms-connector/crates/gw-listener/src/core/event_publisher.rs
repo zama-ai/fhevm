@@ -1,4 +1,5 @@
 use crate::monitoring::metrics::EVENT_STORED_COUNTER;
+use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
@@ -45,6 +46,7 @@ impl EventPublisher for DbEventPublisher {
             GatewayEventKind::PrepKeygen(e) => self.publish_prep_keygen_request(e, otlp_ctx).await,
             GatewayEventKind::Keygen(e) => self.publish_keygen_request(e, otlp_ctx).await,
             GatewayEventKind::Crsgen(e) => self.publish_crsgen_request(e, otlp_ctx).await,
+            GatewayEventKind::PrssInit(id) => self.publish_prss_init(id).await,
         }
         .map_err(|err| anyhow!("Failed to publish event: {err}"))?;
 
@@ -158,6 +160,16 @@ impl DbEventPublisher {
             request.maxBitLength.as_le_slice(),
             params_type as ParamsTypeDb,
             bc2wrap::serialize(&otlp_ctx)?,
+        )
+        .execute(&self.db_pool)
+        .await
+        .map_err(anyhow::Error::from)
+    }
+
+    async fn publish_prss_init(&self, id: U256) -> anyhow::Result<PgQueryResult> {
+        sqlx::query!(
+            "INSERT INTO prss_init(id) VALUES ($1) ON CONFLICT DO NOTHING",
+            id.as_le_slice(),
         )
         .execute(&self.db_pool)
         .await
