@@ -57,3 +57,17 @@ export function toBigInt(x: unknown): bigint | undefined {
   }
   return undefined;
 }
+
+export function removeTemplateComments(inputString: string): string {
+  // Regex explanation:
+  // ^                   : Start of a line (due to the 'm' flag)
+  // [ \t]* : Match zero or more whitespace characters (spaces or tabs)
+  // (\/\/\$\$\s*.*)     : Capture group for '//$$' prefix followed by the rest of the line
+  // $                   : End of the line
+  // /gm                 : Flags: g (global, replace all matches), m (multiline, ^ and $ match start/end of line)
+
+  const regex = /^[ \t]*(\/\/\$\$\s*.*)$/gm;
+
+  // Replace all matches with an empty string
+  return inputString.replace(regex, '');
+}
