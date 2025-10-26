@@ -6,6 +6,7 @@ import {
   type TestGroup,
   debugLog,
   errorLog,
+  formatAndWriteFile,
   generatePrettierConfig,
   getUserConfig,
   getUserOverloadsFile,
@@ -14,7 +15,6 @@ import {
   toAbsoluteFileWithExtension,
   toAbsulteConfig,
   toImportsCode,
-  writeFile,
 } from './config';
 import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos';
 import { type OverloadTests, generateOverloads } from './generateOverloads';
@@ -66,7 +66,7 @@ export async function writeOverloadsIfChanged(
 ): Promise<void> {
   if (!isDeepStrictEqual(newOverloads, existingOverloads)) {
     debugLog(`Save new overloads file at ${overloadsFile}`);
-    await writeFile(
+    await formatAndWriteFile(
       overloadsFile,
       JSON.stringify(newOverloads, (_key, value) => {
         return typeof value === 'bigint' ? value.toString() + 'n' : value;
@@ -208,9 +208,9 @@ export async function commandGenerateAllFiles(options: any) {
     mkDir(path.dirname(fheDotSol));
 
     // Generate core Solidity contract files.
-    await writeFile(`${fheTypesDotSol}`, fheTypesCode);
-    await writeFile(`${implDotSol}`, implCode);
-    await writeFile(`${fheDotSol}`, fheCode);
+    await formatAndWriteFile(`${fheTypesDotSol}`, fheTypesCode);
+    await formatAndWriteFile(`${implDotSol}`, implCode);
+    await formatAndWriteFile(`${fheDotSol}`, fheCode);
   } else {
     debugLog(`Skipping lib generation.`);
   }
@@ -218,7 +218,7 @@ export async function commandGenerateAllFiles(options: any) {
   if (config.noHostContracts !== true) {
     // host contracts directory must exist.
     // Generate Host contracts contract files.
-    await writeFile(`${hcuLimitDotSol}`, hcuCode);
+    await formatAndWriteFile(`${hcuLimitDotSol}`, hcuCode);
   } else {
     debugLog(`Skipping host contracts generation.`);
   }
@@ -281,7 +281,7 @@ export async function commandGenerateAllFiles(options: any) {
     */
     await Promise.all(
       overloadShards.map((os) =>
-        writeFile(
+        formatAndWriteFile(
           path.join(solidityTestGroup.outDir, `FHEVMTestSuite${os.shardNumber}.sol`),
           generateSolidityUnitTestContracts(
             os,
@@ -310,7 +310,7 @@ export async function commandGenerateAllFiles(options: any) {
       config.tests,
     );
     tsSplits.forEach((split, splitIdx) =>
-      writeFile(path.join(typescriptTestGroup.outDir, `fhevmOperations${splitIdx + 1}.ts`), split),
+      formatAndWriteFile(path.join(typescriptTestGroup.outDir, `fhevmOperations${splitIdx + 1}.ts`), split),
     );
   } else {
     debugLog(`No Typescript tests.`);
