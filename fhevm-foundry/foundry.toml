@@ -1,0 +1,18 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib", "dependencies"]
+
+remappings = [
+    '@fhevm-host-contracts/=../host-contracts/',
+    '@openzeppelin/contracts/=dependencies/@openzeppelin-contracts-5.1.0/',
+    '@openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.1.0/',
+    'forge-std/=dependencies/forge-std-1.11.0/src/'
+]
+
+allow_paths = ["../"]
+
+[dependencies]
+forge-std = "1.11.0"
+"@openzeppelin-contracts" = "5.1.0"
+"@openzeppelin-contracts-upgradeable" = "5.1.0"

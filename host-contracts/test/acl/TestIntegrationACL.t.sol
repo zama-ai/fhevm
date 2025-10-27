@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {euint64} from "encrypted-types/EncryptedTypes.sol";
-import {HostContractsDeployerTestUtils} from "../utils/HostContractsDeployerTestUtils.sol";
+import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {FHE} from "../../lib/FHE.sol";
