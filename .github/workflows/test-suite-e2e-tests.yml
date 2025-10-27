@@ -50,6 +50,7 @@ on:
   pull_request:
     branches:
       - main
+      - release/*
 
 permissions: {}
 

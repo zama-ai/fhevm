@@ -1,6 +1,6 @@
 use alloy_primitives::Address;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::telemetry::{self};
 use fhevm_engine_common::tenant_keys::TfheTenantKeys;
 use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
@@ -19,7 +19,7 @@ use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformancePara
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 
-use crate::{auxiliary, Config, ExecutionError, MAX_INPUT_INDEX};
+use crate::{auxiliary, Config, ExecutionError, MAX_INPUT_INDEX, ZKVERIFY_OP_LATENCY_HISTOGRAM};
 use anyhow::Result;
 
 use std::sync::Arc;
@@ -235,6 +235,7 @@ async fn execute_verify_proof_routine(
     .fetch_one(&mut *txn)
     .await
     {
+        let started_at = SystemTime::now();
         let request_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
         let chain_id: i64 = row.get("chain_id");
@@ -280,7 +281,7 @@ async fn execute_verify_proof_routine(
 
         let mut verified = false;
         let mut handles_bytes = vec![];
-        match res {
+        match res.as_ref() {
             Ok((cts, blob_hash)) => {
                 info!(
                     message = "Proof verification successful",
@@ -328,6 +329,13 @@ async fn execute_verify_proof_routine(
             .await?;
 
         txn.commit().await?;
+
+        if res.is_ok() {
+            let elapsed = started_at.elapsed().unwrap_or_default().as_secs_f64();
+            if elapsed > 0.0 {
+                ZKVERIFY_OP_LATENCY_HISTOGRAM.observe(elapsed);
+            }
+        }
 
         info!(message = "Completed", request_id);
     }
@@ -504,8 +512,8 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
 pub(crate) async fn insert_ciphertexts(
     db_txn: &mut Transaction<'_, Postgres>,
     tenant_id: i32,
-    cts: Vec<Ciphertext>,
-    blob_hash: Vec<u8>,
+    cts: &[Ciphertext],
+    blob_hash: &Vec<u8>,
 ) -> Result<(), ExecutionError> {
     for (i, ct) in cts.iter().enumerate() {
         sqlx::query!(

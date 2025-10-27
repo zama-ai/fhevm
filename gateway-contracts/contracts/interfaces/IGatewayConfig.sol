@@ -36,6 +36,13 @@ interface IGatewayConfig {
     );
 
     /**
+     * @notice Emitted when the GatewayConfig is re-initialized from V2.
+     * @param newCoprocessors The new coprocessors.
+     * @param coprocessorThreshold The new coprocessor threshold.
+     */
+    event ReinitializeGatewayConfigV2(Coprocessor[] newCoprocessors, uint256 coprocessorThreshold);
+
+    /**
      * @notice Emitted when the MPC threshold has been updated.
      * @param newMpcThreshold The new MPC threshold.
      */
@@ -60,6 +67,12 @@ interface IGatewayConfig {
     event UpdateKmsGenThreshold(uint256 newKmsGenThreshold);
 
     /**
+     * @notice Emitted when the coprocessor threshold has been updated.
+     * @param newCoprocessorThreshold The new coprocessor threshold.
+     */
+    event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
+
+    /**
      * @notice Emitted when a new host chain has been registered.
      * @param hostChain The new host chain metadata.
      */
@@ -71,13 +84,19 @@ interface IGatewayConfig {
      */
     error NotPauser(address account);
 
-    /// @notice Error emitted when the KMS nodes list is empty.
+    /**
+     * @notice Error emitted when the KMS nodes list is empty.
+     */
     error EmptyKmsNodes();
 
-    /// @notice Error emitted when the coprocessors list is empty.
+    /**
+     * @notice Error emitted when the coprocessors list is empty.
+     */
     error EmptyCoprocessors();
 
-    /// @notice Error emitted when the custodians list is empty.
+    /**
+     * @notice Error emitted when the custodians list is empty.
+     */
     error EmptyCustodians();
 
     /**
@@ -87,27 +106,53 @@ interface IGatewayConfig {
      */
     error InvalidHighMpcThreshold(uint256 mpcThreshold, uint256 nKmsNodes);
 
-    /// @notice Error emitted when the public decryption threshold is null.
+    /**
+     * @notice Error emitted when the public decryption threshold is null.
+     */
     error InvalidNullPublicDecryptionThreshold();
 
-    /// @notice Error emitted when the public decryption threshold is strictly greater than the number of KMS nodes.
-    /// @param publicDecryptionThreshold The public decryption threshold.
-    /// @param nKmsNodes The number of KMS nodes.
+    /**
+     * @notice Error emitted when the public decryption threshold is strictly greater than the number of KMS nodes.
+     * @param publicDecryptionThreshold The public decryption threshold.
+     * @param nKmsNodes The number of KMS nodes.
+     */
     error InvalidHighPublicDecryptionThreshold(uint256 publicDecryptionThreshold, uint256 nKmsNodes);
 
-    /// @notice Error emitted when the user decryption threshold is null.
+    /**
+     * @notice Error emitted when the user decryption threshold is null.
+     */
     error InvalidNullUserDecryptionThreshold();
 
-    /// @notice Error emitted when the user decryption threshold is strictly greater than the number of KMS nodes.
-    /// @param userDecryptionThreshold The user decryption threshold.
-    /// @param nKmsNodes The number of KMS nodes.
+    /**
+     * @notice Error emitted when the user decryption threshold is strictly greater than the number of KMS nodes.
+     * @param userDecryptionThreshold The user decryption threshold.
+     * @param nKmsNodes The number of KMS nodes.
+     */
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
 
-    /// @notice Error emitted when the key and CRS generation threshold is null.
+    /**
+     * @notice Error emitted when the key and CRS generation threshold is null.
+     */
     error InvalidNullKmsGenThreshold();
 
-    /// @notice Error emitted when the key and CRS generation threshold is strictly greater than the number of KMS nodes.
+    /**
+     * @notice Error emitted when the key and CRS generation threshold is strictly greater than the number of KMS nodes.
+     * @param kmsGenThreshold The key and CRS generation threshold.
+     * @param nKmsNodes The number of KMS nodes.
+     */
     error InvalidHighKmsGenThreshold(uint256 kmsGenThreshold, uint256 nKmsNodes);
+
+    /**
+     * @notice Error emitted when the coprocessor threshold is null.
+     */
+    error InvalidNullCoprocessorThreshold();
+
+    /**
+     * @notice Error emitted when the coprocessor threshold is strictly greater than the number of coprocessors.
+     * @param coprocessorThreshold The coprocessor threshold.
+     * @param nCoprocessors The number of coprocessors.
+     */
+    error InvalidHighCoprocessorThreshold(uint256 coprocessorThreshold, uint256 nCoprocessors);
 
     /**
      * @notice Emitted when all the pausable gateway contracts are paused.
@@ -170,6 +215,13 @@ interface IGatewayConfig {
      * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
     function updateKmsGenThreshold(uint256 newKmsGenThreshold) external;
+
+    /**
+     * @notice Update the coprocessor threshold.
+     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of coprocessors currently registered.
+     * @param newCoprocessorThreshold The new coprocessor threshold.
+     */
+    function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
 
     /**
      * @notice Pause all pausable gateway contracts.

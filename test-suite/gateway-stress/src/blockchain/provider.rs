@@ -1,7 +1,7 @@
 use alloy::{
     consensus::Account,
-    eips::{BlockId, BlockNumberOrTag},
-    network::{Network, TransactionBuilder},
+    eips::{BlockId, BlockNumberOrTag, Encodable2718},
+    network::{Ethereum, Network, TransactionBuilder},
     primitives::{
         Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U64, U128,
         U256,
@@ -11,50 +11,95 @@ use alloy::{
         PendingTransaction, PendingTransactionBuilder, PendingTransactionConfig,
         PendingTransactionError, Provider, ProviderCall, RootProvider, RpcWithBlock, SendableTx,
         fillers::{
-            BlobGasFiller, CachedNonceManager, ChainIdFiller, GasFiller, JoinFill, NonceManager,
+            BlobGasFiller, CachedNonceManager, FillProvider, GasFiller, JoinFill, NonceManager,
+            TxFiller,
         },
     },
     rpc::{
         client::NoParams,
         types::{
             AccessListResult, Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory,
-            Filter, FilterChanges, Index, Log, SyncStatus,
+            Filter, FilterChanges, Index, Log, SyncStatus, TransactionReceipt, TransactionRequest,
             erc4337::TransactionConditional,
             pubsub::{Params, SubscriptionKind},
             simulate::{SimulatePayload, SimulatedBlock},
         },
     },
-    transports::TransportResult,
+    transports::{TransportError, TransportResult},
 };
 use futures::lock::Mutex;
 use serde_json::value::RawValue;
 use std::{borrow::Cow, sync::Arc};
 
-pub type FillersWithoutNonceManagement =
-    JoinFill<GasFiller, JoinFill<BlobGasFiller, ChainIdFiller>>;
+pub type FillersWithoutNonceManagement = JoinFill<GasFiller, BlobGasFiller>;
 
 /// A wrapper around an `alloy` provider that recovers its nonce manager on error.
 ///
 /// Note that the provider given by the user must not have nonce management enabled, as this
 /// is done by the `NonceManagedProvider` itself.
 /// Users can use the default `FillersWithoutNonceManagement` to create a provider.
-pub struct NonceManagedProvider<P> {
-    inner: P,
+pub struct NonceManagedProvider<F, P, N = Ethereum>
+where
+    N: Network,
+    F: TxFiller<N>,
+    P: Provider<N>,
+{
+    inner: FillProvider<F, P, N>,
     signer_address: Address,
     nonce_manager: Arc<Mutex<CachedNonceManager>>,
 }
 
-impl<P> NonceManagedProvider<P> {
-    pub fn new(provider: P, signer_address: Address) -> Self {
+impl<F, P> NonceManagedProvider<F, P>
+where
+    F: TxFiller<Ethereum>,
+    P: Provider<Ethereum>,
+{
+    pub fn new(provider: FillProvider<F, P, Ethereum>, signer_address: Address) -> Self {
         Self {
             inner: provider,
             signer_address,
             nonce_manager: Default::default(),
         }
     }
+
+    pub async fn send_transaction_sync(
+        &self,
+        mut tx: TransactionRequest,
+    ) -> TransportResult<TransactionReceipt> {
+        let nonce = self
+            .nonce_manager
+            .lock()
+            .await
+            .get_next_nonce(&self.inner, self.signer_address)
+            .await?;
+        tx.set_nonce(nonce);
+
+        let mut tx_bytes = Vec::new();
+        self.inner
+            .fill(tx)
+            .await?
+            .try_into_envelope()
+            .map_err(|e| TransportError::LocalUsageError(Box::new(e)))?
+            .encode_2718(&mut tx_bytes);
+
+        let res = self
+            .client()
+            .request("eth_sendRawTransactionSync", (Bytes::from(tx_bytes),))
+            .await;
+        if res.is_err() {
+            // Reset the nonce manager if the transaction sending failed.
+            *self.nonce_manager.lock().await = Default::default();
+        }
+        res
+    }
 }
 
-impl<P: Clone> Clone for NonceManagedProvider<P> {
+impl<F, P, N> Clone for NonceManagedProvider<F, P, N>
+where
+    N: Network,
+    F: TxFiller<N>,
+    P: Provider<N> + Clone,
+{
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -65,8 +110,10 @@ impl<P: Clone> Clone for NonceManagedProvider<P> {
 }
 
 #[async_trait::async_trait]
-impl<N: Network, P> Provider<N> for NonceManagedProvider<P>
+impl<F, P, N> Provider<N> for NonceManagedProvider<F, P, N>
 where
+    N: Network,
+    F: TxFiller<N>,
     P: Provider<N>,
 {
     fn root(&self) -> &RootProvider<N> {

@@ -12,6 +12,7 @@ import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';
 import './tasks/blockExplorerVerify';
+import './tasks/ownership';
 import './tasks/pauseContracts';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
@@ -87,7 +88,6 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 }
 
 const config: HardhatUserConfig = {
-  defaultNetwork: 'sepolia',
   namedAccounts: {
     deployer: 0,
   },

@@ -575,4 +575,28 @@ contract KMSVerifierTest is Test {
         vm.expectRevert(KMSVerifier.DeserializingDecryptionProofFail.selector);
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
     }
+
+    /// @dev This function exists for the test below to call it externally.
+    function emptyUpgrade() public {
+        address[] memory emptySigners = new address[](0);
+        implementation = address(new KMSVerifier());
+
+        UnsafeUpgrades.upgradeProxy(
+            proxy,
+            implementation,
+            abi.encodeCall(
+                KMSVerifier.initializeFromEmptyProxy,
+                (verifyingContractSource, uint64(block.chainid), emptySigners, initialThreshold)
+            ),
+            owner
+        );
+    }
+
+    /**
+     * @dev Tests that the contract cannot be reinitialized if the initial signers set is empty.
+     */
+    function test_CannotReinitializeIfInitialSignersSetIsEmpty() public {
+        vm.expectPartialRevert(KMSVerifier.SignersSetIsEmpty.selector);
+        this.emptyUpgrade();
+    }
 }

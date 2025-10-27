@@ -10,7 +10,6 @@ import {EIP712UpgradeableCrossChain} from "../../contracts/shared/EIP712Upgradea
 import {ACL} from "../../contracts/ACL.sol";
 import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
-
 contract MockEIP712UpgradeableCrossChain is UUPSUpgradeable, EIP712UpgradeableCrossChain {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {

@@ -65,7 +65,7 @@ spec:
                 optional: true
           {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
           - name: MANIFEST_DEFAULT_DIR
-            value: "/app/addresses/.openzeppelin"
+            value: "{{ .Values.persistence.mountPath }}/.openzeppelin"
         {{- if .Values.scDeploy.env }}
           {{ toYaml .Values.scDeploy.env | nindent 10 }}
         {{- end }}
@@ -81,7 +81,7 @@ spec:
             name: old-contracts
           {{- end }}
           {{- if .Values.persistence.enabled }}
-          - mountPath: /app/addresses
+          - mountPath: {{ .Values.persistence.mountPath }}
             name: persistence
           {{- end }}
         resources:

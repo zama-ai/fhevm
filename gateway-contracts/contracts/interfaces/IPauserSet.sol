@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /**
  * @title Interface for the PauserSet contract.
  * @notice The PauserSet contract stores the list of all accounts who can pause gateway contracts.
- * @notice only GatewayConfig owner should be able to add or remove pausers.
+ * Only the GatewayConfig owner should be able to add or remove pausers.
  */
 interface IPauserSet {
     /**

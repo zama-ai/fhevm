@@ -3,9 +3,15 @@ pragma solidity ^0.8.24;
 
 import "../shared/FheType.sol";
 
+/**
+ * @title FHETypeBitSizes library
+ * @notice Library that provides utility functions for FHE types
+ */
 library FHETypeBitSizes {
-    // Cleartext bit size for each FHE type.
-    // Note that ebool have a bit size of 2.
+    /**
+     * @notice Cleartext bit size for each FHE type.
+     * @dev Note that ebool have a bit size of 2.
+     */
     uint16 internal constant EBOOL_SIZE = 2;
     uint16 internal constant EUINT8_SIZE = 8;
     uint16 internal constant EUINT16_SIZE = 16;
@@ -14,24 +20,29 @@ library FHETypeBitSizes {
     uint16 internal constant EUINT128_SIZE = 128;
     uint16 internal constant EUINT160_SIZE = 160;
     uint16 internal constant EUINT256_SIZE = 256;
-    /// @notice Error thrown when FHE type is not supported.
-    /// @param fheType The unsupported FHE type.
+
+    /**
+     * @notice Error thrown when FHE type is not supported.
+     * @param fheType The unsupported FHE type.
+     */
     error UnsupportedFHEType(FheType fheType);
 
-    /// @notice Get the bit size for a given FHE type.
-    /// @param fheType The FHE type.
-    /// @return The bit size for the given FHE type.
+    /**
+     * @notice Get the bit size for a given FHE type.
+     * @param fheType The FHE type.
+     * @return The bit size for the given FHE type.
+     */
     // solhint-disable-next-line code-complexity
     function getBitSize(FheType fheType) internal pure returns (uint16) {
-        /// @dev The following normally triggers a "cyclomatic complexity" error from solhint.
-        /// @dev This could be avoid by, for example, using fixed array that maps types with sizes.
-        /// @dev Still, we keep considering if-else branches as it will be easier to maintain if we
-        /// @dev need to consider or remove other types in the future.
-        /// @dev The full list of FHE types is available in the `FheType` enum and comes from the
-        /// @dev `fhevm-solidity` repository, which is directly based on TFHE-rs' list of supported
-        /// @dev types.
-        /// @dev Note that only a subset of them are currently supported (in particular, Uint4 is not
-        /// @dev supported). This list is also defined in the `fhevm-solidity` repository.
+        // The following normally triggers a "cyclomatic complexity" error from solhint.
+        // This could be avoid by, for example, using fixed array that maps types with sizes.
+        // Still, we keep considering if-else branches as it will be easier to maintain if we
+        // need to consider or remove other types in the future.
+        // The full list of FHE types is available in the `FheType` enum and comes from the
+        // `fhevm-solidity` repository, which is directly based on TFHE-rs' list of supported
+        // types.
+        // Note that only a subset of them are currently supported (in particular, Uint4 is not
+        // supported). This list is also defined in the `fhevm-solidity` repository.
         if (fheType == FheType.Bool) {
             return EBOOL_SIZE;
         } else if (fheType == FheType.Uint8) {

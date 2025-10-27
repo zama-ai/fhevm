@@ -25,7 +25,7 @@ contract EmptyUUPSProxyGatewayConfig is UUPSUpgradeable, Ownable2StepUpgradeable
     }
 
     /**
-     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     * @notice Checks if the sender is authorized to upgrade the contract and reverts otherwise.
      */
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}

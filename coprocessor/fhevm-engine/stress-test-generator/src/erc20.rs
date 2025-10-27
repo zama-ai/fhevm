@@ -82,6 +82,7 @@ pub async fn erc20_transaction(
                 &new_destination.to_vec(),
                 AllowEvents::AllowedForDecryption,
                 contract_address.to_string(),
+                transaction_id,
                 pool,
             )
             .await?;
@@ -108,6 +109,7 @@ pub async fn erc20_transaction(
                 &new_source.to_vec(),
                 AllowEvents::AllowedForDecryption,
                 contract_address.to_string(),
+                transaction_id,
                 pool,
             )
             .await?;
@@ -142,6 +144,7 @@ pub async fn erc20_transaction(
                 &new_destination.to_vec(),
                 AllowEvents::AllowedForDecryption,
                 contract_address.to_string(),
+                transaction_id,
                 pool,
             )
             .await?;
@@ -157,6 +160,7 @@ pub async fn erc20_transaction(
                 &new_source.to_vec(),
                 AllowEvents::AllowedForDecryption,
                 contract_address.to_string(),
+                transaction_id,
                 pool,
             )
             .await?;

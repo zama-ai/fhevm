@@ -12,7 +12,9 @@ import { IGatewayConfig } from "../interfaces/IGatewayConfig.sol";
  * based on the OpenZeppelin PausableUpgradeable contract.
  */
 abstract contract Pausable is PausableUpgradeable {
-    /// @notice The address of the GatewayConfig contract
+    /**
+     * @notice The address of the GatewayConfig contract.
+     */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /**
@@ -51,11 +53,9 @@ abstract contract Pausable is PausableUpgradeable {
      * - The contract must be paused.
      */
     function unpause() external virtual {
-        /**
-         * @dev We cast to Ownable2StepUpgradeable instead of importing GatewayConfig
-         * to avoid a circular dependency. Solidity requires that base contracts be defined
-         * before derived contracts, which GatewayConfig would violate in this context.
-         */
+        // We cast to Ownable2StepUpgradeable instead of importing GatewayConfig
+        // to avoid a circular dependency. Solidity requires that base contracts be defined
+        // before derived contracts, which GatewayConfig would violate in this context.
         if (msg.sender != Ownable2StepUpgradeable(gatewayConfigAddress).owner() && msg.sender != gatewayConfigAddress) {
             revert NotOwnerOrGatewayConfig(msg.sender);
         }

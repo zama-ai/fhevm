@@ -137,6 +137,7 @@ pub async fn allow_handle(
     handle: &Vec<u8>,
     event_type: AllowEvents,
     account_address: String,
+    transaction_id: TransactionHash,
     pool: &sqlx::Pool<Postgres>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = std::time::Instant::now();
@@ -144,18 +145,20 @@ pub async fn allow_handle(
     let ecfg = EnvConfig::new();
     let _query =
             sqlx::query!(
-                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
+                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4, $5)
                      ON CONFLICT DO NOTHING;",
                 ecfg.tenant_id,
                 handle,
                 account_address,
                 event_type as i16,
+                transaction_id.to_vec(),
             ).execute(pool).await?;
     let _query = sqlx::query!(
-        "INSERT INTO pbs_computations(tenant_id, handle) VALUES($1, $2) 
+        "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3) 
                      ON CONFLICT DO NOTHING;",
         ecfg.tenant_id,
         handle,
+        transaction_id.to_vec()
     )
     .execute(pool)
     .await?;
@@ -270,6 +273,33 @@ pub async fn query_and_save_pks(
 
     keys.replace((pks.clone(), public_params.clone()));
     Ok((pks, public_params))
+}
+
+pub async fn get_ciphertext_digests(
+    handle: &[u8],
+    pool: &sqlx::PgPool,
+    max_retries: usize,
+) -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error>> {
+    for _ in 0..max_retries {
+        let digests = sqlx::query!(
+            "
+            SELECT ciphertext, ciphertext128
+            FROM ciphertext_digest
+            WHERE handle = $1
+            ",
+            handle,
+        )
+        .fetch_one(pool)
+        .await;
+
+        if let Ok(digests) = digests {
+            if digests.ciphertext.is_some() && digests.ciphertext128.is_some() {
+                return Ok((digests.ciphertext.unwrap(), digests.ciphertext128.unwrap()));
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    Ok((vec![], vec![]))
 }
 
 /// User configuration in which benchmarks must be run.

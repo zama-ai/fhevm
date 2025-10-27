@@ -97,10 +97,14 @@ interface IDecryption {
      */
     event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
 
-    /// @notice Error indicating that the input list of handles is empty.
+    /**
+     * @notice Error indicating that the input list of handles is empty.
+     */
     error EmptyCtHandles();
 
-    /// @notice Error indicating that the input list of ctHandleContractPairs is empty.
+    /**
+     * @notice Error indicating that the input list of ctHandleContractPairs is empty.
+     */
     error EmptyCtHandleContractPairs();
 
     /**
@@ -136,7 +140,9 @@ interface IDecryption {
      */
     error ContractAddressesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
 
-    /// @notice Error indicating that the durationDays of a user decryption request is 0.
+    /**
+     * @notice Error indicating that the durationDays of a user decryption request is 0.
+     */
     error InvalidNullDurationDays();
 
     /**
@@ -167,13 +173,6 @@ interface IDecryption {
      * @param contractAddresses The list of expected contract addresses.
      */
     error UserAddressInContractAddresses(address userAddress, address[] contractAddresses);
-
-    /**
-     * @notice Error indicating that the delegator address is included in the contract addresses list.
-     * @param delegatorAddress The delegator address that is included in the list.
-     * @param contractAddresses The list of expected contract addresses.
-     */
-    error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
 
     /**
      * @notice Error indicating that the contract address is not included in the contract addresses list.
@@ -242,26 +241,6 @@ interface IDecryption {
     ) external;
 
     /**
-     * @notice Requests a delegated user decryption.
-     * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
-     * @param requestValidity The validity period of the user decryption request.
-     * @param delegationAccounts The user's address and the delegated account address for the user decryption.
-     * @param contractsInfo The contracts' information (chain ID, addresses).
-     * @param publicKey The user's public key to reencrypt the decryption shares.
-     * @param signature The EIP712 signature to verify.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
-     */
-    function delegatedUserDecryptionRequest(
-        CtHandleContractPair[] calldata ctHandleContractPairs,
-        RequestValidity calldata requestValidity,
-        DelegationAccounts calldata delegationAccounts,
-        ContractsInfo calldata contractsInfo,
-        bytes calldata publicKey,
-        bytes calldata signature,
-        bytes calldata extraData
-    ) external;
-
-    /**
      * @notice Responds to a user decryption request.
      * @param decryptionId The decryption request ID associated with the response.
      * @param userDecryptedShare The partial decryption share reencrypted with the user's public key.
@@ -294,22 +273,6 @@ interface IDecryption {
     function isUserDecryptionReady(
         address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs,
-        bytes calldata extraData
-    ) external view returns (bool);
-
-    /**
-     * @notice Indicates if handles are ready to be decrypted by a delegated address.
-     * @param contractsChainId The host chain ID, where the contracts are deployed.
-     * @param delegationAccounts The delegator and delegated address.
-     * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
-     * @param contractAddresses The contract addresses.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
-     */
-    function isDelegatedUserDecryptionReady(
-        uint256 contractsChainId,
-        DelegationAccounts calldata delegationAccounts,
-        CtHandleContractPair[] calldata ctHandleContractPairs,
-        address[] calldata contractAddresses,
         bytes calldata extraData
     ) external view returns (bool);
 

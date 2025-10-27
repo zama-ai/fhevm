@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use clap::{command, Parser};
+use fhevm_engine_common::telemetry::MetricsConfig;
 use humantime::parse_duration;
-use sns_worker::SchedulePolicy;
+use sns_worker::{SchedulePolicy, SNS_LATENCY_OP_HISTOGRAM_CONF};
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -99,6 +100,10 @@ pub struct Args {
     #[arg(long, default_value_t = 8080)]
     pub health_check_port: u16,
 
+    /// Prometheus metrics server address
+    #[arg(long, default_value = "0.0.0.0:9100")]
+    pub metrics_addr: Option<String>,
+
     /// Liveness threshold for health checks
     /// Exceeding this threshold means that the worker is stuck
     /// and will be restarted by the orchestrator
@@ -118,8 +123,15 @@ pub struct Args {
     /// Schedule policy for processing tasks
     #[arg(long, default_value = "rayon_parallel", value_parser = clap::value_parser!(SchedulePolicy))]
     pub schedule_policy: SchedulePolicy,
+
+    /// Prometheus metrics: coprocessor_sns_op_latency_seconds
+    #[arg(long, default_value = "0.1:10.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_sns_op_latency: MetricsConfig,
 }
 
 pub fn parse_args() -> Args {
-    Args::parse()
+    let args = Args::parse();
+    // Set global configs from args
+    let _ = SNS_LATENCY_OP_HISTOGRAM_CONF.set(args.metric_sns_op_latency);
+    args
 }

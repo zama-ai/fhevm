@@ -1,6 +1,6 @@
 // Build the KMS request types as defined in contracts
 const enum KmsRequestType {
-  OldDecryptions = 0, // DEPRECATED
+  _deprecated_ = 0, // DEPRECATED
   PublicDecrypt = 1,
   UserDecrypt = 2,
   PrepKeygen = 3,

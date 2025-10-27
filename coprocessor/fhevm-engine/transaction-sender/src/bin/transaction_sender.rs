@@ -18,7 +18,10 @@ use transaction_sender::{
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::{
+    metrics_server,
+    telemetry::{self, MetricsConfig},
+};
 use humantime::parse_duration;
 
 #[derive(Parser, Debug, Clone, ValueEnum)]
@@ -112,6 +115,10 @@ struct Conf {
     #[arg(long, alias = "health-check-port", default_value_t = 8080)]
     http_server_port: u16,
 
+    /// Prometheus metrics server address
+    #[arg(long, default_value = "0.0.0.0:9100")]
+    pub metrics_addr: Option<String>,
+
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     health_check_timeout: Duration,
 
@@ -130,6 +137,14 @@ struct Conf {
     /// service name in OTLP traces
     #[arg(long, default_value = "txn-sender")]
     pub service_name: String,
+
+    /// Prometheus metrics: coprocessor_host_txn_latency_seconds
+    #[arg(long, default_value = "0.1:60.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_host_txn_latency: MetricsConfig,
+
+    /// Prometheus metrics: coprocessor_zkproof_txn_latency_seconds
+    #[arg(long, default_value = "0.1:60.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_zkproof_txn_latency: MetricsConfig,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -146,11 +161,19 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
     Ok(())
 }
 
+fn parse_args() -> Conf {
+    let args = Conf::parse();
+    // Set global configs from args
+    let _ = telemetry::HOST_TXN_LATENCY_CONFIG.set(args.metric_host_txn_latency);
+    let _ = telemetry::ZKPROOF_TXN_LATENCY_CONFIG.set(args.metric_zkproof_txn_latency);
+    args
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
-    let conf = Conf::parse();
+    let conf = parse_args();
 
     tracing_subscriber::fmt()
         .json()
@@ -302,6 +325,9 @@ async fn main() -> anyhow::Result<()> {
     // Run both services concurrently. Here we assume that if transaction sender stops without an error, HTTP server should also stop.
     let transaction_sender_fut = tokio::spawn(async move { transaction_sender.run().await });
     let http_server_fut = tokio::spawn(async move { http_server.start().await });
+
+    // Start metrics server
+    metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
 
     let transaction_sender_res = transaction_sender_fut.await;
     let http_server_res = http_server_fut.await;

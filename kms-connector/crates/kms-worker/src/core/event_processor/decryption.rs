@@ -112,7 +112,7 @@ where
         let sns_ciphertext_materials = self
             .s3_service
             .retrieve_sns_ciphertext_materials(sns_materials)
-            .await;
+            .await?;
 
         if sns_ciphertext_materials.is_empty() {
             return Err(anyhow!("Failed to retrieve any ciphertext materials"));

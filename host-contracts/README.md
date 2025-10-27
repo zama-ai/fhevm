@@ -1,3 +1,3 @@
 ## Introduction
 
-This node package contains all the Solidity core contracts needed to deploy an FHEVM instance.
+This node package contains the core Solidity host contracts needed to deploy an FHEVM instance on a host EVM blockchain.

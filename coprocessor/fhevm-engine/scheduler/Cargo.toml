@@ -16,6 +16,7 @@ rayon = { workspace = true }
 tfhe = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+prometheus = { workspace = true }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }

@@ -3,14 +3,15 @@ pragma solidity ^0.8.24;
 
 import { multichainACLAddress } from "../../addresses/GatewayAddresses.sol";
 import { IMultichainACL } from "../interfaces/IMultichainACL.sol";
-import { DelegationAccounts } from "../shared/Structs.sol";
 
 /**
  * @title MultichainACL Checks
  * @dev Contract that provides checks on top of the MultichainACL contract
  */
 abstract contract MultichainACLChecks {
-    /// @notice The address of the MultichainACL contract
+    /**
+     * @notice The address of the MultichainACL contract.
+     */
     IMultichainACL private constant MULTICHAIN_ACL = IMultichainACL(multichainACLAddress);
 
     /**
@@ -27,36 +28,23 @@ abstract contract MultichainACLChecks {
     error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress);
 
     /**
-     * @notice Error indicating that the account has not been fully delegated.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The addresses of the delegated contracts.
+     * @notice Checks if the ciphertext handle is allowed for public decryption.
+     * @param ctHandle The ciphertext handle to check.
      */
-    error AccountNotDelegatedForContracts(
-        uint256 chainId,
-        DelegationAccounts delegationAccounts,
-        address[] contractAddresses
-    );
-
     function _checkIsPublicDecryptAllowed(bytes32 ctHandle) internal view {
         if (!MULTICHAIN_ACL.isPublicDecryptAllowed(ctHandle)) {
             revert PublicDecryptNotAllowed(ctHandle);
         }
     }
 
+    /**
+     * @notice Checks if the account is allowed to use the ciphertext handle.
+     * @param ctHandle The ciphertext handle to check.
+     * @param accountAddress The address of the account to check.
+     */
     function _checkIsAccountAllowed(bytes32 ctHandle, address accountAddress) internal view {
         if (!MULTICHAIN_ACL.isAccountAllowed(ctHandle, accountAddress)) {
             revert AccountNotAllowedToUseCiphertext(ctHandle, accountAddress);
-        }
-    }
-
-    function _checkIsAccountDelegated(
-        uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) internal view {
-        if (!MULTICHAIN_ACL.isAccountDelegated(chainId, delegationAccounts, contractAddresses)) {
-            revert AccountNotDelegatedForContracts(chainId, delegationAccounts, contractAddresses);
         }
     }
 }

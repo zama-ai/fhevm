@@ -211,7 +211,7 @@ scDebug:
 # Configuration for persistent volumes used during deployment
 persistence:
   enabled: true
-
+  mountPath: /app/addresses
   volumeClaim:
     name: ""
     create: true

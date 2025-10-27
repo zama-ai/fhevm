@@ -224,6 +224,7 @@ pub async fn dex_swap_request_transaction(
         &pending_in_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -231,6 +232,7 @@ pub async fn dex_swap_request_transaction(
         &pending_in_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -238,6 +240,7 @@ pub async fn dex_swap_request_transaction(
         &pending_total_token_in_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -245,6 +248,7 @@ pub async fn dex_swap_request_transaction(
         &pending_total_token_in_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -252,6 +256,7 @@ pub async fn dex_swap_request_transaction(
         &new_current_balance_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -259,6 +264,7 @@ pub async fn dex_swap_request_transaction(
         &new_current_balance_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -548,6 +554,7 @@ pub async fn dex_swap_claim_transaction(
         &new_balance_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -555,6 +562,7 @@ pub async fn dex_swap_claim_transaction(
         &new_balance_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -562,6 +570,7 @@ pub async fn dex_swap_claim_transaction(
         &new_dex_balance_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -569,6 +578,7 @@ pub async fn dex_swap_claim_transaction(
         &new_dex_balance_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;

@@ -222,6 +222,7 @@ interface IFHEVMExecutor {
      * @return result       Result.
      */
     function fheNot(bytes32 ct) external returns (bytes32 result);
+
     /**
      * @notice                Verifies the ciphertext.
      * @param inputHandle     Input handle.

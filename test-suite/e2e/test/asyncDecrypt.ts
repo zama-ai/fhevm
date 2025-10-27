@@ -1,4 +1,4 @@
-import type { Provider } from 'ethers';
+import type { Log, Provider } from 'ethers';
 import { ethers } from 'hardhat';
 
 const currentTime = (): string => {
@@ -51,7 +51,7 @@ async function pollEvents(): Promise<void> {
   lastProcessedBlock = currentBlock;
 }
 
-async function getDecryptionRequestLogs(fromBlock: number, toBlock: number): Promise<ethers.Log[]> {
+async function getDecryptionRequestLogs(fromBlock: number, toBlock: number): Promise<Log[]> {
   const filterOracle = {
     address: process.env.DECRYPTION_ORACLE_ADDRESS!,
     topics: [topicHashRequest],
@@ -62,7 +62,7 @@ async function getDecryptionRequestLogs(fromBlock: number, toBlock: number): Pro
   return ethers.provider.getLogs(filterOracle);
 }
 
-async function getDecryptionFulfillLogs(fromBlock: number, toBlock: number): Promise<ethers.Log[]> {
+async function getDecryptionFulfillLogs(fromBlock: number, toBlock: number): Promise<Log[]> {
   const filterFulfill = {
     topics: [topicHashFulfill],
     fromBlock,
@@ -72,7 +72,7 @@ async function getDecryptionFulfillLogs(fromBlock: number, toBlock: number): Pro
   return ethers.provider.getLogs(filterFulfill);
 }
 
-function processDecryptionRequests(logs: ethers.Log[]): void {
+function processDecryptionRequests(logs: Log[]): void {
   for (const log of logs) {
     const parsed = ifaceRequest.parseLog({
       topics: log.topics as string[],
@@ -93,7 +93,7 @@ function processDecryptionRequests(logs: ethers.Log[]): void {
   }
 }
 
-function processDecryptionFulfillments(logs: ethers.Log[]): void {
+function processDecryptionFulfillments(logs: Log[]): void {
   for (const log of logs) {
     const parsed = ifaceFulfill.parseLog({
       topics: log.topics as string[],

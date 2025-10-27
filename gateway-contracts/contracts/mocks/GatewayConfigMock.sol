@@ -11,6 +11,8 @@ contract GatewayConfigMock {
         Custodian[] custodians
     );
 
+    event ReinitializeGatewayConfigV2(Coprocessor[] newCoprocessors, uint256 coprocessorThreshold);
+
     event UpdateMpcThreshold(uint256 newMpcThreshold);
 
     event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
@@ -18,6 +20,8 @@ contract GatewayConfigMock {
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
     event UpdateKmsGenThreshold(uint256 newKmsGenThreshold);
+
+    event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
 
     event AddHostChain(HostChain hostChain);
 
@@ -31,6 +35,7 @@ contract GatewayConfigMock {
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
         uint256 initialKmsGenThreshold,
+        uint256 initialCoprocessorThreshold,
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
@@ -42,6 +47,10 @@ contract GatewayConfigMock {
         Custodian[] memory custodians = new Custodian[](1);
 
         emit InitializeGatewayConfig(metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
+    }
+
+    function reinitializeV2(Coprocessor[] memory newCoprocessors, uint256 coprocessorThreshold) public {
+        emit ReinitializeGatewayConfigV2(newCoprocessors, coprocessorThreshold);
     }
 
     function updateMpcThreshold(uint256 newMpcThreshold) external {
@@ -58,6 +67,10 @@ contract GatewayConfigMock {
 
     function updateKmsGenThreshold(uint256 newKmsGenThreshold) external {
         emit UpdateKmsGenThreshold(newKmsGenThreshold);
+    }
+
+    function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external {
+        emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
     }
 
     function addHostChain(HostChain calldata hostChain) external {

@@ -4,9 +4,11 @@ use crate::squash_noise::SquashNoiseCiphertext;
 use crate::BigCiphertext;
 use crate::Ciphertext128Format;
 use crate::HandleItem;
+use crate::InternalEvents;
 use crate::KeySet;
 use crate::SchedulePolicy;
 use crate::UploadJob;
+use crate::SNS_LATENCY_OP_HISTOGRAM;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
@@ -60,6 +62,9 @@ pub struct SwitchNSquashService {
     s3_client: Arc<Client>,
     _token: CancellationToken,
     tx: Sender<UploadJob>,
+
+    /// Channel to emit internal events, e.g. keys-loaded event
+    events_tx: InternalEvents,
 }
 impl HealthCheckService for SwitchNSquashService {
     async fn health_check(&self) -> HealthStatus {
@@ -121,6 +126,7 @@ impl SwitchNSquashService {
         tx: Sender<UploadJob>,
         token: CancellationToken,
         s3_client: Arc<Client>,
+        events_tx: InternalEvents,
     ) -> Result<SwitchNSquashService, ExecutionError> {
         Ok(SwitchNSquashService {
             pool: pool_mngr.pool(),
@@ -129,6 +135,7 @@ impl SwitchNSquashService {
             _token: token,
             s3_client,
             tx,
+            events_tx,
         })
     }
 
@@ -142,11 +149,20 @@ impl SwitchNSquashService {
             let tx = self.tx.clone();
             let last_active_at = self.last_active_at.clone();
             let keys_cache = keys_cache.clone();
+            let events_tx = self.events_tx.clone();
 
             async move {
-                run_loop(conf, tx, pool, token, last_active_at.clone(), keys_cache)
-                    .await
-                    .map_err(ServiceError::from)
+                run_loop(
+                    conf,
+                    tx,
+                    pool,
+                    token,
+                    last_active_at.clone(),
+                    keys_cache,
+                    events_tx,
+                )
+                .await
+                .map_err(ServiceError::from)
             }
         };
 
@@ -179,6 +195,7 @@ pub(crate) async fn run_loop(
     token: CancellationToken,
     last_active_at: Arc<RwLock<SystemTime>>,
     keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>>,
+    events_tx: InternalEvents,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
@@ -190,20 +207,7 @@ pub(crate) async fn run_loop(
         .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
         .await?;
 
-    let mut keys = match get_keyset(pool.clone(), keys_cache.clone(), tenant_api_key).await? {
-        Some(keys) => {
-            info!(tenant_api_key = tenant_api_key, "Fetched keyset");
-            Some(keys)
-        }
-        None => {
-            warn!(
-                tenant_api_key = tenant_api_key,
-                "No keys found for the given tenant_api_key"
-            );
-            None
-        }
-    };
-
+    let mut keys = None;
     let mut gc_ticker = interval(conf.db.cleanup_interval);
     let mut gc_timestamp = SystemTime::now();
     let mut polling_ticker = interval(Duration::from_secs(conf.db.polling_interval.into()));
@@ -213,15 +217,24 @@ pub(crate) async fn run_loop(
         update_last_active(last_active_at.clone()).await;
 
         let Some(keys) = keys.as_ref() else {
-            warn!(
-                tenant_api_key = tenant_api_key,
-                "No keys available, retrying in 5 seconds"
-            );
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            keys = get_keyset(pool.clone(), keys_cache.clone(), tenant_api_key).await?;
+            if keys.is_some() {
+                info!(tenant_api_key = tenant_api_key, "Fetched keyset");
+                // Notify that the keys are loaded
+                if let Some(events_tx) = &events_tx {
+                    let _ = events_tx.try_send("event_keys_loaded");
+                }
+            } else {
+                warn!(
+                    tenant_api_key = tenant_api_key,
+                    "No keys available, retrying in 5 seconds"
+                );
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+
             if token.is_cancelled() {
                 return Ok(());
             }
-            keys = get_keyset(pool.clone(), keys_cache.clone(), tenant_api_key).await?;
             continue;
         };
 
@@ -493,6 +506,7 @@ fn compute_task(
     token: CancellationToken,
     _client_key: &Option<ClientKey>,
 ) {
+    let started_at = SystemTime::now();
     let thread_id = format!("{:?}", std::thread::current().id());
     let span = error_span!("compute", thread_id = %thread_id);
     let _enter = span.enter();
@@ -563,6 +577,11 @@ fn compute_task(
 
                 error!({ action = "review", error = %err }, "Failed to send task to upload worker");
                 telemetry::end_span_with_err(task.otel.child_span("send_task"), err.to_string());
+            }
+
+            let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+            if elapsed > 0.0 {
+                SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
             }
         }
         Err(err) => {

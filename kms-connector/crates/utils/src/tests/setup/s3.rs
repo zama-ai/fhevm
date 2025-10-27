@@ -13,7 +13,8 @@ pub struct S3Instance {
 
 pub const MINIO_ACCESS_KEY: &str = "fhevm-access-key";
 pub const MINIO_SECRET_KEY: &str = "fhevm-access-secret-key";
-pub const S3_CT: &str = "011e517540a10486971fbf81dcf64c1b2fc9965744d0c8f7da0e4b338f1a31a9";
+pub const S3_CT_HANDLE: &str = "5a88e7aa46f312ff70df6e84c85eb40cdfd42b18a9ff00000000000030390500";
+pub const S3_CT_DIGEST: &str = "3a002df21130bda55f78d4403a73007a797f4a888174a620bbffc9052a045239";
 
 impl S3Instance {
     pub fn new(url: String, container: ContainerAsync<GenericImage>) -> Self {
@@ -57,7 +58,7 @@ impl S3Instance {
             mc anonymous set public myminio/kms-public &&
             mc anonymous set public myminio/ct64 &&
             mc anonymous set public myminio/ct128 &&
-            mc cp /data/{S3_CT} --attr Ct-Format=uncompressed_on_cpu myminio/ct128/{S3_CT}",
+            mc cp /data/{S3_CT_DIGEST} --attr Ct-Format=compressed_on_cpu myminio/ct128/{S3_CT_DIGEST}",
             self.url
         );
 
@@ -66,11 +67,11 @@ impl S3Instance {
             .with_entrypoint("/bin/sh")
             .with_network("host")
             .with_copy_to(
-                format!("/data/{S3_CT}"),
+                format!("/data/{S3_CT_DIGEST}"),
                 PathBuf::from_str(&format!(
                     "{}/../../tests/data/{}",
                     env!("CARGO_MANIFEST_DIR"),
-                    S3_CT
+                    S3_CT_DIGEST
                 ))
                 .unwrap(),
             )

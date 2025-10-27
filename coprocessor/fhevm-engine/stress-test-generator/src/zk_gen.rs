@@ -1,4 +1,5 @@
 use crate::utils::{next_random_handle, query_and_save_pks, EnvConfig, Inputs, DEF_TYPE};
+use fhevm_engine_common::utils::compact_hex;
 use host_listener::database::tfhe_event_propagate::Handle;
 use rand::Rng;
 use std::collections::HashMap;
@@ -62,22 +63,38 @@ async fn insert_proof(
     zk_pok: &[u8],
     aux: &ZkData,
     db_notify_channel: &str,
+    transaction_id: Handle,
+    _block_number: u64,
 ) -> Result<(), sqlx::Error> {
     //  Insert ZkPok into database
     sqlx::query(
-            "INSERT INTO verify_proofs (zk_proof_id, input, chain_id, contract_address, user_address, verified)
-            VALUES ($1, $2, $3, $4, $5, NULL )" 
+            "INSERT INTO verify_proofs (zk_proof_id, input, chain_id, contract_address, user_address, verified, transaction_id)
+            VALUES ($1, $2, $3, $4, $5, NULL, $6)" 
         ).bind(request_id)
         .bind(zk_pok)
         .bind(aux.chain_id)
         .bind(aux.contract_address.clone())
         .bind(aux.user_address.clone())
+        .bind(transaction_id.to_vec())
         .execute(pool).await?;
     sqlx::query("SELECT pg_notify($1, '')")
         .bind(db_notify_channel)
         .execute(pool)
         .await
         .unwrap();
+
+    // We cannot begin measuring the transaction as it will always fail due to VerifyProofNotRequested in L2
+    // see also: VerifyProofNotRequested(uint256) | 0x4711083f
+    /*
+        let _ = telemetry::try_begin_transaction(
+            pool,
+            aux.chain_id,
+            &transaction_id.to_vec(),
+            _block_number,
+        )
+        .await;
+    */
+
     Ok(())
 }
 async fn wait_for_verification_and_handle(
@@ -144,6 +161,8 @@ pub async fn generate_random_handle_vec(
         .await
         .unwrap();
 
+    let transaction_id = next_random_handle(DEF_TYPE);
+
     let zk_data = ZkData {
         contract_address: contract_address.to_owned(),
         user_address: user_address.to_owned(),
@@ -159,17 +178,23 @@ pub async fn generate_random_handle_vec(
         // TODO: we default to u64s here
         builder.push(rand::rng().random::<u64>());
     }
+
+    info!(target: "tool", "ZK Transaction: tx_id: {:?}, inputs = {:?}", compact_hex(transaction_id.as_ref()), count);
+
     let the_list = builder
         .build_with_proof_packed(&public_params, &aux_data, tfhe::zk::ZkComputeLoad::Proof)
         .unwrap();
     let zk_pok = fhevm_engine_common::utils::safe_serialize(&the_list);
     let zk_id = ZK_PROOF_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
     insert_proof(
         &pool,
         zk_id,
         &zk_pok,
         &zk_data,
         &ctx.args.zkproof_notify_channel,
+        transaction_id,
+        0,
     )
     .await?;
 

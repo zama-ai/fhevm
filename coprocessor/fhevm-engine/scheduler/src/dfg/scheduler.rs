@@ -1,4 +1,7 @@
-use crate::dfg::{types::*, TxEdge};
+use crate::{
+    dfg::{types::*, TxEdge},
+    FHE_BATCH_LATENCY_HISTOGRAM, RERAND_LATENCY_BATCH_HISTOGRAM,
+};
 use anyhow::Result;
 use daggy::{
     petgraph::{
@@ -503,6 +506,7 @@ async fn execute_partition(
         if !cfg!(feature = "gpu") {
             let mut s = tracer.start_with_context("rerandomise_inputs", loop_ctx);
             telemetry::set_txn_id(&mut s, &tid);
+            let started_at = std::time::Instant::now();
             // Re-randomise inputs of the transaction - this also
             // decompresses ciphertexts
             if let Err(e) = re_randomise_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
@@ -522,6 +526,10 @@ async fn execute_partition(
                 }
                 continue 'tx;
             }
+
+            let elapsed = started_at.elapsed();
+            RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
+            drop(s);
         } else {
             let mut s = tracer.start_with_context("decompress_transaction_inputs", loop_ctx);
             telemetry::set_txn_id(&mut s, &tid);
@@ -544,11 +552,13 @@ async fn execute_partition(
                 }
                 continue 'tx;
             }
+            drop(s);
         }
 
         // Prime the scheduler with ready ops from the transaction's subgraph
         let mut s = tracer.start_with_context("execute_transaction", loop_ctx);
         telemetry::set_txn_id(&mut s, &tid);
+        let started_at = std::time::Instant::now();
 
         let mut set: JoinSet<(usize, OpResult)> = JoinSet::new();
         for nidx in dfg.graph.node_identifiers() {
@@ -605,6 +615,8 @@ async fn execute_partition(
             }
         }
         s.end();
+        let elapsed = started_at.elapsed();
+        FHE_BATCH_LATENCY_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     (res, task_id)
 }

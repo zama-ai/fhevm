@@ -61,6 +61,7 @@ pub async fn add_chain_transaction(
         &counter.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -116,6 +117,7 @@ pub async fn mul_chain_transaction(
         &counter.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -155,6 +157,7 @@ pub async fn generate_pub_decrypt_handles_types(
             &handle.to_vec(),
             AllowEvents::AllowedForDecryption,
             user_address.to_string(),
+            transaction_id,
             pool,
         )
         .await?;
@@ -196,6 +199,7 @@ pub async fn generate_user_decrypt_handles_types(
             &handle.to_vec(),
             AllowEvents::AllowedAccount,
             contract_address.to_string(),
+            transaction_id,
             pool,
         )
         .await?;
@@ -203,6 +207,7 @@ pub async fn generate_user_decrypt_handles_types(
             &handle.to_vec(),
             AllowEvents::AllowedAccount,
             user_address.to_string(),
+            transaction_id,
             pool,
         )
         .await?;
