@@ -4,10 +4,10 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
+import { approveContractWithMaxAllowance } from "../tasks/mockedZamaFund";
 import { InputVerification, InputVerification__factory, ProtocolPayment, ZamaOFT } from "../typechain-types";
 import {
   EIP712,
-  approveContractWithMaxAllowance,
   createByteInput,
   createCtHandles,
   createEIP712ResponseZKPoK,
@@ -161,7 +161,7 @@ describe("InputVerification", function () {
 
       it("Should revert because sender has not enough $ZAMA tokens", async function () {
         // Approve the input verification contract with the maximum allowance over the signer's tokens
-        await approveContractWithMaxAllowance(zamaUnfundedSigner, inputVerificationAddress);
+        await approveContractWithMaxAllowance(zamaUnfundedSigner, inputVerificationAddress, hre.ethers);
 
         await expect(
           inputVerification

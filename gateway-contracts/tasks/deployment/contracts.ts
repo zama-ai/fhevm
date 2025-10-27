@@ -3,7 +3,7 @@ import { task, types } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 import { getRequiredEnvVar, loadGatewayAddresses, pascalCaseToAddressEnvVar } from "../utils";
-import { setPaymentBridgingContractAddresses } from "./payment_bridging_utils";
+import { setPaymentBridgingContractAddresses } from "./paymentBridging";
 import { GATEWAY_CONFIG_EMPTY_PROXY_NAME, REGULAR_EMPTY_PROXY_NAME } from "./utils";
 
 // Helper function to deploy a contract implementation to its proxy
@@ -237,7 +237,7 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   await hre.run("task:deployRegularContracts");
 });
 
-// Deploy all the contracts, including the mocked payment bridging ones
+// Deploy all the contracts, including the mocked payment bridging ones (FOR TESTS ONLY)
 task("task:deployAllGatewayContractsForTests").setAction(async function (_, hre) {
   // Deploy all the setup contracts, including the mocked payment bridging ones
   await hre.run("task:deploySetupContracts", { deployMockedPaymentBridgingContracts: true });

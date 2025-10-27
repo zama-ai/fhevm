@@ -23,8 +23,8 @@ services:
     ports:
       - "8546:8546"
 
-  deploy-mocked-payment-bringing-contracts:
-    container_name: deploy-mocked-payment-bringing-contracts
+  deploy-mocked-payment-bridging-contracts:
+    container_name: deploy-mocked-payment-bridging-contracts
     build:
       context: .
       dockerfile: Dockerfile
@@ -58,7 +58,7 @@ services:
     depends_on:
       anvil-node:
         condition: service_started
-      deploy-mocked-payment-bringing-contracts:
+      deploy-mocked-payment-bridging-contracts:
         condition: service_completed_successfully
     volumes:
       - addresses-volume:/app/addresses

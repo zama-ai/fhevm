@@ -5,8 +5,8 @@ import hre from "hardhat";
 import path from "path";
 
 import { ADDRESSES_DIR } from "../../hardhat.config";
-import { getRequiredEnvVar } from "../../tasks/utils/loadVariables";
-import { approveContractWithMaxAllowance, fundSignerWithMockedZamaToken } from "./mockedZamaToken";
+import { setTxSenderMockedPayment } from "../../tasks/mockedZamaFund";
+import { getRequiredEnvVar } from "../../tasks/utils";
 import { fund } from "./wallets";
 
 // Loads the host chains' chain IDs
@@ -140,20 +140,6 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
   };
 }
 
-// Fund the signer with mocked $ZAMA tokens and approve the contracts with maximum allowance over its tokens
-async function fundSignerMockedToken(owner: Wallet, zamaFundedSigner: HardhatEthersSigner) {
-  // Fund the signer with mocked $ZAMA tokens using the owner's balance
-  await fundSignerWithMockedZamaToken(owner, zamaFundedSigner);
-
-  // Get the addresses of the contracts to approve
-  const decryptionAddress = getRequiredEnvVar("DECRYPTION_ADDRESS");
-  const inputVerificationAddress = getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS");
-
-  // Approve the contracts with maximum allowance over the signer's tokens
-  await approveContractWithMaxAllowance(zamaFundedSigner, decryptionAddress);
-  await approveContractWithMaxAllowance(zamaFundedSigner, inputVerificationAddress);
-}
-
 // Loads the addresses of the deployed contracts, and the values required for the tests.
 export async function loadTestVariablesFixture() {
   // Load the number of KMS nodes and coprocessors
@@ -212,7 +198,7 @@ export async function loadTestVariablesFixture() {
   const zamaFundedSigner = hardhatSigners[0];
 
   // Fund the signer with mocked $ZAMA tokens and approve the contracts with maximum allowance over its tokens
-  await fundSignerMockedToken(fixtureData.owner, zamaFundedSigner);
+  await setTxSenderMockedPayment(fixtureData.owner, zamaFundedSigner, hre.ethers);
 
   // Get the third hardhat signer and do not fund it with mocked $ZAMA tokens
   // Note: the second signer is the owner, which is funded by default

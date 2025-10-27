@@ -1,0 +1,34 @@
+services:
+  gateway-deploy-mocked-payment-bridging-contracts:
+    container_name: gateway-deploy-mocked-payment-bridging-contracts
+    image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
+    build:
+      context: ../../../gateway-contracts
+      dockerfile: Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
+    env_file:
+      - ../env/staging/.env.gateway-mocked-payment.local
+    command:
+      - npx hardhat task:deployMockedPaymentBridgingContracts
+
+
+  gateway-set-relayer-mocked-payment:
+    container_name: gateway-set-relayer-mocked-payment
+    image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
+    build:
+      context: ../../../gateway-contracts
+      dockerfile: Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
+    env_file:
+      - ../env/staging/.env.gateway-mocked-payment.local
+    command:
+      - npx hardhat task:setTxSenderMockedPayment
+    depends_on:
+      gateway-deploy-mocked-payment-bridging-contracts:
+        condition: service_completed_successfully

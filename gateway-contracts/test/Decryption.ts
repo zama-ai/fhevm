@@ -4,6 +4,7 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
+import { approveContractWithMaxAllowance } from "../tasks/mockedZamaFund";
 import {
   CiphertextCommits,
   Decryption,
@@ -21,7 +22,6 @@ import {
 } from "../typechain-types/contracts/interfaces/IDecryption";
 import {
   EIP712,
-  approveContractWithMaxAllowance,
   createByteInput,
   createBytes32,
   createBytes32s,
@@ -667,7 +667,7 @@ describe("Decryption", function () {
 
       it("Should revert because sender has not enough $ZAMA tokens", async function () {
         // Approve the public decryption contract with the maximum allowance over the signer's tokens
-        await approveContractWithMaxAllowance(zamaUnfundedSigner, decryptionAddress);
+        await approveContractWithMaxAllowance(zamaUnfundedSigner, decryptionAddress, hre.ethers);
 
         await expect(decryption.connect(zamaUnfundedSigner).publicDecryptionRequest(ctHandles, extraDataV0))
           .to.be.revertedWithCustomError(mockedZamaOFT, "ERC20InsufficientBalance")
@@ -1569,7 +1569,7 @@ describe("Decryption", function () {
 
       it("Should revert because sender has not enough $ZAMA tokens", async function () {
         // Approve the user decryption contract with the maximum allowance over the signer's tokens
-        await approveContractWithMaxAllowance(zamaUnfundedSigner, decryptionAddress);
+        await approveContractWithMaxAllowance(zamaUnfundedSigner, decryptionAddress, hre.ethers);
 
         await expect(
           decryption

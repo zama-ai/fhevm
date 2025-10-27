@@ -4,4 +4,3 @@ export * from "./eip712/";
 export * from "./typeConversion";
 export * from "./inputs";
 export * from "./kmsRequestIds";
-export * from "./mockedZamaToken";

@@ -225,7 +225,7 @@ case $COMMAND in
   upgrade)
     print_logo
     SERVICE=$1
-    if [[ ! $SERVICE =~ ^(minio|core|gateway-node|gateway-sc|host-node|host-sc|kms-connector|coprocessor|relayer|test-suite)$ ]]; then
+    if [[ ! $SERVICE =~ ^(minio|core|gateway-node|gateway-sc|gateway-mocked-payment|host-node|host-sc|kms-connector|coprocessor|relayer|test-suite)$ ]]; then
       echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $SERVICE${RESET}"
       usage
       exit 1
