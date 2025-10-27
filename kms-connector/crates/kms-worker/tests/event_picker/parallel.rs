@@ -49,6 +49,7 @@ async fn test_parallel_event_picker_one_events() -> anyhow::Result<()> {
         events0,
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
+            already_sent: false,
             kind: GatewayEventKind::PublicDecryption(PublicDecryptionRequest {
                 decryptionId: id0,
                 snsCtMaterials: sns_ct.clone(),
@@ -110,6 +111,7 @@ async fn test_parallel_event_picker_two_events() -> anyhow::Result<()> {
         events0,
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
+            already_sent: false,
             kind: GatewayEventKind::PublicDecryption(PublicDecryptionRequest {
                 decryptionId: id0,
                 snsCtMaterials: sns_ct.clone(),
@@ -121,6 +123,7 @@ async fn test_parallel_event_picker_two_events() -> anyhow::Result<()> {
         events1,
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
+            already_sent: false,
             kind: GatewayEventKind::PublicDecryption(PublicDecryptionRequest {
                 decryptionId: id1,
                 snsCtMaterials: sns_ct,

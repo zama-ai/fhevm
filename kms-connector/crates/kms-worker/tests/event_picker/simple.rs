@@ -51,6 +51,7 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
         events,
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
+            already_sent: false,
             kind: GatewayEventKind::PublicDecryption(PublicDecryptionRequest {
                 decryptionId: decryption_id,
                 snsCtMaterials: sns_ct,
@@ -102,6 +103,7 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
         events,
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
+            already_sent: false,
             kind: GatewayEventKind::UserDecryption(UserDecryptionRequest {
                 decryptionId: decryption_id,
                 snsCtMaterials: sns_ct,
@@ -146,6 +148,7 @@ async fn test_pick_prep_keygen() -> anyhow::Result<()> {
         events,
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
+            already_sent: false,
             kind: GatewayEventKind::PrepKeygen(PrepKeygenRequest {
                 prepKeygenId: prep_keygen_request_id,
                 epochId: epoch_id,
@@ -186,6 +189,7 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
         events,
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
+            already_sent: false,
             kind: GatewayEventKind::Keygen(KeygenRequest {
                 prepKeygenId: prep_key_id,
                 keyId: key_id,
@@ -227,6 +231,7 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
         events,
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
+            already_sent: false,
             kind: GatewayEventKind::Crsgen(CrsgenRequest {
                 crsId: crs_id,
                 maxBitLength: max_bit_length,
@@ -274,6 +279,7 @@ async fn test_polling_backup() -> anyhow::Result<()> {
         events,
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
+            already_sent: false,
             kind: GatewayEventKind::PublicDecryption(PublicDecryptionRequest {
                 decryptionId: decryption_id,
                 snsCtMaterials: sns_ct,
