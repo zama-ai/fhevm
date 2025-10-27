@@ -8,17 +8,15 @@ use crate::InternalEvents;
 use crate::KeySet;
 use crate::SchedulePolicy;
 use crate::UploadJob;
+use crate::SNS_LATENCY_OP_HISTOGRAM;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
-use fhevm_engine_common::telemetry::gen_buckets;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::compact_hex;
-use prometheus::register_histogram;
-use prometheus::Histogram;
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
 use sqlx::Pool;
@@ -26,7 +24,6 @@ use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::sync::LazyLock;
 use std::time::Duration;
 use std::time::SystemTime;
 use tfhe::set_server_key;
@@ -41,17 +38,6 @@ use tracing::warn;
 use tracing::{debug, error, info};
 
 const S3_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
-
-pub(crate) static SNS_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
-    let buckets = gen_buckets(0.01, 10.0);
-
-    register_histogram!(
-        "coprocessor_sns_latency_seconds",
-        "Squash_noise computation latencies in seconds",
-        buckets
-    )
-    .unwrap()
-});
 
 #[derive(Debug, Clone, Copy)]
 pub enum Order {
@@ -595,7 +581,7 @@ fn compute_task(
 
             let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
             if elapsed > 0.0 {
-                SNS_LATENCY_HISTOGRAM.observe(elapsed);
+                SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
             }
         }
         Err(err) => {
