@@ -15,6 +15,9 @@ import { HardhatUserConfig, HttpNetworkAccountsUserConfig } from 'hardhat/types'
 import { EndpointId } from '@layerzerolabs/lz-definitions'
 
 import './type-extensions'
+import './tasks/roles/grantRole'
+import './tasks/roles/revokeRole'
+import './tasks/roles/renounceRole'
 import './tasks/sendOFT'
 import './tasks/validateEVMAddress'
 
