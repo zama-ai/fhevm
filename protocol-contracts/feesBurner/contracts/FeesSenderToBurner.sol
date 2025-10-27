@@ -3,6 +3,7 @@ pragma solidity ^0.8.22;
 
 import { IOFT, SendParam, MessagingFee } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 
 /**
  * @title FeesSenderToBurner Contract
@@ -10,13 +11,18 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @dev Anyone can call sendFeesToBurner() function
  */
 contract FeesSenderToBurner {
+    using OptionsBuilder for bytes;
+
     address public immutable ZAMA_OFT;
     address public immutable PROTOCOL_FEES_BURNER;
     uint32 public immutable DESTINATION_EID; /// @dev 40161 for Sepolia and 30101 for Ethereum mainnet
 
-    event FeesForwarded(uint256 amount, uint32 dstEid, address to, uint256 nativeFeePaid);
+    uint8 immutable sharedDecimals;
 
-    error NoZAMAToSend();
+    event FeesForwarded(uint256 amount, uint32 dstEid, address to, bytes options, uint256 nativeFeePaid);
+
+    error InsufficientFee();
+    error NotEnoughZAMAToSend();
     error UnsupportedChainID();
 
     constructor(address _oft, address _protocolFeesBurner) {
@@ -30,44 +36,52 @@ contract FeesSenderToBurner {
         } else {
             revert UnsupportedChainID();
         }
+        sharedDecimals = IOFT(_oft).sharedDecimals();
     }
 
     /// @notice Send all ZAMA held by this contract to the burner on the destination chain.
     /// @dev Caller must send enough native gas (ETH) to pay the LayerZero fee.
     function sendFeesToBurner() external payable {
         uint256 amount = IERC20(ZAMA_OFT).balanceOf(address(this));
-        if (amount == 0) revert NoZAMAToSend();
+        uint256 amountNormalized = (amount/(10**sharedDecimals))*10**sharedDecimals;
+        
+        if (amountNormalized == 0) revert NotEnoughZAMAToSend();
+
+        bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(80000, 0);
 
         SendParam memory sendParam = SendParam({
             dstEid: DESTINATION_EID,
             to: bytes32(uint256(uint160(PROTOCOL_FEES_BURNER))),
-            amountLD: amount,
-            minAmountLD: 0,
-            extraOptions: bytes(""),
+            amountLD: amountNormalized,
+            minAmountLD: amountNormalized,
+            extraOptions: options,
             composeMsg: bytes(""),
             oftCmd: bytes("")
         });
 
         MessagingFee memory quotedFee = IOFT(ZAMA_OFT).quoteSend(sendParam, false);
-        require(msg.value >= quotedFee.nativeFee, "Insufficient native fee");
+        if(msg.value < quotedFee.nativeFee) revert InsufficientFee();
 
         MessagingFee memory msgFee = MessagingFee({ nativeFee: msg.value, lzTokenFee: 0 });
 
         IOFT(ZAMA_OFT).send{ value: msg.value }(sendParam, msgFee, msg.sender);
 
-        emit FeesForwarded(amount, DESTINATION_EID, PROTOCOL_FEES_BURNER, msg.value);
+        emit FeesForwarded(amount, DESTINATION_EID, PROTOCOL_FEES_BURNER, options, msg.value);
     }
 
     function quote() external view returns (uint256) {
         uint256 amount = IERC20(ZAMA_OFT).balanceOf(address(this));
-        if (amount == 0) revert NoZAMAToSend();
+        uint256 amountNormalized = (amount/(10**sharedDecimals))*10**sharedDecimals;
+        if (amountNormalized == 0) revert NotEnoughZAMAToSend();
+
+        bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(80000, 0);
 
         SendParam memory sendParam = SendParam({
             dstEid: DESTINATION_EID,
             to: bytes32(uint256(uint160(PROTOCOL_FEES_BURNER))),
-            amountLD: amount,
-            minAmountLD: 0,
-            extraOptions: bytes(""),
+            amountLD: amountNormalized,
+            minAmountLD: amountNormalized,
+            extraOptions: options,
             composeMsg: bytes(""),
             oftCmd: bytes("")
         });
