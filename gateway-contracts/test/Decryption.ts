@@ -17,7 +17,6 @@ import {
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
 import {
   CtHandleContractPairStruct,
-  DelegationAccountsStruct,
   SnsCiphertextMaterialStruct,
 } from "../typechain-types/contracts/interfaces/IDecryption";
 import {
@@ -27,7 +26,6 @@ import {
   createBytes32s,
   createCtHandle,
   createCtHandles,
-  createEIP712RequestDelegatedUserDecrypt,
   createEIP712RequestUserDecrypt,
   createEIP712ResponsePublicDecrypt,
   createEIP712ResponseUserDecrypt,
@@ -36,7 +34,6 @@ import {
   createRandomWallet,
   getKeyId,
   getPublicDecryptId,
-  getSignaturesDelegatedUserDecryptRequest,
   getSignaturesPublicDecrypt,
   getSignaturesUserDecryptRequest,
   getSignaturesUserDecryptResponse,
@@ -606,6 +603,22 @@ describe("Decryption", function () {
         decryption,
         "EnforcedPause",
       );
+    });
+
+    it("Should revert because the signer and the tx sender do not correspond to the same KMS node", async function () {
+      // Request public decryption
+      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+
+      // Check that triggering a public decryption response using a signature from the first KMS signer
+      // with the second KMS transaction sender reverts
+      const secondKmsTxSender = kmsTxSenders[1];
+      await expect(
+        decryption
+          .connect(secondKmsTxSender)
+          .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
+      )
+        .revertedWithCustomError(decryption, "KmsSignerDoesNotMatchTxSender")
+        .withArgs(kmsSigners[0].address, secondKmsTxSender.address);
     });
 
     describe("Checks", function () {
@@ -1436,6 +1449,30 @@ describe("Decryption", function () {
           extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
+    });
+
+    it("Should revert because the signer and the tx sender do not correspond to the same KMS node", async function () {
+      // Request user decryption
+      await decryption.userDecryptionRequest(
+        ctHandleContractPairs,
+        requestValidity,
+        contractsInfo,
+        user.address,
+        publicKey,
+        userSignature,
+        extraDataV0,
+      );
+
+      // Check that triggering a user decryption response using a signature from the first KMS signer
+      // with the second KMS transaction sender reverts
+      const secondKmsTxSender = kmsTxSenders[1];
+      await expect(
+        decryption
+          .connect(secondKmsTxSender)
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
+      )
+        .revertedWithCustomError(decryption, "KmsSignerDoesNotMatchTxSender")
+        .withArgs(kmsSigners[0].address, secondKmsTxSender.address);
     });
 
     describe("Checks", function () {

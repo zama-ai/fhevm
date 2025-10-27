@@ -107,7 +107,7 @@ contract KMSGeneration is
      */
     string private constant CONTRACT_NAME = "KMSGeneration";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -204,7 +204,6 @@ contract KMSGeneration is
 
     /**
      * @notice Re-initializes the contract from V1.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
@@ -593,8 +592,8 @@ contract KMSGeneration is
         // Recover the signer address from the signature
         address signer = ECDSA.recover(digest, signature);
 
-        // Check that the signer is a KMS signer
-        _checkIsKmsSigner(signer);
+        // Check that the signer is a KMS signer, and that it corresponds to the transaction sender of the same KMS node.
+        _checkKmsSignerMatchesTxSender(signer, msg.sender);
 
         return signer;
     }

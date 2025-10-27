@@ -1,11 +1,14 @@
 use alloy::{
     hex,
     providers::{ProviderBuilder, mock::Asserter},
+    transports::http::reqwest,
 };
+use anyhow::anyhow;
 use connector_utils::tests::{
     rand::rand_u256,
     setup::{S3_CT_DIGEST, S3_CT_HANDLE, S3Instance, TestInstance},
 };
+use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use kms_worker::core::{Config, event_processor::s3::S3Service};
 
 #[tokio::test]
@@ -15,16 +18,24 @@ async fn test_get_ciphertext_from_s3() -> anyhow::Result<()> {
         .build();
     let config = Config::default();
     let mock_provider = ProviderBuilder::new().connect_mocked_client(Asserter::new());
+    let s3_client = reqwest::Client::builder()
+        .connect_timeout(config.s3_connect_timeout)
+        .build()
+        .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
     let bucket_url = format!("{}/ct128", test_instance.s3_url());
-    let s3_service = S3Service::new(&config, mock_provider);
+    let sns_ct = SnsCiphertextMaterial {
+        ctHandle: <[u8; 32]>::try_from(hex::decode(S3_CT_HANDLE)?)
+            .unwrap()
+            .into(),
+        snsCiphertextDigest: <[u8; 32]>::try_from(hex::decode(S3_CT_DIGEST)?)
+            .unwrap()
+            .into(),
+        ..Default::default()
+    };
+    let s3_service = S3Service::new(&config, mock_provider, s3_client);
     s3_service
-        .retrieve_s3_ciphertext_with_retry(
-            vec![bucket_url],
-            &hex::decode(S3_CT_HANDLE)?,
-            &hex::decode(S3_CT_DIGEST)?,
-            S3_CT_DIGEST,
-        )
+        .retrieve_s3_ciphertext(&bucket_url, &sns_ct, S3_CT_DIGEST)
         .await
         .unwrap();
 
@@ -47,17 +58,22 @@ async fn test_get_unstored_s3_ciphertext() -> anyhow::Result<()> {
         .build();
     let config = Config::default();
     let mock_provider = ProviderBuilder::new().connect_mocked_client(Asserter::new());
+    let s3_client = reqwest::Client::builder()
+        .connect_timeout(config.s3_connect_timeout)
+        .build()
+        .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
-    let handle = rand_u256().to_be_bytes_vec(); // dummy handle
     let bucket_url = format!("{}/ct128", test_instance.s3_url());
-    let s3_service = S3Service::new(&config, mock_provider);
-    if let Some(ct) = s3_service
-        .retrieve_s3_ciphertext_with_retry(
-            vec![bucket_url],
-            &handle,
-            &hex::decode(S3_CT_UNSTORED)?,
-            S3_CT_UNSTORED,
-        )
+    let sns_ct = SnsCiphertextMaterial {
+        ctHandle: rand_u256().into(),
+        snsCiphertextDigest: <[u8; 32]>::try_from(hex::decode(S3_CT_UNSTORED)?)
+            .unwrap()
+            .into(),
+        ..Default::default()
+    };
+    let s3_service = S3Service::new(&config, mock_provider, s3_client);
+    if let Ok(ct) = s3_service
+        .retrieve_s3_ciphertext(&bucket_url, &sns_ct, S3_CT_UNSTORED)
         .await
     {
         panic!("Unexpected ciphertext retrievd {ct:?}");
