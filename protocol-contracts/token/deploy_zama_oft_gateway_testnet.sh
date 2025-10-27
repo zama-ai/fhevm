@@ -143,7 +143,7 @@ for (let i = matches.length - 1; i >= 0; i--) {
 
   const closingIndentMatch = m.closing.match(/\n(\s*)\},/);
   const closingIndent = closingIndentMatch ? closingIndentMatch[1] : '';
-  const innerIndent = `${closingIndent}  `;
+  const innerIndent = `${closingIndent}    `;
 
   const replacement = `${m.opening}\n${innerIndent}tokenAddress: '${address}',${m.closing}`;
 
