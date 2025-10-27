@@ -17,7 +17,7 @@ contract FeesSenderToBurner {
     address public immutable PROTOCOL_FEES_BURNER;
     uint32 public immutable DESTINATION_EID; /// @dev 40161 for Sepolia and 30101 for Ethereum mainnet
 
-    uint8 immutable sharedDecimals;
+    uint256 immutable private decimalConversionRate;
 
     event FeesForwarded(uint256 amount, uint32 dstEid, address to, bytes options, uint256 nativeFeePaid);
 
@@ -36,14 +36,16 @@ contract FeesSenderToBurner {
         } else {
             revert UnsupportedChainID();
         }
-        sharedDecimals = IOFT(_oft).sharedDecimals();
+        uint8 sharedDecimals = IOFT(_oft).sharedDecimals();
+        uint8 decimals = IOFT(_oft).decimals();
+        decimalConversionRate = 10**(decimals-sharedDecimals);
     }
 
     /// @notice Send all ZAMA held by this contract to the burner on the destination chain.
     /// @dev Caller must send enough native gas (ETH) to pay the LayerZero fee.
     function sendFeesToBurner() external payable {
         uint256 amount = IERC20(ZAMA_OFT).balanceOf(address(this));
-        uint256 amountNormalized = (amount/(10**sharedDecimals))*10**sharedDecimals;
+        uint256 amountNormalized = (amount/(decimalConversionRate))*decimalConversionRate;
         
         if (amountNormalized == 0) revert NotEnoughZAMAToSend();
 
@@ -71,7 +73,7 @@ contract FeesSenderToBurner {
 
     function quote() external view returns (uint256) {
         uint256 amount = IERC20(ZAMA_OFT).balanceOf(address(this));
-        uint256 amountNormalized = (amount/(10**sharedDecimals))*10**sharedDecimals;
+        uint256 amountNormalized = (amount/(decimalConversionRate))*decimalConversionRate;
         if (amountNormalized == 0) revert NotEnoughZAMAToSend();
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(80000, 0);
