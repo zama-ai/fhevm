@@ -3,14 +3,14 @@ pragma solidity ^0.8.24;
 
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
-import {HostContractsDeployerTestUtils} from "./HostContractsDeployerTestUtils.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
-import {ACL} from "../../contracts/ACL.sol";
-import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
-import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
-import {InputVerifier} from "../../contracts/InputVerifier.sol";
-import {HCULimit} from "../../contracts/HCULimit.sol";
-import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
+import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
+import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+import {ACL} from "@fhevm-host-contracts/contracts/ACL.sol";
+import {FHEVMExecutor} from "@fhevm-host-contracts/contracts/FHEVMExecutor.sol";
+import {KMSVerifier} from "@fhevm-host-contracts/contracts/KMSVerifier.sol";
+import {InputVerifier} from "@fhevm-host-contracts/contracts/InputVerifier.sol";
+import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
+import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {

@@ -8936,6 +8936,150 @@ library FHE {
         return Impl.isPubliclyDecryptable(euint256.unwrap(value));
     }
 
+    /// @notice Checks if the `handle` can be decrypted in the given context (`user`, `contractAddress`).
+    /// @param handle The handle as a bytes32.
+    /// @param user The account address that is part of the user decryption context.
+    /// @param contractAddress The address of the contract that is part of the user decryption context.
+    /// @return False if `user` has not (user, contractAddress) context.
+    function isUserDecryptable(bytes32 handle, address user, address contractAddress) internal view returns (bool) {
+        if (user == contractAddress) {
+            return false;
+        }
+        return Impl.persistAllowed(handle, user) && Impl.persistAllowed(handle, contractAddress);
+    }
+
+    /// @notice Checks if the user decryption rights have been delegated by `delegator` to `delegate`
+    ///         in the context of the given `contractAddress`.
+    /// @param delegator The delegator address
+    /// @param delegate The account authorized to request user decryptions on behalf of `delegator`
+    /// @param contractAddress The address of the contract that is part of the user decryption context
+    /// @param handle The handle as a bytes32
+    /// @return False if no active delegation exists for the (delegate, contractAddress) context, or if it has expired.
+    function isDelegatedForUserDecryption(
+        address delegator,
+        address delegate,
+        address contractAddress,
+        bytes32 handle
+    ) internal view returns (bool) {
+        return Impl.isDelegatedForUserDecryption(delegator, delegate, contractAddress, handle);
+    }
+
+    /// @notice Delegates the user decryption rights that the caller (`msg.sender`) holds in the context
+    ///         of the given `contractAddress` to a new `delegate` account for a limited amount of time.
+    /// @dev The ACL grants user decryption permission based on a (User, Contract) pair. If the pair
+    ///      (`msg.sender`, `contractAddress`) has permission to decrypt a handle, calling this function grants
+    ///      the temporary permission to the new pair (`delegate`, `contractAddress`) to decrypt the same handle.
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`msg.sender`).
+    /// @param contractAddress The address of the contract that is part of the user decryption context.
+    /// @param expiryDate UNIX timestamp when the delegation expires.
+    ///
+    /// @dev Requirements:
+    ///      - the ACL contract must not be paused.
+    ///        Reverts via an {PausableUpgradeable-EnforcedPause} error otherwise.
+    ///
+    ///      - `expiryDate` must be at least 1 hour in the future.
+    ///        i.e. `expiryDate >= block.timestamp + 1 hours`
+    ///        Reverts with an {IACL-ExpiryDateBeforeOneHour} error otherwise.
+    ///
+    ///      - `expiryDate` must differ from the current value.
+    ///        Reverts with an {IACL-ExpiryDateAlreadySetToSameValue} error otherwise.
+    ///
+    ///      - at most one delegate OR revoke per block for this
+    ///        (msg.sender, delegate, contractAddress) tuple to avoid racey
+    ///        state updates.
+    ///        Reverts with an {IACL-AlreadyDelegatedOrRevokedInSameBlock} error
+    ///        if a delegate OR revoke operation already occurred in the current
+    ///        block. See {canDelegateOrRevokeNow}
+    ///
+    ///      - The `contractAddress` cannot be the sender (`msg.sender`).
+    ///        Reverts with an {IACL-SenderCannotBeContractAddress} error if
+    ///        `contractAddress == msg.sender`.
+    ///
+    ///      - The `delegate` address cannot be the sender (`msg.sender`).
+    ///        Reverts with an {IACL-SenderCannotBeDelegate} error if
+    ///        `delegate == msg.sender`.
+    ///
+    ///      - The `delegate` address cannot be the `contractAddress`.
+    ///        Reverts with an {IACL-DelegateCannotBeContractAddress} error if
+    ///        `delegate == contractAddress`.
+    function delegateUserDecryption(address delegate, address contractAddress, uint64 expiryDate) internal {
+        Impl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
+    }
+
+    /// @notice Permanently delegates the user decryption rights that the caller (`msg.sender`) holds in the
+    ///         context of the given `contractAddress` to a new `delegate` account.
+    /// @dev This is the version without expiration of {delegateUserDecryption}. The permission remains active until explicitly
+    ///      revoked by the delegator using {revokeUserDecryptionDelegation}.
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`msg.sender`).
+    /// @param contractAddress The address of the contract that is part of the user decryption context.
+    function delegateUserDecryptionWithoutExpiration(address delegate, address contractAddress) internal {
+        Impl.delegateForUserDecryption(delegate, contractAddress, type(uint64).max);
+    }
+
+    /// @notice Batch delegates the user decryption rights that the caller (`msg.sender`) holds in the context of the
+    ///         given `contractAddresses[i]` to a new `delegate` account for a limited amount of time.
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`msg.sender`).
+    /// @param contractAddresses The array of contract addresses that form the user decryption context tuples
+    ///                          (`msg.sender`, `contractAddresses[i]`).
+    /// @param expiryDate UNIX timestamp when the delegation expires.
+    function delegateUserDecryptions(address delegate, address[] memory contractAddresses, uint64 expiryDate) internal {
+        Impl.delegateForUserDecryptions(delegate, contractAddresses, expiryDate);
+    }
+
+    /// @notice Batch delegates user decryption rights without expiration that the caller (`msg.sender`) holds in the context of
+    ///         the given `contractAddresses[i]` to a new `delegate` account.
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`msg.sender`).
+    /// @param contractAddresses The array of contract addresses that form the user decryption context tuples
+    ///                          (`msg.sender`, `contractAddresses[i]`).
+    function delegateUserDecryptionsWithoutExpiration(address delegate, address[] memory contractAddresses) internal {
+        Impl.delegateForUserDecryptions(delegate, contractAddresses, type(uint64).max);
+    }
+
+    /// @notice Revoke an existing delegation from delegator `msg.sender` to a (delegate, contractAddress) user
+    ///         decryption context.
+    /// @param delegate The account that was authorized to request user decryptions on behalf of `msg.sender`
+    /// @param contractAddress The address of the contract that is part of the user decryption context
+    /// @dev Requirements:
+    ///      - the ACL contract must not be paused.
+    ///        Reverts with an {PausableUpgradeable-EnforcedPause} error otherwise.
+    ///
+    ///      - at most one delegate OR revoke per block for this
+    ///        (msg.sender, delegate, contractAddress) tuple to avoid racey
+    ///        state updates.
+    ///        Reverts with an {IACL-AlreadyDelegatedOrRevokedInSameBlock} error
+    ///        if a delegate OR revoke operation already occurred in the current
+    ///        block.
+    ///
+    ///     -  An active delegation must exist for the (delegate, contractAddress)
+    ///        context.
+    ///        Reverts with an {IACL-NotDelegatedYet} error otherwise.
+    function revokeUserDecryptionDelegation(address delegate, address contractAddress) internal {
+        Impl.revokeDelegationForUserDecryption(delegate, contractAddress);
+    }
+
+    /// @notice Batch revoke existing delegations from delegator `msg.sender` to the given
+    ///         (delegate, contractAddresses[i]) pairs.
+    /// @param delegate The account that was authorized to request user decryptions on behalf of `msg.sender`
+    /// @param contractAddresses The array of contract addresses that form the user decryption context tuples
+    ///                          (`msg.sender`, `contractAddresses[i]`).
+    function revokeUserDecryptionDelegations(address delegate, address[] memory contractAddresses) internal {
+        Impl.revokeDelegationsForUserDecryption(delegate, contractAddresses);
+    }
+
+    /// @notice Get the expiry date of the delegation from delegator `msg.sender` to a (delegate, contractAddress) pair.
+    /// @param delegate The account authorized to request user decryptions on behalf of `msg.sender`
+    /// @param contractAddress The address of the contract that is part of the user decryption context
+    /// @return expiryDate The delegation's expiration limit, which can be one of:
+    ///         - 0 :  If no delegation is currently active for the (delegate, contractAddress) context.
+    ///         - type(uint64).max : If the delegation is permanent (no expiry).
+    ///         - A strictly positive UNIX timestamp when this delegation expires.
+    function getDelegatedUserDecryptionExpiryDate(
+        address delegate,
+        address contractAddress
+    ) internal view returns (uint64 expiryDate) {
+        expiryDate = Impl.getUserDecryptionDelegationExpirationDate(msg.sender, delegate, contractAddress);
+    }
+
     /**
      * @dev Recovers the stored array of handles corresponding to requestID.
      */
