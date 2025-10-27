@@ -145,7 +145,7 @@ for (let i = matches.length - 1; i >= 0; i--) {
   const closingIndent = closingIndentMatch ? closingIndentMatch[1] : '';
   const innerIndent = `${closingIndent}  `;
 
-  const replacement = `${m.opening}\n${innerIndent}tokenAddress: "${address}",${m.closing}`;
+  const replacement = `${m.opening}\n${innerIndent}tokenAddress: '${address}',${m.closing}`;
 
   updated = updated.substring(0, m.index) + replacement + updated.substring(m.index + m.fullMatch.length);
   replacementCount++;
