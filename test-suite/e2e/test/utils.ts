@@ -8,10 +8,7 @@ import { Signer } from 'ethers';
 import { ethers, network } from 'hardhat';
 import hre from 'hardhat';
 
-//import type { Counter } from '../types';
 import { TypedContractMethod } from '../types/common';
-
-//import { getSigners } from './signers';
 
 const coprocAddress = process.env.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
 
@@ -56,14 +53,6 @@ export const waitForBlock = (blockNumber: bigint | number) => {
   }
 };
 
-// export const waitNBlocks = async (Nblocks: number) => {
-//   const currentBlock = await ethers.provider.getBlockNumber();
-//   if (network.name === 'hardhat') {
-//     await produceDummyTransactions(Nblocks);
-//   }
-//   await waitForBlock(currentBlock + Nblocks);
-// };
-
 export const waitForBalance = async (address: string): Promise<void> => {
   return new Promise((resolve, reject) => {
     const checkBalance = async () => {
@@ -90,26 +79,6 @@ export const createTransaction = async <A extends [...{ [I in keyof A]-?: A[I] |
   ];
   return method(...updatedParams);
 };
-
-// export const produceDummyTransactions = async (blockCount: number) => {
-//   const contract = await deployCounterContract();
-//   let counter = blockCount;
-//   while (counter > 0) {
-//     counter--;
-//     const tx = await contract.increment();
-//     const _ = await tx.wait();
-//   }
-// };
-
-// async function deployCounterContract(): Promise<Counter> {
-//   const signers = await getSigners();
-
-//   const contractFactory = await ethers.getContractFactory('Counter');
-//   const contract = await contractFactory.connect(signers.dave).deploy();
-//   await contract.waitForDeployment();
-
-//   return contract;
-// }
 
 export const mineNBlocks = async (n: number) => {
   for (let index = 0; index < n; index++) {
