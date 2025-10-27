@@ -129,3 +129,13 @@ npx hardhat lz:oft:send --src-eid 40161 --dst-eid 40231 --amount 1.5 --to <RECEI
 Once these transactions are sent, wait around 2 minutes and check the receiver's account on Etherscan Arbitrum Sepolia explorer that the receiver indeed received `1.5` ZAMA token on Arbitrum testnet by clicking on `Token Holdings` there.
 
 You could then also send back the tokens from Arbitrum Sepolia testnet to Ethereum Sepolia chain, by swapping the values of `--src-eid` and `--dst-eid` flags from previous command.
+
+## Step 8 : Administrative tasks
+
+After the contracts are deployed and wired you can manage permissions and ownership without writing custom scripts. The project exposes dedicated Hardhat tasks grouped by contract:
+
+- **Role lifecycle on `ZamaERC20` (Ethereum Sepolia):** Every supported role has its own grant/revoke command (`zama:erc20:grant:minter_role`, `zama:erc20:revoke:pausing_minter_role`, etc.) plus a `zama:erc20:renounce:*` variant that lets the currently connected signer drop its role. Use these to add minters, pause controllers, or new admins safely from the CLI.
+- **`ZamaOFTAdapter` administration (Ethereum Sepolia):** Set a new delegate on `ZamaOFTAdapter` with `zama:oftadapter:setDelegate --address <new_delegate>` and hand off overall control with `zama:oftadapter:transferOwnership --address <new_owner>`.
+- **`ZamaOFT` administration (Gateway testnet):** Mirror the same actions on the `ZamaOFT` contract using `zama:oft:setDelegate --address <new_delegate>` and `zama:oft:transferOwnership --address <new_owner>`.
+
+Always pass the correct `--network` flag so Hardhat connects to the chain that hosts the relevant deployment and make sure the signer you use already holds the corresponding privileges.
