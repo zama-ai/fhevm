@@ -16,7 +16,8 @@
     "test:forge": "forge test",
     "test:hardhat": "hardhat test",
     "verify:etherscan:ethereum:sepolia": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n ethereum-testnet -u https://api.etherscan.io/v2/api?chainid=11155111 -k $ETHERSCAN_API'",
-    "verify:etherscan:arbitrum:sepolia": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n arbitrum-testnet -u https://api.etherscan.io/v2/api?chainid=421614 -k $ETHERSCAN_API'"
+    "verify:etherscan:arbitrum:sepolia": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n arbitrum-testnet -u https://api.etherscan.io/v2/api?chainid=421614 -k $ETHERSCAN_API'",
+    "verify:etherscan:gateway:testnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n gateway-testnet -u $BLOCKSCOUT_API'"
   },
   "resolutions": {
     "ethers": "^5.7.2",
@@ -27,12 +28,12 @@
     "@layerzerolabs/devtools-evm-hardhat": "^4.0.0",
     "@layerzerolabs/eslint-config-next": "~2.3.39",
     "@layerzerolabs/io-devtools": "~0.3.0",
-    "@layerzerolabs/lz-definitions": "^3.0.75",
+    "@layerzerolabs/lz-definitions": "^3.0.142",
     "@layerzerolabs/lz-evm-messagelib-v2": "^3.0.75",
     "@layerzerolabs/lz-evm-protocol-v2": "^3.0.75",
     "@layerzerolabs/lz-evm-v1-0.7": "^3.0.75",
-    "@layerzerolabs/lz-v2-utilities": "^3.0.75",
-    "@layerzerolabs/metadata-tools": "^3.0.0",
+    "@layerzerolabs/lz-v2-utilities": "^3.0.142",
+    "@layerzerolabs/metadata-tools": "^3.0.2",
     "@layerzerolabs/oapp-evm": "^0.3.2",
     "@layerzerolabs/oft-evm": "^3.2.0",
     "@layerzerolabs/prettier-config-next": "^2.3.39",
