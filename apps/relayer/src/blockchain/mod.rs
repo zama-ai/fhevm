@@ -1,4 +1,3 @@
-pub mod ethereum;
 pub mod fhevm;
 pub mod gateway;
 

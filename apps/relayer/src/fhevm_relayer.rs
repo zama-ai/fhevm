@@ -46,10 +46,10 @@ use tracing::{debug, info, span, Level};
 
 use crate::{
     blockchain::{
-        ethereum::listener::{
+        fhevm::ethereum::listener::{
             ethereum_listener, fhevm_event_log_converter, gateway_event_log_converter,
         },
-        ethereum::{
+        fhevm::ethereum::{
             parse_private_key, ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
         },
         InputProofGatewayHandler, PublicDecryptFhevmHandler, PublicDecryptGatewayHandler,

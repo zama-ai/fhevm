@@ -1,5 +1,5 @@
 use crate::{
-    blockchain::ethereum::{
+    blockchain::gateway::arbitrum::{
         bindings::Decryption::{self, UserDecryptionRequest},
         ComputeCalldata,
     },

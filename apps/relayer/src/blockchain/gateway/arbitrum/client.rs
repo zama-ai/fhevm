@@ -1,4 +1,4 @@
-use crate::blockchain::ethereum::ContractAndTopicsFilter;
+use crate::blockchain::gateway::arbitrum::ContractAndTopicsFilter;
 use crate::core::errors::Error;
 use alloy::{
     network::AnyNetwork,

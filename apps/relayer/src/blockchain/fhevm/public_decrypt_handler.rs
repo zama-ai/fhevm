@@ -1,5 +1,5 @@
 use crate::{
-    blockchain::ethereum::{bindings::DecryptionOracle, ComputeCalldata},
+    blockchain::fhevm::ethereum::{bindings::DecryptionOracle, ComputeCalldata},
     core::{
         errors::EventProcessingError,
         event::{

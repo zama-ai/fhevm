@@ -1,10 +1,10 @@
-use crate::blockchain::ethereum::bindings::Decryption::{
+use crate::blockchain::gateway::arbitrum::bindings::Decryption::{
     self, publicDecryptionResponseCall, PublicDecryptionRequest, UserDecryptionRequest,
 };
 
-use crate::blockchain::ethereum::bindings::Decryption::CtHandleContractPair;
-use crate::blockchain::ethereum::bindings::IDecryption::{ContractsInfo, RequestValidity};
-use crate::blockchain::ethereum::bindings::InputVerification;
+use crate::blockchain::gateway::arbitrum::bindings::Decryption::CtHandleContractPair;
+use crate::blockchain::gateway::arbitrum::bindings::IDecryption::{ContractsInfo, RequestValidity};
+use crate::blockchain::gateway::arbitrum::bindings::InputVerification;
 use crate::blockchain::PublicDecryptFhevmRequestData;
 use crate::core::errors::EventProcessingError;
 use crate::core::event::{PublicDecryptResponse, UserDecryptRequest};

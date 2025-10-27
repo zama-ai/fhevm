@@ -1,4 +1,4 @@
-use crate::blockchain::ethereum::bindings::{
+use crate::blockchain::fhevm::ethereum::bindings::{
     CiphertextCommits::{self, CiphertextCommitsErrors},
     Decryption::{self, DecryptionErrors},
     InputVerification::{self, InputVerificationErrors},

@@ -1,5 +1,5 @@
 use crate::{
-    blockchain::ethereum::{bindings::Decryption, ComputeCalldata},
+    blockchain::gateway::arbitrum::{bindings::Decryption, ComputeCalldata},
     config::settings::{ContractConfig, RetrySettings},
     core::{
         errors::EventProcessingError,
