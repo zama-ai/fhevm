@@ -18,15 +18,15 @@ contract ACLEvents {
     /// @param delegate             The address of the account that receives the delegation.
     /// @param contractAddress      The contract address to delegate access to.
     /// @param delegationCounter    Counter that tracks the order of each delegation or revocation.
-    /// @param oldExpiryDate        The previous UNIX timestamp when the user decryption delegation expires.
-    /// @param newExpiryDate        The new UNIX timestamp when the user decryption delegation expires.
+    /// @param oldExpirationDate    The previous UNIX timestamp when the user decryption delegation expires.
+    /// @param newExpirationDate    The new UNIX timestamp when the user decryption delegation expires.
     event DelegatedForUserDecryption(
         address indexed delegator,
         address indexed delegate,
         address contractAddress,
         uint64 delegationCounter,
-        uint64 oldExpiryDate,
-        uint64 newExpiryDate
+        uint64 oldExpirationDate,
+        uint64 newExpirationDate
     );
 
     /// @notice                     Emitted when a delegation for user decryption is revoked.
@@ -34,13 +34,13 @@ contract ACLEvents {
     /// @param delegate             The address of the account that receives the delegation.
     /// @param contractAddress      The contract address to delegate access to.
     /// @param delegationCounter    Counter that tracks the order of each delegation or revocation.
-    /// @param oldExpiryDate        The expiration UNIX timestamp of the revoked user decryption delegation.
+    /// @param oldExpirationDate    The expiration UNIX timestamp of the revoked user decryption delegation.
     event RevokedDelegationForUserDecryption(
         address indexed delegator,
         address indexed delegate,
         address contractAddress,
         uint64 delegationCounter,
-        uint64 oldExpiryDate
+        uint64 oldExpirationDate
     );
 
     /// @notice Emitted when an account is added to the deny list.
