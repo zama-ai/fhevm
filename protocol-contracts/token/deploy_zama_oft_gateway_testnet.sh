@@ -73,6 +73,7 @@ fi
 
 require_env_value PRIVATE_KEY
 require_env_value SEPOLIA_RPC_URL
+require_env_value RPC_URL_ZAMA_GATEWAY_TESTNET
 require_env_value INITIAL_SUPPLY_RECEIVER
 require_env_value INITIAL_ADMIN
 
@@ -139,13 +140,13 @@ console.log(`Found ${matches.length} oftAdapter block(s)`);
 
 for (let i = matches.length - 1; i >= 0; i--) {
   const m = matches[i];
-  
+
   const closingIndentMatch = m.closing.match(/\n(\s*)\},/);
   const closingIndent = closingIndentMatch ? closingIndentMatch[1] : '';
-  const innerIndent = `${closingIndent}  `;
-  
-  const replacement = `${m.opening}\n${innerIndent}tokenAddress: "${address}",${m.closing}`;
-  
+  const innerIndent = `${closingIndent}    `;
+
+  const replacement = `${m.opening}\n${innerIndent}tokenAddress: '${address}',${m.closing}`;
+
   updated = updated.substring(0, m.index) + replacement + updated.substring(m.index + m.fullMatch.length);
   replacementCount++;
 }
@@ -181,8 +182,6 @@ npx hardhat lz:deploy --ci --networks ethereum-testnet --tags ZamaOFTAdapter
 info "Deploy ZamaOFT on Zama Gateway Testnet"
 note "Running lz:deploy in CI mode for ZamaOFT on gateway-testnet."
 npx hardhat lz:deploy --ci --networks gateway-testnet --tags ZamaOFT
-
-
 
 # Step 5: Wire contracts
 info "Wire ZamaOFTAdapter (Ethereum Sepolia) with ZamaOFT (Gateway Testnet)"

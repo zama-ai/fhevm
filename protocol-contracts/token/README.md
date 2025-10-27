@@ -109,6 +109,15 @@ And follow straightforward instructions to wire the `ZamaOFTAdapter` contract on
 
 ## Step 7 : Cross-chain transfer
 
+Two NPM scripts are available to send ZAMA tokens between Ethereum Sepolia and Gateway Testnet:
+
+- `npm run zama:oft:send:ethToGateway -- <address> <amount>`
+- `npm run zama:oft:send:gatewayToEth -- <address> <amount>`
+
+The provided address is verified to be a proper Ethereum address, then tokens are sent using `lz:oft:send` task.
+
+If you want to send tokens from/to other chains, you can directly use `lz:oft:send`, as described in the following section.
+
 For example you can send `1.5` ZAMA token from the deployer wallet to a custom receiver address by running this command and following instructions:
 
 ```bash

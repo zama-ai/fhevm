@@ -8,7 +8,7 @@ typechain-types
 # Hardhat files
 cache
 artifacts
-
+deployments
 
 # LayerZero specific files
 .layerzero
