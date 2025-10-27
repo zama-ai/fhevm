@@ -1,8 +1,6 @@
 import { Contract } from 'ethers'
 import { HardhatRuntimeEnvironment } from 'hardhat/types'
 
-import { getBlockExplorerLink } from '../utils'
-
 export interface OftContext {
     signer: Awaited<ReturnType<HardhatRuntimeEnvironment['ethers']['getSigners']>>[number]
     oft: Contract
@@ -31,24 +29,5 @@ export async function resolveOftContext(hre: HardhatRuntimeEnvironment): Promise
         oft,
         deploymentAddress: deployment.address,
         networkName: network.name,
-    }
-}
-
-export async function logExplorerLink(hre: HardhatRuntimeEnvironment, txHash: string): Promise<void> {
-    const { eid } = hre.network.config as { eid?: number }
-    if (typeof eid !== 'number') {
-        console.log('No endpoint ID configured for this network; unable to derive block explorer link.')
-        return
-    }
-
-    try {
-        const explorerLink = await getBlockExplorerLink(eid, txHash)
-        if (explorerLink) {
-            console.log(`Block explorer: ${explorerLink}`)
-        } else {
-            console.log('Block explorer URL unavailable for this network; check LayerZero metadata service.')
-        }
-    } catch (error) {
-        console.log(`Failed to retrieve block explorer URL: ${error instanceof Error ? error.message : error}`)
     }
 }

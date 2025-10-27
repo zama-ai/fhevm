@@ -1,8 +1,10 @@
 import { task, types } from 'hardhat/config'
 
-import { logExplorerLink, resolveOftContext } from './helpers'
+import { logExplorerLink } from '../utils'
 
-task('zama:oft:transferownership', 'Transfer ownership of ZamaOFT')
+import { resolveOftContext } from './helpers'
+
+task('zama:oft:transferOwnership', 'Transfer ownership of ZamaOFT')
     .addParam('address', 'New owner address', undefined, types.string)
     .setAction(async ({ address }, hre) => {
         if (!hre.ethers.utils.isAddress(address)) {

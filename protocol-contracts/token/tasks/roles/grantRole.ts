@@ -1,6 +1,8 @@
 import { task, types } from 'hardhat/config'
 
-import { ROLE_TASK_SUFFIX, RoleKey, logExplorerLink, resolveRoleValue, resolveZamaRoleContext } from './helpers'
+import { logExplorerLink } from '../utils'
+
+import { ROLE_TASK_SUFFIX, RoleKey, resolveRoleValue, resolveZamaRoleContext } from './helpers'
 
 const ROLE_KEYS: RoleKey[] = ['MINTER_ROLE', 'PAUSING_MINTER_ROLE', 'DEFAULT_ADMIN_ROLE']
 

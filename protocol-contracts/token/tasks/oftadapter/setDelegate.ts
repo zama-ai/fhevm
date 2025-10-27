@@ -1,8 +1,10 @@
 import { task, types } from 'hardhat/config'
 
-import { logExplorerLink, resolveOftAdapterContext } from './helpers'
+import { logExplorerLink } from '../utils'
 
-task('zama:oftadapter:setdelegate', 'Set the delegate for ZamaOFTAdapter')
+import { resolveOftAdapterContext } from './helpers'
+
+task('zama:oftadapter:setDelegate', 'Set the delegate for ZamaOFTAdapter')
     .addParam('address', 'New delegate address', undefined, types.string)
     .setAction(async ({ address }, hre) => {
         if (!hre.ethers.utils.isAddress(address)) {
