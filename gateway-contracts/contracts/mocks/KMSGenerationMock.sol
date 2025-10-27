@@ -29,12 +29,12 @@ contract KMSGenerationMock {
 
     event PRSSInit();
 
-    event RetryKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, ParamsType paramsType);
+    event RefreshKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, ParamsType paramsType);
 
     uint256 prepKeygenCounter = 3 << 248;
     uint256 keyCounter = 4 << 248;
-    uint256 epochCounter = 6 << 248;
     uint256 crsCounter = 5 << 248;
+    uint256 epochCounter = 0;
 
     function keygen(ParamsType paramsType) external {
         prepKeygenCounter++;
@@ -75,13 +75,13 @@ contract KMSGenerationMock {
         emit PRSSInit();
     }
 
-    function retryKeygenReshare(uint256 keyId) external {
+    function refreshKeygenReshare(uint256 keyId) external {
         prepKeygenCounter++;
         uint256 prepKeygenId = prepKeygenCounter;
         epochCounter++;
         uint256 epochId = epochCounter;
         ParamsType paramsType;
 
-        emit RetryKeygenReshare(prepKeygenId, keyId, epochId, paramsType);
+        emit RefreshKeygenReshare(prepKeygenId, keyId, epochId, paramsType);
     }
 }

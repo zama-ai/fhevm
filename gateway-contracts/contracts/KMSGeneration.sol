@@ -240,11 +240,9 @@ contract KMSGeneration is
         $.keygenIdPairs[prepKeygenId] = keyId;
         $.keygenIdPairs[keyId] = prepKeygenId;
 
-        // Generate a globally unique epochId for the resharing epoch.
-        // The counter is initialized at deployment such that epochId's first byte uniquely
-        // represents a resharing epoch, with format: [0000 0110 | counter_1..31]
-        $.epochCounter++;
-        uint256 epochId = $.epochCounter;
+        // TODO: Get the epochId once resharing is implemented.
+        // See https://github.com/zama-ai/fhevm-internal/issues/151
+        uint256 epochId = 0;
 
         // Store the FHE params type, used for both the preprocessing and the key generation
         // This value can later be read through the `getKeyParamsType` function, once the key
@@ -440,12 +438,12 @@ contract KMSGeneration is
     }
 
     /**
-     * @notice See {IKMSGeneration-retryKeygenReshare}.
+     * @notice See {IKMSGeneration-refreshKeygenReshare}.
      * @dev ⚠️ This function should only be called under exceptional circumstances.
      * It is intended for corrective flows when a previous resharing attempt failed.
      * Use with caution since incorrect usage may cause inconsistent key generation states.
      */
-    function retryKeygenReshare(uint256 keyId) external virtual onlyGatewayOwner {
+    function refreshKeygenReshare(uint256 keyId) external virtual onlyGatewayOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         if (!$.isRequestDone[keyId]) {
@@ -462,7 +460,7 @@ contract KMSGeneration is
         $.epochCounter++;
         uint256 epochId = $.epochCounter;
 
-        emit RetryKeygenReshare(prepKeygenId, keyId, epochId, paramsType);
+        emit RefreshKeygenReshare(prepKeygenId, keyId, epochId, paramsType);
     }
 
     /**

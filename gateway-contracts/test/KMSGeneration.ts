@@ -247,7 +247,7 @@ describe("KMSGeneration", function () {
 
       // Check for the PrepKeygenRequest event.
       const prepKeygenId = getPrepKeygenId(1);
-      const epochId = getEpochId(1);
+      const epochId = 0;
       await expect(txRequest).to.emit(kmsGeneration, "PrepKeygenRequest").withArgs(prepKeygenId, epochId, paramsType);
 
       // Define a keyId for keygen responses.
@@ -549,7 +549,7 @@ describe("KMSGeneration", function () {
         .withArgs(fakeOwner.address);
 
       // Check that only the owner can trigger a key resharing.
-      await expect(kmsGeneration.connect(fakeOwner).retryKeygenReshare(keyId))
+      await expect(kmsGeneration.connect(fakeOwner).refreshKeygenReshare(keyId))
         .to.be.revertedWithCustomError(kmsGeneration, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
     });
@@ -565,11 +565,10 @@ describe("KMSGeneration", function () {
         prepareKMSGenerationKeygenFixture,
       );
 
-      // Key resharing should increment the epoch ID by 1.
-      const newEpochId = epochId + 1n;
+      const newEpochId = getEpochId(1);
 
-      await expect(kmsGeneration.connect(owner).retryKeygenReshare(keyId))
-        .to.emit(kmsGeneration, "RetryKeygenReshare")
+      await expect(kmsGeneration.connect(owner).refreshKeygenReshare(keyId))
+        .to.emit(kmsGeneration, "RefreshKeygenReshare")
         .withArgs(prepKeygenId, keyId, newEpochId, paramsType);
     });
 
@@ -578,7 +577,7 @@ describe("KMSGeneration", function () {
 
       const fakeKeyId = getKeyId(5);
 
-      await expect(kmsGeneration.connect(owner).retryKeygenReshare(fakeKeyId))
+      await expect(kmsGeneration.connect(owner).refreshKeygenReshare(fakeKeyId))
         .to.be.revertedWithCustomError(kmsGeneration, "KeyNotGenerated")
         .withArgs(fakeKeyId);
     });

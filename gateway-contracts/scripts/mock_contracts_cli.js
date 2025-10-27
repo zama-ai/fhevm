@@ -26,7 +26,6 @@ const KMS_REQUEST_TYPES_MAPPING = {
   prepKeygen: 3,
   key: 4,
   crs: 5,
-  epoch: 6,
 };
 
 const KMS_REQUEST_TYPES_SHIFT = 248;

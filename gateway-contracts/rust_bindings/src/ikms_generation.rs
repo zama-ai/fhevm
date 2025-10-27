@@ -22,7 +22,7 @@ interface IKMSGeneration {
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId);
     event PRSSInit();
     event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType);
-    event RetryKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, ParamsType paramsType);
+    event RefreshKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, ParamsType paramsType);
 
     function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external;
     function crsgenResponse(uint256 crsId, bytes memory crsDigest, bytes memory signature) external;
@@ -38,7 +38,7 @@ interface IKMSGeneration {
     function keygenResponse(uint256 keyId, KeyDigest[] memory keyDigests, bytes memory signature) external;
     function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) external;
     function prssInit() external;
-    function retryKeygenReshare(uint256 keyId) external;
+    function refreshKeygenReshare(uint256 keyId) external;
 }
 ```
 
@@ -317,7 +317,7 @@ interface IKMSGeneration {
   },
   {
     "type": "function",
-    "name": "retryKeygenReshare",
+    "name": "refreshKeygenReshare",
     "inputs": [
       {
         "name": "keyId",
@@ -467,7 +467,7 @@ interface IKMSGeneration {
   },
   {
     "type": "event",
-    "name": "RetryKeygenReshare",
+    "name": "RefreshKeygenReshare",
     "inputs": [
       {
         "name": "prepKeygenId",
@@ -2252,9 +2252,9 @@ event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType params
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `RetryKeygenReshare(uint256,uint256,uint256,uint8)` and selector `0x7cf0be262c7aec97bcb24f48cb25550722e8dd371d79c42f6698f3bb27005731`.
+    /**Event with signature `RefreshKeygenReshare(uint256,uint256,uint256,uint8)` and selector `0x8ee4c147fb1a392e3fa41c0adf4257fc8b00d256cff5875dcc3129fb282bb271`.
 ```solidity
-event RetryKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, ParamsType paramsType);
+event RefreshKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, ParamsType paramsType);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -2263,7 +2263,7 @@ event RetryKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, P
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct RetryKeygenReshare {
+    pub struct RefreshKeygenReshare {
         #[allow(missing_docs)]
         pub prepKeygenId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -2282,7 +2282,7 @@ event RetryKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, P
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for RetryKeygenReshare {
+        impl alloy_sol_types::SolEvent for RefreshKeygenReshare {
             type DataTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -2293,11 +2293,11 @@ event RetryKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, P
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "RetryKeygenReshare(uint256,uint256,uint256,uint8)";
+            const SIGNATURE: &'static str = "RefreshKeygenReshare(uint256,uint256,uint256,uint8)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                124u8, 240u8, 190u8, 38u8, 44u8, 122u8, 236u8, 151u8, 188u8, 178u8, 79u8,
-                72u8, 203u8, 37u8, 85u8, 7u8, 34u8, 232u8, 221u8, 55u8, 29u8, 121u8,
-                196u8, 47u8, 102u8, 152u8, 243u8, 187u8, 39u8, 0u8, 87u8, 49u8,
+                142u8, 228u8, 193u8, 71u8, 251u8, 26u8, 57u8, 46u8, 63u8, 164u8, 28u8,
+                10u8, 223u8, 66u8, 87u8, 252u8, 139u8, 0u8, 210u8, 86u8, 207u8, 245u8,
+                135u8, 93u8, 204u8, 49u8, 41u8, 251u8, 40u8, 43u8, 178u8, 113u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -2362,7 +2362,7 @@ event RetryKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, P
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for RetryKeygenReshare {
+        impl alloy_sol_types::private::IntoLogData for RefreshKeygenReshare {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -2371,9 +2371,9 @@ event RetryKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, P
             }
         }
         #[automatically_derived]
-        impl From<&RetryKeygenReshare> for alloy_sol_types::private::LogData {
+        impl From<&RefreshKeygenReshare> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &RetryKeygenReshare) -> alloy_sol_types::private::LogData {
+            fn from(this: &RefreshKeygenReshare) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -4567,20 +4567,20 @@ function prssInit() external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `retryKeygenReshare(uint256)` and selector `0xd2c08a91`.
+    /**Function with signature `refreshKeygenReshare(uint256)` and selector `0xd20dabd0`.
 ```solidity
-function retryKeygenReshare(uint256 keyId) external;
+function refreshKeygenReshare(uint256 keyId) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct retryKeygenReshareCall {
+    pub struct refreshKeygenReshareCall {
         #[allow(missing_docs)]
         pub keyId: alloy::sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the [`retryKeygenReshare(uint256)`](retryKeygenReshareCall) function.
+    ///Container type for the return parameters of the [`refreshKeygenReshare(uint256)`](refreshKeygenReshareCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct retryKeygenReshareReturn {}
+    pub struct refreshKeygenReshareReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4609,16 +4609,16 @@ function retryKeygenReshare(uint256 keyId) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<retryKeygenReshareCall>
+            impl ::core::convert::From<refreshKeygenReshareCall>
             for UnderlyingRustTuple<'_> {
-                fn from(value: retryKeygenReshareCall) -> Self {
+                fn from(value: refreshKeygenReshareCall) -> Self {
                     (value.keyId,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for retryKeygenReshareCall {
+            for refreshKeygenReshareCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { keyId: tuple.0 }
                 }
@@ -4642,41 +4642,43 @@ function retryKeygenReshare(uint256 keyId) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<retryKeygenReshareReturn>
+            impl ::core::convert::From<refreshKeygenReshareReturn>
             for UnderlyingRustTuple<'_> {
-                fn from(value: retryKeygenReshareReturn) -> Self {
+                fn from(value: refreshKeygenReshareReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for retryKeygenReshareReturn {
+            for refreshKeygenReshareReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
             }
         }
-        impl retryKeygenReshareReturn {
+        impl refreshKeygenReshareReturn {
             fn _tokenize(
                 &self,
-            ) -> <retryKeygenReshareCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            ) -> <refreshKeygenReshareCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
                 ()
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for retryKeygenReshareCall {
+        impl alloy_sol_types::SolCall for refreshKeygenReshareCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = retryKeygenReshareReturn;
+            type Return = refreshKeygenReshareReturn;
             type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "retryKeygenReshare(uint256)";
-            const SELECTOR: [u8; 4] = [210u8, 192u8, 138u8, 145u8];
+            const SIGNATURE: &'static str = "refreshKeygenReshare(uint256)";
+            const SELECTOR: [u8; 4] = [210u8, 13u8, 171u8, 208u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4693,7 +4695,7 @@ function retryKeygenReshare(uint256 keyId) external;
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                retryKeygenReshareReturn::_tokenize(ret)
+                refreshKeygenReshareReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -4746,7 +4748,7 @@ function retryKeygenReshare(uint256 keyId) external;
         #[allow(missing_docs)]
         prssInit(prssInitCall),
         #[allow(missing_docs)]
-        retryKeygenReshare(retryKeygenReshareCall),
+        refreshKeygenReshare(refreshKeygenReshareCall),
     }
     #[automatically_derived]
     impl IKMSGenerationCalls {
@@ -4770,7 +4772,7 @@ function retryKeygenReshare(uint256 keyId) external;
             [186u8, 255u8, 33u8, 30u8],
             [197u8, 91u8, 135u8, 36u8],
             [202u8, 163u8, 103u8, 219u8],
-            [210u8, 192u8, 138u8, 145u8],
+            [210u8, 13u8, 171u8, 208u8],
             [213u8, 47u8, 16u8, 235u8],
         ];
     }
@@ -4820,8 +4822,8 @@ function retryKeygenReshare(uint256 keyId) external;
                     <prepKeygenResponseCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::prssInit(_) => <prssInitCall as alloy_sol_types::SolCall>::SELECTOR,
-                Self::retryKeygenReshare(_) => {
-                    <retryKeygenReshareCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::refreshKeygenReshare(_) => {
+                    <refreshKeygenReshareCall as alloy_sol_types::SolCall>::SELECTOR
                 }
             }
         }
@@ -4982,15 +4984,15 @@ function retryKeygenReshare(uint256 keyId) external;
                     keygen
                 },
                 {
-                    fn retryKeygenReshare(
+                    fn refreshKeygenReshare(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <retryKeygenReshareCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <refreshKeygenReshareCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
-                            .map(IKMSGenerationCalls::retryKeygenReshare)
+                            .map(IKMSGenerationCalls::refreshKeygenReshare)
                     }
-                    retryKeygenReshare
+                    refreshKeygenReshare
                 },
                 {
                     fn getActiveKeyId(
@@ -5167,15 +5169,15 @@ function retryKeygenReshare(uint256 keyId) external;
                     keygen
                 },
                 {
-                    fn retryKeygenReshare(
+                    fn refreshKeygenReshare(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
-                        <retryKeygenReshareCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <refreshKeygenReshareCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(IKMSGenerationCalls::retryKeygenReshare)
+                            .map(IKMSGenerationCalls::refreshKeygenReshare)
                     }
-                    retryKeygenReshare
+                    refreshKeygenReshare
                 },
                 {
                     fn getActiveKeyId(
@@ -5266,8 +5268,8 @@ function retryKeygenReshare(uint256 keyId) external;
                 Self::prssInit(inner) => {
                     <prssInitCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::retryKeygenReshare(inner) => {
-                    <retryKeygenReshareCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::refreshKeygenReshare(inner) => {
+                    <refreshKeygenReshareCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -5357,8 +5359,8 @@ function retryKeygenReshare(uint256 keyId) external;
                         out,
                     )
                 }
-                Self::retryKeygenReshare(inner) => {
-                    <retryKeygenReshareCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::refreshKeygenReshare(inner) => {
+                    <refreshKeygenReshareCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -5663,7 +5665,7 @@ function retryKeygenReshare(uint256 keyId) external;
         #[allow(missing_docs)]
         PrepKeygenRequest(PrepKeygenRequest),
         #[allow(missing_docs)]
-        RetryKeygenReshare(RetryKeygenReshare),
+        RefreshKeygenReshare(RefreshKeygenReshare),
     }
     #[automatically_derived]
     impl IKMSGenerationEvents {
@@ -5700,9 +5702,9 @@ function retryKeygenReshare(uint256 keyId) external;
                 23u8, 1u8, 243u8, 99u8, 42u8, 135u8, 201u8, 174u8, 220u8, 146u8,
             ],
             [
-                124u8, 240u8, 190u8, 38u8, 44u8, 122u8, 236u8, 151u8, 188u8, 178u8, 79u8,
-                72u8, 203u8, 37u8, 85u8, 7u8, 34u8, 232u8, 221u8, 55u8, 29u8, 121u8,
-                196u8, 47u8, 102u8, 152u8, 243u8, 187u8, 39u8, 0u8, 87u8, 49u8,
+                142u8, 228u8, 193u8, 71u8, 251u8, 26u8, 57u8, 46u8, 63u8, 164u8, 28u8,
+                10u8, 223u8, 66u8, 87u8, 252u8, 139u8, 0u8, 210u8, 86u8, 207u8, 245u8,
+                135u8, 93u8, 204u8, 49u8, 41u8, 251u8, 40u8, 43u8, 178u8, 113u8,
             ],
             [
                 235u8, 133u8, 194u8, 109u8, 188u8, 173u8, 70u8, 184u8, 10u8, 104u8,
@@ -5763,13 +5765,13 @@ function retryKeygenReshare(uint256 keyId) external;
                         .map(Self::PrepKeygenRequest)
                 }
                 Some(
-                    <RetryKeygenReshare as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                    <RefreshKeygenReshare as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
-                    <RetryKeygenReshare as alloy_sol_types::SolEvent>::decode_raw_log(
+                    <RefreshKeygenReshare as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                         )
-                        .map(Self::RetryKeygenReshare)
+                        .map(Self::RefreshKeygenReshare)
                 }
                 _ => {
                     alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
@@ -5807,7 +5809,7 @@ function retryKeygenReshare(uint256 keyId) external;
                 Self::PrepKeygenRequest(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::RetryKeygenReshare(inner) => {
+                Self::RefreshKeygenReshare(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
             }
@@ -5832,7 +5834,7 @@ function retryKeygenReshare(uint256 keyId) external;
                 Self::PrepKeygenRequest(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::RetryKeygenReshare(inner) => {
+                Self::RefreshKeygenReshare(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
             }
@@ -6123,12 +6125,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn prssInit(&self) -> alloy_contract::SolCallBuilder<&P, prssInitCall, N> {
             self.call_builder(&prssInitCall)
         }
-        ///Creates a new call builder for the [`retryKeygenReshare`] function.
-        pub fn retryKeygenReshare(
+        ///Creates a new call builder for the [`refreshKeygenReshare`] function.
+        pub fn refreshKeygenReshare(
             &self,
             keyId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, retryKeygenReshareCall, N> {
-            self.call_builder(&retryKeygenReshareCall { keyId })
+        ) -> alloy_contract::SolCallBuilder<&P, refreshKeygenReshareCall, N> {
+            self.call_builder(&refreshKeygenReshareCall { keyId })
         }
     }
     /// Event filters.
@@ -6176,11 +6178,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, PrepKeygenRequest, N> {
             self.event_filter::<PrepKeygenRequest>()
         }
-        ///Creates a new event filter for the [`RetryKeygenReshare`] event.
-        pub fn RetryKeygenReshare_filter(
+        ///Creates a new event filter for the [`RefreshKeygenReshare`] event.
+        pub fn RefreshKeygenReshare_filter(
             &self,
-        ) -> alloy_contract::Event<&P, RetryKeygenReshare, N> {
-            self.event_filter::<RetryKeygenReshare>()
+        ) -> alloy_contract::Event<&P, RefreshKeygenReshare, N> {
+            self.event_filter::<RefreshKeygenReshare>()
         }
     }
 }
