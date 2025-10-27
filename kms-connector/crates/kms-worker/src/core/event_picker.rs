@@ -3,7 +3,7 @@ use crate::{
     monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
 };
 use anyhow::anyhow;
-use connector_utils::types::GatewayEvent;
+use connector_utils::types::{GatewayEvent, gw_event};
 use sqlx::{
     Pool, Postgres,
     postgres::{PgListener, PgNotification},
@@ -126,9 +126,8 @@ impl DbEventPicker {
             PREP_KEYGEN_NOTIFICATION => self.pick_prep_keygen_requests().await,
             KEYGEN_NOTIFICATION => self.pick_keygen_requests().await,
             CRSGEN_NOTIFICATION => self.pick_crsgen_requests().await,
-            channel => return Err(anyhow!("Unexpected notification: {channel}")),
+            channel => Err(anyhow!("Unexpected notification: {channel}")),
         }
-        .map_err(anyhow::Error::from)
     }
 
     async fn pick_any_events(&self) -> Vec<GatewayEvent> {
@@ -152,7 +151,7 @@ impl DbEventPicker {
         all_events
     }
 
-    async fn pick_public_decryption_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
+    async fn pick_public_decryption_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
                 UPDATE public_decryption_requests
@@ -164,18 +163,18 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE public_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, extra_data
+                RETURNING req.decryption_id, sns_ct_materials, extra_data, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(GatewayEvent::from_public_decryption_row)
+        .map(gw_event::from_public_decryption_row)
         .collect()
     }
 
-    async fn pick_user_decryption_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
+    async fn pick_user_decryption_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
                 UPDATE user_decryption_requests
@@ -187,18 +186,18 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data
+                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(GatewayEvent::from_user_decryption_row)
+        .map(gw_event::from_user_decryption_row)
         .collect()
     }
 
-    async fn pick_prep_keygen_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
+    async fn pick_prep_keygen_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
                 UPDATE prep_keygen_requests
@@ -210,18 +209,18 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prep_keygen_requests.prep_keygen_id = req.prep_keygen_id
-                RETURNING req.prep_keygen_id, epoch_id, params_type
+                RETURNING req.prep_keygen_id, epoch_id, params_type, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(GatewayEvent::from_prep_keygen_row)
+        .map(gw_event::from_prep_keygen_row)
         .collect()
     }
 
-    async fn pick_keygen_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
+    async fn pick_keygen_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
                 UPDATE keygen_requests
@@ -233,18 +232,18 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE keygen_requests.key_id = req.key_id
-                RETURNING prep_keygen_id, req.key_id
+                RETURNING prep_keygen_id, req.key_id, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(GatewayEvent::from_keygen_row)
+        .map(gw_event::from_keygen_row)
         .collect()
     }
 
-    async fn pick_crsgen_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
+    async fn pick_crsgen_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
                 UPDATE crsgen_requests
@@ -256,14 +255,14 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE crsgen_requests.crs_id = req.crs_id
-                RETURNING req.crs_id, max_bit_length, params_type
+                RETURNING req.crs_id, max_bit_length, params_type, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(GatewayEvent::from_crsgen_row)
+        .map(gw_event::from_crsgen_row)
         .collect()
     }
 }
