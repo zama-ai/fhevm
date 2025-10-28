@@ -44,6 +44,11 @@ export async function resolveContext(
         contract = await ethers.getContractAt(contractName, deploymentAddress, signer)
     } else {
         deploymentAddress = contractAddress ?? getRequiredEnvVar(`${contractName.toUpperCase()}_CONTRACT_ADDRESS`)
+        if (!hre.ethers.utils.isAddress(deploymentAddress)) {
+            throw new Error(
+                `The provided deployment address of ${contractName} is not a valid EVM address: ${deploymentAddress}`
+            )
+        }
         contract = await ethers.getContractAt(contractName, deploymentAddress).catch(() => {
             throw new Error(
                 `Unable to find ${contractName} deployment for network "${network.name}".
