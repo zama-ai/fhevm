@@ -3,7 +3,6 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { ethers } from 'hardhat';
 
-import { awaitAllDecryptionResults, initDecryptionOracle } from '../asyncDecrypt';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
@@ -13,7 +12,6 @@ describe('InputVerifier', function () {
     this.signers = await getSigners();
     this.instances = await createInstances(this.signers);
     this.inputVerifierFactory = await ethers.getContractFactory('InputVerifier');
-    await initDecryptionOracle();
   });
 
   it('original owner adds one signer, then adds one more signers, then adds one more, then removes one signer', async function () {
