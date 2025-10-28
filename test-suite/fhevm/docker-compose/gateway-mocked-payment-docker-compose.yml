@@ -1,6 +1,6 @@
 services:
-  gateway-deploy-mocked-payment-bridging-contracts:
-    container_name: gateway-deploy-mocked-payment-bridging-contracts
+  gateway-deploy-mocked-zama-oft:
+    container_name: gateway-deploy-mocked-zama-oft
     image: ghcr.io/zama-ai/fhevm/gateway-contracts:${GATEWAY_VERSION}
     build:
       context: ../../../gateway-contracts
@@ -12,7 +12,7 @@ services:
     env_file:
       - ../env/staging/.env.gateway-mocked-payment.local
     command:
-      - npx hardhat task:deployMockedPaymentBridgingContracts
+      - npx hardhat task:deployMockedZamaOFT
 
 
   gateway-set-relayer-mocked-payment:
@@ -30,5 +30,5 @@ services:
     command:
       - npx hardhat task:setTxSenderMockedPayment
     depends_on:
-      gateway-deploy-mocked-payment-bridging-contracts:
+      gateway-deploy-mocked-zama-oft:
         condition: service_completed_successfully

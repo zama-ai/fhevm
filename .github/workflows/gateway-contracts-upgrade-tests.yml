@@ -111,8 +111,8 @@ jobs:
       # require access to the previous implementations 
       # 2) Copy addresses from previous version to root directory: the upgrade tasks need to use the
       # internal addresses that have been deployed (ie, the previous version's addresses)
-      # 3) Deploy mocked payment bridging contracts: this can be removed once fhevm 0.10 is released
-      # as the docker-compose file will consider the `deploy-mocked-payment-bridging-contracts` service
+      # 3) Deploy mocked payment ZamaOFT contract: this can be removed once fhevm 0.10 is released
+      # as the docker-compose file will consider the `deploy-mocked-zama-oft` service
       # 4) Set payment bridging contract addresses in env and solidity files: this can be removed once 
       # fhevm 0.10 is released as the payment bridging contract addresses will be set using the regular 
       # `task:deployAllGatewayContracts` task
@@ -125,7 +125,7 @@ jobs:
         run: |
           cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
           docker cp deploy-gateway-contracts:/app/addresses ./
-          npx hardhat task:deployMockedPaymentBridgingContracts
+          npx hardhat task:deployMockedZamaOFT
           npx hardhat task:setPaymentBridgingContractAddresses --use-internal-addresses true
           npx hardhat task:deploySingleContract --name ProtocolPayment --use-internal-proxy-address true
 

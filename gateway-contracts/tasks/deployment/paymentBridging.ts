@@ -42,11 +42,11 @@ async function deployMockedPaymentBridgingContract(
   return contractAddress;
 }
 
-// Deploy the mocked payment bridging contracts
+// Deploy the mocked ZamaOFT contract
 // Currently, only the ZamaOFT contract is deployed as the FeesSenderToBurner contract can be
 // simply mocked with a random address (there is no logic to test on this contract)
 // We keep the command general enough if we ever need to consider additional contracts in the future
-task("task:deployMockedPaymentBridgingContracts").setAction(async function (_, hre) {
+task("task:deployMockedZamaOFT").setAction(async function (_, hre) {
   // Empty the mocked payment bridging contracts env file
   createEnvAddressesFile(MOCKED_PAYMENT_BRIDGING_ADDRESSES_ENV_FILE_NAME);
 

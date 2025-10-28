@@ -23,8 +23,8 @@ services:
     ports:
       - "8546:8546"
 
-  deploy-mocked-payment-bridging-contracts:
-    container_name: deploy-mocked-payment-bridging-contracts
+  deploy-mocked-zama-oft:
+    container_name: deploy-mocked-zama-oft
     build:
       context: .
       dockerfile: Dockerfile
@@ -35,7 +35,7 @@ services:
       - CHAIN_ID_GATEWAY=54321
       - RPC_URL=http://anvil-node:8546
     command:
-      - npx hardhat task:deployMockedPaymentBridgingContracts
+      - npx hardhat task:deployMockedZamaOFT
     depends_on:
       anvil-node:
         condition: service_started
@@ -58,7 +58,7 @@ services:
     depends_on:
       anvil-node:
         condition: service_started
-      deploy-mocked-payment-bridging-contracts:
+      deploy-mocked-zama-oft:
         condition: service_completed_successfully
     volumes:
       - addresses-volume:/app/addresses

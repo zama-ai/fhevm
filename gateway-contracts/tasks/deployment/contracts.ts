@@ -170,18 +170,18 @@ task("task:deployProtocolPayment").setAction(async function (_, hre) {
   ]);
 });
 
-// Deploy setup contracts, needed before deploying the regular contracts
+// Deploy setup contracts, needed before deploying the implementation contracts
 task("task:deploySetupContracts")
   .addOptionalParam(
-    "deployMockedPaymentBridgingContracts",
+    "deployMockedZamaOft",
     "If mocked payment bridging contracts should be deployed",
     false,
     types.boolean,
   )
-  .setAction(async function ({ deployMockedPaymentBridgingContracts }, hre) {
+  .setAction(async function ({ deployMockedZamaOft }, hre) {
     // Deploy the mocked payment bridging contracts if needed
-    if (deployMockedPaymentBridgingContracts) {
-      await hre.run("task:deployMockedPaymentBridgingContracts");
+    if (deployMockedZamaOft) {
+      await hre.run("task:deployMockedZamaOFT");
     }
 
     // Deploy the EmptyUUPS proxy contracts
@@ -195,8 +195,8 @@ task("task:deploySetupContracts")
     setPaymentBridgingContractAddresses();
   });
 
-// Deploy regular contracts
-task("task:deployRegularContracts").setAction(async function (_, hre) {
+// Deploy implementation contracts
+task("task:deployImplementationContracts").setAction(async function (_, hre) {
   // Compile the implementation contracts
   // The deployEmptyUUPSProxies task has generated the contracts' addresses in `addresses/*.sol`.
   // Contracts thus need to be compiled after deploying the EmptyUUPS proxy contracts in order to
@@ -233,17 +233,17 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   // Deploy all the setup contracts
   await hre.run("task:deploySetupContracts");
 
-  // Deploy all the regular contracts
-  await hre.run("task:deployRegularContracts");
+  // Deploy all the implementation contracts
+  await hre.run("task:deployImplementationContracts");
 });
 
-// Deploy all the contracts, including the mocked payment bridging ones (FOR TESTS ONLY)
+// Deploy all the contracts, including the mocked ZamaOFT one (FOR TESTS ONLY)
 task("task:deployAllGatewayContractsForTests").setAction(async function (_, hre) {
-  // Deploy all the setup contracts, including the mocked payment bridging ones
-  await hre.run("task:deploySetupContracts", { deployMockedPaymentBridgingContracts: true });
+  // Deploy all the setup contracts, including the mocked ZamaOFT one
+  await hre.run("task:deploySetupContracts", { deployMockedZamaOft: true });
 
-  // Deploy all the regular contracts
-  await hre.run("task:deployRegularContracts");
+  // Deploy all the implementation contracts
+  await hre.run("task:deployImplementationContracts");
 });
 
 // Deploy a single contract, after the GatewayConfig contract has been deployed

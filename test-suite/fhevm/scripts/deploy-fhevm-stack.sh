@@ -332,7 +332,7 @@ ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
 
 # Setup mocked payment contracts and set the relayer with the needed funding and allowances
 ${RUN_COMPOSE} "gateway-mocked-payment" "Gateway mocked payment" \
-    "gateway-deploy-mocked-payment-bridging-contracts:complete" \
+    "gateway-deploy-mocked-zama-oft:complete" \
     "gateway-set-relayer-mocked-payment:complete" \
 
 # Setup Gateway contracts, which will trigger the KMS materials generation. Note
