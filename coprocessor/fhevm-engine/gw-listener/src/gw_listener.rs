@@ -13,6 +13,12 @@ use tracing::{debug, error, info};
 use crate::aws_s3::{download_key_from_s3, AwsS3Interface};
 use crate::database::{tenant_id, update_tenant_crs, update_tenant_key};
 use crate::digest::{digest_crs, digest_key};
+use crate::metrics::{
+    ACTIVATE_CRS_FAIL_COUNTER, ACTIVATE_CRS_SUCCESS_COUNTER, ACTIVATE_KEY_FAIL_COUNTER,
+    ACTIVATE_KEY_SUCCESS_COUNTER, CRS_DIGEST_MISMATCH_COUNTER, GET_BLOCK_NUM_FAIL_COUNTER,
+    GET_BLOCK_NUM_SUCCESS_COUNTER, GET_LOGS_FAIL_COUNTER, GET_LOGS_SUCCESS_COUNTER,
+    KEY_DIGEST_MISMATCH_COUNTER, VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER,
+};
 use crate::sks_key::extract_server_key_without_ns;
 use crate::{ChainId, ConfigSettings, HealthStatus, KeyId, KeyType};
 
@@ -195,7 +201,11 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                 }
 
                 _ = ticker.tick() => {
-                    let current_block = self.provider.get_block_number().await?;
+                    let current_block = self.provider.get_block_number().await.inspect(|_| {
+                        GET_BLOCK_NUM_SUCCESS_COUNTER.inc();
+                    }).inspect_err(|_| {
+                        GET_BLOCK_NUM_FAIL_COUNTER.inc();
+                    })?;
 
                     let from_block = if let Some(last) = last_processed_block_num {
                         if last >= current_block {
@@ -216,7 +226,16 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                         .from_block(from_block)
                         .to_block(to_block);
 
-                    let logs = self.provider.get_logs(&filter).await?;
+                    let mut activate_crs_success = 0;
+                    let mut crs_digest_mismatch = 0;
+                    let mut activate_key_success = 0;
+                    let mut key_digest_mismatch = 0;
+
+                    let logs = self.provider.get_logs(&filter).await.inspect(|_| {
+                        GET_LOGS_SUCCESS_COUNTER.inc();
+                    }).inspect_err(|_| {
+                        GET_LOGS_FAIL_COUNTER.inc();
+                    })?;
                     for log in logs {
                         if let Ok(event) = KMSGeneration::KMSGenerationEvents::decode_log(&log.inner) {
                             match event.data {
@@ -224,21 +243,35 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                     // IMPORTANT: If we ignore the event due to digest mismatch, this might lead to inconsistency between coprocessors.
                                     // We choose to ignore the event and then manually fix if it happens.
                                     match self.activate_crs(db_pool, a, &self.aws_s3_client, self.conf.host_chain_id).await {
-                                        Ok(_) => info!("ActivateCrs event successful"),
+                                        Ok(_) => {
+                                            activate_crs_success += 1;
+                                            info!("ActivateCrs event successful");
+                                        },
                                         Err(e) if e.is::<DigestMismatchError>() => {
+                                            crs_digest_mismatch += 1;
                                             error!(error = %e, "CRS digest mismatch, ignoring event");
                                         }
-                                        Err(e) => return Err(e),
+                                        Err(e) => {
+                                            ACTIVATE_CRS_FAIL_COUNTER.inc();
+                                            return Err(e);
+                                        }
                                     }
                                 },
                                 // IMPORTANT: See comment above.
                                 KMSGeneration::KMSGenerationEvents::ActivateKey(a) => {
                                     match self.activate_key(db_pool, a, &self.aws_s3_client, self.conf.host_chain_id).await {
-                                        Ok(_) => info!("ActivateKey event successful"),
+                                        Ok(_) => {
+                                            activate_key_success += 1;
+                                            info!("ActivateKey event successful");
+                                        }
                                         Err(e) if e.is::<DigestMismatchError>() => {
+                                            key_digest_mismatch += 1;
                                             error!(error = %e, "Key digest mismatch, ignoring event");
                                         }
-                                        Err(e) => return Err(e),
+                                        Err(e) => {
+                                            ACTIVATE_KEY_FAIL_COUNTER.inc();
+                                            return Err(e);
+                                        }
                                     };
                                 },
                                 _ => {}
@@ -247,6 +280,14 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                     }
                     last_processed_block_num = Some(to_block);
                     self.update_last_block_num(db_pool, last_processed_block_num).await?;
+
+                    // Update metrics only after a successful DB update as we don't want to consider events that will be processed again
+                    // if the DB update fails.
+                    ACTIVATE_CRS_SUCCESS_COUNTER.inc_by(activate_crs_success);
+                    CRS_DIGEST_MISMATCH_COUNTER.inc_by(crs_digest_mismatch);
+                    ACTIVATE_KEY_SUCCESS_COUNTER.inc_by(activate_key_success);
+                    KEY_DIGEST_MISMATCH_COUNTER.inc_by(key_digest_mismatch);
+
                     if to_block < current_block {
                         debug!(to_block = to_block,
                             current_block = current_block,
@@ -299,7 +340,12 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             self.conf.verify_proof_req_db_channel
         )
         .execute(db_pool)
-        .await?;
+        .await.
+        inspect(|_| {
+            VERIFY_PROOF_SUCCESS_COUNTER.inc();
+        }).inspect_err(|_| {
+            VERIFY_PROOF_FAIL_COUNTER.inc();
+        })?;
         Ok(())
     }
 

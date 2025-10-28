@@ -11,4 +11,4 @@ scrape_configs:
   # Coprocessor job configuration
   - job_name: 'coprocessor'
     static_configs:
-      - targets: ['coprocessor-transaction-sender:9100', 'coprocessor-tfhe-worker:9100', 'coprocessor-sns-worker:9100', 'coprocessor-zkproof-worker:9100']
+      - targets: ['coprocessor-transaction-sender:9100', 'coprocessor-gw-listener:9100', 'coprocessor-tfhe-worker:9100', 'coprocessor-sns-worker:9100', 'coprocessor-zkproof-worker:9100']
