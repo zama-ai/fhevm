@@ -1,12 +1,11 @@
 use anyhow::Result;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 
-pub type TaskResult = Result<(SupportedFheCiphertexts, i16, Vec<u8>, bool)>;
-// pub struct TaskResult {
-//     ct: Result<SupportedFheCiphertexts>,
-//     compressed_ct: Option<(i16, Vec<u8>)>,
-//     is_allowed: bool,
-// }
+pub struct TaskResult {
+    pub ct: SupportedFheCiphertexts,
+    pub compressed_ct: Option<(i16, Vec<u8>)>,
+    pub is_allowed: bool,
+}
 pub struct DFGTxResult {
     pub handle: Handle,
     pub transaction_id: Handle,
@@ -72,7 +71,7 @@ impl std::fmt::Display for SchedulerError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::CyclicDependence => {
-                write!(f, "Depence cycle in dataflow graph")
+                write!(f, "Dependence cycle in dataflow graph")
             }
             Self::DataflowGraphError => {
                 write!(f, "Inconsistent dataflow graph error")
