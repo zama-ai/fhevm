@@ -2,6 +2,7 @@
   "name": "feesBurner",
   "version": "1.0.0",
   "overrides": {
+    "hardhat-deploy": "^1.0.4",
     "@eth-optimism/contracts@0.6.0": {
       "ethers": "^6.15.0"
     }
@@ -21,7 +22,7 @@
     "dotenv": "^17.2.3",
     "ethers": "^6.15.0",
     "hardhat": "^2.26.3",
-    "hardhat-deploy": "^0.12.4",
+    "hardhat-deploy": "^1.0.4",
     "ts-node": "^10.9.2",
     "typechain": "^8.3.2",
     "typescript": "^5.9.3"
