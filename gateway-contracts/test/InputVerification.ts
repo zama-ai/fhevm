@@ -78,12 +78,14 @@ describe("InputVerification", function () {
     let zamaUnfundedSigner: HardhatEthersSigner;
     let inputVerificationAddress: string;
     let protocolPaymentAddress: string;
+    let mockedFeesSenderToBurnerAddress: string;
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
       inputVerification = fixture.inputVerification;
       protocolPayment = fixture.protocolPayment;
       mockedZamaOFT = fixture.mockedZamaOFT;
+      mockedFeesSenderToBurnerAddress = fixture.mockedFeesSenderToBurnerAddress;
       contractChainId = fixture.chainIds[0];
       owner = fixture.owner;
       pauser = fixture.pauser;
@@ -143,7 +145,7 @@ describe("InputVerification", function () {
     describe("$ZAMA fees collection", function () {
       it("Should collect the $ZAMA fees for the input verification", async function () {
         const fundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
-        const protocolPaymentBalance = await mockedZamaOFT.balanceOf(protocolPaymentAddress);
+        const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
 
         // Trigger a proof verification request
         const tx = await inputVerification
@@ -152,16 +154,16 @@ describe("InputVerification", function () {
         tx.wait();
 
         // Check that the $ZAMA fees have been collected from the funded signer and added to the
-        // protocol payment contract's balance
+        // FeesSenderToBurner contract's balance
         const newFundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
-        const newProtocolPaymentBalance = await mockedZamaOFT.balanceOf(protocolPaymentAddress);
+        const newFeesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
         expect(newFundedSignerBalance).to.equal(fundedSignerBalance - inputVerificationPrice);
-        expect(newProtocolPaymentBalance).to.equal(protocolPaymentBalance + inputVerificationPrice);
+        expect(newFeesSenderToBurnerBalance).to.equal(feesSenderToBurnerBalance + inputVerificationPrice);
       });
 
       it("Should revert because sender has not enough $ZAMA tokens", async function () {
-        // Approve the input verification contract with the maximum allowance over the signer's tokens
-        await approveContractWithMaxAllowance(zamaUnfundedSigner, inputVerificationAddress, hre.ethers);
+        // Approve the ProtocolPayment contract with the maximum allowance over the signer's tokens
+        await approveContractWithMaxAllowance(zamaUnfundedSigner, protocolPaymentAddress, hre.ethers);
 
         await expect(
           inputVerification

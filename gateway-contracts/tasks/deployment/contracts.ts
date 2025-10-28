@@ -3,7 +3,7 @@ import { task, types } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 import { getRequiredEnvVar, loadGatewayAddresses, pascalCaseToAddressEnvVar } from "../utils";
-import { setPaymentBridgingContractAddresses } from "./paymentBridging";
+import { setPaymentBridgingContractAddresses } from "./paymentBridging/setAddresses";
 import { GATEWAY_CONFIG_EMPTY_PROXY_NAME, REGULAR_EMPTY_PROXY_NAME } from "./utils";
 
 // Helper function to deploy a contract implementation to its proxy

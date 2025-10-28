@@ -3,8 +3,9 @@ pragma solidity ^0.8.24;
 
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
+import { decryptionAddress, inputVerificationAddress } from "../addresses/GatewayAddresses.sol";
 import { feesSenderToBurnerAddress } from "../addresses/PaymentBridgingAddresses.sol";
+
 import { zamaOFTAddress } from "../addresses/PaymentBridgingAddresses.sol";
 import { IProtocolPayment } from "./interfaces/IProtocolPayment.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
@@ -16,12 +17,22 @@ import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
  */
 contract ProtocolPayment is IProtocolPayment, UUPSUpgradeableEmptyProxy, GatewayOwnable {
     /**
-     * @notice The address of the FeesSenderToBurner contract.
+     * @notice The address of the FeesSenderToBurner contract to send the fees to.
      */
     address private constant FEES_SENDER_TO_BURNER_ADDRESS = address(feesSenderToBurnerAddress);
 
     /**
-     * @notice The interface of the $ZAMA token contract as an ERC20.
+     * @notice The address of the Decryption contract from which some fees are collected.
+     */
+    address private constant DECRYPTION_ADDRESS = address(decryptionAddress);
+
+    /**
+     * @notice The address of the InputVerification contract from which some fees are collected.
+     */
+    address private constant INPUT_VERIFICATION_ADDRESS = address(inputVerificationAddress);
+
+    /**
+     * @notice The interface of the $ZAMA OFT contract as an ERC20 to transfer fees.
      */
     IERC20 private constant ZAMA_OFT = IERC20(zamaOFTAddress);
 
@@ -83,9 +94,6 @@ contract ProtocolPayment is IProtocolPayment, UUPSUpgradeableEmptyProxy, Gateway
         $.publicDecryptionPrice = initialPublicDecryptionPrice;
         $.userDecryptionPrice = initialUserDecryptionPrice;
 
-        // Allow the FeesSenderToBurner address with "infinite" allowance
-        ZAMA_OFT.approve(FEES_SENDER_TO_BURNER_ADDRESS, type(uint256).max);
-
         emit InitializeProtocolPayment(
             initialInputVerificationPrice,
             initialPublicDecryptionPrice,
@@ -100,6 +108,44 @@ contract ProtocolPayment is IProtocolPayment, UUPSUpgradeableEmptyProxy, Gateway
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
     // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+
+    modifier onlyDecryptionContract() {
+        if (msg.sender != DECRYPTION_ADDRESS) {
+            revert SenderNotDecryptionContract(msg.sender);
+        }
+        _;
+    }
+
+    modifier onlyInputVerificationContract() {
+        if (msg.sender != INPUT_VERIFICATION_ADDRESS) {
+            revert SenderNotInputVerificationContract(msg.sender);
+        }
+        _;
+    }
+
+    /**
+     * @notice See {IProtocolPayment-getInputVerificationPrice}.
+     */
+    function getInputVerificationPrice() external view virtual returns (uint256) {
+        ProtocolPaymentStorage storage $ = _getProtocolPaymentStorage();
+        return $.inputVerificationPrice;
+    }
+
+    /**
+     * @notice See {IProtocolPayment-getPublicDecryptionPrice}.
+     */
+    function getPublicDecryptionPrice() external view virtual returns (uint256) {
+        ProtocolPaymentStorage storage $ = _getProtocolPaymentStorage();
+        return $.publicDecryptionPrice;
+    }
+
+    /**
+     * @notice See {IProtocolPayment-getUserDecryptionPrice}.
+     */
+    function getUserDecryptionPrice() external view virtual returns (uint256) {
+        ProtocolPaymentStorage storage $ = _getProtocolPaymentStorage();
+        return $.userDecryptionPrice;
+    }
 
     /**
      * @notice See {IProtocolPayment-setInputVerificationPrice}.
@@ -129,39 +175,27 @@ contract ProtocolPayment is IProtocolPayment, UUPSUpgradeableEmptyProxy, Gateway
     }
 
     /**
-     * @notice See {IProtocolPayment-sendBalance}.
-     * @dev This function can be called by anyone, not just the gateway owner.
+     * @notice See {IProtocolPayment-collectInputVerificationFee}.
      */
-    function sendBalance() external virtual {
-        // Get the total amount of fees aggregated by the ProtocolPayment contract
-        uint256 balance = ZAMA_OFT.balanceOf(address(this));
-
-        // Send all fees to the FeesSenderToBurner contract
-        ZAMA_OFT.transfer(FEES_SENDER_TO_BURNER_ADDRESS, balance);
+    function collectInputVerificationFee(address txSender) external virtual onlyInputVerificationContract {
+        ProtocolPaymentStorage storage $ = _getProtocolPaymentStorage();
+        _transferFromToFeesSenderToBurner(txSender, $.inputVerificationPrice);
     }
 
     /**
-     * @notice See {IProtocolPayment-getInputVerificationPrice}.
+     * @notice See {IProtocolPayment-collectPublicDecryptionFee}.
      */
-    function getInputVerificationPrice() external view virtual returns (uint256) {
+    function collectPublicDecryptionFee(address txSender) external virtual onlyDecryptionContract {
         ProtocolPaymentStorage storage $ = _getProtocolPaymentStorage();
-        return $.inputVerificationPrice;
+        _transferFromToFeesSenderToBurner(txSender, $.publicDecryptionPrice);
     }
 
     /**
-     * @notice See {IProtocolPayment-getPublicDecryptionPrice}.
+     * @notice See {IProtocolPayment-collectUserDecryptionFee}.
      */
-    function getPublicDecryptionPrice() external view virtual returns (uint256) {
+    function collectUserDecryptionFee(address txSender) external virtual onlyDecryptionContract {
         ProtocolPaymentStorage storage $ = _getProtocolPaymentStorage();
-        return $.publicDecryptionPrice;
-    }
-
-    /**
-     * @notice See {IProtocolPayment-getUserDecryptionPrice}.
-     */
-    function getUserDecryptionPrice() external view virtual returns (uint256) {
-        ProtocolPaymentStorage storage $ = _getProtocolPaymentStorage();
-        return $.userDecryptionPrice;
+        _transferFromToFeesSenderToBurner(txSender, $.userDecryptionPrice);
     }
 
     /**
@@ -180,6 +214,15 @@ contract ProtocolPayment is IProtocolPayment, UUPSUpgradeableEmptyProxy, Gateway
                     Strings.toString(PATCH_VERSION)
                 )
             );
+    }
+
+    /**
+     * @notice Transfers the $ZAMA from the sender to the FeesSenderToBurner contract.
+     * @param txSender The address of the transaction sender.
+     * @param price The price of the input verification in $ZAMA base units (using 18 decimals).
+     */
+    function _transferFromToFeesSenderToBurner(address txSender, uint256 price) internal virtual {
+        ZAMA_OFT.transferFrom(txSender, FEES_SENDER_TO_BURNER_ADDRESS, price);
     }
 
     /**

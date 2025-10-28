@@ -60,7 +60,7 @@ export async function approveContractWithMaxAllowance(
 
 // Set the tx sender for mocked payment by:
 // - Funding the tx sender with mocked $ZAMA tokens using the deployer's balance
-// - Approving the relevant contracts with maximum allowance over the signer's tokens
+// - Approving the ProtocolPayment contract with maximum allowance over the signer's tokens
 // The deployer is expected to have deployed the mocked ZamaOFT contract and thus have an initial
 // balance of mocked $ZAMA tokens
 export async function setTxSenderMockedPayment(
@@ -72,13 +72,11 @@ export async function setTxSenderMockedPayment(
   // Fund the tx sender with mocked $ZAMA tokens using the deployer's balance
   await fundTxSenderWithMockedZamaToken(deployer, txSender.address, ethers, verbose);
 
-  // Get the addresses of the contracts to approve
-  const decryptionAddress = getRequiredEnvVar("DECRYPTION_ADDRESS");
-  const inputVerificationAddress = getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS");
+  // Get the addresses of the ProtocolPayment contract to approve
+  const protocolPaymentAddress = getRequiredEnvVar("PROTOCOL_PAYMENT_ADDRESS");
 
-  // Approve the contracts with maximum allowance over the signer's tokens
-  await approveContractWithMaxAllowance(txSender, decryptionAddress, ethers, verbose);
-  await approveContractWithMaxAllowance(txSender, inputVerificationAddress, ethers, verbose);
+  // Approve the ProtocolPayment contract with maximum allowance over the signer's tokens
+  await approveContractWithMaxAllowance(txSender, protocolPaymentAddress, ethers, verbose);
 }
 
 task("task:setTxSenderMockedPayment").setAction(async function (_, hre) {

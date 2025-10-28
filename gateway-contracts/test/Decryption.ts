@@ -120,6 +120,7 @@ describe("Decryption", function () {
   let zamaUnfundedSigner: HardhatEthersSigner;
   let protocolPaymentAddress: string;
   let decryptionAddress: string;
+  let mockedFeesSenderToBurnerAddress: string;
 
   // Add ciphertext materials
   async function prepareAddCiphertextFixture() {
@@ -219,6 +220,7 @@ describe("Decryption", function () {
       decryption = fixtureData.decryption;
       protocolPayment = fixtureData.protocolPayment;
       mockedZamaOFT = fixtureData.mockedZamaOFT;
+      mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
       owner = fixtureData.owner;
       pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
@@ -652,22 +654,22 @@ describe("Decryption", function () {
     describe("$ZAMA fees collection", function () {
       it("Should collect the $ZAMA fees for the public decryption", async function () {
         const fundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
-        const protocolPaymentBalance = await mockedZamaOFT.balanceOf(protocolPaymentAddress);
+        const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
 
         // Trigger a public decryption request
         await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
         // Check that the $ZAMA fees have been collected from the funded signer and added to the
-        // protocol payment contract's balance
+        // FeesSenderToBurner contract's balance
         const newFundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
-        const newProtocolPaymentBalance = await mockedZamaOFT.balanceOf(protocolPaymentAddress);
+        const newFeesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
         expect(newFundedSignerBalance).to.equal(fundedSignerBalance - publicDecryptionPrice);
-        expect(newProtocolPaymentBalance).to.equal(protocolPaymentBalance + publicDecryptionPrice);
+        expect(newFeesSenderToBurnerBalance).to.equal(feesSenderToBurnerBalance + publicDecryptionPrice);
       });
 
       it("Should revert because sender has not enough $ZAMA tokens", async function () {
-        // Approve the public decryption contract with the maximum allowance over the signer's tokens
-        await approveContractWithMaxAllowance(zamaUnfundedSigner, decryptionAddress, hre.ethers);
+        // Approve the ProtocolPayment contract with the maximum allowance over the signer's tokens
+        await approveContractWithMaxAllowance(zamaUnfundedSigner, protocolPaymentAddress, hre.ethers);
 
         await expect(decryption.connect(zamaUnfundedSigner).publicDecryptionRequest(ctHandles, extraDataV0))
           .to.be.revertedWithCustomError(mockedZamaOFT, "ERC20InsufficientBalance")
@@ -1546,7 +1548,7 @@ describe("Decryption", function () {
     describe("$ZAMA fees collection", function () {
       it("Should collect the $ZAMA fees for the user decryption", async function () {
         const fundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
-        const protocolPaymentBalance = await mockedZamaOFT.balanceOf(protocolPaymentAddress);
+        const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
 
         // Trigger a user decryption request
         await decryption.userDecryptionRequest(
@@ -1560,16 +1562,16 @@ describe("Decryption", function () {
         );
 
         // Check that the $ZAMA fees have been collected from the funded signer and added to the
-        // protocol payment contract's balance
+        // FeesSenderToBurner contract's balance
         const newFundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
-        const newProtocolPaymentBalance = await mockedZamaOFT.balanceOf(protocolPaymentAddress);
+        const newFeesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
         expect(newFundedSignerBalance).to.equal(fundedSignerBalance - userDecryptionPrice);
-        expect(newProtocolPaymentBalance).to.equal(protocolPaymentBalance + userDecryptionPrice);
+        expect(newFeesSenderToBurnerBalance).to.equal(feesSenderToBurnerBalance + userDecryptionPrice);
       });
 
       it("Should revert because sender has not enough $ZAMA tokens", async function () {
-        // Approve the user decryption contract with the maximum allowance over the signer's tokens
-        await approveContractWithMaxAllowance(zamaUnfundedSigner, decryptionAddress, hre.ethers);
+        // Approve the ProtocolPayment contract with the maximum allowance over the signer's tokens
+        await approveContractWithMaxAllowance(zamaUnfundedSigner, protocolPaymentAddress, hre.ethers);
 
         await expect(
           decryption

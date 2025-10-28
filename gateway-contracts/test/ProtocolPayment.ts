@@ -3,11 +3,14 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 
 import { GatewayConfig, ProtocolPayment, ZamaOFT } from "../typechain-types";
-import { loadTestVariablesFixture } from "./utils";
+import { createRandomWallet, loadTestVariablesFixture } from "./utils";
 
 describe("ProtocolPayment", function () {
   // Define 1 $ZAMA token (using 18 decimals)
   const oneZamaToken = BigInt(10 ** 18);
+
+  // Define fake tx sender
+  const fakeTxSender = createRandomWallet();
 
   let gatewayConfig: GatewayConfig;
   let protocolPayment: ProtocolPayment;
@@ -59,28 +62,23 @@ describe("ProtocolPayment", function () {
     });
   });
 
-  describe("Send fees to burner", function () {
-    const protocolPaymentBalance = oneZamaToken * BigInt(10 ** 3);
-
-    let protocolPaymentAddress: string;
-
-    beforeEach(async function () {
-      protocolPaymentAddress = await protocolPayment.getAddress();
-
-      // Set an initial balance for the protocol payment contract using the owner's tokens
-      await mockedZamaOFT.connect(owner).transfer(protocolPaymentAddress, protocolPaymentBalance);
+  describe("Fee collection errors", function () {
+    it("Should revert because sender is not the InputVerification contract for input verification fee collection", async function () {
+      await expect(protocolPayment.connect(fakeTxSender).collectInputVerificationFee(fakeTxSender.address))
+        .to.be.revertedWithCustomError(protocolPayment, "SenderNotInputVerificationContract")
+        .withArgs(fakeTxSender.address);
     });
 
-    it("Should send all protocol fees to the FeesSenderToBurner address", async function () {
-      await protocolPayment.sendBalance();
+    it("Should revert because sender is not the Decryption contract for public decryption fee collection", async function () {
+      await expect(protocolPayment.connect(fakeTxSender).collectPublicDecryptionFee(fakeTxSender.address))
+        .to.be.revertedWithCustomError(protocolPayment, "SenderNotDecryptionContract")
+        .withArgs(fakeTxSender.address);
+    });
 
-      // Check that the protocol payment contract has no balance left
-      const newProtocolPaymentBalance = await mockedZamaOFT.balanceOf(protocolPaymentAddress);
-      expect(newProtocolPaymentBalance).to.equal(BigInt(0));
-
-      // Check that the FeesSenderToBurner address has the ProtocolPayment's initial balance
-      const newFeesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
-      expect(newFeesSenderToBurnerBalance).to.equal(protocolPaymentBalance);
+    it("Should revert because sender is not the Decryption contract for user decryption fee collection", async function () {
+      await expect(protocolPayment.connect(fakeTxSender).collectUserDecryptionFee(fakeTxSender.address))
+        .to.be.revertedWithCustomError(protocolPayment, "SenderNotDecryptionContract")
+        .withArgs(fakeTxSender.address);
     });
   });
 });

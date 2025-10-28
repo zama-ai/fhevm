@@ -198,7 +198,7 @@ export async function loadTestVariablesFixture() {
   const zamaFundedSigner = hardhatSigners[0];
 
   // Fund the signer with mocked $ZAMA tokens and approve the contracts with maximum allowance over its tokens
-  await setTxSenderMockedPayment(fixtureData.owner, zamaFundedSigner, hre.ethers);
+  await setTxSenderMockedPayment(fixtureData.owner, zamaFundedSigner, hre.ethers, true);
 
   // Get the third hardhat signer and do not fund it with mocked $ZAMA tokens
   // Note: the second signer is the owner, which is funded by default

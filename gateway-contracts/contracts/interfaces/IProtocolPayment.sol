@@ -38,27 +38,16 @@ interface IProtocolPayment {
     event NewUserDecryptionPrice(uint256 price);
 
     /**
-     * @notice Sets the price in $ZAMA for an input verification.
-     * @param price The price of the input verification in $ZAMA base units (using 18 decimals).
+     * @notice Emitted when the sender is not the Decryption contract.
+     * @param sender The address of the sender.
      */
-    function setInputVerificationPrice(uint256 price) external;
+    error SenderNotDecryptionContract(address sender);
 
     /**
-     * @notice Sets the price in $ZAMA for a public decryption.
-     * @param price The price of the public decryption in $ZAMA base units (using 18 decimals).
+     * @notice Emitted when the sender is not the InputVerification contract.
+     * @param sender The address of the sender.
      */
-    function setPublicDecryptionPrice(uint256 price) external;
-
-    /**
-     * @notice Sets the price in $ZAMA for a user decryption (including delegated user decryption).
-     * @param price The price of the user decryption in $ZAMA base units (using 18 decimals).
-     */
-    function setUserDecryptionPrice(uint256 price) external;
-
-    /**
-     * @notice Sends all the protocol fees (the contract's balance) to the burner contract.
-     */
-    function sendBalance() external;
+    error SenderNotInputVerificationContract(address sender);
 
     /**
      * @notice Get the price in $ZAMA for an input verification.
@@ -77,6 +66,43 @@ interface IProtocolPayment {
      * @return The price of the user decryption in $ZAMA base units (using 18 decimals).
      */
     function getUserDecryptionPrice() external view returns (uint256);
+
+    /**
+     * @notice Sets the price in $ZAMA for an input verification.
+     * @param price The price of the input verification in $ZAMA base units (using 18 decimals).
+     */
+    function setInputVerificationPrice(uint256 price) external;
+
+    /**
+     * @notice Sets the price in $ZAMA for a public decryption.
+     * @param price The price of the public decryption in $ZAMA base units (using 18 decimals).
+     */
+    function setPublicDecryptionPrice(uint256 price) external;
+
+    /**
+     * @notice Sets the price in $ZAMA for a user decryption (including delegated user decryption).
+     * @param price The price of the user decryption in $ZAMA base units (using 18 decimals).
+     */
+    function setUserDecryptionPrice(uint256 price) external;
+
+    /**
+     * @notice Collects the $ZAMA fees from the transaction sender for an input verification.
+     * @param txSender The address of the transaction sender.
+     */
+    function collectInputVerificationFee(address txSender) external;
+
+    /**
+     * @notice Collects the $ZAMA fees from the transaction sender for a public decryption.
+     * @param txSender The address of the transaction sender.
+     */
+    function collectPublicDecryptionFee(address txSender) external;
+
+    /**
+     * @notice Collects the $ZAMA fees from the transaction sender for a user decryption (including
+     * delegated user decryption).
+     * @param txSender The address of the transaction sender.
+     */
+    function collectUserDecryptionFee(address txSender) external;
 
     /**
      * @notice Returns the versions of the ProtocolPayment contract in SemVer format.
