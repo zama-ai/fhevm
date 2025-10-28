@@ -46,18 +46,18 @@ use tracing::{debug, info, span, Level};
 
 use crate::{
     blockchain::{
-        fhevm::ethereum::listener::{
-            ethereum_listener, fhevm_event_log_converter, gateway_event_log_converter,
-        },
+        fhevm::ethereum::listener::ethereum_listener as fhevm_ethereum_listener,
         fhevm::ethereum::{
             parse_private_key, ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
         },
+        gateway::arbitrum::listener::ethereum_listener as gateway_ethereum_listener,
         InputProofGatewayHandler, PublicDecryptFhevmHandler, PublicDecryptGatewayHandler,
         UserDecryptGatewayHandler,
     },
     config::settings::Settings,
     core::event::{
-        GenericEventId, InputProofEventId, PublicDecryptEventId, RelayerEvent, UserDecryptEventId,
+        GatewayChainEventId, HostChainEventId, InputProofEventId, PublicDecryptEventId,
+        RelayerEvent, UserDecryptEventId,
     },
     http::http_server::run_http_server,
     metrics,
@@ -254,13 +254,13 @@ pub async fn run_fhevm_relayer(
         Arc::clone(&input_proof_gw_handler),
     );
     orchestrator.register_handler(
-        GenericEventId::EventLogRcvdFromGw.into(),
+        GatewayChainEventId::EventLogRcvd.into(),
         Arc::clone(&input_proof_gw_handler),
     );
 
     // Register public decryption events
     orchestrator.register_handler(
-        GenericEventId::EventLogRcvdFromFhevm.into(),
+        HostChainEventId::EventLogRcvd.into(),
         Arc::clone(&fhevm_event_log_handler),
     );
     orchestrator.register_handler(
@@ -334,12 +334,12 @@ pub async fn run_fhevm_relayer(
     );
 
     orchestrator.register_handler(
-        GenericEventId::EventLogRcvdFromGw.into(),
+        GatewayChainEventId::EventLogRcvd.into(),
         Arc::clone(&public_decrypt_gateway_handler),
     );
 
     orchestrator.register_handler(
-        GenericEventId::EventLogRcvdFromGw.into(),
+        GatewayChainEventId::EventLogRcvd.into(),
         Arc::clone(&user_decrypt_gateway_handler),
     );
 
@@ -371,9 +371,8 @@ pub async fn run_fhevm_relayer(
         .new_subscription(filter_fhevm, latest_block_fhevm)
         .await?;
     info!("Starting Relayer fhevm Listener");
-    task_set.spawn(ethereum_listener(
+    task_set.spawn(fhevm_ethereum_listener(
         subscription_fhevm,
-        fhevm_event_log_converter,
         Arc::clone(&orchestrator),
         Arc::clone(&fhevm_block_store),
     ));
@@ -405,9 +404,8 @@ pub async fn run_fhevm_relayer(
         .new_subscription(filter_gateway, latest_block_gateway)
         .await?;
     info!("Starting Relayer Gateway Listener");
-    task_set.spawn(ethereum_listener(
+    task_set.spawn(gateway_ethereum_listener(
         subscription_gateway,
-        gateway_event_log_converter,
         Arc::clone(&orchestrator),
         Arc::clone(&gateway_block_store),
     ));

@@ -89,7 +89,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HandlerRegistry<E>
 mod tests {
 
     use crate::core::event::{
-        ApiCategory, ApiVersion, GenericEventData, RelayerEvent, RelayerEventData,
+        ApiCategory, ApiVersion, HostChainEventData, RelayerEvent, RelayerEventData,
     };
     use crate::orchestrator::traits::{Event, EventDispatcher, EventHandler, HandlerRegistry};
     use crate::orchestrator::{Orchestrator, TokioEventDispatcher};
@@ -129,7 +129,7 @@ mod tests {
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },
-            RelayerEventData::Generic(GenericEventData::EventLogFromFhevm {
+            RelayerEventData::HostChain(HostChainEventData::EventLogRcvd {
                 log: Log::default(),
             }),
         );

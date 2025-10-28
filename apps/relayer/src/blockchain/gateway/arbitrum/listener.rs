@@ -1,7 +1,7 @@
 use tracing::{error, info};
 
 use crate::core::event::{
-    ApiCategory, ApiVersion, GenericEventData, RelayerEvent, RelayerEventData,
+    ApiCategory, ApiVersion, GatewayChainEventData, RelayerEvent, RelayerEventData,
 };
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
@@ -10,19 +10,8 @@ use alloy::rpc::types::Log;
 use futures::StreamExt;
 use std::sync::Arc;
 
-pub type EventLogConverter = fn(Log) -> RelayerEventData;
-
-pub fn gateway_event_log_converter(log: Log) -> RelayerEventData {
-    RelayerEventData::Generic(GenericEventData::EventLogFromGw { log })
-}
-
-pub fn fhevm_event_log_converter(log: Log) -> RelayerEventData {
-    RelayerEventData::Generic(GenericEventData::EventLogFromFhevm { log })
-}
-
 pub async fn ethereum_listener(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
-    log_converter: EventLogConverter,
     orchestrator: Arc<
         Orchestrator<
             impl EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
@@ -41,7 +30,7 @@ pub async fn ethereum_listener(
                             category: ApiCategory::PRODUCTION,
                             number: 1,
                         },
-                        log_converter(event_log.clone()),
+                        RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { log: event_log.clone() }),
                     );
                     orchestrator.dispatch_event(event).await.unwrap_or_else(|e| {
                         error!(

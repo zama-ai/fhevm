@@ -33,14 +33,26 @@ use uuid::Uuid;
 
 #[repr(u8)]
 #[derive(Debug)]
-/// Event Ids corresponding the events of GenericEvent type.
-pub enum GenericEventId {
-    EventLogRcvdFromFhevm = 0,
-    EventLogRcvdFromGw = 1,
+/// Event Ids corresponding the events of HostChainEvent type.
+pub enum HostChainEventId {
+    EventLogRcvd = 40,
 }
 
-impl From<GenericEventId> for u8 {
-    fn from(e: GenericEventId) -> u8 {
+impl From<HostChainEventId> for u8 {
+    fn from(e: HostChainEventId) -> u8 {
+        e as u8
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+/// Event Ids corresponding the events of GatewayChainEvent type.
+pub enum GatewayChainEventId {
+    EventLogRcvd = 50,
+}
+
+impl From<GatewayChainEventId> for u8 {
+    fn from(e: GatewayChainEventId) -> u8 {
         e as u8
     }
 }
@@ -155,7 +167,7 @@ const BAD_CONVERSION_STATUS_CODE: StatusCode = StatusCode::INTERNAL_SERVER_ERROR
 impl IntoResponse for RelayerEvent {
     fn into_response(self) -> Response {
         match &self.data {
-            RelayerEventData::Generic(_) => {
+            RelayerEventData::HostChain(_) | RelayerEventData::GatewayChain(_) => {
                 (BAD_CONVERSION_STATUS_CODE, BAD_CONVERSION_BODY).into_response()
             }
             RelayerEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
@@ -251,12 +263,12 @@ impl Event for RelayerEvent {
 
     fn event_id(&self) -> u8 {
         match &self.data {
-            RelayerEventData::Generic(generic_event) => match generic_event {
-                GenericEventData::EventLogFromFhevm { .. } => {
-                    GenericEventId::EventLogRcvdFromFhevm.into()
-                }
-                GenericEventData::EventLogFromGw { .. } => {
-                    GenericEventId::EventLogRcvdFromGw.into()
+            RelayerEventData::HostChain(host_event) => match host_event {
+                HostChainEventData::EventLogRcvd { .. } => HostChainEventId::EventLogRcvd.into(),
+            },
+            RelayerEventData::GatewayChain(gateway_event) => match gateway_event {
+                GatewayChainEventData::EventLogRcvd { .. } => {
+                    GatewayChainEventId::EventLogRcvd.into()
                 }
             },
             RelayerEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
@@ -346,11 +358,11 @@ pub enum ApiCategory {
 }
 
 /// Relayer event data represents the different categories of event data, each
-/// representing a specific flow. Generic event data represents the event data
-/// shared between the different flows.
+/// representing a specific flow.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RelayerEventData {
-    Generic(GenericEventData),
+    HostChain(HostChainEventData),
+    GatewayChain(GatewayChainEventData),
     PublicDecrypt(PublicDecryptEventData),
     UserDecrypt(UserDecryptEventData),
     InputProof(InputProofEventData),
@@ -359,7 +371,8 @@ pub enum RelayerEventData {
 impl AsRef<str> for RelayerEventData {
     fn as_ref(&self) -> &str {
         match self {
-            RelayerEventData::Generic(generic_event) => generic_event.event_name(),
+            RelayerEventData::HostChain(host_event) => host_event.event_name(),
+            RelayerEventData::GatewayChain(gateway_event) => gateway_event.event_name(),
             RelayerEventData::PublicDecrypt(decrypt_event) => decrypt_event.event_name(),
             RelayerEventData::UserDecrypt(decrypt_event) => decrypt_event.event_name(),
             RelayerEventData::InputProof(input_event) => input_event.event_name(),
@@ -368,19 +381,29 @@ impl AsRef<str> for RelayerEventData {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum GenericEventData {
-    /// Event representing a raw blockchain event log received from fhevm blockchain.
-    EventLogFromFhevm { log: Log },
-
-    /// Event representing a raw blockchain event log received from gateway blockchain.
-    EventLogFromGw { log: Log },
+pub enum HostChainEventData {
+    /// Event representing a raw blockchain event log received from host chain (FHEVM).
+    EventLogRcvd { log: Log },
 }
 
-impl GenericEventData {
+impl HostChainEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            GenericEventData::EventLogFromFhevm { .. } => "Generic::EventLogFromFhevm",
-            GenericEventData::EventLogFromGw { .. } => "Generic::EventLogFromGw",
+            HostChainEventData::EventLogRcvd { .. } => "HostChain::EventLogRcvd",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum GatewayChainEventData {
+    /// Event representing a raw blockchain event log received from gateway chain.
+    EventLogRcvd { log: Log },
+}
+
+impl GatewayChainEventData {
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            GatewayChainEventData::EventLogRcvd { .. } => "GatewayChain::EventLogRcvd",
         }
     }
 }

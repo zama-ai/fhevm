@@ -3,8 +3,8 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            GenericEventData, PublicDecryptEventData, PublicDecryptRequest, PublicDecryptResponse,
-            RelayerEvent, RelayerEventData,
+            HostChainEventData, PublicDecryptEventData, PublicDecryptRequest,
+            PublicDecryptResponse, RelayerEvent, RelayerEventData,
         },
     },
     orchestrator::{
@@ -251,7 +251,7 @@ impl FhevmHandler {
 impl EventHandler<RelayerEvent> for FhevmHandler {
     async fn handle_event(&self, event: RelayerEvent) {
         match event.clone().data {
-            RelayerEventData::Generic(GenericEventData::EventLogFromFhevm {
+            RelayerEventData::HostChain(HostChainEventData::EventLogRcvd {
                 log: eth_event_log,
             }) => {
                 if let Some(topic0) = eth_event_log.topic0() {

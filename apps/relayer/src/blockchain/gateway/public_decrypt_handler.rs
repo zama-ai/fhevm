@@ -4,7 +4,7 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            ApiVersion, GenericEventData, PublicDecryptEventData, PublicDecryptRequest,
+            ApiVersion, GatewayChainEventData, PublicDecryptEventData, PublicDecryptRequest,
             PublicDecryptResponse, RelayerEvent, RelayerEventData,
         },
     },
@@ -430,7 +430,9 @@ impl GatewayHandler {
             event.request_id,
         );
 
-        if let RelayerEventData::Generic(GenericEventData::EventLogFromGw { log }) = &event.data {
+        if let RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { log }) =
+            &event.data
+        {
             if let Some(topic) = log.topic0() {
                 if *topic == Decryption::PublicDecryptionResponse::SIGNATURE_HASH {
                     match Decryption::PublicDecryptionResponse::decode_log_data(log.data()) {
@@ -644,7 +646,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 self.send_public_decryption_request_to_gateway(event.clone(), decrypt_request)
                     .await;
             }
-            RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
+            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { ref log }) => {
                 if let Some(topic0) = log.topic0() {
                     if FixedBytes::<32>::from_slice(topic0.as_slice())
                         != Decryption::PublicDecryptionResponse::SIGNATURE_HASH

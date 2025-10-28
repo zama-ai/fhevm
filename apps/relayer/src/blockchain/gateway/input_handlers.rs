@@ -4,7 +4,7 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            GenericEventData, InputProofEventData, InputProofResponse, RelayerEvent,
+            GatewayChainEventData, InputProofEventData, InputProofResponse, RelayerEvent,
             RelayerEventData,
         },
     },
@@ -324,7 +324,9 @@ impl GatewayHandler {
             event.request_id,
         );
 
-        if let RelayerEventData::Generic(GenericEventData::EventLogFromGw { log }) = &event.data {
+        if let RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { log }) =
+            &event.data
+        {
             // Log the raw data for debugging
             debug!(
                 topics = ?log.topics().iter().map(hex::encode).collect::<Vec<_>>(),
@@ -522,7 +524,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 }
             }
 
-            RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
+            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { ref log }) => {
                 if let Some(topic0) = log.topic0() {
                     let sig = FixedBytes::<32>::from_slice(topic0.as_slice());
                     if (sig != InputVerification::VerifyProofResponse::SIGNATURE_HASH)

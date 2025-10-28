@@ -7,7 +7,7 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            ApiVersion, GenericEventData, HandleContractPair, RelayerEvent, RelayerEventData,
+            ApiVersion, GatewayChainEventData, HandleContractPair, RelayerEvent, RelayerEventData,
             UserDecryptEventData, UserDecryptRequest, UserDecryptResponse,
         },
     },
@@ -278,7 +278,9 @@ impl GatewayHandler {
     async fn handle_user_decrypt_response_event_log(&self, event: RelayerEvent) {
         info!("User Decryption response received: {:?}", event.request_id,);
 
-        if let RelayerEventData::Generic(GenericEventData::EventLogFromGw { log }) = &event.data {
+        if let RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { log }) =
+            &event.data
+        {
             if let Some(topic0) = log.topic0() {
                 // Handle individual UserDecryptionResponse events
                 if *topic0 == Decryption::UserDecryptionResponse::SIGNATURE_HASH {
@@ -777,7 +779,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 )
                 .await;
             }
-            RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
+            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { ref log }) => {
                 if let Some(topic0) = log.topic0() {
                     let topic0_fixed = FixedBytes::<32>::from_slice(topic0.as_slice());
                     let individual_response_topic =
