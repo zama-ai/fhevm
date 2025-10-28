@@ -10,7 +10,7 @@ import {
   KMSGenerationMock,
   MultichainACLMock,
 } from "../../typechain-types";
-import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getKeyId, getPrepKeygenId, toValues } from "../utils";
+import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getKeyId, getKeyReshareId, getPrepKeygenId, toValues } from "../utils";
 
 describe("Mock contracts", function () {
   // Mock contracts
@@ -331,6 +331,21 @@ describe("Mock contracts", function () {
       await expect(kmsGenerationMock.crsgenResponse(crsgenId, DefaultBytes, DefaultBytes))
         .to.emit(kmsGenerationMock, "ActivateCrs")
         .withArgs(crsgenId, [DefaultString], DefaultBytes);
+    });
+
+    it("Should emit PRSSInit event on prssInit call", async function () {
+      await expect(kmsGenerationMock.prssInit()).to.emit(kmsGenerationMock, "PRSSInit");
+    });
+
+    it("Should emit KeyReshareSameSet event on keyReshareSameSet call", async function () {
+      // Define incremented prepKeygenId since the mock contract increments
+      // this value internally from previous test cases.
+      const prepKeygenId = getPrepKeygenId(2);
+      const keyReshareId = getKeyReshareId(1);
+
+      await expect(kmsGenerationMock.keyReshareSameSet(keyId))
+        .to.emit(kmsGenerationMock, "KeyReshareSameSet")
+        .withArgs(prepKeygenId, keyId, keyReshareId, DefaultParamsType);
     });
   });
 
