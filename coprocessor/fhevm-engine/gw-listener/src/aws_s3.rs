@@ -110,11 +110,11 @@ fn split_url(s3_bucket_url: &String) -> anyhow::Result<(String, String)> {
         warn!(s3_bucket_url, "Using localhost for minio access");
         host.replace("minio:9000", "172.17.0.1:9000")
     } else {
-        host.to_owned()
+        host
     };
     let bucket = bucket.trim_start_matches('/');
     info!(s3_bucket_url, host, bucket, "Parsed S3 url");
-    Ok((host.to_owned(), bucket.to_owned()))
+    Ok((host, bucket.to_owned()))
 }
 
 pub async fn download_key_from_s3<A: AwsS3Interface>(
