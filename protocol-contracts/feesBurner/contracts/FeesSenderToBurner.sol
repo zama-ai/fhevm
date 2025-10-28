@@ -3,6 +3,7 @@ pragma solidity ^0.8.22;
 
 import { IOFT, SendParam, MessagingFee } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 
 /**
@@ -37,7 +38,7 @@ contract FeesSenderToBurner {
             revert UnsupportedChainID();
         }
         uint8 sharedDecimals = IOFT(_oft).sharedDecimals();
-        uint8 decimals = IOFT(_oft).decimals();
+        uint8 decimals = ERC20(_oft).decimals();
         decimalConversionRate = 10**(decimals-sharedDecimals);
     }
 
@@ -46,7 +47,7 @@ contract FeesSenderToBurner {
     function sendFeesToBurner() external payable {
         uint256 amount = IERC20(ZAMA_OFT).balanceOf(address(this));
         uint256 amountNormalized = (amount/(decimalConversionRate))*decimalConversionRate;
-        
+
         if (amountNormalized == 0) revert NotEnoughZAMAToSend();
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(80000, 0);
