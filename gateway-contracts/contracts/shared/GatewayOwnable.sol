@@ -18,7 +18,9 @@ abstract contract GatewayOwnable {
      */
     error NotGatewayOwner(address sender);
 
-    /// @dev Check that the sender is the owner of the GatewayConfig contract.
+    /**
+     * @notice Checks if the sender is the owner of the GatewayConfig contract.
+     */
     modifier onlyGatewayOwner() {
         /**
          * @dev We cast to Ownable2StepUpgradeable instead of importing GatewayConfig

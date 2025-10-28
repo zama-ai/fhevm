@@ -11,7 +11,7 @@ import {ACL} from "../../contracts/ACL.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {SupportedTypesConstants} from "../fhevmExecutor/fhevmExecutor.t.sol";
-import {ACLChecks} from "../../contracts/shared/ACLChecks.sol";
+import {ACLOwnable} from "../../contracts/shared/ACLOwnable.sol";
 import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract MockHCULimit is HCULimit {
@@ -35,10 +35,10 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
     uint256 internal MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000 - 1;
 
-    bytes32 mockLHS;
-    bytes32 mockRHS;
-    bytes32 mockMiddle;
-    bytes32 mockResult;
+    bytes32 mockLHS = bytes32(uint256(int256(-1)));
+    bytes32 mockRHS = bytes32(uint256(int256(-2)));
+    bytes32 mockMiddle = bytes32(uint256(int256(-3)));
+    bytes32 mockResult = bytes32(uint256(int256(-4)));
 
     function _isTypeSupported(FheType fheType, uint256 supportedTypes) internal pure returns (bool) {
         if ((1 << uint8(fheType)) & supportedTypes == 0) {
@@ -53,22 +53,19 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * This function is executed before each test to ensure a consistent and isolated state.
      */
     function setUp() public {
+        _deployAndEtchACL();
         /// @dev It uses UnsafeUpgrades for measuring code coverage.
         proxy = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, owner)
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
         );
 
         implementation = address(new MockHCULimit());
-        UnsafeUpgrades.upgradeProxy(
-            proxy,
-            implementation,
-            abi.encodeCall(hcuLimit.initializeFromEmptyProxy, ()),
-            owner
-        );
+        vm.startPrank(owner);
+        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(hcuLimit.initializeFromEmptyProxy, ()));
+        vm.stopPrank();
         hcuLimit = MockHCULimit(proxy);
         fhevmExecutor = hcuLimit.getFHEVMExecutorAddress();
-        _deployAndEtchACL();
     }
 
     /**
@@ -91,8 +88,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.3.0")));
-        assertEq(hcuLimit.owner(), owner);
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.1.0")));
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
@@ -1178,7 +1174,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
-        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         this.upgrade(randomAccount);
     }
 

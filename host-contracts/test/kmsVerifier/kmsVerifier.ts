@@ -25,7 +25,7 @@ describe('KMSVerifier', function () {
       const origKMSAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).KMS_VERIFIER_CONTRACT_ADDRESS;
       const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
       const kmsVerifier = await this.kmsFactory.attach(origKMSAdd);
-      expect(await kmsVerifier.getVersion()).to.equal('KMSVerifier v0.2.0');
+      expect(await kmsVerifier.getVersion()).to.equal('KMSVerifier v0.1.0');
 
       const addressSigner = process.env['KMS_SIGNER_ADDRESS_1']!;
       let setSigners = await kmsVerifier.getKmsSigners();

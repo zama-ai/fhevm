@@ -45,6 +45,7 @@ use crate::{
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
+pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct KeySet {
@@ -229,6 +230,7 @@ pub struct HandleItem {
     pub(crate) ct128: Arc<BigCiphertext>,
 
     pub otel: OtelTracer,
+    pub transaction_id: Option<Vec<u8>>,
 }
 
 impl HandleItem {
@@ -241,10 +243,11 @@ impl HandleItem {
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
         sqlx::query!(
-            "INSERT INTO ciphertext_digest (tenant_id, handle)
-            VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            "INSERT INTO ciphertext_digest (tenant_id, handle, transaction_id)
+            VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             self.tenant_id,
             self.handle,
+            self.transaction_id
         )
         .execute(db_txn.as_mut())
         .await?;
@@ -388,11 +391,20 @@ pub async fn run_computation_loop(
     tx: Sender<UploadJob>,
     token: CancellationToken,
     client: Arc<Client>,
+    events_tx: InternalEvents,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = conf.health_checks.port;
 
     let service = Arc::new(
-        SwitchNSquashService::create(pool_mngr, conf, tx, token.child_token(), client).await?,
+        SwitchNSquashService::create(
+            pool_mngr,
+            conf,
+            tx,
+            token.child_token(),
+            client,
+            events_tx.clone(),
+        )
+        .await?,
     );
 
     let http_server = HttpServer::new(service.clone(), port, token.child_token());
@@ -477,6 +489,7 @@ pub async fn create_s3_client(conf: &Config) -> (Arc<aws_sdk_s3::Client>, bool) 
 pub async fn run_all(
     config: Config,
     parent_token: CancellationToken,
+    events_tx: InternalEvents,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Queue of tasks to upload ciphertexts is 10 times the number of concurrent uploads
     // to avoid blocking the worker
@@ -489,7 +502,7 @@ pub async fn run_all(
 
     if !config.service_name.is_empty() {
         if let Err(err) = telemetry::setup_otlp(&config.service_name) {
-            panic!("Error while initializing tracing: {:?}", err);
+            error!(error = %err, "Failed to setup OTLP");
         }
     }
 
@@ -530,7 +543,9 @@ pub async fn run_all(
     let conf = config.clone();
     let token = parent_token.child_token();
 
-    if let Err(err) = run_computation_loop(&pool_mngr, conf, uploads_tx, token, client).await {
+    if let Err(err) =
+        run_computation_loop(&pool_mngr, conf, uploads_tx, token, client, events_tx).await
+    {
         error!(error = %err, "SnS worker failed");
     }
 

@@ -4,9 +4,8 @@ pragma solidity ^0.8.24;
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
-import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {ACLChecks} from "./shared/ACLChecks.sol";
+import {ACLOwnable} from "./shared/ACLOwnable.sol";
 
 /**
  * @title   KMSVerifier.
@@ -14,7 +13,7 @@ import {ACLChecks} from "./shared/ACLChecks.sol";
  *          signature verification functions.
  * @dev     The contract uses EIP712UpgradeableCrossChain for cryptographic operations and is deployed using an UUPS proxy.
  */
-contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain, ACLChecks {
+contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, ACLOwnable {
     /// @notice Returned if the KMS signer to add is already a signer.
     error KMSAlreadySigner();
 
@@ -81,7 +80,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 1;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -95,7 +94,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant KMSVerifierStorageLocation =
@@ -120,17 +119,17 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
         address[] calldata initialSigners,
         uint256 initialThreshold
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __Ownable_init(owner());
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
         defineNewContext(initialSigners, initialThreshold);
     }
 
     /**
      * @notice Re-initializes the contract from V1.
+     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice          Sets a new context (i.e. new set of unique signers and new threshold).

@@ -14,20 +14,23 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
   }
 
   // Compile and deploy all host empty proxy contracts
-  await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxy' });
   await hre.run('task:deployEmptyUUPSProxies');
   await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/immutable' });
   await hre.run('task:deployPauserSet');
 
   // Compile and deploy all host contracts
-  await hre.run('compile:specific', { contract: 'examples' });
   await hre.run('compile:specific', { contract: 'fhevmTemp/contracts' });
   await hre.run('task:deployACL');
   await hre.run('task:deployFHEVMExecutor');
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:deployInputVerifier');
   await hre.run('task:deployHCULimit');
+
+  // Compile and deploy the DecryptionOracle contract
+  await hre.run('compile:specific', { contract: 'fhevmTemp/decryptionOracle' });
   await hre.run('task:deployDecryptionOracle');
+
+  await hre.run('compile:specific', { contract: 'examples' });
 
   console.info('Contract deployment done!');
 });
@@ -74,16 +77,29 @@ address constant pauserSetAdd = ${taskArguments.address};\n`;
     }
   });
 
+async function deployEmptyUUPSForACL(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
+  console.log('Deploying an EmptyUUPSProxyACL proxy contract...');
+  const factory = await ethers.getContractFactory('EmptyUUPSProxyACL', deployer);
+  const UUPSEmptyACL = await upgrades.deployProxy(factory, [deployer.address], {
+    initializer: 'initialize',
+    kind: 'uups',
+  });
+  await UUPSEmptyACL.waitForDeployment();
+  const UUPSEmptyACLAddress = await UUPSEmptyACL.getAddress();
+  console.log('EmptyUUPSProxyACL proxy contract successfully deployed!');
+  return UUPSEmptyACLAddress;
+}
+
 async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
-  console.info('Deploying an EmptyUUPS proxy contract...');
+  console.info('Deploying an EmptyUUPSProxy proxy contract...');
   const factory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const UUPSEmpty = await upgrades.deployProxy(factory, [deployer.address], {
+  const UUPSEmpty = await upgrades.deployProxy(factory, {
     initializer: 'initialize',
     kind: 'uups',
   });
   await UUPSEmpty.waitForDeployment();
   const UUPSEmptyAddress = await UUPSEmpty.getAddress();
-  console.info('EmptyUUPS proxy contract successfully deployed!');
+  console.info('EmptyUUPSProxy proxy contract successfully deployed!');
   return UUPSEmptyAddress;
 }
 
@@ -91,10 +107,19 @@ task('task:deployEmptyUUPSProxies').setAction(async function (
   _taskArguments: TaskArguments,
   { ethers, upgrades, run },
 ) {
+  // Compile the EmptyUUPS proxy contract for ACL
+  await run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxyACL' });
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const aclAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+
+  // Ensure the addresses directory exists.
+  fs.mkdirSync(path.join(__dirname, '../fhevmTemp/addresses'), { recursive: true });
+
+  const aclAddress = await deployEmptyUUPSForACL(ethers, upgrades, deployer);
   await run('task:setACLAddress', { address: aclAddress });
+
+  // Compile the EmptyUUPS proxy contract for other contracts
+  await run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxy' });
 
   const fhevmExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setFHEVMExecutorAddress', { address: fhevmExecutorAddress });
@@ -107,28 +132,52 @@ task('task:deployEmptyUUPSProxies').setAction(async function (
 
   const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setHCULimitAddress', { address: HCULimitAddress });
-
-  const decryptionOracleAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setDecryptionOracleAddress', { address: decryptionOracleAddress });
 });
 
-task('task:deployDecryptionOracle').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
+task('task:deployDecryptionOracle').setAction(async function (_, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplem = await ethers.getContractFactory('DecryptionOracle', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.decryptionoracle'));
-  const proxyAddress = parsedEnv.DECRYPTION_ORACLE_ADDRESS;
-  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem);
-  console.info('DecryptionOracle code set successfully at address:', proxyAddress);
+  const factory = await ethers.getContractFactory('DecryptionOracle', deployer);
+  const decryptionOracle = await upgrades.deployProxy(factory, [deployer.address], {
+    initializer: 'initialize',
+    kind: 'uups',
+  });
+  await decryptionOracle.waitForDeployment();
+  const proxyAddress = await decryptionOracle.getAddress();
+  console.log('DecryptionOracle code set successfully at address:', proxyAddress);
+  // Ensure the addresses/ directory exists or create it
+  fs.mkdirSync('./fhevmTemp/addresses', { recursive: true });
+  const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.decryptionoracle');
+  const content = `DECRYPTION_ORACLE_ADDRESS=${proxyAddress}`;
+  try {
+    fs.writeFileSync(envFilePath, content, { flag: 'w' });
+    console.log('decryptionOracleAddress written to ./fhevmTemp/addresses/.env.decryptionoracle successfully!');
+  } catch (err) {
+    console.error('Failed to write to ./fhevmTemp/addresses/.env.decryptionoracle:', err);
+  }
+
+  const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
+
+pragma solidity ^0.8.24;
+
+address constant decryptionOracleAdd = ${proxyAddress};
+`;
+
+  try {
+    fs.writeFileSync('./fhevmTemp/addresses/DecryptionOracleAddress.sol', solidityTemplate, {
+      encoding: 'utf8',
+      flag: 'w',
+    });
+    console.log('./fhevmTemp/addresses/DecryptionOracleAddress.sol file has been generated successfully.');
+  } catch (error) {
+    console.error('Failed to write ./fhevmTemp/addresses/DecryptionOracleAddress.sol', error);
+  }
 });
 
 task('task:deployACL').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxyACL', deployer);
   const newImplem = await ethers.getContractFactory('ACL', deployer);
   const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
   const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
@@ -211,8 +260,13 @@ task('task:deployInputVerifier')
       }
     }
 
+    const initialThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
+
     await upgrades.upgradeProxy(proxy, newImplem, {
-      call: { fn: 'initializeFromEmptyProxy', args: [verifyingContractSource, chainIDSource, initialSigners] },
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold],
+      },
     });
     console.info('InputVerifier code set successfully at address:', proxyAddress);
   });

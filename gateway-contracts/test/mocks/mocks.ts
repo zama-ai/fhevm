@@ -19,7 +19,7 @@ describe("Mock contracts", function () {
   let gatewayConfigMock: GatewayConfigMock;
   let kmsGenerationMock: KMSGenerationMock;
   let inputVerificationMock: InputVerificationMock;
-  let MultichainACLMock: MultichainACLMock;
+  let multichainACLMock: MultichainACLMock;
 
   // Default values
   const DefaultBytes = ethers.hexlify(new Uint8Array(0));
@@ -38,13 +38,7 @@ describe("Mock contracts", function () {
 
   const DefaultProtocolMetadata = { name: DefaultString, website: DefaultString };
 
-  const DefaultKmsNodeV1 = {
-    txSenderAddress: DefaultAddress,
-    signerAddress: DefaultAddress,
-    ipAddress: DefaultString,
-  };
-
-  const DefaultKmsNodeV2 = {
+  const DefaultKmsNode = {
     txSenderAddress: DefaultAddress,
     signerAddress: DefaultAddress,
     ipAddress: DefaultString,
@@ -81,11 +75,6 @@ describe("Mock contracts", function () {
     addresses: [DefaultAddress],
   };
 
-  const DefaultDelegationAccounts = {
-    delegatorAddress: DefaultAddress,
-    delegatedAddress: DefaultAddress,
-  };
-
   const DefaultParamsType = ParamsTypeEnum.Default;
 
   const DefaultKmsDigest = {
@@ -109,11 +98,11 @@ describe("Mock contracts", function () {
     const kmsGenerationFactory = await ethers.getContractFactory("KMSGenerationMock");
     const kmsGenerationMock = await kmsGenerationFactory.deploy();
 
-    const MultichainACLFactory = await ethers.getContractFactory("MultichainACLMock");
-    const MultichainACLMock = await MultichainACLFactory.deploy();
+    const multichainACLFactory = await ethers.getContractFactory("MultichainACLMock");
+    const multichainACLMock = await multichainACLFactory.deploy();
 
     return {
-      MultichainACLMock,
+      multichainACLMock,
       ciphertextCommitsMock,
       decryptionMock,
       gatewayConfigMock,
@@ -130,7 +119,7 @@ describe("Mock contracts", function () {
     gatewayConfigMock = fixture.gatewayConfigMock;
     kmsGenerationMock = fixture.kmsGenerationMock;
     inputVerificationMock = fixture.inputVerificationMock;
-    MultichainACLMock = fixture.MultichainACLMock;
+    multichainACLMock = fixture.multichainACLMock;
   });
 
   describe("CiphertextCommitsMock", async function () {
@@ -186,46 +175,18 @@ describe("Mock contracts", function () {
         );
     });
 
-    it("Should emit UserDecryptionRequest event on delegated user decryption request", async function () {
-      userDecryptionCounterId++;
-      await expect(
-        decryptionMock.delegatedUserDecryptionRequest(
-          EmptyArray,
-          DefaultRequestValidity,
-          DefaultDelegationAccounts,
-          DefaultContractsInfo,
-          DefaultBytes,
-          DefaultBytes,
-          DefaultBytes,
-        ),
-      )
-        .to.emit(decryptionMock, "UserDecryptionRequest")
-        .withArgs(
-          userDecryptionCounterId,
-          toValues([DefaultSnsCiphertextMaterial]),
-          DefaultAddress,
-          DefaultBytes,
-          DefaultBytes,
-        );
-    });
-
-    it("Should emit UserDecryptionResponse event on user decryption response", async function () {
+    it("Should emit response and consensus events on user decryption response", async function () {
       await expect(
         decryptionMock.userDecryptionResponse(userDecryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes),
       )
         .to.emit(decryptionMock, "UserDecryptionResponse")
-        .withArgs(userDecryptionCounterId, [DefaultBytes], [DefaultBytes], DefaultBytes);
+        .withArgs(userDecryptionCounterId, DefaultUint256, DefaultBytes, DefaultBytes, DefaultBytes)
+        .to.emit(decryptionMock, "UserDecryptionResponseThresholdReached")
+        .withArgs(userDecryptionCounterId);
     });
   });
 
   describe("GatewayConfigMock", async function () {
-    const DefaultV3UpgradeInputs = [
-      {
-        txSenderAddress: DefaultAddress,
-        storageUrl: DefaultString,
-      },
-    ];
-
     it("Should emit InitializeGatewayConfig event on initialization", async function () {
       await expect(
         gatewayConfigMock.initializeFromEmptyProxy(
@@ -234,7 +195,8 @@ describe("Mock contracts", function () {
           DefaultUint256,
           DefaultUint256,
           DefaultUint256,
-          [DefaultKmsNodeV2],
+          DefaultUint256,
+          [DefaultKmsNode],
           [DefaultCoprocessor],
           [DefaultCustodian],
         ),
@@ -243,7 +205,7 @@ describe("Mock contracts", function () {
         .withArgs(
           toValues(DefaultProtocolMetadata),
           DefaultUint256,
-          toValues([DefaultKmsNodeV2]),
+          toValues([DefaultKmsNode]),
           toValues([DefaultCoprocessor]),
           toValues([DefaultCustodian]),
         );
@@ -264,6 +226,18 @@ describe("Mock contracts", function () {
     it("Should emit UpdateUserDecryptionThreshold event on update UserDecryption threshold call", async function () {
       await expect(gatewayConfigMock.updateUserDecryptionThreshold(DefaultUint256))
         .to.emit(gatewayConfigMock, "UpdateUserDecryptionThreshold")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit UpdateKmsGenThreshold event on update KmsGen threshold call", async function () {
+      await expect(gatewayConfigMock.updateKmsGenThreshold(DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdateKmsGenThreshold")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit UpdateCoprocessorThreshold event on update coprocessor threshold call", async function () {
+      await expect(gatewayConfigMock.updateCoprocessorThreshold(DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdateCoprocessorThreshold")
         .withArgs(DefaultUint256);
     });
 
@@ -345,21 +319,57 @@ describe("Mock contracts", function () {
 
   describe("MultichainACLMock", async function () {
     it("Should emit AllowPublicDecrypt event on allow public decrypt call", async function () {
-      await expect(MultichainACLMock.allowPublicDecrypt(DefaultBytes32, DefaultBytes))
-        .to.emit(MultichainACLMock, "AllowPublicDecrypt")
+      await expect(multichainACLMock.allowPublicDecrypt(DefaultBytes32, DefaultBytes))
+        .to.emit(multichainACLMock, "AllowPublicDecrypt")
         .withArgs(DefaultBytes32);
     });
 
     it("Should emit AllowAccount event on allow account call", async function () {
-      await expect(MultichainACLMock.allowAccount(DefaultBytes32, DefaultAddress, DefaultBytes))
-        .to.emit(MultichainACLMock, "AllowAccount")
+      await expect(multichainACLMock.allowAccount(DefaultBytes32, DefaultAddress, DefaultBytes))
+        .to.emit(multichainACLMock, "AllowAccount")
         .withArgs(DefaultBytes32, DefaultAddress);
     });
 
-    it("Should emit DelegateAccount event on delegate account call", async function () {
-      await expect(MultichainACLMock.delegateAccount(DefaultUint256, DefaultDelegationAccounts, [DefaultAddress]))
-        .to.emit(MultichainACLMock, "DelegateAccount")
-        .withArgs(DefaultUint256, toValues(DefaultDelegationAccounts), [DefaultAddress]);
+    it("Should emit delegation and consensus events on delegate user decryption call", async function () {
+      await expect(
+        multichainACLMock.delegateUserDecryption(
+          DefaultUint256,
+          DefaultAddress,
+          DefaultAddress,
+          DefaultAddress,
+          DefaultUint256,
+          DefaultUint256,
+        ),
+      )
+        .to.emit(multichainACLMock, "DelegateUserDecryption")
+        .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256)
+        .to.emit(multichainACLMock, "DelegateUserDecryptionConsensusReached")
+        .withArgs(
+          DefaultUint256,
+          DefaultAddress,
+          DefaultAddress,
+          DefaultAddress,
+          DefaultUint256,
+          DefaultUint256,
+          DefaultUint256,
+        );
+    });
+
+    it("Should emit revocation and consensus events on revoke user decryption delegation call", async function () {
+      await expect(
+        multichainACLMock.revokeUserDecryptionDelegation(
+          DefaultUint256,
+          DefaultAddress,
+          DefaultAddress,
+          DefaultAddress,
+          DefaultUint256,
+          DefaultUint256,
+        ),
+      )
+        .to.emit(multichainACLMock, "RevokeUserDecryptionDelegation")
+        .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256)
+        .to.emit(multichainACLMock, "RevokeUserDecryptionDelegationConsensusReached")
+        .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256, DefaultUint256);
     });
   });
 });

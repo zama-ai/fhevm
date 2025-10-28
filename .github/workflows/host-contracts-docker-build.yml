@@ -40,7 +40,7 @@ jobs:
     name: host-contracts-docker-build/build (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' || github.event_name == 'release' }}
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3d8b1adcb5504fef30223016d459e3e38b36f9d1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@530bf56e4e25ffef3a2a41b22e506d5c26960434 # v1.0.0
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}

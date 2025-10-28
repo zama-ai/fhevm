@@ -22,12 +22,74 @@ interface IMultichainACL {
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
 
     /**
-     * @notice Emitted when an account delegates its access to another account.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The addresses of the delegated contracts.
+     * @notice Emitted when a user decryption is delegated to a delegate and contract addresses.
+     * @param chainId The chain ID of the registered host chain where the contract is deployed.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The address of the contract that is part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
      */
-    event DelegateAccount(uint256 indexed chainId, DelegationAccounts delegationAccounts, address[] contractAddresses);
+    event DelegateUserDecryption(
+        uint256 indexed chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter
+    );
+
+    /**
+     * @notice Emitted when the delegation of a user decryption reaches consensus.
+     * @param chainId The chain ID of the registered host chain where the contract is deployed.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The address of the contract that is part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param oldExpirationDate The previous UNIX timestamp when the user decryption delegation expires.
+     * @param newExpirationDate The new UNIX timestamp when the user decryption delegation expires.
+     */
+    event DelegateUserDecryptionConsensusReached(
+        uint256 indexed chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 oldExpirationDate,
+        uint64 newExpirationDate
+    );
+
+    /**
+     * @notice Emitted when a user decryption delegation is revoked from a delegate and contract addresses.
+     * @param chainId The chain ID of the registered host chain where the contract is deployed.
+     * @param delegator The address of the account that revokes access to its handles.
+     * @param delegate The address of the account that stops receiving the delegation.
+     * @param contractAddress The address of the contract that was part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     */
+    event RevokeUserDecryptionDelegation(
+        uint256 indexed chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter
+    );
+
+    /**
+     * @notice Emitted when the revocation of a user decryption delegation reaches consensus.
+     * @param chainId The chain ID of the registered host chain where the contract is deployed.
+     * @param delegator The address of the account that revokes access to its handles.
+     * @param delegate The address of the account that stops receiving the delegation.
+     * @param contractAddress The address of the contract that was part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param oldExpirationDate The expiration UNIX timestamp of the revoked user decryption delegation.
+     */
+    event RevokeUserDecryptionDelegationConsensusReached(
+        uint256 indexed chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 oldExpirationDate
+    );
 
     /**
      * @notice Error indicating that the coprocessor has already allowed public decryption to the ciphertext.
@@ -45,33 +107,48 @@ interface IMultichainACL {
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
 
     /**
-     * @notice Error indicating that the coprocessor has already delegated access to another account.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The addresses of the contracts that the coprocessor has already delegated.
-     * @param txSender The transaction sender address of the coprocessor that has already confirmed delegation.
+     * @notice Error indicating that the coprocessor has already delegated for user decryption.
+     * @param chainId The chain ID of the registered host chain where the contract is deployed.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The address of the contract that was part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
+     * @param txSender The transaction sender address of the coprocessor that has already confirmed delegation or revocation.
      */
-    error CoprocessorAlreadyDelegated(
+    error CoprocessorAlreadyDelegatedUserDecryption(
         uint256 chainId,
-        DelegationAccounts delegationAccounts,
-        address[] contractAddresses,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate,
         address txSender
     );
 
     /**
-     * @notice Error indicating that the account address is not allowed to use the ciphertext handle.
-     * @param ctHandle The ciphertext handle that the account is not allowed to use.
-     * @param accountAddress The address of the account that is not allowed to use the ciphertext handle.
+     * @notice Error indicating that the coprocessor has already revoked for user decryption.
+     * @param chainId The chain ID of the registered host chain where the contract is deployed.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The address of the contract that was part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
+     * @param txSender The transaction sender address of the coprocessor that has already confirmed delegation or revocation.
      */
-    error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress);
+    error CoprocessorAlreadyRevokedUserDecryption(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate,
+        address txSender
+    );
 
     /**
-     * @notice Error indicating that the ciphertext handle is not allowed for public decryption.
-     * @param ctHandle The ciphertext handle that is not allowed for public decryption.
+     * @notice Error indicating that the contract addresses list is empty.
      */
-    error PublicDecryptNotAllowed(bytes32 ctHandle);
-
-    /// @notice Error indicating that the contract addresses list is empty.
     error EmptyContractAddresses();
 
     /**
@@ -79,15 +156,13 @@ interface IMultichainACL {
      * @param maxLength The maximum number of contracts allowed.
      * @param actualLength The actual number of contracts requested.
      */
-    error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
+    error ContractsMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
 
     /**
-     * @notice Error indicating that the account has not been fully delegated.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddress The address of the delegated contract.
+     * @notice Returned if the user decryption delegation counter is not greater than a previous one.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
      */
-    error AccountNotDelegated(uint256 chainId, DelegationAccounts delegationAccounts, address contractAddress);
+    error UserDecryptionDelegationCounterTooLow(uint64 delegationCounter);
 
     /**
      * @notice Allows access to the ciphertext handle for public decryption.
@@ -105,41 +180,67 @@ interface IMultichainACL {
     function allowAccount(bytes32 ctHandle, address accountAddress, bytes calldata extraData) external;
 
     /**
-     * @notice Delegates the access to the delegated and contract addresses.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The contract addresses to delegate access to.
+     * @notice Delegates the access for user decryption to the delegate and contract addresses.
+     * @param chainId The chain ID of the registered host chain where the contract is deployed.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The address of the contract that is part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
-    function delegateAccount(
+    function delegateUserDecryption(
         uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
     ) external;
 
     /**
-     * @notice Checks that the ciphertext handle is allowed for public decryption.
-     * @param ctHandle The handle of the ciphertext.
+     * @notice Revokes the access for user decryption previously delegated to the delegate and contract addresses.
+     * @param chainId The chain ID of the registered host chain where the contract is deployed.
+     * @param delegator The address of the account that revokes access to its handles.
+     * @param delegate The address of the account that stops receiving the delegation.
+     * @param contractAddress The address of the contract that was part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
-    function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
+    function revokeUserDecryptionDelegation(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
+    ) external;
 
     /**
-     * @notice Checks that the account is allowed to use the ciphertext handle.
+     * @notice Indicates if the ciphertext handle is allowed for public decryption.
+     * @param ctHandle The handle of the ciphertext.
+     */
+    function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
+
+    /**
+     * @notice Indicates if the account is allowed to use the ciphertext handle.
      * @param ctHandle The handle of the ciphertext.
      * @param accountAddress The address of the account.
      */
-    function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view;
+    function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view returns (bool);
 
     /**
-     * @notice Checks that the delegator has delegated access to the delegate and contracts addresses.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The delegated contract addresses.
+     * @notice Indicates if the delegator has delegated access to the delegate and contract address.
+     * @param chainId The chain ID of the registered host chain where the contract is deployed.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that has the delegation access.
+     * @param contractAddress The address of the contract that is part of the user decryption context.
      */
-    function checkAccountDelegated(
+    function isUserDecryptionDelegated(
         uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) external view;
+        address delegator,
+        address delegate,
+        address contractAddress
+    ) external view returns (bool);
 
     /**
      * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for an allow public decrypt.
@@ -158,15 +259,41 @@ interface IMultichainACL {
     ) external view returns (address[] memory);
 
     /**
-     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for a delegate account.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The delegated contract addresses.
+     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus
+     * for a user decryption delegation.
+     * @param chainId The chain ID of the registered host chain where the contract is deployed.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The address of the contract that is part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
-    function getDelegateAccountConsensusTxSenders(
+    function getDelegateUserDecryptionConsensusTxSenders(
         uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
+    ) external view returns (address[] memory);
+
+    /**
+     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus
+     * for a user decryption delegation revocation.
+     * @param chainId The chain ID of the registered host chain where the contract is deployed.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The address of the contract that is part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
+     */
+    function getRevokeUserDecryptionDelegationConsensusTxSenders(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
     ) external view returns (address[] memory);
 
     /**

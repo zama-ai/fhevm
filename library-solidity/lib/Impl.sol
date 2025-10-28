@@ -222,6 +222,7 @@ interface IFHEVMExecutor {
      * @return result       Result.
      */
     function fheNot(bytes32 ct) external returns (bytes32 result);
+
     /**
      * @notice                Verifies the ciphertext.
      * @param inputHandle     Input handle.
@@ -230,7 +231,7 @@ interface IFHEVMExecutor {
      * @param inputType       Input type.
      * @return result         Result.
      */
-    function verifyCiphertext(
+    function verifyInput(
         bytes32 inputHandle,
         address callerAddress,
         bytes memory inputProof,
@@ -630,7 +631,7 @@ library Impl {
      */
     function verify(bytes32 inputHandle, bytes memory inputProof, FheType toType) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
-        result = IFHEVMExecutor($.CoprocessorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
+        result = IFHEVMExecutor($.CoprocessorAddress).verifyInput(inputHandle, msg.sender, inputProof, toType);
         IACL($.ACLAddress).allowTransient(result, msg.sender);
     }
 

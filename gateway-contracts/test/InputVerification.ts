@@ -106,7 +106,7 @@ describe("InputVerification", function () {
           extraDataV0,
         ),
       )
-        .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
+        .revertedWithCustomError(inputVerification, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
@@ -436,7 +436,7 @@ describe("InputVerification", function () {
           .connect(coprocessorTxSenders[0])
           .verifyProofResponse(zkProofId, ctHandles, fakeSignature, extraDataV0),
       )
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorSigner")
+        .revertedWithCustomError(inputVerification, "NotCoprocessorSigner")
         .withArgs(fakeSigner.address);
     });
 
@@ -444,7 +444,7 @@ describe("InputVerification", function () {
       await expect(
         inputVerification.connect(fakeTxSender).verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0),
       )
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+        .revertedWithCustomError(inputVerification, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
 
@@ -456,13 +456,11 @@ describe("InputVerification", function () {
           .verifyProofResponse(zkProofId, ctHandles, signatures[i], extraDataV0);
       }
 
-      await expect(inputVerification.checkProofVerified(zkProofId)).not.to.be.reverted;
+      expect(await inputVerification.isProofVerified(zkProofId)).to.be.true;
     });
 
     it("Should check that a proof has not been verified", async function () {
-      await expect(inputVerification.checkProofVerified(fakeZkProofId))
-        .to.be.revertedWithCustomError(inputVerification, "ProofNotVerified")
-        .withArgs(fakeZkProofId);
+      expect(await inputVerification.isProofVerified(fakeZkProofId)).to.be.false;
     });
   });
 
@@ -690,7 +688,7 @@ describe("InputVerification", function () {
     it("Should revert because the sender is not a coprocessor transaction sender", async function () {
       // Check that triggering a proof response with a non-coprocessor transaction sender reverts
       await expect(inputVerification.connect(fakeTxSender).rejectProofResponse(zkProofId, extraDataV0))
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+        .revertedWithCustomError(inputVerification, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
 
@@ -700,13 +698,11 @@ describe("InputVerification", function () {
         await inputVerification.connect(coprocessorTxSenders[i]).rejectProofResponse(zkProofId, extraDataV0);
       }
 
-      await expect(inputVerification.checkProofRejected(zkProofId)).to.not.be.reverted;
+      expect(await inputVerification.isProofRejected(zkProofId)).to.be.true;
     });
 
     it("Should check that a proof has not been rejected", async function () {
-      await expect(inputVerification.checkProofRejected(fakeZkProofId))
-        .to.be.revertedWithCustomError(inputVerification, "ProofNotRejected")
-        .withArgs(fakeZkProofId);
+      expect(await inputVerification.isProofRejected(fakeZkProofId)).to.be.false;
     });
   });
 

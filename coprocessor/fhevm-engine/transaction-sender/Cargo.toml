@@ -9,6 +9,7 @@ license.workspace = true
 # workspace dependencies
 alloy = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 aws-config = { workspace = true }
 aws-sdk-kms = { workspace = true }
 clap = { workspace = true }
@@ -29,7 +30,6 @@ serde_json = { workspace = true }
 humantime = { workspace = true }
 
 # crates.io dependencies
-async-trait = "0.1.88"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }

@@ -17,6 +17,7 @@ import "./tasks/blockExplorerVerify";
 import "./tasks/deployment";
 import "./tasks/generateKmsMaterials";
 import "./tasks/getters";
+import "./tasks/ownership";
 import "./tasks/pauseContracts";
 import "./tasks/safeSmartAccounts";
 import "./tasks/upgradeContracts";
@@ -31,8 +32,9 @@ const chainIds = {
   hardhat: 31337,
   localGateway: 123456,
   staging: 54321,
-  devnet: 10899,
-  testnet: 55815,
+  devnet: 10900,
+  testnet: 10901,
+  mainnet: 261131,
 };
 
 // If the mnemonic is not set, use a default one
@@ -65,7 +67,7 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
       await hre.run("task:addHostChainsToGatewayConfig", { useInternalGatewayConfigAddress: true });
       // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
       // for local testing
-      await hre.run("task:addPausers", { useInternalGatewayConfigAddress: true });
+      await hre.run("task:addGatewayPausers", { useInternalGatewayConfigAddress: true });
     } else {
       console.log("Skipping contracts setup.");
     }
@@ -118,6 +120,15 @@ const config: HardhatUserConfig = {
       chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.testnet,
       url: rpcUrl,
     },
+    mainnet: {
+      accounts: {
+        count: NUM_ACCOUNTS,
+        mnemonic,
+        path: "m/44'/60'/0'/0",
+      },
+      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.mainnet,
+      url: rpcUrl,
+    },
   },
   sourcify: {
     enabled: false,
@@ -126,6 +137,7 @@ const config: HardhatUserConfig = {
     apiKey: {
       devnet: "empty",
       testnet: "empty",
+      mainnet: "empty",
     },
     customChains: [
       {
@@ -142,6 +154,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: "https://explorer.testnet.zama.cloud/api",
           browserURL: "https://explorer.testnet.zama.cloud/",
+        },
+      },
+      {
+        network: "mainnet",
+        chainId: chainIds.mainnet,
+        urls: {
+          apiURL: "https://explorer-zama-gateway-mainnet.t.conduit.xyz/api",
+          browserURL: "https://explorer-zama-gateway-mainnet.t.conduit.xyz",
         },
       },
     ],

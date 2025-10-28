@@ -2,6 +2,7 @@ use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::{compact_hex, HeartBeat};
@@ -77,9 +78,12 @@ pub struct Database {
     pub tick: HeartBeat,
 }
 
+#[derive(Debug)]
 pub struct LogTfhe {
     pub event: Log<TfheContractEvents>,
     pub transaction_hash: Option<TransactionHash>,
+    pub is_allowed: bool,
+    pub block_number: Option<u64>,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -277,9 +281,10 @@ impl Database {
                 fhe_operation,
                 is_scalar,
                 dependence_chain_id,
-                transaction_id
+                transaction_id,
+                is_allowed
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
             "#,
             tenant_id as i32,
@@ -288,7 +293,8 @@ impl Database {
             fhe_operation as i16,
             is_scalar,
             bucket.to_vec(),
-            log.transaction_hash.map(|txh| txh.to_vec())
+            log.transaction_hash.map(|txh| txh.to_vec()),
+            log.is_allowed,
         );
         query.execute(tx.deref_mut()).await.map(|_| ())
     }
@@ -363,6 +369,25 @@ impl Database {
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, tenant_id, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
+
+        let _t = telemetry::tracer(
+            "handle_tfhe_event",
+            &log.transaction_hash.map(|h| h.to_vec()),
+        );
+
+        // Record the transaction if this is a computation event
+        if !matches!(
+            &event.data,
+            E::Initialized(_)
+                |  E::Upgraded(_)
+                |  E::VerifyInput(_)
+        ) {
+            self.record_transaction_begin(
+                &log.transaction_hash.map(|h| h.to_vec()),
+                &log.block_number,
+            ).await;
+        };
+
         match &event.data {
             E::Cast(C::Cast {ct, toType, result, ..})
             => insert_computation_bytes(tx, result, &[ct], &[ty(toType)], &HAS_SCALAR).await,
@@ -409,10 +434,8 @@ impl Database {
             => insert_computation_bytes(tx, result, &[], &[as_bytes(pt), ty(toType)], &HAS_SCALAR).await,
 
             | E::Initialized(_)
-            | E::OwnershipTransferStarted(_)
-            | E::OwnershipTransferred(_)
             | E::Upgraded(_)
-            | E::VerifyCiphertext(_)
+            | E::VerifyInput(_)
             => Ok(()),
         }
     }
@@ -456,8 +479,24 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         event: &Log<AclContractEvents>,
+        transaction_hash: &Option<Handle>,
+        block_number: &Option<u64>,
     ) -> Result<(), SqlxError> {
         let data = &event.data;
+
+        let transaction_hash = transaction_hash.map(|h| h.to_vec());
+
+        let _t = telemetry::tracer("handle_acl_event", &transaction_hash);
+
+        // Record only Allowed or AllowedForDecryption events
+        if matches!(
+            data,
+            AclContractEvents::Allowed(_)
+                | AclContractEvents::AllowedForDecryption(_)
+        ) {
+            self.record_transaction_begin(&transaction_hash, block_number)
+                .await;
+        }
 
         match data {
             AclContractEvents::Allowed(allowed) => {
@@ -468,10 +507,16 @@ impl Database {
                     handle.clone(),
                     allowed.account.to_string(),
                     AllowEvents::AllowedAccount,
+                    transaction_hash.clone(),
                 )
                 .await?;
 
-                self.insert_pbs_computations(tx, &vec![handle]).await?;
+                self.insert_pbs_computations(
+                    tx,
+                    &vec![handle],
+                    transaction_hash,
+                )
+                .await?;
             }
             AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
                 let handles = allowed_for_decryption
@@ -491,19 +536,25 @@ impl Database {
                         handle,
                         "".to_string(),
                         AllowEvents::AllowedForDecryption,
+                        transaction_hash.clone(),
                     )
                     .await?;
                 }
 
-                self.insert_pbs_computations(tx, &handles).await?;
+                self.insert_pbs_computations(
+                    tx,
+                    &handles,
+                    transaction_hash.clone(),
+                )
+                .await?;
             }
             AclContractEvents::Initialized(initialized) => {
                 warn!(event = ?initialized, "unhandled Acl::Initialized event");
             }
-            AclContractEvents::NewDelegation(new_delegation) => {
+            AclContractEvents::DelegatedForUserDecryption(delegate_account) => {
                 warn!(
-                    event = ?new_delegation,
-                    "unhandled Acl::NewDelegation event"
+                    event = ?delegate_account,
+                    "unhandled Acl::DelegatedForUserDecryption event"
                 );
             }
             AclContractEvents::OwnershipTransferStarted(
@@ -514,16 +565,18 @@ impl Database {
                     "unhandled Acl::OwnershipTransferStarted event"
                 );
             }
+            AclContractEvents::RevokedDelegationForUserDecryption(
+                revoked_delegation,
+            ) => {
+                warn!(
+                    event = ?revoked_delegation,
+                    "unhandled Acl::RevokedDelegationForUserDecryption event"
+                );
+            }
             AclContractEvents::OwnershipTransferred(ownership_transferred) => {
                 warn!(
                     event = ?ownership_transferred,
                     "unhandled Acl::OwnershipTransferred event"
-                );
-            }
-            AclContractEvents::RevokedDelegation(revoked_delegation) => {
-                warn!(
-                    event = ?revoked_delegation,
-                    "unhandled Acl::RevokedDelegation event"
                 );
             }
             AclContractEvents::Upgraded(upgraded) => {
@@ -544,10 +597,16 @@ impl Database {
                     "unhandled Acl::Unpaused event"
                 );
             }
-            AclContractEvents::UpdatePauser(update_pauser) => {
+            AclContractEvents::BlockedAccount(blocked_account) => {
                 warn!(
-                    event = ?update_pauser,
-                    "unhandled Acl::UpdatePauser event"
+                    event = ?blocked_account,
+                    "unhandled Acl::BlockedAccount event"
+                );
+            }
+            AclContractEvents::UnblockedAccount(unblocked_account) => {
+                warn!(
+                    event = ?unblocked_account,
+                    "unhandled Acl::UnblockedAccount event"
                 );
             }
         }
@@ -561,14 +620,16 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         handles: &Vec<Vec<u8>>,
+        transaction_id: Option<Vec<u8>>,
     ) -> Result<(), SqlxError> {
         let tenant_id = self.tenant_id;
         for handle in handles {
             let query = sqlx::query!(
-                "INSERT INTO pbs_computations(tenant_id, handle) VALUES($1, $2)
-                        ON CONFLICT DO NOTHING;",
+                "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3)
+                 ON CONFLICT DO NOTHING;",
                 tenant_id,
                 handle,
+                transaction_id
             );
             query.execute(tx.deref_mut()).await?;
         }
@@ -582,18 +643,37 @@ impl Database {
         handle: Vec<u8>,
         account_address: String,
         event_type: AllowEvents,
+        transaction_id: Option<Vec<u8>>,
     ) -> Result<(), SqlxError> {
         let tenant_id = self.tenant_id;
         let query = sqlx::query!(
-            "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
+            "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4, $5)
                     ON CONFLICT DO NOTHING;",
             tenant_id,
             handle,
             account_address,
             event_type as i16,
+            transaction_id
         );
         query.execute(tx.deref_mut()).await?;
         Ok(())
+    }
+
+    async fn record_transaction_begin(
+        &self,
+        transaction_hash: &Option<Vec<u8>>,
+        block_number: &Option<u64>,
+    ) {
+        if let Some(txn_id) = transaction_hash {
+            let pool = self.pool.read().await.clone();
+            let _ = telemetry::try_begin_transaction(
+                &pool,
+                self.chain_id as i64,
+                txn_id.as_ref(),
+                block_number.unwrap_or_default(),
+            )
+            .await;
+        }
     }
 }
 
@@ -629,11 +709,7 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheRand(_) => O::FheRand as i32,
         E::FheRandBounded(_) => O::FheRandBounded as i32,
         // Not tfhe ops
-        E::Initialized(_)
-        | E::OwnershipTransferStarted(_)
-        | E::OwnershipTransferred(_)
-        | E::Upgraded(_)
-        | E::VerifyCiphertext(_) => -1,
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => -1,
     }
 }
 
@@ -668,9 +744,63 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheRand(_) => "FheRand",
         E::FheRandBounded(_) => "FheRandBounded",
         E::Initialized(_) => "Initialized",
-        E::OwnershipTransferStarted(_) => "OwnershipTransferStarted",
-        E::OwnershipTransferred(_) => "OwnershipTransferred",
         E::Upgraded(_) => "Upgraded",
-        E::VerifyCiphertext(_) => "VerifyCiphertext",
+        E::VerifyInput(_) => "VerifyInput",
+    }
+}
+
+pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+    match op {
+        E::Cast(C::Cast { result, .. })
+        | E::FheAdd(C::FheAdd { result, .. })
+        | E::FheBitAnd(C::FheBitAnd { result, .. })
+        | E::FheBitOr(C::FheBitOr { result, .. })
+        | E::FheBitXor(C::FheBitXor { result, .. })
+        | E::FheDiv(C::FheDiv { result, .. })
+        | E::FheMax(C::FheMax { result, .. })
+        | E::FheMin(C::FheMin { result, .. })
+        | E::FheMul(C::FheMul { result, .. })
+        | E::FheRem(C::FheRem { result, .. })
+        | E::FheRotl(C::FheRotl { result, .. })
+        | E::FheRotr(C::FheRotr { result, .. })
+        | E::FheShl(C::FheShl { result, .. })
+        | E::FheShr(C::FheShr { result, .. })
+        | E::FheSub(C::FheSub { result, .. })
+        | E::FheIfThenElse(C::FheIfThenElse { result, .. })
+        | E::FheEq(C::FheEq { result, .. })
+        | E::FheGe(C::FheGe { result, .. })
+        | E::FheGt(C::FheGt { result, .. })
+        | E::FheLe(C::FheLe { result, .. })
+        | E::FheLt(C::FheLt { result, .. })
+        | E::FheNe(C::FheNe { result, .. })
+        | E::FheNeg(C::FheNeg { result, .. })
+        | E::FheNot(C::FheNot { result, .. })
+        | E::FheRand(C::FheRand { result, .. })
+        | E::FheRandBounded(C::FheRandBounded { result, .. })
+        | E::TrivialEncrypt(C::TrivialEncrypt { result, .. }) => Some(*result),
+
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
+    }
+}
+
+pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
+    let data = &event.data;
+    match data {
+        AclContractEvents::Allowed(allowed) => vec![allowed.handle],
+        AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
+            allowed_for_decryption.handlesList.clone()
+        }
+        AclContractEvents::Initialized(_)
+        | AclContractEvents::DelegatedForUserDecryption(_)
+        | AclContractEvents::OwnershipTransferStarted(_)
+        | AclContractEvents::OwnershipTransferred(_)
+        | AclContractEvents::RevokedDelegationForUserDecryption(_)
+        | AclContractEvents::Upgraded(_)
+        | AclContractEvents::Paused(_)
+        | AclContractEvents::Unpaused(_)
+        | AclContractEvents::BlockedAccount(_)
+        | AclContractEvents::UnblockedAccount(_) => vec![],
     }
 }

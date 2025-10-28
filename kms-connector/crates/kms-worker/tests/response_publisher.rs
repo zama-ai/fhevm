@@ -1,11 +1,12 @@
 use alloy::{hex, primitives::U256};
 use connector_utils::{
+    monitoring::otlp::PropagationContext,
     tests::{
         rand::{rand_digest, rand_signature, rand_u256},
         setup::TestInstanceBuilder,
     },
     types::{
-        KmsGrpcResponse, KmsResponse,
+        KmsGrpcResponse, KmsResponse, KmsResponseKind,
         db::{KeyDigestDbItem, KeyType},
     },
 };
@@ -36,9 +37,12 @@ async fn test_publish_public_decryption_response() -> anyhow::Result<()> {
             extra_data: vec![],
         },
     };
-    let response = KmsResponse::process(grpc_response)?;
+    let response = KmsResponse::new(
+        KmsResponseKind::process(grpc_response)?,
+        PropagationContext::empty(),
+    );
 
-    publisher.publish(response).await?;
+    publisher.publish_response(response).await?;
     info!("PublicDecryptionResponse successfully published!");
 
     info!("Checking PublicDecryptionResponse is stored in DB...");
@@ -73,9 +77,12 @@ async fn test_publish_user_decryption_response() -> anyhow::Result<()> {
             extra_data: vec![],
         },
     };
-    let response = KmsResponse::process(grpc_response)?;
+    let response = KmsResponse::new(
+        KmsResponseKind::process(grpc_response)?,
+        PropagationContext::empty(),
+    );
 
-    publisher.publish(response).await?;
+    publisher.publish_response(response).await?;
     info!("UserDecryptionResponse successfully published!");
 
     info!("Checking UserDecryptionResponse is stored in DB...");
@@ -107,9 +114,12 @@ async fn test_publish_prep_keygen_response() -> anyhow::Result<()> {
         }),
         external_signature: rand_signature.clone(),
     });
-    let response = KmsResponse::process(grpc_response)?;
+    let response = KmsResponse::new(
+        KmsResponseKind::process(grpc_response)?,
+        PropagationContext::empty(),
+    );
 
-    publisher.publish(response).await?;
+    publisher.publish_response(response).await?;
     info!("PrepKeygenResponse successfully published!");
 
     info!("Checking PrepKeygenResponse is stored in DB...");
@@ -155,9 +165,12 @@ async fn test_publish_keygen_response() -> anyhow::Result<()> {
         }),
         key_digests: rand_key_digests.clone(),
     });
-    let response = KmsResponse::process(grpc_response)?;
+    let response = KmsResponse::new(
+        KmsResponseKind::process(grpc_response)?,
+        PropagationContext::empty(),
+    );
 
-    publisher.publish(response).await?;
+    publisher.publish_response(response).await?;
     info!("KeygenResponse successfully published!");
 
     info!("Checking KeygenResponse is stored in DB...");
@@ -198,9 +211,12 @@ async fn test_publish_crsgen_response() -> anyhow::Result<()> {
         external_signature: rand_signature.clone(),
         max_num_bits: 256,
     });
-    let response = KmsResponse::process(grpc_response)?;
+    let response = KmsResponse::new(
+        KmsResponseKind::process(grpc_response)?,
+        PropagationContext::empty(),
+    );
 
-    publisher.publish(response).await?;
+    publisher.publish_response(response).await?;
     info!("CrsgenResponse successfully published!");
 
     info!("Checking CrsgenResponse is stored in DB...");

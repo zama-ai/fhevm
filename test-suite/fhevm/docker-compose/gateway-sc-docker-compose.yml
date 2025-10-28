@@ -14,7 +14,7 @@ services:
     command:
       - npx hardhat task:deployAllGatewayContracts
     volumes:
-      - addresses-volume:/app/addresses
+      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
 
   gateway-sc-add-network:
     container_name: gateway-sc-add-network
@@ -36,7 +36,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
-      - addresses-volume:/app/addresses
+      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
 
   gateway-sc-add-pausers:
     container_name: gateway-sc-add-pausers
@@ -51,10 +51,14 @@ services:
     env_file:
       - ../env/staging/.env.gateway-sc.local
     command:
-      - npx hardhat task:addPausers
+      - npx hardhat task:addGatewayPausers
     depends_on:
-      gateway-sc-deploy:
+      gateway-sc-add-network:
         condition: service_completed_successfully
+    # Addresses needs to be mounted even though we don't use them in the task because the PauserSet
+    # contract is compiled, and it imports these addresses.
+    volumes:
+      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
 
   gateway-sc-trigger-keygen:
     container_name: gateway-sc-trigger-keygen
@@ -71,12 +75,12 @@ services:
     command:
       - npx hardhat task:triggerKeygen --params-type 1
     depends_on:
-      gateway-sc-add-network:
+      gateway-sc-add-pausers:
         condition: service_completed_successfully
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
-      - addresses-volume:/app/addresses
+      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
 
   gateway-sc-trigger-crsgen:
     container_name: gateway-sc-trigger-crsgen
@@ -98,7 +102,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
-      - addresses-volume:/app/addresses
+      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
 
 volumes:
   addresses-volume:

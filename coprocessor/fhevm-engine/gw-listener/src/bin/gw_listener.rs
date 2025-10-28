@@ -3,6 +3,7 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
+use fhevm_engine_common::telemetry;
 use gw_listener::aws_s3::AwsS3Client;
 use gw_listener::chain_id_from_env;
 use gw_listener::gw_listener::GatewayListener;
@@ -61,6 +62,16 @@ struct Conf {
 
     #[arg(long)]
     host_chain_id: Option<u64>,
+
+    #[arg(long, default_value = "1s", value_parser = parse_duration)]
+    get_logs_poll_interval: Duration,
+
+    #[arg(long, default_value_t = 100)]
+    get_logs_block_batch_size: u64,
+
+    /// gw-listener service name in OTLP traces
+    #[arg(long, default_value = "gw-listener")]
+    pub service_name: String,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -89,6 +100,12 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     info!(conf = ?conf, "Starting gw_listener");
+
+    if !conf.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
+    }
 
     let database_url = conf
         .database_url
@@ -137,6 +154,8 @@ async fn main() -> anyhow::Result<()> {
         error_sleep_max_secs: conf.error_sleep_max_secs,
         health_check_port: conf.health_check_port,
         health_check_timeout: conf.health_check_timeout,
+        get_logs_poll_interval: conf.get_logs_poll_interval,
+        get_logs_block_batch_size: conf.get_logs_block_batch_size,
     };
 
     let gw_listener = GatewayListener::new(

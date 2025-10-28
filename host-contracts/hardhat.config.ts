@@ -12,6 +12,7 @@ import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';
 import './tasks/blockExplorerVerify';
+import './tasks/ownership';
 import './tasks/pauseContracts';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
@@ -55,7 +56,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:deployAllHostContracts');
     // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
     // for local testing
-    await hre.run('task:addPausers', { useInternalPauserSetAddress: true });
+    await hre.run('task:addHostPausers', { useInternalPauserSetAddress: true });
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
@@ -87,7 +88,6 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 }
 
 const config: HardhatUserConfig = {
-  defaultNetwork: 'sepolia',
   namedAccounts: {
     deployer: 0,
   },
