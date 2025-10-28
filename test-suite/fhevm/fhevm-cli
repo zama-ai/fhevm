@@ -33,7 +33,7 @@ export ZKPROOF_WORKER_VERSION=${ZKPROOF_WORKER_VERSION:-"v0.9.3"}
 
 # Gateway and Host contracts.
 export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.9.3"}
-export HOST_VERSION=${HOST_VERSION:-"v0.9.3"}
+export HOST_VERSION=${HOST_VERSION:-"a650ef9"}
 
 # Other services.
 export CORE_VERSION=${CORE_VERSION:-"v0.12.2"}
