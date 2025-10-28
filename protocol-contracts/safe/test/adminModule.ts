@@ -51,7 +51,7 @@ describe("AdminModule Tests", function () {
   });
 
   // A Safe Module is a smart contract that is allowed to execute transactions on behalf of a Safe Smart Account.
-  // This function deploys the TokenWithdrawModule contract and enables it in the Safe.
+  // This function deploys the AdminModule contract and enables it in the Safe.
   const enableModule = async (): Promise<{
     adminModule: AdminModule;
   }> => {
