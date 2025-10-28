@@ -67,7 +67,7 @@ interface GatewayConfig {
     error UUPSUnsupportedProxiableUUID(bytes32 slot);
 
     event AddHostChain(HostChain hostChain);
-    event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
+    event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, uint256 publicDecryptionThreshold, uint256 userDecryptionThreshold, uint256 kmsGenThreshold, uint256 coprocessorThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
     event Initialized(uint64 version);
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
@@ -1239,6 +1239,30 @@ interface GatewayConfig {
       },
       {
         "name": "mpcThreshold",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "publicDecryptionThreshold",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "userDecryptionThreshold",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "kmsGenThreshold",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "coprocessorThreshold",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -5725,9 +5749,9 @@ event AddHostChain(HostChain hostChain);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `InitializeGatewayConfig((string,string),uint256,(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])` and selector `0x3a7c54b1195d44a288f9c3c9a0679aed9325068e0d0d5b69e96047355cc71745`.
+    /**Event with signature `InitializeGatewayConfig((string,string),uint256,uint256,uint256,uint256,uint256,(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])` and selector `0x67e1dc6f00b3362df04896cf519c6eebc54b939658e02d8710a5573af300b722`.
 ```solidity
-event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
+event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, uint256 publicDecryptionThreshold, uint256 userDecryptionThreshold, uint256 kmsGenThreshold, uint256 coprocessorThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -5741,6 +5765,14 @@ event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, K
         pub metadata: <ProtocolMetadata as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
         pub mpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub publicDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub userDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub kmsGenThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub coprocessorThreshold: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub kmsNodes: alloy::sol_types::private::Vec<
             <KmsNode as alloy::sol_types::SolType>::RustType,
@@ -5767,6 +5799,10 @@ event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, K
             type DataTuple<'a> = (
                 ProtocolMetadata,
                 alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<KmsNode>,
                 alloy::sol_types::sol_data::Array<Coprocessor>,
                 alloy::sol_types::sol_data::Array<Custodian>,
@@ -5775,11 +5811,11 @@ event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, K
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "InitializeGatewayConfig((string,string),uint256,(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])";
+            const SIGNATURE: &'static str = "InitializeGatewayConfig((string,string),uint256,uint256,uint256,uint256,uint256,(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                58u8, 124u8, 84u8, 177u8, 25u8, 93u8, 68u8, 162u8, 136u8, 249u8, 195u8,
-                201u8, 160u8, 103u8, 154u8, 237u8, 147u8, 37u8, 6u8, 142u8, 13u8, 13u8,
-                91u8, 105u8, 233u8, 96u8, 71u8, 53u8, 92u8, 199u8, 23u8, 69u8,
+                103u8, 225u8, 220u8, 111u8, 0u8, 179u8, 54u8, 45u8, 240u8, 72u8, 150u8,
+                207u8, 81u8, 156u8, 110u8, 235u8, 197u8, 75u8, 147u8, 150u8, 88u8, 224u8,
+                45u8, 135u8, 16u8, 165u8, 87u8, 58u8, 243u8, 0u8, 183u8, 34u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -5791,9 +5827,13 @@ event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, K
                 Self {
                     metadata: data.0,
                     mpcThreshold: data.1,
-                    kmsNodes: data.2,
-                    coprocessors: data.3,
-                    custodians: data.4,
+                    publicDecryptionThreshold: data.2,
+                    userDecryptionThreshold: data.3,
+                    kmsGenThreshold: data.4,
+                    coprocessorThreshold: data.5,
+                    kmsNodes: data.6,
+                    coprocessors: data.7,
+                    custodians: data.8,
                 }
             }
             #[inline]
@@ -5820,6 +5860,22 @@ event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, K
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.mpcThreshold),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.publicDecryptionThreshold,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.userDecryptionThreshold,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.kmsGenThreshold),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorThreshold),
                     <alloy::sol_types::sol_data::Array<
                         KmsNode,
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsNodes),

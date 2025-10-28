@@ -338,6 +338,25 @@ describe("KMSGeneration", function () {
         await expect(txKeygenResponse4).to.not.emit(kmsGeneration, "ActivateKey");
       });
 
+      it("Should emit an event when calling a single prepKeygenResponse", async function () {
+        await expect(
+          kmsGeneration.connect(kmsTxSenders[0]).prepKeygenResponse(prepKeygenId, kmsSignaturesPrepKeygen[0]),
+        )
+          .to.emit(kmsGeneration, "PrepKeygenResponse")
+          .withArgs(prepKeygenId, kmsSignaturesPrepKeygen[0], kmsTxSenders[0].address);
+      });
+
+      it("Should emit an event when calling a single keygenResponse", async function () {
+        // Trigger a keygen request.
+        // This is needed to generate and store the necessary values in the KMSGeneration contract
+        // fetched in the keygen response.
+        await kmsGeneration.connect(owner).keygen(paramsType);
+
+        await expect(kmsGeneration.connect(kmsTxSenders[0]).keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[0]))
+          .to.emit(kmsGeneration, "KeygenResponse")
+          .withArgs(keyId, toValues(keyDigests), kmsSignaturesKeygen[0], kmsTxSenders[0].address);
+      });
+
       it("Should revert because the signer and the tx sender do not correspond to the same coprocessor during preprocessing keygen", async function () {
         // Check that triggering a preprocessing keygen response using a signature from the first KMS signer
         // with the second KMS transaction sender reverts
@@ -352,7 +371,7 @@ describe("KMSGeneration", function () {
         // Trigger a keygen request.
         // This is needed to generate and store the necessary values in the KMSGeneration contract
         // fetched in the keygen response.
-        const txRequest = await kmsGeneration.connect(owner).keygen(paramsType);
+        await kmsGeneration.connect(owner).keygen(paramsType);
 
         // Check that triggering a keygen response using a signature from the first KMS signer
         // with the second KMS transaction sender reverts
@@ -520,6 +539,17 @@ describe("KMSGeneration", function () {
 
         // Check that the 4th response does not emit the ActivateCrs event.
         await expect(txResponse4).to.not.emit(kmsGeneration, "ActivateCrs");
+      });
+
+      it("Should emit an event when calling a single crsgenResponse", async function () {
+        // Trigger a CRS generation request.
+        // This is needed to generate and store the necessary values in the KMSGeneration contract
+        // fetched in the crsgen response.
+        await kmsGeneration.connect(owner).crsgenRequest(maxBitLength, ParamsTypeEnum.Test);
+
+        await expect(kmsGeneration.connect(kmsTxSenders[0]).crsgenResponse(crsId, crsDigest, kmsSignaturesCrsgen[0]))
+          .to.emit(kmsGeneration, "CrsgenResponse")
+          .withArgs(crsId, crsDigest, kmsSignaturesCrsgen[0], kmsTxSenders[0].address);
       });
 
       it("Should revert because the signer and the tx sender do not correspond to the same coprocessor during crsgen", async function () {

@@ -367,6 +367,9 @@ contract Decryption is
         // A "late" valid KMS transaction sender address will still be added in the list.
         $.consensusTxSenderAddresses[decryptionId][digest].push(msg.sender);
 
+        // Emit the event at each call for monitoring purposes.
+        emit PublicDecryptionResponseCall(decryptionId, decryptedResult, signature, msg.sender, extraData);
+
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
@@ -490,6 +493,7 @@ contract Decryption is
         }
 
         UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
+
         // Initialize the UserDecryptResponseVerification structure for the signature validation.
         UserDecryptResponseVerification memory userDecryptResponseVerification = UserDecryptResponseVerification(
             userDecryptionPayload.publicKey,

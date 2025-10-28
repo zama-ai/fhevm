@@ -3,19 +3,24 @@ pragma solidity ^0.8.24;
 import "../shared/Structs.sol";
 
 contract MultichainACLMock {
-    event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
+    event AllowPublicDecrypt(bytes32 indexed ctHandle, address coprocessorTxSender, bytes extraData);
 
-    event AllowPublicDecrypt(bytes32 indexed ctHandle);
+    event AllowPublicDecryptConsensus(bytes32 indexed ctHandle, bytes extraData);
+
+    event AllowAccount(bytes32 indexed ctHandle, address accountAddress, address coprocessorTxSender, bytes extraData);
+
+    event AllowAccountConsensus(bytes32 indexed ctHandle, address accountAddress, bytes extraData);
 
     event DelegateUserDecryption(
         uint256 indexed chainId,
         address delegator,
         address delegate,
         address contractAddress,
-        uint64 delegationCounter
+        uint64 delegationCounter,
+        uint64 expirationDate
     );
 
-    event DelegateUserDecryptionConsensusReached(
+    event DelegateUserDecryptionConsensus(
         uint256 indexed chainId,
         address delegator,
         address delegate,
@@ -42,12 +47,20 @@ contract MultichainACLMock {
         uint64 oldExpirationDate
     );
 
-    function allowPublicDecrypt(bytes32 ctHandle, bytes calldata /* unusedVariable */) external {
-        emit AllowPublicDecrypt(ctHandle);
+    function allowPublicDecrypt(bytes32 ctHandle, bytes calldata extraData) external {
+        address coprocessorTxSender;
+
+        emit AllowPublicDecrypt(ctHandle, coprocessorTxSender, extraData);
+
+        emit AllowPublicDecryptConsensus(ctHandle, extraData);
     }
 
-    function allowAccount(bytes32 ctHandle, address accountAddress, bytes calldata /* unusedVariable */) external {
-        emit AllowAccount(ctHandle, accountAddress);
+    function allowAccount(bytes32 ctHandle, address accountAddress, bytes calldata extraData) external {
+        address coprocessorTxSender;
+
+        emit AllowAccount(ctHandle, accountAddress, coprocessorTxSender, extraData);
+
+        emit AllowAccountConsensus(ctHandle, accountAddress, extraData);
     }
 
     function delegateUserDecryption(
@@ -61,9 +74,9 @@ contract MultichainACLMock {
         uint64 oldExpirationDate;
         uint64 newExpirationDate;
 
-        emit DelegateUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter);
+        emit DelegateUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
 
-        emit DelegateUserDecryptionConsensusReached(
+        emit DelegateUserDecryptionConsensus(
             chainId,
             delegator,
             delegate,

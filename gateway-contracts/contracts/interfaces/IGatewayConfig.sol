@@ -23,6 +23,10 @@ interface IGatewayConfig {
      * @notice Emitted when the GatewayConfig initialization is completed.
      * @param metadata Metadata of the protocol.
      * @param mpcThreshold The MPC threshold.
+     * @param publicDecryptionThreshold The public decryption threshold.
+     * @param userDecryptionThreshold The user decryption threshold.
+     * @param kmsGenThreshold The key and CRS generation threshold.
+     * @param coprocessorThreshold The coprocessor threshold.
      * @param kmsNodes List of KMS nodes.
      * @param coprocessors List of coprocessors.
      * @param custodians List of custodians.
@@ -30,6 +34,10 @@ interface IGatewayConfig {
     event InitializeGatewayConfig(
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
+        uint256 publicDecryptionThreshold,
+        uint256 userDecryptionThreshold,
+        uint256 kmsGenThreshold,
+        uint256 coprocessorThreshold,
         KmsNode[] kmsNodes,
         Coprocessor[] coprocessors,
         Custodian[] custodians

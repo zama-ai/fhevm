@@ -276,6 +276,9 @@ contract KMSGeneration is
         address[] storage consensusTxSenders = $.consensusTxSenderAddresses[prepKeygenId][digest];
         consensusTxSenders.push(msg.sender);
 
+        // Emit the event at each call for monitoring purposes.
+        emit PrepKeygenResponse(prepKeygenId, signature, msg.sender);
+
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.isRequestDone[prepKeygenId] && _isKmsConsensusReached(consensusTxSenders.length)) {
@@ -323,6 +326,9 @@ contract KMSGeneration is
         consensusTxSenders.push(msg.sender);
 
         uint256 consensusTxSendersLength = consensusTxSenders.length;
+
+        // Emit the event at each call for monitoring purposes.
+        emit KeygenResponse(keyId, keyDigests, signature, msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
@@ -406,6 +412,9 @@ contract KMSGeneration is
         consensusTxSenders.push(msg.sender);
 
         uint256 consensusTxSendersLength = consensusTxSenders.length;
+
+        // Emit the event at each call for monitoring purposes.
+        emit CrsgenResponse(crsId, crsDigest, signature, msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted

@@ -14,6 +14,10 @@ contract GatewayConfigMock {
     event InitializeGatewayConfig(
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
+        uint256 publicDecryptionThreshold,
+        uint256 userDecryptionThreshold,
+        uint256 kmsGenThreshold,
+        uint256 coprocessorThreshold,
         KmsNode[] kmsNodes,
         Coprocessor[] coprocessors,
         Custodian[] custodians
@@ -58,11 +62,25 @@ contract GatewayConfigMock {
     ) public {
         ProtocolMetadata memory metadata;
         uint256 mpcThreshold;
+        uint256 publicDecryptionThreshold;
+        uint256 userDecryptionThreshold;
+        uint256 kmsGenThreshold;
+        uint256 coprocessorThreshold;
         KmsNode[] memory kmsNodes = new KmsNode[](1);
         Coprocessor[] memory coprocessors = new Coprocessor[](1);
         Custodian[] memory custodians = new Custodian[](1);
 
-        emit InitializeGatewayConfig(metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
+        emit InitializeGatewayConfig(
+            metadata,
+            mpcThreshold,
+            publicDecryptionThreshold,
+            userDecryptionThreshold,
+            kmsGenThreshold,
+            coprocessorThreshold,
+            kmsNodes,
+            coprocessors,
+            custodians
+        );
     }
 
     function reinitializeV3(KmsNode[] calldata newKmsNodes) public {

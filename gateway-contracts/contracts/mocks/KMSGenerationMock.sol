@@ -19,11 +19,17 @@ contract KMSGenerationMock {
 
     event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType);
 
+    event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
+
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId);
+
+    event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType);
+
+    event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address kmsTxSender);
 
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
 
@@ -45,14 +51,20 @@ contract KMSGenerationMock {
     }
 
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external {
+        address kmsTxSender;
         keyCounter++;
         uint256 keyId = keyCounter;
+
+        emit PrepKeygenResponse(prepKeygenId, signature, kmsTxSender);
 
         emit KeygenRequest(prepKeygenId, keyId);
     }
 
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external {
+        address kmsTxSender;
         string[] memory kmsNodeStorageUrls = new string[](1);
+
+        emit KeygenResponse(keyId, keyDigests, signature, kmsTxSender);
 
         emit ActivateKey(keyId, kmsNodeStorageUrls, keyDigests);
     }
@@ -65,7 +77,10 @@ contract KMSGenerationMock {
     }
 
     function crsgenResponse(uint256 crsId, bytes calldata crsDigest, bytes calldata signature) external {
+        address kmsTxSender;
         string[] memory kmsNodeStorageUrls = new string[](1);
+
+        emit CrsgenResponse(crsId, crsDigest, signature, kmsTxSender);
 
         emit ActivateCrs(crsId, kmsNodeStorageUrls, crsDigest);
     }

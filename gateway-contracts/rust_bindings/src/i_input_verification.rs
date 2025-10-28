@@ -8,8 +8,10 @@ interface IInputVerification {
     error VerifyProofNotRequested(uint256 zkProofId);
 
     event RejectProofResponse(uint256 indexed zkProofId);
+    event RejectProofResponseCall(uint256 indexed zkProofId, bytes extraData);
     event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChainId, address contractAddress, address userAddress, bytes ciphertextWithZKProof, bytes extraData);
     event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
+    event VerifyProofResponseCall(uint256 indexed zkProofId, bytes32[] ctHandles, bytes signature, address coprocessorTxSender, bytes extraData);
 
     function getRejectProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
     function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
@@ -208,6 +210,25 @@ interface IInputVerification {
   },
   {
     "type": "event",
+    "name": "RejectProofResponseCall",
+    "inputs": [
+      {
+        "name": "zkProofId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "VerifyProofRequest",
     "inputs": [
       {
@@ -270,6 +291,43 @@ interface IInputVerification {
         "type": "bytes[]",
         "indexed": false,
         "internalType": "bytes[]"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "VerifyProofResponseCall",
+    "inputs": [
+      {
+        "name": "zkProofId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "ctHandles",
+        "type": "bytes32[]",
+        "indexed": false,
+        "internalType": "bytes32[]"
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      },
+      {
+        "name": "coprocessorTxSender",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
       }
     ],
     "anonymous": false
@@ -758,6 +816,124 @@ event RejectProofResponse(uint256 indexed zkProofId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `RejectProofResponseCall(uint256,bytes)` and selector `0x675cefb1743f728fd21b29c5f6a754b3f0f2ad47acf61ffbfb7b5d9cb85e8cef`.
+```solidity
+event RejectProofResponseCall(uint256 indexed zkProofId, bytes extraData);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct RejectProofResponseCall {
+        #[allow(missing_docs)]
+        pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for RejectProofResponseCall {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Bytes,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "RejectProofResponseCall(uint256,bytes)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                103u8, 92u8, 239u8, 177u8, 116u8, 63u8, 114u8, 143u8, 210u8, 27u8, 41u8,
+                197u8, 246u8, 167u8, 84u8, 179u8, 240u8, 242u8, 173u8, 71u8, 172u8,
+                246u8, 31u8, 251u8, 251u8, 123u8, 93u8, 156u8, 184u8, 94u8, 140u8, 239u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    zkProofId: topics.1,
+                    extraData: data.0,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.zkProofId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.zkProofId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for RejectProofResponseCall {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&RejectProofResponseCall> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &RejectProofResponseCall,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `VerifyProofRequest(uint256,uint256,address,address,bytes,bytes)` and selector `0x4ae54f6a6e900d806ffa5bb46ed91459523d2f6ac9b5d62404feab887686d005`.
 ```solidity
 event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChainId, address contractAddress, address userAddress, bytes ciphertextWithZKProof, bytes extraData);
@@ -1031,6 +1207,151 @@ event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[
         impl From<&VerifyProofResponse> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &VerifyProofResponse) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `VerifyProofResponseCall(uint256,bytes32[],bytes,address,bytes)` and selector `0x01df0fa69857deb2d405618780115de4758a8a3a7e036c8e539aac1c3e889f69`.
+```solidity
+event VerifyProofResponseCall(uint256 indexed zkProofId, bytes32[] ctHandles, bytes signature, address coprocessorTxSender, bytes extraData);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct VerifyProofResponseCall {
+        #[allow(missing_docs)]
+        pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub ctHandles: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
+        #[allow(missing_docs)]
+        pub signature: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub coprocessorTxSender: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for VerifyProofResponseCall {
+            type DataTuple<'a> = (
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Bytes,
+            );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "VerifyProofResponseCall(uint256,bytes32[],bytes,address,bytes)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                1u8, 223u8, 15u8, 166u8, 152u8, 87u8, 222u8, 178u8, 212u8, 5u8, 97u8,
+                135u8, 128u8, 17u8, 93u8, 228u8, 117u8, 138u8, 138u8, 58u8, 126u8, 3u8,
+                108u8, 142u8, 83u8, 154u8, 172u8, 28u8, 62u8, 136u8, 159u8, 105u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    zkProofId: topics.1,
+                    ctHandles: data.0,
+                    signature: data.1,
+                    coprocessorTxSender: data.2,
+                    extraData: data.3,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandles),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.signature,
+                    ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.coprocessorTxSender,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.zkProofId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.zkProofId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for VerifyProofResponseCall {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&VerifyProofResponseCall> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &VerifyProofResponseCall,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -2974,9 +3295,13 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         #[allow(missing_docs)]
         RejectProofResponse(RejectProofResponse),
         #[allow(missing_docs)]
+        RejectProofResponseCall(RejectProofResponseCall),
+        #[allow(missing_docs)]
         VerifyProofRequest(VerifyProofRequest),
         #[allow(missing_docs)]
         VerifyProofResponse(VerifyProofResponse),
+        #[allow(missing_docs)]
+        VerifyProofResponseCall(VerifyProofResponseCall),
     }
     #[automatically_derived]
     impl IInputVerificationEvents {
@@ -2988,9 +3313,19 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
+                1u8, 223u8, 15u8, 166u8, 152u8, 87u8, 222u8, 178u8, 212u8, 5u8, 97u8,
+                135u8, 128u8, 17u8, 93u8, 228u8, 117u8, 138u8, 138u8, 58u8, 126u8, 3u8,
+                108u8, 142u8, 83u8, 154u8, 172u8, 28u8, 62u8, 136u8, 159u8, 105u8,
+            ],
+            [
                 74u8, 229u8, 79u8, 106u8, 110u8, 144u8, 13u8, 128u8, 111u8, 250u8, 91u8,
                 180u8, 110u8, 217u8, 20u8, 89u8, 82u8, 61u8, 47u8, 106u8, 201u8, 181u8,
                 214u8, 36u8, 4u8, 254u8, 171u8, 136u8, 118u8, 134u8, 208u8, 5u8,
+            ],
+            [
+                103u8, 92u8, 239u8, 177u8, 116u8, 63u8, 114u8, 143u8, 210u8, 27u8, 41u8,
+                197u8, 246u8, 167u8, 84u8, 179u8, 240u8, 242u8, 173u8, 71u8, 172u8,
+                246u8, 31u8, 251u8, 251u8, 123u8, 93u8, 156u8, 184u8, 94u8, 140u8, 239u8,
             ],
             [
                 228u8, 101u8, 225u8, 65u8, 250u8, 138u8, 189u8, 149u8, 171u8, 126u8, 8u8,
@@ -3007,7 +3342,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IInputVerificationEvents {
         const NAME: &'static str = "IInputVerificationEvents";
-        const COUNT: usize = 3usize;
+        const COUNT: usize = 5usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -3021,6 +3356,15 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                             data,
                         )
                         .map(Self::RejectProofResponse)
+                }
+                Some(
+                    <RejectProofResponseCall as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <RejectProofResponseCall as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::RejectProofResponseCall)
                 }
                 Some(
                     <VerifyProofRequest as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -3039,6 +3383,15 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                             data,
                         )
                         .map(Self::VerifyProofResponse)
+                }
+                Some(
+                    <VerifyProofResponseCall as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <VerifyProofResponseCall as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::VerifyProofResponseCall)
                 }
                 _ => {
                     alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
@@ -3061,10 +3414,16 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 Self::RejectProofResponse(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::RejectProofResponseCall(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::VerifyProofRequest(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::VerifyProofResponse(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::VerifyProofResponseCall(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
             }
@@ -3074,10 +3433,16 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 Self::RejectProofResponse(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
+                Self::RejectProofResponseCall(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
                 Self::VerifyProofRequest(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::VerifyProofResponse(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::VerifyProofResponseCall(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
             }
@@ -3365,6 +3730,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, RejectProofResponse, N> {
             self.event_filter::<RejectProofResponse>()
         }
+        ///Creates a new event filter for the [`RejectProofResponseCall`] event.
+        pub fn RejectProofResponseCall_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, RejectProofResponseCall, N> {
+            self.event_filter::<RejectProofResponseCall>()
+        }
         ///Creates a new event filter for the [`VerifyProofRequest`] event.
         pub fn VerifyProofRequest_filter(
             &self,
@@ -3376,6 +3747,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, VerifyProofResponse, N> {
             self.event_filter::<VerifyProofResponse>()
+        }
+        ///Creates a new event filter for the [`VerifyProofResponseCall`] event.
+        pub fn VerifyProofResponseCall_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, VerifyProofResponseCall, N> {
+            self.event_filter::<VerifyProofResponseCall>()
         }
     }
 }

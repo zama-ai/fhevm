@@ -9,15 +9,33 @@ import "../shared/Structs.sol";
  */
 interface ICiphertextCommits {
     /**
+     * @notice Emitted when a coprocessor transaction sender requests to add a ciphertext material.
+     * @param ctHandle The handle of the added ciphertext material.
+     * @param keyId The ID of the key under which the ciphertext has been generated.
+     * @param ciphertextDigest The digest of the regular ciphertext.
+     * @param snsCiphertextDigest The digest of the SNS ciphertext.
+     * @param coprocessorTxSender The transaction sender of the coprocessor that has called the function.
+     */
+    event AddCiphertextMaterial(
+        bytes32 indexed ctHandle,
+        uint256 keyId,
+        bytes32 ciphertextDigest,
+        bytes32 snsCiphertextDigest,
+        address coprocessorTxSender
+    );
+
+    /**
      * @notice Emitted when a consensus for the ciphertext material addition is reached.
      * @param ctHandle The handle of the added ciphertext material.
+     * @param keyId The ID of the key under which the ciphertext has been generated.
      * @param ciphertextDigest The digest of the regular ciphertext.
      * @param snsCiphertextDigest The digest of the SNS ciphertext.
      * @param coprocessorTxSenders The list of coprocessor transaction sender addresses
      * that were part of the consensus when adding the ciphertext material.
      */
-    event AddCiphertextMaterial(
+    event AddCiphertextMaterialConsensus(
         bytes32 indexed ctHandle,
+        uint256 keyId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest,
         address[] coprocessorTxSenders

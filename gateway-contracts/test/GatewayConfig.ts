@@ -189,6 +189,10 @@ describe("GatewayConfig", function () {
       expect(stringifiedEventArgs).to.deep.equal([
         toValues(protocolMetadata).toString(),
         mpcThreshold,
+        publicDecryptionThreshold,
+        userDecryptionThreshold,
+        kmsGenThreshold,
+        coprocessorThreshold,
         toValues(kmsNodes).toString(),
         toValues(coprocessors).toString(),
         toValues(custodians).toString(),
