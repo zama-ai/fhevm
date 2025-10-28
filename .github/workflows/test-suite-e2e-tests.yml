@@ -182,6 +182,13 @@ jobs:
         run: |
           ./fhevm-cli test public-decrypt-http-mixed
 
+      - name: Delegate User Decryption (partial test)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test delegate-user-decryption && echo "Should fail" && exit 1 || echo "Failed as expected"
+          ./fhevm-cli logs coprocessor-transaction-sender | grep DelegationRow
+          ./fhevm-cli logs coprocessor-transaction-sender | grep "DelegationForUserDecryption txn succeeded"
+
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
         if: always()

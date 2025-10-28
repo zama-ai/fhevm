@@ -23,22 +23,22 @@ export CONNECTOR_KMS_WORKER_VERSION=${CONNECTOR_KMS_WORKER_VERSION:-"v0.9.3"}
 export CONNECTOR_TX_SENDER_VERSION=${CONNECTOR_TX_SENDER_VERSION:-"v0.9.3"}
 
 # Coprocessor services.
-export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.9.3"}
+export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"288de5a"}
 export GW_LISTENER_VERSION=${GW_LISTENER_VERSION:-"v0.9.3"}
-export HOST_LISTENER_VERSION=${HOST_LISTENER_VERSION:-"v0.9.3"}
-export TX_SENDER_VERSION=${TX_SENDER_VERSION:-"v0.9.3"}
+export HOST_LISTENER_VERSION=${HOST_LISTENER_VERSION:-"288de5a"}
+export TX_SENDER_VERSION=${TX_SENDER_VERSION:-"288de5a"}
 export TFHE_WORKER_VERSION=${TFHE_WORKER_VERSION:-"v0.9.3"}
 export SNS_WORKER_VERSION=${SNS_WORKER_VERSION:-"v0.9.3"}
 export ZKPROOF_WORKER_VERSION=${ZKPROOF_WORKER_VERSION:-"v0.9.3"}
 
 # Gateway and Host contracts.
-export GATEWAY_VERSION=${GATEWAY_VERSION:-"efa5103"}
-export HOST_VERSION=${HOST_VERSION:-"5d96886"}
+export GATEWAY_VERSION=${GATEWAY_VERSION:-"288de5a"}
+export HOST_VERSION=${HOST_VERSION:-"288de5a"}
 
 # Other services.
 export CORE_VERSION=${CORE_VERSION:-"v0.12.2"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.5.0-2"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"v0.9.3"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"288de5a"}
 
 
 function print_logo() {
@@ -176,6 +176,10 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test user decrypt")
           ;;
+        delegate-user-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
+          docker_args+=("-g" "test delegate user decrypt")
+          ;;
         public-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
           docker_args+=("-g" "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)")
@@ -225,7 +229,7 @@ case $COMMAND in
   upgrade)
     print_logo
     SERVICE=$1
-    if [[ ! $SERVICE =~ ^(minio|core|gateway-node|gateway-sc|gateway-mocked-payment|host-node|host-sc|kms-connector|coprocessor|relayer|test-suite)$ ]]; then
+    if [[ ! $SERVICE =~ ^(minio|core|gateway-node|gateway-sc|host-node|host-sc|kms-connector|coprocessor|relayer|test-suite)$ ]]; then
       echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $SERVICE${RESET}"
       usage
       exit 1
