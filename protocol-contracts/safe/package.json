@@ -1,0 +1,25 @@
+{
+  "name": "safe-admin-module",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "overrides": {
+    "@safe-global/safe-contracts": {
+      "ethers": "^6.13.5"
+    }
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "@openzeppelin/contracts": "^5.4.0",
+    "@safe-global/safe-contracts": "^1.4.1-2",
+    "hardhat": "^2.26.3",
+    "hardhat-dependency-compiler": "^1.2.1"
+  }
+}
