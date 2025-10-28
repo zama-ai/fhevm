@@ -26,7 +26,7 @@ import {
 } from "./utils";
 
 // Trigger a key generation in KMSGeneration contract
-async function generateKey(
+export async function generateKey(
   kmsGeneration: KMSGeneration,
   owner: Wallet,
   gatewayChainId: number,
