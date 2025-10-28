@@ -10,7 +10,7 @@ import {
   KMSGenerationMock,
   MultichainACLMock,
 } from "../../typechain-types";
-import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getEpochId, getKeyId, getPrepKeygenId, toValues } from "../utils";
+import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getKeyId, getKeyReshareId, getPrepKeygenId, toValues } from "../utils";
 
 describe("Mock contracts", function () {
   // Mock contracts
@@ -302,7 +302,7 @@ describe("Mock contracts", function () {
     const prepKeygenId = getPrepKeygenId(1);
     const keyId = getKeyId(1);
     const crsgenId = getCrsId(1);
-    const epochId = getEpochId(1);
+    const epochId = 0;
 
     it("Should emit PrepKeygenRequest event on keygen request", async function () {
       await expect(kmsGenerationMock.keygen(DefaultParamsType))
@@ -338,15 +338,15 @@ describe("Mock contracts", function () {
       await expect(kmsGenerationMock.prssInit()).to.emit(kmsGenerationMock, "PRSSInit");
     });
 
-    it("Should emit RefreshKeygenReshare event on refreshKeygenReshare call", async function () {
-      // Define incremented prepKeygenId and epochId since the mock contract increments
-      // these values internally from previous test cases.
+    it("Should emit KeyReshareSameSet event on keyReshareSameSet call", async function () {
+      // Define incremented prepKeygenId since the mock contract increments
+      // this value internally from previous test cases.
       const prepKeygenId = getPrepKeygenId(2);
-      const epochId = getEpochId(2);
+      const keyReshareId = getKeyReshareId(1);
 
-      await expect(kmsGenerationMock.refreshKeygenReshare(keyId))
-        .to.emit(kmsGenerationMock, "RefreshKeygenReshare")
-        .withArgs(prepKeygenId, keyId, epochId, DefaultParamsType);
+      await expect(kmsGenerationMock.keyReshareSameSet(keyId))
+        .to.emit(kmsGenerationMock, "KeyReshareSameSet")
+        .withArgs(prepKeygenId, keyId, keyReshareId, DefaultParamsType);
     });
   });
 

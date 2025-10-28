@@ -14,7 +14,7 @@ import {
     PREP_KEYGEN_COUNTER_BASE,
     KEY_COUNTER_BASE,
     CRS_COUNTER_BASE,
-    EPOCH_COUNTER_BASE
+    KEY_RESHARE_COUNTER_BASE
 } from "./shared/KMSRequestCounters.sol";
 
 /**
@@ -168,8 +168,8 @@ contract KMSGeneration is
         // ----------------------------------------------------------------------------------------------
         /// @notice The parameters type used for the request
         mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
-        /// @notice The number of key resharing epochs, used to generate the epochIds.
-        uint256 epochCounter;
+        /// @notice The number of key resharing, used to generate the keyReshareIds.
+        uint256 keyReshareCounter;
     }
 
     /**
@@ -199,7 +199,7 @@ contract KMSGeneration is
         $.prepKeygenCounter = PREP_KEYGEN_COUNTER_BASE;
         $.keyCounter = KEY_COUNTER_BASE;
         $.crsCounter = CRS_COUNTER_BASE;
-        $.epochCounter = EPOCH_COUNTER_BASE;
+        $.keyReshareCounter = KEY_RESHARE_COUNTER_BASE;
     }
 
     /**
@@ -210,7 +210,7 @@ contract KMSGeneration is
     function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
-        $.epochCounter = EPOCH_COUNTER_BASE;
+        $.keyReshareCounter = KEY_RESHARE_COUNTER_BASE;
     }
 
     /**
@@ -437,12 +437,12 @@ contract KMSGeneration is
     }
 
     /**
-     * @notice See {IKMSGeneration-refreshKeygenReshare}.
+     * @notice See {IKMSGeneration-keyReshareSameSet}.
      * @dev ⚠️ This function should only be called under exceptional circumstances.
      * It is intended for corrective flows when a previous resharing attempt failed.
      * Use with caution since incorrect usage may cause inconsistent key generation states.
      */
-    function refreshKeygenReshare(uint256 keyId) external virtual onlyGatewayOwner {
+    function keyReshareSameSet(uint256 keyId) external virtual onlyGatewayOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         if (!$.isRequestDone[keyId]) {
@@ -453,13 +453,13 @@ contract KMSGeneration is
         uint256 prepKeygenId = $.keygenIdPairs[keyId];
         ParamsType paramsType = $.requestParamsType[prepKeygenId];
 
-        // Generate a globally unique epochId for the resharing epoch.
-        // The counter is initialized at deployment such that epochId's first byte uniquely
-        // represents a resharing epoch, with format: [0000 0110 | counter_1..31]
-        $.epochCounter++;
-        uint256 epochId = $.epochCounter;
+        // Generate a globally unique keyReshareId for the key resharing.
+        // The counter is initialized at deployment such that keyReshareId's first byte uniquely
+        // represents a key reshare request, with format: [0000 0110 | counter_1..31]
+        $.keyReshareCounter++;
+        uint256 keyReshareId = $.keyReshareCounter;
 
-        emit RefreshKeygenReshare(prepKeygenId, keyId, epochId, paramsType);
+        emit KeyReshareSameSet(prepKeygenId, keyId, keyReshareId, paramsType);
     }
 
     /**

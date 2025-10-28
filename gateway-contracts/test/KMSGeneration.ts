@@ -15,8 +15,8 @@ import {
   createEIP712ResponsePrepKeygen,
   createRandomWallet,
   getCrsId,
-  getEpochId,
   getKeyId,
+  getKeyReshareId,
   getPrepKeygenId,
   getSignaturesCrsgen,
   getSignaturesKeygen,
@@ -594,7 +594,7 @@ describe("KMSGeneration", function () {
         .withArgs(fakeOwner.address);
 
       // Check that only the owner can trigger a key resharing.
-      await expect(kmsGeneration.connect(fakeOwner).refreshKeygenReshare(keyId))
+      await expect(kmsGeneration.connect(fakeOwner).keyReshareSameSet(keyId))
         .to.be.revertedWithCustomError(kmsGeneration, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
     });
@@ -624,12 +624,12 @@ describe("KMSGeneration", function () {
 
       // Declare expected values.
       const prepKeygenId = getPrepKeygenId(1);
-      const epochId = getEpochId(1);
+      const keyReshareId = getKeyReshareId(1);
       const paramsType = ParamsTypeEnum.Test;
 
-      await expect(kmsGeneration.connect(owner).refreshKeygenReshare(keyId))
-        .to.emit(kmsGeneration, "RefreshKeygenReshare")
-        .withArgs(prepKeygenId, keyId, epochId, paramsType);
+      await expect(kmsGeneration.connect(owner).keyReshareSameSet(keyId))
+        .to.emit(kmsGeneration, "KeyReshareSameSet")
+        .withArgs(prepKeygenId, keyId, keyReshareId, paramsType);
     });
 
     it("Should revert on reshare key because the key is not generated", async function () {
@@ -637,7 +637,7 @@ describe("KMSGeneration", function () {
 
       const fakeKeyId = getKeyId(5);
 
-      await expect(kmsGeneration.connect(owner).refreshKeygenReshare(fakeKeyId))
+      await expect(kmsGeneration.connect(owner).keyReshareSameSet(fakeKeyId))
         .to.be.revertedWithCustomError(kmsGeneration, "KeyNotGenerated")
         .withArgs(fakeKeyId);
     });

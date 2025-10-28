@@ -84,10 +84,10 @@ interface IKMSGeneration {
      * @dev This is a temporary event to reshare the specified key ID until implementation of a proper key resharing.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param keyId The ID of the key to reshare.
-     * @param epochId The ID of the resharing epoch.
+     * @param keyReshareId The ID of the key reshare request.
      * @param paramsType The type of FHE parameters to use.
      */
-    event RefreshKeygenReshare(uint256 prepKeygenId, uint256 keyId, uint256 epochId, ParamsType paramsType);
+    event KeyReshareSameSet(uint256 prepKeygenId, uint256 keyId, uint256 keyReshareId, ParamsType paramsType);
 
     /**
      * @notice Error thrown when a KMS node has already signed for a preprocessing keygen response.
@@ -165,11 +165,11 @@ interface IKMSGeneration {
     function prssInit() external;
 
     /**
-     * @notice Trigger the reshare of the currently active key.
+     * @notice Trigger the reshare of the given key ID.
      * @dev This is a temporary method to reshare the specified key ID until implementation of a proper key resharing.
      * @param keyId The ID of the key to reshare.
      */
-    function refreshKeygenReshare(uint256 keyId) external;
+    function keyReshareSameSet(uint256 keyId) external;
 
     /**
      * @notice Get the parameters type used for the key generation.
