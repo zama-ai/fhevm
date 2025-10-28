@@ -92,7 +92,8 @@ where
         tracing::Span::current().set_parent(otlp_context.extract());
 
         let response_kind = match event_processor.process(&event).await {
-            Ok(response) => response,
+            Ok(Some(response)) => response,
+            Ok(None) => return,
             Err(e) => return error!("{e}"),
         };
 
@@ -203,13 +204,15 @@ mod tests {
         async fn process(
             &mut self,
             _event: &Self::Event,
-        ) -> Result<KmsResponseKind, ProcessingError> {
-            Ok(KmsResponseKind::UserDecryption(UserDecryptionResponse {
-                decryption_id: rand_u256(),
-                user_decrypted_shares: vec![],
-                signature: rand_signature(),
-                extra_data: vec![],
-            }))
+        ) -> Result<Option<KmsResponseKind>, ProcessingError> {
+            Ok(Some(KmsResponseKind::UserDecryption(
+                UserDecryptionResponse {
+                    decryption_id: rand_u256(),
+                    user_decrypted_shares: vec![],
+                    signature: rand_signature(),
+                    extra_data: vec![],
+                },
+            )))
         }
     }
 
