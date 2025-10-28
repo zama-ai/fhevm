@@ -9,6 +9,7 @@ pub(crate) mod database;
 pub(crate) mod digest;
 pub mod gw_listener;
 pub mod http_server;
+pub(crate) mod metrics;
 pub(crate) mod sks_key;
 
 pub(crate) type ChainId = u64;
@@ -43,7 +44,9 @@ pub struct ConfigSettings {
 
     pub error_sleep_initial_secs: u16,
     pub error_sleep_max_secs: u16,
+
     pub health_check_port: u16,
+
     pub health_check_timeout: Duration,
 
     pub get_logs_poll_interval: Duration,
