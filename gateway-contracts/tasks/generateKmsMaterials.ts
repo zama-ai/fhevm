@@ -1,10 +1,6 @@
-import dotenv from "dotenv";
-import fs from "fs";
 import { task, types } from "hardhat/config";
-import path from "path";
 
-import { ADDRESSES_DIR } from "../hardhat.config";
-import { getRequiredEnvVar } from "./utils/loadVariables";
+import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 
 task("task:triggerKeygen")
   .addParam("paramsType", "The type of the parameters to use for the key generation.")
@@ -23,12 +19,7 @@ task("task:triggerKeygen")
     const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
     if (useInternalProxyAddress) {
-      const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
-
-      if (!fs.existsSync(envFilePath)) {
-        throw new Error(`Environment file not found: ${envFilePath}`);
-      }
-      dotenv.config({ path: envFilePath, override: true });
+      loadGatewayAddresses();
     }
 
     // Get KMSGeneration contract.
@@ -59,13 +50,7 @@ task("task:triggerCrsgen")
     const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
     if (useInternalProxyAddress) {
-      const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
-
-      if (!fs.existsSync(envFilePath)) {
-        throw new Error(`Environment file not found: ${envFilePath}`);
-      }
-
-      dotenv.config({ path: envFilePath, override: true });
+      loadGatewayAddresses();
     }
 
     // Get KMSGeneration contract.

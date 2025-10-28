@@ -90,11 +90,15 @@ deploy-empty-proxies:
 
 # Deploy the pauser set contract
 deploy-pauser-set:
-	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat compile:specific --contract contracts/immutable
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployPauserSet
 
+# Deploy the mocked payment bridging contracts
+deploy-mocked-zama-oft:
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployMockedZamaOFT
+
 # Deploy the contracts needed for deploying the gateway contracts
-deploy-setup-contracts: deploy-empty-proxies deploy-pauser-set
+deploy-setup-contracts: 
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deploySetupContracts --deploy-mocked-zama-oft true
 
 # Ensure that the empty proxy addresses exists as these are required for contract compilation.
 # In addition, ensure that the addresses match the ones used in local development in order to
