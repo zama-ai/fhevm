@@ -8971,18 +8971,18 @@ library FHE {
     ///      the temporary permission to the new pair (`delegate`, `contractAddress`) to decrypt the same handle.
     /// @param delegate The account that will request a user decryption on behalf of delegator (`msg.sender`).
     /// @param contractAddress The address of the contract that is part of the user decryption context.
-    /// @param expiryDate UNIX timestamp when the delegation expires.
+    /// @param expirationDate UNIX timestamp when the delegation expires.
     ///
     /// @dev Requirements:
     ///      - the ACL contract must not be paused.
     ///        Reverts via an {PausableUpgradeable-EnforcedPause} error otherwise.
     ///
-    ///      - `expiryDate` must be at least 1 hour in the future.
-    ///        i.e. `expiryDate >= block.timestamp + 1 hours`
-    ///        Reverts with an {IACL-ExpiryDateBeforeOneHour} error otherwise.
+    ///      - `expirationDate` must be at least 1 hour in the future.
+    ///        i.e. `expirationDate >= block.timestamp + 1 hours`
+    ///        Reverts with an {IACL-ExpirationDateBeforeOneHour} error otherwise.
     ///
-    ///      - `expiryDate` must differ from the current value.
-    ///        Reverts with an {IACL-ExpiryDateAlreadySetToSameValue} error otherwise.
+    ///      - `expirationDate` must differ from the current value.
+    ///        Reverts with an {IACL-ExpirationDateAlreadySetToSameValue} error otherwise.
     ///
     ///      - at most one delegate OR revoke per block for this
     ///        (msg.sender, delegate, contractAddress) tuple to avoid racey
@@ -9002,8 +9002,8 @@ library FHE {
     ///      - The `delegate` address cannot be the `contractAddress`.
     ///        Reverts with an {IACL-DelegateCannotBeContractAddress} error if
     ///        `delegate == contractAddress`.
-    function delegateUserDecryption(address delegate, address contractAddress, uint64 expiryDate) internal {
-        Impl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
+    function delegateUserDecryption(address delegate, address contractAddress, uint64 expirationDate) internal {
+        Impl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
     }
 
     /// @notice Permanently delegates the user decryption rights that the caller (`msg.sender`) holds in the
@@ -9021,9 +9021,13 @@ library FHE {
     /// @param delegate The account that will request a user decryption on behalf of delegator (`msg.sender`).
     /// @param contractAddresses The array of contract addresses that form the user decryption context tuples
     ///                          (`msg.sender`, `contractAddresses[i]`).
-    /// @param expiryDate UNIX timestamp when the delegation expires.
-    function delegateUserDecryptions(address delegate, address[] memory contractAddresses, uint64 expiryDate) internal {
-        Impl.delegateForUserDecryptions(delegate, contractAddresses, expiryDate);
+    /// @param expirationDate UNIX timestamp when the delegation expires.
+    function delegateUserDecryptions(
+        address delegate,
+        address[] memory contractAddresses,
+        uint64 expirationDate
+    ) internal {
+        Impl.delegateForUserDecryptions(delegate, contractAddresses, expirationDate);
     }
 
     /// @notice Batch delegates user decryption rights without expiration that the caller (`msg.sender`) holds in the context of
@@ -9069,15 +9073,15 @@ library FHE {
     /// @notice Get the expiry date of the delegation from delegator `msg.sender` to a (delegate, contractAddress) pair.
     /// @param delegate The account authorized to request user decryptions on behalf of `msg.sender`
     /// @param contractAddress The address of the contract that is part of the user decryption context
-    /// @return expiryDate The delegation's expiration limit, which can be one of:
+    /// @return expirationDate The delegation's expiration limit, which can be one of:
     ///         - 0 :  If no delegation is currently active for the (delegate, contractAddress) context.
     ///         - type(uint64).max : If the delegation is permanent (no expiry).
     ///         - A strictly positive UNIX timestamp when this delegation expires.
-    function getDelegatedUserDecryptionExpiryDate(
+    function getDelegatedUserDecryptionExpirationDate(
         address delegate,
         address contractAddress
-    ) internal view returns (uint64 expiryDate) {
-        expiryDate = Impl.getUserDecryptionDelegationExpirationDate(msg.sender, delegate, contractAddress);
+    ) internal view returns (uint64 expirationDate) {
+        expirationDate = Impl.getUserDecryptionDelegationExpirationDate(msg.sender, delegate, contractAddress);
     }
 
     /**
