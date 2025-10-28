@@ -2,9 +2,12 @@ use crate::core::{config::Config, event_processor::eip712::alloy_to_protobuf_dom
 use alloy::{hex, primitives::U256, sol_types::Eip712Domain};
 use connector_utils::types::KmsGrpcRequest;
 use fhevm_gateway_bindings::kms_generation::KMSGeneration::{
-    CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    CrsgenRequest, KeyReshareSameSet, KeygenRequest, PrepKeygenRequest,
 };
-use kms_grpc::kms::v1::{CrsGenRequest, KeyGenPreprocRequest, KeyGenRequest, RequestId};
+use kms_grpc::kms::v1::{
+    CrsGenRequest, InitRequest, InitiateResharingRequest, KeyGenPreprocRequest, KeyGenRequest,
+    RequestId,
+};
 use std::borrow::Cow;
 use tracing::{error, info};
 
@@ -32,7 +35,7 @@ impl KMSGenerationProcessor {
         Self { domain }
     }
 
-    pub async fn prepare_prep_keygen_request(
+    pub fn prepare_prep_keygen_request(
         &self,
         prep_keygen_request: PrepKeygenRequest,
     ) -> anyhow::Result<KmsGrpcRequest> {
@@ -54,7 +57,7 @@ impl KMSGenerationProcessor {
         }))
     }
 
-    pub async fn prepare_keygen_request(
+    pub fn prepare_keygen_request(
         &self,
         keygen_request: KeygenRequest,
     ) -> anyhow::Result<KmsGrpcRequest> {
@@ -81,7 +84,7 @@ impl KMSGenerationProcessor {
         }))
     }
 
-    pub async fn prepare_crsgen_request(
+    pub fn prepare_crsgen_request(
         &self,
         crsgen_request: CrsgenRequest,
     ) -> anyhow::Result<KmsGrpcRequest> {
@@ -109,5 +112,40 @@ impl KMSGenerationProcessor {
             max_num_bits,
             context_id: None,
         }))
+    }
+
+    pub fn prepare_prss_init_request(&self, id: U256) -> KmsGrpcRequest {
+        let request_id = Some(RequestId {
+            request_id: hex::encode(id.to_be_bytes::<32>()),
+        });
+        KmsGrpcRequest::PrssInit(InitRequest { request_id })
+    }
+
+    pub fn prepare_initiate_resharing_request(
+        &self,
+        req: KeyReshareSameSet,
+    ) -> anyhow::Result<KmsGrpcRequest> {
+        let request_id = Some(RequestId {
+            request_id: hex::encode(req.keyReshareId.to_be_bytes::<32>()),
+        });
+
+        let domain_msg = alloy_to_protobuf_domain(&self.domain)?;
+        info!("Eip712Domain constructed: {domain_msg:?}");
+
+        Ok(KmsGrpcRequest::KeyReshareSameSet(
+            InitiateResharingRequest {
+                request_id,
+                key_id: Some(RequestId {
+                    request_id: hex::encode(req.keyId.to_be_bytes::<32>()),
+                }),
+                preproc_id: Some(RequestId {
+                    request_id: hex::encode(req.prepKeygenId.to_be_bytes::<32>()),
+                }),
+                key_parameters: req.paramsType as i32,
+                domain: Some(domain_msg),
+                epoch_id: None,
+                context_id: None,
+            },
+        ))
     }
 }

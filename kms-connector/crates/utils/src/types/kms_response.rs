@@ -114,6 +114,9 @@ impl KmsResponseKind {
             KmsGrpcResponse::Crsgen(grpc_response) => {
                 CrsgenResponse::process(grpc_response).map(Self::Crsgen)
             }
+            KmsGrpcResponse::NoResponseExpected => {
+                Err(anyhow!("No response expected from KMS. Nothing to process"))
+            }
         }
     }
 }

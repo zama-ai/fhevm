@@ -7,7 +7,9 @@ use fhevm_gateway_bindings::{
     decryption::Decryption::{
         PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
     },
-    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    kms_generation::KMSGeneration::{
+        CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
+    },
 };
 use sqlx::{
     Pool, Postgres, Row,
@@ -43,6 +45,7 @@ impl GatewayEvent {
             }
             GatewayEventKind::Keygen(e) => mark_keygen_as_pending(db, e.keyId).await,
             GatewayEventKind::Crsgen(e) => mark_crsgen_as_pending(db, e.crsId).await,
+            GatewayEventKind::PrssInit(_) | GatewayEventKind::KeyReshareSameSet(_) => (),
         }
     }
 
@@ -57,6 +60,10 @@ impl GatewayEvent {
             GatewayEventKind::PrepKeygen(e) => delete_prep_keygen_from_db(db, e.prepKeygenId).await,
             GatewayEventKind::Keygen(e) => delete_keygen_from_db(db, e.keyId).await,
             GatewayEventKind::Crsgen(e) => delete_crsgen_from_db(db, e.crsId).await,
+            GatewayEventKind::PrssInit(id) => delete_prss_init_from_db(db, *id).await,
+            GatewayEventKind::KeyReshareSameSet(e) => {
+                delete_key_reshare_same_set_from_db(db, e.keyId).await
+            }
         }
     }
 }
@@ -68,6 +75,8 @@ pub enum GatewayEventKind {
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
     Crsgen(CrsgenRequest),
+    PrssInit(U256),
+    KeyReshareSameSet(KeyReshareSameSet),
 }
 
 pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
@@ -135,6 +144,27 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     let kind = GatewayEventKind::Crsgen(CrsgenRequest {
         crsId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
         maxBitLength: U256::from_le_bytes(row.try_get::<[u8; 32], _>("max_bit_length")?),
+        paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
+    });
+    Ok(GatewayEvent {
+        kind,
+        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+    })
+}
+
+pub fn from_prss_init_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
+    let kind = GatewayEventKind::PrssInit(U256::from_le_bytes(row.try_get::<[u8; 32], _>("id")?));
+    Ok(GatewayEvent {
+        kind,
+        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+    })
+}
+
+pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
+    let kind = GatewayEventKind::KeyReshareSameSet(KeyReshareSameSet {
+        prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
+        keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
+        keyReshareId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_reshare_id")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
     });
     Ok(GatewayEvent {
@@ -246,6 +276,19 @@ pub async fn delete_crsgen_from_db(db: &Pool<Postgres>, id: U256) {
     execute_delete_event_query(db, query).await;
 }
 
+pub async fn delete_prss_init_from_db(db: &Pool<Postgres>, id: U256) {
+    let query = sqlx::query!("DELETE FROM prss_init WHERE id = $1", id.as_le_slice());
+    execute_delete_event_query(db, query).await;
+}
+
+pub async fn delete_key_reshare_same_set_from_db(db: &Pool<Postgres>, id: U256) {
+    let query = sqlx::query!(
+        "DELETE FROM key_reshare_same_set WHERE key_id = $1",
+        id.as_le_slice()
+    );
+    execute_delete_event_query(db, query).await;
+}
+
 async fn execute_delete_event_query(db: &Pool<Postgres>, query: Query<'_, Postgres, PgArguments>) {
     warn!("Removing event from DB...");
     let query_result = match query.execute(db).await {
@@ -277,6 +320,10 @@ impl Display for GatewayEventKind {
             }
             GatewayEventKind::Keygen(e) => write!(f, "KeygenRequest #{}", e.keyId),
             GatewayEventKind::Crsgen(e) => write!(f, "CrsgenRequest #{}", e.crsId),
+            GatewayEventKind::PrssInit(id) => write!(f, "PrssInit #{id}"),
+            GatewayEventKind::KeyReshareSameSet(e) => {
+                write!(f, "KeyReshareSameSet #{}", e.keyId)
+            }
         }
     }
 }
@@ -310,3 +357,17 @@ impl From<CrsgenRequest> for GatewayEventKind {
         Self::Crsgen(value)
     }
 }
+
+impl From<PRSSInit> for GatewayEventKind {
+    fn from(_value: PRSSInit) -> Self {
+        Self::PrssInit(PRSS_INIT_ID)
+    }
+}
+
+impl From<KeyReshareSameSet> for GatewayEventKind {
+    fn from(value: KeyReshareSameSet) -> Self {
+        Self::KeyReshareSameSet(value)
+    }
+}
+
+pub const PRSS_INIT_ID: U256 = U256::ONE;
