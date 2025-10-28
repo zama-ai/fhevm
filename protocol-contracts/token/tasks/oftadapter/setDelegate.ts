@@ -5,12 +5,18 @@ import { logExplorerLink } from '../utils/lz'
 
 task('zama:oftadapter:setDelegate', 'Set the delegate for ZamaOFTAdapter')
     .addParam('address', 'New delegate address', undefined, types.string)
-    .setAction(async ({ address }, hre) => {
+    .addOptionalParam(
+        'contractAddress',
+        'Address of the ZamaOFTAdapter contract to interact with. It not set, it fallback on ZAMAOFTADAPTER_CONTRACT_ADDRESS env variable.',
+        undefined,
+        types.string
+    )
+    .setAction(async ({ address, contractAddress }, hre) => {
         if (!hre.ethers.utils.isAddress(address)) {
             throw new Error(`The provided delegate address is not a valid EVM address: ${address}`)
         }
 
-        const { signer, contract, deploymentAddress } = await resolveContext('ZamaOFTAdapter', hre)
+        const { signer, contract, deploymentAddress } = await resolveContext('ZamaOFTAdapter', hre, contractAddress)
 
         if ((await contract.owner()) !== signer.address) {
             throw new Error(

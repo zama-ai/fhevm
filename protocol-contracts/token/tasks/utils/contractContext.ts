@@ -10,7 +10,11 @@ export interface ContractContext {
 
 import { getRequiredEnvVar } from './loadVariables'
 
-export async function resolveContext(contractName: string, hre: HardhatRuntimeEnvironment): Promise<ContractContext> {
+export async function resolveContext(
+    contractName: string,
+    hre: HardhatRuntimeEnvironment,
+    contractAddress?: string
+): Promise<ContractContext> {
     const { ethers, network } = hre
 
     const [signer] = await ethers.getSigners()
@@ -18,8 +22,8 @@ export async function resolveContext(contractName: string, hre: HardhatRuntimeEn
         throw new Error('No signer available to execute the transaction. Configure accounts for this network.')
     }
 
-    const contractAddress = getRequiredEnvVar(`${contractName.toUpperCase()}_CONTRACT_ADDRESS`)
-    const contract = await ethers.getContractAt(contractName, contractAddress).catch(() => {
+    const deploymentAddress = contractAddress ?? getRequiredEnvVar(`${contractName.toUpperCase()}_CONTRACT_ADDRESS`)
+    const contract = await ethers.getContractAt(contractName, deploymentAddress).catch(() => {
         throw new Error(
             `Unable to find ${contractName} deployment for network "${network.name}".
             Ensure you selected the correct network and deployed the contract.`
@@ -29,7 +33,7 @@ export async function resolveContext(contractName: string, hre: HardhatRuntimeEn
     return {
         signer,
         contract,
-        deploymentAddress: contractAddress,
+        deploymentAddress,
         networkName: network.name,
     }
 }

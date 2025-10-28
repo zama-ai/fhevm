@@ -1,73 +1,65 @@
+import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers'
 import { expect } from 'chai'
-import { Contract } from 'ethers'
-import { deployments, ethers, network, run } from 'hardhat'
+import { Contract, ContractFactory } from 'ethers'
+import { ethers, run } from 'hardhat'
 
 describe('ZamaOFT task suite', function () {
-    let oft: Contract
+    let endpointFactory: ContractFactory
+    let zamaOFTFactory: ContractFactory
     let endpointStub: Contract
-    let deployer: string
-    let other: string
-    let snapshotId: string
+    let zamaOFT: Contract
+    let deployer: SignerWithAddress
+    let other: SignerWithAddress
 
-    before(async function () {
-        if (network.name !== 'hardhat') {
-            this.skip()
-        }
+    before(async () => {
+        ;[deployer, other] = await ethers.getSigners()
 
-        const [deployerSigner, otherSigner] = await ethers.getSigners()
-        deployer = deployerSigner.address
-        other = otherSigner.address
+        endpointFactory = await ethers.getContractFactory('EndpointStub')
+        zamaOFTFactory = await ethers.getContractFactory('ZamaOFT')
+    })
 
-        const { deploy } = deployments
-        const deleteFn = (deployments as unknown as { delete?: (name: string) => Promise<void> }).delete
-        if (deleteFn) {
-            await deleteFn('EndpointStubOFT')
-            await deleteFn('ZamaOFT')
-        }
+    beforeEach(async () => {
+        endpointStub = await endpointFactory.deploy()
+        zamaOFT = await zamaOFTFactory
+            .connect(deployer)
+            .deploy('ZAMAOFT', 'ZAMA', endpointStub.address, deployer.address)
+    })
 
-        const endpointDeployment = await deploy('EndpointStubOFT', {
-            contract: 'EndpointStub',
-            from: deployer,
-            args: [],
-            log: false,
-            skipIfAlreadyDeployed: false,
-        })
-        endpointStub = await ethers.getContractAt('EndpointStub', endpointDeployment.address, deployerSigner)
+    describe('setDelegate', async () => {
+        it('updates the delegate via task', async () => {
+            expect(await endpointStub.delegates(zamaOFT.address)).to.eq(deployer.address)
 
-        const oftDeployment = await deploy('ZamaOFT', {
-            from: deployer,
-            args: ['ZamaOFT', 'ZOF', endpointDeployment.address, deployer],
-            log: false,
-            skipIfAlreadyDeployed: false,
+            await run('zama:oft:setDelegate', { address: other.address, contractAddress: zamaOFT.address })
+
+            expect(await endpointStub.delegates(zamaOFT.address)).to.eq(other.address)
         })
 
-        oft = await ethers.getContractAt('ZamaOFT', oftDeployment.address, deployerSigner)
-
-        snapshotId = await network.provider.send('evm_snapshot', [])
+        it('should fail if the provided address is not a valid EVM address', async () => {
+            await expect(
+                run('zama:oft:setDelegate', {
+                    address: '0xabCDe',
+                    contractAddress: zamaOFT.address,
+                })
+            ).to.be.rejected
+        })
     })
 
-    beforeEach(async function () {
-        if (network.name !== 'hardhat') {
-            this.skip()
-        }
+    describe('transferOwnership', async () => {
+        it('transfers ownership via task', async () => {
+            expect(await zamaOFT.owner()).to.eq(deployer.address)
 
-        await network.provider.send('evm_revert', [snapshotId])
-        snapshotId = await network.provider.send('evm_snapshot', [])
-    })
+            await run('zama:oft:transferOwnership', { address: other.address, contractAddress: zamaOFT.address })
 
-    it('updates the delegate via task', async function () {
-        expect(await endpointStub.delegateOf(oft.address)).to.equal(deployer)
+            expect(await zamaOFT.owner()).to.eq(other.address)
+        })
 
-        await run('zama:oft:setDelegate', { address: other })
-
-        expect(await endpointStub.delegateOf(oft.address)).to.equal(other)
-    })
-
-    it('transfers ownership via task', async function () {
-        expect(await oft.owner()).to.equal(deployer)
-
-        await run('zama:oft:transferOwnership', { address: other })
-
-        expect(await oft.owner()).to.equal(other)
+        it('should fail if the provided address is not a valid EVM address', async () => {
+            await expect(
+                run('zama:oft:transferOwnership', {
+                    address: '0xabCDe',
+                    contractAddress: zamaOFT.address,
+                })
+            ).to.be.rejected
+        })
     })
 })

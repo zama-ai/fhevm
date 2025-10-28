@@ -5,12 +5,18 @@ import { logExplorerLink } from '../utils/lz'
 
 task('zama:oftadapter:transferOwnership', 'Transfer ownership of ZamaOFTAdapter')
     .addParam('address', 'New owner address', undefined, types.string)
-    .setAction(async ({ address }, hre) => {
+    .addOptionalParam(
+        'contractAddress',
+        'Address of the ZamaOFTAdapter contract to interact with. It not set, it fallback on ZAMAOFTADAPTER_CONTRACT_ADDRESS env variable.',
+        undefined,
+        types.string
+    )
+    .setAction(async ({ address, contractAddress }, hre) => {
         if (!hre.ethers.utils.isAddress(address)) {
             throw new Error(`The provided owner address is not a valid EVM address: ${address}`)
         }
 
-        const { signer, contract, deploymentAddress } = await resolveContext('ZamaOFTAdapter', hre)
+        const { signer, contract, deploymentAddress } = await resolveContext('ZamaOFTAdapter', hre, contractAddress)
 
         if ((await contract.owner()) !== signer.address) {
             throw new Error(
