@@ -1,8 +1,9 @@
 import { task, types } from 'hardhat/config'
 
-import { logExplorerLink } from '../utils'
+import { resolveContext } from '../utils/contractContext'
+import { logExplorerLink } from '../utils/lz'
 
-import { ROLE_TASK_SUFFIX, RoleKey, resolveRoleValue, resolveZamaRoleContext } from './helpers'
+import { ROLE_TASK_SUFFIX, RoleKey, resolveRoleValue } from './helpers'
 
 const ROLE_KEYS: RoleKey[] = ['MINTER_ROLE', 'PAUSING_MINTER_ROLE', 'DEFAULT_ADMIN_ROLE']
 
@@ -15,10 +16,18 @@ for (const role of ROLE_KEYS) {
                 throw new Error(`The provided address is not a valid EVM address: ${address}`)
             }
 
-            const { signer, zamaErc20, deploymentAddress } = await resolveZamaRoleContext(hre)
-            const roleValue = await resolveRoleValue(zamaErc20, role)
+            const { signer, contract, deploymentAddress } = await resolveContext('ZamaERC20', hre)
+            const roleValue = await resolveRoleValue(contract, role)
 
-            const alreadyHasRole = await zamaErc20.hasRole(roleValue, address)
+            const roleAdmin = await contract.getRoleAdmin(roleValue)
+            const hasRoleAdmin = await contract.hasRole(roleAdmin, signer.address)
+            if (!hasRoleAdmin) {
+                throw new Error(
+                    `The deployer account ${signer.address} does not have the required admin role of ${role} for the ZamaERC20 contract ${deploymentAddress}`
+                )
+            }
+
+            const alreadyHasRole = await contract.hasRole(roleValue, address)
             if (alreadyHasRole) {
                 console.log(`Address ${address} already has ${role} on contract ${deploymentAddress}`)
                 return
@@ -28,7 +37,7 @@ for (const role of ROLE_KEYS) {
                 `Granting ${role} (${roleValue}) to ${address} on contract ${deploymentAddress} using signer ${signer.address}`
             )
 
-            const tx = await zamaErc20.grantRole(roleValue, address)
+            const tx = await contract.grantRole(roleValue, address)
             console.log(`Transaction submitted: ${tx.hash}`)
 
             const receipt = await tx.wait()

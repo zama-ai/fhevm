@@ -1,8 +1,7 @@
 import { task, types } from 'hardhat/config'
 
-import { logExplorerLink } from '../utils'
-
-import { resolveOftContext } from './helpers'
+import { resolveContext } from '../utils/contractContext'
+import { logExplorerLink } from '../utils/lz'
 
 task('zama:oft:setDelegate', 'Set the delegate for ZamaOFT')
     .addParam('address', 'New delegate address', undefined, types.string)
@@ -11,11 +10,17 @@ task('zama:oft:setDelegate', 'Set the delegate for ZamaOFT')
             throw new Error(`The provided delegate address is not a valid EVM address: ${address}`)
         }
 
-        const { signer, oft, deploymentAddress } = await resolveOftContext(hre)
+        const { signer, contract, deploymentAddress } = await resolveContext('ZamaOFT', hre)
+
+        if ((await contract.owner()) !== signer.address) {
+            throw new Error(
+                `The deployer account ${signer.address} is not the owner of the ZamaOFT contract ${deploymentAddress}`
+            )
+        }
 
         console.log(`Setting delegate to ${address} on ZamaOFT ${deploymentAddress} using signer ${signer.address}`)
 
-        const tx = await oft.setDelegate(address)
+        const tx = await contract.setDelegate(address)
         console.log(`Transaction submitted: ${tx.hash}`)
 
         const receipt = await tx.wait()
