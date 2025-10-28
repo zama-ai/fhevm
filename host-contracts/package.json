@@ -21,7 +21,7 @@
     "test:gas": "hardhat test --grep Gas"
   },
   "author": "",
-  "license": "BSD-3-Clause",
+  "license": "BSD-3-Clause-Clear",
   "devDependencies": {
     "@zama-fhe/relayer-sdk": "^0.3.0-2",
     "@nomicfoundation/hardhat-toolbox": "5.0.0",
