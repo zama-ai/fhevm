@@ -101,7 +101,7 @@ describe("Upgrades", function () {
     });
     const decryption = await upgrades.upgradeProxy(emptyUUPS, decryptionFactoryV1);
     await decryption.waitForDeployment();
-    expect(await decryption.getVersion()).to.equal("Decryption v0.1.0");
+    expect(await decryption.getVersion()).to.equal("Decryption v0.2.0");
     const decryptionV2 = await upgrades.upgradeProxy(decryption, decryptionFactoryV2);
     await decryptionV2.waitForDeployment();
     expect(await decryptionV2.getVersion()).to.equal("Decryption v1000.0.0");
@@ -127,7 +127,7 @@ describe("Upgrades", function () {
     });
     const kmsGeneration = await upgrades.upgradeProxy(emptyUUPS, kmsGenerationFactoryV1);
     await kmsGeneration.waitForDeployment();
-    expect(await kmsGeneration.getVersion()).to.equal("KMSGeneration v0.1.0");
+    expect(await kmsGeneration.getVersion()).to.equal("KMSGeneration v0.2.0");
     const kmsGenerationV2 = await upgrades.upgradeProxy(kmsGeneration, kmsGenerationFactoryV2);
     await kmsGenerationV2.waitForDeployment();
     expect(await kmsGenerationV2.getVersion()).to.equal("KMSGeneration v1000.0.0");
@@ -140,7 +140,7 @@ describe("Upgrades", function () {
     });
     const inputVerification = await upgrades.upgradeProxy(emptyUUPS, inputVerificationFactoryV1);
     await inputVerification.waitForDeployment();
-    expect(await inputVerification.getVersion()).to.equal("InputVerification v0.1.0");
+    expect(await inputVerification.getVersion()).to.equal("InputVerification v0.2.0");
     const inputVerificationV2 = await upgrades.upgradeProxy(inputVerification, inputVerificationFactoryV2);
     await inputVerificationV2.waitForDeployment();
     expect(await inputVerificationV2.getVersion()).to.equal("InputVerification v1000.0.0");
