@@ -125,7 +125,7 @@ prepare_local_config_relayer() {
 prepare_all_env_files() {
     log_info "Preparing all local environment files..."
 
-    local components=("minio" "database" "core" "gateway-node" "host-node" "gateway-sc" "host-sc" "kms-connector" "coprocessor" "relayer" "test-suite")
+    local components=("minio" "database" "core" "gateway-node" "host-node" "gateway-sc" "gateway-mocked-payment" "host-sc" "kms-connector" "coprocessor" "relayer" "test-suite")
 
     for component in "${components[@]}"; do
         prepare_local_env_file "$component" > /dev/null
@@ -329,6 +329,11 @@ ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
     "kms-connector-gw-listener:running" \
     "kms-connector-kms-worker:running" \
     "kms-connector-tx-sender:running"
+
+# Setup mocked payment contracts and set the relayer with the needed funding and allowances
+${RUN_COMPOSE} "gateway-mocked-payment" "Gateway mocked payment" \
+    "gateway-deploy-mocked-zama-oft:complete" \
+    "gateway-set-relayer-mocked-payment:complete" \
 
 # Setup Gateway contracts, which will trigger the KMS materials generation. Note
 # that the key generation may take a few seconds to complete, meaning that executing

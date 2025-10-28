@@ -1,0 +1,1 @@
+# AdminModule for the Safe MultiSig wallet to be used on Gateway

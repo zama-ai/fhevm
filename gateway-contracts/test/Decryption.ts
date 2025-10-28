@@ -4,14 +4,15 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
+import { approveContractWithMaxAllowance } from "../tasks/mockedZamaFund";
 import {
   CiphertextCommits,
   Decryption,
   Decryption__factory,
-  GatewayConfig,
   IDecryption,
-  KMSGeneration,
   MultichainACL,
+  ProtocolPayment,
+  ZamaOFT,
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
@@ -26,7 +27,6 @@ import {
   createBytes32s,
   createCtHandle,
   createCtHandles,
-  createEIP712RequestDelegatedUserDecrypt,
   createEIP712RequestUserDecrypt,
   createEIP712ResponsePublicDecrypt,
   createEIP712ResponseUserDecrypt,
@@ -35,7 +35,6 @@ import {
   createRandomWallet,
   getKeyId,
   getPublicDecryptId,
-  getSignaturesDelegatedUserDecryptRequest,
   getSignaturesPublicDecrypt,
   getSignaturesUserDecryptRequest,
   getSignaturesUserDecryptResponse,
@@ -103,11 +102,11 @@ describe("Decryption", function () {
   // Define extra data for version 0
   const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
 
-  let gatewayConfig: GatewayConfig;
-  let kmsGeneration: KMSGeneration;
   let multichainACL: MultichainACL;
   let ciphertextCommits: CiphertextCommits;
   let decryption: Decryption;
+  let protocolPayment: ProtocolPayment;
+  let mockedZamaOFT: ZamaOFT;
   let owner: Wallet;
   let pauser: Wallet;
   let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
@@ -115,6 +114,13 @@ describe("Decryption", function () {
   let kmsTxSenders: HardhatEthersSigner[];
   let kmsSigners: HardhatEthersSigner[];
   let coprocessorTxSenders: HardhatEthersSigner[];
+  let publicDecryptionPrice: bigint;
+  let userDecryptionPrice: bigint;
+  let zamaFundedSigner: HardhatEthersSigner;
+  let zamaUnfundedSigner: HardhatEthersSigner;
+  let protocolPaymentAddress: string;
+  let decryptionAddress: string;
+  let mockedFeesSenderToBurnerAddress: string;
 
   // Add ciphertext materials
   async function prepareAddCiphertextFixture() {
@@ -203,17 +209,18 @@ describe("Decryption", function () {
       // Sign the message with all KMS signers
       const kmsSignatures = await getSignaturesPublicDecrypt(eip712Message, kmsSigners);
 
-      return { ...fixtureData, eip712Message, kmsSignatures };
+      return { ...fixtureData, eip712Message, kmsSignatures, decryptionAddress };
     }
 
     beforeEach(async function () {
       // Initialize globally used variables before each test
       const fixtureData = await loadFixture(preparePublicDecryptEIP712Fixture);
-      gatewayConfig = fixtureData.gatewayConfig;
-      kmsGeneration = fixtureData.kmsGeneration;
       multichainACL = fixtureData.multichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
+      protocolPayment = fixtureData.protocolPayment;
+      mockedZamaOFT = fixtureData.mockedZamaOFT;
+      mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
       owner = fixtureData.owner;
       pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
@@ -222,6 +229,13 @@ describe("Decryption", function () {
       kmsSigners = fixtureData.kmsSigners;
       coprocessorTxSenders = fixtureData.coprocessorTxSenders;
       eip712Message = fixtureData.eip712Message;
+      decryptionAddress = fixtureData.decryptionAddress;
+      publicDecryptionPrice = fixtureData.publicDecryptionPrice;
+      userDecryptionPrice = fixtureData.userDecryptionPrice;
+      zamaFundedSigner = fixtureData.zamaFundedSigner;
+      zamaUnfundedSigner = fixtureData.zamaUnfundedSigner;
+
+      protocolPaymentAddress = await protocolPayment.getAddress();
     });
 
     it("Should request a public decryption with multiple ctHandles", async function () {
@@ -442,8 +456,6 @@ describe("Decryption", function () {
       // Request public decryption
       await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
-      const decryptionAddress = await decryption.getAddress();
-
       // Create a malicious EIP712 message: the decryptedResult is different from the expected one
       // but the signature is valid (the malicious decryptedResult is given to the response call)
       const fakeEip712Message = createEIP712ResponsePublicDecrypt(
@@ -554,8 +566,6 @@ describe("Decryption", function () {
         .connect(kmsTxSenders[2])
         .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2], extraDataV0);
 
-      const decryptionAddress = await decryption.getAddress();
-
       // Create a malicious EIP712 message: the decryptedResult is different from the expected one
       // but the signature is valid (the malicious decryptedResult is given to the response call)
       const fakeEip712Message = createEIP712ResponsePublicDecrypt(
@@ -607,6 +617,22 @@ describe("Decryption", function () {
       );
     });
 
+    it("Should revert because the signer and the tx sender do not correspond to the same KMS node", async function () {
+      // Request public decryption
+      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+
+      // Check that triggering a public decryption response using a signature from the first KMS signer
+      // with the second KMS transaction sender reverts
+      const secondKmsTxSender = kmsTxSenders[1];
+      await expect(
+        decryption
+          .connect(secondKmsTxSender)
+          .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
+      )
+        .revertedWithCustomError(decryption, "KmsSignerDoesNotMatchTxSender")
+        .withArgs(kmsSigners[0].address, secondKmsTxSender.address);
+    });
+
     describe("Checks", function () {
       it("Should be true because public decryption is ready", async function () {
         expect(await decryption.isPublicDecryptionReady(ctHandles, extraDataV0)).to.be.true;
@@ -622,6 +648,32 @@ describe("Decryption", function () {
 
       it("Should be false because the public decryption is not done", async function () {
         expect(await decryption.isDecryptionDone(decryptionId)).to.be.false;
+      });
+    });
+
+    describe("$ZAMA fees collection", function () {
+      it("Should collect the $ZAMA fees for the public decryption", async function () {
+        const fundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+
+        // Trigger a public decryption request
+        await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+
+        // Check that the $ZAMA fees have been collected from the funded signer and added to the
+        // FeesSenderToBurner contract's balance
+        const newFundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const newFeesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+        expect(newFundedSignerBalance).to.equal(fundedSignerBalance - publicDecryptionPrice);
+        expect(newFeesSenderToBurnerBalance).to.equal(feesSenderToBurnerBalance + publicDecryptionPrice);
+      });
+
+      it("Should revert because sender has not enough $ZAMA tokens", async function () {
+        // Approve the ProtocolPayment contract with the maximum allowance over the signer's tokens
+        await approveContractWithMaxAllowance(zamaUnfundedSigner, protocolPaymentAddress, hre.ethers);
+
+        await expect(decryption.connect(zamaUnfundedSigner).publicDecryptionRequest(ctHandles, extraDataV0))
+          .to.be.revertedWithCustomError(mockedZamaOFT, "ERC20InsufficientBalance")
+          .withArgs(zamaUnfundedSigner.address, 0, publicDecryptionPrice);
       });
     });
   });
@@ -730,17 +782,18 @@ describe("Decryption", function () {
         userSignature,
         kmsSignatures,
         requestValidity,
+        decryptionAddress,
       };
     }
 
     beforeEach(async function () {
       // Initialize globally used variables before each test
       const fixtureData = await loadFixture(prepareUserDecryptEIP712Fixture);
-      gatewayConfig = fixtureData.gatewayConfig;
-      kmsGeneration = fixtureData.kmsGeneration;
       multichainACL = fixtureData.multichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
+      protocolPayment = fixtureData.protocolPayment;
+      mockedZamaOFT = fixtureData.mockedZamaOFT;
       owner = fixtureData.owner;
       pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
@@ -752,6 +805,13 @@ describe("Decryption", function () {
       userDecryptedShares = fixtureData.userDecryptedShares;
       eip712RequestMessage = fixtureData.eip712RequestMessage;
       eip712ResponseMessages = fixtureData.eip712ResponseMessages;
+      decryptionAddress = fixtureData.decryptionAddress;
+      publicDecryptionPrice = fixtureData.publicDecryptionPrice;
+      userDecryptionPrice = fixtureData.userDecryptionPrice;
+      zamaFundedSigner = fixtureData.zamaFundedSigner;
+      zamaUnfundedSigner = fixtureData.zamaUnfundedSigner;
+
+      protocolPaymentAddress = await protocolPayment.getAddress();
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
@@ -1174,7 +1234,6 @@ describe("Decryption", function () {
       };
 
       // Create EIP712 message using the fake contract address list
-      const decryptionAddress = await decryption.getAddress();
       const fakeEip712RequestMessage = createEIP712RequestUserDecrypt(
         decryptionAddress,
         publicKey,
@@ -1437,6 +1496,30 @@ describe("Decryption", function () {
       ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
     });
 
+    it("Should revert because the signer and the tx sender do not correspond to the same KMS node", async function () {
+      // Request user decryption
+      await decryption.userDecryptionRequest(
+        ctHandleContractPairs,
+        requestValidity,
+        contractsInfo,
+        user.address,
+        publicKey,
+        userSignature,
+        extraDataV0,
+      );
+
+      // Check that triggering a user decryption response using a signature from the first KMS signer
+      // with the second KMS transaction sender reverts
+      const secondKmsTxSender = kmsTxSenders[1];
+      await expect(
+        decryption
+          .connect(secondKmsTxSender)
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
+      )
+        .revertedWithCustomError(decryption, "KmsSignerDoesNotMatchTxSender")
+        .withArgs(kmsSigners[0].address, secondKmsTxSender.address);
+    });
+
     describe("Checks", function () {
       it("Should be true because user decryption is ready", async function () {
         expect(await decryption.isUserDecryptionReady(user.address, ctHandleContractPairs, extraDataV0)).to.be.true;
@@ -1459,6 +1542,52 @@ describe("Decryption", function () {
 
       it("Should be false because the user decryption is not done", async function () {
         expect(await decryption.isDecryptionDone(decryptionId)).to.be.false;
+      });
+    });
+
+    describe("$ZAMA fees collection", function () {
+      it("Should collect the $ZAMA fees for the user decryption", async function () {
+        const fundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+
+        // Trigger a user decryption request
+        await decryption.userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          contractsInfo,
+          user.address,
+          publicKey,
+          userSignature,
+          extraDataV0,
+        );
+
+        // Check that the $ZAMA fees have been collected from the funded signer and added to the
+        // FeesSenderToBurner contract's balance
+        const newFundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const newFeesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+        expect(newFundedSignerBalance).to.equal(fundedSignerBalance - userDecryptionPrice);
+        expect(newFeesSenderToBurnerBalance).to.equal(feesSenderToBurnerBalance + userDecryptionPrice);
+      });
+
+      it("Should revert because sender has not enough $ZAMA tokens", async function () {
+        // Approve the ProtocolPayment contract with the maximum allowance over the signer's tokens
+        await approveContractWithMaxAllowance(zamaUnfundedSigner, protocolPaymentAddress, hre.ethers);
+
+        await expect(
+          decryption
+            .connect(zamaUnfundedSigner)
+            .userDecryptionRequest(
+              ctHandleContractPairs,
+              requestValidity,
+              contractsInfo,
+              user.address,
+              publicKey,
+              userSignature,
+              extraDataV0,
+            ),
+        )
+          .to.be.revertedWithCustomError(mockedZamaOFT, "ERC20InsufficientBalance")
+          .withArgs(zamaUnfundedSigner.address, 0, userDecryptionPrice);
       });
     });
   });

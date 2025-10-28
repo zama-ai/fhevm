@@ -21,6 +21,7 @@ import { Pausable } from "./shared/Pausable.sol";
 import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
 import { HandleOps } from "./libraries/HandleOps.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
+import { ProtocolPaymentUtils } from "./shared/ProtocolPaymentUtils.sol";
 import { SnsCiphertextMaterial, CtHandleContractPair } from "./shared/Structs.sol";
 import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
@@ -35,6 +36,7 @@ contract Decryption is
     GatewayOwnable,
     GatewayConfigChecks,
     MultichainACLChecks,
+    ProtocolPaymentUtils,
     Pausable
 {
     /**
@@ -176,7 +178,7 @@ contract Decryption is
      */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -185,7 +187,7 @@ contract Decryption is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -266,11 +268,10 @@ contract Decryption is
 
     /**
      * @notice Re-initializes the contract from V1.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IDecryption-publicDecryptionRequest}.
@@ -312,6 +313,9 @@ contract Decryption is
 
         // The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[publicDecryptionId] = ctHandles;
+
+        // Collect the fee from the transaction sender for this public decryption request.
+        _collectPublicDecryptionFee(msg.sender);
 
         emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, extraData);
     }
@@ -458,6 +462,9 @@ contract Decryption is
 
         // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+
+        // Collect the fee from the transaction sender for this user decryption request.
+        _collectUserDecryptionFee(msg.sender);
 
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
@@ -630,8 +637,8 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
         address signer = ECDSA.recover(digest, signature);
 
-        // Check that the signer is a KMS signer.
-        _checkIsKmsSigner(signer);
+        // Check that the signer is a KMS signer, and that it corresponds to the transaction sender of the same KMS node.
+        _checkKmsSignerMatchesTxSender(signer, msg.sender);
 
         // Check that the signer has not already responded to the user decryption request.
         if ($.kmsNodeAlreadySigned[decryptionId][signer]) {

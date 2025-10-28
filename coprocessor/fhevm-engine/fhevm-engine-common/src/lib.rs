@@ -2,6 +2,7 @@
 pub mod gpu_memory;
 pub mod healthz_server;
 pub mod keys;
+pub mod metrics_server;
 pub mod pg_pool;
 pub mod telemetry;
 pub mod tenant_keys;

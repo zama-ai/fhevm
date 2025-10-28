@@ -9,6 +9,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Define common environment variables here:
+# - DOTENV_CONFIG_PATH: The path to the environment file, used for loading variables used for upgrades
+# - HARDHAT_NETWORK: Should match the network from the docker-compose.yml's services
+# - CHAIN_ID_GATEWAY: Should match the chain ID used in the anvil node in the docker-compose.yml file
+# - RPC_URL: The port should match the one used in the anvil node in the docker-compose.yml file
+env:
+  DOTENV_CONFIG_PATH: .env.example
+  HARDHAT_NETWORK: staging
+  CHAIN_ID_GATEWAY: 54321
+  RPC_URL: http://localhost:8546
+
 jobs:
   check-changes:
     name: gateway-contracts-upgrade-tests/check-changes
@@ -85,22 +96,6 @@ jobs:
             echo "Deployment completed successfully with expected completion message"
           fi
 
-          ## Check Host Chain Registration
-          timeout 300s bash -c 'while docker ps --filter "name=add-host-chains" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
-          docker compose logs add-host-chains > host_chain_registration_logs.txt
-          EXIT_CODE_HOST_CHAIN=$(docker inspect --format='{{.State.ExitCode}}' add-host-chains)
-          # display logs for debugging
-          # cat host_chain_registration_logs.txt
-          if [ "$EXIT_CODE_HOST_CHAIN" -ne 0 ]; then
-            echo "Host chain registration failed with exit code $EXIT_CODE_HOST_CHAIN"
-            exit 1
-          elif ! grep -q "Host chains registration done!" host_chain_registration_logs.txt; then
-            echo "Host chain registration did not complete successfully - 'Host chains registration done!' message not found in logs"
-            exit 1
-          else
-            echo "Host chain registration completed successfully with expected completion message"
-          fi
-
       - name: Checkout current code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -111,26 +106,33 @@ jobs:
         working-directory: current-fhevm/gateway-contracts
         run: npm ci
 
-      # Executing task:deployEmptyUUPSProxies is required to generate the proxy contract addresses, which are then used
-      # for compiling the current and new implementations during the upgrade task.
-      - name: Prepare and copy previous contract into current directory
+      # This step prepares the directory for upgrading contracts:
+      # 1) Copy contracts from previous version to directory `./previous-contracts`: upgrade tasks
+      # require access to the previous implementations 
+      # 2) Copy addresses from previous version to root directory: the upgrade tasks need to use the
+      # internal addresses that have been deployed (ie, the previous version's addresses)
+      # 3) Deploy mocked payment ZamaOFT contract: this can be removed once fhevm 0.10 is released
+      # as the docker-compose file will consider the `deploy-mocked-zama-oft` service
+      # 4) Set payment bridging contract addresses in env and solidity files: this can be removed once 
+      # fhevm 0.10 is released as the payment bridging contract addresses will be set using the regular 
+      # `task:deployAllGatewayContracts` task
+      # 5) Deploy ProtocolPayment contract: this can be removed once fhevm 0.10 is released as the
+      # ProtocolPayment contract will be deployed using the regular `task:deployAllGatewayContracts` task
+      # TODO: Remove 3 and 4 once fhevm 0.10 is released and upgrades are tested against it
+      # See https://github.com/zama-ai/fhevm-internal/issues/502
+      - name: Prepare contracts for upgrades
         working-directory: current-fhevm/gateway-contracts
         run: |
-          cp .env.example .env
           cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
-          npx hardhat task:deployEmptyUUPSProxies
-          npx hardhat compile:specific --contract contracts/immutable
-          npx hardhat task:deployPauserSet
+          docker cp deploy-gateway-contracts:/app/addresses ./
+          npx hardhat task:deployMockedZamaOFT
+          npx hardhat task:setPaymentBridgingContractAddresses --use-internal-addresses true
+          npx hardhat task:deploySingleContract --name ProtocolPayment --use-internal-proxy-address true
 
       # TODO: We should instead automatically detect if the contract needs to be upgraded
       #  See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade GatewayConfig contract
         working-directory: current-fhevm/gateway-contracts
-        env:
-          DOTENV_CONFIG_PATH: .env
-          HARDHAT_NETWORK: staging
-          CHAIN_ID_GATEWAY: 54321
-          RPC_URL: http://localhost:8546
         run: |
           npx hardhat task:upgradeGatewayConfig \
             --current-implementation previous-contracts/GatewayConfig.sol:GatewayConfig \
@@ -142,12 +144,6 @@ jobs:
       #  See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade Decryption contract
         working-directory: current-fhevm/gateway-contracts
-        if: false
-        env:
-          DOTENV_CONFIG_PATH: .env
-          HARDHAT_NETWORK: staging
-          CHAIN_ID_GATEWAY: 54321
-          RPC_URL: http://localhost:8546
         run: |
           npx hardhat task:upgradeDecryption \
             --current-implementation previous-contracts/Decryption.sol:Decryption \
@@ -160,11 +156,6 @@ jobs:
       - name: Upgrade CiphertextCommits contract
         working-directory: current-fhevm/gateway-contracts
         if: false
-        env:
-          DOTENV_CONFIG_PATH: .env
-          HARDHAT_NETWORK: staging
-          CHAIN_ID_GATEWAY: 54321
-          RPC_URL: http://localhost:8546
         run: |
           npx hardhat task:upgradeCiphertextCommits \
             --current-implementation previous-contracts/CiphertextCommits.sol:CiphertextCommits \
@@ -176,12 +167,6 @@ jobs:
       #  See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade InputVerification contract
         working-directory: current-fhevm/gateway-contracts
-        if: false
-        env:
-          DOTENV_CONFIG_PATH: .env
-          HARDHAT_NETWORK: staging
-          CHAIN_ID_GATEWAY: 54321
-          RPC_URL: http://localhost:8546
         run: |
           npx hardhat task:upgradeInputVerification \
             --current-implementation previous-contracts/InputVerification.sol:InputVerification \
@@ -193,11 +178,6 @@ jobs:
       #  See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade MultichainACL contract
         working-directory: current-fhevm/gateway-contracts
-        env:
-          DOTENV_CONFIG_PATH: .env
-          HARDHAT_NETWORK: staging
-          CHAIN_ID_GATEWAY: 54321
-          RPC_URL: http://localhost:8546
         run: |
           npx hardhat task:upgradeMultichainACL \
             --current-implementation previous-contracts/MultichainACL.sol:MultichainACL \
@@ -209,16 +189,22 @@ jobs:
       # See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade KMSGeneration contract
         working-directory: current-fhevm/gateway-contracts
-        if: false
-        env:
-          DOTENV_CONFIG_PATH: .env
-          HARDHAT_NETWORK: staging
-          CHAIN_ID_GATEWAY: 54321
-          RPC_URL: http://localhost:8546
         run: |
-          npx hardhat task:upgradeKmsGeneration \
-            --current-implementation previous-contracts/KmsGeneration.sol:KmsGeneration \
-            --new-implementation contracts/KmsGeneration.sol:KmsGeneration \
+          npx hardhat task:upgradeKMSGeneration \
+            --current-implementation previous-contracts/KMSGeneration.sol:KMSGeneration \
+            --new-implementation contracts/KMSGeneration.sol:KMSGeneration \
+            --use-internal-proxy-address true \
+            --verify-contract false
+
+      # TODO: We should instead automatically detect if the contract needs to be upgraded
+      # See https://github.com/zama-ai/fhevm-internal/issues/379
+      - name: Upgrade ProtocolPayment contract
+        working-directory: current-fhevm/gateway-contracts
+        if: false
+        run: |
+          npx hardhat task:upgradeProtocolPayment \
+            --current-implementation previous-contracts/ProtocolPayment.sol:ProtocolPayment \
+            --new-implementation contracts/ProtocolPayment.sol:ProtocolPayment \
             --use-internal-proxy-address true \
             --verify-contract false
 

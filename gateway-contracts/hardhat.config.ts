@@ -17,6 +17,7 @@ import "./tasks/blockExplorerVerify";
 import "./tasks/deployment";
 import "./tasks/generateKmsMaterials";
 import "./tasks/getters";
+import "./tasks/mockedZamaFund";
 import "./tasks/ownership";
 import "./tasks/pauseContracts";
 import "./tasks/safeSmartAccounts";
@@ -26,7 +27,11 @@ const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 export const NUM_ACCOUNTS = 30;
+
+// Define the directory and file names for registering the Gateway contract addresses
 export const ADDRESSES_DIR = resolve(__dirname, "addresses");
+export const GATEWAY_ADDRESSES_ENV_FILE_NAME = ".env.gateway";
+export const GATEWAY_ADDRESSES_SOLIDITY_FILE_NAME = "GatewayAddresses.sol";
 
 const chainIds = {
   hardhat: 31337,
@@ -61,10 +66,15 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
   .addOptionalParam("skipSetup", "Set to true to skip setup tasks", false, types.boolean)
   .setAction(async ({ skipSetup }, hre, runSuper) => {
     if (!skipSetup) {
-      await hre.run("task:deployAllGatewayContracts");
+      // Deploy the gateway contracts, including the mocked payment bridging ones (needed for tests)
+      // In a real environment, the real payment bridging contracts will already be deployed
+      // It sets the contracts' addresses in the `addresses/` directory.
+      await hre.run("task:deployAllGatewayContractsForTests");
+
       // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory
       // for local testing
       await hre.run("task:addHostChainsToGatewayConfig", { useInternalGatewayConfigAddress: true });
+
       // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
       // for local testing
       await hre.run("task:addGatewayPausers", { useInternalGatewayConfigAddress: true });
