@@ -74,6 +74,22 @@ interface IKMSGeneration {
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
 
     /**
+     * @notice Emitted to trigger the initialization of the PRSS (Pseudo-Random Secret Sharing).
+     * @dev This is a temporary event to initialize PRSS until implementation of a proper key resharing.
+     */
+    event PRSSInit();
+
+    /**
+     * @notice Emitted to trigger the reshare of the specified key ID.
+     * @dev This is a temporary event to reshare the specified key ID until implementation of a proper key resharing.
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param keyId The ID of the key to reshare.
+     * @param keyReshareId The ID of the key reshare request.
+     * @param paramsType The type of FHE parameters to use.
+     */
+    event KeyReshareSameSet(uint256 prepKeygenId, uint256 keyId, uint256 keyReshareId, ParamsType paramsType);
+
+    /**
      * @notice Error thrown when a KMS node has already signed for a preprocessing keygen response.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param kmsSigner The signer address of the KMS node.
@@ -141,6 +157,19 @@ interface IKMSGeneration {
      * @param signature The signature of the KMS node that has responded.
      */
     function crsgenResponse(uint256 crsId, bytes calldata crsDigest, bytes calldata signature) external;
+
+    /**
+     * @notice Trigger the initialization of the PRSS (Pseudo-Random Secret Sharing).
+     * @dev This is a temporary method to initialize PRSS until implementation of a proper key resharing.
+     */
+    function prssInit() external;
+
+    /**
+     * @notice Trigger the reshare of the given key ID.
+     * @dev This is a temporary method to reshare the specified key ID until implementation of a proper key resharing.
+     * @param keyId The ID of the key to reshare.
+     */
+    function keyReshareSameSet(uint256 keyId) external;
 
     /**
      * @notice Get the parameters type used for the key generation.
