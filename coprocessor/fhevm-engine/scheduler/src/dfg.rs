@@ -2,6 +2,7 @@ pub mod scheduler;
 pub mod types;
 
 use std::{collections::HashMap, sync::atomic::AtomicUsize};
+use tracing::error;
 
 use crate::dfg::types::*;
 use anyhow::Result;
@@ -55,9 +56,9 @@ impl Default for DFGOp {
         }
     }
 }
-pub type TxEdge = ();
+pub type ComponentEdge = ();
 #[derive(Default)]
-pub struct TxNode {
+pub struct ComponentNode {
     // Inner dataflow graph
     pub graph: DFGraph,
     pub ops: Vec<DFGOp>,
@@ -66,18 +67,85 @@ pub struct TxNode {
     // corresponding FHE op
     pub inputs: HashMap<Handle, Option<DFGTxInput>>,
     pub results: Vec<Handle>,
+    pub unneeded: Vec<Handle>,
     pub transaction_id: Handle,
     pub is_uncomputable: bool,
     pub component_id: usize,
 }
 
+fn is_needed(graph: &Dag<(bool, usize), OpEdge>, index: usize) -> bool {
+    let node_index = NodeIndex::new(index);
+    let node = match graph.node_weight(node_index) {
+        Some(n) => n,
+        None => {
+            error!(target: "scheduler", "Missing node for index in DFG finalization");
+            return false;
+        }
+    };
+    if node.0 {
+        true
+    } else {
+        for edge in graph.edges_directed(node_index, Direction::Outgoing) {
+            // If any outgoing dependence is needed, so is this node
+            if is_needed(graph, edge.target().index()) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+pub fn finalize(graph: &mut Dag<(bool, usize), OpEdge>) -> Vec<usize> {
+    // Traverse in reverse order and mark nodes as needed as the
+    // graph order is roughly computable, so allowed nodes should
+    // generally be later in the graph.
+    for index in (0..graph.node_count()).rev() {
+        if is_needed(graph, index) {
+            let node = match graph.node_weight_mut(NodeIndex::new(index)) {
+                Some(n) => n,
+                None => {
+                    // Shouldn't happen - if this fails we don't prune and execute all the graph
+                    error!(target: "scheduler", "Missing node for index in DFG finalization");
+                    return vec![];
+                }
+            };
+            node.0 = true;
+        }
+    }
+    // Prune graph of all unneeded nodes and edges
+    let mut unneeded_nodes = Vec::new();
+    for index in 0..graph.node_count() {
+        let node_index = NodeIndex::new(index);
+        let Some(node) = graph.node_weight(node_index) else {
+            continue;
+        };
+        if !node.0 {
+            unneeded_nodes.push(index);
+        }
+    }
+    unneeded_nodes.sort();
+    // Remove unneeded nodes and their edges
+    for index in unneeded_nodes.iter().rev() {
+        let node_index = NodeIndex::new(*index);
+        let Some(node) = graph.node_weight(node_index) else {
+            continue;
+        };
+        if !node.0 {
+            graph.remove_node(node_index);
+        }
+    }
+    unneeded_nodes
+}
+
+type ComponentNodes = Result<(Vec<ComponentNode>, Vec<(Handle, Handle)>)>;
 pub fn build_component_nodes(
     mut operations: Vec<DFGOp>,
     transaction_id: &Handle,
-) -> Result<Vec<TxNode>> {
-    let mut graph: Dag<usize, OpEdge> = Dag::default();
+) -> ComponentNodes {
+    operations.sort_by_key(|o| o.output_handle.clone());
+    let mut graph: Dag<(bool, usize), OpEdge> = Dag::default();
     let mut produced_handles: HashMap<Handle, usize> = HashMap::new();
-    let mut components: Vec<TxNode> = vec![];
+    let mut components: Vec<ComponentNode> = vec![];
     for (index, op) in operations.iter().enumerate() {
         produced_handles.insert(op.output_handle.clone(), index);
     }
@@ -95,7 +163,10 @@ pub fn build_component_nodes(
                 DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
             }
         }
-        assert!(index == graph.add_node(index).index());
+        let node_idx = graph.add_node((op.is_allowed, index)).index();
+        if index != node_idx {
+            return Err(SchedulerError::DataflowGraphError.into());
+        }
     }
     for (source, destination, pos) in dependence_pairs {
         // This returns an error in case of circular
@@ -104,7 +175,12 @@ pub fn build_component_nodes(
             .add_edge(node_index(source), node_index(destination), pos as u8)
             .map_err(|_| SchedulerError::CyclicDependence)?;
     }
-    // Prtition the graph and extract sequential components
+    // Prune unneeded branches from the graph
+    let unneeded: Vec<(Handle, Handle)> = finalize(&mut graph)
+        .into_iter()
+        .map(|i| (operations[i].output_handle.clone(), transaction_id.clone()))
+        .collect();
+    // Partition the graph and extract sequential components
     let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
     partition_preserving_parallelism(&graph, &mut execution_graph)?;
     for idx in 0..execution_graph.node_count() {
@@ -112,18 +188,21 @@ pub fn build_component_nodes(
         let node = execution_graph
             .node_weight_mut(index)
             .ok_or(SchedulerError::DataflowGraphError)?;
-        let mut component = TxNode::default();
+        let mut component = ComponentNode::default();
         let mut component_ops = vec![];
         for i in node.df_nodes.iter() {
-            component_ops.push(std::mem::take(&mut operations[i.index()]));
+            let op_node = graph
+                .node_weight(*i)
+                .ok_or(SchedulerError::DataflowGraphError)?;
+            component_ops.push(std::mem::take(&mut operations[op_node.1]));
         }
         component.build(component_ops, transaction_id, idx)?;
         components.push(component);
     }
-    Ok(components)
+    Ok((components, unneeded))
 }
 
-impl TxNode {
+impl ComponentNode {
     pub fn build(
         &mut self,
         mut operations: Vec<DFGOp>,
@@ -157,18 +236,18 @@ impl TxNode {
                 }
             }
             self.results.push(op.output_handle.clone());
-            assert!(
-                index
-                    == self
-                        .graph
-                        .add_node(
-                            op.output_handle.clone(),
-                            (op.fhe_op as i16).into(),
-                            std::mem::take(&mut op.inputs),
-                            op.is_allowed,
-                        )
-                        .index()
-            );
+            let node_idx = self
+                .graph
+                .add_node(
+                    op.output_handle.clone(),
+                    (op.fhe_op as i16).into(),
+                    std::mem::take(&mut op.inputs),
+                    op.is_allowed,
+                )
+                .index();
+            if index != node_idx {
+                return Err(SchedulerError::DataflowGraphError.into());
+            }
         }
         for (source, destination, pos) in dependence_pairs {
             // This returns an error in case of circular
@@ -183,7 +262,7 @@ impl TxNode {
             .and_modify(|v| *v = Some(cct));
     }
 }
-impl std::fmt::Debug for TxNode {
+impl std::fmt::Debug for ComponentNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let _ = writeln!(f, "Transaction: [{:?}]", self.transaction_id);
         let _ = writeln!(
@@ -204,14 +283,14 @@ impl std::fmt::Debug for TxNode {
 }
 
 #[derive(Default)]
-pub struct DFTxGraph {
-    pub graph: Dag<TxNode, TxEdge>,
+pub struct DFComponentGraph {
+    pub graph: Dag<ComponentNode, ComponentEdge>,
     pub needed_map: HashMap<Handle, Vec<NodeIndex>>,
     pub allowed_map: HashMap<Handle, NodeIndex>,
     pub results: Vec<DFGTxResult>,
 }
-impl DFTxGraph {
-    pub fn build(&mut self, nodes: &mut Vec<TxNode>) -> Result<()> {
+impl DFComponentGraph {
+    pub fn build(&mut self, nodes: &mut Vec<ComponentNode>) -> Result<()> {
         while let Some(tx) = nodes.pop() {
             self.graph.add_node(tx);
         }
@@ -262,13 +341,13 @@ impl DFTxGraph {
     pub fn add_output(
         &mut self,
         handle: &[u8],
-        result: TaskResult,
-        edges: &Dag<(), TxEdge>,
+        result: Result<TaskResult>,
+        edges: &Dag<(), ComponentEdge>,
     ) -> Result<()> {
         if let Some(producer) = self.allowed_map.get(handle).cloned() {
             let mut save_result = true;
             if let Ok(ref result) = result {
-                save_result = result.3;
+                save_result = result.is_allowed;
                 // Traverse immediate dependents and add this result as an input
                 for edge in edges.edges_directed(producer, Direction::Outgoing) {
                     let dependent_tx_index = edge.target();
@@ -276,10 +355,9 @@ impl DFTxGraph {
                         .graph
                         .node_weight_mut(dependent_tx_index)
                         .ok_or(SchedulerError::DataflowGraphError)?;
-                    dependent_tx
-                        .inputs
-                        .entry(handle.to_vec())
-                        .and_modify(|v| *v = Some(DFGTxInput::Value((result.0.clone(), result.3))));
+                    dependent_tx.inputs.entry(handle.to_vec()).and_modify(|v| {
+                        *v = Some(DFGTxInput::Value((result.ct.clone(), result.is_allowed)))
+                    });
                 }
             } else {
                 // If this result was an error, mark this transaction
@@ -294,10 +372,20 @@ impl DFTxGraph {
                     .graph
                     .node_weight_mut(producer)
                     .ok_or(SchedulerError::DataflowGraphError)?;
+                if let Ok(ref r) = result {
+                    if r.compressed_ct.is_none() {
+                        error!(target: "scheduler", {handle = ?hex::encode(handle) }, "Missing compressed ciphertext in task result");
+                        return Err(SchedulerError::SchedulerError.into());
+                    }
+                }
                 self.results.push(DFGTxResult {
                     transaction_id: producer_tx.transaction_id.clone(),
                     handle: handle.to_vec(),
-                    compressed_ct: result.map(|rok| (rok.1, rok.2)),
+                    compressed_ct: result.map(|rok| {
+                        // Safe to unwrap as this is checked above
+                        let cct = rok.compressed_ct.unwrap();
+                        (cct.0, cct.1)
+                    }),
                 });
             }
         }
@@ -308,7 +396,7 @@ impl DFTxGraph {
     fn set_uncomputable(
         &mut self,
         tx_node_index: NodeIndex,
-        edges: &Dag<(), TxEdge>,
+        edges: &Dag<(), ComponentEdge>,
     ) -> Result<()> {
         let tx_node = self
             .graph
@@ -339,7 +427,7 @@ impl DFTxGraph {
         res
     }
 }
-impl std::fmt::Debug for DFTxGraph {
+impl std::fmt::Debug for DFComponentGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let _ = writeln!(f, "Transaction Graph:",);
         let _ = writeln!(

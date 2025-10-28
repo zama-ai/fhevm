@@ -1,5 +1,7 @@
 use crate::{
-    dfg::{partition_components, partition_preserving_parallelism, types::*, ExecNode, TxEdge},
+    dfg::{
+        partition_components, partition_preserving_parallelism, types::*, ComponentEdge, ExecNode,
+    },
     FHE_BATCH_LATENCY_HISTOGRAM, RERAND_LATENCY_BATCH_HISTOGRAM,
 };
 use anyhow::Result;
@@ -20,7 +22,7 @@ use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
-use super::{DFGraph, DFTxGraph, OpNode};
+use super::{DFComponentGraph, DFGraph, OpNode};
 
 const TRANSACTION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
@@ -39,8 +41,8 @@ enum DeviceSelection {
 }
 
 pub struct Scheduler<'a> {
-    graph: &'a mut DFTxGraph,
-    edges: Dag<(), TxEdge>,
+    graph: &'a mut DFComponentGraph,
+    edges: Dag<(), ComponentEdge>,
     sks: tfhe::ServerKey,
     cpk: tfhe::CompactPublicKey,
     #[cfg(feature = "gpu")]
@@ -48,6 +50,7 @@ pub struct Scheduler<'a> {
     activity_heartbeat: HeartBeat,
 }
 
+type PartitionResult = (HashMap<Handle, Result<TaskResult>>, NodeIndex);
 impl<'a> Scheduler<'a> {
     fn is_ready_task(&self, node: &ExecNode) -> bool {
         node.dependence_counter
@@ -55,7 +58,7 @@ impl<'a> Scheduler<'a> {
             == 0
     }
     pub fn new(
-        graph: &'a mut DFTxGraph,
+        graph: &'a mut DFComponentGraph,
         sks: tfhe::ServerKey,
         cpk: tfhe::CompactPublicKey,
         #[cfg(feature = "gpu")] csks: Vec<tfhe::CudaServerKey>,
@@ -163,7 +166,7 @@ impl<'a> Scheduler<'a> {
         };
         let task_dependences = execution_graph.map(|_, _| (), |_, edge| *edge);
         // Prime the scheduler with all nodes without dependences
-        let mut set: JoinSet<(HashMap<Handle, TaskResult>, NodeIndex)> = JoinSet::new();
+        let mut set: JoinSet<PartitionResult> = JoinSet::new();
         for idx in 0..execution_graph.node_count() {
             let index = NodeIndex::new(idx);
             let node = execution_graph
@@ -186,7 +189,7 @@ impl<'a> Scheduler<'a> {
                 }
                 let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
                 let loop_ctx = loop_ctx.clone();
-                set.spawn_blocking(move || execute_partition(args, index, 0, sks, cpk, &loop_ctx));
+                set.spawn_blocking(move || execute_partition(args, index, 0, sks, cpk, loop_ctx));
             }
         }
         while let Some(result) = set.join_next().await {
@@ -195,11 +198,11 @@ impl<'a> Scheduler<'a> {
             // computed within the finished partition. Now check the
             // outputs and update the trnsaction inputs of downstream
             // transactions
+            let (sks, _cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
+            tfhe::set_server_key(sks);
             let result = result?;
             let task_index = result.1;
             for (handle, node_result) in result.0.into_iter() {
-                let (sks, _cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
-                tfhe::set_server_key(sks);
                 // Add computed allowed handles to the graph. These
                 // can be used as inputs and forwarded to subsequent,
                 // dependent transactions
@@ -236,7 +239,7 @@ impl<'a> Scheduler<'a> {
                     let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
                     let loop_ctx = loop_ctx.clone();
                     set.spawn_blocking(move || {
-                        execute_partition(args, dependent_task_index, 0, sks, cpk, &loop_ctx)
+                        execute_partition(args, dependent_task_index, 0, sks, cpk, loop_ctx)
                     });
                 }
             }
@@ -320,22 +323,22 @@ fn decompress_transaction_inputs(
     Ok(())
 }
 
-type TransactionMap = Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle, usize)>;
+type ComponentSet = Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle, usize)>;
 fn execute_partition(
-    transactions: TransactionMap,
+    transactions: ComponentSet,
     task_id: NodeIndex,
     gpu_idx: usize,
     #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
     #[cfg(feature = "gpu")] sks: tfhe::CudaServerKey,
     cpk: tfhe::CompactPublicKey,
-    loop_ctx: &opentelemetry::Context,
-) -> (HashMap<Handle, TaskResult>, NodeIndex) {
-    let mut res: HashMap<Handle, TaskResult> = HashMap::with_capacity(transactions.len());
+    loop_ctx: opentelemetry::Context,
+) -> PartitionResult {
+    tfhe::set_server_key(sks);
+    let mut res: HashMap<Handle, Result<TaskResult>> = HashMap::with_capacity(transactions.len());
     let tracer = opentelemetry::global::tracer("tfhe_worker");
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
     'tx: for (ref mut dfg, ref mut tx_inputs, tid, cid) in transactions {
-        tfhe::set_server_key(sks.clone());
         // Update the transaction inputs based on allowed handles so
         // far. If any input is still missing, and we cannot fill it
         // (e.g., error in the producer transaction) we cannot execute
@@ -344,8 +347,7 @@ fn execute_partition(
             if i.is_none() {
                 let Some(Ok(ct)) = res.get(h) else {
                     warn!(target: "scheduler", {transaction_id = ?tid },
-			  "Missing input to compute transaction - skipping");
-                    println!("Can't process {:?}", tx_inputs);
+                         "Missing input to compute transaction - skipping");
                     for nidx in dfg.graph.node_identifiers() {
                         let Some(node) = dfg.graph.node_weight_mut(nidx) else {
                             error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
@@ -360,12 +362,12 @@ fn execute_partition(
                     }
                     continue 'tx;
                 };
-                *i = Some(DFGTxInput::Value((ct.0.clone(), ct.3)));
+                *i = Some(DFGTxInput::Value((ct.ct.clone(), ct.is_allowed)));
             }
         }
 
         if !cfg!(feature = "gpu") {
-            let mut s = tracer.start_with_context("rerandomise_inputs", loop_ctx);
+            let mut s = tracer.start_with_context("rerandomise_inputs", &loop_ctx);
             telemetry::set_txn_id(&mut s, &tid);
             let started_at = std::time::Instant::now();
             // Re-randomise inputs of the transaction - this also
@@ -394,7 +396,7 @@ fn execute_partition(
             RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
             drop(s);
         } else {
-            let mut s = tracer.start_with_context("decompress_transaction_inputs", loop_ctx);
+            let mut s = tracer.start_with_context("decompress_transaction_inputs", &loop_ctx);
             telemetry::set_txn_id(&mut s, &tid);
             // If re-randomisation is not available (e.g., on GPU),
             // only decompress ciphertexts
@@ -419,7 +421,7 @@ fn execute_partition(
         }
 
         // Prime the scheduler with ready ops from the transaction's subgraph
-        let mut s = tracer.start_with_context("execute_transaction", loop_ctx);
+        let mut s = tracer.start_with_context("execute_transaction", &loop_ctx);
         telemetry::set_txn_id(&mut s, &tid);
         let started_at = std::time::Instant::now();
 
@@ -442,12 +444,11 @@ fn execute_partition(
         };
         let edges = dfg.graph.map(|_, _| (), |_, edge| *edge);
         for nidx in ts.iter() {
-            tfhe::set_server_key(sks.clone());
             let Some(node) = dfg.graph.node_weight_mut(*nidx) else {
                 error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                 continue;
             };
-            let result = try_execute_node(node, nidx.index(), tx_inputs, gpu_idx, sks.clone());
+            let result = try_execute_node(node, nidx.index(), tx_inputs, gpu_idx);
             if let Ok(result) = result {
                 let nidx = NodeIndex::new(result.0);
                 if result.1.is_ok() {
@@ -466,24 +467,14 @@ fn execute_partition(
                 }
                 // Update partition's outputs (allowed handles only)
                 let node = dfg.graph.node_weight_mut(nidx).unwrap();
-                if node.is_allowed {
-                    res.insert(
-                        node.result_handle.clone(),
-                        result.1.map(|v| {
-                            (
-                                v.0,
-                                v.1.as_ref().unwrap().0,
-                                v.1.unwrap().1,
-                                node.is_allowed,
-                            )
-                        }),
-                    );
-                } else {
-                    res.insert(
-                        node.result_handle.clone(),
-                        result.1.map(|v| (v.0, 0, vec![], node.is_allowed)),
-                    );
-                }
+                res.insert(
+                    node.result_handle.clone(),
+                    result.1.map(|v| TaskResult {
+                        ct: v.0,
+                        compressed_ct: if node.is_allowed { v.1 } else { None },
+                        is_allowed: node.is_allowed,
+                    }),
+                );
             }
         }
         s.end();
@@ -498,8 +489,6 @@ fn try_execute_node(
     node_index: usize,
     tx_inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
     gpu_idx: usize,
-    #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
-    #[cfg(feature = "gpu")] sks: tfhe::CudaServerKey,
 ) -> Result<(usize, OpResult)> {
     if !node.check_ready_inputs(tx_inputs) {
         return Err(SchedulerError::SchedulerError.into());
@@ -517,7 +506,6 @@ fn try_execute_node(
 
     let opcode = node.opcode;
     let is_allowed = node.is_allowed;
-    tfhe::set_server_key(sks.clone());
     Ok(run_computation(
         opcode, cts, node_index, is_allowed, gpu_idx,
     ))
