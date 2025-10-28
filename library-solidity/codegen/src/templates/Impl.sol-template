@@ -172,6 +172,13 @@ interface IACL {
     function persistAllowed(bytes32 handle, address account) external view returns (bool);
 
     /**
+     * @notice                  Returns whether the account is on the deny list.
+     * @param account           Address of the account.
+     * @return isAccountDenied  Whether the account is on the deny list.
+     */
+    function isAccountDenied(address account) external view returns (bool);
+
+    /**
      * @notice              Delegates user decryption rights to `delegate` for the specified `contractAddress`.
      * @param delegate      The delegate account.
      * @param contractAddress The contract address forming the user decryption context.
@@ -418,6 +425,16 @@ library Impl {
     function persistAllowed(bytes32 handle, address account) internal view returns (bool) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
         return IACL($.ACLAddress).persistAllowed(handle, account);
+    }
+
+    /**
+     * @notice                  Returns whether the account is on the deny list.
+     * @param account           Address of the account.
+     * @return isAccountDenied  Whether the account is on the deny list.
+     */
+    function isAccountDenied(address account) internal view returns (bool) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        return IACL($.ACLAddress).isAccountDenied(account);
     }
 
     /**

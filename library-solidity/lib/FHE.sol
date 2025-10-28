@@ -8936,6 +8936,13 @@ library FHE {
         return Impl.isPubliclyDecryptable(euint256.unwrap(value));
     }
 
+    /**
+     * @dev Returns whether the account is on the deny list.
+     */
+    function isAccountDenied(address account) internal view returns (bool) {
+        return Impl.isAccountDenied(account);
+    }
+
     /// @notice Checks if the `handle` can be decrypted in the given context (`user`, `contractAddress`).
     /// @param handle The handle as a bytes32.
     /// @param user The account address that is part of the user decryption context.
