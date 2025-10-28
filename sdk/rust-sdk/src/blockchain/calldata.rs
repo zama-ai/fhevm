@@ -1,7 +1,7 @@
 //! Calldata module for FHEVM SDK
 
-use crate::Result;
 use crate::decryption::user::UserDecryptRequest;
+use crate::Result;
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::sol_types::SolCall;
 use fhevm_gateway_bindings::decryption::Decryption::{
@@ -13,9 +13,9 @@ use tracing::info;
 
 pub fn public_decryption_req(handles: Vec<FixedBytes<32>>) -> Result<Bytes> {
     info!("Generating public decryption request calldata");
-    let extra_data = Bytes::new(); // Empty extra_data for now
-    let calldata = publicDecryptionRequestCall::new((handles, extra_data)).abi_encode();
-    Ok(Bytes::from(calldata))
+    // Extra data is empty for now
+    let calldata = publicDecryptionRequestCall::new((handles, Bytes::new())).abi_encode();
+    Ok(calldata)
 }
 
 /// Generates calldata for user decryption.
@@ -25,7 +25,6 @@ pub fn user_decryption_req(
 ) -> Result<Bytes> {
     info!("Generating user decryption request calldata");
 
-    let extra_data = Bytes::new(); // Empty extra_data for now
     let call = userDecryptionRequestCall::new((
         user_decrypt_request.ct_handle_contract_pairs,
         user_decrypt_request.request_validity,
@@ -36,12 +35,12 @@ pub fn user_decryption_req(
         user_decrypt_request.user_address,
         user_decrypt_request.public_key,
         user_decrypt_request.signature,
-        extra_data,
+        Bytes::new(), // extraData (empty for now)
     ));
 
-    let calldata = userDecryptionRequestCall::abi_encode(&call);
-
-    Ok(Bytes::from(calldata))
+    // FIX: use instance method; abi_encode() returns alloy::primitives::Bytes directly.
+    let calldata = call.abi_encode();
+    Ok(calldata)
 }
 
 /// Computes calldata for verifyProofRequest function
@@ -58,6 +57,7 @@ pub fn verify_proof_req(
     ciphertext_with_zkproof: Bytes,
 ) -> Result<Bytes> {
     info!("Generating verification proof request calldata");
+
     let request_call = InputVerification::verifyProofRequestCall {
         contractChainId: U256::from(contract_chain_id),
         contractAddress: contract_address,
@@ -65,6 +65,7 @@ pub fn verify_proof_req(
         ciphertextWithZKProof: ciphertext_with_zkproof,
         extraData: Bytes::new(), // Empty extra_data for now
     };
+
     let calldata = request_call.abi_encode();
-    Ok(Bytes::from(calldata))
+    Ok(calldata)
 }
