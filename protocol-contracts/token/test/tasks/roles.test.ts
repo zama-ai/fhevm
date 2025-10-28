@@ -66,9 +66,30 @@ describe('ZamaERC20 Role task suite', function () {
             ).to.be.rejected
         })
 
+        it('should fail if revokee does not have the MINTER_ROLE', async () => {
+            expect(await zamaERC20.hasRole(minterRole, minter.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:revoke:minter_role', {
+                    address: minter.address,
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
+        it('should fail if signer tries to renounce to a MINTER_ROLE it does not have', async () => {
+            expect(await zamaERC20.hasRole(minterRole, minter.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:renounce:minter_role', {
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
         it('should fail to grant MINTER_ROLE if signer is not the role admin', async () => {
             // The resolveContext() function takes the first element from the array returned by `ethers.getSigners()`
-            // Thus, to simulate a contract deployed by a different signer, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
+            // Thus, to run the task with the deployer/signer not being the owner, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
             const roleAdmin = await zamaERC20.getRoleAdmin(minterRole)
             expect(await zamaERC20.hasRole(roleAdmin, deployer.address)).to.be.true
             await run('zama:erc20:renounce:default_admin_role', { contractAddress: zamaERC20.address })
@@ -78,6 +99,38 @@ describe('ZamaERC20 Role task suite', function () {
             await expect(
                 run('zama:erc20:grant:minter_role', {
                     address: deployer.address,
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
+        it('should fail to revoke MINTER_ROLE if signer is not the role admin', async () => {
+            // The resolveContext() function takes the first element from the array returned by `ethers.getSigners()`
+            // Thus, to run the task with the deployer/signer not being the owner, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
+            const roleAdmin = await zamaERC20.getRoleAdmin(minterRole)
+            expect(await zamaERC20.hasRole(roleAdmin, deployer.address)).to.be.true
+            await run('zama:erc20:grant:minter_role', {
+                address: minter.address,
+                contractAddress: zamaERC20.address,
+            })
+            expect(await zamaERC20.hasRole(minterRole, minter.address)).to.be.true
+            await run('zama:erc20:renounce:default_admin_role', { contractAddress: zamaERC20.address })
+
+            expect(await zamaERC20.hasRole(roleAdmin, deployer.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:revoke:minter_role', {
+                    address: deployer.address,
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
+        it('should fail to renounce MINTER_ROLE if signer does not have the role', async () => {
+            expect(await zamaERC20.hasRole(minterRole, deployer.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:renounce:minter_role', {
                     contractAddress: zamaERC20.address,
                 })
             ).to.be.rejected
@@ -130,9 +183,30 @@ describe('ZamaERC20 Role task suite', function () {
             ).to.be.rejected
         })
 
+        it('should fail if revokee does not have the PAUSING_MINTER_ROLE', async () => {
+            expect(await zamaERC20.hasRole(pausingRole, pausing.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:revoke:pausing_minter_role', {
+                    address: pausing.address,
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
+        it('should fail if signer tries to renounce to a PAUSING_MINTER_ROLE it does not have', async () => {
+            expect(await zamaERC20.hasRole(pausingRole, pausing.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:renounce:pausing_minter_role', {
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
         it('should fail to grant PAUSING_MINTER_ROLE if signer is not the role admin', async () => {
             // The resolveContext() function takes the first element from the array returned by `ethers.getSigners()`
-            // Thus, to simulate a contract deployed by a different signer, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
+            // Thus, to run the task with the deployer/signer not being the owner, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
             const roleAdmin = await zamaERC20.getRoleAdmin(pausingRole)
             expect(await zamaERC20.hasRole(roleAdmin, deployer.address)).to.be.true
             await run('zama:erc20:renounce:default_admin_role', { contractAddress: zamaERC20.address })
@@ -142,6 +216,33 @@ describe('ZamaERC20 Role task suite', function () {
             await expect(
                 run('zama:erc20:grant:pausing_minter_role', {
                     address: deployer.address,
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
+        it('should fail to revoke PAUSING_MINTER_ROLE if signer is not the role admin', async () => {
+            // The resolveContext() function takes the first element from the array returned by `ethers.getSigners()`
+            // Thus, to run the task with the deployer/signer not being the owner, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
+            const roleAdmin = await zamaERC20.getRoleAdmin(pausingRole)
+            expect(await zamaERC20.hasRole(roleAdmin, deployer.address)).to.be.true
+            await run('zama:erc20:renounce:default_admin_role', { contractAddress: zamaERC20.address })
+
+            expect(await zamaERC20.hasRole(roleAdmin, deployer.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:revoke:pausing_minter_role', {
+                    address: deployer.address,
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
+        it('should fail to renounce PAUSING_MINTER_ROLE if signer does not have the role', async () => {
+            expect(await zamaERC20.hasRole(pausingRole, deployer.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:renounce:pausing_minter_role', {
                     contractAddress: zamaERC20.address,
                 })
             ).to.be.rejected
@@ -183,9 +284,33 @@ describe('ZamaERC20 Role task suite', function () {
             ).to.be.rejected
         })
 
+        it('should fail if revokee does not have the DEFAULT_ADMIN_ROLE', async () => {
+            expect(await zamaERC20.hasRole(defaultAdminRole, minter.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:revoke:default_admin_role', {
+                    address: minter.address,
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
+        it('should fail if signer tries to renounce to a DEFAULT_ADMIN_ROLE it does not have', async () => {
+            // The resolveContext() function takes the first element from the array returned by `ethers.getSigners()`
+            // Thus, to run the task with the deployer/signer not being the owner, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
+            await run('zama:erc20:renounce:default_admin_role', { contractAddress: zamaERC20.address })
+            expect(await zamaERC20.hasRole(defaultAdminRole, pausing.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:renounce:default_admin_role', {
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
         it('should fail to grant DEFAULT_ADMIN_ROLE if signer is not the role admin', async () => {
             // The resolveContext() function takes the first element from the array returned by `ethers.getSigners()`
-            // Thus, to simulate a contract deployed by a different signer, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
+            // Thus, to run the task with the deployer/signer not being the owner, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
             const roleAdmin = await zamaERC20.getRoleAdmin(defaultAdminRole)
             expect(await zamaERC20.hasRole(roleAdmin, deployer.address)).to.be.true
             await run('zama:erc20:renounce:default_admin_role', { contractAddress: zamaERC20.address })
@@ -195,6 +320,36 @@ describe('ZamaERC20 Role task suite', function () {
             await expect(
                 run('zama:erc20:grant:default_admin_role', {
                     address: deployer.address,
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
+        it('should fail to revoke DEFAULT_ADMIN_ROLE if signer is not the role admin', async () => {
+            // The resolveContext() function takes the first element from the array returned by `ethers.getSigners()`
+            // Thus, to run the task with the deployer/signer not being the owner, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
+            const roleAdmin = await zamaERC20.getRoleAdmin(defaultAdminRole)
+            expect(await zamaERC20.hasRole(roleAdmin, deployer.address)).to.be.true
+            await run('zama:erc20:renounce:default_admin_role', { contractAddress: zamaERC20.address })
+
+            expect(await zamaERC20.hasRole(roleAdmin, deployer.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:revoke:default_admin_role', {
+                    address: deployer.address,
+                    contractAddress: zamaERC20.address,
+                })
+            ).to.be.rejected
+        })
+
+        it('should fail to renounce DEFAULT_ADMIN_ROLE if signer does not have the role', async () => {
+            expect(await zamaERC20.hasRole(defaultAdminRole, deployer.address)).to.be.true
+            await run('zama:erc20:renounce:default_admin_role', { contractAddress: zamaERC20.address })
+
+            expect(await zamaERC20.hasRole(defaultAdminRole, deployer.address)).to.be.false
+
+            await expect(
+                run('zama:erc20:renounce:default_admin_role', {
                     contractAddress: zamaERC20.address,
                 })
             ).to.be.rejected

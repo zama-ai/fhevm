@@ -1,34 +1,56 @@
+import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers'
 import { Contract } from 'ethers'
 import { HardhatRuntimeEnvironment } from 'hardhat/types'
 
+import { getRequiredEnvVar } from './loadVariables'
+
 export interface ContractContext {
-    signer: Awaited<ReturnType<HardhatRuntimeEnvironment['ethers']['getSigners']>>[number]
+    signer: SignerWithAddress
     contract: Contract
     deploymentAddress: string
     networkName: string
 }
 
-import { getRequiredEnvVar } from './loadVariables'
-
 export async function resolveContext(
     contractName: string,
     hre: HardhatRuntimeEnvironment,
+    fromDeployment: boolean,
     contractAddress?: string
 ): Promise<ContractContext> {
-    const { ethers, network } = hre
+    const { ethers, deployments, network } = hre
 
     const [signer] = await ethers.getSigners()
     if (!signer) {
         throw new Error('No signer available to execute the transaction. Configure accounts for this network.')
     }
 
-    const deploymentAddress = contractAddress ?? getRequiredEnvVar(`${contractName.toUpperCase()}_CONTRACT_ADDRESS`)
-    const contract = await ethers.getContractAt(contractName, deploymentAddress).catch(() => {
+    if (fromDeployment && contractAddress) {
         throw new Error(
-            `Unable to find ${contractName} deployment for network "${network.name}".
-            Ensure you selected the correct network and deployed the contract.`
+            `You cannot fetch the contract address from deployment and specify a contract address as well. Use either one.`
         )
-    })
+    }
+
+    let contract: Contract
+    let deploymentAddress: string
+
+    if (fromDeployment) {
+        const deployment = await deployments.get(contractName).catch(() => {
+            throw new Error(
+                `Unable to find ${contractName} deployment for network "${network.name}". Ensure you selected the correct network and deployed the contract.`
+            )
+        })
+
+        deploymentAddress = deployment.address
+        contract = await ethers.getContractAt(contractName, deploymentAddress, signer)
+    } else {
+        deploymentAddress = contractAddress ?? getRequiredEnvVar(`${contractName.toUpperCase()}_CONTRACT_ADDRESS`)
+        contract = await ethers.getContractAt(contractName, deploymentAddress).catch(() => {
+            throw new Error(
+                `Unable to find ${contractName} deployment for network "${network.name}".
+                Ensure you selected the correct network and deployed the contract.`
+            )
+        })
+    }
 
     return {
         signer,

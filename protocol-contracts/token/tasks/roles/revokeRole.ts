@@ -12,17 +12,28 @@ for (const role of ROLE_KEYS) {
     task(`zama:erc20:revoke:${suffix}`, `Revoke ${role} from the provided address`)
         .addParam('address', 'Address to revoke the role from', undefined, types.string)
         .addOptionalParam(
+            'fromDeployment',
+            'Fetch the address of the ZamaERC20 contract from the existing deployments for the selected network.',
+            false,
+            types.boolean
+        )
+        .addOptionalParam(
             'contractAddress',
             'Address of the ZamaERC20 contract to interact with. It not set, it fallback on ZAMAERC20_CONTRACT_ADDRESS env variable.',
             undefined,
             types.string
         )
-        .setAction(async ({ address, contractAddress }, hre) => {
+        .setAction(async ({ address, fromDeployment, contractAddress }, hre) => {
             if (!hre.ethers.utils.isAddress(address)) {
                 throw new Error(`The provided address is not a valid EVM address: ${address}`)
             }
 
-            const { signer, contract, deploymentAddress } = await resolveContext('ZamaERC20', hre, contractAddress)
+            const { signer, contract, deploymentAddress } = await resolveContext(
+                'ZamaERC20',
+                hre,
+                fromDeployment,
+                contractAddress
+            )
             const roleValue = await resolveRoleValue(contract, role)
 
             const roleAdmin = await contract.getRoleAdmin(roleValue)
@@ -35,8 +46,7 @@ for (const role of ROLE_KEYS) {
 
             const hasRole = await contract.hasRole(roleValue, address)
             if (!hasRole) {
-                console.log(`Address ${address} does not have ${role} on contract ${deploymentAddress}`)
-                return
+                throw new Error(`Address ${address} does not have ${role} on contract ${deploymentAddress}`)
             }
 
             console.log(

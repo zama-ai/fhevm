@@ -11,27 +11,29 @@ for (const role of ROLE_KEYS) {
     const suffix = ROLE_TASK_SUFFIX[role]
     task(`zama:erc20:renounce:${suffix}`, `Renounce ${role} for the connected signer`)
         .addOptionalParam(
+            'fromDeployment',
+            'Fetch the address of the ZamaERC20 contract from the existing deployments for the selected network.',
+            false,
+            types.boolean
+        )
+        .addOptionalParam(
             'contractAddress',
             'Address of the ZamaERC20 contract to interact with. It not set, it fallback on ZAMAERC20_CONTRACT_ADDRESS env variable.',
             undefined,
             types.string
         )
-        .setAction(async ({ contractAddress }, hre) => {
-            const { signer, contract, deploymentAddress } = await resolveContext('ZamaERC20', hre, contractAddress)
+        .setAction(async ({ fromDeployment, contractAddress }, hre) => {
+            const { signer, contract, deploymentAddress } = await resolveContext(
+                'ZamaERC20',
+                hre,
+                fromDeployment,
+                contractAddress
+            )
             const roleValue = await resolveRoleValue(contract, role)
-
-            const roleAdmin = await contract.getRoleAdmin(roleValue)
-            const hasRoleAdmin = await contract.hasRole(roleAdmin, signer.address)
-            if (!hasRoleAdmin) {
-                throw new Error(
-                    `The deployer account ${signer.address} does not have the required admin role of ${role} for the ZamaERC20 contract ${deploymentAddress}`
-                )
-            }
 
             const hasRole = await contract.hasRole(roleValue, signer.address)
             if (!hasRole) {
-                console.log(`Signer ${signer.address} does not have ${role} on contract ${deploymentAddress}`)
-                return
+                throw new Error(`Signer ${signer.address} does not have ${role} on contract ${deploymentAddress}`)
             }
 
             console.log(
