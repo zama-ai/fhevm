@@ -244,6 +244,10 @@ gwListener:
     - --get-logs-block-batch-size=100
     # NEW ARG: KMS generation contract address
     - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
+    ### Catchup parameters (optional)
+    # --catchup-kms-generation-from-block BLOCK_NUMBER
+    # To go back in time from latest block
+    # --catchup-kms-generation-from-block -NB_BLOCK
 
   # Service ports configuration
   ports:
