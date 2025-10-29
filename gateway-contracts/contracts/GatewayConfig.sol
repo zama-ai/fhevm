@@ -247,11 +247,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 oldKmsTxSenderAddressesLength = $.kmsTxSenderAddresses.length;
         for (uint256 i = 0; i < oldKmsTxSenderAddressesLength; i++) {
             $.isKmsTxSender[$.kmsTxSenderAddresses[i]] = false;
-            delete $.kmsNodes[$.kmsTxSenderAddresses[i]];
-        }
-        uint256 oldKmsSignerAddressesLength = $.kmsSignerAddresses.length;
-        for (uint256 i = 0; i < oldKmsSignerAddressesLength; i++) {
             $.isKmsSigner[$.kmsSignerAddresses[i]] = false;
+            delete $.kmsNodes[$.kmsTxSenderAddresses[i]];
         }
 
         delete $.kmsTxSenderAddresses;
@@ -288,12 +285,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 oldCoprocessorTxSenderAddressesLength = $.coprocessorTxSenderAddresses.length;
         for (uint256 i = 0; i < oldCoprocessorTxSenderAddressesLength; i++) {
             $.isCoprocessorTxSender[$.coprocessorTxSenderAddresses[i]] = false;
-            delete $.coprocessors[$.coprocessorTxSenderAddresses[i]];
-        }
-
-        uint256 oldCoprocessorSignerAddressesLength = $.coprocessorSignerAddresses.length;
-        for (uint256 i = 0; i < oldCoprocessorSignerAddressesLength; i++) {
             $.isCoprocessorSigner[$.coprocessorSignerAddresses[i]] = false;
+            delete $.coprocessors[$.coprocessorTxSenderAddresses[i]];
         }
 
         delete $.coprocessorTxSenderAddresses;
@@ -315,12 +308,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 oldCustodianTxSenderAddressesLength = $.custodianTxSenderAddresses.length;
         for (uint256 i = 0; i < oldCustodianTxSenderAddressesLength; i++) {
             $.isCustodianTxSender[$.custodianTxSenderAddresses[i]] = false;
-            delete $.custodians[$.custodianTxSenderAddresses[i]];
-        }
-
-        uint256 oldCustodianSignerAddressesLength = $.custodianSignerAddresses.length;
-        for (uint256 i = 0; i < oldCustodianSignerAddressesLength; i++) {
             $.isCustodianSigner[$.custodianSignerAddresses[i]] = false;
+            delete $.custodians[$.custodianTxSenderAddresses[i]];
         }
 
         delete $.custodianTxSenderAddresses;

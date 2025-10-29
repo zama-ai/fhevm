@@ -1,7 +1,7 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
-import { ContractFactory, EventLog, Wallet } from "ethers";
+import { ContractFactory, EventLog, Wallet, ZeroAddress } from "ethers";
 import hre from "hardhat";
 
 import {
@@ -11,7 +11,6 @@ import {
   GatewayConfig,
   InputVerification,
   KMSGeneration,
-  MultichainACL,
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
@@ -492,6 +491,23 @@ describe("GatewayConfig", function () {
           expect(await gatewayConfig.getPublicDecryptionThreshold()).to.equal(newPublicDecryptionThreshold);
           expect(await gatewayConfig.getUserDecryptionThreshold()).to.equal(newUserDecryptionThreshold);
           expect(await gatewayConfig.getKmsGenThreshold()).to.equal(newKmsGenThreshold);
+
+          // Define the null KMS node
+          const nullKmsNode: KmsNodeStruct = {
+            txSenderAddress: ZeroAddress,
+            signerAddress: ZeroAddress,
+            ipAddress: "",
+            storageUrl: "",
+          };
+
+          // Check that old KMS nodes have been removed
+          for (const kmsSigner of kmsSigners) {
+            expect(await gatewayConfig.isKmsSigner(kmsSigner)).to.be.false;
+          }
+          for (const kmsTxSender of kmsTxSenders) {
+            expect(await gatewayConfig.isKmsTxSender(kmsTxSender)).to.be.false;
+            expect(await gatewayConfig.getKmsNode(kmsTxSender)).to.deep.equal(toValues(nullKmsNode));
+          }
         });
 
         it("Should revert because the sender is not the owner", async function () {
@@ -659,6 +675,22 @@ describe("GatewayConfig", function () {
 
           // Check that the threshold have been updated
           expect(await gatewayConfig.getCoprocessorMajorityThreshold()).to.equal(newCoprocessorThreshold);
+
+          // Define the null coprocessor
+          const nullCoprocessor: CoprocessorStruct = {
+            txSenderAddress: ZeroAddress,
+            signerAddress: ZeroAddress,
+            s3BucketUrl: "",
+          };
+
+          // Check that old coprocessors have been removed
+          for (const coprocessorSigner of coprocessorSigners) {
+            expect(await gatewayConfig.isCoprocessorSigner(coprocessorSigner)).to.be.false;
+          }
+          for (const coprocessorTxSender of coprocessorTxSenders) {
+            expect(await gatewayConfig.isCoprocessorTxSender(coprocessorTxSender)).to.be.false;
+            expect(await gatewayConfig.getCoprocessor(coprocessorTxSender)).to.deep.equal(toValues(nullCoprocessor));
+          }
         });
 
         it("Should revert because the sender is not the owner", async function () {
@@ -706,6 +738,23 @@ describe("GatewayConfig", function () {
           expect(await gatewayConfig.getCustodian(newTxSenderAddress)).to.deep.equal(toValues(newCustodian));
           expect(await gatewayConfig.getCustodianTxSenders()).to.deep.equal([newTxSenderAddress]);
           expect(await gatewayConfig.getCustodianSigners()).to.deep.equal([newSignerAddress]);
+
+          // Define the null custodian
+          const nullCustodian: CustodianStruct = {
+            txSenderAddress: ZeroAddress,
+            signerAddress: ZeroAddress,
+            encryptionKey: "0x",
+          };
+
+          // Check that old custodians have been removed
+          for (const custodianSigner of custodianSigners) {
+            expect(await gatewayConfig.isCustodianSigner(custodianSigner)).to.be.false;
+          }
+
+          for (const custodianTxSender of custodianTxSenders) {
+            expect(await gatewayConfig.isCustodianTxSender(custodianTxSender)).to.be.false;
+            expect(await gatewayConfig.getCustodian(custodianTxSender)).to.deep.equal(toValues(nullCustodian));
+          }
         });
 
         it("Should revert because the sender is not the owner", async function () {
@@ -1179,7 +1228,6 @@ describe("GatewayConfig", function () {
       let decryption: Decryption;
       let inputVerification: InputVerification;
       let kmsGeneration: KMSGeneration;
-      let MultichainACL: MultichainACL;
 
       before(async function () {
         const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -1187,7 +1235,6 @@ describe("GatewayConfig", function () {
         decryption = fixtureData.decryption;
         inputVerification = fixtureData.inputVerification;
         kmsGeneration = fixtureData.kmsGeneration;
-        MultichainACL = fixtureData.MultichainACL;
       });
 
       it("Should pause all the Gateway contracts with the pauser", async function () {
