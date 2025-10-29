@@ -18,6 +18,7 @@
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
     "@openzeppelin/contracts": "^5.4.0",
+    "@safe-global/protocol-kit": "^6.1.1",
     "@safe-global/safe-contracts": "^1.4.1-2",
     "hardhat": "^2.26.3",
     "hardhat-dependency-compiler": "^1.2.1"
