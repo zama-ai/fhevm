@@ -3,6 +3,14 @@ pragma solidity ^0.8.24;
 import "../shared/Structs.sol";
 
 contract GatewayConfigMock {
+    struct Thresholds {
+        uint256 mpcThreshold;
+        uint256 publicDecryptionThreshold;
+        uint256 userDecryptionThreshold;
+        uint256 kmsGenThreshold;
+        uint256 coprocessorThreshold;
+    }
+
     event InitializeGatewayConfig(
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
@@ -11,7 +19,19 @@ contract GatewayConfigMock {
         Custodian[] custodians
     );
 
-    event ReinitializeGatewayConfigV2(Coprocessor[] newCoprocessors, uint256 coprocessorThreshold);
+    event ReinitializeGatewayConfigV3(KmsNode[] newKmsNodes);
+
+    event UpdateKmsNodes(
+        KmsNode[] newKmsNodes,
+        uint256 newMpcThreshold,
+        uint256 newPublicDecryptionThreshold,
+        uint256 newUserDecryptionThreshold,
+        uint256 newKmsGenThreshold
+    );
+
+    event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
+
+    event UpdateCustodians(Custodian[] newCustodians);
 
     event UpdateMpcThreshold(uint256 newMpcThreshold);
 
@@ -30,15 +50,11 @@ contract GatewayConfigMock {
     event UnpauseAllGatewayContracts();
 
     function initializeFromEmptyProxy(
-        ProtocolMetadata memory initialMetadata,
-        uint256 initialMpcThreshold,
-        uint256 initialPublicDecryptionThreshold,
-        uint256 initialUserDecryptionThreshold,
-        uint256 initialKmsGenThreshold,
-        uint256 initialCoprocessorThreshold,
-        KmsNode[] memory initialKmsNodes,
-        Coprocessor[] memory initialCoprocessors,
-        Custodian[] memory initialCustodians
+        ProtocolMetadata calldata initialMetadata,
+        Thresholds calldata initialThresholds,
+        KmsNode[] calldata initialKmsNodes,
+        Coprocessor[] calldata initialCoprocessors,
+        Custodian[] calldata initialCustodians
     ) public {
         ProtocolMetadata memory metadata;
         uint256 mpcThreshold;
@@ -49,8 +65,32 @@ contract GatewayConfigMock {
         emit InitializeGatewayConfig(metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
     }
 
-    function reinitializeV2(Coprocessor[] memory newCoprocessors, uint256 coprocessorThreshold) public {
-        emit ReinitializeGatewayConfigV2(newCoprocessors, coprocessorThreshold);
+    function reinitializeV3(KmsNode[] calldata newKmsNodes) public {
+        emit ReinitializeGatewayConfigV3(newKmsNodes);
+    }
+
+    function updateKmsNodes(
+        KmsNode[] calldata newKmsNodes,
+        uint256 newMpcThreshold,
+        uint256 newPublicDecryptionThreshold,
+        uint256 newUserDecryptionThreshold,
+        uint256 newKmsGenThreshold
+    ) public {
+        emit UpdateKmsNodes(
+            newKmsNodes,
+            newMpcThreshold,
+            newPublicDecryptionThreshold,
+            newUserDecryptionThreshold,
+            newKmsGenThreshold
+        );
+    }
+
+    function updateCoprocessors(Coprocessor[] calldata newCoprocessors, uint256 newCoprocessorThreshold) external {
+        emit UpdateCoprocessors(newCoprocessors, newCoprocessorThreshold);
+    }
+
+    function updateCustodians(Custodian[] calldata newCustodians) external {
+        emit UpdateCustodians(newCustodians);
     }
 
     function updateMpcThreshold(uint256 newMpcThreshold) external {

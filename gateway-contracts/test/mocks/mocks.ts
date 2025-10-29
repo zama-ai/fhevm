@@ -38,13 +38,7 @@ describe("Mock contracts", function () {
 
   const DefaultProtocolMetadata = { name: DefaultString, website: DefaultString };
 
-  const DefaultKmsNodeV1 = {
-    txSenderAddress: DefaultAddress,
-    signerAddress: DefaultAddress,
-    ipAddress: DefaultString,
-  };
-
-  const DefaultKmsNodeV2 = {
+  const DefaultKmsNode = {
     txSenderAddress: DefaultAddress,
     signerAddress: DefaultAddress,
     ipAddress: DefaultString,
@@ -198,23 +192,19 @@ describe("Mock contracts", function () {
   });
 
   describe("GatewayConfigMock", async function () {
-    const DefaultV3UpgradeInputs = [
-      {
-        txSenderAddress: DefaultAddress,
-        storageUrl: DefaultString,
-      },
-    ];
-
     it("Should emit InitializeGatewayConfig event on initialization", async function () {
+      const DefaultThresholds = {
+        mpcThreshold: DefaultUint256,
+        publicDecryptionThreshold: DefaultUint256,
+        userDecryptionThreshold: DefaultUint256,
+        kmsGenThreshold: DefaultUint256,
+        coprocessorThreshold: DefaultUint256,
+      };
       await expect(
         gatewayConfigMock.initializeFromEmptyProxy(
           DefaultProtocolMetadata,
-          DefaultUint256,
-          DefaultUint256,
-          DefaultUint256,
-          DefaultUint256,
-          DefaultUint256,
-          [DefaultKmsNodeV2],
+          DefaultThresholds,
+          [DefaultKmsNode],
           [DefaultCoprocessor],
           [DefaultCustodian],
         ),
@@ -223,22 +213,36 @@ describe("Mock contracts", function () {
         .withArgs(
           toValues(DefaultProtocolMetadata),
           DefaultUint256,
-          toValues([DefaultKmsNodeV2]),
+          toValues([DefaultKmsNode]),
           toValues([DefaultCoprocessor]),
           toValues([DefaultCustodian]),
         );
     });
 
-    it("Should emit UpdateMpcThreshold event on update MPC threshold call", async function () {
-      await expect(gatewayConfigMock.updateMpcThreshold(DefaultUint256))
-        .to.emit(gatewayConfigMock, "UpdateMpcThreshold")
-        .withArgs(DefaultUint256);
+    it("Should emit UpdateKmsNodes event on update KMS nodes call", async function () {
+      await expect(
+        gatewayConfigMock.updateKmsNodes(
+          [DefaultKmsNode],
+          DefaultUint256,
+          DefaultUint256,
+          DefaultUint256,
+          DefaultUint256,
+        ),
+      )
+        .to.emit(gatewayConfigMock, "UpdateKmsNodes")
+        .withArgs(toValues([DefaultKmsNode]), DefaultUint256, DefaultUint256, DefaultUint256, DefaultUint256);
     });
 
-    it("Should emit UpdatePublicDecryptionThreshold event on update PublicDecryption threshold call", async function () {
-      await expect(gatewayConfigMock.updatePublicDecryptionThreshold(DefaultUint256))
-        .to.emit(gatewayConfigMock, "UpdatePublicDecryptionThreshold")
-        .withArgs(DefaultUint256);
+    it("Should emit UpdateCoprocessors event on update coprocessors call", async function () {
+      await expect(gatewayConfigMock.updateCoprocessors([DefaultCoprocessor], DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdateCoprocessors")
+        .withArgs(toValues([DefaultCoprocessor]), DefaultUint256);
+    });
+
+    it("Should emit UpdateCustodians event on update custodians call", async function () {
+      await expect(gatewayConfigMock.updateCustodians([DefaultCustodian]))
+        .to.emit(gatewayConfigMock, "UpdateCustodians")
+        .withArgs(toValues([DefaultCustodian]));
     });
 
     it("Should emit UpdateUserDecryptionThreshold event on update UserDecryption threshold call", async function () {

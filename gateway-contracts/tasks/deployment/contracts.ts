@@ -126,15 +126,20 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   console.log("Coprocessors:", coprocessors);
   console.log("Custodians:", custodians);
 
-  // The GatewayConfig contract is not deployed using the same empty proxy as the other contracts,
-  // as it is made ownable
-  await deployContractImplementation("GatewayConfig", hre, GATEWAY_CONFIG_EMPTY_PROXY_NAME, [
-    protocolMetadata,
+  // Define the thresholds struct
+  const thresholds = {
     mpcThreshold,
     publicDecryptionThreshold,
     userDecryptionThreshold,
     kmsGenThreshold,
     coprocessorThreshold,
+  };
+
+  // The GatewayConfig contract is not deployed using the same empty proxy as the other contracts,
+  // as it is made ownable
+  await deployContractImplementation("GatewayConfig", hre, GATEWAY_CONFIG_EMPTY_PROXY_NAME, [
+    protocolMetadata,
+    thresholds,
     kmsNodes,
     coprocessors,
     custodians,
