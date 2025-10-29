@@ -54,4 +54,4 @@ jobs:
       - name: "Run JS/TS tests"
         run: npm --workspace=host-contracts run test
       - name: "Run forge tests"
-        run: "cd host-contracts && forge install foundry-rs/forge-std && forge test"
+        run: "cd host-contracts && forge soldeer install && forge test"

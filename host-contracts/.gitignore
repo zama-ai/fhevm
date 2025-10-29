@@ -29,3 +29,7 @@ lcov.info
 /report
 /lib/forge-std
 foundry.lock
+
+
+# Soldeer
+/dependencies

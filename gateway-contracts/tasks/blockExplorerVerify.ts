@@ -1,9 +1,6 @@
-import dotenv from "dotenv";
 import { task, types } from "hardhat/config";
-import path from "path";
 
-import { ADDRESSES_DIR } from "../hardhat.config";
-import { getRequiredEnvVar } from "./utils/loadVariables";
+import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 
 task("task:verifyCiphertextCommits")
   .addOptionalParam(
@@ -14,7 +11,7 @@ task("task:verifyCiphertextCommits")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("CIPHERTEXT_COMMITS_ADDRESS");
 
@@ -38,7 +35,7 @@ task("task:verifyDecryption")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("DECRYPTION_ADDRESS");
 
@@ -62,7 +59,7 @@ task("task:verifyGatewayConfig")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
@@ -86,7 +83,7 @@ task("task:verifyInputVerification")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS");
 
@@ -110,7 +107,7 @@ task("task:verifyKMSGeneration")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("KMS_GENERATION_ADDRESS");
 
@@ -134,7 +131,7 @@ task("task:verifyMultichainACL")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("MULTICHAIN_ACL_ADDRESS");
 
@@ -158,7 +155,7 @@ task("task:verifyPauserSet")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const implementationAddress = getRequiredEnvVar("PAUSER_SET_ADDRESS");
     await run("verify:verify", {

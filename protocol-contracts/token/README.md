@@ -129,3 +129,35 @@ npx hardhat lz:oft:send --src-eid 40161 --dst-eid 40231 --amount 1.5 --to <RECEI
 Once these transactions are sent, wait around 2 minutes and check the receiver's account on Etherscan Arbitrum Sepolia explorer that the receiver indeed received `1.5` ZAMA token on Arbitrum testnet by clicking on `Token Holdings` there.
 
 You could then also send back the tokens from Arbitrum Sepolia testnet to Ethereum Sepolia chain, by swapping the values of `--src-eid` and `--dst-eid` flags from previous command.
+
+## Step 8 : Administrative tasks
+
+After the contracts are deployed and wired you can manage permissions and ownership without writing custom scripts. The project exposes dedicated Hardhat tasks grouped by contract:
+
+- **Role lifecycle on `ZamaERC20`:** Every supported role has its own grant/revoke command (`zama:erc20:grant:minter_role`, `zama:erc20:revoke:pausing_minter_role`, etc.) plus a `zama:erc20:renounce:*` variant that lets the currently connected signer drop its role. Use these to add minters, pause controllers, or new admins safely from the CLI.
+- **`ZamaOFTAdapter` administration:** Set a new delegate on `ZamaOFTAdapter` with `zama:oftadapter:setDelegate --address <new_delegate>` and hand off overall control with `zama:oftadapter:transferOwnership --address <new_owner>`.
+- **`ZamaOFT` administration:** Mirror the same actions on the `ZamaOFT` contract using `zama:oft:setDelegate --address <new_delegate>` and `zama:oft:transferOwnership --address <new_owner>`.
+
+Always pass the correct `--network` flag so Hardhat connects to the chain that hosts the relevant deployment and make sure the signer you use already holds the corresponding privileges.
+
+By default, these tasks will load the contract address of the task from environment variables:
+
+- `ZAMAOFT_CONTRACT_ADDRESS` for `zama:oft:*`
+- `ZAMAERC20_CONTRACT_ADDRESS` for `zama:erc20:*`
+- `ZAMAOFTADAPTER_CONTRACT_ADDRESS` for `zama:oftadapter:*`
+
+Two optional parameters are available in the tasks: `--from-deployment` and `--contract-address`, they are mutually exclusive.
+
+- `--from-deployment` will fetch the contract address from the available deployments for the network the task is run upon.
+  Here is an example granting the MINTER_ROLE from the ZamaERC20 deployment on the ethereum-testnet
+
+```bash
+npx hardhat zama:erc20:grant:minter_role --address <NEW_MINTER_ADDRESS> --from-deployment true --network ethereum-testnet
+```
+
+- `--contract-address` will use the provided address as the contract address.
+  Here is an example granting the MINTER_ROLE from the ZamaERC20 deployment on the ethereum-testnet
+
+```bash
+npx hardhat zama:erc20:grant:minter_role --address <NEW_MINTER_ADDRESS> --contract-address <ZAMAERC20_CONTRACT_ADDRESS>  --network ethereum-testnet
+```

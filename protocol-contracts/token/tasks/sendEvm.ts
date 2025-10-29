@@ -10,7 +10,7 @@ import { ChainType, endpointIdToChainType, endpointIdToNetwork } from '@layerzer
 import { Options, addressToBytes32 } from '@layerzerolabs/lz-v2-utilities'
 
 import { SendResult } from './types'
-import { DebugLogger, KnownErrors, getLayerZeroScanLink } from './utils'
+import { DebugLogger, KnownErrors, getLayerZeroScanLink } from './utils/lz'
 
 const logger = createLogger()
 

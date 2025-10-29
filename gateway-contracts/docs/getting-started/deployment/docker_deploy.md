@@ -26,7 +26,7 @@ Then start the containers:
 make docker-compose-up
 ```
 
-This should create three containers:
+This should create several containers, in particular:
 
 - `anvil-node`: A local Ethereum network with chain id `54321` on port `8546`
 - `deploy-gateway-contracts`: Deploys the contracts

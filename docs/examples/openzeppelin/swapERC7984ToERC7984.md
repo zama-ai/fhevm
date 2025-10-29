@@ -14,7 +14,7 @@ This ensures Hardhat can compile and test your contracts as expected.
 {% tab title="SwapERC7984ToERC20.sol" %}
 
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.27;
 
 import {FHE, externalEuint64, euint64} from "@fhevm/solidity/lib/FHE.sol";

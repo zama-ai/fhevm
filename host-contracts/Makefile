@@ -16,7 +16,7 @@ deploy-pauser-set:
 ensure-addresses: deploy-empty-proxies deploy-pauser-set
 
 forge-test: ensure-addresses
-	forge install foundry-rs/forge-std && forge test
+	forge soldeer install && forge test
 
 prettier:
 	npx prettier . --write
@@ -29,7 +29,7 @@ clean:
 
 get-accounts:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts
-	
+
 # Define it as a phony target to avoid conflicts with the test directory
 .PHONY: test
 test: clean

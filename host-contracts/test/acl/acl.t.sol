@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
@@ -9,7 +9,7 @@ import {ACL} from "../../contracts/ACL.sol";
 import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {ACLEvents} from "../../contracts/ACLEvents.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {HostContractsDeployerTestUtils} from "../utils/HostContractsDeployerTestUtils.sol";
+import {HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {fhevmExecutorAdd, pauserSetAdd, aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract ACLTest is HostContractsDeployerTestUtils {
@@ -70,10 +70,11 @@ contract ACLTest is HostContractsDeployerTestUtils {
      * This function is executed before each test to ensure a consistent and isolated state.
      */
     function setUp() public {
-        (ACL deployedACL, ) = _deployACL(owner);
-        acl = deployedACL;
-        proxy = address(deployedACL);
-        pauserSet = _deployPauserSet();
+        _deployACL(owner);
+        acl = ACL(aclAdd);
+        proxy = aclAdd;
+        _deployPauserSet();
+        pauserSet = PauserSet(pauserSetAdd);
         vm.prank(owner);
         pauserSet.addPauser(pauser);
         fhevmExecutor = acl.getFHEVMExecutorAddress();

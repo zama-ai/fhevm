@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 // OpenZeppelin Contracts (last updated v5.1.0) (utils/cryptography/EIP712.sol)
 
 pragma solidity ^0.8.20;

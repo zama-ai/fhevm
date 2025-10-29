@@ -11,6 +11,7 @@ import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.so
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { Pausable } from "./shared/Pausable.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
+import { ProtocolPaymentUtils } from "./shared/ProtocolPaymentUtils.sol";
 import { Coprocessor } from "./shared/Structs.sol";
 
 /**
@@ -23,6 +24,7 @@ contract InputVerification is
     UUPSUpgradeableEmptyProxy,
     GatewayOwnable,
     GatewayConfigChecks,
+    ProtocolPaymentUtils,
     Pausable
 {
     /**
@@ -186,6 +188,9 @@ contract InputVerification is
 
         // Associate the request to coprocessor context ID 1 to anticipate their introduction in V2.
         $.inputVerificationContextId[zkProofId] = 1;
+
+        // Collect the fee from the transaction sender for this input verification request.
+        _collectInputVerificationFee(msg.sender);
 
         emit VerifyProofRequest(
             zkProofId,
