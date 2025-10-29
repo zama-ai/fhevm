@@ -114,7 +114,7 @@ describe("Upgrades", function () {
     });
     const gatewayConfig = await upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactoryV1);
     await gatewayConfig.waitForDeployment();
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.2.0");
+    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.3.0");
     const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigFactoryV2);
     await gatewayConfigV2.waitForDeployment();
     expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v1000.0.0");
@@ -155,7 +155,7 @@ describe("Upgrades", function () {
     });
     const gatewayConfig = await upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactoryV1);
     await gatewayConfig.waitForDeployment();
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.2.0");
+    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.3.0");
 
     const newSigner = await createAndFundRandomWallet();
     await gatewayConfig.transferOwnership(newSigner);
