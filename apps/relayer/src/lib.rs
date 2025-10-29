@@ -7,7 +7,6 @@ pub mod http;
 pub mod metrics;
 pub mod orchestrator;
 pub mod store;
-pub mod transaction;
 
 // Re-export commonly used types
 pub use core::errors::Error;

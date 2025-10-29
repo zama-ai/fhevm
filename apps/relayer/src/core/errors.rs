@@ -1,5 +1,9 @@
-use crate::transaction::fhevm::FhevmError;
-use crate::{config::settings::AppConfigError, transaction::TransactionServiceError};
+use crate::blockchain::fhevm::ethereum::transaction::fhevm::FhevmError;
+use crate::{
+    blockchain::fhevm::ethereum::transaction::TransactionServiceError as FhevmTransactionServiceError,
+    blockchain::gateway::arbitrum::transaction::TransactionServiceError as GatewayTransactionServiceError,
+    config::settings::AppConfigError,
+};
 use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -57,31 +61,60 @@ pub enum EventProcessingError {
     HexError(String),
 }
 
-impl From<TransactionServiceError> for EventProcessingError {
-    fn from(e: TransactionServiceError) -> Self {
+impl From<FhevmTransactionServiceError> for EventProcessingError {
+    fn from(e: FhevmTransactionServiceError) -> Self {
         match e {
-            TransactionServiceError::Failed(msg) => {
+            FhevmTransactionServiceError::Failed(msg) => {
                 Self::TransactionError(format!("Transaction failed: {msg}"))
             }
-            TransactionServiceError::Timeout(secs) => {
+            FhevmTransactionServiceError::Timeout(secs) => {
                 Self::TransactionError(format!("Transaction timed out after {secs} seconds"))
             }
-            TransactionServiceError::GasEstimation(msg) => {
+            FhevmTransactionServiceError::GasEstimation(msg) => {
                 Self::TransactionError(format!("Gas estimation failed: {msg}"))
             }
-            TransactionServiceError::NonceError(msg) => {
+            FhevmTransactionServiceError::NonceError(msg) => {
                 Self::TransactionError(format!("Nonce error: {msg}"))
             }
-            TransactionServiceError::Network(msg) => {
+            FhevmTransactionServiceError::Network(msg) => {
                 Self::TransactionError(format!("Network error: {msg}"))
             }
-            TransactionServiceError::Config(msg) => {
+            FhevmTransactionServiceError::Config(msg) => {
                 Self::HandlerError(format!("Config error: {msg}"))
             }
-            TransactionServiceError::Provider(msg) => {
+            FhevmTransactionServiceError::Provider(msg) => {
                 Self::TransactionError(format!("Provider error: {msg}"))
             }
-            TransactionServiceError::Other(err) => Self::TransactionError(err.to_string()),
+            FhevmTransactionServiceError::Other(err) => Self::TransactionError(err.to_string()),
+        }
+    }
+}
+
+impl From<GatewayTransactionServiceError> for EventProcessingError {
+    fn from(e: GatewayTransactionServiceError) -> Self {
+        match e {
+            GatewayTransactionServiceError::Failed(msg) => {
+                Self::TransactionError(format!("Transaction failed: {msg}"))
+            }
+            GatewayTransactionServiceError::Timeout(secs) => {
+                Self::TransactionError(format!("Transaction timed out after {secs} seconds"))
+            }
+            GatewayTransactionServiceError::GasEstimation(msg) => {
+                Self::TransactionError(format!("Gas estimation failed: {msg}"))
+            }
+            GatewayTransactionServiceError::NonceError(msg) => {
+                Self::TransactionError(format!("Nonce error: {msg}"))
+            }
+            GatewayTransactionServiceError::Network(msg) => {
+                Self::TransactionError(format!("Network error: {msg}"))
+            }
+            GatewayTransactionServiceError::Config(msg) => {
+                Self::HandlerError(format!("Config error: {msg}"))
+            }
+            GatewayTransactionServiceError::Provider(msg) => {
+                Self::TransactionError(format!("Provider error: {msg}"))
+            }
+            GatewayTransactionServiceError::Other(err) => Self::TransactionError(err.to_string()),
         }
     }
 }

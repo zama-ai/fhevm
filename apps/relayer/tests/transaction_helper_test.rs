@@ -10,7 +10,7 @@ async fn test_tx_helper() {
     let setup = common::utils::TestSetup::new()
         .await
         .expect("Failed to create test setup");
-    use fhevm_relayer::transaction::{TransactionService, TxConfig};
+    use fhevm_relayer::blockchain::gateway::arbitrum::transaction::{TransactionService, TxConfig};
 
     let node_rpc_url = &setup.settings.networks.fhevm.ws_url;
     let private_key = std::env::var("TEST_PRIVATE_KEY").unwrap_or_else(|_| {

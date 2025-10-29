@@ -1,4 +1,7 @@
 use crate::{
+    blockchain::fhevm::ethereum::transaction::{
+        helper::TransactionType, TransactionHelper, TransactionService, TxConfig,
+    },
     blockchain::fhevm::ethereum::{bindings::DecryptionOracle, ComputeCalldata},
     core::{
         errors::EventProcessingError,
@@ -11,7 +14,6 @@ use crate::{
         traits::{EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
     },
-    transaction::{helper::TransactionType, TransactionHelper, TransactionService, TxConfig},
 };
 use alloy::primitives::{Address, Bytes, FixedBytes, Uint};
 use alloy::rpc::types::Log;

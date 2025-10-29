@@ -1,4 +1,4 @@
-use crate::transaction::{TransactionService, TransactionServiceError, TxConfig};
+use super::{TransactionService, TransactionServiceError, TxConfig};
 use crate::{core::errors::EventProcessingError, metrics};
 use alloy::network::{AnyTransactionReceipt, ReceiptResponse};
 use alloy::primitives::{Address, Bytes, B256};

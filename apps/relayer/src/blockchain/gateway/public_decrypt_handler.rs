@@ -1,4 +1,7 @@
 use crate::{
+    blockchain::gateway::arbitrum::transaction::{
+        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
+    },
     blockchain::gateway::arbitrum::{bindings::Decryption, ComputeCalldata},
     config::settings::{ContractConfig, RetrySettings},
     core::{
@@ -13,9 +16,6 @@ use crate::{
         Orchestrator, TokioEventDispatcher,
     },
     store::{PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore},
-    transaction::{
-        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
-    },
 };
 use std::{str::FromStr, time::Duration};
 

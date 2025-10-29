@@ -1,6 +1,7 @@
 mod client;
 mod filter;
 pub mod listener;
+pub mod transaction;
 mod transaction_calldata;
 mod utils;
 

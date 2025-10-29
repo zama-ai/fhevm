@@ -3,7 +3,7 @@ mod common;
 use alloy::primitives::Address;
 use alloy::providers::fillers::NonceManager;
 use alloy::providers::ProviderBuilder;
-use fhevm_relayer::transaction::nonce::CachedNonceManagerWithRefresh;
+use fhevm_relayer::blockchain::gateway::arbitrum::transaction::nonce::CachedNonceManagerWithRefresh;
 use reqwest::Url;
 
 #[test]

@@ -1,4 +1,7 @@
 use crate::{
+    blockchain::gateway::arbitrum::transaction::{
+        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
+    },
     blockchain::gateway::arbitrum::{bindings::InputVerification, ComputeCalldata},
     config::settings::ContractConfig,
     core::{
@@ -11,9 +14,6 @@ use crate::{
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
-    },
-    transaction::{
-        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
     },
 };
 use std::str::FromStr;

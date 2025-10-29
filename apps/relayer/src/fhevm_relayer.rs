@@ -54,6 +54,14 @@ use crate::{
         InputProofGatewayHandler, PublicDecryptFhevmHandler, PublicDecryptGatewayHandler,
         UserDecryptGatewayHandler,
     },
+    blockchain::{
+        fhevm::ethereum::transaction::{
+            TransactionService as FhevmTransactionService, TxConfig as FhevmTxConfig,
+        },
+        gateway::arbitrum::transaction::{
+            TransactionService as GatewayTransactionService, TxConfig as GatewayTxConfig,
+        },
+    },
     config::settings::Settings,
     core::event::{
         GatewayChainEventId, HostChainEventId, InputProofEventId, PublicDecryptEventId,
@@ -67,7 +75,6 @@ use crate::{
         Orchestrator, TokioEventDispatcher,
     },
     store::{key_value_db::RocksDBKVStore, EventStore},
-    transaction::{TransactionService, TxConfig},
 };
 use prometheus::Registry;
 use std::sync::OnceLock;
@@ -132,7 +139,7 @@ pub async fn run_fhevm_relayer(
     // TODO: prepare for multi-chain support
     // Prepare tx service for fhevm
     let tx_service_host =
-        TransactionService::new(&settings.networks.fhevm.ws_url, Arc::new(fhevm_signer))
+        FhevmTransactionService::new(&settings.networks.fhevm.ws_url, Arc::new(fhevm_signer))
             .await
             .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
@@ -151,7 +158,7 @@ pub async fn run_fhevm_relayer(
 
     // Prepare tx service for gateway
     let tx_service_gateway =
-        TransactionService::new(&gateway_settings.ws_url, Arc::new(gateway_signer))
+        GatewayTransactionService::new(&gateway_settings.ws_url, Arc::new(gateway_signer))
             .await
             .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 
@@ -189,12 +196,13 @@ pub async fn run_fhevm_relayer(
         .register_pre_dispatch_hook(EventLoggingHook::new("Received relayer event".to_string()));
 
     // === Register the event handlers
-    let tx_config = TxConfig::from(settings.transaction.clone());
+    let fhevm_tx_config = FhevmTxConfig::from(settings.transaction.clone());
+    let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
     let fhevm_event_log_handler: Arc<dyn EventHandler<RelayerEvent>> =
         Arc::new(PublicDecryptFhevmHandler::new(
             Arc::clone(&orchestrator),
             tx_service_host.clone(),
-            tx_config.clone(),
+            fhevm_tx_config.clone(),
             settings.networks.fhevm.chain_id,
         ));
 
@@ -235,7 +243,7 @@ pub async fn run_fhevm_relayer(
         Arc::new(InputProofGatewayHandler::new(
             Arc::clone(&orchestrator),
             tx_service_gateway.clone(),
-            tx_config.clone(),
+            gateway_tx_config.clone(),
             settings.contracts.clone(),
             settings.networks.gateway.chain_id,
         ));
@@ -287,7 +295,7 @@ pub async fn run_fhevm_relayer(
             Arc::clone(&orchestrator),
             public_decrypt_caches,
             tx_service_gateway.clone(),
-            tx_config.clone(),
+            gateway_tx_config.clone(),
             settings.contracts.clone(),
             gateway_settings.http_url.clone(),
             settings.transaction.clone().ciphertext_check_retry.clone(),
@@ -301,7 +309,7 @@ pub async fn run_fhevm_relayer(
             user_decrypt_requests_cache,
             user_decrypt_response_store,
             tx_service_gateway,
-            tx_config,
+            gateway_tx_config,
             settings.contracts,
             gateway_settings.http_url.clone(),
             settings.transaction.clone().ciphertext_check_retry.clone(),

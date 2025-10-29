@@ -1,6 +1,6 @@
 mod common;
 
-use fhevm_relayer::transaction::sender::TransactionManager;
+use fhevm_relayer::blockchain::gateway::arbitrum::transaction::sender::TransactionManager;
 
 #[test]
 fn test_encode_function_call() {

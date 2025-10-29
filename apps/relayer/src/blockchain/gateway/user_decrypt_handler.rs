@@ -1,4 +1,7 @@
 use crate::{
+    blockchain::gateway::arbitrum::transaction::{
+        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
+    },
     blockchain::gateway::arbitrum::{
         bindings::Decryption::{self, UserDecryptionRequest},
         ComputeCalldata,
@@ -18,9 +21,6 @@ use crate::{
     store::{
         UserDecryptRequestCacheStore, UserDecryptResponseCacheStore, UserDecryptResponseStore,
         UserDecryptionResponseShare,
-    },
-    transaction::{
-        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
     },
 };
 

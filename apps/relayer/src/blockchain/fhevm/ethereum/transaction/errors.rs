@@ -1,4 +1,4 @@
-use crate::transaction::sender::TransactionError;
+use super::sender::TransactionError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

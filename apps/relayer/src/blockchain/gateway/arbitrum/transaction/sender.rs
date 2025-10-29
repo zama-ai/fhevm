@@ -26,8 +26,10 @@ use tokio::time::{timeout, Instant};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::{
+    blockchain::gateway::arbitrum::transaction::{
+        nonce::CachedNonceManagerWithRefresh, TransactionServiceError,
+    },
     config::settings::{RetrySettings, TransactionConfig},
-    transaction::{nonce::CachedNonceManagerWithRefresh, TransactionServiceError},
 };
 
 pub trait SignerCombined: TxSigner<Signature> + Signer + Send + Sync {}
