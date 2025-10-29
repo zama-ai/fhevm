@@ -1,6 +1,16 @@
 [profile.default]
 src = 'lib'
 out = 'out'
-libs = ['node_modules', 'lib']
+libs = ['node_modules', 'lib', "dependencies"]
 test = 'test'
 cache_path  = 'cache_forge'
+allow_paths = ['../']
+
+remappings = [
+    '@fhevm-host-contracts/=../host-contracts/',
+    '@fhevm-foundry/=../host-contracts/fhevm-foundry/',
+    'forge-std/=dependencies/forge-std-1.11.0/src/'
+]
+
+[dependencies]
+forge-std = "1.11.0"

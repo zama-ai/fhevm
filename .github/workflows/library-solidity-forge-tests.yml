@@ -1,4 +1,4 @@
-name: host-contracts-hardhat-forge-tests
+name: library-solidity-forge-tests
 
 on:
   pull_request:
@@ -7,14 +7,14 @@ permissions: {}
 
 jobs:
   check-changes:
-    name: host-contracts-hardhat-forge-tests/check-changes
+    name: library-solidity-forge-tests/check-changes
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
-      changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
+      changes-library-solidity: ${{ steps.filter.outputs.library-solidity }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -23,19 +23,20 @@ jobs:
         id: filter
         with:
           filters: |
-            host-contracts:
-              - .github/workflows/host-contracts-npm-tests.yml
+            library-solidity:
+              - .github/workflows/library-solidity-forge-tests.yml
+              - library-solidity/**
               - host-contracts/**
   build:
+    name: library-solidity-forge-tests/build (bpr)
     needs: check-changes
-    name: host-contracts-hardhat-forge-tests/build (bpr)
-    if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
+    if: ${{ needs.check-changes.outputs.changes-library-solidity == 'true' }}
     runs-on: large_ubuntu_32
-    permissions:
-      contents: 'read' # Required to checkout repository code
     strategy:
       matrix:
         node-version: [20.x]
+    permissions:
+      contents: 'read' # Required to checkout repository code
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -49,9 +50,14 @@ jobs:
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
           node-version: ${{ matrix.node-version }}
-      - run: cp ./host-contracts/.env.example ./host-contracts/.env
       - run: npm --workspace=host-contracts ci --include=optional
-      - name: "Run JS/TS tests"
-        run: npm --workspace=host-contracts run test
+      - run: make -C host-contracts ensure-addresses
+      - name: Generate DecryptionOracle address
+        run: |
+          cd host-contracts
+          DOTENV_CONFIG_PATH=.env.example HARDHAT_NETWORK=hardhat npx hardhat compile:specific --contract decryptionOracle
+          DOTENV_CONFIG_PATH=.env.example HARDHAT_NETWORK=hardhat npx hardhat task:deployDecryptionOracle
+      - run: cp ./library-solidity/.env.example ./library-solidity/.env
+      - run: npm --workspace=library-solidity ci --include=optional
       - name: "Run forge tests"
-        run: "cd host-contracts && forge soldeer install && forge test"
+        run: "cd library-solidity && forge soldeer install && forge test"

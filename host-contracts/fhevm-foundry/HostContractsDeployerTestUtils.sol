@@ -3,15 +3,15 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {ACL} from "../../contracts/ACL.sol";
-import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
-import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
-import {InputVerifier} from "../../contracts/InputVerifier.sol";
-import {HCULimit} from "../../contracts/HCULimit.sol";
-import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
-import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
-import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {ACL} from "@fhevm-host-contracts/contracts/ACL.sol";
+import {FHEVMExecutor} from "@fhevm-host-contracts/contracts/FHEVMExecutor.sol";
+import {KMSVerifier} from "@fhevm-host-contracts/contracts/KMSVerifier.sol";
+import {InputVerifier} from "@fhevm-host-contracts/contracts/InputVerifier.sol";
+import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
+import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
+import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
+import {EmptyUUPSProxyACL} from "@fhevm-host-contracts/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
+import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /**
  * @dev Thin wrapper so `deployCodeTo` can load locally compiled bytecode for the OZ proxy.
@@ -40,7 +40,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address emptyProxyImplementation = address(new EmptyUUPSProxyACL());
 
         deployCodeTo(
-            "test/utils/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxyACL.initialize, (owner))),
             aclAdd
         );
@@ -61,7 +61,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
-            "test/utils/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
             fhevmExecutorAdd
         );
@@ -89,7 +89,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
-            "test/utils/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
             kmsVerifierAdd
         );
@@ -120,7 +120,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
-            "test/utils/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
             inputVerifierAdd
         );
@@ -145,7 +145,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
-            "test/utils/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
             hcuLimitAdd
         );

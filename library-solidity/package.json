@@ -20,7 +20,9 @@
     "codegen": "./codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
     "codegen:overloads": "./codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "task:getEthereumAddress": "hardhat task:getEthereumAddress",
-    "tsc": "tsc --project ./tsconfig.json --noEmit"
+    "tsc": "tsc --project ./tsconfig.json --noEmit",
+    "test:forge": "forge test",
+    "forge:soldeer": "forge soldeer install"
   },
   "repository": {
     "type": "git",
