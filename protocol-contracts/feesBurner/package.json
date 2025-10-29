@@ -1,6 +1,7 @@
 {
   "name": "feesBurner",
   "version": "1.0.0",
+  "license": "BSD-3-Clause-Clear",
   "overrides": {
     "hardhat-deploy": "^1.0.4",
     "@eth-optimism/contracts@0.6.0": {
