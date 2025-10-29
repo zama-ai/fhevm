@@ -211,11 +211,7 @@ describe("Mock contracts", function () {
         .to.emit(gatewayConfigMock, "InitializeGatewayConfig")
         .withArgs(
           toValues(DefaultProtocolMetadata),
-          DefaultUint256,
-          DefaultUint256,
-          DefaultUint256,
-          DefaultUint256,
-          DefaultUint256,
+          toValues(DefaultThresholds),
           toValues([DefaultKmsNode]),
           toValues([DefaultCoprocessor]),
           toValues([DefaultCustodian]),

@@ -265,6 +265,11 @@ task("task:deploySingleContract")
     // Deploy the EmptyUUPS proxy contracts
     await hre.run("task:deploySingleEmptyUUPSProxy", { name, useInternalProxyAddress });
 
+    // Add a small delay to ensure the proxy transaction is confirmed
+    const delay = 2000; // 2 seconds
+    console.log(`Waiting for proxy transaction to be confirmed for ${delay}ms...`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
     // Compile the implementation contracts
     // The deployEmptyUUPSProxies task has generated the contracts' addresses in `addresses/*.sol`.
     // Contracts thus need to be compiled after deploying the EmptyUUPS proxy contracts in order to

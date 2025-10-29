@@ -30,6 +30,13 @@ interface IGatewayConfig {
         string name;
         string website;
     }
+    struct Thresholds {
+        uint256 mpcThreshold;
+        uint256 publicDecryptionThreshold;
+        uint256 userDecryptionThreshold;
+        uint256 kmsGenThreshold;
+        uint256 coprocessorThreshold;
+    }
 
     error ChainIdNotUint64(uint256 chainId);
     error EmptyCoprocessors();
@@ -49,7 +56,7 @@ interface IGatewayConfig {
     error NotPauser(address account);
 
     event AddHostChain(HostChain hostChain);
-    event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, uint256 publicDecryptionThreshold, uint256 userDecryptionThreshold, uint256 kmsGenThreshold, uint256 coprocessorThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
+    event InitializeGatewayConfig(ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
     event PauseAllGatewayContracts();
     event ReinitializeGatewayConfigV3(KmsNode[] newKmsNodes);
     event UnpauseAllGatewayContracts();
@@ -939,34 +946,37 @@ interface IGatewayConfig {
         ]
       },
       {
-        "name": "mpcThreshold",
-        "type": "uint256",
+        "name": "thresholds",
+        "type": "tuple",
         "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "publicDecryptionThreshold",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "userDecryptionThreshold",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "kmsGenThreshold",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "coprocessorThreshold",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
+        "internalType": "struct IGatewayConfig.Thresholds",
+        "components": [
+          {
+            "name": "mpcThreshold",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "publicDecryptionThreshold",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "userDecryptionThreshold",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kmsGenThreshold",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "coprocessorThreshold",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
       },
       {
         "name": "kmsNodes",
@@ -2717,6 +2727,321 @@ struct ProtocolMetadata { string name; string website; }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**```solidity
+struct Thresholds { uint256 mpcThreshold; uint256 publicDecryptionThreshold; uint256 userDecryptionThreshold; uint256 kmsGenThreshold; uint256 coprocessorThreshold; }
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct Thresholds {
+        #[allow(missing_docs)]
+        pub mpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub publicDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub userDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub kmsGenThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub coprocessorThreshold: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<Thresholds> for UnderlyingRustTuple<'_> {
+            fn from(value: Thresholds) -> Self {
+                (
+                    value.mpcThreshold,
+                    value.publicDecryptionThreshold,
+                    value.userDecryptionThreshold,
+                    value.kmsGenThreshold,
+                    value.coprocessorThreshold,
+                )
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for Thresholds {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    mpcThreshold: tuple.0,
+                    publicDecryptionThreshold: tuple.1,
+                    userDecryptionThreshold: tuple.2,
+                    kmsGenThreshold: tuple.3,
+                    coprocessorThreshold: tuple.4,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolValue for Thresholds {
+            type SolType = Self;
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::SolTypeValue<Self> for Thresholds {
+            #[inline]
+            fn stv_to_tokens(&self) -> <Self as alloy_sol_types::SolType>::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.mpcThreshold),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.publicDecryptionThreshold,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.userDecryptionThreshold,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.kmsGenThreshold),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorThreshold),
+                )
+            }
+            #[inline]
+            fn stv_abi_encoded_size(&self) -> usize {
+                if let Some(size) = <Self as alloy_sol_types::SolType>::ENCODED_SIZE {
+                    return size;
+                }
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encoded_size(&tuple)
+            }
+            #[inline]
+            fn stv_eip712_data_word(&self) -> alloy_sol_types::Word {
+                <Self as alloy_sol_types::SolStruct>::eip712_hash_struct(self)
+            }
+            #[inline]
+            fn stv_abi_encode_packed_to(
+                &self,
+                out: &mut alloy_sol_types::private::Vec<u8>,
+            ) {
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_encode_packed_to(&tuple, out)
+            }
+            #[inline]
+            fn stv_abi_packed_encoded_size(&self) -> usize {
+                if let Some(size) = <Self as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE {
+                    return size;
+                }
+                let tuple = <UnderlyingRustTuple<
+                    '_,
+                > as ::core::convert::From<Self>>::from(self.clone());
+                <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_packed_encoded_size(&tuple)
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolType for Thresholds {
+            type RustType = Self;
+            type Token<'a> = <UnderlyingSolTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SOL_NAME: &'static str = <Self as alloy_sol_types::SolStruct>::NAME;
+            const ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::ENCODED_SIZE;
+            const PACKED_ENCODED_SIZE: Option<usize> = <UnderlyingSolTuple<
+                '_,
+            > as alloy_sol_types::SolType>::PACKED_ENCODED_SIZE;
+            #[inline]
+            fn valid_token(token: &Self::Token<'_>) -> bool {
+                <UnderlyingSolTuple<'_> as alloy_sol_types::SolType>::valid_token(token)
+            }
+            #[inline]
+            fn detokenize(token: Self::Token<'_>) -> Self::RustType {
+                let tuple = <UnderlyingSolTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::detokenize(token);
+                <Self as ::core::convert::From<UnderlyingRustTuple<'_>>>::from(tuple)
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolStruct for Thresholds {
+            const NAME: &'static str = "Thresholds";
+            #[inline]
+            fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
+                alloy_sol_types::private::Cow::Borrowed(
+                    "Thresholds(uint256 mpcThreshold,uint256 publicDecryptionThreshold,uint256 userDecryptionThreshold,uint256 kmsGenThreshold,uint256 coprocessorThreshold)",
+                )
+            }
+            #[inline]
+            fn eip712_components() -> alloy_sol_types::private::Vec<
+                alloy_sol_types::private::Cow<'static, str>,
+            > {
+                alloy_sol_types::private::Vec::new()
+            }
+            #[inline]
+            fn eip712_encode_type() -> alloy_sol_types::private::Cow<'static, str> {
+                <Self as alloy_sol_types::SolStruct>::eip712_root_type()
+            }
+            #[inline]
+            fn eip712_encode_data(&self) -> alloy_sol_types::private::Vec<u8> {
+                [
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::eip712_data_word(&self.mpcThreshold)
+                        .0,
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.publicDecryptionThreshold,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.userDecryptionThreshold,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.kmsGenThreshold,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.coprocessorThreshold,
+                        )
+                        .0,
+                ]
+                    .concat()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::EventTopic for Thresholds {
+            #[inline]
+            fn topic_preimage_length(rust: &Self::RustType) -> usize {
+                0usize
+                    + <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.mpcThreshold,
+                    )
+                    + <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.publicDecryptionThreshold,
+                    )
+                    + <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.userDecryptionThreshold,
+                    )
+                    + <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.kmsGenThreshold,
+                    )
+                    + <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.coprocessorThreshold,
+                    )
+            }
+            #[inline]
+            fn encode_topic_preimage(
+                rust: &Self::RustType,
+                out: &mut alloy_sol_types::private::Vec<u8>,
+            ) {
+                out.reserve(
+                    <Self as alloy_sol_types::EventTopic>::topic_preimage_length(rust),
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.mpcThreshold,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.publicDecryptionThreshold,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.userDecryptionThreshold,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.kmsGenThreshold,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.coprocessorThreshold,
+                    out,
+                );
+            }
+            #[inline]
+            fn encode_topic(
+                rust: &Self::RustType,
+            ) -> alloy_sol_types::abi::token::WordToken {
+                let mut out = alloy_sol_types::private::Vec::new();
+                <Self as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    rust,
+                    &mut out,
+                );
+                alloy_sol_types::abi::token::WordToken(
+                    alloy_sol_types::private::keccak256(out),
+                )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ChainIdNotUint64(uint256)` and selector `0x4178de42`.
 ```solidity
 error ChainIdNotUint64(uint256 chainId);
@@ -4138,9 +4463,9 @@ event AddHostChain(HostChain hostChain);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `InitializeGatewayConfig((string,string),uint256,uint256,uint256,uint256,uint256,(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])` and selector `0x67e1dc6f00b3362df04896cf519c6eebc54b939658e02d8710a5573af300b722`.
+    /**Event with signature `InitializeGatewayConfig((string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])` and selector `0xb2cbe65ea308bfe4b9431819a3168d544f46ba344b1e79f92f973fcff43aae3b`.
 ```solidity
-event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, uint256 publicDecryptionThreshold, uint256 userDecryptionThreshold, uint256 kmsGenThreshold, uint256 coprocessorThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
+event InitializeGatewayConfig(ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4153,15 +4478,7 @@ event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, u
         #[allow(missing_docs)]
         pub metadata: <ProtocolMetadata as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
-        pub mpcThreshold: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub publicDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub userDecryptionThreshold: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub kmsGenThreshold: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub coprocessorThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        pub thresholds: <Thresholds as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
         pub kmsNodes: alloy::sol_types::private::Vec<
             <KmsNode as alloy::sol_types::SolType>::RustType,
@@ -4187,11 +4504,7 @@ event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, u
         impl alloy_sol_types::SolEvent for InitializeGatewayConfig {
             type DataTuple<'a> = (
                 ProtocolMetadata,
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
+                Thresholds,
                 alloy::sol_types::sol_data::Array<KmsNode>,
                 alloy::sol_types::sol_data::Array<Coprocessor>,
                 alloy::sol_types::sol_data::Array<Custodian>,
@@ -4200,11 +4513,11 @@ event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, u
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "InitializeGatewayConfig((string,string),uint256,uint256,uint256,uint256,uint256,(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])";
+            const SIGNATURE: &'static str = "InitializeGatewayConfig((string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                103u8, 225u8, 220u8, 111u8, 0u8, 179u8, 54u8, 45u8, 240u8, 72u8, 150u8,
-                207u8, 81u8, 156u8, 110u8, 235u8, 197u8, 75u8, 147u8, 150u8, 88u8, 224u8,
-                45u8, 135u8, 16u8, 165u8, 87u8, 58u8, 243u8, 0u8, 183u8, 34u8,
+                178u8, 203u8, 230u8, 94u8, 163u8, 8u8, 191u8, 228u8, 185u8, 67u8, 24u8,
+                25u8, 163u8, 22u8, 141u8, 84u8, 79u8, 70u8, 186u8, 52u8, 75u8, 30u8,
+                121u8, 249u8, 47u8, 151u8, 63u8, 207u8, 244u8, 58u8, 174u8, 59u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -4215,14 +4528,10 @@ event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, u
             ) -> Self {
                 Self {
                     metadata: data.0,
-                    mpcThreshold: data.1,
-                    publicDecryptionThreshold: data.2,
-                    userDecryptionThreshold: data.3,
-                    kmsGenThreshold: data.4,
-                    coprocessorThreshold: data.5,
-                    kmsNodes: data.6,
-                    coprocessors: data.7,
-                    custodians: data.8,
+                    thresholds: data.1,
+                    kmsNodes: data.2,
+                    coprocessors: data.3,
+                    custodians: data.4,
                 }
             }
             #[inline]
@@ -4246,25 +4555,7 @@ event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, u
                     <ProtocolMetadata as alloy_sol_types::SolType>::tokenize(
                         &self.metadata,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.mpcThreshold),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.publicDecryptionThreshold,
-                    ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.userDecryptionThreshold,
-                    ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsGenThreshold),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorThreshold),
+                    <Thresholds as alloy_sol_types::SolType>::tokenize(&self.thresholds),
                     <alloy::sol_types::sol_data::Array<
                         KmsNode,
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsNodes),
@@ -13474,11 +13765,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 165u8, 156u8, 176u8, 37u8, 67u8, 252u8, 118u8, 48u8, 132u8, 55u8,
             ],
             [
-                58u8, 124u8, 84u8, 177u8, 25u8, 93u8, 68u8, 162u8, 136u8, 249u8, 195u8,
-                201u8, 160u8, 103u8, 154u8, 237u8, 147u8, 37u8, 6u8, 142u8, 13u8, 13u8,
-                91u8, 105u8, 233u8, 96u8, 71u8, 53u8, 92u8, 199u8, 23u8, 69u8,
-            ],
-            [
                 67u8, 9u8, 41u8, 207u8, 253u8, 244u8, 59u8, 54u8, 129u8, 187u8, 3u8,
                 234u8, 229u8, 128u8, 39u8, 69u8, 227u8, 53u8, 236u8, 1u8, 89u8, 150u8,
                 141u8, 48u8, 30u8, 42u8, 142u8, 61u8, 32u8, 158u8, 239u8, 184u8,
@@ -13502,6 +13788,11 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 131u8, 126u8, 10u8, 101u8, 40u8, 218u8, 223u8, 162u8, 220u8, 121u8, 38u8,
                 146u8, 197u8, 24u8, 46u8, 82u8, 169u8, 245u8, 187u8, 222u8, 237u8, 123u8,
                 35u8, 114u8, 146u8, 122u8, 38u8, 198u8, 149u8, 131u8, 150u8, 19u8,
+            ],
+            [
+                178u8, 203u8, 230u8, 94u8, 163u8, 8u8, 191u8, 228u8, 185u8, 67u8, 24u8,
+                25u8, 163u8, 22u8, 141u8, 84u8, 79u8, 70u8, 186u8, 52u8, 75u8, 30u8,
+                121u8, 249u8, 47u8, 151u8, 63u8, 207u8, 244u8, 58u8, 174u8, 59u8,
             ],
             [
                 190u8, 79u8, 101u8, 93u8, 170u8, 224u8, 219u8, 174u8, 246u8, 58u8, 107u8,
