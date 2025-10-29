@@ -2,7 +2,7 @@
 pragma solidity ^0.8.22;
 
 import { IOFT, SendParam, MessagingFee } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 
 /**
@@ -17,7 +17,7 @@ contract FeesSenderToBurner {
     address public immutable PROTOCOL_FEES_BURNER;
     uint32 public immutable DESTINATION_EID; /// @dev 40161 for Sepolia and 30101 for Ethereum mainnet
 
-    uint256 immutable private decimalConversionRate;
+    uint256 immutable private _DECIMAL_CONVERSION_RATE;
 
     event FeesForwarded(uint256 amount, uint32 dstEid, address to, bytes options, uint256 nativeFeePaid);
 
@@ -37,16 +37,16 @@ contract FeesSenderToBurner {
             revert UnsupportedChainID();
         }
         uint8 sharedDecimals = IOFT(_oft).sharedDecimals();
-        uint8 decimals = IOFT(_oft).decimals();
-        decimalConversionRate = 10**(decimals-sharedDecimals);
+        uint8 decimals = ERC20(_oft).decimals();
+        _DECIMAL_CONVERSION_RATE = 10**(decimals-sharedDecimals);
     }
 
     /// @notice Send all ZAMA held by this contract to the burner on the destination chain.
     /// @dev Caller must send enough native gas (ETH) to pay the LayerZero fee.
     function sendFeesToBurner() external payable {
-        uint256 amount = IERC20(ZAMA_OFT).balanceOf(address(this));
-        uint256 amountNormalized = (amount/(decimalConversionRate))*decimalConversionRate;
-        
+        uint256 amount = ERC20(ZAMA_OFT).balanceOf(address(this));
+        uint256 amountNormalized = (amount/(_DECIMAL_CONVERSION_RATE))*_DECIMAL_CONVERSION_RATE;
+
         if (amountNormalized == 0) revert NotEnoughZAMAToSend();
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(80000, 0);
@@ -72,8 +72,8 @@ contract FeesSenderToBurner {
     }
 
     function quote() external view returns (uint256) {
-        uint256 amount = IERC20(ZAMA_OFT).balanceOf(address(this));
-        uint256 amountNormalized = (amount/(decimalConversionRate))*decimalConversionRate;
+        uint256 amount = ERC20(ZAMA_OFT).balanceOf(address(this));
+        uint256 amountNormalized = (amount/(_DECIMAL_CONVERSION_RATE))*_DECIMAL_CONVERSION_RATE;
         if (amountNormalized == 0) revert NotEnoughZAMAToSend();
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(80000, 0);
