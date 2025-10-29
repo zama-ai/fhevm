@@ -11,7 +11,7 @@ By following this guide, you will learn how to:
 
 In most onchain auctions, **bids are fully public**. Anyone can inspect the blockchain or monitor pending transactions to see how much each participant has bid. This breaks fairness as all it takes to win is to send a new bid with just one wei higher than the current highest.
 
-Existing solutions like commit-reveal schemes attempt to hide bids during a preliminary commit phase. However, they come with several drawbacks: increased transaction overhead, poor user experience (e.g., requiring users to send funds to EOAs via `CREATE2`), and delays caused by the need for multiple auction phases.
+Existing solutions like commit-reveal schemes attempt to hide bids during a preliminary commit phase. However, they come with several drawbacks: increased transaction overhead, poor user experience (e.g., requiring users to send funds to EOA via `CREATE2`), and delays caused by the need for multiple auction phases.
 
 Fully Homomorphic Encryption (FHE) to enable participants to submit encrypted bids directly to a smart contract in a single step, eliminating multi-phase complexity, improving user experience, and preserving bid secrecy without ever revealing or decrypting them.
 

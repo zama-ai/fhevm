@@ -48,6 +48,9 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 });
 
 task('test', async (_taskArgs, hre, runSuper) => {
+  // Ensure the tmp contracts directory exists.
+  fs.mkdirSync(path.join(__dirname, '../fhevmTemp/contracts'), { recursive: true });
+
   const sourceDir = path.resolve(__dirname, '../node_modules/@fhevm/host-contracts/contracts');
   const destinationDir = path.resolve(__dirname, 'fhevmTemp/contracts');
   fs.copySync(sourceDir, destinationDir, { dereference: true });
@@ -59,7 +62,7 @@ task('test', async (_taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     await hre.run('task:deployAllHostContracts');
-    await hre.run('task:addPausers', { useInternalPauserSetAddress: true });
+    await hre.run('task:addHostPausers', { useInternalPauserSetAddress: true });
   }
 
   await runSuper();
@@ -91,7 +94,6 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 }
 
 const config: HardhatUserConfig = {
-  defaultNetwork: 'sepolia',
   namedAccounts: {
     deployer: 0,
   },

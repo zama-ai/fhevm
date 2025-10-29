@@ -9,6 +9,7 @@ license.workspace = true
 # workspace dependencies
 alloy = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 axum = { workspace = true }
 aws-config = { workspace = true }
 aws-credential-types = { workspace = true }
@@ -16,6 +17,7 @@ aws-sdk-s3 = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
 humantime = { workspace = true }
+prometheus = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -27,8 +29,8 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tower-http = { workspace = true }
-url = "2.5.7"
 
+url = "2.5.7"
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [build-dependencies]

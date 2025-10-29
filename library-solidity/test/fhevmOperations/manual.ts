@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { ZeroAddress } from 'ethers';
 import { ethers } from 'hardhat';
 
 import type { FHEVMManualTestSuite } from '../../types/contracts/tests/FHEVMManualTestSuite';
@@ -737,5 +738,32 @@ describe('FHEVM manual operations', function () {
     await tx4.wait();
     const res4 = await decryptBool(await this.contract.resEbool());
     expect(res4).to.equal(true);
+  });
+
+  it('select ebool - uninitialized', async function () {
+    expect(await this.contract.resEbool()).to.equal(0n);
+    const tx = await this.contract.test_ebool_select_unitialized();
+    await tx.wait();
+    expect(await this.contract.resEbool()).not.to.equal(0n);
+    const res = await decryptBool(await this.contract.resEbool());
+    expect(res).to.equal(false);
+  });
+
+  it('select address - uninitialized', async function () {
+    expect(await this.contract.resAdd()).to.equal(0n);
+    const tx = await this.contract.test_ebaddress_select_unitialized();
+    await tx.wait();
+    expect(await this.contract.resAdd()).not.to.equal(0n);
+    const res = await decryptAddress(await this.contract.resAdd());
+    expect(res).to.equal(ZeroAddress);
+  });
+
+  it('select euint64 - uninitialized', async function () {
+    expect(await this.contract.resEuint64()).to.equal(0n);
+    const tx = await this.contract.test_euint64_select_unitialized();
+    await tx.wait();
+    expect(await this.contract.resEuint64()).not.to.equal(0n);
+    const res = await decrypt64(await this.contract.resEuint64());
+    expect(res).to.equal(0n);
   });
 });

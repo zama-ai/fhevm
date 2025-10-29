@@ -147,7 +147,8 @@ fn smoke_test(tenant_api_key: String, coprocessor_url: String) {
                                 AsyncComputationInput {
                                     input: Some(tfhe_worker::server::tfhe_worker::async_computation_input::Input::InputHandle(handle_b.clone())),
                                 },
-                            ]
+                            ],
+			    is_allowed: true,
                         },
                     ]
                 }

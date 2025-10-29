@@ -101,7 +101,7 @@ describe("CiphertextCommits", function () {
           .connect(coprocessorTxSenders[0])
           .addCiphertextMaterial(ctHandleFakeChainId, keyId, ciphertextDigest, snsCiphertextDigest),
       )
-        .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
+        .revertedWithCustomError(ciphertextCommits, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
@@ -222,7 +222,7 @@ describe("CiphertextCommits", function () {
           .connect(fakeTxSender)
           .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
       )
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+        .revertedWithCustomError(ciphertextCommits, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
 
@@ -337,14 +337,12 @@ describe("CiphertextCommits", function () {
       await loadFixture(prepareViewTestFixture);
     });
 
-    it("Should not revert as the ciphertext material have been added", async function () {
-      await expect(ciphertextCommits.checkCiphertextMaterial(ctHandle)).not.to.be.reverted;
+    it("Should be true as the ciphertext material have been added", async function () {
+      expect(await ciphertextCommits.isCiphertextMaterialAdded(ctHandle)).to.be.true;
     });
 
-    it("Should revert as the ciphertext material has not been added", async function () {
-      await expect(ciphertextCommits.checkCiphertextMaterial(newCtHandle))
-        .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
-        .withArgs(newCtHandle);
+    it("Should be false as the ciphertext material has not been added", async function () {
+      expect(await ciphertextCommits.isCiphertextMaterialAdded(newCtHandle)).to.be.false;
     });
   });
 });

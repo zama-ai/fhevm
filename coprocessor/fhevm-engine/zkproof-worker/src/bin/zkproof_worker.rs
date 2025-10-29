@@ -1,12 +1,14 @@
 use clap::{command, Parser};
-use fhevm_engine_common::healthz_server::HttpServer;
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::telemetry::{self, MetricsConfig};
+use fhevm_engine_common::{healthz_server::HttpServer, metrics_server};
 use humantime::parse_duration;
 use std::{sync::Arc, time::Duration};
 use tokio::{join, task};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
 use zkproof_worker::verifier::ZkProofService;
+
+use zkproof_worker::ZKVERIFY_OP_LATENCY_HISTOGRAM_CONF;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -59,15 +61,27 @@ pub struct Args {
     /// HTTP server port for health checks
     #[arg(long, default_value_t = 8080)]
     health_check_port: u16,
+
+    /// Prometheus metrics server address
+    #[arg(long, default_value = "0.0.0.0:9100")]
+    pub metrics_addr: Option<String>,
+
+    /// Prometheus metrics: "coprocessor_zkverify_op_latency_seconds",
+    #[arg(long, default_value = "0.01:2.0:0.01", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_zkverify_op_latency: MetricsConfig,
 }
 
 pub fn parse_args() -> Args {
-    Args::parse()
+    let args = Args::parse();
+    // Set global configs from args
+    let _ = ZKVERIFY_OP_LATENCY_HISTOGRAM_CONF.set(args.metric_zkverify_op_latency);
+    args
 }
 
 #[tokio::main]
 async fn main() {
     let args = parse_args();
+
     tracing_subscriber::fmt()
         .json()
         .with_current_span(true)
@@ -92,9 +106,10 @@ async fn main() {
         pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
     };
 
-    if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-        error!(error = %err, "Error while initializing tracing");
-        std::process::exit(1);
+    if !args.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
     }
 
     let cancel_token = CancellationToken::new();
@@ -121,6 +136,9 @@ async fn main() {
         }
         anyhow::Ok(())
     });
+
+    // Start metrics server
+    metrics_server::spawn(args.metrics_addr.clone(), cancel_token.child_token());
 
     let service_task = async {
         info!("Starting worker...");

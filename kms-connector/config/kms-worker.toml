@@ -71,9 +71,9 @@ address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
 # ENV: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT_SECS
 # healthcheck_timeout_secs = 3
 
-# The limit number of events to fetch from the database (optional, defaults to 10)
+# The limit number of events to fetch from the database (optional, defaults to 50)
 # ENV: KMS_CONNECTOR_EVENTS_BATCH_SIZE
-# events_batch_size = 10
+# events_batch_size = 50
 
 # Number of retries for GRPC requests sent to the KMS Core (optional, defaults to 3)
 # ENV: KMS_CONNECTOR_GRPC_REQUEST_RETRIES
@@ -87,9 +87,9 @@ address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
 # ENV: KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS
 # user_decryption_timeout_secs = 300
 
-# Retry interval to poll GRPC responses from KMS Core in seconds (optional, defaults to 5s)
+# Retry interval to poll GRPC responses from KMS Core in seconds (optional, defaults to 1s)
 # ENV: KMS_CONNECTOR_GRPC_POLL_INTERVAL_SECS
-# grpc_poll_interval_secs = 5
+# grpc_poll_interval_secs = 1
 
 # Number of retries for S3 ciphertext retrieval (optional, default: 3).
 # ENV: KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES
@@ -98,16 +98,6 @@ address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
 # Timeout to connect to a S3 bucket in seconds (optional, defaults to 2s)
 # ENV: KMS_CONNECTOR_S3_CONNECT_TIMEOUT
 # s3_connect_timeout = 2
-
-# S3 configuration for ciphertext storage (optional)
-# This is used for fallback ciphertext retrieval when coprocessor URLs are unavailable
-# [s3_config]
-# ENV: KMS_CONNECTOR_S3_CONFIG__REGION
-# region = "us-east-1"
-# ENV: KMS_CONNECTOR_S3_CONFIG__BUCKET
-# bucket = "my-ciphertext-bucket"
-# ENV: KMS_CONNECTOR_S3_CONFIG__ENDPOINT
-# endpoint = "http://localhost:9876"
 
 # The maximum number of tasks to process events/responses concurrently (optional, defaults to 1000)
 # ENV: KMS_CONNECTOR_TASK_LIMIT

@@ -26,7 +26,7 @@ pub async fn add_chain_transaction(
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     let transaction_id = transaction_id.unwrap_or_else(|| next_random_handle(DEF_TYPE));
-    let counter =
+    let mut counter =
         generate_random_handle_amount_if_none(ctx, counter, contract_address, user_address).await?;
 
     let amount = match amount {
@@ -39,12 +39,13 @@ pub async fn add_chain_transaction(
                 listener_event_to_db,
                 Some(DEF_TYPE),
                 None,
+                false,
             )
             .await?
         }
     };
 
-    for _ in 0..length {
+    for i in 0..length {
         let new_counter = next_random_handle(FheType::FheUint64);
         let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
             caller,
@@ -53,12 +54,14 @@ pub async fn add_chain_transaction(
             result: new_counter,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+        insert_tfhe_event(listener_event_to_db, transaction_id, event, i == length - 1).await?;
+        counter = new_counter;
     }
     allow_handle(
         &counter.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -92,12 +95,13 @@ pub async fn mul_chain_transaction(
                 listener_event_to_db,
                 Some(DEF_TYPE),
                 None,
+                false,
             )
             .await?
         }
     };
 
-    for _ in 0..length {
+    for i in 0..length {
         let new_counter = next_random_handle(FheType::FheUint64);
         let event = tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
             caller,
@@ -106,13 +110,14 @@ pub async fn mul_chain_transaction(
             result: new_counter,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+        insert_tfhe_event(listener_event_to_db, transaction_id, event, i == length - 1).await?;
         counter = new_counter;
     }
     allow_handle(
         &counter.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -145,12 +150,14 @@ pub async fn generate_pub_decrypt_handles_types(
             listener_event_to_db,
             Some(type_num.into()),
             Some(type_num.into()),
+            true,
         )
         .await?;
         allow_handle(
             &handle.to_vec(),
             AllowEvents::AllowedForDecryption,
             user_address.to_string(),
+            transaction_id,
             pool,
         )
         .await?;
@@ -185,12 +192,14 @@ pub async fn generate_user_decrypt_handles_types(
             listener_event_to_db,
             Some(type_num.into()),
             Some(type_num.into()),
+            true,
         )
         .await?;
         allow_handle(
             &handle.to_vec(),
             AllowEvents::AllowedAccount,
             contract_address.to_string(),
+            transaction_id,
             pool,
         )
         .await?;
@@ -198,6 +207,7 @@ pub async fn generate_user_decrypt_handles_types(
             &handle.to_vec(),
             AllowEvents::AllowedAccount,
             user_address.to_string(),
+            transaction_id,
             pool,
         )
         .await?;

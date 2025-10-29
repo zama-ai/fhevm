@@ -7,24 +7,29 @@ import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
 import { IKMSGeneration } from "./interfaces/IKMSGeneration.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
-import { HandleOps } from "./libraries/HandleOps.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 import { CiphertextMaterial, SnsCiphertextMaterial } from "./shared/Structs.sol";
 
 /**
  * @title CiphertextCommits smart contract
- * @dev See {ICiphertextCommits}.
+ * @notice See {ICiphertextCommits}.
  */
 contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, GatewayOwnable, GatewayConfigChecks {
-    /// @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.
+    /**
+     * @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.
+     */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
-    /// @notice The address of the KMSGeneration contract, used for fetching information about the current key.
+    /**
+     * @notice The address of the KMSGeneration contract, used for fetching information about the current key.
+     */
     IKMSGeneration private constant KMS_GENERATION = IKMSGeneration(kmsGenerationAddress);
 
-    /// @dev The following constants are used for versioning the contract. They are made private
-    /// @dev in order to force derived contracts to consider a different version. Note that
-    /// @dev they can still define their own private constants with the same name.
+    /**
+     * @dev The following constants are used for versioning the contract. They are made private
+     * in order to force derived contracts to consider a different version. Note that
+     * they can still define their own private constants with the same name.
+     */
     string private constant CONTRACT_NAME = "CiphertextCommits";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
@@ -38,14 +43,15 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
      */
     uint64 private constant REINITIALIZER_VERSION = 2;
 
-    /// @notice The contract's variable storage struct (@dev see ERC-7201)
+    /**
+     * @notice The contract's variable storage struct (@dev see ERC-7201)
+     */
     /// @custom:storage-location erc7201:fhevm_gateway.storage.CiphertextCommits
     struct CiphertextCommitsStorage {
         // ----------------------------------------------------------------------------------------------
         // Ciphertext material state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The key IDs used for generating the ciphertext.
-        /// @dev It's necessary in case new keys are generated: we need to know what key to use for using a ciphertext.
         mapping(bytes32 ctHandle => uint256 keyId) keyIds;
         /// @notice The regular ciphertext digests tied to the ciphertext handle.
         mapping(bytes32 ctHandle => bytes32 ctDigest) ciphertextDigests;
@@ -57,7 +63,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         /// @notice The mapping of already added ciphertexts tied to the given handle.
         mapping(bytes32 ctHandle => bool isAdded) isCiphertextMaterialAdded;
         /// @notice The counter of confirmations received for a ciphertext to be added.
-        mapping(bytes32 addCiphertextHash => uint8 counter) addCiphertextHashCounters;
+        mapping(bytes32 addCiphertextHash => uint256 counter) addCiphertextHashCounters;
         /// @notice The digest of the ciphertext material addition that reached consensus for a handle.
         mapping(bytes32 ctHandle => bytes32 addCiphertextHash) ctHandleConsensusHash;
         // ----------------------------------------------------------------------------------------------
@@ -69,11 +75,18 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
             alreadyAddedCoprocessorTxSenders;
         /// @notice The coprocessor transaction senders involved in a consensus for a ciphertext material addition.
         mapping(bytes32 addCiphertextHash => address[] coprocessorTxSenderAddresses) coprocessorTxSenderAddresses;
+        // ----------------------------------------------------------------------------------------------
+        // Coprocessor context state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The coprocessor context ID associated to the add ciphertext
+        mapping(bytes32 addCiphertextHash => uint256 contextId) addCiphertextContextId;
     }
 
-    /// @dev Storage location has been computed using the following command:
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.CiphertextCommits")) - 1)) &
-    /// @dev ~bytes32(uint256(0xff))
+    /**
+     * @dev Storage location has been computed using the following command:
+     * keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.CiphertextCommits")) - 1))
+     * & ~bytes32(uint256(0xff))
+     */
     bytes32 private constant CIPHERTEXT_COMMITS_STORAGE_LOCATION =
         0xf41c60ea5b83c8f19b663613ffdd3fa441a59933b8a4fdf4da891b38433d1a00;
 
@@ -97,20 +110,15 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     /// @custom:oz-upgrades-validate-as-initializer
     // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
-    /// @notice See {ICiphertextCommits-addCiphertextMaterial}.
-    /// @dev This function calls the GatewayConfig contract to check that the sender address is a Coprocessor.
+    /**
+     * @notice See {ICiphertextCommits-addCiphertextMaterial}.
+     */
     function addCiphertextMaterial(
         bytes32 ctHandle,
         uint256 keyId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
-    ) external virtual onlyCoprocessorTxSender {
-        // Extract the chainId from the ciphertext handle
-        uint256 chainId = HandleOps.extractChainId(ctHandle);
-
-        // Check that the associated host chain is registered
-        GATEWAY_CONFIG.checkHostChainIsRegistered(chainId);
-
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
 
         // Check if the coprocessor transaction sender has already added the ciphertext handle.
@@ -125,6 +133,12 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         // Note that chainId is not included in the hash because it is already contained in the ctHandle.
         bytes32 addCiphertextHash = keccak256(abi.encode(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest));
         $.addCiphertextHashCounters[addCiphertextHash]++;
+
+        // Associate the handle to coprocessor context ID 1 to anticipate their introduction in V2.
+        // Only set the context ID if it hasn't been set yet to avoid multiple identical SSTOREs.
+        if ($.addCiphertextContextId[addCiphertextHash] == 0) {
+            $.addCiphertextContextId[addCiphertextHash] = 1;
+        }
 
         // It is ok to only the handle can be considered here as a handle should only be added once
         // in the contract anyway
@@ -165,7 +179,17 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         }
     }
 
-    /// @notice See {ICiphertextCommits-getCiphertextMaterials}.
+    /**
+     * @notice See {ICiphertextCommits-isCiphertextMaterialAdded}.
+     */
+    function isCiphertextMaterialAdded(bytes32 ctHandle) public view virtual returns (bool) {
+        CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
+        return $.isCiphertextMaterialAdded[ctHandle];
+    }
+
+    /**
+     * @notice See {ICiphertextCommits-getCiphertextMaterials}.
+     */
     function getCiphertextMaterials(
         bytes32[] calldata ctHandles
     ) external view virtual returns (CiphertextMaterial[] memory ctMaterials) {
@@ -174,7 +198,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
 
         for (uint256 i = 0; i < ctHandles.length; i++) {
             // Check that the consensus has been reached
-            checkCiphertextMaterial(ctHandles[i]);
+            if (!isCiphertextMaterialAdded(ctHandles[i])) {
+                revert CiphertextMaterialNotFound(ctHandles[i]);
+            }
 
             // Get the unique hash associated to the handle and use it to get the list of coprocessor
             // transaction sender address that were involved in the consensus
@@ -192,7 +218,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         return ctMaterials;
     }
 
-    /// @notice See {ICiphertextCommits-getSnsCiphertextMaterials}.
+    /**
+     * @notice See {ICiphertextCommits-getSnsCiphertextMaterials}.
+     */
     function getSnsCiphertextMaterials(
         bytes32[] calldata ctHandles
     ) external view virtual returns (SnsCiphertextMaterial[] memory snsCtMaterials) {
@@ -201,7 +229,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
 
         for (uint256 i = 0; i < ctHandles.length; i++) {
             // Check that the consensus has been reached
-            checkCiphertextMaterial(ctHandles[i]);
+            if (!isCiphertextMaterialAdded(ctHandles[i])) {
+                revert CiphertextMaterialNotFound(ctHandles[i]);
+            }
 
             // Get the unique hash associated to the handle and use it to get the list of coprocessor
             // transaction sender address that were involved in the consensus
@@ -220,7 +250,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     }
 
     /**
-     * @dev See {ICiphertextCommits-getAddCiphertextMaterialConsensusTxSenders}.
+     * @notice See {ICiphertextCommits-getAddCiphertextMaterialConsensusTxSenders}.
      * The list remains empty until the consensus is reached.
      */
     function getAddCiphertextMaterialConsensusTxSenders(
@@ -236,7 +266,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         return $.coprocessorTxSenderAddresses[addCiphertextHash];
     }
 
-    /// @notice See {ICiphertextCommits-getVersion}.
+    /**
+     * @notice See {ICiphertextCommits-getVersion}.
+     */
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -252,31 +284,25 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
             );
     }
 
-    /// @notice See {ICiphertextCommits-checkCiphertextMaterial}.
-    function checkCiphertextMaterial(bytes32 ctHandle) public view virtual {
-        CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
-        if (!$.isCiphertextMaterialAdded[ctHandle]) {
-            revert CiphertextMaterialNotFound(ctHandle);
-        }
-    }
-
     /**
-     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     * @notice Checks if the sender is authorized to upgrade the contract and reverts otherwise.
      */
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
 
-    /// @notice Checks if the consensus is reached among the Coprocessors.
-    /// @param coprocessorCounter The number of coprocessors that agreed
-    /// @return Whether the consensus is reached
+    /**
+     * @notice Checks if the consensus is reached among the Coprocessors.
+     * @param coprocessorCounter The number of coprocessors that agreed
+     * @return Whether the consensus is reached
+     */
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
     }
 
     /**
-     * @dev Returns the CiphertextCommits storage location.
-     * Note that this function is internal but not virtual: derived contracts should be able to
+     * @notice Returns the CiphertextCommits storage location.
+     * @dev Note that this function is internal but not virtual: derived contracts should be able to
      * access it, but if the underlying storage struct version changes, we force them to define a new
      * getter function and use that one instead in order to avoid overriding the storage location.
      */

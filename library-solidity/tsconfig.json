@@ -16,7 +16,7 @@
     "strict": true,
     "target": "es2020"
   },
-  "exclude": ["node_modules"],
+  "exclude": ["node_modules", "codegen"],
   "files": ["./hardhat.config.ts"],
   "include": ["src/**/*", "tasks/**/*", "test/**/*", "deploy/**/*", "types/"]
 }

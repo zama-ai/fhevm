@@ -13,7 +13,7 @@ This ensures Hardhat can compile and test your contracts as expected.
 {% tab title="ERC7984ERC20WrapperExample.sol" %}
 
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.27;
 
 import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";

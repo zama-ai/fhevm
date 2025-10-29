@@ -9,13 +9,14 @@
     "prettier-plugin-solidity": "^2.0.0"
   },
   "scripts": {
-    "codegen": "npx ts-node codegen/main.ts && npm run prettier && npx hardhat compile",
+    "codegen": "../../library-solidity/codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
+    "codegen:overloads": "../../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
   },
   "dependencies": {
     "@fhevm/solidity": "*",
     "@openzeppelin/contracts": "^5.3.0",
-    "@zama-fhe/relayer-sdk": "^0.3.0-0",
+    "@zama-fhe/relayer-sdk": "^0.3.0-2",
     "bigint-buffer": "^1.1.5",
     "dotenv": "^16.0.3",
     "encrypted-types": "^0.0.4"

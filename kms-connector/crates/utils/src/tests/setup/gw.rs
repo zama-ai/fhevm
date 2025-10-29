@@ -3,11 +3,11 @@ use crate::{
     conn::WalletGatewayProvider,
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
     tests::setup::{ROOT_CARGO_TOML, pick_free_port},
-    // tests::setup::{ROOT_CARGO_TOML, pick_free_port},
 };
 use alloy::{
     primitives::{Address, ChainId, FixedBytes},
-    providers::{ProviderBuilder, WsConnect},
+    providers::ProviderBuilder,
+    transports::http::reqwest::Url,
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
@@ -92,10 +92,7 @@ impl GatewayInstance {
             .with_chain_id(*CHAIN_ID as u64)
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet)
-            .connect_ws(WsConnect::new(Self::anvil_ws_endpoint_impl(
-                anvil_host_port,
-            )))
-            .await?;
+            .connect_http(Self::anvil_http_endpoint_impl(anvil_host_port));
         let provider = NonceManagedProvider::new(inner_provider, wallet_addr);
 
         Ok(GatewayInstance::new(
@@ -110,12 +107,14 @@ impl GatewayInstance {
         Duration::from_secs(self.block_time)
     }
 
-    fn anvil_ws_endpoint_impl(anvil_host_port: u16) -> String {
-        format!("ws://localhost:{anvil_host_port}")
+    fn anvil_http_endpoint_impl(anvil_host_port: u16) -> Url {
+        format!("http://localhost:{anvil_host_port}")
+            .parse()
+            .unwrap()
     }
 
-    pub fn anvil_ws_endpoint(&self) -> String {
-        Self::anvil_ws_endpoint_impl(self.anvil_host_port)
+    pub fn anvil_http_endpoint(&self) -> Url {
+        Self::anvil_http_endpoint_impl(self.anvil_host_port)
     }
 }
 

@@ -33,8 +33,16 @@ pub fn extract_server_key_without_ns(src_path: String, dest_path: &String) -> bo
     let server_key: ServerKey = safe_deserialize_sns_key(&read(src_path).expect("read server key"))
         .expect("deserialize server key");
 
-    let (sks, kskm, compression_key, decompression_key, _, noise_squashing_key, tag) =
-        server_key.into_raw_parts();
+    let (
+        sks,
+        kskm,
+        compression_key,
+        decompression_key,
+        noise_squashing_key,
+        _noise_squashing_compression_key,
+        re_randomization_keyswitching_key,
+        tag,
+    ) = server_key.into_raw_parts();
     if noise_squashing_key.is_none() {
         error!("Server key does not have noise squashing");
         return false;
@@ -49,6 +57,7 @@ pub fn extract_server_key_without_ns(src_path: String, dest_path: &String) -> bo
         decompression_key,
         None, // noise squashing key excluded
         None, // noise squashing compression key excluded
+        re_randomization_keyswitching_key,
         tag,
     ));
 
