@@ -158,7 +158,7 @@ pub async fn run_fhevm_relayer(
 
     // Prepare tx service for gateway
     let tx_service_gateway =
-        GatewayTransactionService::new(&gateway_settings.ws_url, Arc::new(gateway_signer))
+        GatewayTransactionService::new(&gateway_settings.http_url, Arc::new(gateway_signer))
             .await
             .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
 

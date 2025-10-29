@@ -250,14 +250,7 @@ impl TransactionService {
         }
 
         // If not found in our records, do a direct provider call
-        match self
-            .manager
-            .provider
-            .read()
-            .await
-            .get_transaction_receipt(tx_hash)
-            .await
-        {
+        match self.manager.provider.get_transaction_receipt(tx_hash).await {
             Ok(Some(receipt)) => Ok(receipt),
             Ok(None) => Err(TransactionServiceError::Failed(
                 "Receipt not available yet".into(),
@@ -379,14 +372,7 @@ impl TransactionService {
 
             // Check for receipt
             // TODO: check for receipt before setting cleanup timeout
-            match self
-                .manager
-                .provider
-                .read()
-                .await
-                .get_transaction_receipt(hash)
-                .await
-            {
+            match self.manager.provider.get_transaction_receipt(hash).await {
                 Ok(Some(receipt)) => {
                     // We have a receipt - update state based on status
                     let success = receipt.status();
@@ -480,11 +466,11 @@ impl TransactionService {
                             let address = self.manager.sender_address();
                             // NOTE: Band-aid solution to nonce management issue
 
-                            let guard = self.manager.provider.read().await;
+                            let guard = &self.manager.provider;
                             match self
                                 .manager
                                 .nonce_manager
-                                .sync_nonce(&**guard, address)
+                                .sync_nonce(guard.as_ref(), address)
                                 .await
                             {
                                 Ok(new_nonce) => {
@@ -617,14 +603,7 @@ impl TransactionService {
             }
 
             // Try to get receipt
-            match self
-                .manager
-                .provider
-                .read()
-                .await
-                .get_transaction_receipt(tx_hash)
-                .await
-            {
+            match self.manager.provider.get_transaction_receipt(tx_hash).await {
                 Ok(Some(receipt)) => return Ok(receipt),
                 Ok(None) => {
                     // Calculate exponential backoff with jitter

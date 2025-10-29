@@ -6,7 +6,7 @@ use alloy::{
     primitives::{Address, Bytes, B256, U256},
     providers::{
         fillers::{ChainIdFiller, GasFiller, NonceFiller, WalletFiller},
-        PendingTransactionBuilder, Provider, ProviderBuilder, WsConnect,
+        PendingTransactionBuilder, Provider, ProviderBuilder,
     },
     rpc::types::TransactionRequest,
     serde::WithOtherFields,
@@ -17,11 +17,9 @@ use alloy::{
 use eyre::Result;
 use futures::StreamExt;
 use reqwest::Url;
-use std::future::Future;
 use std::{fmt, future::IntoFuture};
 use std::{sync::Arc, time::Duration};
 use thiserror::Error;
-use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
 use tracing::{debug, error, info, instrument, warn};
 
@@ -162,10 +160,9 @@ impl Default for TxConfig {
 }
 
 pub struct TransactionManager {
-    pub provider: Arc<RwLock<Box<dyn Provider<AnyNetwork> + Send + Sync>>>,
+    pub provider: Box<dyn Provider<AnyNetwork> + Send + Sync>,
     pub signer: Arc<dyn SignerCombined>,
     pub nonce_manager: Arc<CachedNonceManagerWithRefresh>,
-    rpc_url: Url,
 }
 
 impl fmt::Debug for TransactionManager {
@@ -179,38 +176,30 @@ impl fmt::Debug for TransactionManager {
 
 impl TransactionManager {
     pub async fn new(
-        ws_rpc_url: &str,
+        http_rpc_url: &str,
         // private_key: &str,
         signer: Arc<dyn SignerCombined>,
     ) -> Result<Self, TransactionError> {
         let wallet = EthereumWallet::from(signer.clone());
 
-        let ws_rpc_url = Url::parse(ws_rpc_url)
+        let rpc_url = Url::parse(http_rpc_url)
             .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {e}")))?;
-
-        // NOTE: The only way I found to reconnect the internal Provider backend is to re-create
-        // the provider entirely as I didn't find a way to access the [`PubSubConnect.try_reconnect`] method from the provider itself
-        // But that implies mutability, or the use of either a Mutex or RwLock.
-        // Another option would be to set a virtually infinite retry (u32::MAX * 3 seconds ~= 408 years) should be enough.
-        // But we would miss error logs about the connexion dropping, unless parsing alloy logs
-        // specifically.
-        let ws = WsConnect::new(ws_rpc_url.clone());
 
         // NOTE: nonce-manager that allows for nonce-resync
         let nonce_manager = CachedNonceManagerWithRefresh::default();
-        let provider: Arc<RwLock<Box<dyn Provider<AnyNetwork> + Send + Sync>>> = {
-            let concrete_provider = ProviderBuilder::new()
-                .network::<AnyNetwork>()
-                .filler(NonceFiller::new(nonce_manager.clone()))
-                .filler(GasFiller)
-                .filler(ChainIdFiller::new(signer.chain_id()))
-                .filler(WalletFiller::new(wallet))
-                .connect_ws(ws)
-                .await
-                .map_err(TransactionError::TransportError)?;
+        // TODO: Add fallback layers.
+        // Add retry layer.
 
-            Arc::new(RwLock::new(Box::new(concrete_provider)))
-        };
+        let concrete_provider = ProviderBuilder::new()
+            .network::<AnyNetwork>()
+            .filler(NonceFiller::new(nonce_manager.clone()))
+            .filler(GasFiller)
+            .filler(ChainIdFiller::new(signer.chain_id()))
+            .filler(WalletFiller::new(wallet))
+            // .layer(Layer::new(retry_policy))
+            .connect_http(rpc_url.clone());
+
+        let provider_http = Box::new(concrete_provider);
 
         info!(
             address = ?signer.address(),
@@ -219,35 +208,18 @@ impl TransactionManager {
         );
 
         Ok(Self {
-            provider,
+            provider: provider_http,
             nonce_manager: Arc::new(nonce_manager),
             signer,
-            rpc_url: ws_rpc_url,
         })
     }
 
-    pub fn provider(&self) -> &Arc<RwLock<Box<dyn Provider<AnyNetwork> + Send + Sync>>> {
-        &self.provider
+    pub fn provider(&self) -> &(dyn Provider<AnyNetwork> + Send + Sync) {
+        self.provider.as_ref()
     }
 
     pub fn sender_address(&self) -> Address {
         self.signer.address()
-    }
-
-    pub async fn reset_provider(&self) -> anyhow::Result<()> {
-        let wallet = EthereumWallet::from(self.signer.clone());
-        let ws = WsConnect::new(self.rpc_url.clone());
-        let provider = ProviderBuilder::new()
-            .network::<AnyNetwork>()
-            .filler(NonceFiller::new((*self.nonce_manager).clone()))
-            .filler(GasFiller)
-            .filler(ChainIdFiller::new(self.signer.chain_id()))
-            .filler(WalletFiller::new(wallet))
-            .connect_ws(ws)
-            .await?;
-        let mut provider_write_guard = self.provider.write().await;
-        *provider_write_guard = Box::new(provider);
-        Ok(())
     }
 
     async fn call_provider<F, Fut, T>(
@@ -256,23 +228,31 @@ impl TransactionManager {
     ) -> Result<T, RpcError<TransportErrorKind>>
     where
         F: for<'a> FnOnce(&'a dyn Provider<AnyNetwork>) -> Fut,
-        Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
+        Fut: std::future::Future<Output = Result<T, RpcError<TransportErrorKind>>>,
     {
-        let provider = self.provider.read().await;
-        match operation(&**provider).await {
+        let provider = &self.provider;
+        let result = operation(provider.as_ref()).await;
+
+        match result {
             Ok(value) => Ok(value),
-            Err(error) => {
-                if let RpcError::Transport(alloy::transports::TransportErrorKind::BackendGone) =
-                    &error
-                {
-                    drop(provider); // Release the read lock before reset
-                    if let Err(reset_error) = self.reset_provider().await {
-                        warn!("Failure to reset provider: {reset_error}");
-                    } else {
-                        debug!("Successfully reset provider");
+            Err(err) => {
+                // 🔍 Handle retryable errors gracefully
+                match &err {
+                    RpcError::Transport(kind) => match kind {
+                        TransportErrorKind::BackendGone => {
+                            warn!(?kind, "Transient network or backend issue detected");
+                            // The RetryLayer already retries automatically,
+                            // so here we just log — no manual reset required.
+                        }
+                        _ => {
+                            error!(?kind, "Non-retryable transport error");
+                        }
+                    },
+                    _ => {
+                        error!(?err, "RPC-level error");
                     }
                 }
-                Err(error)
+                Err(err)
             }
         }
     }
@@ -460,13 +440,7 @@ impl TransactionManager {
         // TODO: check if it makes sense to keep both [`TransactionManager`] and
         // [`TransactionService`]
         loop {
-            match self
-                .provider
-                .read()
-                .await
-                .send_transaction(request.clone())
-                .await
-            {
+            match self.provider.send_transaction(request.clone()).await {
                 Ok(value) => {
                     pending_tx = value;
                     break;
@@ -486,10 +460,10 @@ impl TransactionManager {
                             if response_error_string.contains("nonce too low")
                                 | response_error_string.contains("nonce too high")
                             {
-                                let provider_guard = self.provider.read().await;
+                                let provider_guard = &self.provider;
                                 let _ = self
                                     .nonce_manager
-                                    .sync_nonce(&**provider_guard, self.signer.address())
+                                    .sync_nonce(provider_guard.as_ref(), self.signer.address())
                                     .await;
                             } else {
                                 return Err(TransactionError::TransactionFailed(err_msg));
@@ -516,15 +490,9 @@ impl TransactionManager {
 
         // Check if contract exists
         info!("Checking contract code at {:#x}", target);
-        let code = self
-            .provider
-            .read()
-            .await
-            .get_code_at(target)
-            .await
-            .map_err(|e| {
-                TransactionError::TransactionFailed(format!("Failed to check contract code: {e}"))
-            })?;
+        let code = self.provider.get_code_at(target).await.map_err(|e| {
+            TransactionError::TransactionFailed(format!("Failed to check contract code: {e}"))
+        })?;
 
         if code.is_empty() {
             error!("No code at target address: {:?} !", target);
@@ -568,12 +536,7 @@ impl TransactionManager {
         // Send and watch for the transaction
         let result = timeout(
             timeout_duration,
-            self.provider
-                .read()
-                .await
-                .send_transaction(request)
-                .await?
-                .watch(),
+            self.provider.send_transaction(request).await?.watch(),
         )
         .await;
 
@@ -647,15 +610,9 @@ impl TransactionManager {
         let start = Instant::now();
         let reconnect_delay = Duration::from_millis(1000);
 
-        let block_subscription = self
-            .provider
-            .read()
-            .await
-            .subscribe_blocks()
-            .await
-            .map_err(|e| {
-                TransactionError::NetworkError(format!("Failed to subscribe for new blocks: {e}"))
-            })?;
+        let block_subscription = self.provider.subscribe_blocks().await.map_err(|e| {
+            TransactionError::NetworkError(format!("Failed to subscribe for new blocks: {e}"))
+        })?;
         let mut block_subscription_stream = block_subscription.into_stream();
 
         loop {
@@ -670,13 +627,7 @@ impl TransactionManager {
                 }
 
                 // Try to get receipt
-                match self
-                    .provider
-                    .read()
-                    .await
-                    .get_transaction_receipt(tx_hash)
-                    .await
-                {
+                match self.provider.get_transaction_receipt(tx_hash).await {
                     Ok(Some(receipt)) => {
                         // If confirmation checks required
                         if let Some(required_confirmations) = config.confirmations {
@@ -738,7 +689,7 @@ impl TransactionManager {
             } else {
                 // tokio sleep
                 tokio::time::sleep(reconnect_delay).await;
-                match self.provider.read().await.subscribe_blocks().await {
+                match self.provider.subscribe_blocks().await {
                     Ok(block_subscription) => {
                         block_subscription_stream = block_subscription.into_stream();
                     }
