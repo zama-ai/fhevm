@@ -88,10 +88,11 @@ describe("AdminModule Tests", function () {
   });
 
   it("Transfer ownership in a single step", async function () {
+    const aliceAddress = await alice.getAddress();
     let owners = await safe.getOwners();
-    console.log("Current owners: ", owners);
     let threshold = await safe.getThreshold();
-    console.log("Current threshold: ", threshold);
+    expect(new Set(owners)).to.deep.equal(new Set([aliceAddress]));
+    expect(threshold).to.equal(1);
 
     const chain = await ethers.provider.getNetwork();
     const chainIdKey = chain.chainId.toString();
@@ -109,7 +110,6 @@ describe("AdminModule Tests", function () {
       safeAddress,
       contractNetworks,
     });
-    const aliceAddress = await alice.getAddress();
 
     const newOwners = Array.from({ length: 9 }, (_, i) => "0x" + String(i + 1).repeat(40));
 
@@ -124,6 +124,11 @@ describe("AdminModule Tests", function () {
     await safeKit.signTransaction(batch);
     await safeKit.executeTransaction(batch);
 
+    owners = await safe.getOwners();
+    expect(new Set(owners)).to.deep.equal(new Set([...newOwners, aliceAddress]));
+    threshold = await safe.getThreshold();
+    expect(threshold).to.equal(1);
+
     const txs2 = [];
     txs2.push(await safeKit.createRemoveOwnerTx({ ownerAddress: aliceAddress, threshold: 6 }));
     const partials2 = txs2.map((t) => t.data);
@@ -132,8 +137,8 @@ describe("AdminModule Tests", function () {
     await safeKit.executeTransaction(batch2);
 
     owners = await safe.getOwners();
-    console.log("Current owners: ", owners);
+    expect(new Set(owners)).to.deep.equal(new Set(newOwners));
     threshold = await safe.getThreshold();
-    console.log("Current threshold: ", threshold);
+    expect(threshold).to.equal(6);
   });
 });
