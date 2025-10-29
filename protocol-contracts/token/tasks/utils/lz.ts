@@ -1,3 +1,5 @@
+import { HardhatRuntimeEnvironment } from 'hardhat/types'
+
 import { endpointIdToNetwork } from '@layerzerolabs/lz-definitions'
 import { Options } from '@layerzerolabs/lz-v2-utilities'
 
@@ -19,6 +21,25 @@ export async function getBlockExplorerLink(srcEid: number, txHash: string): Prom
         return `${explorer.replace(/\/+$/, '')}/tx/${txHash}`
     }
     return
+}
+
+export async function logExplorerLink(hre: Pick<HardhatRuntimeEnvironment, 'network'>, txHash: string): Promise<void> {
+    const { eid } = hre.network.config as { eid?: number }
+    if (typeof eid !== 'number') {
+        console.log('No endpoint ID configured for this network; unable to derive block explorer link.')
+        return
+    }
+
+    try {
+        const explorerLink = await getBlockExplorerLink(eid, txHash)
+        if (explorerLink) {
+            console.log(`Block explorer: ${explorerLink}`)
+        } else {
+            console.log('Block explorer URL unavailable for this network; check LayerZero metadata service.')
+        }
+    } catch (error) {
+        console.log(`Failed to retrieve block explorer URL: ${error instanceof Error ? error.message : error}`)
+    }
 }
 
 function formatBigIntForDisplay(n: bigint) {
