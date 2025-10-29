@@ -91,9 +91,8 @@ where
         let otlp_context = event.otlp_context.clone();
         tracing::Span::current().set_parent(otlp_context.extract());
 
-        let response_kind = match event_processor.process(&event).await {
-            Ok(response) => response,
-            Err(e) => return error!("{e}"),
+        let Some(response_kind) = event_processor.process(&event).await else {
+            return;
         };
 
         let response = KmsResponse::new(response_kind, otlp_context);
@@ -142,7 +141,6 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::event_processor::ProcessingError;
     use connector_utils::{
         tests::rand::{rand_signature, rand_u256},
         types::{GatewayEvent, KmsResponse, KmsResponseKind, UserDecryptionResponse},
@@ -200,11 +198,8 @@ mod tests {
 
     impl EventProcessor for MockEventProcessor {
         type Event = GatewayEvent;
-        async fn process(
-            &mut self,
-            _event: &Self::Event,
-        ) -> Result<KmsResponseKind, ProcessingError> {
-            Ok(KmsResponseKind::UserDecryption(UserDecryptionResponse {
+        async fn process(&mut self, _event: &Self::Event) -> Option<KmsResponseKind> {
+            Some(KmsResponseKind::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
                 signature: rand_signature(),

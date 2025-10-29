@@ -27,9 +27,14 @@ contract KMSGenerationMock {
 
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
 
+    event PRSSInit();
+
+    event KeyReshareSameSet(uint256 prepKeygenId, uint256 keyId, uint256 keyReshareId, ParamsType paramsType);
+
     uint256 prepKeygenCounter = 3 << 248;
     uint256 keyCounter = 4 << 248;
     uint256 crsCounter = 5 << 248;
+    uint256 keyReshareCounter = 6 << 248;
 
     function keygen(ParamsType paramsType) external {
         prepKeygenCounter++;
@@ -63,5 +68,19 @@ contract KMSGenerationMock {
         string[] memory kmsNodeStorageUrls = new string[](1);
 
         emit ActivateCrs(crsId, kmsNodeStorageUrls, crsDigest);
+    }
+
+    function prssInit() external {
+        emit PRSSInit();
+    }
+
+    function keyReshareSameSet(uint256 keyId) external {
+        prepKeygenCounter++;
+        uint256 prepKeygenId = prepKeygenCounter;
+        keyReshareCounter++;
+        uint256 keyReshareId = keyReshareCounter;
+        ParamsType paramsType;
+
+        emit KeyReshareSameSet(prepKeygenId, keyId, keyReshareId, paramsType);
     }
 }

@@ -3,7 +3,8 @@
 
 [advisories]
 # The ignored vulnerability RUSTSEC-2023-0071 is due to sqlx-mysql which is not used
-ignore = ["RUSTSEC-2023-0071"]
+# The ignored vulnerability RUSTSEC-2025-0111 is affecting only the testcontainers only used for testing
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2025-0111"]
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
 

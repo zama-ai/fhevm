@@ -20,6 +20,7 @@ import "./tasks/getters";
 import "./tasks/mockedZamaFund";
 import "./tasks/ownership";
 import "./tasks/pauseContracts";
+import "./tasks/reshareKeys";
 import "./tasks/safeSmartAccounts";
 import "./tasks/upgradeContracts";
 
