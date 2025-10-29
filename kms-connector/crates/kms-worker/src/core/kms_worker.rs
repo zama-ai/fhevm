@@ -86,12 +86,12 @@ where
     async fn process_event(
         mut event_processor: Proc,
         response_publisher: Publ,
-        event: GatewayEvent,
+        mut event: GatewayEvent,
     ) {
         let otlp_context = event.otlp_context.clone();
         tracing::Span::current().set_parent(otlp_context.extract());
 
-        let response_kind = match event_processor.process(&event).await {
+        let response_kind = match event_processor.process(&mut event).await {
             Ok(response) => response,
             Err(e) => return error!("{e}"),
         };
@@ -202,7 +202,7 @@ mod tests {
         type Event = GatewayEvent;
         async fn process(
             &mut self,
-            _event: &Self::Event,
+            _event: &mut Self::Event,
         ) -> Result<KmsResponseKind, ProcessingError> {
             Ok(KmsResponseKind::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),

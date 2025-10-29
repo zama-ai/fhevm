@@ -17,7 +17,7 @@ pub trait EventProcessor: Send {
 
     fn process(
         &mut self,
-        event: &Self::Event,
+        event: &mut Self::Event,
     ) -> impl Future<Output = Result<KmsResponseKind, ProcessingError>> + Send;
 }
 
@@ -41,7 +41,10 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
-    async fn process(&mut self, event: &Self::Event) -> Result<KmsResponseKind, ProcessingError> {
+    async fn process(
+        &mut self,
+        event: &mut Self::Event,
+    ) -> Result<KmsResponseKind, ProcessingError> {
         info!("Starting to process {:?}...", event.kind);
         match self.inner_process(event).await {
             Ok(response) => {
@@ -132,10 +135,10 @@ impl<P: Provider> DbEventProcessor<P> {
     /// Core event processing logic function.
     async fn inner_process(
         &mut self,
-        event: &GatewayEvent,
+        event: &mut GatewayEvent,
     ) -> Result<KmsResponseKind, ProcessingError> {
         let request = self.prepare_request(event.clone()).await?;
-        let grpc_response = self.kms_client.send_request(request).await?;
+        let grpc_response = self.kms_client.send_request(request, event).await?;
         KmsResponseKind::process(grpc_response).map_err(ProcessingError::Irrecoverable)
     }
 }

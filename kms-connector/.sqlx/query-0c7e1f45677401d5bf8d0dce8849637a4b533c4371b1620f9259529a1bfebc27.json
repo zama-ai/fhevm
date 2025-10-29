@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE keygen_requests SET under_process = FALSE, already_sent = $1 WHERE key_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0c7e1f45677401d5bf8d0dce8849637a4b533c4371b1620f9259529a1bfebc27"
+}
