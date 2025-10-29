@@ -11,7 +11,7 @@ use connector_utils::types::{
 use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use tonic::Code;
-use tracing::info;
+use tracing::{error, info};
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -20,7 +20,7 @@ pub trait EventProcessor: Send {
     fn process(
         &mut self,
         event: &Self::Event,
-    ) -> impl Future<Output = Result<Option<KmsResponseKind>, ProcessingError>> + Send;
+    ) -> impl Future<Output = Option<KmsResponseKind>> + Send;
 }
 
 /// Struct that processes Gateway's events coming from a `Postgres` database.
@@ -43,27 +43,26 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
-    async fn process(
-        &mut self,
-        event: &Self::Event,
-    ) -> Result<Option<KmsResponseKind>, ProcessingError> {
+    async fn process(&mut self, event: &Self::Event) -> Option<KmsResponseKind> {
         info!("Starting to process {:?}...", event.kind);
         match (self.inner_process(event).await, &event.kind) {
             (Ok(response), _) => {
                 info!("Event successfully processed!");
-                Ok(response)
+                response
             }
             (Err(ProcessingError::Irrecoverable(e)), _)
             | (
                 Err(ProcessingError::Recoverable(e)),
                 GatewayEventKind::PrssInit(_) | GatewayEventKind::KeyReshareSameSet(_),
             ) => {
+                error!("{}", ProcessingError::Irrecoverable(e));
                 event.delete_from_db(&self.db_pool).await;
-                Err(ProcessingError::Irrecoverable(e))
+                None
             }
             (Err(ProcessingError::Recoverable(e)), _) => {
+                error!("{}", ProcessingError::Recoverable(e));
                 event.mark_as_pending(&self.db_pool).await;
-                Err(ProcessingError::Recoverable(e))
+                None
             }
         }
     }
