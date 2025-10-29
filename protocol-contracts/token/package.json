@@ -2,7 +2,7 @@
   "name": "@fhevm/protocol-contracts",
   "version": "0.5.4",
   "private": true,
-  "license": "MIT",
+  "license": "BSD-3-Clause-Clear",
   "scripts": {
     "clean": "rm -rf artifacts cache out",
     "compile": "concurrently -c auto --names forge,hardhat '$npm_execpath run compile:forge' '$npm_execpath run compile:hardhat'",
