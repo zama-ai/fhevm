@@ -111,13 +111,12 @@ struct Conf {
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     provider_retry_interval: Duration,
 
-    /// HTTP server port
-    #[arg(long, alias = "health-check-port", default_value_t = 8080)]
-    http_server_port: u16,
+    #[arg(long, default_value_t = 8080)]
+    health_check_port: u16,
 
     /// Prometheus metrics server address
     #[arg(long, default_value = "0.0.0.0:9100")]
-    pub metrics_addr: Option<String>,
+    metrics_addr: Option<String>,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     health_check_timeout: Duration,
@@ -290,7 +289,7 @@ async fn main() -> anyhow::Result<()> {
         txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
         required_txn_confirmations: conf.required_txn_confirmations,
         review_after_unlimited_retries: conf.review_after_unlimited_retries,
-        http_server_port: conf.http_server_port,
+        health_check_port: conf.health_check_port,
         health_check_timeout: conf.health_check_timeout,
         gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
         graceful_shutdown_timeout: conf.graceful_shutdown_timeout,
@@ -312,17 +311,17 @@ async fn main() -> anyhow::Result<()> {
 
     let http_server = HttpServer::new(
         transaction_sender.clone(),
-        conf.http_server_port,
+        conf.health_check_port,
         cancel_token.clone(),
     );
 
     info!(
-        http_server_port = conf.http_server_port,
+        health_check_port = conf.health_check_port,
         conf = ?config,
-        "Transaction sender and HTTP server starting"
+        "Transaction sender and HTTP health check server starting"
     );
 
-    // Run both services concurrently. Here we assume that if transaction sender stops without an error, HTTP server should also stop.
+    // Run both services in parallel. Here we assume that if transaction sender stops without an error, HTTP server should also stop.
     let transaction_sender_fut = tokio::spawn(async move { transaction_sender.run().await });
     let http_server_fut = tokio::spawn(async move { http_server.start().await });
 
@@ -335,13 +334,13 @@ async fn main() -> anyhow::Result<()> {
     info!(
         transaction_sender_res = ?transaction_sender_res,
         http_server_res = ?http_server_res,
-        "Transaction sender and HTTP server tasks have stopped"
+        "Transaction sender and HTTP health check server tasks have stopped"
     );
 
     transaction_sender_res??;
     http_server_res??;
 
-    info!("Transaction sender and HTTP server stopped gracefully");
+    info!("Transaction sender and HTTP health check server stopped gracefully");
 
     Ok(())
 }
