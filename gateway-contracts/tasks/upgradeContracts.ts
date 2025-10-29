@@ -251,27 +251,21 @@ task("task:upgradeGatewayConfig")
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
-    // Parse the coprocessors
-    const numCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
-    const coprocessors = [];
-    for (let idx = 0; idx < numCoprocessors; idx++) {
-      coprocessors.push({
-        txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
-        signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
-        s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
+    // Parse the KMS nodes
+    const numKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
+    const kmsNodes = [];
+    for (let idx = 0; idx < numKmsNodes; idx++) {
+      kmsNodes.push({
+        txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
+        signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
+        ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
+        storageUrl: getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`),
       });
     }
 
-    // Get the coprocessor threshold
-    const coprocessorThreshold = getRequiredEnvVar("COPROCESSOR_THRESHOLD");
+    console.log("New KMS nodes:", kmsNodes);
 
-    console.log("New coprocessors:", coprocessors);
-    console.log("Coprocessor threshold:", coprocessorThreshold);
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
-      coprocessors,
-      coprocessorThreshold,
-    ]);
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [kmsNodes]);
   });
 
 task("task:upgradeKMSGeneration")

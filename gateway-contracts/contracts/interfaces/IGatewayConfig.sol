@@ -36,11 +36,39 @@ interface IGatewayConfig {
     );
 
     /**
-     * @notice Emitted when the GatewayConfig is re-initialized from V2.
-     * @param newCoprocessors The new coprocessors.
-     * @param coprocessorThreshold The new coprocessor threshold.
+     * @notice Emitted when the GatewayConfig is re-initialized from V3.
+     * @param newKmsNodes The new KMS nodes.
      */
-    event ReinitializeGatewayConfigV2(Coprocessor[] newCoprocessors, uint256 coprocessorThreshold);
+    event ReinitializeGatewayConfigV3(KmsNode[] newKmsNodes);
+
+    /**
+     * @notice Emitted when the KMS nodes have been updated.
+     * @param newKmsNodes The new KMS nodes.
+     * @param newMpcThreshold The new MPC threshold.
+     * @param newPublicDecryptionThreshold The new public decryption threshold.
+     * @param newUserDecryptionThreshold The new user decryption threshold.
+     * @param newKmsGenThreshold The new key and CRS generation threshold.
+     */
+    event UpdateKmsNodes(
+        KmsNode[] newKmsNodes,
+        uint256 newMpcThreshold,
+        uint256 newPublicDecryptionThreshold,
+        uint256 newUserDecryptionThreshold,
+        uint256 newKmsGenThreshold
+    );
+
+    /**
+     * @notice Emitted when the coprocessors have been updated.
+     * @param newCoprocessors The new coprocessors.
+     * @param newCoprocessorThreshold The new coprocessor threshold.
+     */
+    event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
+
+    /**
+     * @notice Emitted when the custodians have been updated.
+     * @param newCustodians The new custodians.
+     */
+    event UpdateCustodians(Custodian[] newCustodians);
 
     /**
      * @notice Emitted when the MPC threshold has been updated.
@@ -182,11 +210,38 @@ interface IGatewayConfig {
     error ChainIdNotUint64(uint256 chainId);
 
     /**
-     * @notice Add a new host chain metadata to the GatewayConfig contract.
-     * @dev The associated chain ID must be non-zero and representable by a uint64.
-     * @param hostChain The new host chain metadata to include.
+     * @notice Update the list of KMS nodes and their thresholds.
+     * @dev ⚠️ This function should be used with caution as it can lead to unexpected behavior in
+     * some requests and the contracts should first be paused. It will be deprecated in the future.
+     * @param newKmsNodes The new KMS nodes.
+     * @param newMpcThreshold The new MPC threshold.
+     * @param newPublicDecryptionThreshold The new public decryption threshold.
+     * @param newUserDecryptionThreshold The new user decryption threshold.
+     * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
-    function addHostChain(HostChain calldata hostChain) external;
+    function updateKmsNodes(
+        KmsNode[] calldata newKmsNodes,
+        uint256 newMpcThreshold,
+        uint256 newPublicDecryptionThreshold,
+        uint256 newUserDecryptionThreshold,
+        uint256 newKmsGenThreshold
+    ) external;
+
+    /**
+     * @notice Update the list of coprocessors and their threshold.
+     * @dev ⚠️ This function should be used with caution as it can lead to unexpected behavior in
+     * some requests and the contracts should first be paused. It will be deprecated in the future.
+     * @param newCoprocessors The new coprocessors.
+     * @param newCoprocessorThreshold The new coprocessor threshold.
+     */
+    function updateCoprocessors(Coprocessor[] calldata newCoprocessors, uint256 newCoprocessorThreshold) external;
+
+    /**
+     * @notice Update the list of custodians.
+     * @dev ⚠️ This function should be used with caution. It will be deprecated in the future.
+     * @param newCustodians The new custodians.
+     */
+    function updateCustodians(Custodian[] calldata newCustodians) external;
 
     /**
      * @notice Update the MPC threshold.
@@ -222,6 +277,13 @@ interface IGatewayConfig {
      * @param newCoprocessorThreshold The new coprocessor threshold.
      */
     function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external;
+
+    /**
+     * @notice Add a new host chain metadata to the GatewayConfig contract.
+     * @dev The associated chain ID must be non-zero and representable by a uint64.
+     * @param hostChain The new host chain metadata to include.
+     */
+    function addHostChain(HostChain calldata hostChain) external;
 
     /**
      * @notice Pause all pausable gateway contracts.
