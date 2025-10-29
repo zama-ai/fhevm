@@ -10,8 +10,8 @@ contract AdminModule {
     error SenderIsNotAdmin();
     error CouldNotExecuteSafeTx(bytes errorData);
 
-    constructor(address _adminAccount, address payable safeProxy){
-        ADMIN_ACCOUNT = _adminAccount;
+    constructor(address adminAccount, address payable safeProxy){
+        ADMIN_ACCOUNT = adminAccount;
         SAFE_PROXY = safeProxy;
     }
 
