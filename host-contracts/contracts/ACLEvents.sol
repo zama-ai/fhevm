@@ -13,19 +13,41 @@ contract ACLEvents {
     /// @param handlesList  List of handles allowed for decryption.
     event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
 
-    /// @notice                 Emitted when a new delegatee address is added.
-    /// @param caller           caller address
-    /// @param delegatee        Delegatee address.
-    /// @param contractAddresses  Contract addresses.
-    event NewDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
+    /// @notice                     Emitted when an account is delegated for user decryption.
+    /// @param delegator            The address of the account that delegates access to its handles.
+    /// @param delegate             The address of the account that receives the delegation.
+    /// @param contractAddress      The contract address to delegate access to.
+    /// @param delegationCounter    Counter that tracks the order of each delegation or revocation.
+    /// @param oldExpiryDate        The previous UNIX timestamp when the user decryption delegation expires.
+    /// @param newExpiryDate        The new UNIX timestamp when the user decryption delegation expires.
+    event DelegatedForUserDecryption(
+        address indexed delegator,
+        address indexed delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 oldExpiryDate,
+        uint64 newExpiryDate
+    );
 
-    /// @notice                 Emitted when a delegatee address is revoked.
-    /// @param caller           caller address
-    /// @param delegatee        Delegatee address.
-    /// @param contractAddresses  Contract addresses.
-    event RevokedDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
+    /// @notice                     Emitted when a delegation for user decryption is revoked.
+    /// @param delegator            The address of the account that delegates access to its handles.
+    /// @param delegate             The address of the account that receives the delegation.
+    /// @param contractAddress      The contract address to delegate access to.
+    /// @param delegationCounter    Counter that tracks the order of each delegation or revocation.
+    /// @param oldExpiryDate        The expiration UNIX timestamp of the revoked user decryption delegation.
+    event RevokedDelegationForUserDecryption(
+        address indexed delegator,
+        address indexed delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 oldExpiryDate
+    );
 
-    /// @notice Emitted when the pauser address is updated.
-    /// @param newPauser New pauser address.
-    event UpdatePauser(address indexed newPauser);
+    /// @notice Emitted when an account is added to the deny list.
+    /// @param account The address of the account that is blocked.
+    event BlockedAccount(address indexed account);
+
+    /// @notice Emitted when an account is removed from the deny list.
+    /// @param account The address of the account that is unblocked.
+    event UnblockedAccount(address indexed account);
 }

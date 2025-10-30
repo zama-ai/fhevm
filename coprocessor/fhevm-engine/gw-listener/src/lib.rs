@@ -9,6 +9,7 @@ pub(crate) mod database;
 pub(crate) mod digest;
 pub mod gw_listener;
 pub mod http_server;
+pub(crate) mod metrics;
 pub(crate) mod sks_key;
 
 pub(crate) type ChainId = u64;
@@ -43,8 +44,14 @@ pub struct ConfigSettings {
 
     pub error_sleep_initial_secs: u16,
     pub error_sleep_max_secs: u16,
+
     pub health_check_port: u16,
+
     pub health_check_timeout: Duration,
+
+    pub get_logs_poll_interval: Duration,
+    pub get_logs_block_batch_size: u64,
+    pub catchup_kms_generation_from_block: Option<i64>,
 }
 
 pub fn chain_id_from_env() -> Option<ChainId> {
@@ -69,6 +76,9 @@ impl Default for ConfigSettings {
             error_sleep_max_secs: 10,
             health_check_port: 8080,
             health_check_timeout: Duration::from_secs(4),
+            get_logs_poll_interval: Duration::from_secs(1),
+            get_logs_block_batch_size: 100,
+            catchup_kms_generation_from_block: None,
         }
     }
 }

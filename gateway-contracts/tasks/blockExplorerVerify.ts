@@ -1,9 +1,6 @@
-import dotenv from "dotenv";
 import { task, types } from "hardhat/config";
-import path from "path";
 
-import { ADDRESSES_DIR } from "../hardhat.config";
-import { getRequiredEnvVar } from "./utils/loadVariables";
+import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 
 task("task:verifyCiphertextCommits")
   .addOptionalParam(
@@ -14,7 +11,7 @@ task("task:verifyCiphertextCommits")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("CIPHERTEXT_COMMITS_ADDRESS");
 
@@ -38,7 +35,7 @@ task("task:verifyDecryption")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("DECRYPTION_ADDRESS");
 
@@ -62,7 +59,7 @@ task("task:verifyGatewayConfig")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
@@ -86,7 +83,7 @@ task("task:verifyInputVerification")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS");
 
@@ -110,7 +107,7 @@ task("task:verifyKMSGeneration")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("KMS_GENERATION_ADDRESS");
 
@@ -134,7 +131,7 @@ task("task:verifyMultichainACL")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("MULTICHAIN_ACL_ADDRESS");
 
@@ -149,6 +146,24 @@ task("task:verifyMultichainACL")
     });
   });
 
+task("task:verifyPauserSet")
+  .addOptionalParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      loadGatewayAddresses();
+    }
+    const implementationAddress = getRequiredEnvVar("PAUSER_SET_ADDRESS");
+    await run("verify:verify", {
+      address: implementationAddress,
+      constructorArguments: [],
+    });
+  });
+
 task("task:verifyAllGatewayContracts")
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -157,23 +172,59 @@ task("task:verifyAllGatewayContracts")
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
-    console.log("Verify GatewayConfig contract:");
-    await hre.run("task:verifyGatewayConfig", { useInternalProxyAddress });
-
-    console.log("Verify InputVerification contract:");
-    await hre.run("task:verifyInputVerification", { useInternalProxyAddress });
-
-    console.log("Verify KMSGeneration contract:");
-    await hre.run("task:verifyKMSGeneration", { useInternalProxyAddress });
-
-    console.log("Verify CiphertextCommits contract:");
-    await hre.run("task:verifyCiphertextCommits", { useInternalProxyAddress });
-
-    console.log("Verify MultichainACL contract:");
-    await hre.run("task:verifyMultichainACL", { useInternalProxyAddress });
-
-    console.log("Verify Decryption contract:");
-    await hre.run("task:verifyDecryption", { useInternalProxyAddress });
-
-    console.log("Contract verification done!");
+    try {
+      // to not panic if Blockscout throws an error due to already verified implementation
+      console.log("Verify GatewayConfig contract:");
+      await hre.run("task:verifyGatewayConfig", { useInternalProxyAddress });
+    } catch (error) {
+      console.error("An error occurred:", error);
+    }
+    try {
+      // to not panic if Blockscout throws an error due to already verified implementation
+      console.log("Verify InputVerification contract:");
+      await hre.run("task:verifyInputVerification", { useInternalProxyAddress });
+    } catch (error) {
+      console.error("An error occurred:", error);
+    }
+    try {
+      // to not panic if Blockscout throws an error due to already verified implementation
+      console.log("Verify KMSGeneration contract:");
+      await hre.run("task:verifyKMSGeneration", { useInternalProxyAddress });
+    } catch (error) {
+      console.error("An error occurred:", error);
+    }
+    try {
+      // to not panic if Blockscout throws an error due to already verified implementation
+      console.log("Verify CiphertextCommits contract:");
+      await hre.run("task:verifyCiphertextCommits", { useInternalProxyAddress });
+    } catch (error) {
+      console.error("An error occurred:", error);
+    }
+    try {
+      // to not panic if Blockscout throws an error due to already verified implementation
+      console.log("Verify MultichainACL contract:");
+      await hre.run("task:verifyMultichainACL", { useInternalProxyAddress });
+    } catch (error) {
+      console.error("An error occurred:", error);
+    }
+    try {
+      // to not panic if Blockscout throws an error due to already verified implementation
+      console.log("Verify Decryption contract:");
+      await hre.run("task:verifyDecryption", { useInternalProxyAddress });
+    } catch (error) {
+      console.error("An error occurred:", error);
+    }
+    try {
+      // to not panic if Blockscout throws an error due to already verified implementation
+      console.log("Verify PauserSet contract:");
+      await hre.run("task:verifyPauserSet", { useInternalProxyAddress });
+    } catch (error) {
+      console.error("An error occurred:", error);
+    }
+    try {
+      // to not panic if Blockscout throws an error due to already verified implementation
+      console.log("Contract verification done!");
+    } catch (error) {
+      console.error("An error occurred:", error);
+    }
   });

@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-// Define the KMS request types
-// The old decryption request (a mix of public and user decryption requests) is deprecated. Is it kept
-// in order to stay backward compatible and avoid overlaps between the old and new decryption request IDs.
-// See `Decryption.sol` for more details.
+/**
+ * @notice The KMS request types.
+ * @dev The first request type is deprecated.
+ * See `Decryption.sol` for more details.
+ */
 enum RequestType {
-    _deprecated_, // 0: DEPRECATED (old decryption requests)
+    _deprecated_, // 0: DEPRECATED
     PublicDecrypt, // 1
     UserDecrypt, // 2
     PrepKeygen, // 3
     Keygen, // 4
-    Crsgen // 5
+    Crsgen, // 5
+    KeyReshare // 6
 }
 
 // Bit position to left shift for initializing the counters
@@ -34,3 +36,6 @@ uint256 constant KEY_COUNTER_BASE = uint256(RequestType.Keygen) << REQUEST_TYPE_
 
 // CRS generation requestId format in bytes: [0000 0101 | counter_1..31]
 uint256 constant CRS_COUNTER_BASE = uint256(RequestType.Crsgen) << REQUEST_TYPE_SHIFT;
+
+// Key resharing requestId format in bytes: [0000 0110 | counter_1..31]
+uint256 constant KEY_RESHARE_COUNTER_BASE = uint256(RequestType.KeyReshare) << REQUEST_TYPE_SHIFT;

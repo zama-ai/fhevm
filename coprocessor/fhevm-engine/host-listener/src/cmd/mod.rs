@@ -5,10 +5,11 @@ use alloy::pubsub::SubscriptionStream;
 use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
 use alloy::sol_types::SolEventInterface;
 use anyhow::{anyhow, Result};
+use fhevm_engine_common::telemetry;
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,11 +23,13 @@ use rustls;
 use tokio_util::sync::CancellationToken;
 
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
-use fhevm_engine_common::types::BlockchainProvider;
+use fhevm_engine_common::types::{BlockchainProvider, Handle};
 use fhevm_engine_common::utils::HeartBeat;
 
 use crate::contracts::{AclContract, TfheContract};
-use crate::database::tfhe_event_propagate::{ChainId, Database, LogTfhe};
+use crate::database::tfhe_event_propagate::{
+    acl_result_handles, tfhe_result_handle, ChainId, Database, LogTfhe,
+};
 use crate::health_check::HealthCheck;
 
 pub mod block_history;
@@ -109,6 +112,10 @@ pub struct Args {
         help = "Maximum duration in blocks to detect reorgs"
     )]
     pub reorg_maximum_duration_in_blocks: u64,
+
+    /// service name in OTLP traces
+    #[arg(long, default_value = "host-listener")]
+    pub service_name: String,
 }
 
 // TODO: to merge with Levent works
@@ -819,35 +826,42 @@ async fn db_insert_block_no_retry(
     tfhe_contract_address: &Option<Address>,
 ) -> std::result::Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
+    let mut is_allowed = HashSet::<Handle>::new();
+    let mut tfhe_event_log = vec![];
     for log in &block_logs.logs {
-        info!(
-            block = ?log.block_number,
-            tx = ?log.transaction_hash,
-            log_index = ?log.log_index,
-            "Log",
-        );
         let current_address = Some(log.inner.address);
-        let is_tfhe_address = &current_address == tfhe_contract_address;
-        if tfhe_contract_address.is_none() || is_tfhe_address {
-            if let Ok(event) =
-                TfheContract::TfheContractEvents::decode_log(&log.inner)
-            {
-                info!(tfhe_event = ?event, "TFHE event");
-                let log = LogTfhe {
-                    event,
-                    transaction_hash: log.transaction_hash,
-                };
-                db.insert_tfhe_event(&mut tx, &log).await?;
-                continue;
-            }
-        }
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
                 info!(acl_event = ?event, "ACL event");
-                db.handle_acl_event(&mut tx, &event).await?;
+                let handles = acl_result_handles(&event);
+                for handle in handles {
+                    is_allowed.insert(handle.to_vec());
+                }
+                db.handle_acl_event(
+                    &mut tx,
+                    &event,
+                    &log.transaction_hash,
+                    &log.block_number,
+                )
+                .await?;
+                continue;
+            }
+        }
+        let is_tfhe_address = &current_address == tfhe_contract_address;
+        if tfhe_contract_address.is_none() || is_tfhe_address {
+            if let Ok(event) =
+                TfheContract::TfheContractEvents::decode_log(&log.inner)
+            {
+                let log = LogTfhe {
+                    event,
+                    transaction_hash: log.transaction_hash,
+                    is_allowed: false, // updated in the next loop
+                    block_number: log.block_number,
+                };
+                tfhe_event_log.push(log);
                 continue;
             }
         }
@@ -856,9 +870,24 @@ async fn db_insert_block_no_retry(
                 event_address = ?log.inner.address,
                 acl_contract_address = ?acl_contract_address,
                 tfhe_contract_address = ?tfhe_contract_address,
+                log = ?log,
                 "Cannot decode event",
             );
         }
+    }
+    for tfhe_log in tfhe_event_log {
+        info!(tfhe_log = ?tfhe_log, "TFHE event");
+        let is_allowed =
+            if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
+                is_allowed.contains(&result_handle.to_vec())
+            } else {
+                false
+            };
+        let tfhe_log = LogTfhe {
+            is_allowed,
+            ..tfhe_log
+        };
+        db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
     }
     db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
     tx.commit().await
@@ -896,6 +925,12 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             })?,
         )
     };
+
+    if !args.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
+    }
 
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;

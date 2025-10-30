@@ -52,7 +52,7 @@ fn default_database_polling_timeout_secs() -> u64 {
 }
 
 fn default_tx_retries() -> u8 {
-    3
+    4
 }
 
 fn default_tx_retry_interval_ms() -> u64 {
@@ -64,11 +64,11 @@ fn default_trace_reverted_tx() -> bool {
 }
 
 fn default_responses_batch_size() -> u8 {
-    10
+    50
 }
 
 fn default_gas_multiplier_percent() -> usize {
-    300 // 300% gas increase by default
+    115 // 115% gas increase by default
 }
 
 impl DeserializeRawConfig for RawConfig {}

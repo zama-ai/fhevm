@@ -235,7 +235,6 @@ fn prepare_relayer_curl_command(
             "startTimestamp": "1748252823",
             "durationDays": "10"
         },
-        "contractsChainId": "11155111", // Ethereum Sepolia
         "contractAddresses": [
             "0x56a24bcaE11890353726596fD6f5cABb5a126Df9",
             "0x7777777777777777777777777777777777777777"

@@ -5,11 +5,13 @@ use crate::core::event_processor::{
 };
 use alloy::providers::Provider;
 use anyhow::anyhow;
-use connector_utils::types::{GatewayEvent, KmsGrpcRequest, KmsResponse};
+use connector_utils::types::{
+    GatewayEvent, GatewayEventKind, KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind,
+};
 use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use tonic::Code;
-use tracing::info;
+use tracing::{error, info};
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -18,7 +20,7 @@ pub trait EventProcessor: Send {
     fn process(
         &mut self,
         event: &Self::Event,
-    ) -> impl Future<Output = Result<KmsResponse, ProcessingError>> + Send;
+    ) -> impl Future<Output = Option<KmsResponseKind>> + Send;
 }
 
 /// Struct that processes Gateway's events coming from a `Postgres` database.
@@ -41,20 +43,26 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
-    async fn process(&mut self, event: &Self::Event) -> Result<KmsResponse, ProcessingError> {
-        info!("Starting to process {:?}...", event);
-        match self.inner_process(event).await {
-            Ok(response) => {
+    async fn process(&mut self, event: &Self::Event) -> Option<KmsResponseKind> {
+        info!("Starting to process {:?}...", event.kind);
+        match (self.inner_process(event).await, &event.kind) {
+            (Ok(response), _) => {
                 info!("Event successfully processed!");
-                Ok(response)
+                response
             }
-            Err(ProcessingError::Recoverable(e)) => {
-                event.mark_as_pending(&self.db_pool).await;
-                Err(ProcessingError::Recoverable(e))
-            }
-            Err(ProcessingError::Irrecoverable(e)) => {
+            (Err(ProcessingError::Irrecoverable(e)), _)
+            | (
+                Err(ProcessingError::Recoverable(e)),
+                GatewayEventKind::PrssInit(_) | GatewayEventKind::KeyReshareSameSet(_),
+            ) => {
+                error!("{}", ProcessingError::Irrecoverable(e));
                 event.delete_from_db(&self.db_pool).await;
-                Err(ProcessingError::Irrecoverable(e))
+                None
+            }
+            (Err(ProcessingError::Recoverable(e)), _) => {
+                error!("{}", ProcessingError::Recoverable(e));
+                event.mark_as_pending(&self.db_pool).await;
+                None
             }
         }
     }
@@ -89,8 +97,8 @@ impl<P: Provider> DbEventProcessor<P> {
         &self,
         event: GatewayEvent,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
-        match event {
-            GatewayEvent::PublicDecryption(req) => {
+        match event.kind {
+            GatewayEventKind::PublicDecryption(req) => {
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -100,7 +108,7 @@ impl<P: Provider> DbEventProcessor<P> {
                     )
                     .await
             }
-            GatewayEvent::UserDecryption(req) => {
+            GatewayEventKind::UserDecryption(req) => {
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -110,21 +118,21 @@ impl<P: Provider> DbEventProcessor<P> {
                     )
                     .await
             }
-            GatewayEvent::PrepKeygen(req) => {
-                self.kms_generation_processor
-                    .prepare_prep_keygen_request(req)
-                    .await
+            GatewayEventKind::PrepKeygen(req) => self
+                .kms_generation_processor
+                .prepare_prep_keygen_request(req),
+            GatewayEventKind::Keygen(req) => {
+                self.kms_generation_processor.prepare_keygen_request(req)
             }
-            GatewayEvent::Keygen(req) => {
-                self.kms_generation_processor
-                    .prepare_keygen_request(req)
-                    .await
+            GatewayEventKind::Crsgen(req) => {
+                self.kms_generation_processor.prepare_crsgen_request(req)
             }
-            GatewayEvent::Crsgen(req) => {
-                self.kms_generation_processor
-                    .prepare_crsgen_request(req)
-                    .await
+            GatewayEventKind::PrssInit(id) => {
+                Ok(self.kms_generation_processor.prepare_prss_init_request(id))
             }
+            GatewayEventKind::KeyReshareSameSet(req) => self
+                .kms_generation_processor
+                .prepare_initiate_resharing_request(req),
         }
         .map_err(ProcessingError::Recoverable)
     }
@@ -133,10 +141,18 @@ impl<P: Provider> DbEventProcessor<P> {
     async fn inner_process(
         &mut self,
         event: &GatewayEvent,
-    ) -> Result<KmsResponse, ProcessingError> {
+    ) -> Result<Option<KmsResponseKind>, ProcessingError> {
         let request = self.prepare_request(event.clone()).await?;
         let grpc_response = self.kms_client.send_request(request).await?;
-        KmsResponse::process(grpc_response).map_err(ProcessingError::Irrecoverable)
+
+        if let KmsGrpcResponse::NoResponseExpected = &grpc_response {
+            event.delete_from_db(&self.db_pool).await;
+            return Ok(None);
+        }
+
+        let processed_response =
+            KmsResponseKind::process(grpc_response).map_err(ProcessingError::Irrecoverable)?;
+        Ok(Some(processed_response))
     }
 }
 

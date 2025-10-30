@@ -11,13 +11,16 @@ use crate::{
     },
     monitoring::health::{KmsHealthClient, State},
 };
+use alloy::transports::http::reqwest;
+use anyhow::anyhow;
 use connector_utils::{
     conn::{GatewayProvider, connect_to_db, connect_to_gateway},
     tasks::spawn_with_limit,
+    types::{GatewayEvent, KmsResponse},
 };
-use std::fmt::Display;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct processing stored Gateway's events.
 pub struct KmsWorker<E, Proc, Publ> {
@@ -31,12 +34,11 @@ pub struct KmsWorker<E, Proc, Publ> {
     response_publisher: Publ,
 }
 
-impl<E, Proc, Publ, T> KmsWorker<E, Proc, Publ>
+impl<E, Proc, Publ> KmsWorker<E, Proc, Publ>
 where
-    E: EventPicker<Event = T>,
-    Proc: EventProcessor<Event = T> + Clone + Send + 'static,
+    E: EventPicker<Event = GatewayEvent>,
+    Proc: EventProcessor<Event = GatewayEvent> + Clone + Send + 'static,
     Publ: KmsResponsePublisher + Clone + Send + 'static,
-    T: Send + Sync + 'static + Display,
 {
     /// Creates a new `KmsWorker<E, Proc, Publ, R>`.
     pub fn new(event_picker: E, event_processor: Proc, response_publisher: Publ) -> Self {
@@ -56,39 +58,46 @@ where
         }
     }
 
-    /// Runs the event handling loop of the `KmsWorker`.
+    /// Runs the event processing loop of the `KmsWorker`.
     async fn run(mut self) {
         loop {
             match self.event_picker.pick_events().await {
-                Ok(events) => self.spawn_event_handling_tasks(events).await,
+                Ok(events) => self.spawn_event_processing_tasks(events).await,
                 Err(e) => warn!("Error while picking events: {e}"),
             };
         }
     }
 
-    /// Spawns a new task to handle each event.
-    async fn spawn_event_handling_tasks(&self, events: Vec<T>) {
+    /// Spawns a new task to process each event.
+    async fn spawn_event_processing_tasks(&self, events: Vec<GatewayEvent>) {
         for event in events {
             let event_processor = self.event_processor.clone();
             let response_publisher = self.response_publisher.clone();
 
             spawn_with_limit(async move {
-                Self::handle_event(event_processor, response_publisher, event).await
+                Self::process_event(event_processor, response_publisher, event).await
             })
             .await;
         }
     }
 
-    /// Handles an event coming from the Gateway.
-    #[tracing::instrument(skip(event_processor, response_publisher), fields(event = %event))]
-    async fn handle_event(mut event_processor: Proc, response_publisher: Publ, event: T) {
-        let response = match event_processor.process(&event).await {
-            Ok(response) => response,
-            Err(e) => return error!("{e}"),
+    /// Processes an event coming from the Gateway.
+    #[tracing::instrument(skip(event_processor, response_publisher), fields(event = % event.kind))]
+    async fn process_event(
+        mut event_processor: Proc,
+        response_publisher: Publ,
+        event: GatewayEvent,
+    ) {
+        let otlp_context = event.otlp_context.clone();
+        tracing::Span::current().set_parent(otlp_context.extract());
+
+        let Some(response_kind) = event_processor.process(&event).await else {
+            return;
         };
 
-        if let Err(e) = response_publisher.publish(response.clone()).await {
-            error!("Failed to publish {response}: {e}");
+        let response = KmsResponse::new(response_kind, otlp_context);
+        if let Err(e) = response_publisher.publish_response(response).await {
+            error!("Failed to publish response: {e}");
         }
     }
 }
@@ -100,10 +109,14 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
         let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
+        let s3_client = reqwest::Client::builder()
+            .connect_timeout(config.s3_connect_timeout)
+            .build()
+            .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
-        let s3_service = S3Service::new(&config, provider.clone());
+        let s3_service = S3Service::new(&config, provider.clone(), s3_client);
         let decryption_processor = DecryptionProcessor::new(&config, s3_service);
         let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let event_processor = DbEventProcessor::new(
@@ -128,10 +141,9 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::event_processor::ProcessingError;
     use connector_utils::{
         tests::rand::{rand_signature, rand_u256},
-        types::{GatewayEvent, KmsResponse, UserDecryptionResponse},
+        types::{GatewayEvent, KmsResponse, KmsResponseKind, UserDecryptionResponse},
     };
     use std::time::Duration;
     use tracing_test::traced_test;
@@ -186,8 +198,8 @@ mod tests {
 
     impl EventProcessor for MockEventProcessor {
         type Event = GatewayEvent;
-        async fn process(&mut self, _event: &Self::Event) -> Result<KmsResponse, ProcessingError> {
-            Ok(KmsResponse::UserDecryption(UserDecryptionResponse {
+        async fn process(&mut self, _event: &Self::Event) -> Option<KmsResponseKind> {
+            Some(KmsResponseKind::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
                 signature: rand_signature(),
@@ -200,7 +212,7 @@ mod tests {
     struct MockResponsePublisher {}
 
     impl KmsResponsePublisher for MockResponsePublisher {
-        async fn publish(&self, _response: KmsResponse) -> anyhow::Result<()> {
+        async fn publish_response(&self, _response: KmsResponse) -> anyhow::Result<()> {
             info!("Response has been published");
             Ok(())
         }

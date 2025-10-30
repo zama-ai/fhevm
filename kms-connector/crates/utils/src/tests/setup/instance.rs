@@ -4,6 +4,7 @@ use crate::{
     conn::WalletGatewayProvider,
     tests::setup::{CustomTestWriter, DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
 };
+use alloy::transports::http::reqwest::Url;
 use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
     gateway_config::GatewayConfig::GatewayConfigInstance,
@@ -109,8 +110,8 @@ impl TestInstance {
         self.gateway().anvil_block_time()
     }
 
-    pub fn anvil_ws_endpoint(&self) -> String {
-        self.gateway().anvil_ws_endpoint()
+    pub fn anvil_http_endpoint(&self) -> Url {
+        self.gateway().anvil_http_endpoint()
     }
 
     pub fn kms_container(&self) -> &ContainerAsync<GenericImage> {

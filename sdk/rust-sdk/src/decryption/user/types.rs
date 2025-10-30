@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 pub struct UserDecryptRequest {
     pub ct_handle_contract_pairs: Vec<CtHandleContractPair>,
     pub request_validity: RequestValidity,
-    pub contracts_chain_id: u64,
     pub contract_addresses: Vec<Address>,
     pub user_address: Address,
     pub signature: Bytes,

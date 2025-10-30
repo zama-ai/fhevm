@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
+import { MulticallUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IMultichainACL } from "./interfaces/IMultichainACL.sol";
 import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
@@ -9,20 +10,31 @@ import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
-import { DelegationAccounts } from "./shared/Structs.sol";
+import { UserDecryptionDelegation } from "./shared/Structs.sol";
 
-/// @title MultichainACL smart contract
-/// @dev See {IMultichainACL}
-contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwnable, GatewayConfigChecks {
-    /// @notice The address of the GatewayConfig contract for protocol state calls.
+/**
+ * @title MultichainACL smart contract
+ * @notice See {IMultichainACL}
+ * @dev This contract implements MulticallUpgradeable to allow batching multiple calls in a single
+ * transaction, e.g., for bundling user decryption delegations of multiple contracts.
+ */
+contract MultichainACL is
+    IMultichainACL,
+    UUPSUpgradeableEmptyProxy,
+    GatewayOwnable,
+    GatewayConfigChecks,
+    MulticallUpgradeable
+{
+    /**
+     * @notice The address of the GatewayConfig contract for protocol state calls.
+     */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
-    /// @notice The maximum number of contracts that can be requested for delegation.
-    uint8 internal constant MAX_CONTRACT_ADDRESSES = 10;
-
-    /// @dev The following constants are used for versioning the contract. They are made private
-    /// @dev in order to force derived contracts to consider a different version. Note that
-    /// @dev they can still define their own private constants with the same name.
+    /**
+     * @dev The following constants are used for versioning the contract. They are made private
+     * in order to force derived contracts to consider a different version. Note that
+     * they can still define their own private constants with the same name.
+     */
     string private constant CONTRACT_NAME = "MultichainACL";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
@@ -34,68 +46,62 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
-    /// @notice The contract's variable storage struct (@dev see ERC-7201)
+    /**
+     * @notice The contract's variable storage struct (@dev see ERC-7201)
+     */
     /// @custom:storage-location erc7201:fhevm_gateway.storage.MultichainACL
     struct MultichainACLStorage {
         // ----------------------------------------------------------------------------------------------
-        // Common consensus state variables:
+        // Common state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice The coprocessor transaction senders involved in a consensus for allowing a public decryption.
-        mapping(bytes32 ctHandle => address[] coprocessorTxSenderAddresses) allowPublicDecryptConsensusTxSenders;
-        // prettier-ignore
-        /// @notice The coprocessor transaction senders involved in a consensus for allowing an account.
-        mapping(bytes32 ctHandle => mapping(address accountAddress =>
-            address[] coprocessorTxSenderAddresses))
-               allowAccountConsensusTxSenders;
-        /// @notice The coprocessor transaction senders involved in a consensus for delegating an account.
+        /// @notice The coprocessors that have already made an allow call.
+        mapping(bytes32 allowHash => mapping(address coprocessorTxSenderAddress => bool hasAllowed)) allowCoprocessors;
+        /// @notice The counter used for an allow consensus.
+        mapping(bytes32 allowHash => uint256 counter) allowCounters;
+        /// @notice The coprocessor transaction senders involved in a consensus for an allow call.
+        mapping(bytes32 allowHash => address[] coprocessorTxSenderAddresses) allowConsensusTxSenders;
+        /// @notice Allowed public decryptions.
+        mapping(bytes32 allowHash => bool isAllowed) isAllowed;
+        /// @notice DEPRECATED: to remove in a state reset.
         mapping(bytes32 delegateAccountHash => address[] coprocessorTxSenderAddresses) delegateAccountConsensusTxSenders;
         // ----------------------------------------------------------------------------------------------
-        // Allow account state variables:
+        // Coprocessor context state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice Accounts allowed to use the ciphertext handle.
-        mapping(bytes32 ctHandle => mapping(address accountAddress => bool isAllowed)) allowedAccounts;
-        /// @notice The counter used for the allowAccount consensus.
-        mapping(bytes32 ctHandle => mapping(address accountAddress => uint8 counter)) allowAccountCounters;
+        /// @notice The context ID for the allow consensus.
+        mapping(bytes32 allowHash => uint256 contextId) allowContextId;
+        // ----------------------------------------------------------------------------------------------
+        // Delegation state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The computed delegate user decryption hash that has already reached consensus for delegation or revocation.
+        mapping(bytes32 delegateUserDecryptionHash => bool isDelegatedOrRevoked) delegatedOrRevokedUserDecryptionHashes;
+        /// @notice The coprocessor transaction senders involved in a consensus for delegating user decryption.
+        mapping(bytes32 delegateUserDecryptionHash => address[] coprocessorTxSenderAddresses) delegateUserDecryptionTxSenders;
+        /// @notice The coprocessor transaction senders involved in a consensus for revoking user decryption.
+        mapping(bytes32 delegateUserDecryptionHash => address[] coprocessorTxSenderAddresses) revokeUserDecryptionTxSenders;
         // prettier-ignore
-        /// @notice The coprocessors that have already allowed an account to use the ciphertext handle.
-        mapping(bytes32 ctHandle => mapping(address accountAddress =>
-            mapping(address coprocessorTxSenderAddress => bool hasAllowed)))
-                allowAccountCoprocessors;
-        // ----------------------------------------------------------------------------------------------
-        // Allow public decryption state variables:
-        // ----------------------------------------------------------------------------------------------
-        /// @notice Allowed public decryptions.
-        mapping(bytes32 ctHandle => bool isAllowed) allowedPublicDecrypts;
-        /// @notice The counter used for the public decryption consensus.
-        mapping(bytes32 ctHandle => uint8 counter) allowPublicDecryptCounters;
-        // prettier-ignore
-        /// @notice The coprocessors that have already allowed a public decryption.
-        mapping(bytes32 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAllowed)) 
-            allowPublicDecryptCoprocessors;
-        // ----------------------------------------------------------------------------------------------
-        // Delegate account state variables:
-        // ----------------------------------------------------------------------------------------------
-        /// @notice The computed delegateAccountHash that has already been delegated.
-        mapping(bytes32 delegateAccountHash => bool isDelegated) delegatedAccountHashes;
-        /// @notice The number of times a delegateAccountHash has received confirmations.
-        mapping(bytes32 delegateAccountHash => uint8 counter) delegateAccountHashCounters;
-        // prettier-ignore
-        /// @notice The coprocessors that have already delegated an account for a given delegateAccountHash.
-        mapping(bytes32 delegateAccountHash =>
+        /// @notice The coprocessors that have already delegated for user decryption.
+        mapping(bytes32 delegateUserDecryptionHash =>
             mapping(address coprocessorTxSenderAddress => bool hasDelegated))
-                alreadyDelegatedCoprocessors;
+                alreadyDelegatedUserDecryptionCoprocessors;
         // prettier-ignore
-        /// @notice The account delegations for a given contract after reaching consensus.
-        mapping(address delegator => mapping(address delegated =>
-            mapping(uint256 chainId => mapping(address contractAddress => bool isDelegated))))
-                delegatedContracts;
+        /// @notice The coprocessors that have already revoked delegation for user decryption.
+        mapping(bytes32 delegateUserDecryptionHash =>
+            mapping(address coprocessorTxSenderAddress => bool hasRevoked))
+                alreadyRevokedUserDecryptionCoprocessors;
+        // prettier-ignore
+        /// @notice The user decryption delegation info after reaching consensus for delegation or revocation.
+        mapping(uint256 chainId => mapping(address delegator =>
+            mapping(address delegate => mapping(address contractAddress => UserDecryptionDelegation delegation))))
+                userDecryptionDelegations;
     }
 
-    /// @dev Storage location has been computed using the following command:
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.MultichainACL")) - 1))
-    /// @dev & ~bytes32(uint256(0xff))
+    /**
+     * @dev Storage location has been computed using the following command:
+     * keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.MultichainACL")) - 1))
+     * & ~bytes32(uint256(0xff))
+     */
     bytes32 private constant MULTICHAIN_ACL_STORAGE_LOCATION =
         0x7f733a54a70114addd729bcd827932a6c402ccf3920960665917bc2e6640f400;
 
@@ -104,8 +110,10 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         _disableInitializers();
     }
 
-    /// @notice Initializes the contract.
-    /// @dev This function needs to be public in order to be called by the UUPS proxy.
+    /**
+     * @notice Initializes the contract.
+     * @dev This function needs to be public in order to be called by the UUPS proxy.
+     */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
@@ -115,207 +123,365 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
-    /// @dev See {IMultichainACL-allowPublicDecrypt}.
+    /**
+     * @notice See {IMultichainACL-allowPublicDecrypt}.
+     */
     function allowPublicDecrypt(
         bytes32 ctHandle,
-        bytes calldata /* extraData */
+        bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        /**
-         * @dev Check if the coprocessor has already allowed the ciphertext handle for public decryption.
-         * A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
-         * the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
-         */
-        if ($.allowPublicDecryptCoprocessors[ctHandle][msg.sender]) {
+        // Associate the ctHandle to coprocessor context ID 1 to anticipate their introduction in V2.
+        // Only set the context ID if it hasn't been set yet to avoid multiple identical SSTOREs.
+        if ($.allowContextId[ctHandle] == 0) {
+            $.allowContextId[ctHandle] = 1;
+        }
+
+        // Check if the coprocessor has already allowed the ciphertext handle for public decryption.
+        // A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
+        // the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
+        if ($.allowCoprocessors[ctHandle][msg.sender]) {
             revert CoprocessorAlreadyAllowedPublicDecrypt(ctHandle, msg.sender);
         }
-        $.allowPublicDecryptCounters[ctHandle]++;
-        $.allowPublicDecryptCoprocessors[ctHandle][msg.sender] = true;
+        $.allowCounters[ctHandle]++;
+        $.allowCoprocessors[ctHandle][msg.sender] = true;
 
         // Store the coprocessor transaction sender address for the public decryption response
         // It is important to consider the same mapping fields used for the consensus
         // A "late" valid coprocessor transaction sender address will still be added in the list.
-        $.allowPublicDecryptConsensusTxSenders[ctHandle].push(msg.sender);
+        $.allowConsensusTxSenders[ctHandle].push(msg.sender);
+
+        // Emit the event at each call for monitoring purposes.
+        emit AllowPublicDecrypt(ctHandle, msg.sender, extraData);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.allowedPublicDecrypts[ctHandle] && _isConsensusReached($.allowPublicDecryptCounters[ctHandle])) {
-            $.allowedPublicDecrypts[ctHandle] = true;
-            emit AllowPublicDecrypt(ctHandle);
+        if (!$.isAllowed[ctHandle] && _isConsensusReached($.allowCounters[ctHandle])) {
+            $.isAllowed[ctHandle] = true;
+            emit AllowPublicDecryptConsensus(ctHandle, extraData);
         }
     }
 
-    /// @dev See {IMultichainACL-allowAccount}.
+    /**
+     * @notice See {IMultichainACL-allowAccount}.
+     */
     function allowAccount(
         bytes32 ctHandle,
         address accountAddress,
-        bytes calldata /* extraData */
+        bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        /**
-         * @dev Check if the coprocessor has already allowed the account to use the ciphertext handle.
-         * A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
-         * the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
-         */
-        if ($.allowAccountCoprocessors[ctHandle][accountAddress][msg.sender]) {
+        // Compute the hash of the allow call, unique across all types of allow calls.
+        bytes32 allowHash = _getAllowAccountHash(ctHandle, accountAddress);
+
+        // Associate the allowHash to coprocessor context ID 1 to anticipate their introduction in V2.
+        // Only set the context ID if it hasn't been set yet to avoid multiple identical SSTOREs.
+        if ($.allowContextId[allowHash] == 0) {
+            $.allowContextId[allowHash] = 1;
+        }
+
+        // Check if the coprocessor has already allowed the account to use the ciphertext handle.
+        // A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
+        // the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
+        if ($.allowCoprocessors[allowHash][msg.sender]) {
             revert CoprocessorAlreadyAllowedAccount(ctHandle, accountAddress, msg.sender);
         }
-        $.allowAccountCounters[ctHandle][accountAddress]++;
-        $.allowAccountCoprocessors[ctHandle][accountAddress][msg.sender] = true;
+        $.allowCounters[allowHash]++;
+        $.allowCoprocessors[allowHash][msg.sender] = true;
 
         // Store the coprocessor transaction sender address for the allow account response
         // It is important to consider the same mapping fields used for the consensus
         // A "late" valid coprocessor transaction sender address will still be added in the list.
-        $.allowAccountConsensusTxSenders[ctHandle][accountAddress].push(msg.sender);
+        $.allowConsensusTxSenders[allowHash].push(msg.sender);
+
+        // Emit the event at each call for monitoring purposes.
+        emit AllowAccount(ctHandle, accountAddress, msg.sender, extraData);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (
-            !$.allowedAccounts[ctHandle][accountAddress] &&
-            _isConsensusReached($.allowAccountCounters[ctHandle][accountAddress])
-        ) {
-            $.allowedAccounts[ctHandle][accountAddress] = true;
-            emit AllowAccount(ctHandle, accountAddress);
+        if (!$.isAllowed[allowHash] && _isConsensusReached($.allowCounters[allowHash])) {
+            $.isAllowed[allowHash] = true;
+            emit AllowAccountConsensus(ctHandle, accountAddress, extraData);
         }
     }
 
-    /// @dev See {IMultichainACL-delegateAccount}.
-    function delegateAccount(
+    /// @dev See {IMultichainACL-delegateUserDecryption}.
+    function delegateUserDecryption(
         uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
     ) external virtual onlyCoprocessorTxSender {
-        if (contractAddresses.length == 0) {
-            revert EmptyContractAddresses();
-        }
-        if (contractAddresses.length > MAX_CONTRACT_ADDRESSES) {
-            revert ContractsMaxLengthExceeded(MAX_CONTRACT_ADDRESSES, contractAddresses.length);
-        }
-
         MultichainACLStorage storage $ = _getMultichainACLStorage();
+        bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate
+        );
 
-        /// @dev The delegateAccountHash is the hash of all input arguments.
-        /// @dev This hash is used to track the delegation consensus over the whole contractAddresses list,
-        /// @dev and assumes that the Coprocessors will delegate the same list of contracts and keep the same order.
-        bytes32 delegateAccountHash = _getDelegateAccountHash(chainId, delegationAccounts, contractAddresses);
+        _checkAlreadyDelegatedOrRevokedUserDecryptionDelegation(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate,
+            delegateUserDecryptionHash
+        );
 
-        mapping(address => bool) storage alreadyDelegatedCoprocessors = $.alreadyDelegatedCoprocessors[
-            delegateAccountHash
-        ];
+        mapping(address => bool) storage alreadyDelegatedUserDecryptionCoprocessors = $
+            .alreadyDelegatedUserDecryptionCoprocessors[delegateUserDecryptionHash];
 
-        /// @dev Check if the coprocessor has already delegated the account.
-        if (alreadyDelegatedCoprocessors[msg.sender]) {
-            revert CoprocessorAlreadyDelegated(chainId, delegationAccounts, contractAddresses, msg.sender);
-        }
+        // Mark the coprocessor has already delegated for the user decryption hash.
+        alreadyDelegatedUserDecryptionCoprocessors[msg.sender] = true;
 
-        $.delegateAccountHashCounters[delegateAccountHash]++;
-        alreadyDelegatedCoprocessors[msg.sender] = true;
-
-        // Store the coprocessor transaction sender address for the delegate account response
-        // It is important to consider the same mapping fields used for the consensus
+        // Store the coprocessor transaction sender address for the delegate user decryption hash.
         // A "late" valid coprocessor transaction sender address will still be added in the list.
-        $.delegateAccountConsensusTxSenders[delegateAccountHash].push(msg.sender);
+        $.delegateUserDecryptionTxSenders[delegateUserDecryptionHash].push(msg.sender);
 
-        // Send the event if and only if the consensus is reached in the current response call.
-        // This means a "late" response will not be reverted, just ignored and no event will be emitted
+        emit DelegateUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
+
+        // Send the consensus reached event only if the consensus is reached in the current call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted.
         if (
-            !$.delegatedAccountHashes[delegateAccountHash] &&
-            _isConsensusReached($.delegateAccountHashCounters[delegateAccountHash])
+            !$.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] &&
+            _isConsensusReached($.delegateUserDecryptionTxSenders[delegateUserDecryptionHash].length)
         ) {
-            mapping(address => bool) storage delegatedContracts = $.delegatedContracts[
-                delegationAccounts.delegatorAddress
-            ][delegationAccounts.delegatedAddress][chainId];
-            for (uint256 i = 0; i < contractAddresses.length; i++) {
-                delegatedContracts[contractAddresses[i]] = true;
+            UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[chainId][delegator][
+                delegate
+            ][contractAddress];
+
+            // Check that the delegation counter is strictly greater than the previous one.
+            // This check must be performed only after consensus is reached to guarantee correct ordering
+            // of delegation operations among multiple coprocessors. Performing this check outside of the
+            // consensus branch could lead to incorrect reverts in cases where multiple delegation or
+            // revocation transactions are processed in parallel.
+            if (delegationCounter <= userDecryptionDelegation.delegationCounter) {
+                revert UserDecryptionDelegationCounterTooLow(delegationCounter);
             }
-            $.delegatedAccountHashes[delegateAccountHash] = true;
-            emit DelegateAccount(chainId, delegationAccounts, contractAddresses);
+
+            // Update the user decryption delegation information.
+            uint64 oldExpirationDate = userDecryptionDelegation.expirationDate;
+            userDecryptionDelegation.delegationCounter = delegationCounter;
+            userDecryptionDelegation.expirationDate = expirationDate;
+
+            // Mark the delegate user decryption hash as having reached consensus for delegation.
+            $.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] = true;
+
+            emit DelegateUserDecryptionConsensus(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                oldExpirationDate,
+                expirationDate
+            );
         }
     }
 
-    /// @dev See {IMultichainACL-checkPublicDecryptAllowed}.
-    function checkPublicDecryptAllowed(bytes32 ctHandle) external view virtual {
-        MultichainACLStorage storage $ = _getMultichainACLStorage();
-
-        if (!$.allowedPublicDecrypts[ctHandle]) {
-            revert PublicDecryptNotAllowed(ctHandle);
-        }
-    }
-
-    /// @dev See {IMultichainACL-checkAccountAllowed}.
-    function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view virtual {
-        MultichainACLStorage storage $ = _getMultichainACLStorage();
-
-        /// @dev Check that the account address is allowed to use this ciphertext.
-        if (!$.allowedAccounts[ctHandle][accountAddress]) {
-            revert AccountNotAllowedToUseCiphertext(ctHandle, accountAddress);
-        }
-    }
-
-    /// @dev See {IMultichainACL-checkAccountDelegated}.
-    function checkAccountDelegated(
+    /// @dev See {IMultichainACL-revokeUserDecryptionDelegation}.
+    function revokeUserDecryptionDelegation(
         uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) external view virtual {
-        if (contractAddresses.length == 0) {
-            revert EmptyContractAddresses();
-        }
-
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
+    ) external virtual onlyCoprocessorTxSender {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
-        for (uint256 i = 0; i < contractAddresses.length; i++) {
-            if (
-                !$.delegatedContracts[delegationAccounts.delegatorAddress][delegationAccounts.delegatedAddress][
-                    chainId
-                ][contractAddresses[i]]
-            ) {
-                revert AccountNotDelegated(chainId, delegationAccounts, contractAddresses[i]);
+        bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate
+        );
+
+        _checkAlreadyDelegatedOrRevokedUserDecryptionDelegation(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate,
+            delegateUserDecryptionHash
+        );
+
+        mapping(address => bool) storage alreadyRevokedUserDecryptionCoprocessors = $
+            .alreadyRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash];
+
+        // Mark the coprocessor has already revoked for the delegate user decryption hash.
+        alreadyRevokedUserDecryptionCoprocessors[msg.sender] = true;
+
+        // Store the revoking coprocessor transaction sender address for the delegate user decryption hash.
+        // A "late" valid coprocessor transaction sender address will still be added in the list.
+        $.revokeUserDecryptionTxSenders[delegateUserDecryptionHash].push(msg.sender);
+
+        emit RevokeUserDecryptionDelegation(chainId, delegator, delegate, contractAddress, delegationCounter);
+
+        // Send the consensus reached event only if the consensus is reached in the current call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted.
+        if (
+            !$.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] &&
+            _isConsensusReached($.revokeUserDecryptionTxSenders[delegateUserDecryptionHash].length)
+        ) {
+            UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[chainId][delegator][
+                delegate
+            ][contractAddress];
+
+            // Check that the delegation counter is strictly greater than the previous one.
+            // This check must be performed only after consensus is reached to guarantee correct ordering
+            // of revocation operations among multiple coprocessors. Performing this check outside of the
+            // consensus branch could lead to incorrect reverts in cases where multiple delegation or
+            // revocation transactions are processed in parallel.
+            if (delegationCounter <= userDecryptionDelegation.delegationCounter) {
+                revert UserDecryptionDelegationCounterTooLow(delegationCounter);
             }
+
+            // Update the user decryption delegation information.
+            uint64 oldExpirationDate = userDecryptionDelegation.expirationDate;
+            userDecryptionDelegation.delegationCounter = delegationCounter;
+            userDecryptionDelegation.expirationDate = 0;
+
+            // Mark the delegate user decryption hash as having reached consensus for revocation.
+            $.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] = true;
+
+            emit RevokeUserDecryptionDelegationConsensusReached(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                oldExpirationDate
+            );
         }
     }
 
-    /// @dev See {IMultichainACL-getAllowPublicDecryptConsensusTxSenders}.
+    /**
+     * @notice See {IMultichainACL-isPublicDecryptAllowed}.
+     */
+    function isPublicDecryptAllowed(bytes32 ctHandle) external view virtual returns (bool) {
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
+
+        return $.isAllowed[ctHandle];
+    }
+
+    /**
+     * @notice See {IMultichainACL-isAccountAllowed}.
+     */
+    function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view virtual returns (bool) {
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
+
+        bytes32 allowHash = _getAllowAccountHash(ctHandle, accountAddress);
+        return $.isAllowed[allowHash];
+    }
+
+    /**
+     * @notice See {IMultichainACL-isUserDecryptionDelegated}.
+     */
+    function isUserDecryptionDelegated(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress
+    ) external view returns (bool) {
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
+
+        UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[chainId][delegator][
+            delegate
+        ][contractAddress];
+
+        return userDecryptionDelegation.expirationDate >= block.timestamp;
+    }
+
+    /**
+     * @notice See {IMultichainACL-getAllowPublicDecryptConsensusTxSenders}.
+     */
     function getAllowPublicDecryptConsensusTxSenders(
         bytes32 ctHandle
     ) external view virtual returns (address[] memory) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        return $.allowPublicDecryptConsensusTxSenders[ctHandle];
+        return $.allowConsensusTxSenders[ctHandle];
     }
 
-    /// @dev See {IMultichainACL-getAllowAccountConsensusTxSenders}.
+    /**
+     * @notice See {IMultichainACL-getAllowAccountConsensusTxSenders}.
+     */
     function getAllowAccountConsensusTxSenders(
         bytes32 ctHandle,
         address accountAddress
     ) external view virtual returns (address[] memory) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        return $.allowAccountConsensusTxSenders[ctHandle][accountAddress];
+        bytes32 allowHash = _getAllowAccountHash(ctHandle, accountAddress);
+        return $.allowConsensusTxSenders[allowHash];
     }
 
     /**
-     * @dev See {IMultichainACL-getDelegateAccountConsensusTxSenders}.
-     * The contract address list needs to be provided in the same order as when the consensus was reached
-     * in order to be able to retrieve the coprocessor transaction senders associated to it.
+     * @notice See {IMultichainACL-getDelegateUserDecryptionConsensusTxSenders}.
      */
-    function getDelegateAccountConsensusTxSenders(
+    function getDelegateUserDecryptionConsensusTxSenders(
         uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) external view virtual returns (address[] memory) {
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
+    ) external view returns (address[] memory) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        // Get the hash of the delegate account's inputs used to track the consensus.
-        bytes32 delegateAccountHash = _getDelegateAccountHash(chainId, delegationAccounts, contractAddresses);
+        bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate
+        );
 
-        return $.delegateAccountConsensusTxSenders[delegateAccountHash];
+        return $.delegateUserDecryptionTxSenders[delegateUserDecryptionHash];
     }
 
-    /// @dev See {IMultichainACL-getVersion}.
+    /**
+     * @notice See {IMultichainACL-getRevokeUserDecryptionDelegationConsensusTxSenders}.
+     */
+    function getRevokeUserDecryptionDelegationConsensusTxSenders(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
+    ) external view returns (address[] memory) {
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
+
+        bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate
+        );
+
+        return $.revokeUserDecryptionTxSenders[delegateUserDecryptionHash];
+    }
+
+    /**
+     * @notice See {IMultichainACL-getVersion}.
+     */
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -332,31 +498,92 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     }
 
     /**
-     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     * @notice Checks if the sender is authorized to upgrade the contract and reverts otherwise.
      */
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
 
-    /// @notice Checks if the consensus is reached among the Coprocessors.
-    /// @param coprocessorCounter The number of coprocessors that agreed
-    /// @return Whether the consensus is reached
-    function _isConsensusReached(uint8 coprocessorCounter) internal view virtual returns (bool) {
+    /**
+     * @notice Checks if the consensus is reached among the Coprocessors.
+     * @param coprocessorCounter The number of coprocessors that agreed
+     * @return Whether the consensus is reached
+     */
+    function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
     }
 
-    /// @dev Returns the hash of a delegate account's inputs.
-    function _getDelegateAccountHash(
-        uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) internal pure virtual returns (bytes32) {
-        return keccak256(abi.encode(chainId, delegationAccounts, contractAddresses));
+    /**
+     * @notice Returns the hash of a allow account call.
+     */
+    function _getAllowAccountHash(bytes32 ctHandle, address accountAddress) internal pure virtual returns (bytes32) {
+        return keccak256(abi.encode(ctHandle, accountAddress));
     }
 
     /**
-     * @dev Returns the MultichainACL storage location.
-     * Note that this function is internal but not virtual: derived contracts should be able to
+     * @notice Returns the hash of a delegate user decryption information.
+     */
+    function _getDelegateUserDecryptionHash(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
+    ) internal pure virtual returns (bytes32) {
+        return keccak256(abi.encode(chainId, delegator, delegate, contractAddress, delegationCounter, expirationDate));
+    }
+
+    /**
+     * @notice Checks if the coprocessor has already delegated or revoked the user decryption delegation.
+     */
+    function _checkAlreadyDelegatedOrRevokedUserDecryptionDelegation(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate,
+        bytes32 delegateUserDecryptionHash
+    ) internal view virtual {
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
+
+        mapping(address => bool) storage alreadyDelegatedUserDecryptionCoprocessors = $
+            .alreadyDelegatedUserDecryptionCoprocessors[delegateUserDecryptionHash];
+
+        mapping(address => bool) storage alreadyRevokedUserDecryptionCoprocessors = $
+            .alreadyRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash];
+
+        // Check if the coprocessor has already delegated the user decryption.
+        if (alreadyDelegatedUserDecryptionCoprocessors[msg.sender]) {
+            revert CoprocessorAlreadyDelegatedUserDecryption(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                expirationDate,
+                msg.sender
+            );
+        }
+
+        // Check if the coprocessor has already revoked the user decryption delegation.
+        if (alreadyRevokedUserDecryptionCoprocessors[msg.sender]) {
+            revert CoprocessorAlreadyRevokedUserDecryption(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                expirationDate,
+                msg.sender
+            );
+        }
+    }
+
+    /**
+     * @notice Returns the MultichainACL storage location.
+     * @dev Note that this function is internal but not virtual: derived contracts should be able to
      * access it, but if the underlying storage struct version changes, we force them to define a new
      * getter function and use that one instead in order to avoid overriding the storage location.
      */

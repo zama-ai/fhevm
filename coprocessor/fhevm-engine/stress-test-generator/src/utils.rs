@@ -122,12 +122,14 @@ pub struct Scenario {
 pub struct Job {
     pub id: u64,
     pub scenarios: Vec<Scenario>,
+    pub cancel_token: tokio_util::sync::CancellationToken,
 }
 
 #[derive(Clone)]
 pub struct Context {
     pub args: Args,
     pub ecfg: EnvConfig,
+    pub cancel_token: tokio_util::sync::CancellationToken,
 }
 
 #[allow(dead_code)]
@@ -135,6 +137,7 @@ pub async fn allow_handle(
     handle: &Vec<u8>,
     event_type: AllowEvents,
     account_address: String,
+    transaction_id: TransactionHash,
     pool: &sqlx::Pool<Postgres>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = std::time::Instant::now();
@@ -142,18 +145,20 @@ pub async fn allow_handle(
     let ecfg = EnvConfig::new();
     let _query =
             sqlx::query!(
-                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
+                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4, $5)
                      ON CONFLICT DO NOTHING;",
                 ecfg.tenant_id,
                 handle,
                 account_address,
                 event_type as i16,
+                transaction_id.to_vec(),
             ).execute(pool).await?;
     let _query = sqlx::query!(
-        "INSERT INTO pbs_computations(tenant_id, handle) VALUES($1, $2) 
+        "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3) 
                      ON CONFLICT DO NOTHING;",
         ecfg.tenant_id,
         handle,
+        transaction_id.to_vec()
     )
     .execute(pool)
     .await?;
@@ -208,6 +213,7 @@ pub async fn generate_trivial_encrypt(
     listener_event_to_db: &mut ListenerDatabase,
     ct_type: Option<FheType>,
     ct_value: Option<u128>,
+    is_allowed: bool,
 ) -> Result<Handle, Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     let ct_type = ct_type.unwrap_or(DEF_TYPE);
@@ -223,6 +229,8 @@ pub async fn generate_trivial_encrypt(
             },
         )),
         transaction_hash: Some(transaction_hash),
+        is_allowed,
+        block_number: None,
     };
     let mut tx = listener_event_to_db.new_transaction().await?;
     listener_event_to_db
@@ -265,6 +273,33 @@ pub async fn query_and_save_pks(
 
     keys.replace((pks.clone(), public_params.clone()));
     Ok((pks, public_params))
+}
+
+pub async fn get_ciphertext_digests(
+    handle: &[u8],
+    pool: &sqlx::PgPool,
+    max_retries: usize,
+) -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error>> {
+    for _ in 0..max_retries {
+        let digests = sqlx::query!(
+            "
+            SELECT ciphertext, ciphertext128
+            FROM ciphertext_digest
+            WHERE handle = $1
+            ",
+            handle,
+        )
+        .fetch_one(pool)
+        .await;
+
+        if let Ok(digests) = digests {
+            if digests.ciphertext.is_some() && digests.ciphertext128.is_some() {
+                return Ok((digests.ciphertext.unwrap(), digests.ciphertext128.unwrap()));
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    Ok((vec![], vec![]))
 }
 
 /// User configuration in which benchmarks must be run.
@@ -368,12 +403,15 @@ pub async fn insert_tfhe_event(
     listener_event_to_db: &ListenerDatabase,
     transaction_hash: TransactionHash,
     event: Log<TfheContractEvents>,
+    is_allowed: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = tokio::time::Instant::now();
     let mut tx = listener_event_to_db.new_transaction().await?;
     let log = LogTfhe {
         event,
         transaction_hash: Some(transaction_hash),
+        is_allowed,
+        block_number: None,
     };
     listener_event_to_db
         .insert_tfhe_event(&mut tx, &log)

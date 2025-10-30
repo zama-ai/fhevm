@@ -3,7 +3,8 @@ pragma solidity ^0.8.24;
 
 /**
  * @title Interface for the InputVerification contract.
- * @dev The InputVerification contract handles Zero-Knowledge Proof of Knowledge (ZKPoK) verifications for inputs.
+ * @notice The InputVerification contract handles Zero-Knowledge Proof of Knowledge (ZKPoK)
+ * verifications for inputs.
  */
 interface IInputVerification {
     /**
@@ -25,12 +26,37 @@ interface IInputVerification {
     );
 
     /**
+     * @notice Emitted when a coprocessor transaction sender responds to a ZK Proof verification
+     * request for a proof validation.
+     * @param zkProofId The ID of the ZK Proof.
+     * @param ctHandles The coprocessor's computed ciphertext handles.
+     * @param signature The coprocessor's signature.
+     * @param coprocessorTxSender The transaction sender of the coprocessor that has called the function.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    event VerifyProofResponseCall(
+        uint256 indexed zkProofId,
+        bytes32[] ctHandles,
+        bytes signature,
+        address coprocessorTxSender,
+        bytes extraData
+    );
+
+    /**
      * @notice Emitted once a correct ZK Proof verification is completed.
      * @param zkProofId The ID of the ZK Proof.
      * @param ctHandles The coprocessor's computed ciphertext handles.
      * @param signatures The coprocessor's signature.
      */
     event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
+
+    /**
+     * @notice Emitted when a coprocessor transaction sender responds to a ZK Proof verification
+     * request for a proof rejection.
+     * @param zkProofId The ID of the ZK Proof.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    event RejectProofResponseCall(uint256 indexed zkProofId, bytes extraData);
 
     /**
      * @notice Emitted once an ZK Proof verification is rejected.
@@ -53,18 +79,6 @@ interface IInputVerification {
      * @param signer The signer address of the coprocessor that has already rejected.
      */
     error CoprocessorAlreadyRejected(uint256 zkProofId, address txSender, address signer);
-
-    /**
-     * @notice Error indicating that the ZK Proof has not been verified.
-     * @param zkProofId The ID of the ZK Proof.
-     */
-    error ProofNotVerified(uint256 zkProofId);
-
-    /**
-     * @notice Error indicating that the ZK Proof has not been rejected.
-     * @param zkProofId The ID of the ZK Proof.
-     */
-    error ProofNotRejected(uint256 zkProofId);
 
     /**
      * @notice Error indicating that the ZK Proof is not requested yet.
@@ -114,16 +128,16 @@ interface IInputVerification {
     function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external;
 
     /**
-     * @notice Checks that a ZK Proof has been verified.
+     * @notice Indicates if a ZK Proof has been verified.
      * @param zkProofId The ID of the ZK Proof.
      */
-    function checkProofVerified(uint256 zkProofId) external view;
+    function isProofVerified(uint256 zkProofId) external view returns (bool);
 
     /**
-     * @notice Checks that a ZK Proof has been rejected.
+     * @notice Indicates if a ZK Proof has been rejected.
      * @param zkProofId The ID of the ZK Proof.
      */
-    function checkProofRejected(uint256 zkProofId) external view;
+    function isProofRejected(uint256 zkProofId) external view returns (bool);
 
     /**
      * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for a proof verification.

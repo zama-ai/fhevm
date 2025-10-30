@@ -1,0 +1,18 @@
+{
+  // This file is used to compile CommonJs, ESM and Types
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // Modules
+    // =======
+    // Since the build config sets composite=false,
+    // rootDir only affects how files are emitted to outDir
+    "rootDir": "./src",
+
+    // Emit
+    // ====
+    "noEmitOnError": true,
+    "sourceMap": true // ignored in when compile types
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test-d.ts"]
+}

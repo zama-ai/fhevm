@@ -3,14 +3,14 @@ use crate::{
     monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
 };
 use anyhow::anyhow;
-use connector_utils::types::GatewayEvent;
+use connector_utils::types::{GatewayEvent, gw_event};
 use sqlx::{
     Pool, Postgres,
     postgres::{PgListener, PgNotification},
 };
 use std::time::Duration;
 use tokio::select;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Interface used to pick Gateway's events from some storage.
 pub trait EventPicker {
@@ -24,7 +24,9 @@ const PUBLIC_DECRYPT_NOTIFICATION: &str = "public_decryption_request_available";
 const USER_DECRYPT_NOTIFICATION: &str = "user_decryption_request_available";
 const PREP_KEYGEN_NOTIFICATION: &str = "prep_keygen_request_available";
 const KEYGEN_NOTIFICATION: &str = "keygen_request_available";
-const CRSGEN_NOTIFICATION: &str = "crs_request_available";
+const CRSGEN_NOTIFICATION: &str = "crsgen_request_available";
+const PRSS_INIT_NOTIFICATION: &str = "prss_init_available";
+const KEY_RESHARE_SAME_SET_NOTIFICATION: &str = "key_reshare_same_set_available";
 
 /// Struct that collects Gateway's events from a `Postgres` database.
 pub struct DbEventPicker {
@@ -80,7 +82,11 @@ impl DbEventPicker {
         self.db_listener.listen(USER_DECRYPT_NOTIFICATION).await?;
         self.db_listener.listen(PREP_KEYGEN_NOTIFICATION).await?;
         self.db_listener.listen(KEYGEN_NOTIFICATION).await?;
-        self.db_listener.listen(CRSGEN_NOTIFICATION).await
+        self.db_listener.listen(CRSGEN_NOTIFICATION).await?;
+        self.db_listener.listen(PRSS_INIT_NOTIFICATION).await?;
+        self.db_listener
+            .listen(KEY_RESHARE_SAME_SET_NOTIFICATION)
+            .await
     }
 }
 
@@ -99,7 +105,7 @@ impl EventPicker for DbEventPicker {
                 },
                 _ = tokio::time::sleep(self.polling_timeout) => {
                     debug!("Polling timeout, rechecking for events");
-                    self.pick_any_events().await.inspect_err(|_| EVENT_RECEIVED_ERRORS.inc())?
+                    self.pick_any_events().await
                 },
             };
 
@@ -126,23 +132,36 @@ impl DbEventPicker {
             PREP_KEYGEN_NOTIFICATION => self.pick_prep_keygen_requests().await,
             KEYGEN_NOTIFICATION => self.pick_keygen_requests().await,
             CRSGEN_NOTIFICATION => self.pick_crsgen_requests().await,
-            channel => return Err(anyhow!("Unexpected notification: {channel}")),
+            PRSS_INIT_NOTIFICATION => self.pick_prss_init().await,
+            KEY_RESHARE_SAME_SET_NOTIFICATION => self.pick_key_reshare_same_set().await,
+            channel => Err(anyhow!("Unexpected notification: {channel}")),
         }
-        .map_err(anyhow::Error::from)
     }
 
-    async fn pick_any_events(&self) -> anyhow::Result<Vec<GatewayEvent>> {
-        Ok([
-            self.pick_public_decryption_requests().await?,
-            self.pick_user_decryption_requests().await?,
-            self.pick_prep_keygen_requests().await?,
-            self.pick_keygen_requests().await?,
-            self.pick_crsgen_requests().await?,
+    async fn pick_any_events(&self) -> Vec<GatewayEvent> {
+        let mut all_events = vec![];
+        [
+            self.pick_public_decryption_requests().await,
+            self.pick_user_decryption_requests().await,
+            self.pick_prep_keygen_requests().await,
+            self.pick_keygen_requests().await,
+            self.pick_crsgen_requests().await,
+            self.pick_prss_init().await,
+            self.pick_key_reshare_same_set().await,
         ]
-        .concat())
+        .into_iter()
+        .for_each(|res| match res {
+            Ok(events) => all_events.extend(events),
+            Err(e) => {
+                warn!("Failed to fetch events from one of the DB tables: {e}");
+                EVENT_RECEIVED_ERRORS.inc();
+            }
+        });
+
+        all_events
     }
 
-    async fn pick_public_decryption_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
+    async fn pick_public_decryption_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
                 UPDATE public_decryption_requests
@@ -154,18 +173,18 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE public_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, extra_data
+                RETURNING req.decryption_id, sns_ct_materials, extra_data, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(GatewayEvent::from_public_decryption_row)
+        .map(gw_event::from_public_decryption_row)
         .collect()
     }
 
-    async fn pick_user_decryption_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
+    async fn pick_user_decryption_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
                 UPDATE user_decryption_requests
@@ -177,18 +196,18 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data
+                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(GatewayEvent::from_user_decryption_row)
+        .map(gw_event::from_user_decryption_row)
         .collect()
     }
 
-    async fn pick_prep_keygen_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
+    async fn pick_prep_keygen_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
                 UPDATE prep_keygen_requests
@@ -200,18 +219,18 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prep_keygen_requests.prep_keygen_id = req.prep_keygen_id
-                RETURNING req.prep_keygen_id, epoch_id, params_type
+                RETURNING req.prep_keygen_id, epoch_id, params_type, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(GatewayEvent::from_prep_keygen_row)
+        .map(gw_event::from_prep_keygen_row)
         .collect()
     }
 
-    async fn pick_keygen_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
+    async fn pick_keygen_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
                 UPDATE keygen_requests
@@ -223,18 +242,18 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE keygen_requests.key_id = req.key_id
-                RETURNING prep_keygen_id, req.key_id
+                RETURNING prep_keygen_id, req.key_id, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(GatewayEvent::from_keygen_row)
+        .map(gw_event::from_keygen_row)
         .collect()
     }
 
-    async fn pick_crsgen_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
+    async fn pick_crsgen_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
                 UPDATE crsgen_requests
@@ -246,14 +265,58 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE crsgen_requests.crs_id = req.crs_id
-                RETURNING req.crs_id, max_bit_length, params_type
+                RETURNING req.crs_id, max_bit_length, params_type, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(GatewayEvent::from_crsgen_row)
+        .map(gw_event::from_crsgen_row)
+        .collect()
+    }
+
+    async fn pick_prss_init(&self) -> anyhow::Result<Vec<GatewayEvent>> {
+        sqlx::query(
+            "
+                UPDATE prss_init
+                SET under_process = TRUE
+                FROM (
+                    SELECT id
+                    FROM prss_init
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE prss_init.id = req.id
+                RETURNING req.id, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(gw_event::from_prss_init_row)
+        .collect()
+    }
+
+    async fn pick_key_reshare_same_set(&self) -> anyhow::Result<Vec<GatewayEvent>> {
+        sqlx::query(
+            "
+                UPDATE key_reshare_same_set
+                SET under_process = TRUE
+                FROM (
+                    SELECT key_id
+                    FROM key_reshare_same_set
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE key_reshare_same_set.key_id = req.key_id
+                RETURNING prep_keygen_id, req.key_id, key_reshare_id, params_type, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(gw_event::from_key_reshare_same_set_row)
         .collect()
     }
 }

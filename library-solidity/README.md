@@ -18,6 +18,17 @@ _See full details in the [Key concepts](https://docs.zama.ai/fhevm/smart-contrac
 
 To start writing confidential smart contracts using FHEVM Solidity, follow the Hardhat setup guide here: [Getting Started with Hardhat](https://docs.zama.ai/fhevm/getting-started/overview-1/hardhat).
 
+run
+```
+npm install
+```
+
+To run forge tests:
+```
+npm run forge:soldeer
+npm run test:forge
+```
+
 ## Resources
 
 - [Documentation](https://docs.zama.ai/fhevm/)

@@ -51,6 +51,7 @@ message AsyncComputation {
   bytes transaction_id = 2;
   bytes output_handle = 3;
   repeated AsyncComputationInput inputs = 4;
+  bool is_allowed = 5;
 }
 
 message AsyncComputationInput {

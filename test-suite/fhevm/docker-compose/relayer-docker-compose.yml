@@ -1,7 +1,8 @@
 services:
   relayer:
     container_name: fhevm-relayer
-    image: ghcr.io/zama-ai/console/fhevm-relayer:${RELAYER_VERSION}
+    platform: linux/amd64
+    image: ghcr.io/zama-ai/console/relayer:${RELAYER_VERSION}
     env_file:
       - ../env/staging/.env.relayer.local
     command:

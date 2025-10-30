@@ -43,11 +43,28 @@ interface IKMSGeneration {
     event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType);
 
     /**
+     * @notice Emitted when a KMS node has responded to a preprocessing keygen request.
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param signature The signature of the KMS node that has responded.
+     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
+     */
+    event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
+
+    /**
      * @notice Emitted to trigger an FHE key generation.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param keyId The ID of the key to generate.
      */
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId);
+
+    /**
+     * @notice Emitted when a KMS node has responded to a keygen request.
+     * @param keyId The ID of the key.
+     * @param keyDigests The digests of the generated keys.
+     * @param signature The signature of the KMS node that has responded.
+     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
+     */
+    event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     /**
      * @notice Emitted when the key is activated.
@@ -66,12 +83,37 @@ interface IKMSGeneration {
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType);
 
     /**
+     * @notice Emitted when a KMS node has responded to a CRS generation request.
+     * @param crsId The ID of the CRS.
+     * @param crsDigest The digest of the generated CRS.
+     * @param signature The signature of the KMS node that has responded.
+     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
+     */
+    event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address kmsTxSender);
+
+    /**
      * @notice Emitted when the CRS is activated.
      * @param crsId The ID of the generated CRS.
      * @param kmsNodeStorageUrls The KMS nodes' storage URL that participated in the consensus.
      * @param crsDigest The digest of the generated CRS.
      */
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
+
+    /**
+     * @notice Emitted to trigger the initialization of the PRSS (Pseudo-Random Secret Sharing).
+     * @dev This is a temporary event to initialize PRSS until implementation of a proper key resharing.
+     */
+    event PRSSInit();
+
+    /**
+     * @notice Emitted to trigger the reshare of the specified key ID.
+     * @dev This is a temporary event to reshare the specified key ID until implementation of a proper key resharing.
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param keyId The ID of the key to reshare.
+     * @param keyReshareId The ID of the key reshare request.
+     * @param paramsType The type of FHE parameters to use.
+     */
+    event KeyReshareSameSet(uint256 prepKeygenId, uint256 keyId, uint256 keyReshareId, ParamsType paramsType);
 
     /**
      * @notice Error thrown when a KMS node has already signed for a preprocessing keygen response.
@@ -141,6 +183,19 @@ interface IKMSGeneration {
      * @param signature The signature of the KMS node that has responded.
      */
     function crsgenResponse(uint256 crsId, bytes calldata crsDigest, bytes calldata signature) external;
+
+    /**
+     * @notice Trigger the initialization of the PRSS (Pseudo-Random Secret Sharing).
+     * @dev This is a temporary method to initialize PRSS until implementation of a proper key resharing.
+     */
+    function prssInit() external;
+
+    /**
+     * @notice Trigger the reshare of the given key ID.
+     * @dev This is a temporary method to reshare the specified key ID until implementation of a proper key resharing.
+     * @param keyId The ID of the key to reshare.
+     */
+    function keyReshareSameSet(uint256 keyId) external;
 
     /**
      * @notice Get the parameters type used for the key generation.

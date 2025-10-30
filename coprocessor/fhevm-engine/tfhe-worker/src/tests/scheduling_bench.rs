@@ -6,8 +6,8 @@ use crate::server::tfhe_worker::{
     InputToUpload, InputUploadBatch,
 };
 use crate::tests::utils::{
-    allow_handle, decrypt_ciphertexts, default_api_key, default_tenant_id, random_handle,
-    setup_test_app, wait_until_all_allowed_handles_computed,
+    decrypt_ciphertexts, default_api_key, default_tenant_id, random_handle, setup_test_app,
+    wait_until_all_allowed_handles_computed,
 };
 use fhevm_engine_common::utils::safe_serialize;
 use std::str::FromStr;
@@ -42,7 +42,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output_handles = vec![];
     let mut async_computations = vec![];
-    let mut num_samples: usize = 2;
+    let mut num_samples: usize = 7;
     let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
     if let Ok(samples) = samples {
         num_samples = samples.parse::<usize>().unwrap();
@@ -115,12 +115,14 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
             transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
             transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_target_handle.clone(),
             inputs: vec![bald.clone(), trxa.clone()],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -135,12 +137,14 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 bald.clone(),
             ],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
             transaction_id: transaction_id.clone(),
             output_handle: new_from_amount_target_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -155,6 +159,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 bals.clone(),
             ],
+            is_allowed: true,
         });
     }
 
@@ -167,10 +172,6 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await?;
-
-    for h in output_handles.iter() {
-        allow_handle(h, &pool).await?;
-    }
 
     println!("Computations scheduled, waiting upon completion...");
     wait_until_all_allowed_handles_computed(&app).await?;
@@ -215,7 +216,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output_handles = vec![];
     let mut async_computations = vec![];
-    let mut num_samples: usize = 2;
+    let mut num_samples: usize = 7;
     let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
     if let Ok(samples) = samples {
         num_samples = samples.parse::<usize>().unwrap();
@@ -288,6 +289,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
             transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
@@ -301,6 +303,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
                     input: Some(Input::Scalar(vec![5u8])),
                 },
             ],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
@@ -312,6 +315,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
                     input: Some(Input::InputHandle(cast_has_enough_funds_handle.clone())),
                 },
             ],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
@@ -323,6 +327,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
                     input: Some(Input::InputHandle(select_amount_handle.clone())),
                 },
             ],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
@@ -334,6 +339,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
                     input: Some(Input::InputHandle(select_amount_handle.clone())),
                 },
             ],
+            is_allowed: true,
         });
     }
 
@@ -346,10 +352,6 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await?;
-
-    for h in output_handles.iter() {
-        allow_handle(h, &pool).await?;
-    }
 
     println!("Computations scheduled, waiting upon completion...");
     wait_until_all_allowed_handles_computed(&app).await?;
@@ -394,7 +396,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
 
     let mut output_handles = vec![];
     let mut async_computations = vec![];
-    let mut num_samples: usize = 2;
+    let mut num_samples: usize = 7;
     let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
     if let Ok(samples) = samples {
         num_samples = samples.parse::<usize>().unwrap();
@@ -490,6 +492,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
             transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
@@ -503,6 +506,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
                     input: Some(Input::Scalar(vec![5u8])),
                 },
             ],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
@@ -514,6 +518,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
                     input: Some(Input::InputHandle(cast_has_enough_funds_handle.clone())),
                 },
             ],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
@@ -525,6 +530,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
                     input: Some(Input::InputHandle(select_amount_handle.clone())),
                 },
             ],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
@@ -536,6 +542,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
                     input: Some(Input::InputHandle(select_amount_handle.clone())),
                 },
             ],
+            is_allowed: true,
         });
 
         bald = AsyncComputationInput {
@@ -552,10 +559,6 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await?;
-
-    for h in output_handles.iter() {
-        allow_handle(h, &pool).await?;
-    }
 
     println!("Computations scheduled, waiting upon completion...");
     wait_until_all_allowed_handles_computed(&app).await?;
@@ -601,7 +604,7 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output_handles = vec![];
     let mut async_computations = vec![];
-    let mut num_samples: usize = 2;
+    let mut num_samples: usize = 7;
     let samples = std::env::var("FHEVM_TEST_NUM_SAMPLES");
     if let Ok(samples) = samples {
         num_samples = samples.parse::<usize>().unwrap();
@@ -659,6 +662,7 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
                     input: Some(Input::Scalar(vec![7u8])),
                 },
             ],
+            is_allowed: true,
         });
 
         counter = AsyncComputationInput {
@@ -676,9 +680,6 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
     );
     let _resp = client.async_compute(compute_request).await?;
 
-    for h in output_handles.iter() {
-        allow_handle(h, &pool).await?;
-    }
     println!("Computations scheduled, waiting upon completion...");
     wait_until_all_allowed_handles_computed(&app).await?;
 
@@ -783,6 +784,7 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
                 transaction_id: transaction_id.clone(),
                 output_handle: output_handle.clone(),
                 inputs: vec![level_inputs[2 * i].clone(), level_inputs[2 * i + 1].clone()],
+                is_allowed: true,
             });
         }
         num_comps_at_level /= 2;
@@ -802,10 +804,6 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await?;
-
-    for h in output_handles.iter() {
-        allow_handle(h, &pool).await?;
-    }
 
     println!("Computations scheduled, waiting upon completion...");
     wait_until_all_allowed_handles_computed(&app).await?;

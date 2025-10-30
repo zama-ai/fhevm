@@ -6,4 +6,9 @@ scrape_configs:
   - job_name: 'kms-connector'
 
     static_configs:
-      - targets: ['kms-connector-gw-listener:9100', 'kms-connector-kms-worker:9100', 'kms-connector-tx-sender:9100', 'transaction-sender:8080']
+      - targets: ['kms-connector-gw-listener:9100', 'kms-connector-kms-worker:9100', 'kms-connector-tx-sender:9100']
+   
+  # Coprocessor job configuration
+  - job_name: 'coprocessor'
+    static_configs:
+      - targets: ['coprocessor-transaction-sender:9100', 'coprocessor-gw-listener:9100', 'coprocessor-tfhe-worker:9100', 'coprocessor-sns-worker:9100', 'coprocessor-zkproof-worker:9100']

@@ -4,7 +4,7 @@ use common::{
     insert_rand_crsgen_response, insert_rand_keygen_response, insert_rand_prep_keygen_response,
     insert_rand_public_decrypt_response, insert_rand_user_decrypt_response,
 };
-use connector_utils::{tests::setup::TestInstanceBuilder, types::KmsResponse};
+use connector_utils::{tests::setup::TestInstanceBuilder, types::KmsResponseKind};
 use rstest::rstest;
 use std::time::Duration;
 use tracing::info;
@@ -27,8 +27,8 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
 
     info!("Checking PublicDecryptionResponse data...");
     assert_eq!(
-        responses[0],
-        KmsResponse::PublicDecryption(inserted_response)
+        responses[0].kind,
+        KmsResponseKind::PublicDecryption(inserted_response)
     );
     info!("Data OK!");
     Ok(())
@@ -49,7 +49,10 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
     let responses = response_picker.pick_responses().await?;
 
     info!("Checking UserDecryptionResponse data...");
-    assert_eq!(responses[0], KmsResponse::UserDecryption(inserted_response));
+    assert_eq!(
+        responses[0].kind,
+        KmsResponseKind::UserDecryption(inserted_response)
+    );
     info!("Data OK!");
     Ok(())
 }
@@ -69,7 +72,10 @@ async fn test_pick_prep_keygen() -> anyhow::Result<()> {
     let responses = response_picker.pick_responses().await?;
 
     info!("Checking PrepKeygenResponse data...");
-    assert_eq!(responses[0], KmsResponse::PrepKeygen(inserted_response));
+    assert_eq!(
+        responses[0].kind,
+        KmsResponseKind::PrepKeygen(inserted_response)
+    );
     info!("Data OK!");
     Ok(())
 }
@@ -89,7 +95,10 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
     let responses = response_picker.pick_responses().await?;
 
     info!("Checking KeygenResponse data...");
-    assert_eq!(responses[0], KmsResponse::Keygen(inserted_response));
+    assert_eq!(
+        responses[0].kind,
+        KmsResponseKind::Keygen(inserted_response)
+    );
     info!("Data OK!");
     Ok(())
 }
@@ -109,7 +118,10 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
     let responses = response_picker.pick_responses().await?;
 
     info!("Checking CrsgenResponse data...");
-    assert_eq!(responses[0], KmsResponse::Crsgen(inserted_response));
+    assert_eq!(
+        responses[0].kind,
+        KmsResponseKind::Crsgen(inserted_response)
+    );
     info!("Data OK!");
     Ok(())
 }
@@ -131,7 +143,10 @@ async fn test_polling_backup() -> anyhow::Result<()> {
     let responses = response_picker.pick_responses().await?;
 
     info!("Checking UserDecryptionResponse data...");
-    assert_eq!(responses[0], KmsResponse::UserDecryption(inserted_response));
+    assert_eq!(
+        responses[0].kind,
+        KmsResponseKind::UserDecryption(inserted_response)
+    );
     info!("Data OK!");
     Ok(())
 }

@@ -26,7 +26,7 @@ cd <your-project-root-directory>/contracts
 From there, create a new file named `FHECounter.sol`, and copy the following Solidity code into it:
 
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 /// @title A simple counter contract
@@ -62,14 +62,14 @@ To begin integrating FHEVM features into your contract, we first need to import 
 #### Replace the current header
 
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 ```
 
 #### With this updated header:
 
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 import { FHE, euint32, externalEuint32 } from "@fhevm/solidity/lib/FHE.sol";

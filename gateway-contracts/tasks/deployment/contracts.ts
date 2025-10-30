@@ -1,13 +1,9 @@
-import dotenv from "dotenv";
 import { Wallet } from "ethers";
-import fs from "fs";
-import { task } from "hardhat/config";
+import { task, types } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
-import path from "path";
 
-import { ADDRESSES_DIR } from "../../hardhat.config";
-import { getRequiredEnvVar } from "../utils/loadVariables";
-import { pascalCaseToSnakeCase } from "../utils/stringOps";
+import { getRequiredEnvVar, loadGatewayAddresses, pascalCaseToAddressEnvVar } from "../utils";
+import { setPaymentBridgingContractAddresses } from "./paymentBridging/setAddresses";
 import { GATEWAY_CONFIG_EMPTY_PROXY_NAME, REGULAR_EMPTY_PROXY_NAME } from "./utils";
 
 // Helper function to deploy a contract implementation to its proxy
@@ -15,6 +11,7 @@ async function deployContractImplementation(
   name: string,
   hre: HardhatRuntimeEnvironment,
   emptyProxyName: string,
+  useInternalProxyAddress: boolean = false,
   initializeArgs?: unknown[],
 ): Promise<string> {
   const { ethers, upgrades } = hre;
@@ -27,21 +24,15 @@ async function deployContractImplementation(
   const proxyImplementation = await ethers.getContractFactory(emptyProxyName, deployer);
   const newImplem = await ethers.getContractFactory(name, deployer);
 
-  const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
-  if (!fs.existsSync(envFilePath)) {
-    throw new Error(`Environment file not found: ${envFilePath}`);
+  if (useInternalProxyAddress) {
+    loadGatewayAddresses();
   }
-  dotenv.config({ path: envFilePath, override: true });
 
   // Determine env variable name for the proxy contract address
-  const nameSnakeCase = pascalCaseToSnakeCase(name);
-  const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;
+  const addressEnvVarName = pascalCaseToAddressEnvVar(name);
 
   // Get the proxy address
   const proxyAddress = getRequiredEnvVar(addressEnvVarName);
-  if (!proxyAddress) {
-    throw new Error(`Address variable ${addressEnvVarName} not found in ${envFilePath}`);
-  }
 
   // Force import
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
@@ -53,7 +44,7 @@ async function deployContractImplementation(
       args: [] as unknown[],
     },
   };
-  if (initializeArgs !== undefined && initializeArgs.length > 0) {
+  if (Array.isArray(initializeArgs) && initializeArgs.length > 0) {
     upgradeOptions.call.args = initializeArgs;
   }
 
@@ -81,6 +72,9 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
 
   // Parse the KMS public material generation threshold
   const kmsGenThreshold = getRequiredEnvVar("KMS_GENERATION_THRESHOLD");
+
+  // Parse the coprocessor threshold
+  const coprocessorThreshold = getRequiredEnvVar("COPROCESSOR_THRESHOLD");
 
   // Parse the KMS nodes
   const numKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
@@ -123,14 +117,20 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   console.log("Coprocessors:", coprocessors);
   console.log("Custodians:", custodians);
 
-  // The GatewayConfig contract is not deployed using the same empty proxy as the other contracts,
-  // as it is made ownable
-  await deployContractImplementation("GatewayConfig", hre, GATEWAY_CONFIG_EMPTY_PROXY_NAME, [
-    protocolMetadata,
+  // Define the thresholds struct
+  const thresholds = {
     mpcThreshold,
     publicDecryptionThreshold,
     userDecryptionThreshold,
     kmsGenThreshold,
+    coprocessorThreshold,
+  };
+
+  // The GatewayConfig contract is not deployed using the same empty proxy as the other contracts,
+  // as it is made ownable
+  await deployContractImplementation("GatewayConfig", hre, GATEWAY_CONFIG_EMPTY_PROXY_NAME, true, [
+    protocolMetadata,
+    thresholds,
     kmsNodes,
     coprocessors,
     custodians,
@@ -139,37 +139,69 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
 
 // Deploy the InputVerification contract
 task("task:deployInputVerification").setAction(async function (_, hre) {
-  await deployContractImplementation("InputVerification", hre, REGULAR_EMPTY_PROXY_NAME);
+  await deployContractImplementation("InputVerification", hre, REGULAR_EMPTY_PROXY_NAME, true);
 });
 
 // Deploy the KMSGeneration contract
 task("task:deployKMSGeneration").setAction(async function (_, hre) {
-  await deployContractImplementation("KMSGeneration", hre, REGULAR_EMPTY_PROXY_NAME);
+  await deployContractImplementation("KMSGeneration", hre, REGULAR_EMPTY_PROXY_NAME, true);
 });
 
 // Deploy the CiphertextCommits contract
 task("task:deployCiphertextCommits").setAction(async function (_, hre) {
-  await deployContractImplementation("CiphertextCommits", hre, REGULAR_EMPTY_PROXY_NAME);
+  await deployContractImplementation("CiphertextCommits", hre, REGULAR_EMPTY_PROXY_NAME, true);
 });
 
 // Deploy the MultichainACL contract
 task("task:deployMultichainACL").setAction(async function (_, hre) {
-  await deployContractImplementation("MultichainACL", hre, REGULAR_EMPTY_PROXY_NAME);
+  await deployContractImplementation("MultichainACL", hre, REGULAR_EMPTY_PROXY_NAME, true);
 });
 
 // Deploy the Decryption contract
 task("task:deployDecryption").setAction(async function (_, hre) {
-  await deployContractImplementation("Decryption", hre, REGULAR_EMPTY_PROXY_NAME);
+  await deployContractImplementation("Decryption", hre, REGULAR_EMPTY_PROXY_NAME, true);
 });
 
-// Deploy all the contracts
-task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
-  // Deploy the EmptyUUPS proxy contracts
-  await hre.run("task:deployEmptyUUPSProxies");
+// Deploy the ProtocolPayment contract
+task("task:deployProtocolPayment").setAction(async function (_, hre) {
+  const inputVerificationPrice = getRequiredEnvVar("INPUT_VERIFICATION_PRICE");
+  const publicDecryptionPrice = getRequiredEnvVar("PUBLIC_DECRYPTION_PRICE");
+  const userDecryptionPrice = getRequiredEnvVar("USER_DECRYPTION_PRICE");
 
-  await hre.run("compile:specific", { contract: "contracts/immutable" });
-  await hre.run("task:deployPauserSet");
+  await deployContractImplementation("ProtocolPayment", hre, REGULAR_EMPTY_PROXY_NAME, true, [
+    inputVerificationPrice,
+    publicDecryptionPrice,
+    userDecryptionPrice,
+  ]);
+});
 
+// Deploy setup contracts, needed before deploying the implementation contracts
+task("task:deploySetupContracts")
+  .addOptionalParam(
+    "deployMockedZamaOft",
+    "If mocked payment bridging contracts should be deployed",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ deployMockedZamaOft }, hre) {
+    // Deploy the mocked payment bridging contracts if needed
+    if (deployMockedZamaOft) {
+      await hre.run("task:deployMockedZamaOFT");
+    }
+
+    // Deploy the EmptyUUPS proxy contracts
+    await hre.run("task:deployEmptyUUPSProxies");
+
+    // Deploy the PauserSet contract
+    await hre.run("task:deployPauserSet");
+
+    // Register the payment bridging contract addresses
+    // Note: these contracts should already be deployed and their address registered as env vars
+    setPaymentBridgingContractAddresses();
+  });
+
+// Deploy implementation contracts
+task("task:deployImplementationContracts").setAction(async function (_, hre) {
   // Compile the implementation contracts
   // The deployEmptyUUPSProxies task has generated the contracts' addresses in `addresses/*.sol`.
   // Contracts thus need to be compiled after deploying the EmptyUUPS proxy contracts in order to
@@ -195,5 +227,58 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   console.log("Deploy Decryption contract:");
   await hre.run("task:deployDecryption");
 
+  console.log("Deploy ProtocolPayment contract:");
+  await hre.run("task:deployProtocolPayment");
+
   console.log("Contract deployment done!");
 });
+
+// Deploy all the contracts
+task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
+  // Deploy all the setup contracts
+  await hre.run("task:deploySetupContracts");
+
+  // Deploy all the implementation contracts
+  await hre.run("task:deployImplementationContracts");
+});
+
+// Deploy all the contracts, including the mocked ZamaOFT one (FOR TESTS ONLY)
+task("task:deployAllGatewayContractsForTests").setAction(async function (_, hre) {
+  // Deploy all the setup contracts, including the mocked ZamaOFT one
+  await hre.run("task:deploySetupContracts", { deployMockedZamaOft: true });
+
+  // Deploy all the implementation contracts
+  await hre.run("task:deployImplementationContracts");
+});
+
+// Deploy a single contract, after the GatewayConfig contract has been deployed
+// The new contract address will be appended to the .env.gateway and GatewayAddresses.sol files
+task("task:deploySingleContract")
+  .addParam("name", "The name of the contract")
+  .addParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ name, useInternalProxyAddress }, hre) {
+    // Deploy the EmptyUUPS proxy contracts
+    await hre.run("task:deploySingleEmptyUUPSProxy", { name, useInternalProxyAddress });
+
+    // Add a small delay to ensure the proxy transaction is confirmed
+    const delay = 2000; // 2 seconds
+    console.log(`Waiting for proxy transaction to be confirmed for ${delay}ms...`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    // Compile the implementation contracts
+    // The deployEmptyUUPSProxies task has generated the contracts' addresses in `addresses/*.sol`.
+    // Contracts thus need to be compiled after deploying the EmptyUUPS proxy contracts in order to
+    // use these addresses. Otherwise, irrelevant addresses will be used and, although deployment will
+    // succeed, most transactions made to the contracts will revert as inter-contract calls will fail.
+    await hre.run("compile:specific", { contract: "contracts" });
+
+    console.log(`Deploy ${name} contract:`);
+    await hre.run(`task:deploy${name}`);
+
+    console.log(`Contract deployment done: ${name} !`);
+  });
