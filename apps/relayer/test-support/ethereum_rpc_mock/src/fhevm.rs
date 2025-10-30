@@ -7,11 +7,14 @@ use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::primitives::{Log, LogData};
 use alloy::sol_types::{SolCall, SolEvent};
 use rand::{Rng, RngCore};
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
+use std::{
+    str::FromStr,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
 };
-use std::time::Duration;
 use tracing::{debug, info};
 
 // Re-export FHEVM bindings for convenience
@@ -40,9 +43,18 @@ fn random_hash() -> B256 {
 }
 
 // Predicate helpers for pattern matching
+/// Helper function to create predicates matching contract address and function selector
+fn matches_contract_and_selector_for_call(
+    contract: Address,
+    selector: [u8; 4],
+) -> impl Fn(&crate::mock_server::CallParams) -> bool + Send + Sync + 'static {
+    move |params: &crate::mock_server::CallParams| -> bool {
+        params.to == contract && params.input.len() >= 4 && params.input[0..4] == selector
+    }
+}
 
 /// Helper function to create predicates matching contract address and function selector
-fn matches_contract_and_selector(
+fn matches_contract_and_selector_for_txn(
     contract: Address,
     selector: [u8; 4],
 ) -> impl Fn(&crate::mock_server::TxParams) -> bool + Send + Sync + 'static {
@@ -287,9 +299,27 @@ impl FhevmMockWrapper {
             scheduled_transactions: vec![scheduled_tx],
         };
 
+        self.json_rpc_server.on_call(
+            matches_contract_and_selector_for_call(
+                self.decryption_contract,
+                Decryption::isUserDecryptionReadyCall::SELECTOR,
+            ),
+            Response::Success {
+                hash: None,
+                data: crate::mock_server::ResponseData::Bytes(
+                    Bytes::from_str(
+                        "0x0000000000000000000000000000000000000000000000000000000000000001",
+                    )
+                    .unwrap(),
+                ),
+                scheduled_transactions: Vec::new(),
+            },
+            UsageLimit::Unlimited,
+        );
+
         // Register pattern that returns immediate response with scheduled transaction
         self.json_rpc_server.on_transaction(
-            matches_contract_and_selector(
+            matches_contract_and_selector_for_txn(
                 self.decryption_contract,
                 Decryption::userDecryptionRequestCall::SELECTOR,
             ),
@@ -303,7 +333,7 @@ impl FhevmMockWrapper {
     /// Register user decryption that reverts with specified reason
     pub fn on_user_decrypt_revert(&self, reason: &str) {
         self.json_rpc_server.on_transaction(
-            matches_contract_and_selector(
+            matches_contract_and_selector_for_txn(
                 self.decryption_contract,
                 Decryption::userDecryptionRequestCall::SELECTOR,
             ),
@@ -317,6 +347,26 @@ impl FhevmMockWrapper {
 
     /// Register public decryption that succeeds with the provided values
     pub fn on_public_decrypt_success(&self, handles: Vec<B256>, values: Vec<u64>) {
+        // Register the readiness check call
+        self.json_rpc_server.on_call(
+            matches_contract_and_selector_for_call(
+                self.decryption_contract,
+                Decryption::isPublicDecryptionReadyCall::SELECTOR,
+            ),
+            Response::Success {
+                hash: None,
+                data: crate::mock_server::ResponseData::Bytes(
+                    Bytes::from_str(
+                        "0x0000000000000000000000000000000000000000000000000000000000000001",
+                    )
+                    .unwrap(),
+                ),
+                scheduled_transactions: Vec::new(),
+            },
+            UsageLimit::Unlimited,
+        );
+
+        // Register the transaction pattern
         self.register_decrypt_pattern(
             "public decryption success",
             self.decryption_contract,
@@ -332,7 +382,7 @@ impl FhevmMockWrapper {
     /// Register public decryption that reverts
     pub fn on_public_decrypt_revert(&self, reason: &str) {
         self.json_rpc_server.on_transaction(
-            matches_contract_and_selector(
+            matches_contract_and_selector_for_txn(
                 self.decryption_contract,
                 Decryption::publicDecryptionRequestCall::SELECTOR,
             ),
@@ -365,7 +415,7 @@ impl FhevmMockWrapper {
     /// Register input proof that reverts
     pub fn on_input_proof_revert(&self, reason: &str) {
         self.json_rpc_server.on_transaction(
-            matches_contract_and_selector(
+            matches_contract_and_selector_for_txn(
                 self.input_proof_contract,
                 InputVerification::verifyProofRequestCall::SELECTOR,
             ),
@@ -431,7 +481,7 @@ impl FhevmMockWrapper {
 
         // Register pattern that returns immediate response with scheduled transaction
         self.json_rpc_server.on_transaction(
-            matches_contract_and_selector(contract, selector),
+            matches_contract_and_selector_for_txn(contract, selector),
             immediate_response,
             UsageLimit::Unlimited,
         );

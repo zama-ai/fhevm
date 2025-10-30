@@ -43,17 +43,17 @@ impl TxParams {
 pub struct CallParams {
     pub from: Option<Address>,
     pub to: Address,
-    pub data: Bytes,
+    pub input: Bytes,
     pub gas: Option<u64>,
     pub gas_price: Option<U256>,
 }
 
 impl CallParams {
-    pub fn new(to: Address, data: Bytes) -> Self {
+    pub fn new(to: Address, input: Bytes) -> Self {
         Self {
             from: None,
             to,
-            data,
+            input,
             gas: None,
             gas_price: None,
         }
@@ -209,8 +209,8 @@ impl TryFrom<&Value> for CallParams {
             .with_context(|| format!("Invalid 'to' address format: {}", to_str))?;
 
         // Parse optional 'data' field with validation
-        let data = tx_obj
-            .get("data")
+        let input = tx_obj
+            .get("input")
             .and_then(|v| v.as_str())
             .map(|s| {
                 let hex_str = s.strip_prefix("0x").unwrap_or(s);
@@ -241,7 +241,7 @@ impl TryFrom<&Value> for CallParams {
         Ok(Self {
             from,
             to,
-            data,
+            input,
             gas: None,
             gas_price: None,
         })
@@ -319,7 +319,7 @@ impl TryFrom<&str> for TxParams {
             },
             _ => {
                 return Err(anyhow::anyhow!(
-                    "Unsupported transaction type. Only Legacy and EIP-1559 transactions are supported, got: {:?}", 
+                    "Unsupported transaction type. Only Legacy and EIP-1559 transactions are supported, got: {:?}",
                     tx_envelope
                 ))
             }

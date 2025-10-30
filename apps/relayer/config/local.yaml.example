@@ -50,7 +50,6 @@ transaction:
     max_attempts: 3
     base_delay_secs: 2
     max_delay_secs: 60
-    mock_mode: false
   ciphertext_check_retry:
     enabled: false
     max_attempts: 75

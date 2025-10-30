@@ -588,13 +588,6 @@ impl GatewayHandler {
             user_decrypt_request.user_address, contract_pairs
         );
 
-        if let Some(retry_config) = &self.tx_helper.tx_config.retry_config {
-            if retry_config.mock_mode {
-                info!("Mock mode is enabled, skipping readiness check");
-                should_retry = false;
-            }
-        }
-
         while should_retry && retries < max_retries {
             should_retry = false;
 

@@ -44,7 +44,6 @@ pub struct RetryConfig {
     pub max_attempts: u32,
     pub base_delay: Duration,
     pub max_delay: Duration,
-    pub mock_mode: bool,
 }
 
 impl Default for RetryConfig {
@@ -53,7 +52,6 @@ impl Default for RetryConfig {
             max_attempts: 3,
             base_delay: Duration::from_secs(1),
             max_delay: Duration::from_secs(60),
-            mock_mode: false,
         }
     }
 }
@@ -64,14 +62,12 @@ impl From<RetrySettings> for RetryConfig {
             max_attempts = settings.max_attempts,
             base_delay_secs = settings.base_delay_secs,
             max_delay_secs = settings.max_delay_secs,
-            mock_mode = settings.mock_mode,
             "Retry configuration"
         );
         RetryConfig {
             max_attempts: settings.max_attempts,
             base_delay: Duration::from_secs(settings.base_delay_secs),
             max_delay: Duration::from_secs(settings.max_delay_secs),
-            mock_mode: settings.mock_mode,
         }
     }
 }

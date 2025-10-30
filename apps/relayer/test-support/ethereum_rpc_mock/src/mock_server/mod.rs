@@ -8,5 +8,5 @@ pub mod rpc_types;
 pub mod server;
 
 // Re-export main types for convenience
-pub use rpc_types::{Response, ResponseData, TxParams};
+pub use rpc_types::{CallParams, Response, ResponseData, TxParams};
 pub use server::{MockConfig, MockServer, MockServerHandle};

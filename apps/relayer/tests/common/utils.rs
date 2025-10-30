@@ -107,9 +107,6 @@ impl TestSetup {
         settings.networks.gateway.http_url = format!("http://localhost:{}", gateway_port);
         settings.networks.gateway.ws_url = format!("ws://localhost:{}", gateway_port);
 
-        // Enable mock mode
-        settings.transaction.retry.mock_mode = true;
-
         // Start relayer service with isolated settings
         let cancellation_token = CancellationToken::new();
         let relayer_token = cancellation_token.clone();
@@ -124,7 +121,6 @@ impl TestSetup {
         relayer_settings.networks.fhevm.ws_url = settings.networks.fhevm.ws_url.clone();
         relayer_settings.networks.gateway.http_url = settings.networks.gateway.http_url.clone();
         relayer_settings.networks.gateway.ws_url = settings.networks.gateway.ws_url.clone();
-        relayer_settings.transaction.retry.mock_mode = settings.transaction.retry.mock_mode;
 
         tokio::spawn(async move {
             tracing::debug!("Starting isolated relayer service...");

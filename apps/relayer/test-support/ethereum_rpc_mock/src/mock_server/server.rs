@@ -376,7 +376,7 @@ mod tests {
 
         // Test call pattern registration
         server.on_call(
-            |params| params.data.len() == 4,
+            |params| params.input.len() == 4,
             Response::call_success(Bytes::from("test")),
             UsageLimit::Unlimited,
         );
