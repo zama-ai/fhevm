@@ -1,25 +1,47 @@
 After filling all values of the `.env` file until the `ZAMA_ERC20_ADDRESS` variable (i.e all variables except from `PROTOCOL_FEES_BURNER_ADDRESS`), run this command to deploy first the `ProtocolFeesBurner` contract on Ethereum testnet:
 
+# Deployment
+## Setup
+Copy the environment file: `cp .env.example .env`.
+
+Then fill all the environment variables till `ZAMA_ERC20_ADDRESS` for the wanted networks (`MAINNET` or `TESTNET` RPC urls).
+
+Install the NPM packages: `npm i`
+
+## Automated Deployment (Recommended)
+
+Run the following hardhat task to deploy ProtocolFeesBurner on Ethereum and FeesSenderToBurner on Gateway:
+```bash
+npx hardhat deploy:feesBurner --preset <mainnet|testnet> --verify <boolean>
+```
+
+To verify the ProtocolFeesBurner on Etherscan and FeesSenderToBurner on BlockScout, set this flag: `--verify true`.
+
+## Manual Deployment of FeesBurner
+### ProtocolFeesBurner Deployment
+
+Deploy the ProtocolFeesBurner contract on Ethereum
+
 ```bash
 npx hardhat deploy --tags ProtocolFeesBurner --network ethereum-testnet
 ```
 
-Then to verify it on Etherscan: 
+Then fill the `PROTOCOL_FEES_BURNER_ADDRESS` env variable with the address of your deployment.
 
-```bash
-npx hardhat --network ethereum-testnet etherscan-verify --license BSD-3-Clause --force-license --api-key [ETHERSCAN_API]
-```
-
-Then to deploy the `FeesSenderToBurner` on Gateway-testnet, after filling the last missing value in the `.env` file, ie `PROTOCOL_FEES_BURNER_ADDRESS` coming from the first deployment step, run:
+### FeesSenderToBurner Deployment
 
 ```bash
 npx hardhat deploy --tags FeesSenderToBurner --network gateway-testnet
 ```
 
-Then to verify it:
+### Verification
+
+You can verify the contracts on Etherscan with the following tasks:
 
 ```bash
-npx hardhat task:verifyFeesSenderToBurner --network gateway-testnet --fees-sender-to-burner [FEES_SENDER_TO_BURNER_ADDRESS]
+npx hardhat --network ethereum-testnet task:verifyProtocolFeesBurner --protocol-fees-burner <PROCOTOL_FEES_BURNER_ADDRESS>
 ```
 
-Where `FEES_SENDER_TO_BURNER_ADDRESS` value must come from the second deployment step.
+```bash
+npx hardhat --network gateway-testnet task:verifyFeesSenderToBurner --fees-sender-to-burner <FEES_SENDER_TO_BURNER_ADDRESS>
+```

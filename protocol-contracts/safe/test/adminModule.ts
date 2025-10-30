@@ -26,7 +26,9 @@ describe("AdminModule Tests", function () {
     const safeFactory = await ethers.getContractFactory("SafeL2", deployer); // L2 version for easier debugging and because gas is cheap on gateway
     masterCopy = await safeFactory.deploy(); // deploys the singleton Safe implementation
 
-    proxyFactory = await (await ethers.getContractFactory("SafeProxyFactory", deployer)).deploy();
+    proxyFactory = await (
+      await ethers.getContractFactory("SafeProxyFactory", deployer)
+    ).deploy();
 
     // Setup the Safe, Step 1, generate transaction data, with one owner, alice, and threshold of 1
     const safeData = masterCopy.interface.encodeFunctionData("setup", [
@@ -41,19 +43,33 @@ describe("AdminModule Tests", function () {
     ]);
 
     // this statiCall allows to predict the address of the upcoming Safe proxy not deployed yet
-    safeAddress = await proxyFactory.createProxyWithNonce.staticCall(await masterCopy.getAddress(), safeData, 0n);
+    safeAddress = await proxyFactory.createProxyWithNonce.staticCall(
+      await masterCopy.getAddress(),
+      safeData,
+      0n,
+    );
 
     if (safeAddress === ZeroAddress) {
       throw new Error("Safe address not found");
     }
 
-    await proxyFactory.createProxyWithNonce(await masterCopy.getAddress(), safeData, 0n);
+    await proxyFactory.createProxyWithNonce(
+      await masterCopy.getAddress(),
+      safeData,
+      0n,
+    );
 
     safe = await ethers.getContractAt("SafeL2", safeAddress);
 
-    gatewayConfigMock = await (await ethers.getContractFactory("GatewayConfigMock", deployer)).deploy(safeAddress);
+    gatewayConfigMock = await (
+      await ethers.getContractFactory("GatewayConfigMock", deployer)
+    ).deploy(safeAddress);
 
-    const multiSend = await new ContractFactory(MultiSendJson.abi, MultiSendJson.bytecode, deployer).deploy();
+    const multiSend = await new ContractFactory(
+      MultiSendJson.abi,
+      MultiSendJson.bytecode,
+      deployer,
+    ).deploy();
     multiSendAddress = await multiSend.getAddress();
   });
 
@@ -67,7 +83,10 @@ describe("AdminModule Tests", function () {
     ).deploy(await charlie.getAddress(), safeAddress); // charlie is set to be the owner of AdminModule
 
     // Enable the module in the safe, Step 1, generate transaction data
-    const enableModuleData = masterCopy.interface.encodeFunctionData("enableModule", [adminModule.target]);
+    const enableModuleData = masterCopy.interface.encodeFunctionData(
+      "enableModule",
+      [adminModule.target],
+    );
 
     // Enable the module in the safe, Step 2, execute the transaction
     await execTransaction([alice], safe, safe.target, 0, enableModuleData, 0);
@@ -82,8 +101,12 @@ describe("AdminModule Tests", function () {
     // Enable the module in the Safe
     const { adminModule } = await enableModule();
     const gatewayConfigMockAddress = await gatewayConfigMock.getAddress();
-    const data = gatewayConfigMock.interface.encodeFunctionData("setByOwner", [42n]);
-    await adminModule.connect(charlie).execTransactionFromModuleReturnData(gatewayConfigMockAddress, 0n, data, 0n);
+    const data = gatewayConfigMock.interface.encodeFunctionData("setByOwner", [
+      42n,
+    ]);
+    await adminModule
+      .connect(charlie)
+      .executeSafeTransactions([gatewayConfigMockAddress], [0n], [data], [0n]);
     expect(await gatewayConfigMock.value()).to.equal(42n);
   });
 
@@ -111,7 +134,10 @@ describe("AdminModule Tests", function () {
       contractNetworks,
     });
 
-    const newOwners = Array.from({ length: 9 }, (_, i) => "0x" + String(i + 1).repeat(40));
+    const newOwners = Array.from(
+      { length: 9 },
+      (_, i) => "0x" + String(i + 1).repeat(40),
+    );
 
     const txs = [];
 
@@ -125,12 +151,19 @@ describe("AdminModule Tests", function () {
     await safeKit.executeTransaction(batch);
 
     owners = await safe.getOwners();
-    expect(new Set(owners)).to.deep.equal(new Set([...newOwners, aliceAddress]));
+    expect(new Set(owners)).to.deep.equal(
+      new Set([...newOwners, aliceAddress]),
+    );
     threshold = await safe.getThreshold();
     expect(threshold).to.equal(1);
 
     const txs2 = [];
-    txs2.push(await safeKit.createRemoveOwnerTx({ ownerAddress: aliceAddress, threshold: 6 }));
+    txs2.push(
+      await safeKit.createRemoveOwnerTx({
+        ownerAddress: aliceAddress,
+        threshold: 6,
+      }),
+    );
     const partials2 = txs2.map((t) => t.data);
     const batch2 = await safeKit.createTransaction({ transactions: partials2 });
     await safeKit.signTransaction(batch2);

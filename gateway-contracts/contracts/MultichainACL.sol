@@ -130,7 +130,7 @@ contract MultichainACL is
      */
     function allowPublicDecrypt(
         bytes32 ctHandle,
-        bytes calldata /* extraData */
+        bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
@@ -154,11 +154,14 @@ contract MultichainACL is
         // A "late" valid coprocessor transaction sender address will still be added in the list.
         $.allowConsensusTxSenders[ctHandle].push(msg.sender);
 
+        // Emit the event at each call for monitoring purposes.
+        emit AllowPublicDecrypt(ctHandle, msg.sender, extraData);
+
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.isAllowed[ctHandle] && _isConsensusReached($.allowCounters[ctHandle])) {
             $.isAllowed[ctHandle] = true;
-            emit AllowPublicDecrypt(ctHandle);
+            emit AllowPublicDecryptConsensus(ctHandle, extraData);
         }
     }
 
@@ -168,7 +171,7 @@ contract MultichainACL is
     function allowAccount(
         bytes32 ctHandle,
         address accountAddress,
-        bytes calldata /* extraData */
+        bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
@@ -195,11 +198,14 @@ contract MultichainACL is
         // A "late" valid coprocessor transaction sender address will still be added in the list.
         $.allowConsensusTxSenders[allowHash].push(msg.sender);
 
+        // Emit the event at each call for monitoring purposes.
+        emit AllowAccount(ctHandle, accountAddress, msg.sender, extraData);
+
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.isAllowed[allowHash] && _isConsensusReached($.allowCounters[allowHash])) {
             $.isAllowed[allowHash] = true;
-            emit AllowAccount(ctHandle, accountAddress);
+            emit AllowAccountConsensus(ctHandle, accountAddress, extraData);
         }
     }
 
@@ -242,7 +248,7 @@ contract MultichainACL is
         // A "late" valid coprocessor transaction sender address will still be added in the list.
         $.delegateUserDecryptionTxSenders[delegateUserDecryptionHash].push(msg.sender);
 
-        emit DelegateUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter);
+        emit DelegateUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
 
         // Send the consensus reached event only if the consensus is reached in the current call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted.
@@ -271,7 +277,7 @@ contract MultichainACL is
             // Mark the delegate user decryption hash as having reached consensus for delegation.
             $.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] = true;
 
-            emit DelegateUserDecryptionConsensusReached(
+            emit DelegateUserDecryptionConsensus(
                 chainId,
                 delegator,
                 delegate,

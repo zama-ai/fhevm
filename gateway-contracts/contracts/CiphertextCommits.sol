@@ -152,6 +152,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         // sender address will still be added in the list
         $.coprocessorTxSenderAddresses[addCiphertextHash].push(msg.sender);
 
+        // Emit an event at each call for monitoring purposes.
+        emit AddCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, msg.sender);
+
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (
@@ -170,8 +173,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
             // by only knowing the handle, since a consensus can only happen once per handle
             $.ctHandleConsensusHash[ctHandle] = addCiphertextHash;
 
-            emit AddCiphertextMaterial(
+            emit AddCiphertextMaterialConsensus(
                 ctHandle,
+                keyId,
                 ciphertextDigest,
                 snsCiphertextDigest,
                 $.coprocessorTxSenderAddresses[addCiphertextHash]

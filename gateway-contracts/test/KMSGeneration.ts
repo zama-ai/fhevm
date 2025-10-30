@@ -16,6 +16,7 @@ import {
   createRandomWallet,
   getCrsId,
   getKeyId,
+  getKeyReshareId,
   getPrepKeygenId,
   getSignaturesCrsgen,
   getSignaturesKeygen,
@@ -25,7 +26,7 @@ import {
 } from "./utils";
 
 // Trigger a key generation in KMSGeneration contract
-async function generateKey(
+export async function generateKey(
   kmsGeneration: KMSGeneration,
   owner: Wallet,
   gatewayChainId: number,
@@ -35,7 +36,8 @@ async function generateKey(
 ): Promise<bigint> {
   // Start a keygen with test parameters
   // This first triggers a preprocessing keygen request
-  const txRequestPrepKeygen = await kmsGeneration.connect(owner).keygen(ParamsTypeEnum.Test);
+  const paramsType = ParamsTypeEnum.Test;
+  const txRequestPrepKeygen = await kmsGeneration.connect(owner).keygen(paramsType);
 
   // Get the prepKeygenId from the event in the transaction receipt
   const receiptPrepKeygen = await txRequestPrepKeygen.wait();
@@ -336,6 +338,25 @@ describe("KMSGeneration", function () {
         await expect(txKeygenResponse4).to.not.emit(kmsGeneration, "ActivateKey");
       });
 
+      it("Should emit an event when calling a single prepKeygenResponse", async function () {
+        await expect(
+          kmsGeneration.connect(kmsTxSenders[0]).prepKeygenResponse(prepKeygenId, kmsSignaturesPrepKeygen[0]),
+        )
+          .to.emit(kmsGeneration, "PrepKeygenResponse")
+          .withArgs(prepKeygenId, kmsSignaturesPrepKeygen[0], kmsTxSenders[0].address);
+      });
+
+      it("Should emit an event when calling a single keygenResponse", async function () {
+        // Trigger a keygen request.
+        // This is needed to generate and store the necessary values in the KMSGeneration contract
+        // fetched in the keygen response.
+        await kmsGeneration.connect(owner).keygen(paramsType);
+
+        await expect(kmsGeneration.connect(kmsTxSenders[0]).keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[0]))
+          .to.emit(kmsGeneration, "KeygenResponse")
+          .withArgs(keyId, toValues(keyDigests), kmsSignaturesKeygen[0], kmsTxSenders[0].address);
+      });
+
       it("Should revert because the signer and the tx sender do not correspond to the same coprocessor during preprocessing keygen", async function () {
         // Check that triggering a preprocessing keygen response using a signature from the first KMS signer
         // with the second KMS transaction sender reverts
@@ -350,7 +371,7 @@ describe("KMSGeneration", function () {
         // Trigger a keygen request.
         // This is needed to generate and store the necessary values in the KMSGeneration contract
         // fetched in the keygen response.
-        const txRequest = await kmsGeneration.connect(owner).keygen(paramsType);
+        await kmsGeneration.connect(owner).keygen(paramsType);
 
         // Check that triggering a keygen response using a signature from the first KMS signer
         // with the second KMS transaction sender reverts
@@ -520,6 +541,17 @@ describe("KMSGeneration", function () {
         await expect(txResponse4).to.not.emit(kmsGeneration, "ActivateCrs");
       });
 
+      it("Should emit an event when calling a single crsgenResponse", async function () {
+        // Trigger a CRS generation request.
+        // This is needed to generate and store the necessary values in the KMSGeneration contract
+        // fetched in the crsgen response.
+        await kmsGeneration.connect(owner).crsgenRequest(maxBitLength, ParamsTypeEnum.Test);
+
+        await expect(kmsGeneration.connect(kmsTxSenders[0]).crsgenResponse(crsId, crsDigest, kmsSignaturesCrsgen[0]))
+          .to.emit(kmsGeneration, "CrsgenResponse")
+          .withArgs(crsId, crsDigest, kmsSignaturesCrsgen[0], kmsTxSenders[0].address);
+      });
+
       it("Should revert because the signer and the tx sender do not correspond to the same coprocessor during crsgen", async function () {
         // Trigger a CRS generation request.
         // This is needed to generate and store the necessary values in the KMSGeneration contract
@@ -577,6 +609,67 @@ describe("KMSGeneration", function () {
         const kmsTxSenderAddresses = kmsTxSenders.map((s) => s.address);
         expect(await kmsGeneration.getConsensusTxSenders(crsId)).to.deep.equal(kmsTxSenderAddresses);
       });
+    });
+  });
+
+  describe("Key resharing", function () {
+    it("Should revert because of access controls", async function () {
+      const { kmsGeneration } = await loadFixture(loadTestVariablesFixture);
+
+      const keyId = getKeyId(1);
+
+      // Check that only the owner can trigger a PRSS initialization.
+      await expect(kmsGeneration.connect(fakeOwner).prssInit())
+        .to.be.revertedWithCustomError(kmsGeneration, "NotGatewayOwner")
+        .withArgs(fakeOwner.address);
+
+      // Check that only the owner can trigger a key resharing.
+      await expect(kmsGeneration.connect(fakeOwner).keyReshareSameSet(keyId))
+        .to.be.revertedWithCustomError(kmsGeneration, "NotGatewayOwner")
+        .withArgs(fakeOwner.address);
+    });
+
+    it("Should trigger the PRSS initialization", async function () {
+      const { owner, kmsGeneration } = await loadFixture(loadTestVariablesFixture);
+
+      await expect(kmsGeneration.connect(owner).prssInit()).to.emit(kmsGeneration, "PRSSInit");
+    });
+
+    it("Should trigger key resharing for the given key ID", async function () {
+      const { owner, kmsGeneration } = await loadFixture(loadTestVariablesFixture);
+
+      // Define the key digests.
+      const serverKeyDigest: IKMSGeneration.KeyDigestStruct = {
+        keyType: KeyTypeEnum.Server,
+        digest: createByteInput(),
+      };
+      const publicKeyDigest: IKMSGeneration.KeyDigestStruct = {
+        keyType: KeyTypeEnum.Public,
+        digest: createByteInput(),
+      };
+      const keyDigests = [serverKeyDigest, publicKeyDigest];
+
+      // Generate a key to reshare.
+      const keyId = await generateKey(kmsGeneration, owner, gatewayChainId, kmsTxSenders, kmsSigners, keyDigests);
+
+      // Declare expected values.
+      const prepKeygenId = getPrepKeygenId(1);
+      const keyReshareId = getKeyReshareId(1);
+      const paramsType = ParamsTypeEnum.Test;
+
+      await expect(kmsGeneration.connect(owner).keyReshareSameSet(keyId))
+        .to.emit(kmsGeneration, "KeyReshareSameSet")
+        .withArgs(prepKeygenId, keyId, keyReshareId, paramsType);
+    });
+
+    it("Should revert on reshare key because the key is not generated", async function () {
+      const { owner, kmsGeneration } = await loadFixture(loadTestVariablesFixture);
+
+      const fakeKeyId = getKeyId(5);
+
+      await expect(kmsGeneration.connect(owner).keyReshareSameSet(fakeKeyId))
+        .to.be.revertedWithCustomError(kmsGeneration, "KeyNotGenerated")
+        .withArgs(fakeKeyId);
     });
   });
 });

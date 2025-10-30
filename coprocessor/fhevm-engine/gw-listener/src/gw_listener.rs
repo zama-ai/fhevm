@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
-use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log, sol};
+use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::compact_hex;
 use futures_util::{future::join_all, StreamExt};
@@ -22,17 +22,8 @@ use crate::metrics::{
 use crate::sks_key::extract_server_key_without_ns;
 use crate::{ChainId, ConfigSettings, HealthStatus, KeyId, KeyType};
 
-sol!(
-    #[sol(rpc)]
-    InputVerification,
-    "./../../../gateway-contracts/artifacts/contracts/InputVerification.sol/InputVerification.json"
-);
-
-sol!(
-    #[sol(rpc)]
-    KMSGeneration,
-    "./../../../gateway-contracts/artifacts/contracts/KMSGeneration.sol/KMSGeneration.json"
-);
+use fhevm_gateway_bindings::input_verification::InputVerification;
+use fhevm_gateway_bindings::kms_generation::KMSGeneration;
 
 #[derive(Debug)]
 struct DigestMismatchError {

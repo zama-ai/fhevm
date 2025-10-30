@@ -13,7 +13,7 @@ while [[ $# -gt 0 ]]; do
 		;;
 	-h | --help)
 		cat <<'USAGE'
-Usage: ./scripts/deploy_zama_oft_testnet.sh [--verify]
+Usage: ./deploy_zama_oft_arbitrum_testnet.sh [--verify]
 
 Options:
   --verify   Run the optional Etherscan verification commands.
@@ -164,7 +164,7 @@ current_token_address=$(
 	node <<'NODE'
 const fs = require('fs');
 const text = fs.readFileSync('hardhat.config.ts', 'utf8');
-const match = text.matchAll(/tokenAddress:\s*["\'](0x[0-9a-fA-F]+)["\']/);
+const match = text.match(/tokenAddress:\s*["\'](0x[0-9a-fA-F]+)["\']/);
 if (!match) {
   console.error('Error: tokenAddress entry not found after update.');
   process.exit(1);

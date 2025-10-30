@@ -160,6 +160,13 @@ task(
   console.log(`${SAFE_SMART_ACCOUNT_IMPL_NAME} address ${safeAddress} written successfully!`);
 });
 
+/**
+ * Example usage:
+ * npx hardhat task:deployOwnerSafeSmartAccountProxy \
+ *   --owners '["<address1>","<address2>"]' \
+ *   --threshold 2 \
+ *   --use-internal-safe-impl-address true
+ */
 task("task:deployOwnerSafeSmartAccountProxy", "Deploys the OwnerSafeSmartAccountProxy contract")
   .addParam("owners", "List of addresses that control the OwnerSafeSmartAccount.", undefined, types.json)
   .addParam(

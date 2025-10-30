@@ -20,16 +20,32 @@ import { ProtocolMetadata, KmsNode, Coprocessor, Custodian, HostChain } from "..
  */
 interface IGatewayConfig {
     /**
+     * @notice The operator's thresholds.
+     */
+    struct Thresholds {
+        /// @notice The MPC threshold
+        uint256 mpcThreshold;
+        /// @notice The threshold to consider for public decryption consensus
+        uint256 publicDecryptionThreshold;
+        /// @notice The threshold to consider for user decryption consensus
+        uint256 userDecryptionThreshold;
+        /// @notice The threshold to consider for KMS generation consensus
+        uint256 kmsGenThreshold;
+        /// @notice The threshold to consider for coprocessor consensus
+        uint256 coprocessorThreshold;
+    }
+
+    /**
      * @notice Emitted when the GatewayConfig initialization is completed.
      * @param metadata Metadata of the protocol.
-     * @param mpcThreshold The MPC threshold.
+     * @param thresholds The operator's thresholds.
      * @param kmsNodes List of KMS nodes.
      * @param coprocessors List of coprocessors.
      * @param custodians List of custodians.
      */
     event InitializeGatewayConfig(
         ProtocolMetadata metadata,
-        uint256 mpcThreshold,
+        Thresholds thresholds,
         KmsNode[] kmsNodes,
         Coprocessor[] coprocessors,
         Custodian[] custodians

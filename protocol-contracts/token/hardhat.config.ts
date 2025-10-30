@@ -53,7 +53,7 @@ const config: HardhatUserConfig = {
     solidity: {
         compilers: [
             {
-                version: '0.8.22',
+                version: '0.8.24',
                 settings: {
                     optimizer: {
                         enabled: true,
@@ -68,21 +68,32 @@ const config: HardhatUserConfig = {
             eid: EndpointId.ARBSEP_V2_TESTNET,
             url: process.env.RPC_URL_ARBITRUM_SEPOLIA || 'https://sepolia-rollup.arbitrum.io/rpc',
             accounts,
+        },
+        'ethereum-mainnet': {
+            eid: EndpointId.ETHEREUM_V2_MAINNET,
+            url: process.env.MAINNET_RPC_URL || '',
+            accounts,
             oftAdapter: {
                 tokenAddress: '0x',
             },
         },
         'ethereum-testnet': {
             eid: EndpointId.SEPOLIA_V2_TESTNET,
-            url: process.env.SEPOLIA_RPC_URL,
+            url: process.env.SEPOLIA_RPC_URL!,
             accounts,
             oftAdapter: {
                 tokenAddress: '0x',
             },
         },
+        // No ZAMA_V2_MAINNET endpoint available yet.
+        // 'gateway-mainnet': {
+        //     eid: EndpointId.ZAMA_V2_MAINNET,
+        //     url: process.env.RPC_URL_ZAMA_GATEWAY_MAINNET || '',
+        //     accounts,
+        // },
         'gateway-testnet': {
             eid: EndpointId.ZAMA_V2_TESTNET,
-            url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET,
+            url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET || '',
             accounts,
         },
         hardhat: {

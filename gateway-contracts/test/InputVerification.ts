@@ -218,6 +218,16 @@ describe("InputVerification", function () {
       );
     });
 
+    it("Should emit an event when calling a single proof verification response", async function () {
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0),
+      )
+        .to.emit(inputVerification, "VerifyProofResponseCall")
+        .withArgs(zkProofId, ctHandles, signatures[0], coprocessorTxSenders[0].address, extraDataV0);
+    });
+
     it("Should verify proof with 2 valid responses", async function () {
       // Trigger two valid proof verification responses
       await inputVerification
@@ -554,6 +564,12 @@ describe("InputVerification", function () {
         ciphertextWithZKProof,
         extraDataV0,
       );
+    });
+
+    it("Should emit an event when calling a single proof rejection response", async function () {
+      await expect(inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0))
+        .to.emit(inputVerification, "RejectProofResponseCall")
+        .withArgs(zkProofId, extraDataV0);
     });
 
     it("Should reject a proof with 2 valid responses", async function () {

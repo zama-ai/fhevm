@@ -32,6 +32,7 @@ tower-http = { workspace = true }
 
 url = "2.5.7"
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+fhevm_gateway_bindings = { path = "../../../gateway-contracts/rust_bindings" }
 
 [build-dependencies]
 foundry-compilers = { workspace = true }
