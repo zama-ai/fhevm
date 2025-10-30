@@ -1,9 +1,9 @@
 use crate::{
-    bench::{BenchAverageResult, BenchBurstResult, BenchRecordInput},
+    bench::{BenchAverageResult, BenchBurstResult, BenchRecordInput, BurstResult},
+    blockchain::types::DecryptionRequest,
     cli::{DbBenchmarkArgs, DbTestArgs},
     config::Config,
     db::{DbConnector, RequestBuilder, ResponseTracker},
-    decryption::{BurstResult, types::DecryptionRequest},
 };
 use anyhow::anyhow;
 use std::sync::Arc;
