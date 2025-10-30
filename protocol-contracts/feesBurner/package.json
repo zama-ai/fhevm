@@ -2,7 +2,7 @@
   "name": "feesBurner",
   "version": "1.0.0",
   "license": "BSD-3-Clause-Clear",
-    "packageManager": "pnpm@10.20.0",
+  "packageManager": "pnpm@10.20.0",
   "scripts": {
     "preinstall": "npx only-allow pnpm"
   },
