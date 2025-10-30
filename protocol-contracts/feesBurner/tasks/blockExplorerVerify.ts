@@ -2,13 +2,41 @@ import { task } from "hardhat/config";
 
 import { getRequiredEnvVar } from "../deploy/utils/loadVariables";
 
+// Verify the ProtocolFeesBurner contract at the given address.
+task("task:verifyProtocolFeesBurner")
+  .addParam("protocolFeesBurner", "address of the already deployed ProtocolFeesBurner contract that should be verified")
+  .setAction(async function ({ protocolFeesBurner }, hre) {
+    const zamaERC20Address = getRequiredEnvVar("ZAMA_ERC20_ADDRESS");
+    const apiKey = getRequiredEnvVar("ETHERSCAN_API");
+
+    if (typeof hre.config.etherscan.apiKey !== "string") {
+      console.log(
+        "Verification on Ethereum requires using Etherscan API V2, only available when the etherscan.apiKey field is a string.",
+      );
+      hre.config.etherscan.apiKey = apiKey;
+    }
+
+    await hre.run("verify:verify", {
+      address: protocolFeesBurner,
+      constructorArguments: [zamaERC20Address],
+    });
+  });
+
+// Verify the FeesSenderToBurner contract at the given address.
 task("task:verifyFeesSenderToBurner")
   .addParam("feesSenderToBurner", "address of the already deployed FeesSenderToBurner contract that should be verified")
-  .setAction(async function ({ feesSenderToBurner }, { run }) {
+  .setAction(async function ({ feesSenderToBurner }, hre) {
     const oftAddress = getRequiredEnvVar("ZAMA_OFT_ADDRESS");
     const protocolFeesBurnerAddress = getRequiredEnvVar("PROTOCOL_FEES_BURNER_ADDRESS");
 
-    await run("verify:verify", {
+    if (typeof hre.config.etherscan.apiKey === "string") {
+      console.log(
+        "Verification on Gateway requires using BlockScout API, only available when the etherscan.apiKey field is not a string.",
+      );
+      hre.config.etherscan.apiKey = { "gateway-testnet": "empty", "gateway-mainnet": "empty" };
+    }
+
+    await hre.run("verify:verify", {
       address: feesSenderToBurner,
       constructorArguments: [oftAddress, protocolFeesBurnerAddress],
     });

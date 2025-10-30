@@ -13,7 +13,7 @@ while [[ $# -gt 0 ]]; do
 		;;
 	-h | --help)
 		cat <<'USAGE'
-Usage: ./scripts/deploy_zama_oft_testnet.sh [--verify]
+Usage: ./deploy_zama_oft_gateway_testnet.sh [--verify]
 
 Options:
   --verify   Run the optional Etherscan verification commands.

@@ -69,17 +69,31 @@ const config: HardhatUserConfig = {
             url: process.env.RPC_URL_ARBITRUM_SEPOLIA || 'https://sepolia-rollup.arbitrum.io/rpc',
             accounts,
         },
-        'ethereum-testnet': {
-            eid: EndpointId.SEPOLIA_V2_TESTNET,
-            url: process.env.SEPOLIA_RPC_URL,
+        'ethereum-mainnet': {
+            eid: EndpointId.ETHEREUM_V2_MAINNET,
+            url: process.env.MAINNET_RPC_URL || '',
             accounts,
             oftAdapter: {
                 tokenAddress: '0x',
             },
         },
+        'ethereum-testnet': {
+            eid: EndpointId.SEPOLIA_V2_TESTNET,
+            url: process.env.SEPOLIA_RPC_URL!,
+            accounts,
+            oftAdapter: {
+                tokenAddress: '0x',
+            },
+        },
+        // No ZAMA_V2_MAINNET endpoint available yet.
+        // 'gateway-mainnet': {
+        //     eid: EndpointId.ZAMA_V2_MAINNET,
+        //     url: process.env.RPC_URL_ZAMA_GATEWAY_MAINNET || '',
+        //     accounts,
+        // },
         'gateway-testnet': {
             eid: EndpointId.ZAMA_V2_TESTNET,
-            url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET,
+            url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET || '',
             accounts,
         },
         hardhat: {
