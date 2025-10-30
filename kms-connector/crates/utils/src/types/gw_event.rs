@@ -45,7 +45,10 @@ impl GatewayEvent {
             }
             GatewayEventKind::Keygen(e) => mark_keygen_as_pending(db, e.keyId).await,
             GatewayEventKind::Crsgen(e) => mark_crsgen_as_pending(db, e.crsId).await,
-            GatewayEventKind::PrssInit(_) | GatewayEventKind::KeyReshareSameSet(_) => (),
+            GatewayEventKind::PrssInit(_) => mark_prss_init_as_pending(db, PRSS_INIT_ID).await,
+            GatewayEventKind::KeyReshareSameSet(e) => {
+                mark_key_reshare_same_set_as_pending(db, e.keyId).await
+            }
         }
     }
 
@@ -213,6 +216,24 @@ pub async fn mark_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
 pub async fn mark_crsgen_as_pending(db: &Pool<Postgres>, id: U256) {
     let query = sqlx::query!(
         "UPDATE crsgen_requests SET under_process = FALSE WHERE crs_id = $1",
+        id.as_le_slice()
+    );
+    execute_free_event_query(db, query).await;
+}
+
+/// Sets the `under_process` field of the `PrssInit` as `FALSE` in the database.
+pub async fn mark_prss_init_as_pending(db: &Pool<Postgres>, id: U256) {
+    let query = sqlx::query!(
+        "UPDATE prss_init SET under_process = FALSE WHERE id = $1",
+        id.as_le_slice()
+    );
+    execute_free_event_query(db, query).await;
+}
+
+/// Sets the `under_process` field of the `KeyReshareSameSet` as `FALSE` in the database.
+pub async fn mark_key_reshare_same_set_as_pending(db: &Pool<Postgres>, id: U256) {
+    let query = sqlx::query!(
+        "UPDATE key_reshare_same_set SET under_process = FALSE WHERE key_id = $1",
         id.as_le_slice()
     );
     execute_free_event_query(db, query).await;

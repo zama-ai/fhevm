@@ -1,15 +1,15 @@
 use crate::{
-    core::Config,
+    core::{
+        Config,
+        kms_response_picker::notifier::{DbKmsResponseNotifier, KmsResponseNotification},
+    },
     monitoring::metrics::{RESPONSE_RECEIVED_COUNTER, RESPONSE_RECEIVED_ERRORS},
 };
 use anyhow::anyhow;
 use connector_utils::types::{KmsResponse, kms_response};
-use sqlx::{
-    Pool, Postgres,
-    postgres::{PgListener, PgNotification},
-};
-use std::{future::Future, time::Duration};
-use tokio::select;
+use sqlx::{Pool, Postgres};
+use std::future::Future;
+use tokio::sync::mpsc::{self, Receiver};
 use tracing::{debug, info, warn};
 
 /// Interface used to pick KMS Core's responses from some storage.
@@ -17,95 +17,75 @@ pub trait KmsResponsePicker {
     fn pick_responses(&mut self) -> impl Future<Output = anyhow::Result<Vec<KmsResponse>>>;
 }
 
-// Postgres notifications for KMS Core's responses
-const PUBLIC_DECRYPT_NOTIFICATION: &str = "public_decryption_response_available";
-const USER_DECRYPT_NOTIFICATION: &str = "user_decryption_response_available";
-const PREP_KEYGEN_NOTIFICATION: &str = "prep_keygen_response_available";
-const KEYGEN_NOTIFICATION: &str = "keygen_response_available";
-const CRSGEN_NOTIFICATION: &str = "crsgen_response_available";
-
 /// Struct that collects KMS Core's responses from a `Postgres` database.
 pub struct DbKmsResponsePicker {
     /// The DB connection pool used to query responses when notified.
     db_pool: Pool<Postgres>,
 
-    /// The DB listener to watch for notifications.
-    db_listener: PgListener,
+    /// The receiver channel used to receive KMS response notification.
+    notif_receiver: Receiver<KmsResponseNotification>,
 
     /// The maximum number of responses to fetch at once.
     responses_batch_size: u8,
-
-    /// The timeout for polling the database for responses.
-    polling_timeout: Duration,
 }
 
 impl DbKmsResponsePicker {
     pub fn new(
         db_pool: Pool<Postgres>,
-        db_listener: PgListener,
-        response_batch_size: u8,
-        polling_timeout: Duration,
+        notif_receiver: Receiver<KmsResponseNotification>,
+        responses_batch_size: u8,
     ) -> Self {
         Self {
             db_pool,
-            db_listener,
-            responses_batch_size: response_batch_size,
-            polling_timeout,
+            notif_receiver,
+            responses_batch_size,
         }
     }
 
     pub async fn connect(db_pool: Pool<Postgres>, config: &Config) -> anyhow::Result<Self> {
-        let db_listener = PgListener::connect_with(&db_pool)
-            .await
-            .map_err(|e| anyhow!("Failed to init Postgres Listener: {e}"))?;
+        let (notif_sender, notif_receiver) = mpsc::channel(config.task_limit);
+        let response_notifier =
+            DbKmsResponseNotifier::connect(db_pool.clone(), notif_sender, config).await?;
+        tokio::spawn(response_notifier.start());
 
-        let mut response_picker = DbKmsResponsePicker::new(
-            db_pool,
-            db_listener,
-            config.responses_batch_size,
-            config.database_polling_timeout,
-        );
-        response_picker
-            .listen()
-            .await
-            .map_err(|e| anyhow!("Failed to listen to responses: {e}"))?;
-
+        let response_picker =
+            DbKmsResponsePicker::new(db_pool, notif_receiver, config.responses_batch_size);
         Ok(response_picker)
-    }
-
-    async fn listen(&mut self) -> sqlx::Result<()> {
-        self.db_listener.listen(PUBLIC_DECRYPT_NOTIFICATION).await?;
-        self.db_listener.listen(USER_DECRYPT_NOTIFICATION).await?;
-        self.db_listener.listen(PREP_KEYGEN_NOTIFICATION).await?;
-        self.db_listener.listen(KEYGEN_NOTIFICATION).await?;
-        self.db_listener.listen(CRSGEN_NOTIFICATION).await
     }
 }
 
 impl KmsResponsePicker for DbKmsResponsePicker {
+    /// Picks KMS responses from the database.
+    ///
+    /// Should only return an error if the notification channel is closed, so the `tx_sender` can
+    /// shutdown gracefully.
+    /// If another error is encountered, it will just be logged with a warning and will wait for
+    /// next responses.
     async fn pick_responses(&mut self) -> anyhow::Result<Vec<KmsResponse>> {
         loop {
-            let responses = select! {
-                notification = self.db_listener.recv() => {
-                    let notification = notification?;
-                    info!("Received Postgres notification: {}", notification.channel());
-                    self.pick_notified_responses(notification)
-                        .await
-                        .inspect_err(|_| RESPONSE_RECEIVED_ERRORS.inc())?
-                },
-                _ = tokio::time::sleep(self.polling_timeout) => {
-                    debug!("Polling timeout, rechecking for responses");
-                    self.pick_any_responses().await
-                },
+            let Some(notification) = self.notif_receiver.recv().await else {
+                return Err(anyhow!("notification channel was closed!"));
             };
 
-            if responses.is_empty() {
-                debug!("Responses have already been picked");
-                continue;
-            } else {
-                info!("Picked {} responses successfully", responses.len());
-                RESPONSE_RECEIVED_COUNTER.inc_by(responses.len() as u64);
-                return Ok(responses);
+            match self.pick_notified_responses(&notification).await {
+                Err(e) => {
+                    warn!("Error while picking responses: {e}");
+                    RESPONSE_RECEIVED_ERRORS.inc();
+                    continue;
+                }
+                Ok(responses) if responses.is_empty() => {
+                    debug!("Responses have already been picked");
+                    continue;
+                }
+                Ok(responses) => {
+                    info!(
+                        "Picked {} {} successfully",
+                        responses.len(),
+                        notification.response_str()
+                    );
+                    RESPONSE_RECEIVED_COUNTER.inc_by(responses.len() as u64);
+                    return Ok(responses);
+                }
             }
         }
     }
@@ -114,37 +94,17 @@ impl KmsResponsePicker for DbKmsResponsePicker {
 impl DbKmsResponsePicker {
     async fn pick_notified_responses(
         &self,
-        notification: PgNotification,
+        notification: &KmsResponseNotification,
     ) -> anyhow::Result<Vec<KmsResponse>> {
-        match notification.channel() {
-            PUBLIC_DECRYPT_NOTIFICATION => self.pick_public_decryption_responses().await,
-            USER_DECRYPT_NOTIFICATION => self.pick_user_decryption_responses().await,
-            PREP_KEYGEN_NOTIFICATION => self.pick_prep_keygen_responses().await,
-            KEYGEN_NOTIFICATION => self.pick_keygen_responses().await,
-            CRSGEN_NOTIFICATION => self.pick_crsgen_responses().await,
-            channel => Err(anyhow!("Unexpected notification: {channel}")),
-        }
-    }
-
-    async fn pick_any_responses(&self) -> Vec<KmsResponse> {
-        let mut all_responses = vec![];
-        [
-            self.pick_public_decryption_responses().await,
-            self.pick_user_decryption_responses().await,
-            self.pick_prep_keygen_responses().await,
-            self.pick_keygen_responses().await,
-            self.pick_crsgen_responses().await,
-        ]
-        .into_iter()
-        .for_each(|res| match res {
-            Ok(events) => all_responses.extend(events),
-            Err(e) => {
-                warn!("Failed to fetch responses from one of the DB tables: {e}");
-                RESPONSE_RECEIVED_ERRORS.inc();
+        match notification {
+            KmsResponseNotification::PublicDecryption => {
+                self.pick_public_decryption_responses().await
             }
-        });
-
-        all_responses
+            KmsResponseNotification::UserDecryption => self.pick_user_decryption_responses().await,
+            KmsResponseNotification::PrepKeygen => self.pick_prep_keygen_responses().await,
+            KmsResponseNotification::Keygen => self.pick_keygen_responses().await,
+            KmsResponseNotification::Crsgen => self.pick_crsgen_responses().await,
+        }
     }
 
     async fn pick_public_decryption_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
@@ -202,12 +162,13 @@ impl DbKmsResponsePicker {
                     SELECT prep_keygen_id
                     FROM prep_keygen_responses
                     WHERE under_process = FALSE
-                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE prep_keygen_responses.prep_keygen_id = resp.prep_keygen_id
                 RETURNING resp.prep_keygen_id, signature, otlp_context
             ",
         )
+        .bind(self.responses_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -224,12 +185,13 @@ impl DbKmsResponsePicker {
                     SELECT key_id
                     FROM keygen_responses
                     WHERE under_process = FALSE
-                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE keygen_responses.key_id = resp.key_id
                 RETURNING resp.key_id, key_digests, signature, otlp_context
             ",
         )
+        .bind(self.responses_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -246,12 +208,13 @@ impl DbKmsResponsePicker {
                     SELECT crs_id
                     FROM crsgen_responses
                     WHERE under_process = FALSE
-                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE crsgen_responses.crs_id = resp.crs_id
                 RETURNING resp.crs_id, crs_digest, signature, otlp_context
             ",
         )
+        .bind(self.responses_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
