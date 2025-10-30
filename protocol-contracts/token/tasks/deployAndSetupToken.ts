@@ -18,13 +18,22 @@ interface DeploymentConfig {
 }
 
 const CONFIGS: Record<string, DeploymentConfig> = {
-    gateway_testnet: {
+    testnet: {
         sourceNetwork: 'ethereum-testnet',
         destNetwork: 'gateway-testnet',
-        layerzeroConfigPath: 'layerzero.config.gatewaytestnet.ts',
+        layerzeroConfigPath: 'layerzero.config.testnet.ts',
         verificationScripts: {
             source: 'verify:etherscan:ethereum:sepolia',
             destination: 'verify:etherscan:gateway:testnet',
+        },
+    },
+    mainnet: {
+        sourceNetwork: 'ethereum-mainnet',
+        destNetwork: 'gateway-mainnet',
+        layerzeroConfigPath: 'layerzero.config.mainnet.ts',
+        verificationScripts: {
+            source: 'verify:etherscan:ethereum:mainnet',
+            destination: 'verify:etherscan:gateway:mainnet',
         },
     },
 }
@@ -38,7 +47,7 @@ const CONFIGS: Record<string, DeploymentConfig> = {
  * 5. Wire the contracts together
  *
  * Example usage:
- * npx hardhat deploy:token --preset "arbitrum_testnet" --verify true
+ * npx hardhat deploy:token --preset testnet --verify true
  */
 task('deploy:token', 'Complete setup of ZAMA token, OFTAdapter and OFT')
     .addParam('preset', 'Deployment preset to use', undefined, types.string)
@@ -61,7 +70,7 @@ task('deploy:token', 'Complete setup of ZAMA token, OFTAdapter and OFT')
         }
 
         console.log('\n> Checking prerequisite setup')
-        checkEnvVariables()
+        checkEnvVariables(taskArgs.preset)
 
         console.log(`\n> Deploy ZamaERC20 on ${config.sourceNetwork}`)
         console.log(` - Running lz:deploy in CI mode for ZamaERC20 on ${config.sourceNetwork}.`)
@@ -107,12 +116,17 @@ task('deploy:token', 'Complete setup of ZAMA token, OFTAdapter and OFT')
         if (runVerify) {
             console.log('\n> Verifying contracts on Etherscan')
             await verifyContracts(hre, config)
+            console.log('\n> ✅ Contracts verified successfully')
         } else {
             console.log('\n> Skipping Etherscan verification')
-            return
         }
 
-        console.log('\n> ✅ Contracts verified successfully')
+        const zamaERC20Address = await getDeployedAddress(config.sourceNetwork, 'ZamaERC20')
+        const zamaOFTAdapterAddress = await getDeployedAddress(config.sourceNetwork, 'ZamaOFTAdapter')
+        const zamaOFTAddress = await getDeployedAddress(config.destNetwork, 'ZamaOFT')
+        console.log(`\n> ZAMAERC20_CONTRACT_ADDRESS: ${zamaERC20Address}`)
+        console.log(`\n> ZAMAOFTADAPTER_CONTRACT_ADDRESS: ${zamaOFTAdapterAddress}`)
+        console.log(`\n> ZAMAOFT_CONTRACT_ADDRESS: ${zamaOFTAddress}`)
     })
 
 /**
@@ -148,9 +162,19 @@ async function getDeployedAddress(network: string, contractName: string): Promis
 /**
  * Checks that required environment variables are set
  */
-function checkEnvVariables() {
-    const required = ['PRIVATE_KEY', 'SEPOLIA_RPC_URL', 'INITIAL_SUPPLY_RECEIVER', 'INITIAL_ADMIN']
+function checkEnvVariables(preset?: string) {
+    const baseRequired = ['PRIVATE_KEY', 'INITIAL_SUPPLY_RECEIVER', 'INITIAL_ADMIN']
 
+    // Add network-specific RPC URL requirements based on preset
+    const required = [...baseRequired]
+    switch (preset) {
+        case 'mainnet':
+            required.push('MAINNET_RPC_URL', 'RPC_URL_ZAMA_GATEWAY_MAINNET')
+            break
+        case 'testnet':
+            required.push('SEPOLIA_RPC_URL', 'RPC_URL_ZAMA_GATEWAY_TESTNET')
+            break
+    }
     const missing = required.filter((key) => !process.env[key])
 
     if (missing.length > 0) {

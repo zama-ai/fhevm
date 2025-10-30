@@ -5,18 +5,19 @@ import { OAppEnforcedOption } from '@layerzerolabs/toolbox-hardhat'
 
 import type { OmniPointHardhat } from '@layerzerolabs/toolbox-hardhat'
 
-const sepoliaContract: OmniPointHardhat = {
-    eid: EndpointId.SEPOLIA_V2_TESTNET,
+const ethereumContract: OmniPointHardhat = {
+    eid: EndpointId.ETHEREUM_V2_MAINNET,
     contractName: 'ZamaOFTAdapter',
 }
 
-const arbitrumSepoliaContract: OmniPointHardhat = {
-    eid: EndpointId.ARBSEP_V2_TESTNET,
+const zamaMainnetContract: OmniPointHardhat = {
+    // @ts-ignore: TODO: Remove TS ignore once LayerZero endpoint is deployed.
+    eid: EndpointId.ZAMA_V2_MAINNET,
     contractName: 'ZamaOFT',
 }
 
 // To connect all the above chains to each other, we need the following pathways:
-// ArbitrumSepolia <-> Sepolia
+// ZamaGatewayMainnet <-> Ethereum
 
 // For this example's simplicity, we will use the same enforced options values for sending to all chains
 // For production, you should ensure `gas` is set to the correct value through profiling the gas usage of calling OFT._lzReceive(...) on the destination chain
@@ -34,8 +35,8 @@ const EVM_ENFORCED_OPTIONS: OAppEnforcedOption[] = [
 // i.e. if you declare A,B there's no need to declare B,A
 const pathways: TwoWayConfig[] = [
     [
-        sepoliaContract, // Chain A contract
-        arbitrumSepoliaContract, // Chain B contract
+        ethereumContract, // Chain A contract
+        zamaMainnetContract, // Chain B contract
         // TODO: Add custom ZAMA DVN in next line?
         [['LayerZero Labs'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
         [15, 20], // [A to B confirmations, B to A confirmations]
@@ -47,7 +48,7 @@ export default async function () {
     // Generate the connections config based on the pathways
     const connections = await generateConnectionsConfig(pathways)
     return {
-        contracts: [{ contract: arbitrumSepoliaContract }, { contract: sepoliaContract }],
+        contracts: [{ contract: zamaMainnetContract }, { contract: ethereumContract }],
         connections,
     }
 }
