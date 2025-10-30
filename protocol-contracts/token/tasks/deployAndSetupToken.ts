@@ -1,37 +1,31 @@
-import { task, types } from 'hardhat/config'
-import type { HardhatRuntimeEnvironment } from 'hardhat/types'
+import { execSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
-import { execSync } from 'child_process'
+
+import { task, types } from 'hardhat/config'
+
+import type { HardhatRuntimeEnvironment } from 'hardhat/types'
 
 interface DeploymentConfig {
     sourceNetwork: string // Network where ZamaERC20 and OFTAdapter are deployed
     destNetwork: string // Network where ZamaOFT is deployed
     layerzeroConfigPath: string // Path to LayerZero config file
+    verificationScripts?: {
+        // Verification scripts to run for the source and destination networks
+        source: string
+        destination: string
+    }
 }
 
 const CONFIGS: Record<string, DeploymentConfig> = {
-    arbitrum_testnet: {
-        sourceNetwork: 'ethereum-testnet',
-        destNetwork: 'arbitrum-testnet',
-        layerzeroConfigPath: 'layerzero.config.arbitrumtestnet.ts',
-    },
     gateway_testnet: {
         sourceNetwork: 'ethereum-testnet',
         destNetwork: 'gateway-testnet',
         layerzeroConfigPath: 'layerzero.config.gatewaytestnet.ts',
-    },
-}
-
-// Verification script mapping that matches package.json scripts
-const VERIFICATION_SCRIPTS: Record<string, { ethereum: string; destination: string }> = {
-    arbitrum_testnet: {
-        ethereum: 'verify:etherscan:ethereum:sepolia',
-        destination: 'verify:etherscan:arbitrum:sepolia',
-    },
-    gateway_testnet: {
-        ethereum: 'verify:etherscan:ethereum:sepolia',
-        destination: 'verify:etherscan:gateway:testnet',
+        verificationScripts: {
+            source: 'verify:etherscan:ethereum:sepolia',
+            destination: 'verify:etherscan:gateway:testnet',
+        },
     },
 }
 
@@ -44,30 +38,28 @@ const VERIFICATION_SCRIPTS: Record<string, { ethereum: string; destination: stri
  * 5. Wire the contracts together
  *
  * Example usage:
- * npx hardhat deploy:oft-bridge --target "arbitrum_testnet" --verify true
+ * npx hardhat deploy:token --preset "arbitrum_testnet" --verify true
  */
-task('deploy:oft-bridge', 'Deploy complete OFT bridge setup')
-    .addParam('target', 'Target network', undefined, types.string)
+task('deploy:token', 'Complete setup of ZAMA token, OFTAdapter and OFT')
+    .addParam('preset', 'Deployment preset to use', undefined, types.string)
     .addOptionalParam('verify', 'Run Etherscan verification', false, types.boolean)
-    .setAction(async (taskArgs: { target: string; verify: boolean }, hre) => {
-        const target = taskArgs.target
+    .setAction(async (taskArgs: { preset: string; verify: boolean }, hre) => {
+        const config = CONFIGS[taskArgs.preset]
         const runVerify = taskArgs.verify
 
-        if (!CONFIGS[target]) {
-            throw new Error(`Unknown target: ${target}. Available: ${Object.keys(CONFIGS).join(', ')}`)
+        if (!config) {
+            throw new Error(`Unknown config: ${taskArgs.preset}. Available: ${Object.keys(CONFIGS).join(', ')}`)
         }
 
-        if (runVerify && !VERIFICATION_SCRIPTS[target]) {
-            console.warn(`\n⚠️  WARNING: Verification is not yet supported for target '${target}'`)
-            console.warn(`Available verification targets: ${Object.keys(VERIFICATION_SCRIPTS).join(', ')}`)
+        if (runVerify && !config.verificationScripts) {
+            console.warn(`\n⚠️  WARNING: Verification is not yet supported for target '${config}'`)
             console.warn(`\nTo add verification support:`)
-            console.warn(`  1. Add verification scripts to package.json for ${target}`)
-            console.warn(`  2. Update VERIFICATION_SCRIPTS in tasks/deployOFTBridge.ts`)
+            console.warn(`  1. Add verification scripts to package.json for ${taskArgs.preset}`)
+            console.warn(`  2. Update verificationScripts in the config object.`)
             console.error(`\nEither run without verification or add compatible verification scripts\n`)
             process.exit(1)
         }
 
-        const config = CONFIGS[target]
         console.log('\n> Checking prerequisite setup')
         checkEnvVariables()
 
@@ -83,7 +75,7 @@ task('deploy:oft-bridge', 'Deploy complete OFT bridge setup')
         const tokenAddress = await getDeployedAddress(config.sourceNetwork, 'ZamaERC20')
         console.log(` - Detected ZamaERC20 address: ${tokenAddress}`)
 
-        patchHardhatConfigForOFTAdapter(hre, config.sourceNetwork, tokenAddress)
+        setHardhatConfigForOFTAdapter(hre, config.sourceNetwork, tokenAddress)
         console.log(` - Set ${config.sourceNetwork}.oftAdapter.tokenAddress to ${tokenAddress}`)
 
         console.log(`\n> Deploy ZamaOFTAdapter on ${config.sourceNetwork}`)
@@ -114,21 +106,20 @@ task('deploy:oft-bridge', 'Deploy complete OFT bridge setup')
         // Optional verification
         if (runVerify) {
             console.log('\n> Verifying contracts on Etherscan')
-            await verifyContracts(hre, target)
+            await verifyContracts(hre, config)
         } else {
             console.log('\n> Skipping Etherscan verification')
-            return;
+            return
         }
 
         console.log('\n> ✅ Contracts verified successfully')
-
     })
 
 /**
- * Patches the hardhat config in memory to set the oftAdapter.tokenAddress
+ * Sets the oftAdapter.tokenAddress key in the hre config.
  * This enables running the lz:deploy task with the correct token address
  */
-function patchHardhatConfigForOFTAdapter(hre: HardhatRuntimeEnvironment, network: string, tokenAddress: string) {
+function setHardhatConfigForOFTAdapter(hre: HardhatRuntimeEnvironment, network: string, tokenAddress: string) {
     if (!hre.config.networks[network]) {
         throw new Error(`Network ${network} not found in hardhat config`)
     }
@@ -141,10 +132,7 @@ function patchHardhatConfigForOFTAdapter(hre: HardhatRuntimeEnvironment, network
 /**
  * Gets the deployed contract address from hardhat-deploy artifacts
  */
-async function getDeployedAddress(
-    network: string,
-    contractName: string
-): Promise<string> {
+async function getDeployedAddress(network: string, contractName: string): Promise<string> {
     const deploymentsPath = path.join('deployments', network, `${contractName}.json`)
     try {
         const data = JSON.parse(fs.readFileSync(deploymentsPath, 'utf8'))
@@ -176,27 +164,23 @@ function checkEnvVariables() {
  * Runs verification using package.json scripts
  * Must use the scripts defined in package.json as they contain the correct API endpoints
  */
-async function verifyContracts(hre: HardhatRuntimeEnvironment, target: string) {
-    const scripts = VERIFICATION_SCRIPTS[target]
-    if (!scripts) {
-        console.error(' - Verification scripts not found for this target')
-        process.exit(1)
+async function verifyContracts(hre: HardhatRuntimeEnvironment, config: DeploymentConfig) {
+    const { source, destination } = config.verificationScripts!
+    if (!source || !destination) {
+        throw new Error('Verification scripts not found in config')
     }
-
-    console.log(`\n> Verifying ZamaERC20 and ZamaOFTAdapter on Ethereum Sepolia`)
-    console.log(` - Running: pnpm ${scripts.ethereum}`)
+    console.log(`\n> Verifying ZamaERC20 and ZamaOFTAdapter on ${config.sourceNetwork}`)
+    console.log(` - Running: pnpm ${source}`)
     try {
-        execSync(`pnpm run ${scripts.ethereum}`, { stdio: 'inherit' })
+        execSync(`pnpm run ${source}`, { stdio: 'inherit' })
     } catch (error: any) {
         console.log(' - Verification command returned an error; check Etherscan manually.')
     }
-
-    const config = CONFIGS[target]
     console.log(`\n> Verifying ZamaOFT on ${config.destNetwork}`)
-    console.log(` - Running: pnpm ${scripts.destination}`)
+    console.log(` - Running: pnpm ${destination}`)
     try {
-        execSync(`pnpm run ${scripts.destination}`, { stdio: 'inherit' })
+        execSync(`pnpm run ${destination}`, { stdio: 'inherit' })
     } catch (error: any) {
-        console.log(' - Verification command returned an error; check block explorer manually.')
+        console.log(' - Verification command returned an error; check Etherscan manually.')
     }
 }

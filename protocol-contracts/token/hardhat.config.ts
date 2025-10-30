@@ -24,7 +24,7 @@ import './tasks/oft/setDelegate'
 import './tasks/oft/transferOwnership'
 import './tasks/sendOFT'
 import './tasks/validateEVMAddress'
-import './tasks/deployOFTBridge'
+import './tasks/deployAndSetupToken'
 
 // Set your preferred authentication method
 //

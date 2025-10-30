@@ -1,6 +1,7 @@
 import assert from 'assert'
 
 import { type DeployFunction } from 'hardhat-deploy/types'
+
 import { getRequiredEnvVar } from '../tasks/utils/loadVariables'
 
 const contractName = 'ZamaERC20'

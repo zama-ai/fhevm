@@ -33,14 +33,14 @@ For better DevX, add the Arbitrum Sepolia network to your Metamask wallet:
 The deployment of the `ZamaERC20` and `ZamaOFTAdapter` on Ethereum Sepolia as well as the deployment of the `ZamaOFT` on Arbitrum Sepolia and the wiring of both contracts can be done automatically by running the following Hardhat task:
 
 ```bash
-npx hardhat deploy:oft-bridge --target arbitrum_testnet
+npx hardhat deploy:token --preset gateway_testnet
 ```
 
 The task automatically:
 
 - Confirms `.env` is populated (Step 1) and that required environment variables are set.
 - Deploys `ZamaERC20` to `ethereum-testnet` using the appropriate deploy script tags.
-- Automatically captures the deployed `ZamaERC20` address and patches the Hardhat runtime configuration in memory with `networks.ethereum-testnet.oftAdapter.tokenAddress`.
+- Automatically captures the deployed `ZamaERC20` address and sets the `oftAdapter.tokenAddress` key in the Hardhat runtime configuration for the layerzero deployment of the `ZamaOFTAdapter`.
 - Deploys `ZamaOFTAdapter` to `ethereum-testnet` with the correct token address configuration.
 - Deploys `ZamaOFT` to `arbitrum-testnet` with the matching deploy script tag.
 - Wires both contracts together using LayerZero's `lz:oapp:wire` task.
@@ -48,13 +48,7 @@ The task automatically:
 Add `--verify true` if you want to automatically run the Etherscan verification commands:
 
 ```bash
-npx hardhat deploy:oft-bridge --target arbitrum_testnet --verify true
-```
-
-For deployment to Gateway Testnet instead of Arbitrum Sepolia, use:
-
-```bash
-npx hardhat deploy:oft-bridge --target gateway_testnet
+npx hardhat deploy:token --preset "gateway_testnet" --verify true
 ```
 
 You can still follow the manual instructions below if you prefer.
