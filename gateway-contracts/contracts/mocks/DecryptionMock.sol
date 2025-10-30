@@ -45,6 +45,14 @@ contract DecryptionMock {
         bytes extraData
     );
 
+    event PublicDecryptionResponseCall(
+        uint256 indexed decryptionId,
+        bytes decryptedResult,
+        bytes signature,
+        address kmsTxSender,
+        bytes extraData
+    );
+
     event PublicDecryptionResponse(
         uint256 indexed decryptionId,
         bytes decryptedResult,
@@ -87,7 +95,10 @@ contract DecryptionMock {
         bytes calldata signature,
         bytes calldata extraData
     ) external {
+        address kmsTxSender;
         bytes[] memory signatures = new bytes[](1);
+
+        emit PublicDecryptionResponseCall(decryptionId, decryptedResult, signature, kmsTxSender, extraData);
 
         emit PublicDecryptionResponse(decryptionId, decryptedResult, signatures, extraData);
     }

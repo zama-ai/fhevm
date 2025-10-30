@@ -97,6 +97,14 @@ describe("MultichainACL", function () {
         .withArgs(fakeHostChainId);
     });
 
+    it("Should emit an event when calling a single allowAccount", async function () {
+      await expect(
+        multichainACL.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress, extraDataV0),
+      )
+        .to.emit(multichainACL, "AllowAccount")
+        .withArgs(ctHandle, newAccountAddress, coprocessorTxSenders[0].address, extraDataV0);
+    });
+
     it("Should allow account with 2 valid responses", async function () {
       // Trigger 2 allow calls with different coprocessor transaction senders
       await multichainACL.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress, extraDataV0);
@@ -105,7 +113,9 @@ describe("MultichainACL", function () {
         .allowAccount(ctHandle, newAccountAddress, extraDataV0);
 
       // Consensus should be reached at the second response
-      await expect(txResponse).to.emit(multichainACL, "AllowAccount").withArgs(ctHandle, newAccountAddress);
+      await expect(txResponse)
+        .to.emit(multichainACL, "AllowAccountConsensus")
+        .withArgs(ctHandle, newAccountAddress, extraDataV0);
     });
 
     it("Should allow account with 2 valid responses and ignore the other valid one", async function () {
@@ -121,8 +131,8 @@ describe("MultichainACL", function () {
       // Check that the 1st and 3rd responses do not emit an event:
       // - 1st response is ignored because consensus is not reached yet
       // - 3rd response is ignored (not reverted) even though it is late
-      await expect(txResponse1).to.not.emit(multichainACL, "AllowAccount");
-      await expect(txResponse3).to.not.emit(multichainACL, "AllowAccount");
+      await expect(txResponse1).to.not.emit(multichainACL, "AllowAccountConsensus");
+      await expect(txResponse3).to.not.emit(multichainACL, "AllowAccountConsensus");
     });
 
     it("Should get all valid coprocessor transaction senders from allow account consensus", async function () {
@@ -209,13 +219,19 @@ describe("MultichainACL", function () {
         .withArgs(fakeHostChainId);
     });
 
+    it("Should emit an event when calling a single allowPublicDecrypt", async function () {
+      await expect(multichainACL.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle, extraDataV0))
+        .to.emit(multichainACL, "AllowPublicDecrypt")
+        .withArgs(newCtHandle, coprocessorTxSenders[0].address, extraDataV0);
+    });
+
     it("Should allow for public decryption with 2 valid responses", async function () {
       // Trigger 2 allow calls with different coprocessor transaction senders
       await multichainACL.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle, extraDataV0);
       const txResponse = multichainACL.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle, extraDataV0);
 
       // Consensus should be reached at the second response
-      await expect(txResponse).to.emit(multichainACL, "AllowPublicDecrypt").withArgs(newCtHandle);
+      await expect(txResponse).to.emit(multichainACL, "AllowPublicDecryptConsensus").withArgs(newCtHandle, extraDataV0);
     });
 
     it("Should allow public decryption with 2 valid responses and ignore the other valid one", async function () {
@@ -231,8 +247,8 @@ describe("MultichainACL", function () {
       // Check that the 1st and 3rd responses do not emit an event:
       // - 1st response is ignored because consensus is not reached yet
       // - 3rd response is ignored (not reverted) even though it is late
-      await expect(txResponse1).to.not.emit(multichainACL, "AllowPublicDecrypt");
-      await expect(txResponse3).to.not.emit(multichainACL, "AllowPublicDecrypt");
+      await expect(txResponse1).to.not.emit(multichainACL, "AllowPublicDecryptConsensus");
+      await expect(txResponse3).to.not.emit(multichainACL, "AllowPublicDecryptConsensus");
     });
 
     it("Should get all valid coprocessor transaction senders from allow public decryption consensus", async function () {
@@ -305,15 +321,15 @@ describe("MultichainACL", function () {
       // Check DelegateUserDecryption event is emitted for each call.
       await expect(txResponse1)
         .to.emit(multichainACL, "DelegateUserDecryption")
-        .withArgs(hostChainId, delegator, delegate, contractAddress, delegationCounter);
+        .withArgs(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
       await expect(txResponse2)
         .to.emit(multichainACL, "DelegateUserDecryption")
-        .withArgs(hostChainId, delegator, delegate, contractAddress, delegationCounter);
+        .withArgs(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
 
       // Check consensus event should be reached at the second response.
       const oldExpirationDate = 0;
       await expect(txResponse2)
-        .to.emit(multichainACL, "DelegateUserDecryptionConsensusReached")
+        .to.emit(multichainACL, "DelegateUserDecryptionConsensus")
         .withArgs(
           hostChainId,
           delegator,
@@ -340,8 +356,8 @@ describe("MultichainACL", function () {
       // Check that the 1st and 3rd responses do not emit the consensus reached event:
       // - 1st response is ignored because consensus is not reached yet.
       // - 3rd response is ignored (not reverted) even though it is late.
-      await expect(txResponse1).to.not.emit(multichainACL, "DelegateUserDecryptionConsensusReached");
-      await expect(txResponse3).to.not.emit(multichainACL, "DelegateUserDecryptionConsensusReached");
+      await expect(txResponse1).to.not.emit(multichainACL, "DelegateUserDecryptionConsensus");
+      await expect(txResponse3).to.not.emit(multichainACL, "DelegateUserDecryptionConsensus");
     });
 
     it("Should get all valid coprocessor transaction senders from delegate user decryption", async function () {

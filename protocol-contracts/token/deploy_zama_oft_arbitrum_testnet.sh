@@ -164,7 +164,7 @@ current_token_address=$(
 	node <<'NODE'
 const fs = require('fs');
 const text = fs.readFileSync('hardhat.config.ts', 'utf8');
-const match = text.matchAll(/tokenAddress:\s*["\'](0x[0-9a-fA-F]+)["\']/);
+const match = text.match(/tokenAddress:\s*["\'](0x[0-9a-fA-F]+)["\']/);
 if (!match) {
   console.error('Error: tokenAddress entry not found after update.');
   process.exit(1);

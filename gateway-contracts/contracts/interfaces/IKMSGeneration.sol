@@ -43,11 +43,28 @@ interface IKMSGeneration {
     event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType);
 
     /**
+     * @notice Emitted when a KMS node has responded to a preprocessing keygen request.
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param signature The signature of the KMS node that has responded.
+     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
+     */
+    event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
+
+    /**
      * @notice Emitted to trigger an FHE key generation.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param keyId The ID of the key to generate.
      */
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId);
+
+    /**
+     * @notice Emitted when a KMS node has responded to a keygen request.
+     * @param keyId The ID of the key.
+     * @param keyDigests The digests of the generated keys.
+     * @param signature The signature of the KMS node that has responded.
+     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
+     */
+    event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     /**
      * @notice Emitted when the key is activated.
@@ -64,6 +81,15 @@ interface IKMSGeneration {
      * @param paramsType The type of CRS parameters to use.
      */
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType);
+
+    /**
+     * @notice Emitted when a KMS node has responded to a CRS generation request.
+     * @param crsId The ID of the CRS.
+     * @param crsDigest The digest of the generated CRS.
+     * @param signature The signature of the KMS node that has responded.
+     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
+     */
+    event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address kmsTxSender);
 
     /**
      * @notice Emitted when the CRS is activated.

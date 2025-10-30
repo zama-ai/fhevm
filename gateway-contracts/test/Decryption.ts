@@ -397,6 +397,19 @@ describe("Decryption", function () {
         );
     });
 
+    it("Should emit an event when calling a single public decryption response", async function () {
+      // Request public decryption
+      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+
+      await expect(
+        decryption
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
+      )
+        .to.emit(decryption, "PublicDecryptionResponseCall")
+        .withArgs(decryptionId, decryptedResult, kmsSignatures[0], kmsTxSenders[0].address, extraDataV0);
+    });
+
     it("Should public decrypt with 3 valid responses", async function () {
       // Request public decryption
       await decryption.publicDecryptionRequest(ctHandles, extraDataV0);

@@ -9,17 +9,38 @@ import "../shared/Structs.sol";
  */
 interface IMultichainACL {
     /**
-     * @notice Emitted when an account is allowed to use a ciphertext handle.
-     * @param ctHandle The ciphertext handle that the account is allowed to use.
-     * @param accountAddress The address of the account allowed to use the ciphertext handle.
+     * @notice Emitted when a coprocessor transaction sender requests to allow public decryption for
+     * a ciphertext handle.
+     * @param ctHandle The ciphertext handle that is allowed for public decryption.
+     * @param coprocessorTxSender The transaction sender of the coprocessor that has called the function.
+     * @param extraData Generic bytes metadata for versioned payloads.
      */
-    event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
+    event AllowPublicDecrypt(bytes32 indexed ctHandle, address coprocessorTxSender, bytes extraData);
 
     /**
      * @notice Emitted when a public decryption is allowed for a ciphertext handle.
      * @param ctHandle The ciphertext handle that is allowed for public decryption.
+     * @param extraData Generic bytes metadata for versioned payloads.
      */
-    event AllowPublicDecrypt(bytes32 indexed ctHandle);
+    event AllowPublicDecryptConsensus(bytes32 indexed ctHandle, bytes extraData);
+
+    /**
+     * @notice Emitted when a coprocessor transaction sender requests to allow an account to use a
+     * ciphertext handle.
+     * @param ctHandle The ciphertext handle that the account is allowed to use.
+     * @param accountAddress The address of the account allowed to use the ciphertext handle.
+     * @param coprocessorTxSender The transaction sender of the coprocessor that has called the function.
+     * @param extraData Generic bytes metadata for versioned payloads.
+     */
+    event AllowAccount(bytes32 indexed ctHandle, address accountAddress, address coprocessorTxSender, bytes extraData);
+
+    /**
+     * @notice Emitted when an account is allowed to use a ciphertext handle.
+     * @param ctHandle The ciphertext handle that the account is allowed to use.
+     * @param accountAddress The address of the account allowed to use the ciphertext handle.
+     * @param extraData Generic bytes metadata for versioned payloads.
+     */
+    event AllowAccountConsensus(bytes32 indexed ctHandle, address accountAddress, bytes extraData);
 
     /**
      * @notice Emitted when a user decryption is delegated to a delegate and contract addresses.
@@ -28,13 +49,15 @@ interface IMultichainACL {
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The address of the contract that is part of the user decryption context.
      * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
     event DelegateUserDecryption(
         uint256 indexed chainId,
         address delegator,
         address delegate,
         address contractAddress,
-        uint64 delegationCounter
+        uint64 delegationCounter,
+        uint64 expirationDate
     );
 
     /**
@@ -47,7 +70,7 @@ interface IMultichainACL {
      * @param oldExpirationDate The previous UNIX timestamp when the user decryption delegation expires.
      * @param newExpirationDate The new UNIX timestamp when the user decryption delegation expires.
      */
-    event DelegateUserDecryptionConsensusReached(
+    event DelegateUserDecryptionConsensus(
         uint256 indexed chainId,
         address delegator,
         address delegate,
