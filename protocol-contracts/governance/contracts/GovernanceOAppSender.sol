@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.22;
+pragma solidity ^0.8.24;
 
 import { OAppSender, OAppCore, Origin, MessagingFee, MessagingReceipt } from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
 import { OAppOptionsType3 } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OAppOptionsType3.sol";
