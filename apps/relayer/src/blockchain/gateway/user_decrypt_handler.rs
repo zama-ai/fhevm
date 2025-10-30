@@ -1,6 +1,6 @@
 use crate::{
     blockchain::gateway::arbitrum::transaction::{
-        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
+        helper::TransactionType, ReceiptProcessor, TransactionHelper,
     },
     blockchain::gateway::arbitrum::{
         bindings::Decryption::{self, UserDecryptionRequest},
@@ -90,24 +90,18 @@ impl GatewayHandler {
         user_decryption_responses_cache: Arc<UserDecryptResponseCacheStore>,
         user_decryption_requests_cache: Arc<UserDecryptRequestCacheStore>,
         user_decrypt_response_store: Arc<UserDecryptResponseStore>,
-        tx_service: Arc<TransactionService>,
-        tx_config: TxConfig,
+        tx_helper: Arc<TransactionHelper>,
         contracts: ContractConfig,
         gateway_http_url: String,
         retry_config: RetrySettings,
-        gateway_chain_id: u64,
     ) -> Self {
         Self {
             dispatcher,
-            tx_helper: Arc::new(TransactionHelper::new(
-                tx_service,
-                tx_config,
-                gateway_chain_id,
-            )),
             user_decryption_responses_cache,
             user_decryption_requests_cache,
             user_decrypt_response_store,
             user_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
+            tx_helper,
             contracts,
             gateway_http_url,
             retry_config,

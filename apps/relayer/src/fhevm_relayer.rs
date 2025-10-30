@@ -32,6 +32,7 @@
 //! [fhevm] ← [fhevm Handler] ← [Orchestrator] ← [gateway Listener]
 //! ```
 
+use crate::blockchain::gateway::arbitrum::transaction::TransactionHelper as GatewayTransactionHelper;
 use crate::store::{
     BlockNumberStore, PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore,
     UserDecryptRequestCacheStore, UserDecryptResponseCacheStore, UserDecryptResponseStore,
@@ -197,34 +198,33 @@ pub async fn run_fhevm_relayer(
     )?;
 
     let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
-    setup_input_proof_gateway_handler(
-        &orchestrator,
+    let gateway_tx_helper = Arc::new(GatewayTransactionHelper::new(
         tx_service_gateway.clone(),
         gateway_tx_config.clone(),
-        settings.contracts.clone(),
         settings.networks.gateway.chain_id,
+    ));
+    setup_input_proof_gateway_handler(
+        &orchestrator,
+        gateway_tx_helper.clone(),
+        settings.contracts.clone(),
     )?;
 
     setup_public_decrypt_gateway_handler(
         &orchestrator,
         kv_store.clone(),
-        tx_service_gateway.clone(),
-        gateway_tx_config.clone(),
+        gateway_tx_helper.clone(),
         settings.contracts.clone(),
         gateway_settings.http_url.clone(),
         settings.transaction.clone().ciphertext_check_retry.clone(),
-        gateway_settings.chain_id,
     )?;
 
     setup_user_decrypt_gateway_handler(
         &orchestrator,
         kv_store.clone(),
-        tx_service_gateway,
-        gateway_tx_config,
+        gateway_tx_helper.clone(),
         settings.contracts,
         gateway_settings.http_url.clone(),
         settings.transaction.clone().ciphertext_check_retry.clone(),
-        settings.networks.gateway.chain_id,
     )?;
 
     // === Initialize fhevm listener
@@ -384,27 +384,25 @@ fn setup_public_decrypt_fhevm_handler(
 /// Setup InputProofGatewayHandler and register its events
 fn setup_input_proof_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    tx_service: Arc<GatewayTransactionService>,
-    tx_config: GatewayTxConfig,
+    tx_helper: Arc<GatewayTransactionHelper>,
     contracts: crate::config::settings::ContractConfig,
-    chain_id: u64,
 ) -> eyre::Result<()> {
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(InputProofGatewayHandler::new(
         Arc::clone(orchestrator),
-        tx_service,
-        tx_config,
+        tx_helper,
         contracts,
-        chain_id,
     ));
 
-    let event_ids = [
-        InputProofEventId::ReqRcvdFromUser.into(),
-        InputProofEventId::ReqSentToGw.into(),
-        InputProofEventId::RespRcvdFromGw.into(),
-        GatewayChainEventId::EventLogRcvd.into(),
-    ];
-
-    register_handler_for_events(orchestrator, handler, &event_ids);
+    register_handler_for_events(
+        orchestrator,
+        handler,
+        &[
+            InputProofEventId::ReqRcvdFromUser.into(),
+            InputProofEventId::ReqSentToGw.into(),
+            InputProofEventId::RespRcvdFromGw.into(),
+            GatewayChainEventId::EventLogRcvd.into(),
+        ],
+    );
     Ok(())
 }
 
@@ -412,12 +410,10 @@ fn setup_input_proof_gateway_handler(
 fn setup_public_decrypt_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     kv_store: Arc<RocksDBKVStore>,
-    tx_service: Arc<GatewayTransactionService>,
-    tx_config: GatewayTxConfig,
+    tx_helper: Arc<GatewayTransactionHelper>,
     contracts: crate::config::settings::ContractConfig,
     http_url: String,
     retry_config: crate::config::settings::RetrySettings,
-    chain_id: u64,
 ) -> eyre::Result<()> {
     let public_decrypt_responses_cache =
         Arc::new(PublicDecryptResponseCacheStore::new(kv_store.clone()));
@@ -431,12 +427,10 @@ fn setup_public_decrypt_gateway_handler(
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(PublicDecryptGatewayHandler::new(
         Arc::clone(orchestrator),
         public_decrypt_caches,
-        tx_service,
-        tx_config,
+        tx_helper,
         contracts,
         http_url,
         retry_config,
-        chain_id,
     ));
 
     let event_ids = [
@@ -454,12 +448,10 @@ fn setup_public_decrypt_gateway_handler(
 fn setup_user_decrypt_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     kv_store: Arc<RocksDBKVStore>,
-    tx_service: Arc<GatewayTransactionService>,
-    tx_config: GatewayTxConfig,
+    tx_helper: Arc<GatewayTransactionHelper>,
     contracts: crate::config::settings::ContractConfig,
     http_url: String,
     retry_config: crate::config::settings::RetrySettings,
-    chain_id: u64,
 ) -> eyre::Result<()> {
     let user_decrypt_responses_cache =
         Arc::new(UserDecryptResponseCacheStore::new(kv_store.clone()));
@@ -474,12 +466,10 @@ fn setup_user_decrypt_gateway_handler(
         user_decrypt_responses_cache,
         user_decrypt_requests_cache,
         user_decrypt_response_store,
-        tx_service,
-        tx_config,
+        tx_helper,
         contracts,
         http_url,
         retry_config,
-        chain_id,
     ));
 
     let event_ids = [

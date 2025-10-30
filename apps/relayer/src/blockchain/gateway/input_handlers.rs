@@ -1,6 +1,6 @@
 use crate::{
     blockchain::gateway::arbitrum::transaction::{
-        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
+        helper::TransactionType, ReceiptProcessor, TransactionHelper,
     },
     blockchain::gateway::arbitrum::{bindings::InputVerification, ComputeCalldata},
     config::settings::ContractConfig,
@@ -57,18 +57,12 @@ pub struct GatewayHandler {
 impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        tx_service: Arc<TransactionService>,
-        tx_config: TxConfig,
+        tx_helper: Arc<TransactionHelper>,
         contracts: ContractConfig,
-        gateway_chain_id: u64,
     ) -> Self {
         Self {
             dispatcher,
-            tx_helper: Arc::new(TransactionHelper::new(
-                tx_service,
-                tx_config,
-                gateway_chain_id,
-            )),
+            tx_helper,
             input_verification_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
         }
