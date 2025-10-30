@@ -57,6 +57,7 @@ task("deploy:feesBurner")
     // Deploy FeesSenderToBurner on Gateway
     // Set HardhatRuntimeEnvironment to Gateway <Mainnet|Testnet>
     hre = await getHreByNetworkName(config.gatewayNetwork);
+    process.env["PROTOCOL_FEES_BURNER_ADDRESS"] = protocolFeesBurnerAddress;
     await hre.run("deploy", {
       tags: FEES_SENDER_TO_BURNER,
     });

@@ -25,15 +25,9 @@ task("task:verifyProtocolFeesBurner")
 // Verify the FeesSenderToBurner contract at the given address.
 task("task:verifyFeesSenderToBurner")
   .addParam("feesSenderToBurner", "Address of the already deployed FeesSenderToBurner contract that should be verified")
-  .addOptionalParam(
-    "protocolFeesBurner",
-    "Address of the ProtocolFeesBurner contract used in the constructor when deploying the FeesSenderToBurner contract being verified.",
-    undefined,
-    types.string,
-  )
-  .setAction(async function ({ feesSenderToBurner, protocolFeesBurner }, hre) {
+  .setAction(async function ({ feesSenderToBurner }, hre) {
     const oftAddress = getRequiredEnvVar("ZAMA_OFT_ADDRESS");
-    const protocolFeesBurnerAddress = protocolFeesBurner ?? getRequiredEnvVar("PROTOCOL_FEES_BURNER_ADDRESS");
+    const protocolFeesBurner = getRequiredEnvVar("PROTOCOL_FEES_BURNER_ADDRESS");
 
     if (typeof hre.config.etherscan.apiKey === "string") {
       console.log(
@@ -42,12 +36,8 @@ task("task:verifyFeesSenderToBurner")
       hre.config.etherscan.apiKey = { "gateway-testnet": "empty", "gateway-mainnet": "empty" };
     }
 
-    if (!protocolFeesBurner) {
-      throw new Error("The ProtocolFeesBurner address cannot be empty for verification.");
-    }
-
     await hre.run("verify:verify", {
       address: feesSenderToBurner,
-      constructorArguments: [oftAddress, protocolFeesBurnerAddress],
+      constructorArguments: [oftAddress, protocolFeesBurner],
     });
   });
