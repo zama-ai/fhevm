@@ -64,12 +64,12 @@ const config: HardhatUserConfig = {
             url: process.env.SEPOLIA_RPC_URL!,
             accounts,
         },
-        // No ZAMA_V2_MAINNET endpoint available yet.
-        // 'gateway-mainnet': {
-        //     eid: EndpointId.ZAMA_V2_MAINNET,
-        //     url: process.env.RPC_URL_ZAMA_GATEWAY_MAINNET || '',
-        //     accounts,
-        // },
+        'gateway-mainnet': {
+            // @ts-ignore: TODO: Remove TS ignore once LayerZero endpoint is deployed.
+            eid: EndpointId.ZAMA_V2_MAINNET,
+            url: process.env.RPC_URL_ZAMA_GATEWAY_MAINNET || '',
+            accounts,
+        },
         'gateway-testnet': {
             eid: EndpointId.ZAMA_V2_TESTNET,
             url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET || '',
