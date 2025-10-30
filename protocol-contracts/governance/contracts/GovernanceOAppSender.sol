@@ -23,9 +23,13 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     /// @notice Thrown when trying to deploy this contract on an unsupported blockchain.
     error UnsupportedChainID();
 
+    /// @notice Thrown when targets array is empty.
     error TargetsIsEmpty();
+    /// @notice Thrown when length of targets array is different than length of datas array.
     error TargetsNotSameLengthAsDatas();
+    /// @notice Thrown when length of targets array is different than length of operations array.
     error TargetsNotSameLengthAsOperations();
+    /// @notice Thrown when length of targets array is different than length of values array.
     error TargetsNotSameLengthAsValues();
 
     /// @notice Emitted when a proposal has been successfully sent to Zama Gateway chain;
