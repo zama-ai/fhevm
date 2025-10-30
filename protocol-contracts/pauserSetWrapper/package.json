@@ -2,6 +2,12 @@
   "name": "pauserSetWrapper",
   "version": "1.0.0",
   "license": "BSD-3-Clause-Clear",
+  "scripts": {
+    "lint": "$npm_execpath run lint:js && $npm_execpath run lint:sol",
+    "lint:fix": "eslint --fix '**/*.{js,ts,json}' && prettier --write . && solhint 'contracts/**/*.sol' --fix --noPrompt",
+    "lint:js": "eslint '**/*.{js,ts,json}' && prettier --check .",
+    "lint:sol": "solhint 'contracts/**/*.sol'"
+  },
   "devDependencies": {
     "@fhevm/host-contracts": "^0.9.0-1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
@@ -20,7 +26,8 @@
     "chai": "^4.5.0",
     "dotenv": "^17.2.3",
     "ethers": "^6.15.0",
-    "hardhat": "^2.26.3",
+    "hardhat": "^2.26.0",
+    "hardhat-deploy": "^0.12.4",
     "hardhat-gas-reporter": "^2.3.0",
     "solidity-coverage": "^0.8.16",
     "ts-node": "^10.9.2",
