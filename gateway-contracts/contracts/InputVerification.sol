@@ -254,6 +254,9 @@ contract InputVerification is
         // A "late" valid coprocessor transaction sender address will still be added in the list.
         $.verifyProofConsensusTxSenders[zkProofId][digest].push(msg.sender);
 
+        // Emit the event at each call for monitoring purposes.
+        emit VerifyProofResponseCall(zkProofId, ctHandles, signature, msg.sender, extraData);
+
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.verifiedZKProofs[zkProofId] && _isConsensusReached(currentSignatures.length)) {
@@ -272,10 +275,7 @@ contract InputVerification is
     /**
      * @notice See {IInputVerification-rejectProofResponse}.
      */
-    function rejectProofResponse(
-        uint256 zkProofId,
-        bytes calldata /* extraData */
-    ) external virtual onlyCoprocessorTxSender {
+    function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
@@ -303,6 +303,9 @@ contract InputVerification is
         // It is important to consider the same mapping fields used for the consensus
         // A "late" valid coprocessor transaction sender address will still be added in the list.
         $.rejectProofConsensusTxSenders[zkProofId].push(msg.sender);
+
+        // Emit the event at each call for monitoring purposes.
+        emit RejectProofResponseCall(zkProofId, extraData);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted

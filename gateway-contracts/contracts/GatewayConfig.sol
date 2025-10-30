@@ -20,22 +20,6 @@ import { ProtocolMetadata, HostChain, Coprocessor, Custodian, KmsNode } from "./
  */
 contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy {
     /**
-     * @notice The operator's thresholds.
-     */
-    struct Thresholds {
-        /// @notice The MPC threshold
-        uint256 mpcThreshold;
-        /// @notice The threshold to consider for public decryption consensus
-        uint256 publicDecryptionThreshold;
-        /// @notice The threshold to consider for user decryption consensus
-        uint256 userDecryptionThreshold;
-        /// @notice The threshold to consider for KMS generation consensus
-        uint256 kmsGenThreshold;
-        /// @notice The threshold to consider for coprocessor consensus
-        uint256 coprocessorThreshold;
-    }
-
-    /**
      * @notice The maximum chain ID.
      */
     uint256 internal constant MAX_CHAIN_ID = type(uint64).max;
@@ -199,7 +183,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         emit InitializeGatewayConfig(
             initialMetadata,
-            initialThresholds.mpcThreshold,
+            initialThresholds,
             initialKmsNodes,
             initialCoprocessors,
             initialCustodians
