@@ -30,21 +30,32 @@ For better DevX, add the Arbitrum Sepolia network to your Metamask wallet:
 
 ## Automated Deployment
 
-The deployment of the `ZamaERC20` and `ZamaOFTAdapter` on Ethereum Sepolia as well as the deployment of the `ZamaOFT` on Arbitrum Sepolia and the wiring of both contracts can be done automatically by running the following script:
+The deployment of the `ZamaERC20` and `ZamaOFTAdapter` on Ethereum Sepolia as well as the deployment of the `ZamaOFT` on Arbitrum Sepolia and the wiring of both contracts can be done automatically by running the following Hardhat task:
 
 ```bash
-./deploy_zama_oft_arbitrum_testnet.sh
+npx hardhat deploy:oft-bridge --target arbitrum_testnet
 ```
 
-The script loads environment variables from the `.env` file.
-The script expects the commands `pnpm`, `npx` and `node` to be available.
-The script runs in non-interactive mode, so no manual input is required. It also:
+The task automatically:
 
-- Confirms `.env` is populated (Step 1) and reminds that the deployer wallet must be funded on Ethereum and Arbitrum Sepolia (Step 3).
-- Deploys `ZamaERC20` and `ZamaOFTAdapter` to `ethereum-testnet` using the appropriate deploy script tags.
-- Automatically captures the deployed `ZamaERC20` address and writes it to `networks.ethereum-testnet.oftAdapter.tokenAddress` in `hardhat.config.ts`.
+- Confirms `.env` is populated (Step 1) and that required environment variables are set.
+- Deploys `ZamaERC20` to `ethereum-testnet` using the appropriate deploy script tags.
+- Automatically captures the deployed `ZamaERC20` address and patches the Hardhat runtime configuration in memory with `networks.ethereum-testnet.oftAdapter.tokenAddress`.
+- Deploys `ZamaOFTAdapter` to `ethereum-testnet` with the correct token address configuration.
 - Deploys `ZamaOFT` to `arbitrum-testnet` with the matching deploy script tag.
-- Add `--verify` if you want the optional Step 5 verification commands executed before Step 6.
+- Wires both contracts together using LayerZero's `lz:oapp:wire` task.
+
+Add `--verify true` if you want to automatically run the Etherscan verification commands:
+
+```bash
+npx hardhat deploy:oft-bridge --target arbitrum_testnet --verify true
+```
+
+For deployment to Gateway Testnet instead of Arbitrum Sepolia, use:
+
+```bash
+npx hardhat deploy:oft-bridge --target gateway_testnet
+```
 
 You can still follow the manual instructions below if you prefer.
 
