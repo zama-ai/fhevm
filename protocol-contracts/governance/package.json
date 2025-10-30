@@ -3,6 +3,7 @@
   "version": "0.6.3",
   "private": true,
   "license": "MIT",
+    "packageManager": "pnpm@10.20.0",
   "scripts": {
     "clean": "rm -rf artifacts cache out",
     "compile": "concurrently -c auto --names forge,hardhat '$npm_execpath run compile:forge' '$npm_execpath run compile:hardhat'",
@@ -14,7 +15,8 @@
     "lint:sol": "solhint 'contracts/**/*.sol'",
     "test": "$npm_execpath run test:forge && $npm_execpath run test:hardhat",
     "test:forge": "forge test",
-    "test:hardhat": "hardhat test"
+    "test:hardhat": "hardhat test",
+    "preinstall": "npx only-allow pnpm"
   },
   "resolutions": {
     "ethers": "^5.7.2",
