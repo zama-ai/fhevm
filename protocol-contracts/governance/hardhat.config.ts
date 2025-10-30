@@ -8,22 +8,12 @@ import 'dotenv/config'
 import 'hardhat-deploy'
 import 'hardhat-contract-sizer'
 import '@nomiclabs/hardhat-ethers'
-import '@nomicfoundation/hardhat-chai-matchers' // Version 1.0.6 is the latest using Ethers v5
 import '@layerzerolabs/toolbox-hardhat'
 import { HardhatUserConfig, HttpNetworkAccountsUserConfig } from 'hardhat/types'
 
 import { EndpointId } from '@layerzerolabs/lz-definitions'
 
-import './type-extensions'
-import './tasks/roles/grantRole'
-import './tasks/roles/revokeRole'
-import './tasks/roles/renounceRole'
-import './tasks/oftadapter/setDelegate'
-import './tasks/oftadapter/transferOwnership'
-import './tasks/oft/setDelegate'
-import './tasks/oft/transferOwnership'
-import './tasks/sendOFT'
-import './tasks/validateEVMAddress'
+import './tasks/sendString'
 
 // Set your preferred authentication method
 //
@@ -64,25 +54,14 @@ const config: HardhatUserConfig = {
         ],
     },
     networks: {
-        'arbitrum-testnet': {
+        'arbitrum-sepolia': {
             eid: EndpointId.ARBSEP_V2_TESTNET,
-            url: process.env.RPC_URL_ARBITRUM_SEPOLIA || 'https://sepolia-rollup.arbitrum.io/rpc',
+            url: process.env.RPC_URL_ARB_SEPOLIA || 'https://arbitrum-sepolia.gateway.tenderly.co',
             accounts,
-            oftAdapter: {
-                tokenAddress: '0x',
-            },
         },
-        'ethereum-testnet': {
-            eid: EndpointId.SEPOLIA_V2_TESTNET,
-            url: process.env.SEPOLIA_RPC_URL,
-            accounts,
-            oftAdapter: {
-                tokenAddress: '0x',
-            },
-        },
-        'gateway-testnet': {
-            eid: EndpointId.ZAMA_V2_TESTNET,
-            url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET,
+        'base-sepolia': {
+            eid: EndpointId.BASESEP_V2_TESTNET,
+            url: process.env.RPC_URL_BASE_SEPOLIA || 'https://base-sepolia.gateway.tenderly.co',
             accounts,
         },
         hardhat: {
