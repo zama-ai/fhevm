@@ -24,6 +24,7 @@ import './tasks/oft/setDelegate'
 import './tasks/oft/transferOwnership'
 import './tasks/sendOFT'
 import './tasks/validateEVMAddress'
+import './tasks/deployAndSetupToken'
 
 // Set your preferred authentication method
 //
@@ -64,11 +65,6 @@ const config: HardhatUserConfig = {
         ],
     },
     networks: {
-        'arbitrum-testnet': {
-            eid: EndpointId.ARBSEP_V2_TESTNET,
-            url: process.env.RPC_URL_ARBITRUM_SEPOLIA || 'https://sepolia-rollup.arbitrum.io/rpc',
-            accounts,
-        },
         'ethereum-mainnet': {
             eid: EndpointId.ETHEREUM_V2_MAINNET,
             url: process.env.MAINNET_RPC_URL || '',
@@ -85,12 +81,12 @@ const config: HardhatUserConfig = {
                 tokenAddress: '0x',
             },
         },
-        // No ZAMA_V2_MAINNET endpoint available yet.
-        // 'gateway-mainnet': {
-        //     eid: EndpointId.ZAMA_V2_MAINNET,
-        //     url: process.env.RPC_URL_ZAMA_GATEWAY_MAINNET || '',
-        //     accounts,
-        // },
+        'gateway-mainnet': {
+            // @ts-ignore: TODO: Remove TS ignore once LayerZero endpoint is deployed.
+            eid: EndpointId.ZAMA_V2_MAINNET,
+            url: process.env.RPC_URL_ZAMA_GATEWAY_MAINNET || '',
+            accounts,
+        },
         'gateway-testnet': {
             eid: EndpointId.ZAMA_V2_TESTNET,
             url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET || '',
