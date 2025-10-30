@@ -145,81 +145,47 @@ Options:
 
 ```bash
 $ gw_listener --help
-Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --input-verification-address <INPUT_VERIFICATION_ADDRESS> --kms-management-address <KMS_MANAGEMENT_ADDRESS>
+Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --input-verification-address <INPUT_VERIFICATION_ADDRESS> --kms-generation-address <KMS_GENERATION_ADDRESS>
 
 Options:
       --database-url <DATABASE_URL>
+          
       --database-pool-size <DATABASE_POOL_SIZE>
           [default: 16]
       --verify-proof-req-database-channel <VERIFY_PROOF_REQ_DATABASE_CHANNEL>
-          [default: verify_proof_requests]
+          [default: event_zkpok_new_work]
       --gw-url <GW_URL>
+          
   -i, --input-verification-address <INPUT_VERIFICATION_ADDRESS>
-      --kms-management-address <KMS_MANAGEMENT_ADDRESS>
+          
+      --kms-generation-address <KMS_GENERATION_ADDRESS>
+          
       --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
           [default: 1]
       --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>
           [default: 10]
-      --catchup-kms-generation-from-block <BLOCK_NUMBER OR -BLOCKS_BACK>
-          [default: None]
-  -h, --help
-          Print help
-  -V, --version
-          Print version
-```
-
-For more info, please check [gw-listener README](fhevm-engine/gw-listener/README.md)
-
-##### sns-worker
-
-```bash
-$ sns_worker --help
-Usage: sns_worker [OPTIONS] --pg-listen-channel <PG_LISTEN_CHANNEL> --pg-notify-channel <PG_NOTIFY_CHANNEL>
-
-Options:
-      --work-items-batch-size <WORK_ITEMS_BATCH_SIZE>
-          Work items batch size [default: 4]
-      --pg-listen-channel <PG_LISTEN_CHANNEL>
-          NOTIFY/LISTEN channel for database that the worker listen to
-      --pg-notify-channel <PG_NOTIFY_CHANNEL>
-          NOTIFY/LISTEN channel for database that the worker notify to
-      --pg-polling-interval <PG_POLLING_INTERVAL>
-          Polling interval in seconds [default: 60]
-      --pg-pool-connections <PG_POOL_CONNECTIONS>
-          Postgres pool connections [default: 10]
-      --database-url <DATABASE_URL>
-          Postgres database url. If unspecified DATABASE_URL environment variable is used
-      --keys-file-path <KEYS_FILE_PATH>
-          KeySet file. If unspecified the the keys are read from the database (not implemented)
+      --health-check-port <HEALTH_CHECK_PORT>
+          [default: 8080]
+      --metrics-addr <METRICS_ADDR>
+          Prometheus metrics server address [default: 0.0.0.0:9100]
+      --health-check-timeout <HEALTH_CHECK_TIMEOUT>
+          [default: 4s]
+      --provider-max-retries <PROVIDER_MAX_RETRIES>
+          [default: 4294967295]
+      --provider-retry-interval <PROVIDER_RETRY_INTERVAL>
+          [default: 4s]
+      --log-level <LOG_LEVEL>
+          [default: INFO]
+      --host-chain-id <HOST_CHAIN_ID>
+          
+      --get-logs-poll-interval <GET_LOGS_POLL_INTERVAL>
+          [default: 1s]
+      --get-logs-block-batch-size <GET_LOGS_BLOCK_BATCH_SIZE>
+          [default: 100]
       --service-name <SERVICE_NAME>
-          sns-executor service name in OTLP traces (not implemented) [default: sns-executor]
-  -h, --help
-          Print help
-  -V, --version
-          Print version
-```
-
-##### zkproof-worker
-
-```bash
-$ zkproof_worker --help
-Usage: zkproof_worker [OPTIONS]
-
-Options:
-  -d, --database-url <DATABASE_URL>
-
-      --database-pool-size <DATABASE_POOL_SIZE>
-          [default: 10]
-      --database-polling-interval-secs <DATABASE_POLLING_INTERVAL_SECS>
-          [default: 5]
-  -v, --verify-proof-req-database-channel <VERIFY_PROOF_REQ_DATABASE_CHANNEL>
-          [default: verify_proof_resquests]
-  -t, --tokio-blocking-threads <TOKIO_BLOCKING_THREADS>
-          [default: 16]
-      --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
-          [default: 1]
-      --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>
-          [default: 10]
+          gw-listener service name in OTLP traces [default: gw-listener]
+      --catchup-kms-generation-from-block <CATCHUP_KMS_GENERATION_FROM_BLOCK>
+          Can be negative from last processed block
   -h, --help
           Print help
   -V, --version
@@ -250,17 +216,17 @@ Options:
       --database-pool-size <DATABASE_POOL_SIZE>
           [default: 10]
       --database-polling-interval-secs <DATABASE_POLLING_INTERVAL_SECS>
-          [default: 5]
+          [default: 1]
       --verify-proof-resp-database-channel <VERIFY_PROOF_RESP_DATABASE_CHANNEL>
-          [default: verify_proof_responses]
+          [default: event_zkpok_computed]
       --add-ciphertexts-database-channel <ADD_CIPHERTEXTS_DATABASE_CHANNEL>
-          [default: add_ciphertexts]
+          [default: event_ciphertexts_uploaded]
       --allow-handle-database-channel <ALLOW_HANDLE_DATABASE_CHANNEL>
           [default: event_allowed_handle]
       --verify-proof-resp-batch-limit <VERIFY_PROOF_RESP_BATCH_LIMIT>
           [default: 128]
       --verify-proof-resp-max-retries <VERIFY_PROOF_RESP_MAX_RETRIES>
-          [default: 3]
+          [default: 6]
       --verify-proof-remove-after-max-retries
           
       --add-ciphertexts-batch-limit <ADD_CIPHERTEXTS_BATCH_LIMIT>
@@ -268,19 +234,41 @@ Options:
       --allow-handle-batch-limit <ALLOW_HANDLE_BATCH_LIMIT>
           [default: 10]
       --allow-handle-max-retries <ALLOW_HANDLE_MAX_RETRIES>
-          [default: 10]
+          [default: 4294967295]
       --add-ciphertexts-max-retries <ADD_CIPHERTEXTS_MAX_RETRIES>
-          [default: 15]
+          [default: 4294967295]
       --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
           [default: 1]
       --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>
-          [default: 16]
+          [default: 300]
       --txn-receipt-timeout-secs <TXN_RECEIPT_TIMEOUT_SECS>
           [default: 10]
       --required-txn-confirmations <REQUIRED_TXN_CONFIRMATIONS>
           [default: 0]
       --review-after-unlimited-retries <REVIEW_AFTER_UNLIMITED_RETRIES>
           [default: 30]
+      --provider-max-retries <PROVIDER_MAX_RETRIES>
+          [default: 4294967295]
+      --provider-retry-interval <PROVIDER_RETRY_INTERVAL>
+          [default: 4s]
+      --health-check-port <HEALTH_CHECK_PORT>
+          [default: 8080]
+      --metrics-addr <METRICS_ADDR>
+          Prometheus metrics server address [default: 0.0.0.0:9100]
+      --health-check-timeout <HEALTH_CHECK_TIMEOUT>
+          [default: 4s]
+      --log-level <LOG_LEVEL>
+          [default: INFO]
+      --gas-limit-overprovision-percent <GAS_LIMIT_OVERPROVISION_PERCENT>
+          [default: 120]
+      --graceful-shutdown-timeout <GRACEFUL_SHUTDOWN_TIMEOUT>
+          [default: 8s]
+      --service-name <SERVICE_NAME>
+          service name in OTLP traces [default: txn-sender]
+      --metric-host-txn-latency <METRIC_HOST_TXN_LATENCY>
+          Prometheus metrics: coprocessor_host_txn_latency_seconds [default: 0.1:60.0:0.1]
+      --metric-zkproof-txn-latency <METRIC_ZKPROOF_TXN_LATENCY>
+          Prometheus metrics: coprocessor_zkproof_txn_latency_seconds [default: 0.1:60.0:0.1]
   -h, --help
           Print help
   -V, --version
