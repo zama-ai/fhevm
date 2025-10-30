@@ -234,16 +234,21 @@ gwListener:
   # Command line arguments for the gateway listener
   args:
     - --database-url=$(DATABASE_URL)
+    - --database-pool-size=16
+    - --verify-proof-req-database-channel=event_zkpok_new_work
     - --gw-url=ws://gateway-rpc-node:8548
     - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-    - --verify-proof-req-database-channel="event_zkpok_new_work"
-    - --database-pool-size=16
+    - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
     - --error-sleep-initial-secs=1
     - --error-sleep-max-secs=10
+    - --health-check-port=8080
+    - --metrics-addr=0.0.0.0:9100
+    - --provider-max-retries=4294967295
+    - --provider-retry-interval=4s
+    - --log-level=INFO
     - --get-logs-poll-interval=1s
     - --get-logs-block-batch-size=100
-    # NEW ARG: KMS generation contract address
-    - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
+    - --service-name=gw-listener
     ### Catchup parameters (optional)
     # --catchup-kms-generation-from-block BLOCK_NUMBER
     # To go back in time from latest block
@@ -456,8 +461,8 @@ zkProofWorker:
   # Command line arguments for ZK proof worker
   args:
     - --database-url=$(DATABASE_URL)
-    - --pg-listen-channel="event_zkpok_new_work"
-    - --pg-notify-channel="event_zkpok_computed"
+    - --pg-listen-channel=event_zkpok_new_work
+    - --pg-notify-channel=event_zkpok_computed
     - --pg-polling-interval=5
     - --pg-pool-connections=5
     - --pg-timeout=15s
@@ -694,24 +699,59 @@ txSender:
           key: coprocessor-db-url
     - name: TX_SENDER_PRIVATE_KEY
       value: "0x8f82b3f482c19a95ac29c82cf048c076ed0de2530c64a73f2d2d7d1e64b5cc6e"
-    - name: ZKPOK_MANAGER_ADDRESS
+    - name: INPUT_VERIFICATION_ADDRESS
       valueFrom:
         configMapKeyRef:
           name: gateway-sc-addresses
-          key: zkpok_manager.address
-    - name: CIPHERTEXT_STORAGE_ADDRESS
+          key: input_verification.address
+    - name: CIPHERTEXT_COMMITS_ADDRESS
       valueFrom:
         configMapKeyRef:
           name: gateway-sc-addresses
-          key: fhevm.address
+          key: ciphertext_commits.address
+    - name: MULTICHAIN_ACL_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gw-sc-addresses
+          key: multichain_acl.address
 
   # Command line arguments for transaction sender
   args:
-    - --database-url=$(DATABASE_URL)
-    - --gateway-url=http://gateway-anvil-node:8546
+    - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+    - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+    - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
+    - --gateway-url=ws://gateway-rpc-node:8548
+    - --signer-type=private-key
     - --private-key=$(TX_SENDER_PRIVATE_KEY)
-    - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
-    - --ciphertext-storage-address=$(CIPHERTEXT_STORAGE_ADDRESS)
+    - --database-url=$(DATABASE_URL)
+    - --database-pool-size=10
+    - --database-polling-interval-secs=1
+    - --verify-proof-resp-database-channel=event_zkpok_computed
+    - --add-ciphertexts-database-channel=event_ciphertexts_uploaded
+    - --allow-handle-database-channel=event_allowed_handle
+    - --verify-proof-resp-batch-limit=128
+    - --verify-proof-resp-max-retries=6
+    - --verify-proof-remove-after-max-retries
+    - --add-ciphertexts-batch-limit=10
+    - --allow-handle-batch-limit=10
+    - --allow-handle-max-retries=2147483647
+    - --add-ciphertexts-max-retries=2147483647
+    - --error-sleep-initial-secs=1
+    - --error-sleep-max-secs=300
+    - --txn-receipt-timeout-secs=10
+    - --required-txn-confirmations=0
+    - --review-after-unlimited-retries=30
+    - --provider-max-retries=4294967295
+    - --provider-retry-interval=4s
+    - --health-check-port=8080
+    - --metrics-addr=0.0.0.0:9100
+    - --health-check-timeout=4s
+    - --log-level=INFO
+    - --gas-limit-overprovision-percent=120
+    - --graceful-shutdown-timeout=8s
+    - --service-name=txn-sender
+    - --metric-host-txn-latency=0.1:60.0:0.1
+    - --metric-zkproof-txn-latency=0.1:60.0:0.1
 
   # Service ports configuration
   ports:
