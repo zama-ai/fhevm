@@ -12,7 +12,7 @@
     "@layerzerolabs/lz-evm-protocol-v2": "^3.0.142",
     "@layerzerolabs/oapp-evm": "^0.3.2",
     "@layerzerolabs/oft-evm": "^3.2.1",
-    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "@nomicfoundation/hardhat-toolbox": "^6.1.1",
     "@openzeppelin/contracts": "^5.4.0",
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",
