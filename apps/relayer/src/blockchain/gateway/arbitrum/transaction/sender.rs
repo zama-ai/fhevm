@@ -15,7 +15,6 @@ use alloy::{
 };
 
 use eyre::Result;
-use futures::StreamExt;
 use reqwest::Url;
 use std::{fmt, future::IntoFuture};
 use std::{sync::Arc, time::Duration};
@@ -606,100 +605,72 @@ impl TransactionManager {
         tx_hash: B256,
         config: &TxConfig,
     ) -> Result<AnyTransactionReceipt, TransactionError> {
-        let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(60));
-        let start = Instant::now();
-        let reconnect_delay = Duration::from_millis(1000);
+        let total_timeout = Duration::from_secs(config.timeout_secs.unwrap_or(60));
+        let required_confirmation = config.confirmations.unwrap_or(1);
+        let start_time = Instant::now();
 
-        let block_subscription = self.provider.subscribe_blocks().await.map_err(|e| {
-            TransactionError::NetworkError(format!("Failed to subscribe for new blocks: {e}"))
-        })?;
-        let mut block_subscription_stream = block_subscription.into_stream();
+        // Arbitrum mining block time could be very low, 250 to 100 ms if the blocks are full.
+        let mut poll_interval = Duration::from_millis(50);
+        let max_poll_interval = Duration::from_millis(1000);
 
         loop {
-            if start.elapsed() > timeout {
-                return Err(TransactionError::TransactionTimeout(timeout.as_secs()));
+            if start_time.elapsed() > total_timeout {
+                error!(?tx_hash, "Timed out for transaction receipt.");
+                return Err(TransactionError::TransactionTimeout(
+                    total_timeout.as_secs(),
+                ));
             }
 
-            while (block_subscription_stream.next().await).is_some() {
-                // Check if we've exceeded timeout
-                if start.elapsed() > timeout {
-                    return Err(TransactionError::TransactionTimeout(timeout.as_secs()));
-                }
+            match self.provider.get_transaction_receipt(tx_hash).await {
+                Ok(Some(receipt)) => {
+                    if required_confirmation == 0 {
+                        info!(?tx_hash, "Receipt found with 0 confirmations required.");
+                        return Ok(receipt);
+                    }
 
-                // Try to get receipt
-                match self.provider.get_transaction_receipt(tx_hash).await {
-                    Ok(Some(receipt)) => {
-                        // If confirmation checks required
-                        if let Some(required_confirmations) = config.confirmations {
-                            if required_confirmations <= 1 {
-                                return Ok(receipt);
-                            }
-
-                            // Check block confirmations
-                            if let Ok(current_block) =
-                                self.call_provider(|p| p.get_block_number()).await
-                            {
-                                if let Some(receipt_block) = receipt.block_number {
-                                    let confirmations =
-                                        current_block.saturating_sub(receipt_block) + 1;
-
-                                    if confirmations >= required_confirmations {
-                                        return Ok(receipt);
-                                    }
-
-                                    info!(
+                    if let Some(receipt_block) = receipt.block_number {
+                        match self.provider.get_block_number().await {
+                            Ok(current_block) => {
+                                let confirmations = current_block.saturating_sub(receipt_block) + 1;
+                                if confirmations > required_confirmation {
+                                    info!(?tx_hash, ?confirmations, "Getting receipt and transaction confirmed after {:?} confirmations", confirmations);
+                                    return Ok(receipt);
+                                } else {
+                                    debug!(
                                         ?tx_hash,
+                                        ?confirmations,
                                         ?receipt_block,
                                         ?current_block,
-                                        ?confirmations,
-                                        required = ?required_confirmations,
-                                        "Waiting for more confirmations"
+                                        "Receipt found, waiting for more confirmations."
                                     );
                                 }
                             }
-                        } else {
-                            // No confirmations required
-                            return Ok(receipt);
+                            Err(e) => {
+                                warn!(?tx_hash, error = %e, "Could not get current block number to check confirmations: will retry");
+                            }
                         }
-                    }
-                    Ok(None) => {
-                        // No receipt yet
+                    } else {
                         debug!(
                             ?tx_hash,
-                            elapsed = ?start.elapsed().as_secs(),
-                            "Receipt not available yet, waiting before retry"
+                            "Receipt found, but still has no block number yet: Waiting"
                         );
                     }
-                    Err(e) => {
-                        // Error retrieving receipt
-                        warn!(
-                            ?tx_hash,
-                            error = %e,
-                            "Error retrieving receipt, will retry"
-                        );
-                    }
+                }
+                Ok(None) => {
+                    // Transaction not mined yet.
+                    debug!(?tx_hash, "Receipt not available yet.");
+                }
+                Err(e) => {
+                    // TODO: Check here with retry layer implementation, if renders errors and when.
+                    // Error occured during polling.
+                    warn!(?tx_hash, error=%e, "Error when polling for receipt, retrying.");
                 }
             }
 
-            if start.elapsed() > timeout {
-                // If the stream ends unexpectedly, return an error
-                return Err(TransactionError::NetworkError(
-                    "WebSocket stream ended unexpectedly".to_string(),
-                ));
-            } else {
-                // tokio sleep
-                tokio::time::sleep(reconnect_delay).await;
-                match self.provider.subscribe_blocks().await {
-                    Ok(block_subscription) => {
-                        block_subscription_stream = block_subscription.into_stream();
-                    }
-                    Err(e) => {
-                        return Err(TransactionError::NetworkError(format!(
-                            "Failed to subscribe for new blocks: {e}"
-                        )));
-                    }
-                }
-            }
+            // Wait before the next polling loop.
+            tokio::time::sleep(poll_interval).await;
+            // Exponential backoff strategy for polling, not hitting the node too hard: Can be removed if need polling consistency.
+            poll_interval = (poll_interval * 2).min(max_poll_interval);
         }
     }
 
