@@ -73,4 +73,6 @@ contract KMSGeneration is IKMSGeneration {
     function getVersion() external pure returns (string memory) {}
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external {}
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external {}
+    function keyReshareSameSet(uint256 keyId) external {}
+    function prssInit() external {}
 }
