@@ -23,17 +23,31 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     /// @notice Thrown when trying to deploy this contract on an unsupported blockchain.
     error UnsupportedChainID();
 
+    error TargetsIsEmpty();
+    error TargetsNotSameLengthAsDatas();
+    error TargetsNotSameLengthAsOperations();
+    error TargetsNotSameLengthAsValues();
+
     /// @notice Emitted when a proposal has been successfully sent to Zama Gateway chain;
-    event RemoteProposalSent(address target, uint256 value, bytes data, Operation operation, bytes options, MessagingReceipt receipt);  
+    event RemoteProposalSent(
+        address[] targets,
+        uint256[] values,
+        bytes[] datas,
+        Operation[] operations,
+        bytes options,
+        MessagingReceipt receipt
+    );
 
     /// @notice Initialize with Endpoint V2 and owner address.
     /// @param endpoint The local chain's LayerZero Endpoint V2 address.
     /// @param owner    The address permitted to configure this OApp.
     constructor(address endpoint, address owner) OAppCore(endpoint, owner) Ownable(owner) {
         uint256 chainID = block.chainid;
-        if (chainID == 1) { // chainID of ethereum-mainnet i.e linked to gateway-mainnet.
-            revert('TODO: to fill with correct value, destEid unknown yet for Zama mainnet');
-        } else if (chainID == 11155111) { // chainID of ethereum-testnet i.e linked to gateway-testnet.
+        if (chainID == 1) {
+            // chainID of ethereum-mainnet i.e linked to gateway-mainnet.
+            revert("TODO: to fill with correct value, destEid unknown yet for Zama mainnet");
+        } else if (chainID == 11155111) {
+            // chainID of ethereum-testnet i.e linked to gateway-testnet.
             DESTINATION_EID = 40424;
         } else {
             revert UnsupportedChainID();
@@ -41,48 +55,65 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     }
 
     /// @notice Quotes the gas needed to pay for the full cross-chain transaction in native gas.
-    /// @param target The target contract to be called.
-    /// @param value The value to be sent.
-    /// @param data The calldata to be used.
-    /// @param operation The Safe operation.
+    /// @param targets The target contracts to be called.
+    /// @param values The values to be sent.
+    /// @param datas The calldatas to be used.
+    /// @param operations The Safe operations.
     /// @param options Message execution options (e.g., for sending gas to destination).
     /// @return fee The calculated gas fee in native ETH token.
     function quoteSendCrossChainTransaction(
-        address target,
-        uint256 value,
-        bytes calldata data,
-        Operation operation,
+        address[] calldata targets,
+        uint256[] calldata values,
+        bytes[] calldata datas,
+        Operation[] calldata operations,
         bytes calldata options
     ) public view returns (uint256 fee) {
-        bytes memory message = abi.encode(target, value, data, operation);
-        MessagingFee memory mfee = _quote(DESTINATION_EID, message, combineOptions(DESTINATION_EID, SEND, options), false);
+        bytes memory message = abi.encode(targets, values, datas, operations);
+        MessagingFee memory mfee = _quote(
+            DESTINATION_EID,
+            message,
+            combineOptions(DESTINATION_EID, SEND, options),
+            false
+        );
         fee = mfee.nativeFee;
     }
 
     /// @notice Send a cross-chain proposal to Zama Gateway chain. Only the owner, i.e the Aragaon DAO, should be able to send proposals.
-    /// @param target The target contract to be called.
-    /// @param value The value to be sent.
-    /// @param data The calldata to be used.
-    /// @param operation The Safe operation.
+    /// @param targets The target contracts to be called.
+    /// @param values The values to be sent.
+    /// @param datas The calldatas to be used.
+    /// @param operations The Safe operations.
     /// @param options Message execution options (e.g., for sending gas to destination).
     function sendRemoteProposal(
-        address target,
-        uint256 value,
-        bytes calldata data,
-        Operation operation,
+        address[] calldata targets,
+        uint256[] calldata values,
+        bytes[] calldata datas,
+        Operation[] calldata operations,
         bytes calldata options
-        ) external payable onlyOwner {
-        uint256 quotedFee = quoteSendCrossChainTransaction(target, value, data, operation, options);
-        if(msg.value < quotedFee) revert InsufficientFee();
+    ) external payable onlyOwner {
+        uint256 quotedFee = quoteSendCrossChainTransaction(targets, values, datas, operations, options);
+        if (msg.value < quotedFee) revert InsufficientFee();
+
+        {
+            // local scope to avoid stack too deep error
+            uint256 targetLen = targets.length;
+            uint256 valueLen = values.length;
+            uint256 dataLen = datas.length;
+            uint256 operationLen = operations.length;
+            if (targetLen == 0) revert TargetsIsEmpty();
+            if (targetLen != valueLen) revert TargetsNotSameLengthAsValues();
+            if (targetLen != dataLen) revert TargetsNotSameLengthAsDatas();
+            if (targetLen != operationLen) revert TargetsNotSameLengthAsOperations();
+        }
 
         MessagingReceipt memory receipt = _lzSend(
             DESTINATION_EID,
-            abi.encode(target, value, data, operation),
+            abi.encode(targets, values, datas, operations),
             combineOptions(DESTINATION_EID, SEND, options),
             MessagingFee(msg.value, 0),
             payable(msg.sender)
         );
 
-        emit RemoteProposalSent(target, value, data, operation, options, receipt);  
+        emit RemoteProposalSent(targets, values, datas, operations, options, receipt);
     }
 }

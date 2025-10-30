@@ -21,6 +21,9 @@
     "@safe-global/protocol-kit": "^6.1.1",
     "@safe-global/safe-contracts": "^1.4.1-2",
     "hardhat": "^2.26.3",
-    "hardhat-dependency-compiler": "^1.2.1"
+    "hardhat-dependency-compiler": "^1.2.1",
+    "prettier": "^3.6.2",
+    "prettier-plugin-solidity": "^2.1.0",
+    "solhint": "^6.0.1"
   }
 }

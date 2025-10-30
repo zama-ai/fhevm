@@ -8,7 +8,12 @@ import { Operation } from "./shared/Structs.sol";
 
 /// @notice Interface of the AdminModule Safe Module which has privileged ownership of the Safe multi-sig owning GatewayConfig contract.
 interface IAdminModule {
-    function execTransactionFromModuleReturnData(address target, uint256 value, bytes memory data, Operation operation) external;
+    function executeSafeTransaction(
+        address[] calldata targets,
+        uint256[] calldata values,
+        bytes[] calldata datas,
+        Operation[] calldata operations
+    ) external;
 }
 
 contract GovernanceOAppReceiver is OAppReceiver, OAppOptionsType3 {
@@ -21,7 +26,16 @@ contract GovernanceOAppReceiver is OAppReceiver, OAppOptionsType3 {
     error AdminSafeModuleIsNull();
 
     /// @notice Emitted when a proposal has been successfully received and executed by the Safe through the AdminModule.
-    event ProposalExecuted(Origin origin, bytes32 guid, address target, uint256 value, bytes data, Operation operation, address executor, bytes extraData);
+    event ProposalExecuted(
+        Origin origin,
+        bytes32 guid,
+        address[] targets,
+        uint256[] values,
+        bytes[] datas,
+        Operation[] operations,
+        address executor,
+        bytes extraData
+    );
 
     /// @notice Initialize with Endpoint V2 and owner address.
     /// @param endpoint The local chain's LayerZero Endpoint V2 address.
@@ -31,7 +45,7 @@ contract GovernanceOAppReceiver is OAppReceiver, OAppOptionsType3 {
     /// @notice Sets the adminSafeModule address, can only be called by the owner.
     /// @param adminModule  The address of the privileged AdminModule of the Safe owning GatewayConfig contract.
     function setAdminSafeModule(address adminModule) external onlyOwner {
-        if(adminModule==address(0)) revert AdminSafeModuleIsNull();
+        if (adminModule == address(0)) revert AdminSafeModuleIsNull();
         adminSafeModule = IAdminModule(adminModule);
     }
 
@@ -49,12 +63,13 @@ contract GovernanceOAppReceiver is OAppReceiver, OAppOptionsType3 {
         address executor,
         bytes calldata extraData
     ) internal override {
-        if(address(adminSafeModule)==address(0)) revert AdminSafeModuleNotSet();
+        if (address(adminSafeModule) == address(0)) revert AdminSafeModuleNotSet();
 
-        (address target, uint256 value, bytes memory data, Operation operation) = abi.decode(message, (address, uint256, bytes, Operation));
+        (address[] memory targets, uint256[] memory values, bytes[] memory datas, Operation[] memory operations) = abi
+            .decode(message, (address[], uint256[], bytes[], Operation[]));
 
-        adminSafeModule.execTransactionFromModuleReturnData(target, value, data, operation);
+        adminSafeModule.executeSafeTransaction(targets, values, datas, operations);
 
-        emit ProposalExecuted(origin, guid, target, value, data, operation, executor, extraData);
+        emit ProposalExecuted(origin, guid, targets, values, datas, operations, executor, extraData);
     }
 }
