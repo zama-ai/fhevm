@@ -33,7 +33,7 @@ task("task:verifyFeesSenderToBurner")
       console.log(
         "Verification on Gateway requires using BlockScout API, only available when the etherscan.apiKey field is not a string.",
       );
-      hre.config.etherscan.apiKey = { "gateway-testnet": "empty" };
+      hre.config.etherscan.apiKey = { "gateway-testnet": "empty", "gateway-mainnet": "empty" };
     }
 
     await hre.run("verify:verify", {
