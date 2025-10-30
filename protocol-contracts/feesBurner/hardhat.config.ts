@@ -4,6 +4,7 @@ import "hardhat-deploy";
 import type { HardhatUserConfig } from "hardhat/config";
 
 import "./tasks/blockExplorerVerify";
+import "./tasks/deployFeesBurner";
 
 // Set your preferred authentication method
 //

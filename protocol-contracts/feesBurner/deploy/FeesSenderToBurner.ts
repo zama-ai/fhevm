@@ -1,7 +1,8 @@
 import assert from "assert";
-import { type DeployFunction } from "hardhat-deploy/types";
+import * as fs from "fs";
+import { type DeployFunction, Deployment } from "hardhat-deploy/types";
 
-import { getRequiredEnvVar } from "./utils/loadVariables";
+import { getRequiredEnvVar } from "../tasks/utils/loadVariables";
 
 const contractName = "FeesSenderToBurner";
 

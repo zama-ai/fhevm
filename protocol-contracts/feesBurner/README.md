@@ -6,7 +6,19 @@ Copy the environment file: `cp .env.example .env`.
 
 Then fill all the environment variables till `ZAMA_ERC20_ADDRESS` for the wanted networks (`MAINNET` or `TESTNET` RPC urls).
 
-## ProtocolFeesBurner Deployment
+Install the NPM packages: `npm i`
+
+## Automated Deployment (Recommended)
+
+Run the following hardhat task to deploy ProtocolFeesBurner on Ethereum and FeesSenderToBurner on Gateway:
+```bash
+npx hardhat deploy:feesBurner --preset <mainnet|testnet> --verify <boolean>
+```
+
+To verify the ProtocolFeesBurner on Etherscan and FeesSenderToBurner on BlockScout, set this flag: `--verify true`.
+
+## Manual Deployment of FeesBurner
+### ProtocolFeesBurner Deployment
 
 Deploy the ProtocolFeesBurner contract on Ethereum
 
@@ -16,13 +28,13 @@ npx hardhat deploy --tags ProtocolFeesBurner --network ethereum-testnet
 
 Then fill the `PROTOCOL_FEES_BURNER_ADDRESS` env variable with the address of your deployment.
 
-## FeesSenderToBurner Deployment
+### FeesSenderToBurner Deployment
 
 ```bash
 npx hardhat deploy --tags FeesSenderToBurner --network gateway-testnet
 ```
 
-## Verification
+### Verification
 
 You can verify the contracts on Etherscan with the following tasks:
 
