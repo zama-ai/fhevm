@@ -6,7 +6,7 @@ This document explains one of the key components of the Zama Protocol - Coproces
 
 Coprocessor performs the heavy cryptographic operations—specifically, fully homomorphic encryption (FHE) computations—on behalf of smart contracts that operate on encrypted data. Acting as a decentralized compute layer, the coprocessor bridges symbolic on-chain logic with real-world encrypted execution.
 
-Coprocessor works together with the Gateway, verifying encrypted inputs, executing FHE instructions, and maintaining synchronization of access permissions, in particula
+Coprocessor works together with the Gateway, verifying encrypted inputs, executing FHE instructions, and maintaining synchronization of access permissions, in particular:
 
 - Listens to events emitted by host chains and the Gateway.
 - Executes FHE computations (`add`, `mul`, `div`, `cmp`, etc.) on ciphertexts.
