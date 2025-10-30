@@ -146,8 +146,7 @@ where
             .getCoprocessor(copro_addr)
             .call()
             .await?
-            .s3BucketUrl
-            .to_string();
+            .s3BucketUrl;
 
         if s3_bucket_url.is_empty() {
             warn!("No S3 bucket URL registered for coprocessor {copro_addr}");

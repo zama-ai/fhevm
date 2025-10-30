@@ -91,8 +91,8 @@ impl<'a> Scheduler<'a> {
         Self {
             graph,
             edges,
-            sks: sks.clone(),
-            cpk: cpk.clone(),
+            sks: sks,
+            cpk: cpk,
             #[cfg(feature = "gpu")]
             csks: csks.clone(),
             activity_heartbeat,
@@ -646,7 +646,7 @@ fn try_schedule_node(
 
     let opcode = node.opcode;
     let is_allowed = node.is_allowed;
-    let sks = sks.clone();
+    let sks = sks;
     set.spawn_blocking(move || {
         tfhe::set_server_key(sks.clone());
         run_computation(opcode, cts, node_index, is_allowed, gpu_idx)

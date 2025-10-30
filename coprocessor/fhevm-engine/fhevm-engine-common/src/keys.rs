@@ -84,7 +84,7 @@ impl FhevmKeys {
         let compact_public_key = CompactPublicKey::new(&client_key);
         let crs = CompactPkeCrs::from_config(config, MAX_BITS_TO_PROVE).expect("CRS creation");
         let compressed_server_key = CompressedServerKey::new(&client_key);
-        let server_key = compressed_server_key.clone().decompress();
+        let server_key = compressed_server_key.decompress();
         #[cfg(not(feature = "gpu"))]
         let (
             sks,
@@ -114,7 +114,7 @@ impl FhevmKeys {
             server_key_without_ns,
             client_key: Some(client_key),
             compact_public_key,
-            public_params: Arc::new(crs.clone()),
+            public_params: Arc::new(crs),
             #[cfg(feature = "gpu")]
             compressed_server_key: compressed_server_key.clone(),
             #[cfg(feature = "gpu")]
@@ -274,7 +274,7 @@ impl From<SerializedFhevmKeys> for FhevmKeys {
                 .expect("deserialize compressed server key");
 
         FhevmKeys {
-            client_key: client_key.clone(),
+            client_key,
             compact_public_key: safe_deserialize_key(&f.compact_public_key)
                 .expect("deserialize compact public key"),
             public_params: Arc::new(
