@@ -25,12 +25,20 @@ if (accounts == null) {
 const config: HardhatUserConfig = {
   solidity: "0.8.28",
   networks: {
+    "ethereum-mainnet": {
+      url: process.env.MAINNET_RPC_URL || "",
+      accounts,
+    },
     "ethereum-testnet": {
-      url: process.env.SEPOLIA_RPC_URL,
+      url: process.env.SEPOLIA_RPC_URL || "",
+      accounts,
+    },
+    "gateway-mainnet": {
+      url: process.env.RPC_URL_ZAMA_GATEWAY_MAINNET || "",
       accounts,
     },
     "gateway-testnet": {
-      url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET,
+      url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET || "",
       accounts,
     },
     hardhat: {
@@ -43,10 +51,16 @@ const config: HardhatUserConfig = {
     },
   },
   etherscan: {
-    apiKey: {
-      "gateway-testnet": "empty",
-    },
+    apiKey: process.env.ETHERSCAN_API || "",
     customChains: [
+      {
+        network: "gateway-mainnet",
+        chainId: 261131,
+        urls: {
+          apiURL: "https://explorer-zama-gateway-mainnet.t.conduit.xyz/api",
+          browserURL: "https://explorer-zama-gateway-mainnet.t.conduit.xyz",
+        },
+      },
       {
         network: "gateway-testnet",
         chainId: 10901,

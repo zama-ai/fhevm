@@ -16,7 +16,9 @@
     "test:forge": "forge test",
     "test:hardhat": "hardhat test",
     "verify:etherscan:arbitrum:sepolia": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n arbitrum-testnet -u https://api.etherscan.io/v2/api?chainid=421614 -k $ETHERSCAN_API'",
+    "verify:etherscan:ethereum:mainnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n ethereum-mainnet -u https://api.etherscan.io/v2/api?chainid=1 -k $ETHERSCAN_API'",
     "verify:etherscan:ethereum:sepolia": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n ethereum-testnet -u https://api.etherscan.io/v2/api?chainid=11155111 -k $ETHERSCAN_API'",
+    "verify:etherscan:gateway:mainnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n gateway-mainnet -u $BLOCKSCOUT_API'",
     "verify:etherscan:gateway:testnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n gateway-testnet -u $BLOCKSCOUT_API'",
     "zama:oft:send:ethToGateway": "dotenv -e .env -- bash -c 'npx hardhat evm:validate:address --address \"$1\" && npx hardhat lz:oft:send --src-eid 40161 --dst-eid 40424 --amount \"$2\" --to \"$1\" --oapp-config  layerzero.config.gatewaytestnet.ts' --",
     "zama:oft:send:gatewayToEth": "dotenv -e .env -- bash -c 'npx hardhat evm:validate:address --address \"$1\" && npx hardhat lz:oft:send --src-eid 40424 --dst-eid 40161 --amount \"$2\" --to \"$1\" --oapp-config  layerzero.config.gatewaytestnet.ts' --"
