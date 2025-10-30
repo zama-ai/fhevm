@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/access/Ownable.sol";
-import {IPauserSet} from "@fhevm/host-contracts/contracts/interfaces/IPauserSet.sol";
+import { IPauserSet } from "@fhevm/host-contracts/contracts/interfaces/IPauserSet.sol";
 
 /// @dev Just for testing, use the real PauserSet from Ethereum host-contracts on mainnet
 contract PauserSetMock is Ownable, IPauserSet {
@@ -36,7 +36,7 @@ contract PauserSetMock is Ownable, IPauserSet {
         return pausers[account];
     }
 
-    function getVersion() external pure returns (string memory){
+    function getVersion() external pure returns (string memory) {
         return "PauserSetMock";
     }
 }
