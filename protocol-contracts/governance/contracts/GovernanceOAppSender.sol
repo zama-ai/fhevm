@@ -18,6 +18,12 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
         DelegateCall
     }
 
+    /// @notice This struct is used to avoid stack too deep errors
+    struct MessagingReceiptOptions {
+        MessagingReceipt receipt;
+        bytes options;
+    }
+
     /// @notice Thrown when trying to send cross-chain tx without sending enough ETH fees.
     error InsufficientFee();
     /// @notice Thrown when trying to deploy this contract on an unsupported blockchain.
@@ -31,15 +37,17 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     error TargetsNotSameLengthAsOperations();
     /// @notice Thrown when length of targets array is different than length of values array.
     error TargetsNotSameLengthAsValues();
+    /// @notice Thrown when length of targets array is different than length of functionSignatures array.
+    error TargetsNotSameLengthAsFunctionSignatures();
 
     /// @notice Emitted when a proposal has been successfully sent to Zama Gateway chain;
     event RemoteProposalSent(
         address[] targets,
         uint256[] values,
+        string[] functionSignatures,
         bytes[] datas,
         Operation[] operations,
-        bytes options,
-        MessagingReceipt receipt
+        MessagingReceiptOptions receiptOptions
     );
 
     /// @notice Initialize with Endpoint V2 and owner address.
@@ -68,11 +76,12 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     function quoteSendCrossChainTransaction(
         address[] calldata targets,
         uint256[] calldata values,
+        string[] calldata functionSignatures,
         bytes[] calldata datas,
         Operation[] calldata operations,
         bytes calldata options
     ) public view returns (uint256 fee) {
-        bytes memory message = abi.encode(targets, values, datas, operations);
+        bytes memory message = abi.encode(targets, values, functionSignatures, datas, operations);
         MessagingFee memory mfee = _quote(
             DESTINATION_EID,
             message,
@@ -85,17 +94,26 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     /// @notice Send a cross-chain proposal to Zama Gateway chain. Only the owner, i.e the Aragaon DAO, should be able to send proposals.
     /// @param targets The target contracts to be called.
     /// @param values The values to be sent.
-    /// @param datas The calldatas to be used.
+    /// @param datas The calldatas to be used (with function selector, if functionSignatures[i] is an empty string).
+    /// @param functionSignatures Function signatures - optional: if empty string, datas[i] is already starting with the function selector.
     /// @param operations The Safe operations.
     /// @param options Message execution options (e.g., for sending gas to destination).
     function sendRemoteProposal(
         address[] calldata targets,
         uint256[] calldata values,
+        string[] calldata functionSignatures,
         bytes[] calldata datas,
         Operation[] calldata operations,
         bytes calldata options
     ) external payable onlyOwner {
-        uint256 quotedFee = quoteSendCrossChainTransaction(targets, values, datas, operations, options);
+        uint256 quotedFee = quoteSendCrossChainTransaction(
+            targets,
+            values,
+            functionSignatures,
+            datas,
+            operations,
+            options
+        );
         if (msg.value < quotedFee) revert InsufficientFee();
 
         {
@@ -104,20 +122,24 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
             uint256 valueLen = values.length;
             uint256 dataLen = datas.length;
             uint256 operationLen = operations.length;
+            uint256 functionSignatureLen = functionSignatures.length;
             if (targetLen == 0) revert TargetsIsEmpty();
             if (targetLen != valueLen) revert TargetsNotSameLengthAsValues();
             if (targetLen != dataLen) revert TargetsNotSameLengthAsDatas();
             if (targetLen != operationLen) revert TargetsNotSameLengthAsOperations();
+            if (targetLen != functionSignatureLen) revert TargetsNotSameLengthAsFunctionSignatures();
         }
 
         MessagingReceipt memory receipt = _lzSend(
             DESTINATION_EID,
-            abi.encode(targets, values, datas, operations),
+            abi.encode(targets, values, functionSignatures, datas, operations),
             combineOptions(DESTINATION_EID, SEND, options),
             MessagingFee(msg.value, 0),
             payable(msg.sender)
         );
 
-        emit RemoteProposalSent(targets, values, datas, operations, options, receipt);
+        MessagingReceiptOptions memory receiptOptions = MessagingReceiptOptions({ receipt: receipt, options: options });
+
+        emit RemoteProposalSent(targets, values, functionSignatures, datas, operations, receiptOptions);
     }
 }
