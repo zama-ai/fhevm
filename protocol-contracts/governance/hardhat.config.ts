@@ -13,7 +13,7 @@ import { HardhatUserConfig, HttpNetworkAccountsUserConfig } from 'hardhat/types'
 
 import { EndpointId } from '@layerzerolabs/lz-definitions'
 
-import './tasks/sendString'
+import './tasks/sendRemoteProposal'
 
 // Set your preferred authentication method
 //
@@ -54,14 +54,25 @@ const config: HardhatUserConfig = {
         ],
     },
     networks: {
-        'arbitrum-sepolia': {
-            eid: EndpointId.ARBSEP_V2_TESTNET,
-            url: process.env.RPC_URL_ARB_SEPOLIA || 'https://arbitrum-sepolia.gateway.tenderly.co',
+        'ethereum-mainnet': {
+            eid: EndpointId.ETHEREUM_V2_MAINNET,
+            url: process.env.MAINNET_RPC_URL || '',
             accounts,
         },
-        'base-sepolia': {
-            eid: EndpointId.BASESEP_V2_TESTNET,
-            url: process.env.RPC_URL_BASE_SEPOLIA || 'https://base-sepolia.gateway.tenderly.co',
+        'ethereum-testnet': {
+            eid: EndpointId.SEPOLIA_V2_TESTNET,
+            url: process.env.SEPOLIA_RPC_URL!,
+            accounts,
+        },
+        'gateway-mainnet': {
+            // @ts-ignore: TODO: Remove TS ignore once LayerZero endpoint is deployed.
+            eid: EndpointId.ZAMA_V2_MAINNET,
+            url: process.env.RPC_URL_ZAMA_GATEWAY_MAINNET || '',
+            accounts,
+        },
+        'gateway-testnet': {
+            eid: EndpointId.ZAMA_V2_TESTNET,
+            url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET || '',
             accounts,
         },
         hardhat: {

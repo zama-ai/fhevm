@@ -14,7 +14,11 @@
     "lint:sol": "solhint 'contracts/**/*.sol'",
     "test": "$npm_execpath run test:forge && $npm_execpath run test:hardhat",
     "test:forge": "forge test",
-    "test:hardhat": "hardhat test"
+    "test:hardhat": "hardhat test",
+    "verify:etherscan:ethereum:mainnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n ethereum-mainnet -u https://api.etherscan.io/v2/api?chainid=1 -k $ETHERSCAN_API'",
+    "verify:etherscan:ethereum:testnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n ethereum-testnet -u https://api.etherscan.io/v2/api?chainid=11155111 -k $ETHERSCAN_API'",
+    "verify:etherscan:gateway:mainnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n gateway-mainnet -u $BLOCKSCOUT_API'",
+    "verify:etherscan:gateway:testnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n gateway-testnet -u $BLOCKSCOUT_API'"
   },
   "resolutions": {
     "ethers": "^5.7.2",
@@ -47,6 +51,7 @@
     "chai": "^4.4.1",
     "concurrently": "~9.1.0",
     "dotenv": "^16.4.1",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^8.55.0",
     "eslint-plugin-jest-extended": "~2.0.0",
     "ethers": "^5.7.2",
