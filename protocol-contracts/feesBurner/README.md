@@ -12,20 +12,10 @@ Install the NPM packages: `npm i`
 
 Run the following hardhat task to deploy ProtocolFeesBurner on Ethereum and FeesSenderToBurner on Gateway:
 ```bash
-npx hardhat deploy:feesBurner --mainnet <boolean> --verify <boolean>
+npx hardhat deploy:feesBurner --preset <mainnet|testnet> --verify <boolean>
 ```
 
 To verify the ProtocolFeesBurner on Etherscan and FeesSenderToBurner on BlockScout, set this flag: `--verify true`.
-
-### Deploy on Testnet (Ethereum Sepolia & Gateway Testnet)
-```bash
-npx hardhat deploy:feesBurner
-```
-
-### Deploy on Mainnet (Ethereum Mainnet & Gateway Mainnet)
-```bash
-npx hardhat deploy:feesBurner --mainnet true --verify true
-```
 
 ## Manual Deployment of FeesBurner
 ### ProtocolFeesBurner Deployment
