@@ -1,8 +1,5 @@
 use alloy::{
-    network::{
-        AnyNetwork, AnyTransactionReceipt, EthereumWallet, ReceiptResponse, TransactionBuilder,
-        TxSigner,
-    },
+    network::{AnyNetwork, AnyTransactionReceipt, EthereumWallet, TransactionBuilder, TxSigner},
     primitives::{Address, Bytes, B256, U256},
     providers::{
         fillers::{ChainIdFiller, GasFiller, NonceFiller, WalletFiller},
@@ -572,18 +569,22 @@ impl TransactionManager {
         Bytes::from(calldata)
     }
 
-    pub async fn wait_for_confirmation(
+    pub async fn wait_for_confirmation_receipt_with_timeout(
         &self,
         tx_hash: B256,
         min_confirmations: u64,
-    ) -> Result<bool, eyre::Error> {
+        timeout: Duration,
+    ) -> Result<AnyTransactionReceipt, eyre::Error> {
         let config = TxConfig {
             confirmations: Some(min_confirmations),
             ..Default::default()
         };
 
-        match self.wait_for_receipt(tx_hash, &config).await {
-            Ok(receipt) => Ok(receipt.status()),
+        match self
+            .wait_for_receipt_with_timeout(tx_hash, &config, timeout)
+            .await
+        {
+            Ok(receipt) => Ok(receipt),
             Err(e) => Err(eyre::eyre!("Failed to get confirmation: {}", e)),
         }
     }
@@ -600,27 +601,24 @@ impl TransactionManager {
     /// # Returns
     /// * `Ok(TransactionReceipt)` - The transaction receipt once confirmed
     /// * `Err(TransactionError)` - Various errors based on polling results
-    pub async fn wait_for_receipt(
+    pub async fn wait_for_receipt_with_timeout(
         &self,
         tx_hash: B256,
         config: &TxConfig,
+        timeout: Duration,
     ) -> Result<AnyTransactionReceipt, TransactionError> {
-        let total_timeout = Duration::from_secs(config.timeout_secs.unwrap_or(60));
-        let required_confirmation = config.confirmations.unwrap_or(1);
+        info!("TX MANAGER: wait_for_receipt_with_timeout");
         let start_time = Instant::now();
+        let required_confirmation = config.confirmations.unwrap_or(1);
 
         // Arbitrum mining block time could be very low, 250 to 100 ms if the blocks are full.
-        let mut poll_interval = Duration::from_millis(50);
-        let max_poll_interval = Duration::from_millis(1000);
+        let poll_interval = Duration::from_millis(50);
 
         loop {
-            if start_time.elapsed() > total_timeout {
-                error!(?tx_hash, "Timed out for transaction receipt.");
-                return Err(TransactionError::TransactionTimeout(
-                    total_timeout.as_secs(),
-                ));
+            if start_time.elapsed() > timeout {
+                error!(?tx_hash, "Timed out waiting for transaction receipt.");
+                return Err(TransactionError::TransactionTimeout(timeout.as_secs()));
             }
-
             match self.provider.get_transaction_receipt(tx_hash).await {
                 Ok(Some(receipt)) => {
                     if required_confirmation == 0 {
@@ -669,8 +667,68 @@ impl TransactionManager {
 
             // Wait before the next polling loop.
             tokio::time::sleep(poll_interval).await;
-            // Exponential backoff strategy for polling, not hitting the node too hard: Can be removed if need polling consistency.
-            poll_interval = (poll_interval * 2).min(max_poll_interval);
+        }
+    }
+
+    pub async fn wait_for_receipt(
+        &self,
+        tx_hash: B256,
+        config: &TxConfig,
+    ) -> Result<AnyTransactionReceipt, TransactionError> {
+        let required_confirmation = config.confirmations.unwrap_or(1);
+
+        // Arbitrum mining block time could be very low, 250 to 100 ms if the blocks are full.
+        let poll_interval = Duration::from_millis(50);
+
+        loop {
+            match self.provider.get_transaction_receipt(tx_hash).await {
+                Ok(Some(receipt)) => {
+                    if required_confirmation == 0 {
+                        info!(?tx_hash, "Receipt found with 0 confirmations required.");
+                        return Ok(receipt);
+                    }
+
+                    if let Some(receipt_block) = receipt.block_number {
+                        match self.provider.get_block_number().await {
+                            Ok(current_block) => {
+                                let confirmations = current_block.saturating_sub(receipt_block) + 1;
+                                if confirmations > required_confirmation {
+                                    info!(?tx_hash, ?confirmations, "Getting receipt and transaction confirmed after {:?} confirmations", confirmations);
+                                    return Ok(receipt);
+                                } else {
+                                    debug!(
+                                        ?tx_hash,
+                                        ?confirmations,
+                                        ?receipt_block,
+                                        ?current_block,
+                                        "Receipt found, waiting for more confirmations."
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                warn!(?tx_hash, error = %e, "Could not get current block number to check confirmations: will retry");
+                            }
+                        }
+                    } else {
+                        debug!(
+                            ?tx_hash,
+                            "Receipt found, but still has no block number yet: Waiting"
+                        );
+                    }
+                }
+                Ok(None) => {
+                    // Transaction not mined yet.
+                    debug!(?tx_hash, "Receipt not available yet.");
+                }
+                Err(e) => {
+                    // TODO: Check here with retry layer implementation, if renders errors and when.
+                    // Error occured during polling.
+                    warn!(?tx_hash, error=%e, "Error when polling for receipt, retrying.");
+                }
+            }
+
+            // Wait before the next polling loop.
+            tokio::time::sleep(poll_interval).await;
         }
     }
 

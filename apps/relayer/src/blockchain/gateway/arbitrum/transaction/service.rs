@@ -22,7 +22,6 @@ use alloy::{
     primitives::{Address, Bytes, B256},
 };
 use dashmap::DashMap;
-use rand::Rng;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, instrument, warn};
@@ -74,6 +73,8 @@ struct TransactionRecord {
     /// TODO: doesn't seemed to be used anywhere
     ready_for_cleanup: bool,
 }
+
+const BLOCK_CONFIRMATIONS: u64 = 0;
 
 /// Main service for managing transactions
 #[derive(Clone, Debug)]
@@ -241,9 +242,26 @@ impl TransactionService {
                 }
                 TransactionState::Pending { hash, .. } if *hash == tx_hash => {
                     // Found a pending transaction, wait for receipt with default timeout
-                    return self
-                        .wait_for_receipt(tx_hash, Duration::from_secs(60))
-                        .await;
+                    let timeout = Duration::from_secs(60);
+                    match self
+                        .manager
+                        .wait_for_confirmation_receipt_with_timeout(
+                            tx_hash,
+                            BLOCK_CONFIRMATIONS,
+                            timeout,
+                        )
+                        .await
+                    {
+                        Ok(receipt) => {
+                            return Ok(receipt);
+                        }
+                        Err(e) => {
+                            error!(?tx_hash, error=%e, "Could not find receipt");
+                            return Err(TransactionServiceError::Failed(
+                                "Could not find receipt after polling".into(),
+                            ));
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -564,7 +582,6 @@ impl TransactionService {
         calldata: Bytes,
         config: TxConfig,
     ) -> Result<AnyTransactionReceipt, TransactionServiceError> {
-        info!("Submit_and_wait");
         let tx_hash = self
             .submit_transaction(target, calldata, config.clone())
             .await?;
@@ -572,7 +589,21 @@ impl TransactionService {
         info!(?tx_hash, "Transaction submitted, waiting for confirmation");
 
         let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(60));
-        self.wait_for_receipt(tx_hash, timeout).await
+        match self
+            .manager
+            .wait_for_confirmation_receipt_with_timeout(tx_hash, BLOCK_CONFIRMATIONS, timeout)
+            .await
+        {
+            Ok(receipt) => {
+                return Ok(receipt);
+            }
+            Err(e) => {
+                error!(?tx_hash, error=%e, "Could not find receipt after polling loop");
+                return Err(TransactionServiceError::Failed(
+                    "Could not find receipt after polling".into(),
+                ));
+            }
+        }
     }
 
     pub async fn wait_for_receipt(
@@ -580,53 +611,17 @@ impl TransactionService {
         tx_hash: B256,
         timeout: Duration,
     ) -> Result<AnyTransactionReceipt, TransactionServiceError> {
-        let start = Instant::now();
-        let base_delay = Duration::from_millis(200); // Start with 200ms
-        let max_delay = Duration::from_secs(10); // Cap at 10 seconds
-        let mut attempt = 0;
-
-        // Introduce an **initial delay** before the first attempt
-        // TODO: Make this configurable
-        tokio::time::sleep(Duration::from_millis(400)).await;
-
-        info!(
-            ?tx_hash,
-            ?attempt,
-            elapsed = ?start.elapsed().as_millis(),
-            "First attempt to get receipt (ms)"
-        );
-
-        loop {
-            // Check timeout
-            if start.elapsed() > timeout {
-                return Err(TransactionServiceError::Timeout(timeout.as_secs()));
-            }
-
-            // Try to get receipt
-            match self.manager.provider.get_transaction_receipt(tx_hash).await {
-                Ok(Some(receipt)) => return Ok(receipt),
-                Ok(None) => {
-                    // Calculate exponential backoff with jitter
-                    let backoff_base = base_delay.mul_f64(1.5f64.powi(attempt));
-                    let jitter = 0.8 + (0.4 * rand::rng().random::<f64>());
-                    let delay = backoff_base.mul_f64(jitter).min(max_delay);
-
-                    info!(
-                        ?tx_hash,
-                        attempt = attempt + 1,
-                        delay_ms = ?delay.as_millis(),
-                        elapsed = ?start.elapsed().as_secs(),
-                        "Receipt not available yet, waiting with backoff"
-                    );
-
-                    tokio::time::sleep(delay).await;
-                    attempt += 1;
-                }
-                Err(e) => {
-                    // Log error and use a shorter retry delay for network errors
-                    warn!(?tx_hash, ?e, "Error getting receipt");
-                    tokio::time::sleep(base_delay).await;
-                }
+        match self
+            .manager
+            .wait_for_confirmation_receipt_with_timeout(tx_hash, BLOCK_CONFIRMATIONS, timeout)
+            .await
+        {
+            Ok(receipt) => Ok(receipt),
+            Err(e) => {
+                error!(?tx_hash, error = %e, "Could not get receipt after polling");
+                Err(TransactionServiceError::Failed(
+                    "Could not get receipt.".into(),
+                ))
             }
         }
     }
