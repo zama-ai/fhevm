@@ -8,7 +8,7 @@ import { Operation } from "./shared/Structs.sol";
 
 /// @notice Interface of the AdminModule Safe Module which has privileged ownership of the Safe multi-sig owning GatewayConfig contract.
 interface IAdminModule {
-    function executeSafeTransaction(
+    function executeSafeTransactions(
         address[] calldata targets,
         uint256[] calldata values,
         bytes[] calldata datas,
@@ -80,7 +80,7 @@ contract GovernanceOAppReceiver is OAppReceiver, OAppOptionsType3 {
                 : abi.encodePacked(bytes4(keccak256(bytes(functionSignatures[idx]))), datas[idx]);
         }
 
-        adminSafeModule.executeSafeTransaction(targets, values, datas, operations);
+        adminSafeModule.executeSafeTransactions(targets, values, datas, operations);
 
         emit ProposalExecuted(origin, guid, targets, values, functionSignatures, datas, operations);
     }

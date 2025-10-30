@@ -106,7 +106,7 @@ describe("AdminModule Tests", function () {
     ]);
     await adminModule
       .connect(charlie)
-      .executeSafeTransaction([gatewayConfigMockAddress], [0n], [data], [0n]);
+      .executeSafeTransactions([gatewayConfigMockAddress], [0n], [data], [0n]);
     expect(await gatewayConfigMock.value()).to.equal(42n);
   });
 

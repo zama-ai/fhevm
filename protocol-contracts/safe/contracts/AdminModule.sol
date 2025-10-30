@@ -26,7 +26,7 @@ contract AdminModule {
         SAFE_PROXY = safeProxy;
     }
 
-    function executeSafeTransaction(
+    function executeSafeTransactions(
         address[] calldata targets,
         uint256[] calldata values,
         bytes[] calldata datas,
