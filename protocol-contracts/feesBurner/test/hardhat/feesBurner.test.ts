@@ -1,3 +1,4 @@
+import { EndpointId } from "@layerzerolabs/lz-definitions";
 import { Options } from "@layerzerolabs/lz-v2-utilities";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
@@ -29,10 +30,10 @@ describe("FeesBurner", () => {
   let mockEndpointV2A: EndpointV2Mock;
   let mockEndpointV2B: EndpointV2Mock;
 
-  // Emulate the Ethereum Testnet chainId
-  const eidA = 30101;
-  // Emulate the Gateway Testnet chainId
-  const eidB = 261131;
+  // Emulate the LZ V2 eid of Ethereum Sepolia
+  const eidA = EndpointId.SEPOLIA_V2_TESTNET;
+  // Emulate the LZ V2 eid of Gateway Testnet
+  const eidB = EndpointId.ZAMA_V2_TESTNET;
   const MINTER_ROLE = ethers.id("MINTER_ROLE");
   const feesSenderToBurnerInterface = { interface: FeesSenderToBurner__factory.createInterface() };
 
