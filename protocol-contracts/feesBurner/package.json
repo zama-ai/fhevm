@@ -10,8 +10,10 @@
   },
   "devDependencies": {
     "@layerzerolabs/lz-evm-protocol-v2": "^3.0.142",
+    "@layerzerolabs/lz-v2-utilities": "^3.0.143",
     "@layerzerolabs/oapp-evm": "^0.3.2",
     "@layerzerolabs/oft-evm": "^3.2.1",
+    "@nomicfoundation/hardhat-ethers": "^3.1.2",
     "@nomicfoundation/hardhat-toolbox": "^6.1.1",
     "@openzeppelin/contracts": "^5.4.0",
     "@typechain/ethers-v6": "^0.5.1",
