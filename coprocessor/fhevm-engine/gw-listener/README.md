@@ -6,7 +6,7 @@ The **gw-listener** service listens for events from the GW and dispatches them t
 
 **gw-listener** listens for input proof verification events from the InputVerification contract and inserts them into the DB into the `verify_proofs` table.
 
-The gw-listener will notify **zkproof-worker** services that work is available over the `verify_proof_requests` DB channel (configurable, but this is the default one).
+The gw-listener will notify **zkproof-worker** services that work is available over the `event_zkpok_new_work` DB channel (configurable, but this is the default one).
 
 Once a ZK proof request is verified, a zkproof-worker should set:
  * `verified = true or false`

@@ -606,7 +606,7 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
         .await?;
         if !rows.txn_is_sent
             && rows.txn_limited_retries_count == 0
-            && rows.txn_unlimited_retries_count > conf.add_ciphertexts_max_retries as i32
+            && rows.txn_unlimited_retries_count > conf.add_ciphertexts_max_retries
         {
             break;
         }

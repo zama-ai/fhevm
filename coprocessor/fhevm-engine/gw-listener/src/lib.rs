@@ -70,7 +70,7 @@ impl Default for ConfigSettings {
             database_url: std::env::var("DATABASE_URL")
                 .unwrap_or("postgres://postgres:postgres@localhost/coprocessor".to_owned()),
             database_pool_size: 16,
-            verify_proof_req_db_channel: "verify_proof_requests".to_owned(),
+            verify_proof_req_db_channel: "event_zkpok_new_work".to_owned(),
             gw_url: "ws://127.0.0.1:8546".try_into().expect("Invalid URL"),
             error_sleep_initial_secs: 1,
             error_sleep_max_secs: 10,

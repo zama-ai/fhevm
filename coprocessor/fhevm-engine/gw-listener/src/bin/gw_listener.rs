@@ -20,10 +20,10 @@ struct Conf {
     #[arg(long)]
     database_url: Option<String>,
 
-    #[arg(long, default_value = "16")]
+    #[arg(long, default_value_t = 16)]
     database_pool_size: u32,
 
-    #[arg(long, default_value = "verify_proof_requests")]
+    #[arg(long, default_value = "event_zkpok_new_work")]
     verify_proof_req_database_channel: String,
 
     #[arg(long)]
@@ -35,10 +35,10 @@ struct Conf {
     #[arg(long)]
     kms_generation_address: Address,
 
-    #[arg(long, default_value = "1")]
+    #[arg(long, default_value_t = 1)]
     error_sleep_initial_secs: u16,
 
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value_t = 10)]
     error_sleep_max_secs: u16,
 
     #[arg(long, default_value_t = 8080)]
@@ -51,7 +51,7 @@ struct Conf {
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     health_check_timeout: Duration,
 
-    #[arg(long, default_value = "1000000")]
+    #[arg(long, default_value_t = u32::MAX)]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
