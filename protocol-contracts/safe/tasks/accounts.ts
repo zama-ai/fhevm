@@ -1,7 +1,7 @@
 import { task } from "hardhat/config";
 import { HardhatNetworkHDAccountsConfig } from "hardhat/types";
 
-const NUM_ACCOUNTS = 10;
+const NUM_ACCOUNTS = 20;
 
 // Use this task to get the list of accounts (addresses, private keys, public keys)
 // Example usage:

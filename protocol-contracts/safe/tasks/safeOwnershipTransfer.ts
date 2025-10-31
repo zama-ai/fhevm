@@ -1,5 +1,5 @@
 import Safe from "@safe-global/protocol-kit";
-import { task } from "hardhat/config";
+import { task, types } from "hardhat/config";
 import { Network, HardhatEthersHelpers } from "hardhat/types";
 
 import { getRequiredEnvVar } from "./utils/loadVariables";
@@ -44,87 +44,102 @@ async function getSafeKitDeployer(
 // Add owners to the Safe
 // Also keeps the deployer as owner and threshold at 1
 // Example usage:
-// npx hardhat task:addOwnersToSafe \
-// --newOwners \
-// "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC,0x90F79bf6EB2c4f870365E785982E1f101E93b906"
-task("task:addOwnersToSafe")
-  .addParam(
-    "newOwners",
-    "Addresses of the new owners of the Safe, comma-separated",
-  )
-  .setAction(async function (
-    { newOwners },
-    { getNamedAccounts, ethers, network },
-  ) {
-    // Get the deployer
-    const { deployer } = await getNamedAccounts();
+// npx hardhat task:addOwnersToSafe
+task("task:addOwnersToSafe").setAction(async function (
+  _,
+  { getNamedAccounts, ethers, network },
+) {
+  // Get the deployer
+  const { deployer } = await getNamedAccounts();
 
-    // Get the Safe proxy and address
-    const { safeProxy, safeAddress } = await getSafeProxyAndAddress(ethers);
+  // Get the Safe proxy and address
+  const { safeProxy, safeAddress } = await getSafeProxyAndAddress(ethers);
 
-    // Make sure the deployer is an owner of the SafeL2Proxy contract
-    const safeOwners = await safeProxy.getOwners();
-    if (!safeOwners.includes(deployer)) {
-      throw new Error(
-        `Deployer should be an owner of the SafeL2Proxy contract. 
+  // Make sure the deployer is an owner of the SafeL2Proxy contract
+  const safeOwners = await safeProxy.getOwners();
+  if (!safeOwners.includes(deployer)) {
+    throw new Error(
+      `Deployer should be an owner of the SafeL2Proxy contract. 
         Current owners: ${safeOwners.join(", ")}, expected: ${deployer}`,
-      );
-    }
-
-    // Make sure the threshold is 1
-    const threshold = await safeProxy.getThreshold();
-    if (threshold !== BigInt(1)) {
-      throw new Error(`Threshold should be 1. Current threshold: ${threshold}`);
-    }
-
-    // Get the SafeKit deployer
-    const safeKitDeployer = await getSafeKitDeployer(
-      deployer,
-      safeAddress,
-      network,
-      ethers,
     );
+  }
 
-    // Parse the newOwners string into an array of strings
-    const newOwnersAsArray = newOwners.split(",");
+  // Make sure the threshold is 1
+  const threshold = await safeProxy.getThreshold();
+  if (threshold !== BigInt(1)) {
+    throw new Error(`Threshold should be 1. Current threshold: ${threshold}`);
+  }
 
-    // Generate the transactions to add the new owners, without updating the threshold
-    const addOwnersTxsData = [];
-    for (const newOwnerAddress of newOwnersAsArray) {
-      addOwnersTxsData.push(
-        (
-          await safeKitDeployer.createAddOwnerTx({
-            ownerAddress: newOwnerAddress,
-          })
-        ).data,
-      );
-    }
+  // Get the SafeKit deployer
+  const safeKitDeployer = await getSafeKitDeployer(
+    deployer,
+    safeAddress,
+    network,
+    ethers,
+  );
 
-    // Create, sign and execute the transaction batch to add the new owners in a single transaction,
-    // using the deployer (the Safe's current only owner)
-    const batch = await safeKitDeployer.createTransaction({
-      transactions: addOwnersTxsData,
-    });
-    await safeKitDeployer.signTransaction(batch);
-    await safeKitDeployer.executeTransaction(batch);
+  // Get the number of new owners to add
+  const numNewOwners = Number(getRequiredEnvVar("SAFE_NUM_NEW_OWNERS"));
+
+  // Generate the transactions to add the new owners, without updating the threshold
+  const addOwnersTxsData = [];
+  for (let i = 0; i < numNewOwners; i++) {
+    // Get the new owner address
+    const newOwnerAddress = getRequiredEnvVar(`SAFE_NEW_OWNER_ADDRESS_${i}`);
+
+    // Generate the transaction to add the new owner
+    addOwnersTxsData.push(
+      (
+        await safeKitDeployer.createAddOwnerTx({
+          ownerAddress: newOwnerAddress,
+        })
+      ).data,
+    );
+  }
+
+  // Create, sign and execute the transaction batch to add the new owners in a single transaction,
+  // using the deployer (the Safe's current only owner)
+  const batch = await safeKitDeployer.createTransaction({
+    transactions: addOwnersTxsData,
   });
+  await safeKitDeployer.signTransaction(batch);
+  await safeKitDeployer.executeTransaction(batch);
+});
 
 // Check that the owners of the Safe are set as expected
+// It should be the new added owners, with or without the deployer depending on when this task is called
 // Example usage:
-// npx hardhat task:checkSafeOwners \
-// --expectedOwners \
-// "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC,0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+// npx hardhat task:checkSafeOwners --includeDeployer true
 task("task:checkSafeOwners")
   .addParam(
-    "expectedOwners",
-    "Addresses of the expected owners of the Safe, comma-separated",
+    "includeDeployer",
+    "Whether to include the deployer in the owners",
+    false,
+    types.boolean,
   )
-  .setAction(async function ({ expectedOwners }, { ethers }) {
+  .setAction(async function (
+    { includeDeployer },
+    { getNamedAccounts, ethers },
+  ) {
     // Get the Safe proxy
     const { safeProxy } = await getSafeProxyAndAddress(ethers);
 
+    // Get the number of new owners
+    const numNewOwners = Number(getRequiredEnvVar("SAFE_NUM_NEW_OWNERS"));
+
     // Parse the expectedOwners string into an array of strings
-    const expectedOwnersAsArray = expectedOwners.split(",");
+    const expectedOwnersAsArray = [];
+    for (let i = 0; i < numNewOwners; i++) {
+      expectedOwnersAsArray.push(
+        getRequiredEnvVar(`SAFE_NEW_OWNER_ADDRESS_${i}`),
+      );
+    }
+
+    // Add the deployer to the expected owners if needed
+    if (includeDeployer) {
+      const { deployer } = await getNamedAccounts();
+      expectedOwnersAsArray.push(deployer);
+    }
 
     // Check that the owners are correctly set in the Safe
     const owners = await safeProxy.getOwners();
@@ -132,7 +147,7 @@ task("task:checkSafeOwners")
     // Check that the number of owners is correct
     if (owners.length !== expectedOwnersAsArray.length) {
       throw new Error(
-        `The number of owners in the Safe is incorrect. Expected: ${expectedOwners} 
+        `The number of owners in the Safe is incorrect. Expected: ${expectedOwnersAsArray.join(", ")} 
       (length ${expectedOwnersAsArray.length}), Got: ${owners.join(", ")} (length ${owners.length})`,
       );
     }
@@ -141,7 +156,7 @@ task("task:checkSafeOwners")
     for (const owner of owners) {
       if (!expectedOwnersAsArray.includes(owner)) {
         throw new Error(
-          `The owner ${owner} is not in the expected owners. Expected: ${expectedOwners}, Got: ${owners.join(", ")}`,
+          `The owner ${owner} is not in the expected owners. Expected: ${expectedOwnersAsArray.join(", ")}, Got: ${owners.join(", ")}`,
         );
       }
     }

@@ -50,14 +50,10 @@ describe("Ownership transfers", function () {
     // Add the new owners to the Safe:
     // - the deployer is kept as owner
     // - threshold is kept at 1
-    const newOwnersString = newOwners.join(",");
-    await hre.run("task:addOwnersToSafe", { newOwners: newOwnersString });
+    await hre.run("task:addOwnersToSafe");
 
     // Check that the owners are now the deployer and the new owners only
-    const expectedOwnersAsString = initialOwners.concat(newOwners).join(",");
-    await hre.run("task:checkSafeOwners", {
-      expectedOwners: expectedOwnersAsString,
-    });
+    await hre.run("task:checkSafeOwners", { includeDeployer: true });
 
     // Check that the threshold is still 1
     threshold = await safeProxy.getThreshold();
@@ -69,10 +65,7 @@ describe("Ownership transfers", function () {
     await hre.run("task:removeDeployerFromSafeOwnersAndUpdateThreshold");
 
     // Check that the owners are now the new owners only
-    const expectedOwnersAsString = newOwners.join(",");
-    await hre.run("task:checkSafeOwners", {
-      expectedOwners: expectedOwnersAsString,
-    });
+    await hre.run("task:checkSafeOwners", { includeDeployer: false });
 
     // Check that the threshold is updated to the new threshold (found in environment variables)
     const newThreshold = Number(getRequiredEnvVar("SAFE_NEW_THRESHOLD"));
