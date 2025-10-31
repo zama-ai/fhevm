@@ -11,10 +11,13 @@ interface IKMSGeneration {
     }
 
     error CrsNotGenerated(uint256 crsId);
+    error CrsgenNotRequested(uint256 crsId);
     error KeyNotGenerated(uint256 keyId);
+    error KeygenNotRequested(uint256 keyId);
     error KmsAlreadySignedForCrsgen(uint256 crsId, address kmsSigner);
     error KmsAlreadySignedForKeygen(uint256 keyId, address kmsSigner);
     error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
+    error PrepKeygenNotRequested(uint256 prepKeygenId);
 
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
@@ -611,7 +614,29 @@ interface IKMSGeneration {
   },
   {
     "type": "error",
+    "name": "CrsgenNotRequested",
+    "inputs": [
+      {
+        "name": "crsId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "KeyNotGenerated",
+    "inputs": [
+      {
+        "name": "keyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "KeygenNotRequested",
     "inputs": [
       {
         "name": "keyId",
@@ -665,6 +690,17 @@ interface IKMSGeneration {
         "name": "kmsSigner",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PrepKeygenNotRequested",
+    "inputs": [
+      {
+        "name": "prepKeygenId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   }
@@ -1204,6 +1240,81 @@ pub mod IKMSGeneration {
         }
     };
     #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CrsgenNotRequested(uint256)` and selector `0x8d8c940a`.
+    ```solidity
+    error CrsgenNotRequested(uint256 crsId);
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CrsgenNotRequested {
+        #[allow(missing_docs)]
+        pub crsId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U256,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CrsgenNotRequested> for UnderlyingRustTuple<'_> {
+            fn from(value: CrsgenNotRequested) -> Self {
+                (value.crsId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CrsgenNotRequested {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { crsId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CrsgenNotRequested {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CrsgenNotRequested(uint256)";
+            const SELECTOR: [u8; 4] = [141u8, 140u8, 148u8, 10u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.crsId,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KeyNotGenerated(uint256)` and selector `0x84de1331`.
     ```solidity
     error KeyNotGenerated(uint256 keyId);
@@ -1255,6 +1366,81 @@ pub mod IKMSGeneration {
             type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "KeyNotGenerated(uint256)";
             const SELECTOR: [u8; 4] = [132u8, 222u8, 19u8, 49u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.keyId,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `KeygenNotRequested(uint256)` and selector `0xadfab904`.
+    ```solidity
+    error KeygenNotRequested(uint256 keyId);
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct KeygenNotRequested {
+        #[allow(missing_docs)]
+        pub keyId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U256,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<KeygenNotRequested> for UnderlyingRustTuple<'_> {
+            fn from(value: KeygenNotRequested) -> Self {
+                (value.keyId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for KeygenNotRequested {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { keyId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for KeygenNotRequested {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "KeygenNotRequested(uint256)";
+            const SELECTOR: [u8; 4] = [173u8, 250u8, 185u8, 4u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -1533,6 +1719,83 @@ pub mod IKMSGeneration {
                     ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.kmsSigner,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `PrepKeygenNotRequested(uint256)` and selector `0x0ab7f687`.
+    ```solidity
+    error PrepKeygenNotRequested(uint256 prepKeygenId);
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct PrepKeygenNotRequested {
+        #[allow(missing_docs)]
+        pub prepKeygenId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U256,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<PrepKeygenNotRequested> for UnderlyingRustTuple<'_> {
+            fn from(value: PrepKeygenNotRequested) -> Self {
+                (value.prepKeygenId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for PrepKeygenNotRequested {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    prepKeygenId: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for PrepKeygenNotRequested {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "PrepKeygenNotRequested(uint256)";
+            const SELECTOR: [u8; 4] = [10u8, 183u8, 246u8, 135u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.prepKeygenId,
                     ),
                 )
             }
@@ -5289,13 +5552,19 @@ pub mod IKMSGeneration {
         #[allow(missing_docs)]
         CrsNotGenerated(CrsNotGenerated),
         #[allow(missing_docs)]
+        CrsgenNotRequested(CrsgenNotRequested),
+        #[allow(missing_docs)]
         KeyNotGenerated(KeyNotGenerated),
+        #[allow(missing_docs)]
+        KeygenNotRequested(KeygenNotRequested),
         #[allow(missing_docs)]
         KmsAlreadySignedForCrsgen(KmsAlreadySignedForCrsgen),
         #[allow(missing_docs)]
         KmsAlreadySignedForKeygen(KmsAlreadySignedForKeygen),
         #[allow(missing_docs)]
         KmsAlreadySignedForPrepKeygen(KmsAlreadySignedForPrepKeygen),
+        #[allow(missing_docs)]
+        PrepKeygenNotRequested(PrepKeygenNotRequested),
     }
     #[automatically_derived]
     impl IKMSGenerationErrors {
@@ -5306,9 +5575,12 @@ pub mod IKMSGeneration {
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [10u8, 183u8, 246u8, 135u8],
             [51u8, 202u8, 31u8, 227u8],
             [132u8, 222u8, 19u8, 49u8],
+            [141u8, 140u8, 148u8, 10u8],
             [152u8, 251u8, 149u8, 125u8],
+            [173u8, 250u8, 185u8, 4u8],
             [218u8, 50u8, 208u8, 15u8],
             [252u8, 245u8, 166u8, 233u8],
         ];
@@ -5317,15 +5589,21 @@ pub mod IKMSGeneration {
     impl alloy_sol_types::SolInterface for IKMSGenerationErrors {
         const NAME: &'static str = "IKMSGenerationErrors";
         const MIN_DATA_LENGTH: usize = 32usize;
-        const COUNT: usize = 5usize;
+        const COUNT: usize = 8usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::CrsNotGenerated(_) => {
                     <CrsNotGenerated as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::CrsgenNotRequested(_) => {
+                    <CrsgenNotRequested as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::KeyNotGenerated(_) => {
                     <KeyNotGenerated as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::KeygenNotRequested(_) => {
+                    <KeygenNotRequested as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::KmsAlreadySignedForCrsgen(_) => {
                     <KmsAlreadySignedForCrsgen as alloy_sol_types::SolError>::SELECTOR
@@ -5335,6 +5613,9 @@ pub mod IKMSGeneration {
                 }
                 Self::KmsAlreadySignedForPrepKeygen(_) => {
                     <KmsAlreadySignedForPrepKeygen as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::PrepKeygenNotRequested(_) => {
+                    <PrepKeygenNotRequested as alloy_sol_types::SolError>::SELECTOR
                 }
             }
         }
@@ -5350,6 +5631,15 @@ pub mod IKMSGeneration {
         #[allow(non_snake_case)]
         fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<IKMSGenerationErrors>] = &[
+                {
+                    fn PrepKeygenNotRequested(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <PrepKeygenNotRequested as alloy_sol_types::SolError>::abi_decode_raw(data)
+                            .map(IKMSGenerationErrors::PrepKeygenNotRequested)
+                    }
+                    PrepKeygenNotRequested
+                },
                 {
                     fn KmsAlreadySignedForPrepKeygen(
                         data: &[u8],
@@ -5371,6 +5661,15 @@ pub mod IKMSGeneration {
                     KeyNotGenerated
                 },
                 {
+                    fn CrsgenNotRequested(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <CrsgenNotRequested as alloy_sol_types::SolError>::abi_decode_raw(data)
+                            .map(IKMSGenerationErrors::CrsgenNotRequested)
+                    }
+                    CrsgenNotRequested
+                },
+                {
                     fn KmsAlreadySignedForKeygen(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
@@ -5380,6 +5679,15 @@ pub mod IKMSGeneration {
                         .map(IKMSGenerationErrors::KmsAlreadySignedForKeygen)
                     }
                     KmsAlreadySignedForKeygen
+                },
+                {
+                    fn KeygenNotRequested(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <KeygenNotRequested as alloy_sol_types::SolError>::abi_decode_raw(data)
+                            .map(IKMSGenerationErrors::KeygenNotRequested)
+                    }
+                    KeygenNotRequested
                 },
                 {
                     fn CrsNotGenerated(
@@ -5421,6 +5729,17 @@ pub mod IKMSGeneration {
             )
                 -> alloy_sol_types::Result<IKMSGenerationErrors>] = &[
                 {
+                    fn PrepKeygenNotRequested(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <PrepKeygenNotRequested as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IKMSGenerationErrors::PrepKeygenNotRequested)
+                    }
+                    PrepKeygenNotRequested
+                },
+                {
                     fn KmsAlreadySignedForPrepKeygen(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
@@ -5443,6 +5762,17 @@ pub mod IKMSGeneration {
                     KeyNotGenerated
                 },
                 {
+                    fn CrsgenNotRequested(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <CrsgenNotRequested as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                            data,
+                        )
+                        .map(IKMSGenerationErrors::CrsgenNotRequested)
+                    }
+                    CrsgenNotRequested
+                },
+                {
                     fn KmsAlreadySignedForKeygen(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
@@ -5452,6 +5782,17 @@ pub mod IKMSGeneration {
                             .map(IKMSGenerationErrors::KmsAlreadySignedForKeygen)
                     }
                     KmsAlreadySignedForKeygen
+                },
+                {
+                    fn KeygenNotRequested(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationErrors> {
+                        <KeygenNotRequested as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                            data,
+                        )
+                        .map(IKMSGenerationErrors::KeygenNotRequested)
+                    }
+                    KeygenNotRequested
                 },
                 {
                     fn CrsNotGenerated(
@@ -5490,8 +5831,14 @@ pub mod IKMSGeneration {
                 Self::CrsNotGenerated(inner) => {
                     <CrsNotGenerated as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
+                Self::CrsgenNotRequested(inner) => {
+                    <CrsgenNotRequested as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                }
                 Self::KeyNotGenerated(inner) => {
                     <KeyNotGenerated as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                }
+                Self::KeygenNotRequested(inner) => {
+                    <KeygenNotRequested as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::KmsAlreadySignedForCrsgen(inner) => {
                     <KmsAlreadySignedForCrsgen as alloy_sol_types::SolError>::abi_encoded_size(
@@ -5508,6 +5855,9 @@ pub mod IKMSGeneration {
                         inner,
                     )
                 }
+                Self::PrepKeygenNotRequested(inner) => {
+                    <PrepKeygenNotRequested as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                }
             }
         }
         #[inline]
@@ -5516,8 +5866,14 @@ pub mod IKMSGeneration {
                 Self::CrsNotGenerated(inner) => {
                     <CrsNotGenerated as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
+                Self::CrsgenNotRequested(inner) => {
+                    <CrsgenNotRequested as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                }
                 Self::KeyNotGenerated(inner) => {
                     <KeyNotGenerated as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                }
+                Self::KeygenNotRequested(inner) => {
+                    <KeygenNotRequested as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::KmsAlreadySignedForCrsgen(inner) => {
                     <KmsAlreadySignedForCrsgen as alloy_sol_types::SolError>::abi_encode_raw(
@@ -5531,6 +5887,11 @@ pub mod IKMSGeneration {
                 }
                 Self::KmsAlreadySignedForPrepKeygen(inner) => {
                     <KmsAlreadySignedForPrepKeygen as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner, out,
+                    )
+                }
+                Self::PrepKeygenNotRequested(inner) => {
+                    <PrepKeygenNotRequested as alloy_sol_types::SolError>::abi_encode_raw(
                         inner, out,
                     )
                 }

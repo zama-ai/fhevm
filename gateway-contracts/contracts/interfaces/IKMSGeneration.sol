@@ -116,6 +116,12 @@ interface IKMSGeneration {
     event KeyReshareSameSet(uint256 prepKeygenId, uint256 keyId, uint256 keyReshareId, ParamsType paramsType);
 
     /**
+     * @notice Error indicating that the preprocessing keygen request is not requested yet.
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     */
+    error PrepKeygenNotRequested(uint256 prepKeygenId);
+
+    /**
      * @notice Error thrown when a KMS node has already signed for a preprocessing keygen response.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param kmsSigner The signer address of the KMS node.
@@ -123,11 +129,23 @@ interface IKMSGeneration {
     error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
 
     /**
+     * @notice Error indicating that the keygen request is not requested yet.
+     * @param keyId The ID of the key.
+     */
+    error KeygenNotRequested(uint256 keyId);
+
+    /**
      * @notice Error thrown when a KMS node has already signed for a keygen response.
      * @param keyId The ID of the key.
      * @param kmsSigner The signer address of the KMS node.
      */
     error KmsAlreadySignedForKeygen(uint256 keyId, address kmsSigner);
+
+    /**
+     * @notice Error indicating that the CRS generation request is not requested yet.
+     * @param crsId The ID of the CRS.
+     */
+    error CrsgenNotRequested(uint256 crsId);
 
     /**
      * @notice Error thrown when a KMS node has already signed for a CRS generation response.

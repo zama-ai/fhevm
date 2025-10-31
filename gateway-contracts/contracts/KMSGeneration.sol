@@ -107,14 +107,14 @@ contract KMSGeneration is
      */
     string private constant CONTRACT_NAME = "KMSGeneration";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
      * @dev Constant used for making sure the version number using in the `reinitializer` modifier
      * is identical between `initializeFromEmptyProxy` and the reinitializeVX` method
      */
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     // ----------------------------------------------------------------------------------------------
     // Contract storage:
@@ -203,11 +203,11 @@ contract KMSGeneration is
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         $.keyReshareCounter = KEY_RESHARE_COUNTER_BASE;
@@ -257,6 +257,11 @@ contract KMSGeneration is
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external virtual onlyKmsTxSender {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
+        // Make sure the prepKeygenId corresponds to a generated preprocessing keygen request.
+        if (prepKeygenId > $.prepKeygenCounter || prepKeygenId == 0) {
+            revert PrepKeygenNotRequested(prepKeygenId);
+        }
+
         // Compute the digest of the PrepKeygenVerification struct.
         bytes32 digest = _hashPrepKeygenVerification(prepKeygenId);
 
@@ -303,6 +308,11 @@ contract KMSGeneration is
         bytes calldata signature
     ) external virtual onlyKmsTxSender {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // Make sure the keyId corresponds to a generated keygen request.
+        if (keyId > $.keyCounter || keyId == 0) {
+            revert KeygenNotRequested(keyId);
+        }
 
         // Get the prepKeygenId associated to the keyId
         uint256 prepKeygenId = $.keygenIdPairs[keyId];
@@ -390,6 +400,11 @@ contract KMSGeneration is
         bytes calldata signature
     ) external virtual onlyKmsTxSender {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // Make sure the crsId corresponds to a generated CRS generation request.
+        if (crsId > $.crsCounter || crsId == 0) {
+            revert CrsgenNotRequested(crsId);
+        }
 
         uint256 maxBitLength = $.crsMaxBitLength[crsId];
 
