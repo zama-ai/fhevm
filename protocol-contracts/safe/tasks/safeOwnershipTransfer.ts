@@ -1,156 +1,192 @@
 import Safe from "@safe-global/protocol-kit";
-import MultiSendJson from "@safe-global/safe-contracts/build/artifacts/contracts/libraries/MultiSend.sol/MultiSend.json";
 import { task } from "hardhat/config";
+import { Network, HardhatEthersHelpers } from "hardhat/types";
 
 import { getRequiredEnvVar } from "./utils/loadVariables";
 
-// Deploy the SafeSmartAccount contract
-task("task:transferSafeOwnershipFromDeployer")
+async function getSafeProxyAndAddress(ethers: HardhatEthersHelpers) {
+  const safeAddress = getRequiredEnvVar("SAFE_ADDRESS");
+  const safeProxy = await ethers.getContractAt("SafeL2", safeAddress);
+  return { safeProxy, safeAddress };
+}
+
+async function getSafeKitDeployer(
+  deployer: string,
+  safeAddress: string,
+  network: Network,
+  ethers: HardhatEthersHelpers,
+) {
+  // Define the contract networks
+  const chain = await ethers.provider.getNetwork();
+  const chainIdKey = chain.chainId.toString();
+
+  // Get the MultiSend contract address
+  const multiSendAddress = getRequiredEnvVar("MULTISEND_ADDRESS");
+
+  const contractNetworks = {
+    [chainIdKey]: {
+      multiSendAddress,
+      multiSendCallOnlyAddress: multiSendAddress,
+    },
+  };
+
+  // Initialize a SafeKit instance with the deployer
+  const safeKitDeployer = await Safe.init({
+    provider: network.provider,
+    signer: deployer,
+    safeAddress,
+    contractNetworks,
+  });
+
+  return safeKitDeployer;
+}
+
+// Add owners to the Safe
+// Also keeps the deployer as owner and threshold at 1
+task("task:addOwnersToSafe")
   .addParam(
     "newOwners",
     "Addresses of the new owners of the Safe, comma-separated",
   )
-  .addParam("newThreshold", "Threshold of the Safe")
   .setAction(async function (
-    { newOwners, newThreshold },
+    { newOwners },
     { getNamedAccounts, ethers, network },
   ) {
     // Get the deployer
     const { deployer } = await getNamedAccounts();
 
-    // Get the Safe contract
-    const safeAddress = getRequiredEnvVar("SAFE_ADDRESS");
-    const safeProxy = await ethers.getContractAt("SafeL2", safeAddress);
+    // Get the Safe proxy and address
+    const { safeProxy, safeAddress } = await getSafeProxyAndAddress(ethers);
 
-    // Make sure the deployer is the only owner of the SafeL2Proxy contract
-    // This also means that the threshold is 1
+    // Make sure the deployer is an owner of the SafeL2Proxy contract
     const safeOwners = await safeProxy.getOwners();
-    if (safeOwners.length !== 1 || safeOwners[0] !== deployer) {
+    if (!safeOwners.includes(deployer)) {
       throw new Error(
-        `This task can only be used if the deployer is the only owner of the SafeL2Proxy contract. 
+        `Deployer should be an owner of the SafeL2Proxy contract. 
         Current owners: ${safeOwners.join(", ")}, expected: ${deployer}`,
       );
     }
 
+    // Make sure the threshold is 1
+    const threshold = await safeProxy.getThreshold();
+    if (threshold !== BigInt(1)) {
+      throw new Error(`Threshold should be 1. Current threshold: ${threshold}`);
+    }
+
+    // Get the SafeKit deployer
+    const safeKitDeployer = await getSafeKitDeployer(
+      deployer,
+      safeAddress,
+      network,
+      ethers,
+    );
+
     // Parse the newOwners string into an array of strings
     const newOwnersAsArray = newOwners.split(",");
-    const newThresholdAsBigInt = BigInt(newThreshold);
 
-    // WARNING: IN the following, it is not possible to use the functions from the Safe kit
-    // (`createAddOwnerTx`, `createRemoveOwnerTx`, ...) like found in the tests !
-    // This is because this kit has some unavoidable checks that is not very compatible with batching
-    // transactions as it seems to be mainly designed for single successive transactions.
-    // For example:
-    // - current threshold is 1
-    // - calling `createAddOwnerTx` works fine (if threshold is kept at 1)
-    // - calling `createRemoveOwnerTx` will fail: the kit's `encodeRemoveOwnerData` function only
-    // sees that the current threshold is 1, and automatically tries to lower it by 1, which is
-    // not allowed since the threshold cannot be 0 (ensured by the kit's `validateThreshold`).
-    // This happens purely because the kit is not aware that the transactions are going to be batched
-    // and that the number of owners will actually be much higher.
-    // Note that for a similar reason, it is not possible to initially call `createAddOwnerTx` with
-    // a higher threshold than 2: the kit is only aware of the current owner and the new one when
-    // creating any of the transaction, but setting a threshold higher than the total number of owners
-    // is not allowed.
-    // This is why we need to generate the transactions manually below.
-
-    // 1. Generate the transactions to add the new owners and keep the threshold at 1
-    // Here, we use a direct call operation to call the Safe contract
-    const txsData = [];
+    // Generate the transactions to add the new owners, without updating the threshold
+    const addOwnersTxsData = [];
     for (const newOwnerAddress of newOwnersAsArray) {
-      const addOwnerData = safeProxy.interface.encodeFunctionData(
-        "addOwnerWithThreshold",
-        [newOwnerAddress, 1],
+      addOwnersTxsData.push(
+        (
+          await safeKitDeployer.createAddOwnerTx({
+            ownerAddress: newOwnerAddress,
+          })
+        ).data,
       );
-
-      txsData.push({
-        to: safeAddress,
-        value: "0",
-        data: addOwnerData,
-        operation: 0,
-      });
     }
 
-    // 2. Remove the deployer
-    // The Safe contract ues linked list to handle owners. This means it requires to know the
-    // previous owner to remove an owner.
-    // In this case, only some owners have been added, which means the previous owner of the deployer
-    // (the initial owner) is the first owner that has been added from the above list
-    const prevOwner = newOwnersAsArray[0];
-
-    // Generate the transaction to remove the deployer from the owners and update the threshold at the same time
-    // Here, we use a direct call operation to call the Safe contract
-    const removeOwnerData = safeProxy.interface.encodeFunctionData(
-      "removeOwner",
-      [prevOwner, deployer, newThresholdAsBigInt],
-    );
-
-    txsData.push({
-      to: safeAddress,
-      value: "0",
-      data: removeOwnerData,
-      operation: 0,
-    });
-
-    // Get the MultiSend contract address
-    const multiSendAddress = getRequiredEnvVar("MULTISEND_ADDRESS");
-    const multiSend = await ethers.getContractAt(
-      MultiSendJson.abi,
-      multiSendAddress,
-    );
-
-    // 3. Generate the encoded transactions to be used in the MultiSend contract
-    let encodedTransactions = "";
-    for (const tx of txsData) {
-      const dataLength = ethers.dataLength(tx.data);
-      const encodedTx = ethers.solidityPacked(
-        ["uint8", "address", "uint256", "uint256", "bytes"],
-        [tx.operation, tx.to, tx.value, dataLength, tx.data],
-      );
-      // Encode each tx: operation (1 byte) + to (20 bytes) + value (32 bytes) + dataLength (32 bytes) + Data
-      // Strip the `0x` prefix from the encoded transaction
-      encodedTransactions = encodedTransactions + encodedTx.slice(2);
-    }
-
-    // Add the `0x` prefix to the encoded transactions
-    encodedTransactions = "0x" + encodedTransactions;
-
-    // Generate the meta transaction data for the `multiSend` function of the MultiSend contract
-    // call using a DelegateCall operation
-    const multiSendData = multiSend.interface.encodeFunctionData("multiSend", [
-      encodedTransactions,
-    ]);
-    const multiSendTx = {
-      to: multiSendAddress,
-      value: "0",
-      data: multiSendData,
-      operation: 1,
-    };
-
-    // Define the contract networks
-    const chain = await ethers.provider.getNetwork();
-    const chainIdKey = chain.chainId.toString();
-
-    const contractNetworks = {
-      [chainIdKey]: {
-        multiSendAddress,
-        multiSendCallOnlyAddress: multiSendAddress,
-      },
-    };
-
-    // Initialize a SafeKit instance with the deployer
-    const safeKitDeployer = await Safe.init({
-      provider: network.provider,
-      signer: deployer,
-      safeAddress,
-      contractNetworks,
-    });
-
-    // Create, sign and execute the transaction batch to do all of the above in a single transaction,
+    // Create, sign and execute the transaction batch to add the new owners in a single transaction,
     // using the deployer (the Safe's current only owner)
     const batch = await safeKitDeployer.createTransaction({
-      transactions: [multiSendTx],
+      transactions: addOwnersTxsData,
     });
     await safeKitDeployer.signTransaction(batch);
     await safeKitDeployer.executeTransaction(batch);
   });
+
+// Check that the owners of the Safe are set as expected
+task("task:checkSafeOwners")
+  .addParam(
+    "expectedOwners",
+    "Addresses of the expected owners of the Safe, comma-separated",
+  )
+  .setAction(async function ({ expectedOwners }, { ethers }) {
+    // Get the Safe proxy
+    const { safeProxy } = await getSafeProxyAndAddress(ethers);
+
+    // Parse the expectedOwners string into an array of strings
+    const expectedOwnersAsArray = expectedOwners.split(",");
+
+    // Check that the owners are correctly set in the Safe
+    const owners = await safeProxy.getOwners();
+
+    // Check that the number of owners is correct
+    if (owners.length !== expectedOwnersAsArray.length) {
+      throw new Error(
+        `The number of owners in the Safe is incorrect. Expected: ${expectedOwners} 
+      (length ${expectedOwnersAsArray.length}), Got: ${owners.join(", ")} (length ${owners.length})`,
+      );
+    }
+
+    // Check that all owners are present in the expected owners
+    for (const owner of owners) {
+      if (!expectedOwnersAsArray.includes(owner)) {
+        throw new Error(
+          `The owner ${owner} is not in the expected owners. Expected: ${expectedOwners}, Got: ${owners.join(", ")}`,
+        );
+      }
+    }
+  });
+
+// Remove deployer from the Safe and update the threshold
+task("task:removeDeployerFromSafeOwnersAndUpdateThreshold").setAction(
+  async function (_, { getNamedAccounts, ethers, network }) {
+    // Get the deployer
+    const { deployer } = await getNamedAccounts();
+
+    // Get the Safe proxy and address
+    const { safeProxy, safeAddress } = await getSafeProxyAndAddress(ethers);
+
+    // Make sure the deployer is an owner of the SafeL2Proxy contract
+    const safeOwners = await safeProxy.getOwners();
+    if (!safeOwners.includes(deployer)) {
+      throw new Error(
+        `Deployer should be an owner of the SafeL2Proxy contract. 
+        Current owners: ${safeOwners.join(", ")}, expected: ${deployer}`,
+      );
+    }
+
+    // Make sure the threshold is 1
+    const threshold = await safeProxy.getThreshold();
+    if (threshold !== BigInt(1)) {
+      throw new Error(`Threshold should be 1. Current threshold: ${threshold}`);
+    }
+
+    // Get the SafeKit deployer
+    const safeKitDeployer = await getSafeKitDeployer(
+      deployer,
+      safeAddress,
+      network,
+      ethers,
+    );
+
+    // Define the new threshold: it should be ``floor(2n/3) + 1``, where `n` is the number of the
+    // final owners (i.e., without the deployer)
+    const currentOwners = await safeProxy.getOwners();
+    const newThreshold = Math.floor((2 * (currentOwners.length - 1)) / 3) + 1;
+
+    // Generate the transaction to remove the deployer from the owners and update the threshold
+    const removeOwnerTx = await safeKitDeployer.createRemoveOwnerTx({
+      ownerAddress: deployer,
+      threshold: newThreshold,
+    });
+
+    // Create, sign and execute the transaction using the deployer (the Safe's current only owner)
+    const batch = await safeKitDeployer.createTransaction({
+      transactions: [removeOwnerTx.data],
+    });
+    await safeKitDeployer.signTransaction(batch);
+    await safeKitDeployer.executeTransaction(batch);
+  },
+);

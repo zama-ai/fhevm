@@ -3,7 +3,6 @@ import hre from "hardhat";
 
 import { getRequiredEnvVar } from "../../tasks/utils/loadVariables";
 import { makeDeployerOnlyOwner } from "../../test/utils/safeOwners";
-import { createRandomAddresses } from "../../test/utils/utils";
 import { SafeL2 } from "../../typechain-types";
 
 describe("Ownership transfers", function () {
@@ -15,23 +14,23 @@ describe("Ownership transfers", function () {
 
   // Define variables
   let deployer: string;
-  let alice: string;
-  let bob: string;
   let safeProxy: SafeL2;
   let safeAddress: string;
   let owners: string[];
   let threshold: bigint;
   let initialOwners: string[];
+  let newOwners: string[];
 
   before(async () => {
     // Get the named accounts addresses
     const namedAccounts = await hre.getNamedAccounts();
     deployer = namedAccounts.deployer;
-    alice = namedAccounts.alice;
-    bob = namedAccounts.bob;
 
     // The initial owners should only include the deployer
     initialOwners = [deployer];
+
+    // Define the new owners as all the accounts except the deployer
+    newOwners = Object.values(namedAccounts).slice(1);
 
     // Get the deployed contract:
     // - SafeL2Proxy is the name of the proxy contract
@@ -41,48 +40,56 @@ describe("Ownership transfers", function () {
     safeProxy = await hre.ethers.getContractAt("SafeL2", safeAddress);
   });
 
-  it("Transfer ownership of Safe from deployer to new list in a single transaction", async function () {
+  it("Should add new owners to the Safe", async function () {
     // Check that the initial owners and threshold are correct
     owners = await safeProxy.getOwners();
     threshold = await safeProxy.getThreshold();
     expect(new Set(owners)).to.deep.equal(new Set(initialOwners));
     expect(threshold).to.equal(initialThreshold);
 
-    // Define the new owners (by including Alice and Bob) and the new threshold
-    const randomOwners = createRandomAddresses(8);
-    const newOwners = [alice, bob, ...randomOwners];
-    const newThreshold = 2;
-
-    // Run the task to:
-    // - transfer the ownership of the Safe from the deployer to the new list
-    // - remove the deployer from the owners
-    // - update th threshold
-    // All of the above in a single transaction
+    // Add the new owners to the Safe:
+    // - the deployer is kept as owner
+    // - threshold is kept at 1
     const newOwnersString = newOwners.join(",");
-    const newThresholdString = newThreshold.toString();
-    await hre.run("task:transferSafeOwnershipFromDeployer", {
-      newOwners: newOwnersString,
-      newThreshold: newThresholdString,
+    await hre.run("task:addOwnersToSafe", { newOwners: newOwnersString });
+
+    // Check that the owners are now the deployer and the new owners only
+    const expectedOwnersAsString = initialOwners.concat(newOwners).join(",");
+    await hre.run("task:checkSafeOwners", {
+      expectedOwners: expectedOwnersAsString,
     });
 
-    // Check that the owners are now the new owners only
-    owners = await safeProxy.getOwners();
-    expect(new Set(owners)).to.deep.equal(new Set(newOwners));
+    // Check that the threshold is still 1
+    threshold = await safeProxy.getThreshold();
+    expect(threshold).to.equal(initialThreshold);
+  });
 
-    // Check that the threshold has been updated
+  it("Should remove the deployer from the owners and update the threshold", async function () {
+    // Remove the deployer from the owners and update the threshold
+    await hre.run("task:removeDeployerFromSafeOwnersAndUpdateThreshold");
+
+    // Check that the owners are now the new owners only
+    const expectedOwnersAsString = newOwners.join(",");
+    await hre.run("task:checkSafeOwners", {
+      expectedOwners: expectedOwnersAsString,
+    });
+
+    // Check that the threshold is updated to the new threshold: ``floor(2n/3) + 1``, where `n` is the number of the
+    // new owners
+    const newThreshold = Math.floor((2 * newOwners.length) / 3) + 1;
     threshold = await safeProxy.getThreshold();
     expect(threshold).to.equal(newThreshold);
+  });
 
-    // Put back the deployer as the only owner and update the threshold to 1 (to not break tests)
+  // This task is here to avoid breaking following tests
+  it("Should put back the deployer as the only owner and update the threshold to 1", async function () {
     // WARNING: `orderedOwnersToRemove` (here `newOwners`) needs to be in the same order as the
     // owners were added in. See comments in `makeDeployerOnlyOwner` for more details.
     await makeDeployerOnlyOwner(
       deployer,
-      alice,
-      bob,
+      newOwners,
       safeProxy,
       multiSendAddress,
-      newOwners,
     );
   });
 });

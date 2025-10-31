@@ -4,26 +4,21 @@ import { ethers, network } from "hardhat";
 
 import { SafeL2 } from "../../typechain-types";
 
+// This function puts back the deployer as the only owner and updates the threshold to 1:
+// - the deployer is added back as the only owner
+// - the threshold is updated to 1
+// - the other owners are removed
+// Important: `orderedOwnersToRemove` needs to:
+// - be in the same order as the owners were added in
+// - not contain the deployer
 export async function makeDeployerOnlyOwner(
   deployer: string,
-  alice: string,
-  bob: string,
+  orderedOwnersToRemove: string[],
   safeProxy: SafeL2,
   multiSendAddress: string,
-  orderedOwnersToRemove: string[],
 ) {
-  const currentThreshold = await safeProxy.getThreshold();
-
-  if (currentThreshold !== BigInt(2)) {
-    throw new Error(`Current threshold should be 2. Got ${currentThreshold}`);
-  }
-
-  if (!(await safeProxy.isOwner(alice))) {
-    throw new Error(`Alice should be an owner.`);
-  }
-
-  if (!(await safeProxy.isOwner(bob))) {
-    throw new Error(`Bob should be an owner.`);
+  if (orderedOwnersToRemove.length === 0) {
+    throw new Error(`"orderedOwnersToRemove" should not be empty.`);
   }
 
   for (const owner of orderedOwnersToRemove) {
@@ -31,6 +26,9 @@ export async function makeDeployerOnlyOwner(
       throw new Error(
         `${owner} in "orderedOwnersToRemove" should be an owner.`,
       );
+    }
+    if (owner === deployer) {
+      throw new Error(`Deployer should not be in "orderedOwnersToRemove".`);
     }
   }
 
@@ -53,26 +51,28 @@ export async function makeDeployerOnlyOwner(
   const safeAddress = await safeProxy.getAddress();
 
   // Define a SafeKit instances for  alice and bob
-  const safeKitAlice = await Safe.init({
-    provider: network.provider,
-    signer: alice,
-    safeAddress,
-    contractNetworks,
-  });
-  const safeKitBob = await Safe.init({
-    provider: network.provider,
-    signer: bob,
-    safeAddress,
-    contractNetworks,
-  });
+  const safeKitOwners = [];
+  for (const owner of orderedOwnersToRemove) {
+    safeKitOwners.push(
+      await Safe.init({
+        provider: network.provider,
+        signer: owner,
+        safeAddress,
+        contractNetworks,
+      }),
+    );
+  }
+
+  // Get the first SafeKit instance to use for creating and executing the transactions
+  const firstSafeKitOwner = safeKitOwners[0];
 
   // This function puts back the deployer as the only owner and updates the threshold to 1
   const newThreshold = 1;
   const newOwners = [deployer];
 
   // Add the deployer back
-  const addDeployerTx = await safeKitAlice.createAddOwnerTx({
-    ownerAddress: deployer,
+  const addDeployerTx = await firstSafeKitOwner.createAddOwnerTx({
+    ownerAddress: newOwners[0],
     threshold: newThreshold,
   });
 
@@ -80,14 +80,17 @@ export async function makeDeployerOnlyOwner(
   // It is not important who creates and executes the transaction, but since the threshold is 2, at least 2
   // signatures from owners are need to be present in the transaction.
   // It is possible to do so by making them signing the resulting transaction successively as below.
-  const tx = await safeKitAlice.createTransaction({
+  let tx = await firstSafeKitOwner.createTransaction({
     transactions: [addDeployerTx.data],
   });
-  const txWith1Signature = await safeKitAlice.signTransaction(tx);
-  const txWith2Signatures = await safeKitBob.signTransaction(txWith1Signature);
 
-  // Execute the transaction with the 2 signatures
-  await safeKitBob.executeTransaction(txWith2Signatures);
+  // Sign the transaction with all the owners to make sure the threshold is met
+  for (const safeKitOwner of safeKitOwners) {
+    tx = await safeKitOwner.signTransaction(tx);
+  }
+
+  // Execute the transaction with the signatures
+  await firstSafeKitOwner.executeTransaction(tx);
 
   // Initialize a SafeKit instance with the deployer: he is able to update the set of owners alone
   // since he is now an owner and the threshold is 1

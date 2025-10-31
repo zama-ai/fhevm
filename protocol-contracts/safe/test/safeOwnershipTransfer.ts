@@ -1,14 +1,11 @@
 import Safe from "@safe-global/protocol-kit";
-import MultiSendJson from "@safe-global/safe-contracts/build/artifacts/contracts/libraries/MultiSend.sol/MultiSend.json";
 import { expect } from "chai";
-import { ContractFactory, Signer } from "ethers";
 import { ethers, network } from "hardhat";
 import hre from "hardhat";
 
 import { getRequiredEnvVar } from "../tasks/utils/loadVariables";
 import { SafeL2 } from "../typechain-types";
 import { makeDeployerOnlyOwner } from "./utils/safeOwners";
-import { createRandomAddresses } from "./utils/utils";
 
 describe("Ownership transfer", function () {
   // Get the initial threshold
@@ -19,24 +16,24 @@ describe("Ownership transfer", function () {
 
   // Define variables
   let deployer: string;
-  let alice: string;
-  let bob: string;
   let safeSingleton: any;
   let safeProxy: SafeL2;
   let safeAddress: string;
   let owners: string[];
   let threshold: bigint;
   let initialOwners: string[];
+  let newOwners: string[];
 
   before(async () => {
     // Get the deployer
     const namedAccounts = await hre.getNamedAccounts();
     deployer = namedAccounts.deployer;
-    alice = namedAccounts.alice;
-    bob = namedAccounts.bob;
 
     // The initial owners is only the deployer
     initialOwners = [deployer];
+
+    // Define the new owners as all the accounts except the deployer
+    newOwners = Object.values(namedAccounts).slice(1);
 
     // Get the deployed contract:
     // - SafeL2Proxy is the name of the proxy contract
@@ -72,10 +69,6 @@ describe("Ownership transfer", function () {
       safeAddress,
       contractNetworks,
     });
-
-    // Define the new owners, and include Alice and Bob
-    const randomOwners = createRandomAddresses(8);
-    const newOwners = [alice, bob, ...randomOwners];
 
     // Generate the transactions to add the new owners, without updating the threshold
     const txsData = [];
@@ -126,17 +119,17 @@ describe("Ownership transfer", function () {
     // Check that the threshold has been updated
     threshold = await safeProxy.getThreshold();
     expect(threshold).to.equal(newThreshold);
+  });
 
-    // Put back the deployer as the only owner and update the threshold to 1 (to not break tests)
+  // This task is here to avoid breaking following tests
+  it("Should put back the deployer as the only owner and update the threshold to 1", async function () {
     // WARNING: `orderedOwnersToRemove` (here `newOwners`) needs to be in the same order as the
     // owners were added in. See comments in `makeDeployerOnlyOwner` for more details.
     await makeDeployerOnlyOwner(
       deployer,
-      alice,
-      bob,
+      newOwners,
       safeProxy,
       multiSendAddress,
-      newOwners,
     );
   });
 });

@@ -49,6 +49,9 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
   )
   .setAction(async ({ skipSetup }, hre, runSuper) => {
     if (!skipSetup) {
+      // Compile the contracts
+      await hre.run("compile");
+
       // Deploy the SafeL2 contract
       await hre.run("task:deploySafeL2");
 
@@ -105,6 +108,30 @@ const config: HardhatUserConfig = {
     },
     bob: {
       default: 2, // wallet address of index[2], of the mnemonic in .env
+    },
+    charlie: {
+      default: 3, // wallet address of index[3], of the mnemonic in .env
+    },
+    dave: {
+      default: 4, // wallet address of index[4], of the mnemonic in .env
+    },
+    eve: {
+      default: 5, // wallet address of index[5], of the mnemonic in .env
+    },
+    frank: {
+      default: 6, // wallet address of index[6], of the mnemonic in .env
+    },
+    grace: {
+      default: 7, // wallet address of index[7], of the mnemonic in .env
+    },
+    heidi: {
+      default: 8, // wallet address of index[8], of the mnemonic in .env
+    },
+    ivan: {
+      default: 9, // wallet address of index[9], of the mnemonic in .env
+    },
+    judy: {
+      default: 10, // wallet address of index[10], of the mnemonic in .env
     },
   },
   etherscan: {
