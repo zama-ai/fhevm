@@ -405,6 +405,15 @@ describe("KMSGeneration", function () {
           .to.be.revertedWithCustomError(kmsGeneration, "KeygenNotRequested")
           .withArgs(keyId);
       });
+
+      it("Should revert because the preprocessing keygen request is ongoing", async function () {
+        // Trigger a first keygen request: `keyId`
+        await kmsGeneration.connect(owner).keygen(paramsType);
+
+        await expect(kmsGeneration.connect(owner).keygen(paramsType))
+          .to.be.revertedWithCustomError(kmsGeneration, "KeygenOngoing")
+          .withArgs(keyId);
+      });
     });
 
     describe("After key generation", function () {
@@ -597,6 +606,15 @@ describe("KMSGeneration", function () {
         await expect(kmsGeneration.connect(kmsTxSenders[0]).crsgenResponse(fakeCrsId, crsDigest, "0x"))
           .to.be.revertedWithCustomError(kmsGeneration, "CrsgenNotRequested")
           .withArgs(fakeCrsId);
+      });
+
+      it("Should revert because the CRS generation request is ongoing", async function () {
+        // Trigger a first CRS generation request: `crsId`
+        await kmsGeneration.connect(owner).crsgenRequest(maxBitLength, ParamsTypeEnum.Test);
+
+        await expect(kmsGeneration.connect(owner).crsgenRequest(maxBitLength, ParamsTypeEnum.Test))
+          .to.be.revertedWithCustomError(kmsGeneration, "CrsgenOngoing")
+          .withArgs(crsId);
       });
     });
 

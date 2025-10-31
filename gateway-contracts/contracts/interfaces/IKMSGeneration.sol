@@ -122,6 +122,12 @@ interface IKMSGeneration {
     error PrepKeygenNotRequested(uint256 prepKeygenId);
 
     /**
+     * @notice Error thrown when a keygen request is ongoing.
+     * @param keyId The ID of the ongoing keygen request.
+     */
+    error KeygenOngoing(uint256 keyId);
+
+    /**
      * @notice Error thrown when a KMS node has already signed for a preprocessing keygen response.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param kmsSigner The signer address of the KMS node.
@@ -146,6 +152,12 @@ interface IKMSGeneration {
      * @param crsId The ID of the CRS.
      */
     error CrsgenNotRequested(uint256 crsId);
+
+    /**
+     * @notice Error thrown when a crsgen request is ongoing.
+     * @param crsId The ID of the ongoing crsgen request.
+     */
+    error CrsgenOngoing(uint256 crsId);
 
     /**
      * @notice Error thrown when a KMS node has already signed for a CRS generation response.
