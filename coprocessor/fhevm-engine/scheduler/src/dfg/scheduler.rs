@@ -125,15 +125,15 @@ impl<'a> Scheduler<'a> {
     ) -> Result<(tfhe::CudaServerKey, tfhe::CompactPublicKey)> {
         match target {
             DeviceSelection::Index(i) => {
-                if i > self.csks.len() {
+                if i < self.csks.len() {
+                    Ok((self.csks[i].clone(), self.cpk.clone()))
+                } else {
                     error!(target: "scheduler", {index = ?i },
 			   "Wrong device index");
                     // Instead of giving up, we'll use device 0 (which
                     // should always be safe to use) and keep making
                     // progress even if suboptimally
                     Ok((self.csks[0].clone(), self.cpk.clone()))
-                } else {
-                    Ok((self.csks[i].clone(), self.cpk.clone()))
                 }
             }
             DeviceSelection::RoundRobin => {
