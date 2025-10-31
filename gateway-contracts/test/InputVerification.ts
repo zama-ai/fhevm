@@ -5,7 +5,13 @@ import { Wallet } from "ethers";
 import hre from "hardhat";
 
 import { approveContractWithMaxAllowance } from "../tasks/mockedZamaFund";
-import { InputVerification, InputVerification__factory, ProtocolPayment, ZamaOFT } from "../typechain-types";
+import {
+  GatewayConfig,
+  InputVerification,
+  InputVerification__factory,
+  ProtocolPayment,
+  ZamaOFT,
+} from "../typechain-types";
 import {
   EIP712,
   createByteInput,
@@ -178,6 +184,8 @@ describe("InputVerification", function () {
 
   describe("Proof verification response", async function () {
     let inputVerification: InputVerification;
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
     let contractChainId: number;
@@ -188,6 +196,8 @@ describe("InputVerification", function () {
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
       inputVerification = fixture.inputVerification;
+      gatewayConfig = fixture.gatewayConfig;
+      owner = fixture.owner;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       contractChainId = fixture.chainIds[0];
@@ -538,10 +548,35 @@ describe("InputVerification", function () {
         .revertedWithCustomError(inputVerification, "CoprocessorSignerDoesNotMatchTxSender")
         .withArgs(firstCoprocessorSigner.address, secondCoprocessorTxSender.address);
     });
+
+    it("Should not reach verify consensus if it has already been rejected with low coprocessor threshold", async function () {
+      // Update the coprocessor threshold to 1 in order to try to reach a consensus twice with the
+      // current total of 3 coprocessors
+      await gatewayConfig.connect(owner).updateCoprocessorThreshold(1);
+
+      // Trigger a proof rejection response with the first coprocessor transaction sender
+      await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0);
+
+      // Check that the proof has been rejected
+      expect(await inputVerification.isProofRejected(zkProofId)).to.be.true;
+
+      // Check that the proof has not been verified
+      expect(await inputVerification.isProofVerified(zkProofId)).to.be.false;
+
+      // Trigger a proof verification response with the second coprocessor transaction sender
+      await inputVerification
+        .connect(coprocessorTxSenders[1])
+        .verifyProofResponse(zkProofId, ctHandles, signatures[1], extraDataV0);
+
+      // Check that the proof has not been verified
+      expect(await inputVerification.isProofVerified(zkProofId)).to.be.false;
+    });
   });
 
   describe("Proof rejection response", async function () {
     let inputVerification: InputVerification;
+    let gatewayConfig: GatewayConfig;
+    let owner: Wallet;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
     let contractChainId: number;
@@ -550,6 +585,8 @@ describe("InputVerification", function () {
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
       inputVerification = fixture.inputVerification;
+      gatewayConfig = fixture.gatewayConfig;
+      owner = fixture.owner;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       contractChainId = fixture.chainIds[0];
@@ -781,6 +818,43 @@ describe("InputVerification", function () {
 
     it("Should check that a proof has not been rejected", async function () {
       expect(await inputVerification.isProofRejected(fakeZkProofId)).to.be.false;
+    });
+
+    it("Should not reach verify consensus if it has already been rejected with low coprocessor threshold", async function () {
+      // Update the coprocessor threshold to 1 in order to try to reach a consensus twice with the
+      // current total of 3 coprocessors
+      await gatewayConfig.connect(owner).updateCoprocessorThreshold(1);
+
+      // Create the EIP712 message
+      const eip712Message = createEIP712ResponseZKPoK(
+        hre.network.config.chainId!,
+        inputVerificationAddress,
+        ctHandles,
+        userAddress,
+        contractAddress,
+        contractChainId,
+        extraDataV0,
+      );
+
+      // Get the EIP712 signatures
+      const [signature1] = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
+
+      // Trigger a proof verification response with the first coprocessor transaction sender
+      await inputVerification
+        .connect(coprocessorTxSenders[0])
+        .verifyProofResponse(zkProofId, ctHandles, signature1, extraDataV0);
+
+      // Check that the proof has been verified
+      expect(await inputVerification.isProofVerified(zkProofId)).to.be.true;
+
+      // Check that the proof has not been rejected
+      expect(await inputVerification.isProofRejected(zkProofId)).to.be.false;
+
+      // Trigger a proof rejection response with the second coprocessor transaction sender
+      await inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(zkProofId, extraDataV0);
+
+      // Check that the proof has not been rejected
+      expect(await inputVerification.isProofRejected(zkProofId)).to.be.false;
     });
   });
 
