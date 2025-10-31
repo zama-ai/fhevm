@@ -66,12 +66,7 @@ describe("Ownership transfers", function () {
 
   it("Should remove the deployer from the owners and update the threshold", async function () {
     // Remove the deployer from the owners and update the threshold
-    // In practice, the new threshold could be clos to `floor(2n/3) + 1`, where `n` is the number of the
-    // new owners, so this test reflects that.
-    const newThreshold = Math.floor((2 * newOwners.length) / 3) + 1;
-    await hre.run("task:removeDeployerFromSafeOwnersAndUpdateThreshold", {
-      newThreshold: newThreshold.toString(),
-    });
+    await hre.run("task:removeDeployerFromSafeOwnersAndUpdateThreshold");
 
     // Check that the owners are now the new owners only
     const expectedOwnersAsString = newOwners.join(",");
@@ -79,8 +74,8 @@ describe("Ownership transfers", function () {
       expectedOwners: expectedOwnersAsString,
     });
 
-    // Check that the threshold is updated to the new threshold: ``floor(2n/3) + 1``, where `n` is the number of the
-    // new owners
+    // Check that the threshold is updated to the new threshold (found in environment variables)
+    const newThreshold = Number(getRequiredEnvVar("SAFE_NEW_THRESHOLD"));
     threshold = await safeProxy.getThreshold();
     expect(threshold).to.equal(newThreshold);
   });
