@@ -8,7 +8,6 @@ The FHEVM Solidity library offers the following core features:
 
 - **Encrypted types**: Use encrypted integers like `euint8`, `euint16`, ..., `euint256` directly in Solidity contracts.
 - **Encrypted operations**: Perform operations on encrypted data using FHE-compatible functions like `add`, `sub`, `eq`, `lt`, `ternary`, etc.
-- **Decryption functions**: Use `requestDecryption` to trigger decryption asynchronously via an oracle. The plaintext result is returned to the smart contract through a callback, eliminating the need for client-side processing.
 - **Access control**: Restrict which accounts can decrypt or update values with programmable access logic.
 - **Symbolic execution**: All encrypted operations are executed symbolically on the chain, with actual computation performed off-chain by the [coprocessor](../coprocessor/).
 
