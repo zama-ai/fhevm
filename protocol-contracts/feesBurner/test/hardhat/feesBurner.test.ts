@@ -6,14 +6,13 @@ import { ethers } from "hardhat";
 import {
   EndpointV2Mock,
   FeesSenderToBurner,
-  FeesSenderToBurnerMock,
+  FeesSenderToBurner__factory,
   ProtocolFeesBurner,
   ZamaERC20Mock,
   ZamaOFTAdapterMock,
   ZamaOFTMock,
 } from "../../typechain-types";
 import { MessagingFeeStruct, SendParamStruct } from "../../typechain-types/contracts/mocks/ZamaOFTAdapterMock";
-import { FeesSenderToBurner__factory } from "../../typechain-types/factories/contracts/mocks/FeesSenderToBurnerMock.sol";
 
 describe("FeesBurner", () => {
   // Signers
@@ -22,8 +21,7 @@ describe("FeesBurner", () => {
   let endpointOwner: SignerWithAddress;
   // Contracts
   let protocolFeesBurner: ProtocolFeesBurner;
-  // Mock required to lift off the DESTINATION_EID condition.
-  let feesSenderToBurner: FeesSenderToBurnerMock;
+  let feesSenderToBurner: FeesSenderToBurner;
   // Mock because external artifacts cannot be used within hardhat tests.
   let zamaERC20: ZamaERC20Mock;
   let zamaOFTAdapter: ZamaOFTAdapterMock;
@@ -31,8 +29,10 @@ describe("FeesBurner", () => {
   let mockEndpointV2A: EndpointV2Mock;
   let mockEndpointV2B: EndpointV2Mock;
 
-  const eidA = 1;
-  const eidB = 2;
+  // Emulate the Ethereum Testnet chainId
+  const eidA = 30101;
+  // Emulate the Gateway Testnet chainId
+  const eidB = 261131;
   const MINTER_ROLE = ethers.id("MINTER_ROLE");
   const feesSenderToBurnerInterface = { interface: FeesSenderToBurner__factory.createInterface() };
 
@@ -59,10 +59,9 @@ describe("FeesBurner", () => {
     // Chain B contracts
     zamaOFT = await ethers.deployContract("ZamaOFTMock", ["ZAMAOFT", "ZAMA", mockEndpointV2BAddress, deployer.address]);
     const zamaOFTAddress = await zamaOFT.getAddress();
-    feesSenderToBurner = await ethers.deployContract("FeesSenderToBurnerMock", [
+    feesSenderToBurner = await ethers.deployContract("FeesSenderToBurner", [
       zamaOFTAddress,
       await protocolFeesBurner.getAddress(),
-      eidA,
     ]);
 
     // Grant MINTER_ROLE to deployer
@@ -175,21 +174,6 @@ describe("FeesBurner", () => {
       expect(await feesSenderToBurner.ZAMA_OFT()).to.eq(zamaOFTAddress);
       expect(await feesSenderToBurner.PROTOCOL_FEES_BURNER()).to.eq(protocolFeesBurnerAddress);
       expect(await feesSenderToBurner.DESTINATION_EID()).to.eq(eidA);
-
-      const sharedDecimals = await zamaOFT.sharedDecimals();
-      const decimals = await zamaOFT.decimals();
-      const expectedDecimalConversionRate = 10n ** (decimals - sharedDecimals);
-      expect(await feesSenderToBurner._DECIMAL_CONVERSION_RATE()).to.eq(expectedDecimalConversionRate);
-    });
-
-    it("should revert on unsupported chain id with non-mock version", async () => {
-      // Try deploying actual FeesSenderToBurner, which should revert with UnsupporterChainID
-      await expect(
-        ethers.deployContract("FeesSenderToBurner", [
-          await zamaOFT.getAddress(),
-          await protocolFeesBurner.getAddress(),
-        ]),
-      ).to.be.revertedWithCustomError(feesSenderToBurnerInterface, "UnsupportedChainID");
     });
 
     describe("Empty $ZamaOFT Balance", () => {
@@ -216,8 +200,10 @@ describe("FeesBurner", () => {
 
     describe("Dust amount $ZamaOFT Balance", () => {
       beforeEach(async () => {
-        const decimalConversionRate = await feesSenderToBurner._DECIMAL_CONVERSION_RATE();
-        const DUST_AMOUNT = decimalConversionRate - 1n;
+        const sharedDecimals = await zamaOFT.sharedDecimals();
+        const decimals = await zamaOFT.decimals();
+        const _DECIMAL_CONVERSION_RATE = 10n ** (decimals - sharedDecimals);
+        const DUST_AMOUNT = _DECIMAL_CONVERSION_RATE - 1n;
 
         await collectFees(DUST_AMOUNT);
       });
