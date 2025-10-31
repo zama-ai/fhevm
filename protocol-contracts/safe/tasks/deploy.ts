@@ -5,6 +5,8 @@ import { task } from "hardhat/config";
 import { getRequiredEnvVar } from "./utils/loadVariables";
 
 // Deploy the SafeSmartAccount contract
+// Example usage:
+// npx hardhat task:deploySafeL2
 task("task:deploySafeL2").setAction(async function (
   _,
   { getNamedAccounts, ethers, deployments, network },
@@ -37,25 +39,18 @@ task("task:deploySafeL2").setAction(async function (
     skipIfAlreadyDeployed: false,
   });
 
-  // Get the environment variables for the Safe setup, using default values if not provided for
-  // the optional parameters
+  // Set the Safe setup parameters:
+  // - owners: the deployer only
+  // - threshold: 1
+  // - remaining optional parameters: use default values if not provided
   const owners = [deployer];
-  const threshold = getRequiredEnvVar("SAFE_THRESHOLD");
-  const to = getRequiredEnvVar("SAFE_TO", ethers.ZeroAddress);
-  const data = getRequiredEnvVar("SAFE_DATA", "0x");
-  const fallbackHandler = getRequiredEnvVar(
-    "SAFE_FALLBACK_HANDLER",
-    ethers.ZeroAddress,
-  );
-  const paymentToken = getRequiredEnvVar(
-    "SAFE_PAYMENT_TOKEN",
-    ethers.ZeroAddress,
-  );
-  const payment = getRequiredEnvVar("SAFE_PAYMENT", 0);
-  const paymentReceiver = getRequiredEnvVar(
-    "SAFE_PAYMENT_RECEIVER",
-    ethers.ZeroAddress,
-  );
+  const threshold = 1;
+  const to = ethers.ZeroAddress;
+  const data = "0x";
+  const fallbackHandler = ethers.ZeroAddress;
+  const paymentToken = ethers.ZeroAddress;
+  const payment = 0;
+  const paymentReceiver = ethers.ZeroAddress;
 
   // Get contract instances
   const safeContract = await ethers.getContractAt(
@@ -90,10 +85,6 @@ task("task:deploySafeL2").setAction(async function (
       0n,
     );
 
-  if (safeAddress === ethers.ZeroAddress) {
-    throw new Error("Safe address not found");
-  }
-
   // Step 2, deploy the Safe proxy contract
   await proxyFactoryContract.createProxyWithNonce(
     safeSingleton.address,
@@ -114,6 +105,8 @@ task("task:deploySafeL2").setAction(async function (
 });
 
 // Deploy the AdminModule contract
+// Example usage:
+// npx hardhat task:deployAdminModule
 task("task:deployAdminModule").setAction(async function (
   _,
   { getNamedAccounts, deployments, network },
@@ -138,6 +131,9 @@ task("task:deployAdminModule").setAction(async function (
   );
 });
 
+// Deploy the MultiSend contract
+// Example usage:
+// npx hardhat task:deployMultiSend
 task("task:deployMultiSend").setAction(async function (
   _,
   { getNamedAccounts, deployments, network, ethers },

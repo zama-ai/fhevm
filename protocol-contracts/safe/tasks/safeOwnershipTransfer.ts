@@ -43,6 +43,10 @@ async function getSafeKitDeployer(
 
 // Add owners to the Safe
 // Also keeps the deployer as owner and threshold at 1
+// Example usage:
+// npx hardhat task:addOwnersToSafe \
+// --newOwners \
+// "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC,0x90F79bf6EB2c4f870365E785982E1f101E93b906"
 task("task:addOwnersToSafe")
   .addParam(
     "newOwners",
@@ -106,6 +110,10 @@ task("task:addOwnersToSafe")
   });
 
 // Check that the owners of the Safe are set as expected
+// Example usage:
+// npx hardhat task:checkSafeOwners \
+// --expectedOwners \
+// "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC,0x90F79bf6EB2c4f870365E785982E1f101E93b906"
 task("task:checkSafeOwners")
   .addParam(
     "expectedOwners",
@@ -140,6 +148,8 @@ task("task:checkSafeOwners")
   });
 
 // Remove deployer from the Safe and update the threshold
+// Example usage:
+// npx hardhat task:removeDeployerFromSafeOwnersAndUpdateThreshold
 task("task:removeDeployerFromSafeOwnersAndUpdateThreshold").setAction(
   async function (_, { getNamedAccounts, ethers, network }) {
     // Get the deployer

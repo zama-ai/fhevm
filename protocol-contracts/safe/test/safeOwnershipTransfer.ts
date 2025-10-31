@@ -8,8 +8,8 @@ import { SafeL2 } from "../typechain-types";
 import { makeDeployerOnlyOwner } from "./utils/safeOwners";
 
 describe("Ownership transfer", function () {
-  // Get the initial threshold
-  const initialThreshold = Number(getRequiredEnvVar("SAFE_THRESHOLD"));
+  // The initial threshold is 1
+  const initialThreshold = 1;
 
   // Get the MultiSend contract address
   const multiSendAddress = getRequiredEnvVar("MULTISEND_ADDRESS");

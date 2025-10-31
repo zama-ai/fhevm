@@ -4,6 +4,8 @@ import { HardhatNetworkHDAccountsConfig } from "hardhat/types";
 const NUM_ACCOUNTS = 10;
 
 // Use this task to get the list of accounts (addresses, private keys, public keys)
+// Example usage:
+// npx hardhat get-accounts
 task("get-accounts", "Prints the list of accounts").setAction(
   async (_, { ethers, network }) => {
     // Get signers from hardhat

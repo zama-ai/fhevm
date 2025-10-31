@@ -14,10 +14,12 @@ describe("Deploy Tasks", function () {
       safeL2Deployment.address,
     );
 
-    // Get the expected values
+    // Initially:
+    // - owners: the deployer only
+    // - threshold: 1
     const deployer = (await hre.getNamedAccounts()).deployer;
     const expectedOwners = [deployer];
-    const expectedThreshold = getRequiredEnvVar("SAFE_THRESHOLD");
+    const expectedThreshold = 1;
 
     // Check that the owners and threshold are correct
     const owners = await safeL2.getOwners();
