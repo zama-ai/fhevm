@@ -43,8 +43,8 @@ const config: HardhatUserConfig = {
       accounts,
     },
     hardhat: {
-      // Set to gateway-mainnet for FeesSenderToBurner constructor check
-      chainId: 261131,
+      // Set to gateway-testnet for FeesSenderToBurner constructor check
+      chainId: 10901,
       // Required to deploy EndpointV2Mock which exceeds max size.
       allowUnlimitedContractSize: true,
     },

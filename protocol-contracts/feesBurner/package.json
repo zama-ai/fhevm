@@ -9,6 +9,7 @@
     }
   },
   "devDependencies": {
+    "@layerzerolabs/lz-definitions": "^3.0.143",
     "@layerzerolabs/lz-evm-protocol-v2": "^3.0.142",
     "@layerzerolabs/lz-v2-utilities": "^3.0.143",
     "@layerzerolabs/oapp-evm": "^0.3.2",
