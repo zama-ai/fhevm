@@ -1,6 +1,6 @@
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS prod
 
-ARG RUST_IMAGE_VERSION=1.90.0
+ARG RUST_IMAGE_VERSION=1.91.0
 
 USER root
 
