@@ -9,12 +9,6 @@ contract ZamaERC20Mock is ERC20, ERC20Burnable, AccessControl {
 
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
-    event EtherRecovered(address indexed recipient, uint256 amount);
-    event ERC20Recovered(address indexed token, address indexed recipient, uint256 amount);
-    event ERC721Recovered(address indexed token, uint256 tokenId, address indexed recipient);
-
-    error FailedToSendEther();
-
     constructor(
         string memory name,
         string memory symbol,
