@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM delegate_user_decrypt\n        WHERE block_number < $1\n        AND gateway_nb_attempts = 0\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a5631e0977691e152b0e25d1f2c53d39302e5f3436c7790a6f0824330bd1fb3a"
+}

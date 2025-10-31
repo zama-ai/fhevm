@@ -13,6 +13,7 @@ where
 
 pub(crate) mod add_ciphertext;
 pub(crate) mod allow_handle;
+pub(crate) mod delegate_user_decrypt;
 pub(crate) mod verify_proof;
 
 mod common;
