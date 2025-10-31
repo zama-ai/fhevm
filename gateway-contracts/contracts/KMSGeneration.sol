@@ -207,17 +207,20 @@ contract KMSGeneration is
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
-        $.keyReshareCounter = KEY_RESHARE_COUNTER_BASE;
-    }
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IKMSGeneration-keygen}.
      */
     function keygen(ParamsType paramsType) external virtual onlyGatewayOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // Check that the previous keygen request has reached consensus
+        // Exception for the first keygen request, which has no previous key (counter is KEY_COUNTER_BASE)
+        uint256 previousKeyId = $.keyCounter;
+        if (previousKeyId != KEY_COUNTER_BASE && !$.isRequestDone[previousKeyId]) {
+            revert KeygenOngoing(previousKeyId);
+        }
 
         // Generate a globally unique prepKeygenId for the key generation preprocessing
         // The counter is initialized at deployment such that prepKeygenId's first byte uniquely
@@ -373,6 +376,13 @@ contract KMSGeneration is
      */
     function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external virtual onlyGatewayOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // Check that the previous CRS generation request has reached consensus
+        // Exception for the first CRS generation request, which has no previous CRS (counter is CRS_COUNTER_BASE)
+        uint256 previousCrsId = $.crsCounter;
+        if (previousCrsId != CRS_COUNTER_BASE && !$.isRequestDone[previousCrsId]) {
+            revert CrsgenOngoing(previousCrsId);
+        }
 
         // Generate a globally unique crsId for the CRS generation
         // The counter is initialized at deployment such that crsId's first byte uniquely
