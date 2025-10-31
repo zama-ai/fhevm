@@ -13,8 +13,8 @@ describe('Ownership tasks', function () {
   const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(deployerPrivateKey).connect(ethers.provider);
 
-  // Define the private key of the new owner (Account 2)
-  const newOwnerPrivateKey = '0x7ae52cf0d3011ef7fecbe22d9537aeda1a9e42a0596e8def5d49970eb59e7a40';
+  // Get the private key of the new owner
+  const newOwnerPrivateKey = getRequiredEnvVar('NEW_OWNER_PRIVATE_KEY');
   const newOwner = new ethers.Wallet(newOwnerPrivateKey).connect(ethers.provider);
 
   before(async function () {
@@ -36,5 +36,32 @@ describe('Ownership tasks', function () {
 
     // Check that the pending owner is the new owner.
     expect(await acl.pendingOwner()).to.eq(newOwner.address);
+  });
+
+  it('Should accept ownership of the ACL contract', async function () {
+    await run('task:acceptHostOwnership');
+
+    // Check that the ownership has been transferred to the new owner.
+    expect(await acl.owner()).to.eq(newOwner.address);
+  });
+
+  // This is to avoid to break other tests
+  it('Should put back ownership of the ACL contract to the deployer', async function () {
+    // Temporarily swap the deployer and the new owner private keys
+    process.env.DEPLOYER_PRIVATE_KEY = newOwnerPrivateKey;
+    process.env.NEW_OWNER_PRIVATE_KEY = deployerPrivateKey;
+
+    // Transfer ownership to the deployer and accept it
+    await run('task:transferHostOwnership', {
+      newOwnerAddress: deployer.address,
+    });
+    await run('task:acceptHostOwnership');
+
+    // Check that the ownership has been transferred back to the deployer.
+    expect(await acl.owner()).to.eq(deployer.address);
+
+    // Restore the original private keys
+    process.env.DEPLOYER_PRIVATE_KEY = deployerPrivateKey;
+    process.env.NEW_OWNER_PRIVATE_KEY = newOwnerPrivateKey;
   });
 });
