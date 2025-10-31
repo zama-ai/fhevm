@@ -50,6 +50,7 @@ Here's the complete list of environment variables used for deploying the FHEVM g
 | `MNEMONIC`                          | "Mnemonic phrase for address generation | string        | "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer" | -                                                                                |
 | `RPC_URL`                           | URL of the RPC node                     | string        | "http://127.0.0.1:8757"                                                                             | -                                                                                |
 | `GATEWAY_CONFIG_ADDRESS`            | Address of the GatewayConfig contract   | address       | -                                                                                                   | Only for production settings                                                     |
+| `NEW_OWNER_PRIVATE_KEY`             | Private key for new owner acceptance    | bytes32       | -                                                                                                   | Only used in task that transfers ownership of the gateway to a new EAO owner     |
 
 ## In details
 
@@ -248,3 +249,11 @@ KMS_GENERATION_ADDRESS="0x87A5b1152AA51728258dbc1AA54B6a83DCd1d3dd" # (address)
 ```
 
 This (static) address is needed for generating the FHE key and CRS through the KMSGeneration contract. In a proper production setting, this environment variable needs to be dynamically set after deploying the contracts.
+
+- New owner private key
+
+```bash
+NEW_OWNER_PRIVATE_KEY="0x7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f" # (bytes32)
+```
+
+This is the private key of the targeted new owner EAO, used to accept the ownership of the gateway contracts in case it is not directly transferred to a multisig account.
