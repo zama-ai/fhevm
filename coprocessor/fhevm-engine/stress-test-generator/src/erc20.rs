@@ -6,6 +6,8 @@ use host_listener::database::tfhe_event_propagate::{
 use sqlx::Postgres;
 use tracing::{error, info};
 
+use alloy::primitives::Address; // <-- added: for typed parse of user_address
+
 use crate::utils::{
     allow_handle, insert_tfhe_event, next_random_handle, tfhe_event, Context, ERCTransferVariant,
     FheType, DEF_TYPE,
@@ -25,7 +27,9 @@ pub async fn erc20_transaction(
     contract_address: &String,
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
-    let caller = user_address.parse().unwrap();
+    // FIX: avoid panic on bad input; parse Address and propagate error
+    let caller: Address = user_address.parse()?;
+
     let transaction_id = transaction_id.unwrap_or(next_random_handle(DEF_TYPE));
 
     info!(target: "tool", "ERC20 Transaction: tx_id: {:?}", transaction_id);
@@ -167,6 +171,8 @@ pub async fn erc20_transaction(
         }
         ERCTransferVariant::NA => {
             error!("ERC should have a variant");
+            // FIX: do not continue silently; return an error
+            return Err("ERC should have a valid transfer variant".into());
         }
     }
     Ok((new_source, new_destination))
