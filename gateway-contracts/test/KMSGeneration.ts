@@ -339,6 +339,10 @@ describe("KMSGeneration", function () {
       });
 
       it("Should emit an event when calling a single prepKeygenResponse", async function () {
+        // Trigger a keygen request.
+        // This is needed to generate and store the prepKeygenId
+        await kmsGeneration.connect(owner).keygen(paramsType);
+
         await expect(
           kmsGeneration.connect(kmsTxSenders[0]).prepKeygenResponse(prepKeygenId, kmsSignaturesPrepKeygen[0]),
         )
@@ -358,6 +362,10 @@ describe("KMSGeneration", function () {
       });
 
       it("Should revert because the signer and the tx sender do not correspond to the same coprocessor during preprocessing keygen", async function () {
+        // Trigger a keygen request.
+        // This is needed to generate and store the prepKeygenId
+        await kmsGeneration.connect(owner).keygen(paramsType);
+
         // Check that triggering a preprocessing keygen response using a signature from the first KMS signer
         // with the second KMS transaction sender reverts
         await expect(
@@ -378,6 +386,24 @@ describe("KMSGeneration", function () {
         await expect(kmsGeneration.connect(kmsTxSenders[1]).keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[0]))
           .to.be.revertedWithCustomError(kmsGeneration, "KmsSignerDoesNotMatchTxSender")
           .withArgs(kmsSigners[0].address, kmsTxSenders[1].address);
+      });
+
+      it("Should revert because the preprocessing keygen request is not requested yet", async function () {
+        // Trigger a keygen request.
+        // Check that triggering a preprocessing keygen response using a non-existing prepKeygenId reverts
+        await expect(
+          kmsGeneration.connect(kmsTxSenders[0]).prepKeygenResponse(prepKeygenId, kmsSignaturesPrepKeygen[0]),
+        )
+          .to.be.revertedWithCustomError(kmsGeneration, "PrepKeygenNotRequested")
+          .withArgs(prepKeygenId);
+      });
+
+      it("Should revert because the keygen request is not requested yet", async function () {
+        // Trigger a keygen request.
+        // Check that triggering a keygen response using a non-existing keyId reverts
+        await expect(kmsGeneration.connect(kmsTxSenders[0]).keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[0]))
+          .to.be.revertedWithCustomError(kmsGeneration, "KeygenNotRequested")
+          .withArgs(keyId);
       });
     });
 
@@ -563,6 +589,14 @@ describe("KMSGeneration", function () {
         await expect(kmsGeneration.connect(kmsTxSenders[1]).crsgenResponse(crsId, crsDigest, kmsSignaturesCrsgen[0]))
           .to.be.revertedWithCustomError(kmsGeneration, "KmsSignerDoesNotMatchTxSender")
           .withArgs(kmsSigners[0].address, kmsTxSenders[1].address);
+      });
+
+      it("Should revert because the CRS generation request is not requested yet", async function () {
+        // Trigger a keygen request.
+        // Check that triggering a CRS generation response using a non-existing crsId reverts
+        await expect(kmsGeneration.connect(kmsTxSenders[0]).crsgenResponse(fakeCrsId, crsDigest, "0x"))
+          .to.be.revertedWithCustomError(kmsGeneration, "CrsgenNotRequested")
+          .withArgs(fakeCrsId);
       });
     });
 
