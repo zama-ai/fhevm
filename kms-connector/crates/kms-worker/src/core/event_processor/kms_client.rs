@@ -10,16 +10,18 @@ use crate::{
         KEY_MANAGEMENT_RESPONSE_COUNTER, KEY_MANAGEMENT_RESPONSE_ERRORS,
     },
 };
-use alloy::primitives::U256;
+use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
 use connector_utils::{
     conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
-    types::{KmsGrpcRequest, KmsGrpcResponse, decode_request_id, u256_to_u32},
+    types::{
+        KmsGrpcRequest, KmsGrpcResponse, decode_request_id, gw_event::PRSS_INIT_ID, u256_to_u32,
+    },
 };
 use kms_grpc::{
     kms::v1::{
-        CrsGenRequest, Empty, KeyGenPreprocRequest, KeyGenRequest, PublicDecryptionRequest,
-        RequestId, UserDecryptionRequest,
+        CrsGenRequest, InitRequest, InitiateResharingRequest, KeyGenPreprocRequest, KeyGenRequest,
+        PublicDecryptionRequest, RequestId, UserDecryptionRequest,
     },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
@@ -127,6 +129,8 @@ impl KmsClient {
             KmsGrpcRequest::PrepKeygen(req) => self.request_prep_keygen(req).await,
             KmsGrpcRequest::Keygen(req) => self.request_keygen(req).await,
             KmsGrpcRequest::Crsgen(req) => self.request_crsgen(req).await,
+            KmsGrpcRequest::PrssInit(req) => self.request_prss_init(req).await,
+            KmsGrpcRequest::KeyReshareSameSet(req) => self.request_initiate_resharing(req).await,
         }
     }
 
@@ -332,6 +336,51 @@ impl KmsClient {
         Ok(KmsGrpcResponse::Crsgen(grpc_response.into_inner()))
     }
 
+    async fn request_prss_init(
+        &self,
+        request: InitRequest,
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
+        let inner_client = self.choose_client(RequestId {
+            request_id: hex::encode(PRSS_INIT_ID.to_be_bytes::<32>()),
+        });
+        send_request_with_retry(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.init(request).await }
+            },
+            &KEY_MANAGEMENT_REQUEST_SENT_COUNTER,
+            &KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
+        )
+        .await?;
+        Ok(KmsGrpcResponse::NoResponseExpected)
+    }
+
+    async fn request_initiate_resharing(
+        &self,
+        request: InitiateResharingRequest,
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
+        let request_id = request
+            .request_id
+            .clone()
+            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("Missing request ID")))?;
+
+        let inner_client = self.choose_client(request_id.clone());
+        send_request_with_retry(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.initiate_resharing(request).await }
+            },
+            &KEY_MANAGEMENT_REQUEST_SENT_COUNTER,
+            &KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
+        )
+        .await?;
+        Ok(KmsGrpcResponse::NoResponseExpected)
+    }
+
     fn choose_client(&self, request_id: RequestId) -> CoreServiceEndpointClient<Channel> {
         let request_id = decode_request_id(request_id).unwrap_or_else(|e| {
             warn!("Failed to parse request ID: {e}. Sending request to shard 0 by default");
@@ -354,7 +403,7 @@ const RETRYABLE_GRPC_CODE: [Code; 4] = [
 ];
 
 #[tracing::instrument(skip_all)]
-async fn send_request_with_retry<F, Fut>(
+async fn send_request_with_retry<F, Fut, R>(
     retries: u8,
     mut request_fn: F,
     success_counter: &LazyLock<IntCounter>,
@@ -362,7 +411,7 @@ async fn send_request_with_retry<F, Fut>(
 ) -> Result<(), ProcessingError>
 where
     F: FnMut() -> Fut,
-    Fut: Future<Output = Result<Response<Empty>, Status>>,
+    Fut: Future<Output = Result<Response<R>, Status>>,
 {
     for i in 1..=retries {
         match request_fn().await {

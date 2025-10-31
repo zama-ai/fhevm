@@ -19,6 +19,7 @@ import "./tasks/generateKmsMaterials";
 import "./tasks/getters";
 import "./tasks/ownership";
 import "./tasks/pauseContracts";
+import "./tasks/reshareKeys";
 import "./tasks/safeSmartAccounts";
 import "./tasks/upgradeContracts";
 
