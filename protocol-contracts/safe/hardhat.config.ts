@@ -12,6 +12,7 @@ import "./tasks/accounts";
 import "./tasks/deploy";
 import "./tasks/safeOwnershipTransfer";
 import "./tasks/verify";
+import "./tasks/enableModule";
 
 // Get the environment configuration from .env file
 //
@@ -92,7 +93,7 @@ const config: HardhatUserConfig = {
   },
   networks: {
     "gateway-testnet": {
-      url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET,
+      url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET || "",
       accounts,
     },
     hardhat: {
