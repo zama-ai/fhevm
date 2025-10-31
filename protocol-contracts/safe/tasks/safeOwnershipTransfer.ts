@@ -150,8 +150,12 @@ task("task:checkSafeOwners")
 // Remove deployer from the Safe and update the threshold
 // Example usage:
 // npx hardhat task:removeDeployerFromSafeOwnersAndUpdateThreshold
-task("task:removeDeployerFromSafeOwnersAndUpdateThreshold").setAction(
-  async function (_, { getNamedAccounts, ethers, network }) {
+task("task:removeDeployerFromSafeOwnersAndUpdateThreshold")
+  .addParam("newThreshold", "The new threshold for the Safe contract")
+  .setAction(async function (
+    { newThreshold },
+    { getNamedAccounts, ethers, network },
+  ) {
     // Get the deployer
     const { deployer } = await getNamedAccounts();
 
@@ -184,12 +188,11 @@ task("task:removeDeployerFromSafeOwnersAndUpdateThreshold").setAction(
     // Define the new threshold: it should be ``floor(2n/3) + 1``, where `n` is the number of the
     // final owners (i.e., without the deployer)
     const currentOwners = await safeProxy.getOwners();
-    const newThreshold = Math.floor((2 * (currentOwners.length - 1)) / 3) + 1;
 
     // Generate the transaction to remove the deployer from the owners and update the threshold
     const removeOwnerTx = await safeKitDeployer.createRemoveOwnerTx({
       ownerAddress: deployer,
-      threshold: newThreshold,
+      threshold: Number(newThreshold),
     });
 
     // Create, sign and execute the transaction using the deployer (the Safe's current only owner)
@@ -198,5 +201,4 @@ task("task:removeDeployerFromSafeOwnersAndUpdateThreshold").setAction(
     });
     await safeKitDeployer.signTransaction(batch);
     await safeKitDeployer.executeTransaction(batch);
-  },
-);
+  });
