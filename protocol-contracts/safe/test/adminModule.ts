@@ -1,98 +1,69 @@
-import Safe from "@safe-global/protocol-kit";
-import MultiSendJson from "@safe-global/safe-contracts/build/artifacts/contracts/libraries/MultiSend.sol/MultiSend.json";
 import { expect } from "chai";
-import { ContractFactory, Signer, ZeroAddress } from "ethers";
-import { ethers, network } from "hardhat";
+import { Signer } from "ethers";
+import { ethers } from "hardhat";
+import hre from "hardhat";
 
-import { AdminModule, GatewayConfigMock, SafeL2 } from "../typechain-types";
+import { getRequiredEnvVar } from "../tasks/utils/loadVariables";
+import { AdminModule, GatewayConfigMock } from "../typechain-types";
 import { execTransaction } from "./utils/utils";
 
 describe("AdminModule Tests", function () {
-  // Define variables
   let deployer: Signer;
-  let alice: Signer;
-  let bob: Signer;
-  let charlie: Signer;
-  let masterCopy: any;
-  let proxyFactory: any;
-  let safe: SafeL2;
+  let safeSingleton: any;
+  let safeProxy: any;
   let safeAddress: string;
   let gatewayConfigMock: GatewayConfigMock;
-  let multiSendAddress: string;
 
   before(async () => {
-    [deployer, alice, bob, charlie] = await ethers.getSigners();
+    // Get the deployer
+    const namedAccounts = await hre.getNamedAccounts();
+    deployer = await hre.ethers.getSigner(namedAccounts.deployer);
 
-    const safeFactory = await ethers.getContractFactory("SafeL2", deployer); // L2 version for easier debugging and because gas is cheap on gateway
-    masterCopy = await safeFactory.deploy(); // deploys the singleton Safe implementation
+    // Get the deployed contract:
+    // - SafeL2Proxy is the name of the proxy contract
+    // - SafeL2 is the name of the implementation contract
+    const safeProxyDeployment = await hre.deployments.get("SafeL2Proxy");
+    safeAddress = safeProxyDeployment.address;
+    safeProxy = await hre.ethers.getContractAt("SafeL2", safeAddress);
+    safeSingleton = await hre.ethers.getContractAt("SafeL2", safeAddress);
 
-    proxyFactory = await (
-      await ethers.getContractFactory("SafeProxyFactory", deployer)
-    ).deploy();
-
-    // Setup the Safe, Step 1, generate transaction data, with one owner, alice, and threshold of 1
-    const safeData = masterCopy.interface.encodeFunctionData("setup", [
-      [await alice.getAddress()],
-      1,
-      ZeroAddress,
-      "0x",
-      ZeroAddress,
-      ZeroAddress,
-      0,
-      ZeroAddress,
-    ]);
-
-    // this statiCall allows to predict the address of the upcoming Safe proxy not deployed yet
-    safeAddress = await proxyFactory.createProxyWithNonce.staticCall(
-      await masterCopy.getAddress(),
-      safeData,
-      0n,
-    );
-
-    if (safeAddress === ZeroAddress) {
-      throw new Error("Safe address not found");
-    }
-
-    await proxyFactory.createProxyWithNonce(
-      await masterCopy.getAddress(),
-      safeData,
-      0n,
-    );
-
-    safe = await ethers.getContractAt("SafeL2", safeAddress);
-
+    // Deploy the GatewayConfigMock contract
     gatewayConfigMock = await (
       await ethers.getContractFactory("GatewayConfigMock", deployer)
     ).deploy(safeAddress);
-
-    const multiSend = await new ContractFactory(
-      MultiSendJson.abi,
-      MultiSendJson.bytecode,
-      deployer,
-    ).deploy();
-    multiSendAddress = await multiSend.getAddress();
   });
 
-  // A Safe Module is a smart contract that is allowed to execute transactions on behalf of a Safe Smart Account.
+  // A Safe Module is a smart contract that is allowed to execute transactions on behalf of a Safe
+  // Smart Account, without having to consider the threshold and gather signatures.
   // This function deploys the AdminModule contract and enables it in the Safe.
   const enableModule = async (): Promise<{
     adminModule: AdminModule;
   }> => {
-    const adminModule = await (
-      await ethers.getContractFactory("AdminModule", deployer)
-    ).deploy(await charlie.getAddress(), safeAddress); // charlie is set to be the owner of AdminModule
+    // Get the deployed contract
+    const adminModuleDeployment = await hre.deployments.get("AdminModule");
+    const adminModule = await hre.ethers.getContractAt(
+      "AdminModule",
+      adminModuleDeployment.address,
+    );
 
-    // Enable the module in the safe, Step 1, generate transaction data
-    const enableModuleData = masterCopy.interface.encodeFunctionData(
+    // Step 1, generate transaction data
+    const enableModuleData = safeSingleton.interface.encodeFunctionData(
       "enableModule",
       [adminModule.target],
     );
 
-    // Enable the module in the safe, Step 2, execute the transaction
-    await execTransaction([alice], safe, safe.target, 0, enableModuleData, 0);
+    // Step 2, execute the transaction using the deployer account (the Safe owner)
+    await execTransaction(
+      [deployer],
+      safeProxy,
+      safeProxy.target,
+      0,
+      enableModuleData,
+      0,
+    );
 
     // Verify that the module is enabled
-    expect(await safe.isModuleEnabled(adminModule.target)).to.be.true;
+    expect(await safeProxy.isModuleEnabled(adminModule.target)).to.be.true;
 
     return { adminModule };
   };
@@ -100,78 +71,24 @@ describe("AdminModule Tests", function () {
   it("Should successfully propagate tx from the admin account", async function () {
     // Enable the module in the Safe
     const { adminModule } = await enableModule();
+
     const gatewayConfigMockAddress = await gatewayConfigMock.getAddress();
+
+    // Step 1, encode the transaction data
     const data = gatewayConfigMock.interface.encodeFunctionData("setByOwner", [
       42n,
     ]);
+
+    // Get the admin account
+    const adminAddress = getRequiredEnvVar("ADMIN_ADDRESS");
+    const admin = await hre.ethers.getSigner(adminAddress);
+
+    // Step 2, execute the transaction using the admin account
     await adminModule
-      .connect(charlie)
+      .connect(admin)
       .executeSafeTransactions([gatewayConfigMockAddress], [0n], [data], [0n]);
+
+    // Check that the transaction was successful
     expect(await gatewayConfigMock.value()).to.equal(42n);
-  });
-
-  it("Transfer ownership in a single step", async function () {
-    const aliceAddress = await alice.getAddress();
-    let owners = await safe.getOwners();
-    let threshold = await safe.getThreshold();
-    expect(new Set(owners)).to.deep.equal(new Set([aliceAddress]));
-    expect(threshold).to.equal(1);
-
-    const chain = await ethers.provider.getNetwork();
-    const chainIdKey = chain.chainId.toString();
-
-    const contractNetworks = {
-      [chainIdKey]: {
-        multiSendAddress,
-        multiSendCallOnlyAddress: multiSendAddress,
-      },
-    };
-
-    const safeKit = await Safe.init({
-      provider: network.provider,
-      signer: await alice.getAddress(),
-      safeAddress,
-      contractNetworks,
-    });
-
-    const newOwners = Array.from(
-      { length: 9 },
-      (_, i) => "0x" + String(i + 1).repeat(40),
-    );
-
-    const txs = [];
-
-    for (const addr of newOwners) {
-      txs.push(await safeKit.createAddOwnerTx({ ownerAddress: addr }));
-    }
-
-    const partials = txs.map((t) => t.data);
-    const batch = await safeKit.createTransaction({ transactions: partials });
-    await safeKit.signTransaction(batch);
-    await safeKit.executeTransaction(batch);
-
-    owners = await safe.getOwners();
-    expect(new Set(owners)).to.deep.equal(
-      new Set([...newOwners, aliceAddress]),
-    );
-    threshold = await safe.getThreshold();
-    expect(threshold).to.equal(1);
-
-    const txs2 = [];
-    txs2.push(
-      await safeKit.createRemoveOwnerTx({
-        ownerAddress: aliceAddress,
-        threshold: 6,
-      }),
-    );
-    const partials2 = txs2.map((t) => t.data);
-    const batch2 = await safeKit.createTransaction({ transactions: partials2 });
-    await safeKit.signTransaction(batch2);
-    await safeKit.executeTransaction(batch2);
-
-    owners = await safe.getOwners();
-    expect(new Set(owners)).to.deep.equal(new Set(newOwners));
-    threshold = await safe.getThreshold();
-    expect(threshold).to.equal(6);
   });
 });

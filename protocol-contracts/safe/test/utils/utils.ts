@@ -1,7 +1,17 @@
 import { AddressLike, BigNumberish, Signer, ZeroAddress } from "ethers";
-import { ethers } from "hardhat";
+import hre, { ethers } from "hardhat";
 
 import { Safe } from "../../typechain-types";
+
+// Create a new random address
+export function createRandomAddress() {
+  return hre.ethers.Wallet.createRandom().address;
+}
+
+// Create a list of random addresses
+export function createRandomAddresses(length: number) {
+  return Array.from({ length }, () => createRandomAddress());
+}
 
 /**
  * Executes a transaction on the Safe contract.
@@ -12,7 +22,7 @@ import { Safe } from "../../typechain-types";
  * @param data - The data to send with the transaction.
  * @param operation - The operation type (0 for call, 1 for delegate call).
  */
-const execTransaction = async function (
+export const execTransaction = async function (
   wallets: Signer[],
   safe: Safe,
   to: AddressLike,
@@ -41,7 +51,9 @@ const execTransaction = async function (
   const bytesDataHash = ethers.getBytes(transactionHash);
 
   // Get the addresses of the signers
-  const addresses = await Promise.all(wallets.map((wallet) => wallet.getAddress()));
+  const addresses = await Promise.all(
+    wallets.map((wallet) => wallet.getAddress()),
+  );
   // Sort the signers by their addresses
   const sorted = wallets.sort((a, b) => {
     const addressA = addresses[wallets.indexOf(a)];
@@ -51,12 +63,23 @@ const execTransaction = async function (
 
   // Sign the transaction hash with each signer
   for (let i = 0; i < sorted.length; i++) {
-    const flatSig = (await sorted[i].signMessage(bytesDataHash)).replace(/1b$/, "1f").replace(/1c$/, "20");
+    const flatSig = (await sorted[i].signMessage(bytesDataHash))
+      .replace(/1b$/, "1f")
+      .replace(/1c$/, "20");
     signatureBytes += flatSig.slice(2);
   }
 
   // Execute the transaction on the Safe contract
-  await safe.execTransaction(to, value, data, operation, 0, 0, 0, ZeroAddress, ZeroAddress, signatureBytes);
+  await safe.execTransaction(
+    to,
+    value,
+    data,
+    operation,
+    0,
+    0,
+    0,
+    ZeroAddress,
+    ZeroAddress,
+    signatureBytes,
+  );
 };
-
-export { execTransaction };
