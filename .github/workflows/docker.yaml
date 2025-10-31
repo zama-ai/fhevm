@@ -185,8 +185,7 @@ jobs:
             latest=auto
           tags: |
             type=sha,format=short
-            type=ref,event=tag
-            # Replace semver: strip service prefix from tags like relayer@v0.5.0-3 to get v0.5.0-3
+            # Produces semver: strip service prefix from tags like relayer@v0.5.0-3 to get v0.5.0-3
             type=match,pattern=.*@(.*),group=1,enable=${{ startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, '@') }}
           labels: |
             org.opencontainers.image.title=${{ matrix.service.name }}
