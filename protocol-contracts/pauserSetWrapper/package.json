@@ -17,6 +17,7 @@
     "@nomicfoundation/hardhat-network-helpers": "^1.1.0",
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
     "@nomicfoundation/hardhat-verify": "^2.1.1",
+    "@layerzerolabs/prettier-config-next": "^2.3.39",
     "@openzeppelin/contracts": "^5.4.0",
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",

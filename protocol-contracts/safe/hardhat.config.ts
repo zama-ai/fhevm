@@ -40,6 +40,7 @@ if (accounts == null) {
   );
 }
 
+// Deploy contracts by default before running tests
 task("test", "Runs the test suite, optionally skipping setup tasks")
   .addOptionalParam(
     "skipSetup",
