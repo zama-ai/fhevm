@@ -11,12 +11,13 @@ BLOCKSCOUT_API=https://xxxxxxxxxxxx.xyz/api # don't forget the /api suffix at th
 
 Then run: 
 ```
+npx hardhat compile
 npx hardhat task:deploySafe --network gateway-testnet
 ```
 
 This will deploy `SafeL2` singleton contract, as well as `SafeProxyFactory` and `SafeL2Proxy`. The `SafeL2Proxy` is actually the multisig wallet which will become later the owner of `GatewayConfig`.
 
-Then run: 
+Then, after waiting for around 1 minute for the blockscout indexing to take into consideration newly deployed contracts, run: 
 ```
 npx hardhat task:verifySafe --network gateway-testnet
 ```
@@ -33,7 +34,7 @@ Deploy then the AdminModule with:
 npx hardhat task:deployAdminModule --network gateway-testnet
 ```
 
-And verify it with: 
+And, after waiting for around 1 minute for the blockscout indexing, verify it with: 
 
 ```
 npx hardhat task:verifyAdminModule --network gateway-testnet
