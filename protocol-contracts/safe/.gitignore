@@ -1,5 +1,7 @@
 node_modules
 .env
+!.env.example.test
+!.env.example.deploy
 
 # Hardhat files
 /cache
