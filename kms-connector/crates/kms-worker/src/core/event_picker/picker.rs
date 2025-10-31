@@ -1,15 +1,14 @@
 use crate::{
-    core::Config,
+    core::{
+        Config,
+        event_picker::notifier::{DbEventNotifier, EventNotification},
+    },
     monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
 };
 use anyhow::anyhow;
 use connector_utils::types::{GatewayEvent, gw_event};
-use sqlx::{
-    Pool, Postgres,
-    postgres::{PgListener, PgNotification},
-};
-use std::time::Duration;
-use tokio::select;
+use sqlx::{Pool, Postgres};
+use tokio::sync::mpsc::{self, Receiver};
 use tracing::{debug, info, warn};
 
 /// Interface used to pick Gateway's events from some storage.
@@ -19,103 +18,76 @@ pub trait EventPicker {
     fn pick_events(&mut self) -> impl Future<Output = anyhow::Result<Vec<Self::Event>>>;
 }
 
-// Postgres notifications
-const PUBLIC_DECRYPT_NOTIFICATION: &str = "public_decryption_request_available";
-const USER_DECRYPT_NOTIFICATION: &str = "user_decryption_request_available";
-const PREP_KEYGEN_NOTIFICATION: &str = "prep_keygen_request_available";
-const KEYGEN_NOTIFICATION: &str = "keygen_request_available";
-const CRSGEN_NOTIFICATION: &str = "crsgen_request_available";
-const PRSS_INIT_NOTIFICATION: &str = "prss_init_available";
-const KEY_RESHARE_SAME_SET_NOTIFICATION: &str = "key_reshare_same_set_available";
-
 /// Struct that collects Gateway's events from a `Postgres` database.
 pub struct DbEventPicker {
     /// The DB connection pool used to query events when notified.
     db_pool: Pool<Postgres>,
 
-    /// The DB listener to watch for notifications.
-    db_listener: PgListener,
+    /// The receiver channel used to receive event notification.
+    notif_receiver: Receiver<EventNotification>,
 
     /// The limit number of events to fetch from the database.
     events_batch_size: u8,
-
-    /// The timeout for polling the database for events.
-    polling_timeout: Duration,
 }
 
 impl DbEventPicker {
     pub fn new(
         db_pool: Pool<Postgres>,
-        db_listener: PgListener,
+        notif_receiver: Receiver<EventNotification>,
         events_batch_size: u8,
-        polling_timeout: Duration,
     ) -> Self {
         Self {
             db_pool,
-            db_listener,
+            notif_receiver,
             events_batch_size,
-            polling_timeout,
         }
     }
 
     pub async fn connect(db_pool: Pool<Postgres>, config: &Config) -> anyhow::Result<Self> {
-        let db_listener = PgListener::connect_with(&db_pool)
-            .await
-            .map_err(|e| anyhow!("Failed to init Postgres Listener: {e}"))?;
+        let (notif_sender, notif_receiver) = mpsc::channel(config.task_limit);
+        let event_notifier =
+            DbEventNotifier::connect(db_pool.clone(), notif_sender, config).await?;
+        tokio::spawn(event_notifier.start());
 
-        let mut event_picker = DbEventPicker::new(
-            db_pool,
-            db_listener,
-            config.events_batch_size,
-            config.database_polling_timeout,
-        );
-        event_picker
-            .listen()
-            .await
-            .map_err(|e| anyhow!("Failed to listen to events: {e}"))?;
-
+        let event_picker = DbEventPicker::new(db_pool, notif_receiver, config.events_batch_size);
         Ok(event_picker)
-    }
-
-    async fn listen(&mut self) -> sqlx::Result<()> {
-        self.db_listener.listen(PUBLIC_DECRYPT_NOTIFICATION).await?;
-        self.db_listener.listen(USER_DECRYPT_NOTIFICATION).await?;
-        self.db_listener.listen(PREP_KEYGEN_NOTIFICATION).await?;
-        self.db_listener.listen(KEYGEN_NOTIFICATION).await?;
-        self.db_listener.listen(CRSGEN_NOTIFICATION).await?;
-        self.db_listener.listen(PRSS_INIT_NOTIFICATION).await?;
-        self.db_listener
-            .listen(KEY_RESHARE_SAME_SET_NOTIFICATION)
-            .await
     }
 }
 
 impl EventPicker for DbEventPicker {
     type Event = GatewayEvent;
 
+    /// Picks events from the database.
+    ///
+    /// Should only return an error if the notification channel is closed, so the `kms_worker` can
+    /// shutdown gracefully.
+    /// If another error is encountered, it will just be logged with a warning and will wait for
+    /// next events.
     async fn pick_events(&mut self) -> anyhow::Result<Vec<Self::Event>> {
         loop {
-            let events = select! {
-                notification = self.db_listener.recv() => {
-                    let notification = notification?;
-                    info!("Received Postgres notification: {}", notification.channel());
-                    self.pick_notified_events(notification)
-                        .await
-                        .inspect_err(|_| EVENT_RECEIVED_ERRORS.inc())?
-                },
-                _ = tokio::time::sleep(self.polling_timeout) => {
-                    debug!("Polling timeout, rechecking for events");
-                    self.pick_any_events().await
-                },
+            let Some(notification) = self.notif_receiver.recv().await else {
+                return Err(anyhow!("notification channel was closed!"));
             };
 
-            if events.is_empty() {
-                debug!("Events have already been picked");
-                continue;
-            } else {
-                info!("Picked {} events successfully", events.len());
-                EVENT_RECEIVED_COUNTER.inc_by(events.len() as u64);
-                return Ok(events);
+            match self.pick_notified_events(&notification).await {
+                Err(e) => {
+                    warn!("Error while picking events: {e}");
+                    EVENT_RECEIVED_ERRORS.inc();
+                    continue;
+                }
+                Ok(events) if events.is_empty() => {
+                    debug!("Events have already been picked");
+                    continue;
+                }
+                Ok(events) => {
+                    info!(
+                        "Picked {} {} successfully",
+                        events.len(),
+                        notification.event_str()
+                    );
+                    EVENT_RECEIVED_COUNTER.inc_by(events.len() as u64);
+                    return Ok(events);
+                }
             }
         }
     }
@@ -124,41 +96,17 @@ impl EventPicker for DbEventPicker {
 impl DbEventPicker {
     async fn pick_notified_events(
         &self,
-        notification: PgNotification,
+        notification: &EventNotification,
     ) -> anyhow::Result<Vec<GatewayEvent>> {
-        match notification.channel() {
-            PUBLIC_DECRYPT_NOTIFICATION => self.pick_public_decryption_requests().await,
-            USER_DECRYPT_NOTIFICATION => self.pick_user_decryption_requests().await,
-            PREP_KEYGEN_NOTIFICATION => self.pick_prep_keygen_requests().await,
-            KEYGEN_NOTIFICATION => self.pick_keygen_requests().await,
-            CRSGEN_NOTIFICATION => self.pick_crsgen_requests().await,
-            PRSS_INIT_NOTIFICATION => self.pick_prss_init().await,
-            KEY_RESHARE_SAME_SET_NOTIFICATION => self.pick_key_reshare_same_set().await,
-            channel => Err(anyhow!("Unexpected notification: {channel}")),
+        match notification {
+            EventNotification::PublicDecryption => self.pick_public_decryption_requests().await,
+            EventNotification::UserDecryption => self.pick_user_decryption_requests().await,
+            EventNotification::PrepKeygen => self.pick_prep_keygen_requests().await,
+            EventNotification::Keygen => self.pick_keygen_requests().await,
+            EventNotification::Crsgen => self.pick_crsgen_requests().await,
+            EventNotification::PrssInit => self.pick_prss_init().await,
+            EventNotification::KeyReshareSameSet => self.pick_key_reshare_same_set().await,
         }
-    }
-
-    async fn pick_any_events(&self) -> Vec<GatewayEvent> {
-        let mut all_events = vec![];
-        [
-            self.pick_public_decryption_requests().await,
-            self.pick_user_decryption_requests().await,
-            self.pick_prep_keygen_requests().await,
-            self.pick_keygen_requests().await,
-            self.pick_crsgen_requests().await,
-            self.pick_prss_init().await,
-            self.pick_key_reshare_same_set().await,
-        ]
-        .into_iter()
-        .for_each(|res| match res {
-            Ok(events) => all_events.extend(events),
-            Err(e) => {
-                warn!("Failed to fetch events from one of the DB tables: {e}");
-                EVENT_RECEIVED_ERRORS.inc();
-            }
-        });
-
-        all_events
     }
 
     async fn pick_public_decryption_requests(&self) -> anyhow::Result<Vec<GatewayEvent>> {
@@ -216,13 +164,12 @@ impl DbEventPicker {
                     SELECT prep_keygen_id
                     FROM prep_keygen_requests
                     WHERE under_process = FALSE
-                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prep_keygen_requests.prep_keygen_id = req.prep_keygen_id
                 RETURNING req.prep_keygen_id, epoch_id, params_type, otlp_context
             ",
         )
-        .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -239,13 +186,12 @@ impl DbEventPicker {
                     SELECT key_id
                     FROM keygen_requests
                     WHERE under_process = FALSE
-                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE keygen_requests.key_id = req.key_id
                 RETURNING prep_keygen_id, req.key_id, otlp_context
             ",
         )
-        .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -262,13 +208,12 @@ impl DbEventPicker {
                     SELECT crs_id
                     FROM crsgen_requests
                     WHERE under_process = FALSE
-                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE crsgen_requests.crs_id = req.crs_id
                 RETURNING req.crs_id, max_bit_length, params_type, otlp_context
             ",
         )
-        .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()

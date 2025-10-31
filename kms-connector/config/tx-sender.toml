@@ -17,6 +17,10 @@ gateway_url = "ws://localhost:8545"
 # ENV: KMS_CONNECTOR_DATABASE_URL
 database_url = "postgres://postgres:postgres@localhost/kms-connector"
 
+# Timeout for polling the database for responses (optional, defaults to 5 seconds)
+# ENV: KMS_CONNECTOR_DATABASE_POLLING_TIMEOUT
+# database_polling_timeout = 5
+
 # Configuration of the Decryption contract (required)
 [decryption_contract]
 # Address of the Decryption contract (required)
