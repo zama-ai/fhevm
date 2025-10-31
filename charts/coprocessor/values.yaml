@@ -155,11 +155,16 @@ hostListener:
     - --health-port=8080
     - --dependence-cache-size=128
     - --reorg-maximum-duration-in-blocks=50
+
     ### Catchup parameters (optional)
     # - --catchup-margin
     # - --catchup-paging
     # - --start-at-block  # To be used to catch up from a specific block
     # - --end-at-block    # To be used to stop at a specific block
+
+    ### New in v0.10
+    - --service-name="host-listener"
+    - --catchup-finalization-in-blocks=20  # Continuous catchup will wait for block "finalization"
 
   # Service ports configuration
   ports:
