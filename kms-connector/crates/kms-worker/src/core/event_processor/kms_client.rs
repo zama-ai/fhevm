@@ -341,7 +341,7 @@ impl KmsClient {
         request: InitRequest,
     ) -> Result<KmsGrpcResponse, ProcessingError> {
         let inner_client = self.choose_client(RequestId {
-            request_id: hex::encode(PRSS_INIT_ID.as_le_slice()),
+            request_id: hex::encode(PRSS_INIT_ID.to_be_bytes::<32>()),
         });
         send_request_with_retry(
             self.grpc_request_retries,
