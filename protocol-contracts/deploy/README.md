@@ -16,5 +16,7 @@ Go to `https://app.aragon.org/`[https://app.aragon.org/] and use the front-end t
 
 Once deployed, copy the address of the deployed DAO contract inside the `.env`: this should be the `DAO_ADDRESS` value.
 
+## Deploy the Zama token and OFT
+
 ## Deploy Gateway contracts
 
