@@ -78,6 +78,7 @@ const config: HardhatUserConfig = {
         hardhat: {
             // Need this for testing because TestHelperOz5.sol is exceeding the compiled contract size limit
             allowUnlimitedContractSize: true,
+            chainId: 11155111,
         },
     },
     namedAccounts: {
