@@ -75,7 +75,7 @@ const config: HardhatUserConfig = {
         },
         'ethereum-testnet': {
             eid: EndpointId.SEPOLIA_V2_TESTNET,
-            url: process.env.SEPOLIA_RPC_URL!,
+            url: process.env.SEPOLIA_RPC_URL || '',
             accounts,
             oftAdapter: {
                 tokenAddress: '0x',

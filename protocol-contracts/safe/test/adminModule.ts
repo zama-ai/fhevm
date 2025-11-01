@@ -5,7 +5,7 @@ import hre from "hardhat";
 
 import { getRequiredEnvVar } from "../tasks/utils/loadVariables";
 import { AdminModule, GatewayConfigMock } from "../typechain-types";
-import { execTransaction } from "./utils/utils";
+import { execTransaction } from "../tasks/utils/execTransaction";
 
 describe("AdminModule Tests", function () {
   let deployer: Signer;

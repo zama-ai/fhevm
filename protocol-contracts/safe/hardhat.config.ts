@@ -12,6 +12,7 @@ import "./tasks/accounts";
 import "./tasks/deploy";
 import "./tasks/safeOwnershipTransfer";
 import "./tasks/verify";
+import "./tasks/enableModule";
 
 // Get the environment configuration from .env file
 //
@@ -54,7 +55,7 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
       await hre.run("compile");
 
       // Deploy the SafeL2 contract
-      await hre.run("task:deploySafeL2");
+      await hre.run("task:deploySafe");
 
       // Deploy the AdminModule contract
       // Safe address is fixed in the .env file but should match the one deployed above
@@ -92,7 +93,7 @@ const config: HardhatUserConfig = {
   },
   networks: {
     "gateway-testnet": {
-      url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET,
+      url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET || "",
       accounts,
     },
     hardhat: {
