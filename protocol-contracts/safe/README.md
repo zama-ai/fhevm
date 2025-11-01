@@ -45,3 +45,16 @@ Finally, enable the safe module with:
 ```
 npx hardhat task:enableAdminModule --network gateway-testnet
 ```
+
+## Accept ownership of GatewayConfig contract
+
+This step supposes that the original owner of GatewayConfig already called the `transferOwnership` function of `GatewayConfig` with the Safe proxy address as a new owner. Since `GatewayConfig` inherits from `Ownable2StepUpgradeable`, the Safe wallet still need to call `acceptOwnership` to effectively become the owner. This can be done using: 
+
+```
+npx hardhat task:acceptGatewayConfigOwnership --network gateway-testnet
+```
+
+## Change owners and threshold of the Safe proxy
+
+This can be done in the 3 following steps, in order to be careful and limit risk of errors.
+
