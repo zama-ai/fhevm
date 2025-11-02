@@ -11,4 +11,12 @@ contract GatewayConfigMock is Ownable2Step {
     function setValue(uint256 _value) external onlyOwner {
         value = _value;
     }
+
+    function expensiveUpdate(uint256 _value) external onlyOwner {
+        uint256 expensiveVar;
+        for (uint256 k = 0; k < 10000; k++) {
+            expensiveVar += 1;
+        }
+        value = _value;
+    }
 }
