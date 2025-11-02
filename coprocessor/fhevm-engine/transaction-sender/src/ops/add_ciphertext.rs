@@ -246,7 +246,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         current_retry_count: i32,
     ) -> anyhow::Result<()> {
         let compact_hex_handle = compact_hex(handle);
-        if current_retry_count == (self.conf.add_ciphertexts_max_retries as i32) - 1 {
+        if current_retry_count == self.conf.add_ciphertexts_max_retries - 1 {
             error!(
                 action = REVIEW,
                 max_retries = self.conf.add_ciphertexts_max_retries,
@@ -335,7 +335,7 @@ where
             AND ciphertext128 IS NOT NULL
             AND txn_limited_retries_count < $1
             LIMIT $2",
-            self.conf.add_ciphertexts_max_retries as i64,
+            self.conf.add_ciphertexts_max_retries,
             self.conf.add_ciphertexts_batch_limit as i64,
         )
         .fetch_all(&self.db_pool)
