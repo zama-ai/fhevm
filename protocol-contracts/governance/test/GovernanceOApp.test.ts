@@ -2,6 +2,7 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers'
 import { expect } from 'chai'
 import { Contract, ContractFactory } from 'ethers'
 import { deployments, ethers } from 'hardhat'
+import { execTransaction } from './utils/execTransaction.ts'
 
 import { Options } from '@layerzerolabs/lz-v2-utilities'
 
@@ -82,6 +83,9 @@ describe('GovernanceOApp Test', function () {
         adminModuleMock = await AdminModuleMock.deploy(governanceOAppReceiver.address, safeProxy.address)
 
         await governanceOAppReceiver.setAdminSafeModule(adminModuleMock.address)
+
+        const enableModuleData = safeProxy.interface.encodeFunctionData('enableModule', [adminModuleMock.address])
+        await execTransaction([owner], safeProxy, safeProxy.address, 0n, enableModuleData, 0)
     })
 
     it('should send a remote proposal on source chain and execute it on destination chain', async function () {
@@ -91,7 +95,7 @@ describe('GovernanceOApp Test', function () {
         const quotedFee = await governanceOAppSender.quoteSendCrossChainTransaction(
             [gatewayConfigMock.address],
             [0n],
-            ['setValue(uint256 value)'],
+            ['setValue(uint256)'],
             [ethers.utils.defaultAbiCoder.encode(['uint256'], [42n])],
             [0n],
             options
@@ -100,7 +104,7 @@ describe('GovernanceOApp Test', function () {
         await governanceOAppSender.sendRemoteProposal(
             [gatewayConfigMock.address],
             [0n],
-            ['setValue(uint256 value)'],
+            ['setValue(uint256)'],
             [ethers.utils.defaultAbiCoder.encode(['uint256'], [42n])],
             [0n],
             options,
