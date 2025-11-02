@@ -24,8 +24,6 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
         bytes options;
     }
 
-    /// @notice Thrown when trying to send cross-chain tx without sending enough ETH fees.
-    error InsufficientFee();
     /// @notice Thrown when trying to deploy this contract on an unsupported blockchain.
     error UnsupportedChainID();
 

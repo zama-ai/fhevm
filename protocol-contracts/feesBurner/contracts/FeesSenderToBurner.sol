@@ -21,7 +21,6 @@ contract FeesSenderToBurner {
 
     event FeesForwarded(uint256 amount, uint32 dstEid, address to, bytes options, uint256 nativeFeePaid);
 
-    error InsufficientFee();
     error NotEnoughZAMAToSend();
     error UnsupportedChainID();
 

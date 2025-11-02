@@ -88,9 +88,9 @@ describe('GovernanceOApp Test', function () {
         await execTransaction([owner], safeProxy, safeProxy.address, 0n, enableModuleData, 0)
     })
 
-    it('should send a remote proposal on source chain and execute it on destination chain', async function () {
+    it('should send a remote proposal with function signature on source chain and execute it on destination chain', async function () {
         expect(BigInt(await gatewayConfigMock.value())).to.equal(0n)
-        const options = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString()
+        const options = Options.newOptions().addExecutorLzReceiveOption(80000, 0).toHex().toString()
 
         const quotedFee = await governanceOAppSender.quoteSendCrossChainTransaction(
             [gatewayConfigMock.address],
@@ -112,5 +112,33 @@ describe('GovernanceOApp Test', function () {
         )
 
         expect(BigInt(await gatewayConfigMock.value())).to.equal(42n)
+    })
+
+    it('should send a remote proposal without function signature on source chain and execute it on destination chain', async function () {
+        expect(BigInt(await gatewayConfigMock.value())).to.equal(0n)
+        const options = Options.newOptions().addExecutorLzReceiveOption(80000, 0).toHex().toString()
+
+        const calldata = gatewayConfigMock.interface.encodeFunctionData('setValue', [19n])
+
+        const quotedFee = await governanceOAppSender.quoteSendCrossChainTransaction(
+            [gatewayConfigMock.address],
+            [0n],
+            [''],
+            [calldata],
+            [0n],
+            options
+        )
+
+        await governanceOAppSender.sendRemoteProposal(
+            [gatewayConfigMock.address],
+            [0n],
+            [''],
+            [calldata],
+            [0n],
+            options,
+            { value: quotedFee }
+        )
+
+        expect(BigInt(await gatewayConfigMock.value())).to.equal(19n)
     })
 })
