@@ -106,16 +106,6 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
         Operation[] calldata operations,
         bytes calldata options
     ) external payable onlyOwner {
-        uint256 quotedFee = quoteSendCrossChainTransaction(
-            targets,
-            values,
-            functionSignatures,
-            datas,
-            operations,
-            options
-        );
-        if (msg.value < quotedFee) revert InsufficientFee();
-
         {
             // local scope to avoid stack too deep error
             uint256 targetLen = targets.length;

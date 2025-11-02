@@ -71,5 +71,8 @@
   "overrides": {
     "ethers": "^5.7.2",
     "hardhat-deploy": "^0.12.1"
+  },
+  "dependencies": {
+    "@safe-global/safe-contracts": "1.4.1-2"
   }
 }

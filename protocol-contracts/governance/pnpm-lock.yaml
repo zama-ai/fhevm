@@ -11,6 +11,10 @@ overrides:
 importers:
 
   .:
+    dependencies:
+      '@safe-global/safe-contracts':
+        specifier: 1.4.1-2
+        version: 1.4.1-2(ethers@5.8.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))
     devDependencies:
       '@babel/core':
         specifier: ^7.23.9
@@ -795,6 +799,11 @@ packages:
 
   '@safe-global/protocol-kit@1.3.0':
     resolution: {integrity: sha512-zBhwHpaUggywmnR1Xm5RV22DpyjmVWYP3pnOl4rcf9LAc1k7IVmw6WIt2YVhHRaWGxVYMd4RitJX8Dx2+8eLZQ==}
+
+  '@safe-global/safe-contracts@1.4.1-2':
+    resolution: {integrity: sha512-UFiqZOamt1lDbyQ16lpzBE8mDdzfnQ3OBftll1erLlwIrdfmhePicQqfLquvyXA8AlqPWQ3ktz1DzpC9UcN+JQ==}
+    peerDependencies:
+      ethers: ^5.7.2
 
   '@safe-global/safe-core-sdk-types@2.3.0':
     resolution: {integrity: sha512-dU0KkDV1KJNf11ajbUjWiSi4ygdyWfhk1M50lTJWUdCn1/2Bsb/hICM8LoEk6DCoFumxaoCet02SmYakXsW2CA==}
@@ -5243,6 +5252,10 @@ snapshots:
       - ethers
       - supports-color
       - utf-8-validate
+
+  '@safe-global/safe-contracts@1.4.1-2(ethers@5.8.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))':
+    dependencies:
+      ethers: 5.8.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
 
   '@safe-global/safe-core-sdk-types@2.3.0':
     dependencies:

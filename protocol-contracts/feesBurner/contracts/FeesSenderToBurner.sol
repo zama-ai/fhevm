@@ -61,9 +61,6 @@ contract FeesSenderToBurner {
             oftCmd: bytes("")
         });
 
-        MessagingFee memory quotedFee = IOFT(ZAMA_OFT).quoteSend(sendParam, false);
-        if(msg.value < quotedFee.nativeFee) revert InsufficientFee();
-
         MessagingFee memory msgFee = MessagingFee({ nativeFee: msg.value, lzTokenFee: 0 });
 
         IOFT(ZAMA_OFT).send{ value: msg.value }(sendParam, msgFee, msg.sender);
