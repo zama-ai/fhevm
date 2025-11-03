@@ -88,7 +88,7 @@ describe("Upgrades", function () {
     });
     const ciphertextCommits = await upgrades.upgradeProxy(emptyUUPS, ciphertextCommitsFactoryV1);
     await ciphertextCommits.waitForDeployment();
-    expect(await ciphertextCommits.getVersion()).to.equal("CiphertextCommits v0.1.0");
+    expect(await ciphertextCommits.getVersion()).to.equal("CiphertextCommits v0.2.0");
     const ciphertextCommitsV2 = await upgrades.upgradeProxy(ciphertextCommits, ciphertextCommitsFactoryV2);
     await ciphertextCommitsV2.waitForDeployment();
     expect(await ciphertextCommitsV2.getVersion()).to.equal("CiphertextCommits v1000.0.0");
@@ -140,7 +140,7 @@ describe("Upgrades", function () {
     });
     const inputVerification = await upgrades.upgradeProxy(emptyUUPS, inputVerificationFactoryV1);
     await inputVerification.waitForDeployment();
-    expect(await inputVerification.getVersion()).to.equal("InputVerification v0.3.0");
+    expect(await inputVerification.getVersion()).to.equal("InputVerification v0.2.0");
     const inputVerificationV2 = await upgrades.upgradeProxy(inputVerification, inputVerificationFactoryV2);
     await inputVerificationV2.waitForDeployment();
     expect(await inputVerificationV2.getVersion()).to.equal("InputVerification v1000.0.0");
