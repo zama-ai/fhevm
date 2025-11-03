@@ -1,5 +1,7 @@
 node_modules
 .env
+!.env.example.test
+!.env.example.deploy
 
 # Hardhat files
 /cache
@@ -15,3 +17,5 @@ node_modules
 
 # Hardhat Ignition default folder for deployments against a local node
 ignition/deployments/chain-31337
+
+deployments/

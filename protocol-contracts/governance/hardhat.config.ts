@@ -61,7 +61,7 @@ const config: HardhatUserConfig = {
         },
         'ethereum-testnet': {
             eid: EndpointId.SEPOLIA_V2_TESTNET,
-            url: process.env.SEPOLIA_RPC_URL!,
+            url: process.env.SEPOLIA_RPC_URL || '',
             accounts,
         },
         'gateway-mainnet': {
@@ -78,6 +78,7 @@ const config: HardhatUserConfig = {
         hardhat: {
             // Need this for testing because TestHelperOz5.sol is exceeding the compiled contract size limit
             allowUnlimitedContractSize: true,
+            chainId: 11155111,
         },
     },
     namedAccounts: {

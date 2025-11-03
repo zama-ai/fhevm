@@ -2,12 +2,12 @@ import MultiSendJson from "@safe-global/safe-contracts/build/artifacts/contracts
 import { ContractFactory } from "ethers";
 import { task } from "hardhat/config";
 
-import { getRequiredEnvVar } from "./utils/loadVariables";
+import { getRequiredEnvVar, getDeployedAddress } from "./utils/loadVariables";
 
 // Deploy the SafeSmartAccount contract
 // Example usage:
-// npx hardhat task:deploySafeL2
-task("task:deploySafeL2").setAction(async function (
+// npx hardhat task:deploySafe --network gateway-testnet
+task("task:deploySafe").setAction(async function (
   _,
   { getNamedAccounts, ethers, deployments, network },
 ) {
@@ -115,7 +115,13 @@ task("task:deployAdminModule").setAction(async function (
   const { deployer } = await getNamedAccounts();
 
   const adminAddress = getRequiredEnvVar("ADMIN_ADDRESS");
-  const safeProxyAddress = getRequiredEnvVar("SAFE_ADDRESS");
+
+  let safeProxyAddress;
+  if (network.name === "hardhat") {
+    safeProxyAddress = getRequiredEnvVar("SAFE_ADDRESS");
+  } else {
+    safeProxyAddress = await getDeployedAddress(network.name, "SafeL2Proxy");
+  }
 
   const contractName = "AdminModule";
   console.log(`Deploying ${contractName}...`);
