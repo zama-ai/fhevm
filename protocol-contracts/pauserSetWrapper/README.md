@@ -1,13 +1,34 @@
-# Sample Hardhat Project
+# PauserSetWrapper
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
+This project contains the PauserSetWrapper contract, which allows pausers from a PauserSet contract to call specific functions on target contracts.
 
-Try running some of the following tasks:
+## Prerequisites
+
+```bash
+cp .env.example .env
+```
+
+Then fill the `PRIVATE_KEY` and `SEPOLIA_RPC_URL` in `.env` with your own values.
+Fill the `CONTRACT_TARGET`, `FUNCTION_SIGNATURE` and `PAUSER_SET` with the values of the target contract, function signature, and pauser set contract.
+
+## Deployment
 
 ```shell
-npx hardhat help
+npx hardhat deploy --network <ethereum-testnet|ethereum-mainnet>
+```
+
+## Verification
+
+After deployment, verify the contract on Etherscan:
+
+```shell
+npx hardhat task:verifyPauserSetWrapper --address <deployed-address> --network <ethereum-testnet|ethereum-mainnet>
+```
+
+## Testing
+
+Run the test suite:
+
+```shell
 npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat ignition deploy ./ignition/modules/Lock.ts
 ```

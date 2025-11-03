@@ -57,55 +57,57 @@ struct Conf {
     #[arg(long, default_value = "10")]
     database_pool_size: u32,
 
-    #[arg(long, default_value = "5")]
+    #[arg(long, default_value = "1")]
     database_polling_interval_secs: u16,
 
-    #[arg(long, default_value = "verify_proof_responses")]
+    #[arg(long, default_value = "event_zkpok_computed")]
     verify_proof_resp_database_channel: String,
 
-    #[arg(long, default_value = "add_ciphertexts")]
+    #[arg(long, default_value = "event_ciphertexts_uploaded")]
     add_ciphertexts_database_channel: String,
 
     #[arg(long, default_value = "event_allowed_handle")]
     allow_handle_database_channel: String,
 
-    #[arg(long, default_value = "128")]
+    #[arg(long, default_value_t = 128)]
     verify_proof_resp_batch_limit: u32,
 
-    #[arg(long, default_value = "3")]
+    #[arg(long, default_value_t = 6)]
     verify_proof_resp_max_retries: u32,
 
-    #[arg(long, default_value = "true")]
+    #[arg(long, default_value_t = true)]
     verify_proof_remove_after_max_retries: bool,
 
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value_t = 10)]
     add_ciphertexts_batch_limit: u32,
 
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value_t = 10)]
     allow_handle_batch_limit: u32,
 
-    #[arg(long, default_value = "10")]
-    allow_handle_max_retries: u32,
+    // For now, use i32 as that's what we have in the DB as integer type.
+    #[arg(long, default_value_t = i32::MAX, value_parser = clap::value_parser!(i32).range(0..))]
+    allow_handle_max_retries: i32,
 
-    #[arg(long, default_value = "15")]
-    add_ciphertexts_max_retries: u32,
+    // For now, use i32 as that's what we have in the DB as integer type.
+    #[arg(long, default_value_t = i32::MAX, value_parser = clap::value_parser!(i32).range(0..))]
+    add_ciphertexts_max_retries: i32,
 
-    #[arg(long, default_value = "1")]
+    #[arg(long, default_value_t = 1)]
     error_sleep_initial_secs: u16,
 
-    #[arg(long, default_value = "16")]
+    #[arg(long, default_value_t = 300)]
     error_sleep_max_secs: u16,
 
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value_t = 10)]
     txn_receipt_timeout_secs: u16,
 
-    #[arg(long, default_value = "0")]
+    #[arg(long, default_value_t = 0)]
     required_txn_confirmations: u16,
 
-    #[arg(long, default_value = "30")]
+    #[arg(long, default_value_t = 30)]
     review_after_unlimited_retries: u16,
 
-    #[arg(long, default_value = "1000000")]
+    #[arg(long, default_value_t = u32::MAX)]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]

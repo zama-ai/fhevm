@@ -22,13 +22,11 @@ The Gateway ensures that encrypted values provided by users are well-formed and 
 
 - Accepting encrypted inputs along with Zero-Knowledge Proofs of Knowledge (ZKPoKs).
 - Emitting verification events for coprocessors to validate.
-- Aggregating signatures from a majority of coprocessors to generate attestations, which can then be used on-chain as\
-  trusted external values.
+- Aggregating signatures from a majority of coprocessors to generate attestations, which can then be used on-chain as trusted external values.
 
 ### Access Control coordination
 
-The Gateway maintains a synchronized copy of Access Control Lists (ACLs) from host chains, enabling it to independently\
-determine if decryption or computation rights should be granted for a ciphertext. This helps enforce:
+The Gateway maintains a synchronized copy of Access Control Lists (ACLs) from host chains, enabling it to independently determine if decryption or computation rights should be granted for a ciphertext. This helps enforce:
 
 - Access permissions (allow)
 - Public decryption permissions (allowForDecryption)
@@ -41,8 +39,7 @@ When a smart contract or user requests the decryption of an encrypted value:
 
 1. The Gateway verifies ACL permissions.
 2. It then triggers the KMS to decrypt (either publicly or privately).
-3. Once the KMS returns signed results, the Gateway emits events that can be picked up by an oracle (for smart contract\
-   decryption) or returned to the user (for private decryption).
+3. Once the KMS returns signed results, the Gateway emits events that can be picked up by an oracle (for smart contract decryption) or returned to the user (for private decryption).
 
 This ensures asynchronous, secure, and auditable decryption without the Gateway itself knowing the plaintext.
 

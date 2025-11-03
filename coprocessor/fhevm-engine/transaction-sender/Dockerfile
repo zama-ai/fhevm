@@ -1,5 +1,5 @@
 # Stage 1: Build Transaction Sender
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.90.0 AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
 USER root
 

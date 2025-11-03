@@ -80,7 +80,7 @@ contract InputVerification is
      */
     string private constant CONTRACT_NAME = "InputVerification";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -89,7 +89,7 @@ contract InputVerification is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -162,11 +162,11 @@ contract InputVerification is
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IInputVerification-verifyProofRequest}.
@@ -259,7 +259,14 @@ contract InputVerification is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.verifiedZKProofs[zkProofId] && _isConsensusReached(currentSignatures.length)) {
+        // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
+        // coprocessors to be able to send both a verification and a rejection response by waiting for
+        // a coprocessor threshold decrement before sending some responses.
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached(currentSignatures.length)
+        ) {
             $.verifiedZKProofs[zkProofId] = true;
 
             // A "late" valid coprocessor could still see its transaction sender address be added to
@@ -309,7 +316,14 @@ contract InputVerification is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.rejectedZKProofs[zkProofId] && _isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
+        // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
+        // coprocessors to be able to send both a verification and a rejection response by waiting for
+        // a coprocessor threshold decrement before sending some responses.
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached($.rejectedProofResponseCounter[zkProofId])
+        ) {
             $.rejectedZKProofs[zkProofId] = true;
 
             emit RejectProofResponse(zkProofId);

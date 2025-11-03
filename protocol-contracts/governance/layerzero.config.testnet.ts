@@ -39,7 +39,7 @@ const pathways: TwoWayConfig[] = [
         // TODO: Add custom ZAMA DVN in next line?
         [['LayerZero Labs'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
         [15, undefined], // [A to B confirmations, B to A confirmations] // NOTE: undefined is used here because we want an uniderectional pathway
-        [EVM_ENFORCED_OPTIONS, EVM_ENFORCED_OPTIONS], // Chain B enforcedOptions, Chain A enforcedOptions
+        [EVM_ENFORCED_OPTIONS, undefined], // Chain B enforcedOptions, Chain A enforcedOptions  // NOTE: undefined is used here because we want an uniderectional pathway
     ],
 ]
 

@@ -1,92 +1,99 @@
-import "@nomicfoundation/hardhat-toolbox";
-import dotenv from "dotenv";
-import "hardhat-gas-reporter";
-import type { HardhatUserConfig } from "hardhat/config";
-import type { NetworkUserConfig } from "hardhat/types";
-import { resolve } from "path";
+import 'dotenv/config'
 
-const NUM_ACCOUNTS = 15;
+import '@nomicfoundation/hardhat-toolbox'
+import 'hardhat-deploy'
+import '@nomicfoundation/hardhat-ethers'
+import '@nomicfoundation/hardhat-chai-matchers' // Version 1.0.6 is the latest using Ethers v5
+import { HardhatUserConfig } from 'hardhat/types'
+import { task, types } from 'hardhat/config'
 
-// Ensure that we have all the environment variables we need.
-let mnemonic: string | undefined = process.env.MNEMONIC;
-if (!mnemonic) {
-  mnemonic = "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"; // default mnemonic in case it is undefined (needed to avoid panicking when deploying on real network)
+import 'hardhat/types/config'
+
+import './tasks/blockExplorerVerify'
+import './tasks/deployMocks'
+
+// Set your preferred authentication method
+//
+// If you prefer using a mnemonic, set a MNEMONIC environment variable
+// to a valid mnemonic
+const MNEMONIC = process.env.MNEMONIC
+
+// If you prefer to be authenticated using a private key, set a PRIVATE_KEY environment variable
+const PRIVATE_KEY = process.env.PRIVATE_KEY
+
+const accounts = MNEMONIC ? { mnemonic: MNEMONIC } : PRIVATE_KEY ? [PRIVATE_KEY] : undefined
+
+if (accounts == null) {
+    console.warn(
+        'Could not find MNEMONIC or PRIVATE_KEY environment variables. It will not be possible to execute transactions in your example.'
+    )
 }
 
-const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
-dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
+// Deploy contracts by default before running tests
+task('test', 'Runs the test suite, optionally skipping setup tasks')
+    .addOptionalParam('skipSetup', 'Set to true to skip setup tasks', false, types.boolean)
+    .setAction(async ({ skipSetup }, hre, runSuper) => {
+        if (!skipSetup) {
+            // Compile the contracts
+            await hre.run('compile')
 
-const chainIds = {
-  sepolia: 11155111,
-  mainnet: 1,
-};
+            // Deploy the mock contracts
+            await hre.run('task:deployMocks')
 
-function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
-  let jsonRpcUrl: string | undefined = process.env.RPC_URL;
-  if (!jsonRpcUrl) {
-    jsonRpcUrl = "http://127.0.0.1:8756";
-  }
-  return {
-    accounts: {
-      count: NUM_ACCOUNTS,
-      mnemonic,
-      path: "m/44'/60'/0'/0",
-    },
-    chainId: process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : chainIds[chain],
-    url: jsonRpcUrl,
-  };
-}
+            // Deploy the PauserSetWrapper contract
+            await hre.run('deploy')
+        } else {
+            console.log('Skipping contracts setup.')
+        }
+        await runSuper()
+    })
 
 const config: HardhatUserConfig = {
-  mocha: {
-    timeout: 500000,
-  },
-  gasReporter: {
-    currency: "USD",
-    enabled: process.env.REPORT_GAS ? true : false,
-  },
-  networks: {
-    hardhat: {
-      accounts: {
-        count: 20,
-        mnemonic,
-        path: "m/44'/60'/0'/0",
-      },
+    solidity: {
+        version: '0.8.24',
+        settings: {
+            metadata: {
+                bytecodeHash: 'none',
+            },
+            optimizer: {
+                enabled: true,
+                runs: 800,
+            },
+            evmVersion: 'cancun',
+        },
     },
-    sepolia: getChainConfig("sepolia"),
-    mainnet: getChainConfig("mainnet"),
-  },
-  paths: {
-    artifacts: "./artifacts",
-    cache: "./cache",
-    sources: "./contracts",
-    tests: "./test",
-  },
-  solidity: {
-    version: "0.8.24",
-    settings: {
-      metadata: {
-        // Not including the metadata hash
-        // https://github.com/paulrberg/hardhat-template/issues/31
-        bytecodeHash: "none",
-      },
-      // Disable the optimizer when debugging
-      // https://hardhat.org/hardhat-network/#solidity-optimizer-support
-      optimizer: {
-        enabled: true,
-        runs: 800,
-      },
-      evmVersion: "cancun",
-      viaIR: false,
+    networks: {
+        'ethereum-mainnet': {
+            url: process.env.MAINNET_RPC_URL || '',
+            accounts,
+        },
+        'ethereum-testnet': {
+            url: process.env.SEPOLIA_RPC_URL || '',
+            accounts,
+        },
+        hardhat: {
+            chainId: 11155111,
+            saveDeployments: false,
+        },
     },
-  },
-  etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY!,
-  },
-  typechain: {
-    outDir: "types",
-    target: "ethers-v6",
-  },
-};
+    namedAccounts: {
+        deployer: {
+            default: 0, // wallet address of index[0], of the mnemonic in .env
+        },
+        alice: {
+            default: 1, // wallet address of index[1], of the mnemonic in .env
+        },
+        bob: {
+            default: 2, // wallet address of index[2], of the mnemonic in .env
+        },
+    },
+    etherscan: {
+        apiKey: process.env.ETHERSCAN_API_KEY || '',
+    },
+    // Add this section to disable gas reporter
+    gasReporter: {
+        enabled: false,
+    },
+}
 
-export default config;
+export default config

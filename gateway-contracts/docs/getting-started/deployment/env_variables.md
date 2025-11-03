@@ -57,6 +57,7 @@ Here's the complete list of environment variables used for deploying the FHEVM g
 | `GATEWAY_CONFIG_ADDRESS`            | Address of the GatewayConfig contract      | address       | -                                                                                                   | Only for production settings                                                     |
 | `KMS_GENERATION_ADDRESS`            | Address of the KmsGeneration contract      | address       | -                                                                                                   | Only for production settings                                                     |
 | `PAUSER_SET_ADDRESS`                | Address of the PauserSet contract          | address       | -                                                                                                   | Only for production settings                                                     |
+| `NEW_OWNER_PRIVATE_KEY`             | Private key for new owner acceptance       | bytes32       | -                                                                                                   | Only used in task that transfers ownership of the gateway to a new EAO owner     |
 
 ## In details
 
@@ -284,3 +285,11 @@ PAUSER_SET_ADDRESS="0xc1D733116990ce3D9e54F9eCf48a1cdD441Af4f9" # (address)
 ```
 
 This (static) address is needed for managing pausers in the PauserSet contract separately. In a proper production setting, this environment variable needs to be dynamically set after deploying the contracts.
+
+- New owner private key
+
+```bash
+NEW_OWNER_PRIVATE_KEY="0x7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f" # (bytes32)
+```
+
+This is the private key of the targeted new owner EAO, used to accept the ownership of the gateway contracts in case it is not directly transferred to a multisig account.

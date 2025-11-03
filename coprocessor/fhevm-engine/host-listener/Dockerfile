@@ -13,7 +13,7 @@ RUN cp .env.example .env
 RUN npm install && HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && npx hardhat compile
 
 # Stage 1: Build Host Listener
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.90.0 AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
 USER root
 

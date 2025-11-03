@@ -19,7 +19,7 @@ use connector_utils::{
     types::{GatewayEvent, KmsResponse},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct processing stored Gateway's events.
@@ -63,7 +63,7 @@ where
         loop {
             match self.event_picker.pick_events().await {
                 Ok(events) => self.spawn_event_processing_tasks(events).await,
-                Err(e) => warn!("Error while picking events: {e}"),
+                Err(e) => break error!("Event picker is broken: {e}"),
             };
         }
     }

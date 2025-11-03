@@ -9,8 +9,8 @@ use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
 use prometheus::{register_int_counter, IntCounter};
 use scheduler::dfg::types::{DFGTxInput, SchedulerError};
+use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
-use scheduler::dfg::{DFGOp, DFTxGraph, TxNode};
 use sqlx::Postgres;
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
@@ -116,7 +116,7 @@ async fn tfhe_worker_cycle(
         s.end();
 
         // Query for transactions to execute, and if relevant the associated keys
-        let mut transactions =
+        let (mut transactions, mut unneeded_handles) =
             query_for_work(args, &health_check, &mut trx, &tracer, &loop_ctx).await?;
         if transactions.is_empty() {
             continue;
@@ -149,6 +149,7 @@ async fn tfhe_worker_cycle(
             upload_transaction_graph_results(
                 tenant_id,
                 &mut tx_graph,
+                &mut unneeded_handles,
                 &mut trx,
                 &tracer,
                 &loop_ctx,
@@ -170,7 +171,7 @@ async fn tfhe_worker_cycle(
 }
 
 async fn query_tenants_and_keys<'a>(
-    transactions: &[(i32, Vec<TxNode>)],
+    transactions: &[(i32, Vec<ComponentNode>)],
     tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     tracer: &opentelemetry::global::BoxedTracer,
@@ -290,7 +291,10 @@ async fn query_for_work<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
-) -> Result<Vec<(i32, Vec<TxNode>)>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<
+    (Vec<(i32, Vec<ComponentNode>)>, Vec<(Handle, Handle)>),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     // This query locks our work items so other worker doesn't select them.
     let mut s = tracer.start_with_context("query_work_items", loop_ctx);
     let the_work = query!(
@@ -337,7 +341,7 @@ FOR UPDATE SKIP LOCKED            ",
     health_check.update_db_access();
     if the_work.is_empty() {
         health_check.update_activity();
-        return Ok(vec![]);
+        return Ok((vec![], vec![]));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", { count = the_work.len() }, "Processing work items");
@@ -358,9 +362,10 @@ FOR UPDATE SKIP LOCKED            ",
         );
     }
     // Traverse transactions and build transaction nodes
-    let mut transactions: Vec<(i32, Vec<TxNode>)> = vec![];
+    let mut transactions: Vec<(i32, Vec<ComponentNode>)> = vec![];
+    let mut unneeded_handles: Vec<(Handle, Handle)> = vec![];
     for (tenant_id, work_by_transaction) in work_by_tenant_by_transaction.iter() {
-        let mut tenant_transactions: Vec<TxNode> = vec![];
+        let mut tenant_transactions: Vec<ComponentNode> = vec![];
         for (transaction_id, txwork) in work_by_transaction.iter() {
             let mut ops = vec![];
             for w in txwork {
@@ -397,26 +402,26 @@ FOR UPDATE SKIP LOCKED            ",
                     is_allowed: w.is_allowed,
                 });
             }
-            let mut txn = TxNode::default();
-            txn.build(ops, transaction_id)?;
-            tenant_transactions.push(txn);
+            let (mut components, mut unneeded) = build_component_nodes(ops, transaction_id)?;
+            tenant_transactions.append(&mut components);
+            unneeded_handles.append(&mut unneeded);
         }
         transactions.push((*tenant_id, tenant_transactions));
     }
     s_prep.end();
-    Ok(transactions)
+    Ok((transactions, unneeded_handles))
 }
 
 async fn build_transaction_graph_and_execute<'a>(
     tenant_id: &i32,
-    tenant_txs: &mut Vec<TxNode>,
+    tenant_txs: &mut Vec<ComponentNode>,
     tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
-) -> Result<DFTxGraph, Box<dyn std::error::Error + Send + Sync>> {
-    let mut tx_graph = DFTxGraph::default();
+) -> Result<DFComponentGraph, Box<dyn std::error::Error + Send + Sync>> {
+    let mut tx_graph = DFComponentGraph::default();
     tx_graph.build(tenant_txs)?;
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
     let ciphertext_map =
@@ -424,7 +429,7 @@ async fn build_transaction_graph_and_execute<'a>(
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
         tx_graph.add_input(
             &handle,
-            &DFGTxInput::Compressed((ct_type, std::mem::take(&mut ct))),
+            &DFGTxInput::Compressed(((ct_type, std::mem::take(&mut ct)), true)),
         )?;
     }
     // Execute the DFG with the current tenant's keys
@@ -450,17 +455,19 @@ async fn build_transaction_graph_and_execute<'a>(
 
 async fn upload_transaction_graph_results<'a>(
     tenant_id: &i32,
-    tx_graph: &mut DFTxGraph,
+    tx_graph: &mut DFComponentGraph,
+    unneeded_handles: &mut Vec<(Handle, Handle)>,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Get computation results
     let graph_results = tx_graph.get_results();
+    let mut handles_to_update = tx_graph.get_handles();
+    handles_to_update.append(unneeded_handles);
 
     // Traverse computations that have been scheduled and
     // upload their results/errors
-    let mut handles_to_update = tx_graph.get_intermediate_handles();
     let mut cts_to_insert = vec![];
     let mut uncomputable = vec![];
     for result in graph_results.into_iter() {
@@ -473,7 +480,6 @@ async fn upload_transaction_graph_results<'a>(
                         (db_bytes, (current_ciphertext_version(), db_type)),
                     ),
                 ));
-                handles_to_update.push((result.handle.clone(), result.transaction_id.clone()));
                 WORK_ITEMS_PROCESSED_COUNTER.inc();
             }
             Err(mut err) => {

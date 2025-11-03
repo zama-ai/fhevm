@@ -341,7 +341,7 @@ impl KmsClient {
         request: InitRequest,
     ) -> Result<KmsGrpcResponse, ProcessingError> {
         let inner_client = self.choose_client(RequestId {
-            request_id: hex::encode(PRSS_INIT_ID.as_le_slice()),
+            request_id: hex::encode(PRSS_INIT_ID.to_be_bytes::<32>()),
         });
         send_request_with_retry(
             self.grpc_request_retries,
@@ -395,6 +395,13 @@ impl KmsClient {
     }
 }
 
+const RETRYABLE_GRPC_CODE: [Code; 4] = [
+    Code::DeadlineExceeded,
+    Code::ResourceExhausted,
+    Code::Unavailable,
+    Code::Unknown,
+];
+
 #[tracing::instrument(skip_all)]
 async fn send_request_with_retry<F, Fut, R>(
     retries: u8,
@@ -411,20 +418,15 @@ where
             Ok(_) => {
                 success_counter.inc();
                 info!("GRPC request successfully sent to the KMS!");
-                break;
+                return Ok(());
             }
             Err(e) if e.code() == Code::AlreadyExists => {
                 info!("GRPC already sent to the KMS!");
-                break;
+                return Ok(());
             }
-            Err(e) if [Code::ResourceExhausted, Code::Unknown].contains(&e.code()) => {
+            Err(e) if RETRYABLE_GRPC_CODE.contains(&e.code()) => {
                 error_counter.inc();
                 warn!("#{i}/{retries} GRPC request attempt failed: {e}");
-                if i == retries {
-                    return Err(ProcessingError::Recoverable(anyhow!(
-                        "All GRPC requests failed!"
-                    )));
-                }
             }
             Err(e) => {
                 error_counter.inc();
@@ -432,7 +434,9 @@ where
             }
         }
     }
-    Ok(())
+    Err(ProcessingError::Recoverable(anyhow!(
+        "All GRPC requests failed!"
+    )))
 }
 
 /// Poll for result with timeout.
@@ -458,7 +462,7 @@ where
                 return Ok(response);
             }
             Err(status) => {
-                if [Code::Unavailable, Code::Unknown].contains(&status.code()) {
+                if RETRYABLE_GRPC_CODE.contains(&status.code()) {
                     // Check if we've exceeded the timeout
                     if start.elapsed() >= timeout {
                         error_counter.inc();
