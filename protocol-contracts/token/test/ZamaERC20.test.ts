@@ -28,6 +28,45 @@ describe('ZamaERC20 - Unit Test', () => {
         ;[deployer, owner, admin, alice, bob, charlie] = signers
     })
 
+    describe('Multiple initial receivers', () => {
+        it('should mint the correct amount for each initial receivers', async () => {
+            const _ALICE_AMOUNT = 5_000_000_000n
+            const _BOB_AMOUNT = 4_000_000_000n
+            const _CHARLIE_AMOUNT = 2_000_000_000n
+
+            const ALICE_AMOUNT = ethers.utils.parseEther(_ALICE_AMOUNT.toString())
+            const BOB_AMOUNT = ethers.utils.parseEther(_BOB_AMOUNT.toString())
+            const CHARLIE_AMOUNT = ethers.utils.parseEther(_CHARLIE_AMOUNT.toString())
+
+            zamaERC20 = await zamaERC20Factory
+                .connect(deployer)
+                .deploy(
+                    'ZAMAERC20',
+                    'ZAMA',
+                    [alice.address, bob.address, charlie.address],
+                    [ALICE_AMOUNT, BOB_AMOUNT, CHARLIE_AMOUNT],
+                    admin.address
+                )
+
+            expect(await zamaERC20.balanceOf(alice.address)).to.eq(ALICE_AMOUNT)
+            expect(await zamaERC20.balanceOf(bob.address)).to.eq(BOB_AMOUNT)
+            expect(await zamaERC20.balanceOf(charlie.address)).to.eq(CHARLIE_AMOUNT)
+
+            expect(await zamaERC20.totalSupply()).to.eq(ALICE_AMOUNT.add(BOB_AMOUNT).add(CHARLIE_AMOUNT))
+        })
+
+        it('should revert when receivers address and amount length differ', async () => {
+            const _AMOUNT = 5_000_000_000n
+            const AMOUNT = ethers.utils.parseEther(_AMOUNT.toString())
+
+            await expect(
+                zamaERC20Factory
+                    .connect(deployer)
+                    .deploy('ZAMAERC20', 'ZAMA', [alice.address, bob.address, charlie.address], [AMOUNT], admin.address)
+            ).to.be.revertedWithCustomError({ interface: zamaERC20Factory.interface }, 'AmountsReceiversLengthMismatch')
+        })
+    })
+
     describe('Single initial receiver', () => {
         const _INITIAL_MINT_AMOUNT = 11_000_000_000n
         const INITIAL_MINT_AMOUNT = ethers.utils.parseEther(_INITIAL_MINT_AMOUNT.toString())
