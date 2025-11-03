@@ -6,7 +6,7 @@ import { getRequiredEnvVar, getDeployedAddress } from "./utils/loadVariables";
 
 // Deploy the SafeSmartAccount contract
 // Example usage:
-// npx hardhat task:deploySafeL2 --network gateway-testnet
+// npx hardhat task:deploySafe --network gateway-testnet
 task("task:deploySafe").setAction(async function (
   _,
   { getNamedAccounts, ethers, deployments, network },

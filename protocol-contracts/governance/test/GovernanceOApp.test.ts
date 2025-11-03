@@ -5,10 +5,11 @@ import { deployments, ethers } from 'hardhat'
 import { execTransaction } from './utils/execTransaction.ts'
 
 import { Options } from '@layerzerolabs/lz-v2-utilities'
+import { EndpointId } from '@layerzerolabs/lz-definitions'
 
 describe('GovernanceOApp Test', function () {
-    const eidA = 40161
-    const eidB = 40424
+    const eidA = EndpointId.SEPOLIA_V2_TESTNET
+    const eidB = EndpointId.ZAMA_V2_TESTNET
     let GovernanceOAppSender: ContractFactory
     let GovernanceOAppReceiver: ContractFactory
     let EndpointV2Mock: ContractFactory
