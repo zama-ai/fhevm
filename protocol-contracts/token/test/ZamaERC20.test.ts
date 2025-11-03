@@ -28,12 +28,15 @@ describe('ZamaERC20 - Unit Test', () => {
         ;[deployer, owner, admin, alice, bob, charlie] = signers
     })
 
+    const _INITIAL_MINT_AMOUNT = 11_000_000_000n
+    const INITIAL_MINT_AMOUNT = ethers.utils.parseEther(_INITIAL_MINT_AMOUNT.toString())
+
     // beforeEach hook for setup that runs before each test in the block
     beforeEach(async () => {
         // The INITIAL_RECEIVER_0 and INITIAL_ADMIN can be different from the deployer.
         zamaERC20 = await zamaERC20Factory
             .connect(deployer)
-            .deploy('ZAMAERC20', 'ZAMA', [owner.address], [11_000_000_000n], admin.address)
+            .deploy('ZAMAERC20', 'ZAMA', [owner.address], [INITIAL_MINT_AMOUNT], admin.address)
     })
 
     describe('Initialization', () => {
@@ -48,12 +51,11 @@ describe('ZamaERC20 - Unit Test', () => {
             expect(await zamaERC20.symbol()).to.eq('ZAMA')
 
             // Check that owner has the initial supply
-            const expectedTokenAmount = ethers.utils.parseEther('11000000000')
             const ownerBalance = await zamaERC20.balanceOf(owner.address)
-            expect(ownerBalance).eql(expectedTokenAmount)
+            expect(ownerBalance).eql(INITIAL_MINT_AMOUNT)
 
             // Total Supply
-            expect(await zamaERC20.totalSupply()).to.eq(expectedTokenAmount)
+            expect(await zamaERC20.totalSupply()).to.eq(INITIAL_MINT_AMOUNT)
 
             // Check that admin has DEFAULT_ADMIN_ROLE
             const hasAdminRole = await zamaERC20.hasRole(DEFAULT_ADMIN_ROLE, admin.address)

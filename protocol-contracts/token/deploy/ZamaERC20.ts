@@ -1,13 +1,14 @@
 import assert from 'assert'
 
+import { ethers } from 'hardhat'
 import { type DeployFunction } from 'hardhat-deploy/types'
 
 import { getRequiredEnvVar } from '../tasks/utils/loadVariables'
 
 const contractName = 'ZamaERC20'
 
-function toBigIntWithUnderscores(s: string): bigint {
-    return BigInt(s.replace(/_/g, ''))
+function removeUnderscores(s: string): string {
+    return s.replace(/_/g, '')
 }
 
 const deploy: DeployFunction = async (hre) => {
@@ -31,7 +32,7 @@ const deploy: DeployFunction = async (hre) => {
     const amounts = []
     for (let idx = 0; idx < numReceivers; idx++) {
         receivers.push(getRequiredEnvVar(`INITIAL_RECEIVER_${idx}`))
-        amounts.push(toBigIntWithUnderscores(getRequiredEnvVar(`INITIAL_AMOUNT_${idx}`)))
+        amounts.push(ethers.utils.parseEther(removeUnderscores(getRequiredEnvVar(`INITIAL_AMOUNT_${idx}`))))
     }
 
     const initialAdmin = getRequiredEnvVar('INITIAL_ADMIN')
