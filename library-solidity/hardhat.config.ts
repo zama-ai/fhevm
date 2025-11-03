@@ -51,13 +51,9 @@ task('test', async (_taskArgs, hre, runSuper) => {
   // Ensure the tmp contracts directory exists.
   fs.mkdirSync(path.join(__dirname, '../fhevmTemp/contracts'), { recursive: true });
 
-  const sourceDir = path.resolve(__dirname, '../node_modules/@fhevm/host-contracts/contracts');
-  const destinationDir = path.resolve(__dirname, 'fhevmTemp/contracts');
-  fs.copySync(sourceDir, destinationDir, { dereference: true });
-
-  const sourceDir3 = path.resolve(__dirname, 'node_modules/@zama-fhe/oracle-solidity/contracts');
-  const destinationDir3 = path.resolve(__dirname, 'fhevmTemp/contracts');
-  fs.copySync(sourceDir3, destinationDir3, { dereference: true });
+  const hostContractsSrcDir = path.resolve(__dirname, '../node_modules/@fhevm/host-contracts/contracts');
+  const hostContractsDstDir = path.resolve(__dirname, 'fhevmTemp/contracts');
+  fs.copySync(hostContractsSrcDir, hostContractsDstDir, { dereference: true });
 
   // Run modified test task
   if (hre.network.name === 'hardhat') {
@@ -154,7 +150,6 @@ const config: HardhatUserConfig = {
     },
   },
   typechain: {
-    outDir: 'types',
     target: 'ethers-v6',
   },
 };

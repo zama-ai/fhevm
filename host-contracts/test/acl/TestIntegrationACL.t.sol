@@ -93,7 +93,6 @@ contract FHELibCaller {
         CoprocessorConfig memory config = CoprocessorConfig({
             ACLAddress: aclAddress,
             CoprocessorAddress: fhevmExecutorAdd,
-            DecryptionOracleAddress: address(0),
             KMSVerifierAddress: kmsVerifierAdd
         });
         FHE.setCoprocessor(config);

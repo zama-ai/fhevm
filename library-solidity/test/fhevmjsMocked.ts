@@ -2,7 +2,7 @@ import { toBigIntBE } from 'bigint-buffer';
 import { toBufferBE } from 'bigint-buffer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { Wallet, ethers } from 'ethers';
+import { type BigNumberish, type Signer, ethers } from 'ethers';
 import * as fs from 'fs';
 import hre from 'hardhat';
 import { Keccak } from 'sha3';
@@ -449,7 +449,7 @@ export const ENCRYPTION_TYPES = {
 };
 
 async function computeInputSignaturesCopro(
-  handlesList: string[],
+  handlesList: BigNumberish[],
   userAddress: string,
   contractAddress: string,
   extraData: string,
@@ -467,11 +467,11 @@ async function computeInputSignaturesCopro(
 }
 
 async function coprocSign(
-  handlesList: string[],
+  handlesList: BigNumberish[],
   userAddress: string,
   contractAddress: string,
   extraData: string,
-  signer: Wallet,
+  signer: Signer,
 ): Promise<string> {
   const inputVerificationAdd = process.env.INPUT_VERIFICATION_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;

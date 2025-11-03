@@ -20,6 +20,6 @@ describe('TestEthereumCoprocessorConfig', function () {
 
   it('test protocolId', async function () {
     const protocolId = await this.contract.connect(this.signers.carol).protocolId();
-    expect(protocolId).to.equal(1); // Zama protocolId == 1
+    expect(protocolId).to.equal(0); // Zama protocolId == 0 on any chain other than mainnet/sepolia
   });
 });
