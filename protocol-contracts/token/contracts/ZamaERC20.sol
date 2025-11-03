@@ -30,7 +30,7 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
      * @param initialReceivers Array of addresses of the receivers of the initial supply.
      * @param initialAmounts Array of amounts to be distributed to each initial receiver.
      * @param initialAdmin Account granted the DEFAULT_ADMIN_ROLE role.
-     * @dev The amounts in initialAmounts are token units, i.e an amount of 1 corresponds to a balance of 1e18
+     * @dev The initialAmounts values are expected to have all decimals accounted for (i.e. 1e18 for 1 token unit).
      */
     constructor(
         string memory name,
@@ -43,7 +43,7 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
         if (initialAmounts.length != initialReceiversLen) revert AmountsReceiversLengthMismatch();
 
         for (uint256 i = 0; i < initialReceiversLen; i++) {
-            _mint(initialReceivers[i], initialAmounts[i] * 1e18);
+            _mint(initialReceivers[i], initialAmounts[i]);
         }
 
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);

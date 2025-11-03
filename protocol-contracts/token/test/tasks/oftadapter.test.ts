@@ -23,9 +23,11 @@ describe('ZamaOFTAdapter task suite', function () {
 
     beforeEach(async function () {
         endpointStub = await endpointFactory.deploy()
+        const _INITIAL_MINT_AMOUNT = 11_000_000_000n
+        const INITIAL_MINT_AMOUNT = ethers.utils.parseEther(_INITIAL_MINT_AMOUNT.toString())
         zamaERC20 = await zamaERC20Factory
             .connect(deployer)
-            .deploy('ZAMAERC20', 'ZAMA', [deployer.address], [11_000_000_000n], deployer.address)
+            .deploy('ZAMAERC20', 'ZAMA', [deployer.address], [INITIAL_MINT_AMOUNT], deployer.address)
         zamaOFTAdapter = await zamaOFTAdapterFactory
             .connect(deployer)
             .deploy(zamaERC20.address, endpointStub.address, deployer.address)
