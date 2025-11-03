@@ -1,0 +1,96 @@
+import fs from 'node:fs';
+import { DeploymentConfig } from '../config/schema.js';
+import { EnvManager } from '../config/env-manager.js';
+import { NetworkRegistry } from '../config/networks.js';
+import { StateManager } from '../state/state-manager.js';
+import { StepResultData } from '../state/types.js';
+import { HardhatRunner, PackageName } from '../tasks/hardhat-runner.js';
+import { InteractivePrompt } from '../tasks/interactive-prompt.js';
+import { Logger } from '../utils/logger.js';
+import { execa } from 'execa';
+import path from 'node:path';
+import { resolveProjectRoot } from '../utils/project-paths.js';
+
+export interface DeploymentContext {
+  readonly config: DeploymentConfig;
+  readonly env: EnvManager;
+  readonly state: StateManager;
+  readonly hardhat: HardhatRunner;
+  readonly prompt: InteractivePrompt;
+  readonly logger: Logger;
+  readonly networks: NetworkRegistry;
+}
+
+export interface StepExecutionResult extends StepResultData {
+  status?: 'completed' | 'skipped' | 'pending';
+}
+
+export interface DeploymentStep {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly dependencies: readonly string[];
+  run(ctx: DeploymentContext): Promise<StepExecutionResult>;
+}
+
+export abstract class BaseStep implements DeploymentStep {
+  public abstract readonly id: string;
+  public abstract readonly name: string;
+  public abstract readonly description: string;
+  public readonly dependencies: readonly string[] = [];
+  public abstract readonly pkgName: PackageName;
+
+  public async run(ctx: DeploymentContext): Promise<StepExecutionResult> {
+    const scopedLogger = ctx.logger.child(this.id);
+    scopedLogger.info(`Starting ${this.name}`);
+
+    await this.preRequires(ctx, scopedLogger);
+    await this.validate(ctx, scopedLogger);
+    const result = await this.execute(ctx, scopedLogger);
+    await this.after(ctx, result, scopedLogger);
+
+    scopedLogger.success(`Finished ${this.name}`);
+    return result;
+  }
+
+  protected async preRequires(ctx: DeploymentContext, logger: Logger): Promise<void> {
+    logger.info(`Installing npm dependencies for ${this.pkgName}...`);
+    try {
+      // Get either pnpm-lock.yaml or package-lock.json to decide which package manager to use
+      const pnpmLockFile = path.join(resolveProjectRoot(), this.pkgName, 'pnpm-lock.yaml');
+      const pkgManager = fs.existsSync(pnpmLockFile) ? 'pnpm' : 'npm';
+      const {stdout} = await execa(pkgManager, ['install'], {
+        cwd: path.join(resolveProjectRoot(), this.pkgName),
+        stdio: ['pipe', 'inherit', 'inherit']
+      });
+      logger.success(`${this.pkgName} dependencies installed`);
+    } catch (error) {
+      throw new Error(`Failed to install ${this.pkgName} dependencies: ${error}`);
+    }
+  }
+
+  protected async validate(ctx: DeploymentContext, logger: Logger): Promise<void> {
+    logger.debug(`No custom validation for ${this.id}`);
+    return Promise.resolve();
+  }
+
+  protected abstract execute(ctx: DeploymentContext, logger: Logger): Promise<StepExecutionResult>;
+
+  protected async after(
+    ctx: DeploymentContext,
+    result: StepExecutionResult,
+    logger: Logger
+  ): Promise<void> {
+    if (result.addresses) {
+      for (const [key, value] of Object.entries(result.addresses)) {
+        ctx.env.recordAddress(key, value, this.id);
+      }
+    }
+
+    if (result.notes && result.notes.length > 0) {
+      for (const note of result.notes) {
+        logger.info(note);
+      }
+    }
+  }
+}

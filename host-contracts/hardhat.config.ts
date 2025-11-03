@@ -125,7 +125,7 @@ const config: HardhatUserConfig = {
     version: '0.8.24',
     settings: {
       metadata: {
-        // Not including the metadata hash
+      // Not including the metadata hash
         // https://github.com/paulrberg/hardhat-template/issues/31
         bytecodeHash: 'none',
       },
