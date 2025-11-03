@@ -63,7 +63,7 @@ export class DeploymentOrchestrator {
     options: { networkEnvironment: string }
   ): Promise<DeploymentOrchestrator> {
     const rootPath = resolveProjectRoot();
-    const resolvedConfigPath = path.resolve(rootPath, "deployment-cli", 'deployment-state', 'deployment-config.yaml');
+    const resolvedConfigPath = path.resolve(rootPath, "protocol-contracts", "deployment-cli", "deployment-state", "deployment-config.yaml");
     const { config, hash } = loadDeploymentConfig(resolvedConfigPath);
     const steps = getDeploymentSteps();
 
