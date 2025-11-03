@@ -36,7 +36,6 @@ task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (network.name === 'hardhat') {
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
-    // const privKeyFhevmRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
 
@@ -48,7 +47,6 @@ task('test', async (taskArgs, hre, runSuper) => {
 
     await hre.run('compile:specific', { contract: 'contracts' });
     await hre.run('compile:specific', { contract: 'lib' });
-    await hre.run('compile:specific', { contract: 'decryptionOracle' });
 
     await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployTFHEExecutor', {
@@ -61,9 +59,6 @@ task('test', async (taskArgs, hre, runSuper) => {
       privateKey: privKeyFhevmDeployer,
     });
     await hre.run('task:deployHCULimit', {
-      privateKey: privKeyFhevmDeployer,
-    });
-    await hre.run('task:deployDecryptionOracle', {
       privateKey: privKeyFhevmDeployer,
     });
 
