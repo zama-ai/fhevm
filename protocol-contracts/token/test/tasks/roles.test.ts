@@ -22,7 +22,7 @@ describe('ZamaERC20 Role task suite', function () {
     beforeEach(async () => {
         zamaERC20 = await zamaERC20Factory
             .connect(deployer)
-            .deploy('ZAMAERC20', 'ZAMA', deployer.address, deployer.address)
+            .deploy('ZAMAERC20', 'ZAMA', [deployer.address], [11_000_000_000n], deployer.address)
 
         minterRole = await zamaERC20.MINTER_ROLE()
         pausingRole = await zamaERC20.MINTING_PAUSER_ROLE()

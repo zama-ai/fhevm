@@ -25,7 +25,7 @@ describe('ZamaOFTAdapter task suite', function () {
         endpointStub = await endpointFactory.deploy()
         zamaERC20 = await zamaERC20Factory
             .connect(deployer)
-            .deploy('ZAMAERC20', 'ZAMA', deployer.address, deployer.address)
+            .deploy('ZAMAERC20', 'ZAMA', [deployer.address], [11_000_000_000n], deployer.address)
         zamaOFTAdapter = await zamaOFTAdapterFactory
             .connect(deployer)
             .deploy(zamaERC20.address, endpointStub.address, deployer.address)

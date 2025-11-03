@@ -64,7 +64,9 @@ describe('Zama Token OFT Transfer', () => {
         mockEndpointV2B = await endpointV2MockFactory.deploy(eidB)
 
         // The INITIAL_SUPPLY_RECEIVER and INITIAL_ADMIN can be different from the deployer.
-        zamaERC20 = await zamaERC20Factory.connect(deployer).deploy('ZAMAERC20', 'ZAMA', owner.address, admin.address)
+        zamaERC20 = await zamaERC20Factory
+            .connect(deployer)
+            .deploy('ZAMAERC20', 'ZAMA', [owner.address], [11_000_000_000n], admin.address)
         // Grant the admin the MINTER_ROLE & PAUSING_MINTER_ROLE
         zamaERC20.connect(admin).grantRole(MINTER_ROLE, admin.address)
         zamaERC20.connect(admin).grantRole(MINTING_PAUSER_ROLE, admin.address)
