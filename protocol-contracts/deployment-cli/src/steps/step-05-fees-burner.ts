@@ -1,5 +1,6 @@
 import { ValidationError } from "../utils/errors.js";
 import { resolveProjectRoot } from "../utils/project-paths.js";
+import { withRetry } from "../utils/retry.js";
 import { TaskOutputReader } from "../utils/task-output-reader.js";
 import {
     BaseStep,
@@ -101,44 +102,65 @@ export class Step05FeesBurner extends BaseStep {
         }
 
         if (ctx.config.options.auto_verify_contracts) {
-            ctx.logger.info(
-                "Waiting 10 seconds for contract deployment to propagate before verification...",
+            ctx.logger.info("Verifying contracts on block explorers...");
+
+            await withRetry(
+                () =>
+                    ctx.hardhat.runTask({
+                        pkg: this.pkgName,
+                        task: "task:verifyProtocolFeesBurner",
+                        args: [
+                            "--protocol-fees-burner",
+                            protocolFeesBurner!,
+                            "--network",
+                            ethereum.name,
+                        ],
+                        env: baseEnv,
+                    }),
+                {
+                    maxAttempts: 3,
+                    initialDelayMs: 10000,
+                    onRetry: (attempt) => {
+                        ctx.logger.warn(
+                            `ProtocolFeesBurner verification failed, retrying (attempt ${attempt}/3)...`,
+                        );
+                    },
+                },
             );
-            await new Promise((resolve) => setTimeout(resolve, 10000));
-            await ctx.hardhat.runTask({
-                pkg: this.pkgName,
-                task: "task:verifyProtocolFeesBurner",
-                args: [
-                    "--protocol-fees-burner",
-                    protocolFeesBurner!,
-                    "--network",
-                    ethereum.name,
-                ],
-                env: baseEnv,
-            });
             ctx.logger.info(`Verified ProtocolFeesBurner on ${ethereum.name}`);
 
             // Reset ETHERSCAN_API_KEY to force usage of BlockScout API
             baseEnv.ETHERSCAN_API_KEY = "";
-            await ctx.hardhat.runTask({
-                pkg: this.pkgName,
-                task: "task:verifyFeesSenderToBurner",
-                args: [
-                    "--fees-sender-to-burner",
-                    feesSenderToBurner!,
-                    "--network",
-                    gateway.name,
-                ],
-                env: {
-                    ...baseEnv,
-                    PROTOCOL_FEES_BURNER_ADDRESS: protocolFeesBurner!,
+            await withRetry(
+                () =>
+                    ctx.hardhat.runTask({
+                        pkg: this.pkgName,
+                        task: "task:verifyFeesSenderToBurner",
+                        args: [
+                            "--fees-sender-to-burner",
+                            feesSenderToBurner!,
+                            "--network",
+                            gateway.name,
+                        ],
+                        env: {
+                            ...baseEnv,
+                            PROTOCOL_FEES_BURNER_ADDRESS: protocolFeesBurner!,
+                        },
+                    }),
+                {
+                    maxAttempts: 3,
+                    initialDelayMs: 10000,
+                    onRetry: (attempt) => {
+                        ctx.logger.warn(
+                            `FeesSenderToBurner verification failed, retrying (attempt ${attempt}/3)...`,
+                        );
+                    },
                 },
-            });
+            );
             ctx.logger.info(`Verified FeesSenderToBurner on ${gateway.name}`);
         }
 
         return {
-            status: "completed",
             addresses: {
                 PROTOCOL_FEES_BURNER: protocolFeesBurner!,
                 FEES_SENDER_TO_BURNER: feesSenderToBurner!,

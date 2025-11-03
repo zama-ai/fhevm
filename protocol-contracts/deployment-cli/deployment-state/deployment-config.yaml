@@ -24,6 +24,7 @@ networks:
       chain_id: 10901
       explorer_url: "https://explorer-zama-testnet-0.t.conduit.xyz/"
       etherscan_api_key: "ETHERSCAN_API_KEY"
+      layerzero_config: "layerzero.config.testnet.ts"  # LayerZero config file for this environment
 
 wallets:
   protocol_deployer:

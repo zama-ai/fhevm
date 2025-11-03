@@ -203,7 +203,6 @@ export class Step06GatewayContracts extends BaseStep {
         }
 
         return {
-            status: "completed",
             addresses: addressMap,
         };
     }

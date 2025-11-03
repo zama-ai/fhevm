@@ -38,7 +38,7 @@ export abstract class BaseStep implements DeploymentStep {
     public abstract readonly name: string;
     public abstract readonly description: string;
     public readonly dependencies: readonly string[] = [];
-    public abstract readonly pkgName: PackageName;
+    public readonly pkgName?: PackageName;
 
     public async run(ctx: DeploymentContext): Promise<StepExecutionResult> {
         const scopedLogger = ctx.logger.child(this.id);
@@ -57,6 +57,12 @@ export abstract class BaseStep implements DeploymentStep {
         ctx: DeploymentContext,
         logger: Logger,
     ): Promise<void> {
+        // Skip dependency installation if this step has no associated package
+        if (!this.pkgName) {
+            logger.debug("No package dependencies to install for this step");
+            return;
+        }
+
         logger.info(`Installing npm dependencies for ${this.pkgName}...`);
         try {
             // Get either pnpm-lock.yaml or package-lock.json to decide which package manager to use

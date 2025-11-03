@@ -28,11 +28,13 @@ interface EnvironmentNetworks {
         explorer_url?: string;
         etherscan_api_key?: string;
     };
+    layerzero_config: string;
 }
 
 export class NetworkRegistry {
     private readonly ethereum: NetworkInfo;
     private readonly gateway: NetworkInfo;
+    private readonly layerzeroConfig: string;
     private readonly selectedEnvironment: string;
     private readonly allEnvironments: readonly string[];
 
@@ -69,6 +71,8 @@ export class NetworkRegistry {
             explorerUrl: selectedNetworks.gateway.explorer_url,
             explorerApiKey: selectedNetworks.gateway.etherscan_api_key,
         };
+
+        this.layerzeroConfig = selectedNetworks.layerzero_config;
     }
 
     private findEnvironment(
@@ -97,5 +101,9 @@ export class NetworkRegistry {
 
     public listAvailableEnvironments(): readonly string[] {
         return this.allEnvironments;
+    }
+
+    public getLayerzeroConfig(): string {
+        return this.layerzeroConfig;
     }
 }

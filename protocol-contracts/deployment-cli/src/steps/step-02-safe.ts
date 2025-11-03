@@ -160,7 +160,6 @@ export class Step02Safe extends BaseStep {
         }
 
         return {
-            status: "completed",
             addresses: {
                 SAFE_ADDRESS: safeAddress,
                 ADMIN_MODULE_ADDRESS: adminModuleAddress,

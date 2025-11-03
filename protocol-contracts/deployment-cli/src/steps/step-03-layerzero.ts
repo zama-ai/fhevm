@@ -134,11 +134,12 @@ export class Step03LayerzeroLink extends BaseStep {
         }
 
         // Step 3: Wire OApps together (configure LayerZero messaging between chains)
+        const layerzeroConfig = ctx.networks.getLayerzeroConfig();
         ctx.logger.info("Wiring OApps together via LayerZero...");
         await ctx.hardhat.runTask({
             pkg: this.pkgName,
             task: "lz:oapp:wire",
-            args: ["--oapp-config", "layerzero.config.testnet.ts", "--ci"],
+            args: ["--oapp-config", layerzeroConfig, "--ci"],
             env: baseEnv,
         });
         ctx.logger.success(
@@ -155,7 +156,7 @@ export class Step03LayerzeroLink extends BaseStep {
         await ctx.hardhat.runTask({
             pkg: this.pkgName,
             task: "lz:ownable:transfer-ownership",
-            args: ["--oapp-config", "layerzero.config.testnet.ts", "--ci"],
+            args: ["--oapp-config", layerzeroConfig, "--ci"],
             env: baseEnv,
         });
         ctx.logger.success("Transferred GovernanceOAppSender ownership to DAO");
@@ -165,7 +166,6 @@ export class Step03LayerzeroLink extends BaseStep {
         // E2E tests can be run separately via: npx hardhat test (in protocol-contracts/governance)
 
         return {
-            status: "completed",
             addresses: {
                 GOVERNANCE_OAPP_SENDER: senderAddress,
                 GOVERNANCE_OAPP_RECEIVER: receiverAddress,

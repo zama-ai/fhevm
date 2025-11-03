@@ -209,6 +209,10 @@ const ExistingDeploymentsSchema = z
 const EnvironmentNetworksSchema = z.object({
     ethereum: EthereumNetworkSchema,
     gateway: GatewayNetworkSchema,
+    layerzero_config: z
+        .string()
+        .min(1, "LayerZero config file name is required")
+        .default("layerzero.config.testnet.ts"),
 });
 
 export const DeploymentConfigSchema = z.object({

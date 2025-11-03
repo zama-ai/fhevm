@@ -166,7 +166,6 @@ export class Step04TokenDeployment extends BaseStep {
         }
 
         return {
-            status: "completed",
             addresses: {
                 ZAMA_TOKEN: zamaToken,
                 ZAMA_OFT: zamaOft,

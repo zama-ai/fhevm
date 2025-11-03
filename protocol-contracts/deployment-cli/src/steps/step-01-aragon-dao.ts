@@ -13,10 +13,7 @@ export class Step01AragonDao extends BaseStep {
     public readonly description =
         "Creates the governance DAO and records its address.";
     public readonly dependencies = [] as const;
-    // @ts-expect-error
-    public readonly pkgName = undefined;
-
-    protected async preRequires(ctx: DeploymentContext): Promise<void> {}
+    // No pkgName needed for this manual step
 
     protected async execute(
         ctx: DeploymentContext,
@@ -49,7 +46,6 @@ export class Step01AragonDao extends BaseStep {
         }
 
         return {
-            status: "completed",
             addresses: {
                 DAO_ADDRESS: getAddress(daoAddress),
             },

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Logger } from "../utils/logger.js";
+import { resolveProjectRoot } from "../utils/project-paths.js";
 import type {
     DeploymentStateData,
     StepResultData,
@@ -13,7 +14,6 @@ export interface StateManagerOptions {
     readonly configPath: string;
     readonly configHash: string;
     readonly steps: readonly string[];
-    readonly rootDir?: string;
 }
 
 const DEFAULT_STATE_DIR = "deployment-state";
@@ -38,10 +38,8 @@ export class StateManager {
         logger: Logger,
     ): Promise<StateManager> {
         const { deploymentName, configPath, configHash, steps } = options;
-        const stateDir = path.resolve(
-            process.cwd(),
-            options.rootDir ?? DEFAULT_STATE_DIR,
-        );
+        const projectRoot = resolveProjectRoot();
+        const stateDir = path.resolve(projectRoot, DEFAULT_STATE_DIR);
         fs.mkdirSync(stateDir, { recursive: true });
 
         const stateFileName = `${deploymentName.replace(/[^a-zA-Z0-9-_]/g, "_")}.state.json`;

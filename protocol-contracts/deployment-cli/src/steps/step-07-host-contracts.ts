@@ -1,3 +1,4 @@
+import { ethers } from "ethers";
 import path from "path";
 import { ValidationError } from "../utils/errors.js";
 import { resolveProjectRoot } from "../utils/project-paths.js";
@@ -23,26 +24,9 @@ export class Step07HostContracts extends BaseStep {
         const gateway = ctx.networks.getGateway();
         const deployerPk = ctx.env.resolveWalletPrivateKey("deployer");
 
-        // Do RPC call to Gateway rpcUrl to get the chain id
-        const response = await fetch(gateway.rpcUrl, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                method: "eth_chainId",
-                params: [],
-                id: 1,
-                jsonrpc: "2.0",
-            }),
-        });
-        const data = await response.json();
-        const gatewayChainId = data.result;
-        if (!gatewayChainId) {
-            throw new ValidationError(
-                "Failed to get chain id from Gateway RPC URL",
-            );
-        }
+        const gatewayProvider = new ethers.JsonRpcProvider(gateway.rpcUrl);
+        const gatewayNetwork = await gatewayProvider.getNetwork();
+        const gatewayChainId = gatewayNetwork.chainId;
 
         // Build environment variables from config
         const baseEnvVars: Record<string, string> = {
@@ -181,7 +165,6 @@ export class Step07HostContracts extends BaseStep {
         }
 
         return {
-            status: "completed",
             addresses: addressMap,
         };
     }

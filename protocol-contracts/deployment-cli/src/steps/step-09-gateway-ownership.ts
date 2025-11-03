@@ -44,7 +44,6 @@ export class Step09GatewayOwnership extends BaseStep {
                 "GatewayConfig is already owned by the Safe. Skipping ownership transfer.",
             );
             return {
-                status: "completed",
                 notes: [
                     "Ownership transfer already completed; GatewayConfig is owned by the Safe.",
                 ],
@@ -123,9 +122,7 @@ export class Step09GatewayOwnership extends BaseStep {
             env: offerEnv,
         });
 
-        return {
-            status: "completed",
-        };
+        return {};
     }
 
     /**
@@ -140,7 +137,6 @@ export class Step09GatewayOwnership extends BaseStep {
         try {
             const provider = new ethers.JsonRpcProvider(rpcUrl);
 
-            // Create a minimal Ownable contract interface to call owner()
             const ownerableABI = [
                 "function owner() public view returns (address)",
             ];
@@ -160,39 +156,18 @@ export class Step09GatewayOwnership extends BaseStep {
         }
     }
 
+    /**
+     * Check the balance of the safe contract.
+     */
     private async checkSafeBalance(
         rpcUrl: string,
         safeAddress: string,
     ): Promise<string> {
         try {
-            const response = await fetch(rpcUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    jsonrpc: "2.0",
-                    method: "eth_getBalance",
-                    params: [safeAddress, "latest"],
-                    id: 1,
-                }),
-            });
-
-            const data = (await response.json()) as {
-                result?: string;
-                error?: unknown;
-            };
-            if (data.error) {
-                throw new ValidationError(
-                    `RPC error checking balance: ${JSON.stringify(data.error)}`,
-                );
-            }
-
-            if (!data.result) {
-                throw new ValidationError("No balance data returned from RPC");
-            }
-
-            const balanceWei = BigInt(data.result);
-            const balanceEth = Number(balanceWei) / 1e18;
-            return balanceEth.toFixed(4);
+            const provider = new ethers.JsonRpcProvider(rpcUrl);
+            const balanceWei = await provider.getBalance(safeAddress);
+            const balanceEth = ethers.formatEther(balanceWei);
+            return parseFloat(balanceEth).toFixed(4);
         } catch (error) {
             throw new ValidationError(
                 `Failed to check Safe balance at ${safeAddress}: ${error instanceof Error ? error.message : String(error)}`,

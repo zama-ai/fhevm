@@ -92,7 +92,6 @@ export class Step08PauserSetWrapper extends BaseStep {
         }
 
         return {
-            status: "completed",
             addresses: {
                 PAUSER_SET_WRAPPER: wrapperAddress,
             },

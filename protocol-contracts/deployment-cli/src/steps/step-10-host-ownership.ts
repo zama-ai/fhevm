@@ -85,7 +85,6 @@ export class Step10HostOwnership extends BaseStep {
         }
 
         return {
-            status: "completed",
             notes: ["DAO confirmed to have accepted ACL ownership."],
         };
     }
