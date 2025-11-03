@@ -38,64 +38,43 @@ export class Step05FeesBurner extends BaseStep {
         const tokenAddress = ctx.env.getAddress("ZAMA_TOKEN");
         const oftAddress = ctx.env.getAddress("ZAMA_OFT");
 
-        let protocolFeesBurner = ctx.env.getAddress("PROTOCOL_FEES_BURNER");
-        let feesSenderToBurner = ctx.env.getAddress("FEES_SENDER_TO_BURNER");
-
         const baseEnv = ctx.env.buildTaskEnv({
             PRIVATE_KEY: protocolPk,
             SEPOLIA_RPC_URL: ethereum.rpcUrl,
             RPC_URL_ZAMA_GATEWAY_TESTNET: gateway.rpcUrl,
             ZAMA_ERC20_ADDRESS: tokenAddress,
             ZAMA_OFT_ADDRESS: oftAddress,
+            ETHERSCAN_API: ethereum.explorerApiKey,
+        });
+        await ctx.hardhat.runTask({
+            pkg: this.pkgName,
+            task: "deploy",
+            args: ["--tags", "ProtocolFeesBurner", "--network", ethereum.name],
+            env: baseEnv,
         });
 
-        if (!protocolFeesBurner) {
-            await ctx.hardhat.runTask({
-                pkg: this.pkgName,
-                task: "deploy",
-                args: [
-                    "--tags",
-                    "ProtocolFeesBurner",
-                    "--network",
-                    ethereum.name,
-                ],
-                env: baseEnv,
-            });
+        const reader = new TaskOutputReader(resolveProjectRoot());
+        const protocolFeesBurner = reader.readHardhatDeployment(
+            this.pkgName,
+            ethereum.name,
+            "ProtocolFeesBurner",
+        );
 
-            const projectRoot = resolveProjectRoot();
-            const reader = new TaskOutputReader(projectRoot);
-            protocolFeesBurner = reader.readHardhatDeployment(
-                this.pkgName,
-                ethereum.name,
-                "ProtocolFeesBurner",
-            );
-        }
+        const envWithBurner = ctx.env.buildTaskEnv(baseEnv, {
+            PROTOCOL_FEES_BURNER_ADDRESS: protocolFeesBurner,
+        });
+        await ctx.hardhat.runTask({
+            pkg: this.pkgName,
+            task: "deploy",
+            args: ["--tags", "FeesSenderToBurner", "--network", gateway.name],
+            env: envWithBurner,
+        });
 
-        if (!feesSenderToBurner) {
-            const envWithBurner = ctx.env.buildTaskEnv(baseEnv, {
-                PROTOCOL_FEES_BURNER_ADDRESS: protocolFeesBurner,
-            });
-
-            await ctx.hardhat.runTask({
-                pkg: this.pkgName,
-                task: "deploy",
-                args: [
-                    "--tags",
-                    "FeesSenderToBurner",
-                    "--network",
-                    gateway.name,
-                ],
-                env: envWithBurner,
-            });
-
-            const projectRoot = resolveProjectRoot();
-            const reader = new TaskOutputReader(projectRoot);
-            feesSenderToBurner = reader.readHardhatDeployment(
-                this.pkgName,
-                gateway.name,
-                "FeesSenderToBurner",
-            );
-        }
+        const feesSenderToBurner = reader.readHardhatDeployment(
+            this.pkgName,
+            gateway.name,
+            "FeesSenderToBurner",
+        );
 
         if (ctx.config.options.auto_verify_contracts) {
             ctx.logger.info("Verifying contracts on block explorers...");

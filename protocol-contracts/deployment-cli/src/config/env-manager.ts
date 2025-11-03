@@ -70,6 +70,14 @@ export class EnvManager {
         return value;
     }
 
+    public tryGetAddress(key: string): string | undefined {
+        const normalizedKey = key.toUpperCase();
+        return (
+            this.addresses.get(normalizedKey)?.value ??
+            this.state.getAddress(normalizedKey)
+        );
+    }
+
     public exportAddresses(targetPath: string): void {
         const data = Object.fromEntries(
             Array.from(this.addresses.values()).map((entry) => [

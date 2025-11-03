@@ -46,7 +46,7 @@ const EthereumNetworkSchema = z
             rpc_url: envRpcUrl,
             chain_id: value.chain_id,
             explorer_url: value.explorer_url,
-            etherscan_api_key: value.etherscan_api_key,
+            etherscan_api_key: process.env[value.etherscan_api_key ?? ""],
         };
     });
 const GatewayNetworkSchema = z
@@ -82,7 +82,7 @@ const GatewayNetworkSchema = z
             blockscout_api_url: value.blockscout_api_url,
             chain_id: value.chain_id,
             explorer_url: value.explorer_url,
-            etherscan_api_key: value.etherscan_api_key,
+            etherscan_api_key: process.env[value.etherscan_api_key ?? ""],
         };
     });
 

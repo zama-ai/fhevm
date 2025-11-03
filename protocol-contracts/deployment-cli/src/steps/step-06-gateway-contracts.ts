@@ -1,6 +1,7 @@
 import path from "node:path";
 import { ValidationError } from "../utils/errors.js";
 import { resolveProjectRoot } from "../utils/project-paths.js";
+import { withRetry } from "../utils/retry.js";
 import { TaskOutputReader } from "../utils/task-output-reader.js";
 import {
     BaseStep,
@@ -182,24 +183,30 @@ export class Step06GatewayContracts extends BaseStep {
         // Verify gateway contracts if auto verification is enabled
         if (ctx.config.options.auto_verify_contracts) {
             ctx.logger.info("Verifying gateway contracts...");
-            try {
-                await ctx.hardhat.runTask({
-                    pkg: this.pkgName,
-                    task: "task:verifyAllGatewayContracts",
-                    args: [
-                        "--network",
-                        gateway.gatewayPkgName,
-                        "--useInternalProxyAddress",
-                        "true",
-                    ],
-                    env: baseEnv,
-                });
-                ctx.logger.success("Gateway contracts verified successfully");
-            } catch (_error) {
-                ctx.logger.warn(
-                    "Gateway contracts verification failed (this may be acceptable if already verified)",
-                );
-            }
+            await withRetry(
+                () =>
+                    ctx.hardhat.runTask({
+                        pkg: this.pkgName,
+                        task: "task:verifyAllGatewayContracts",
+                        args: [
+                            "--network",
+                            gateway.gatewayPkgName,
+                            "--useInternalProxyAddress",
+                            "true",
+                        ],
+                        env: baseEnv,
+                    }),
+                {
+                    maxAttempts: 3,
+                    initialDelayMs: 10000,
+                    onRetry: (attempt) => {
+                        ctx.logger.warn(
+                            `Gateway contracts verification failed, retrying (attempt ${attempt}/3)...`,
+                        );
+                    },
+                },
+            );
+            ctx.logger.info("Gateway contracts verified successfully");
         }
 
         return {

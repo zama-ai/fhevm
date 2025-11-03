@@ -1,5 +1,6 @@
 import { ValidationError } from "../utils/errors.js";
 import { resolveProjectRoot } from "../utils/project-paths.js";
+import { withRetry } from "../utils/retry.js";
 import { TaskOutputReader } from "../utils/task-output-reader.js";
 import {
     BaseStep,
@@ -85,12 +86,29 @@ export class Step08PauserSetWrapper extends BaseStep {
         }
 
         if (ctx.config.options.auto_verify_contracts) {
-            await ctx.hardhat.runTask({
-                pkg: this.pkgName,
-                task: "task:verifyPauserSetWrapper",
-                args: ["--address", wrapperAddress, "--network", ethereum.name],
-                env: baseEnv,
-            });
+            await withRetry(
+                () =>
+                    ctx.hardhat.runTask({
+                        pkg: this.pkgName,
+                        task: "task:verifyPauserSetWrapper",
+                        args: [
+                            "--address",
+                            wrapperAddress,
+                            "--network",
+                            ethereum.name,
+                        ],
+                        env: baseEnv,
+                    }),
+                {
+                    maxAttempts: 3,
+                    initialDelayMs: 10000,
+                    onRetry: (attempt) => {
+                        ctx.logger.warn(
+                            `PauserSetWrapper verification failed, retrying (attempt ${attempt}/3)...`,
+                        );
+                    },
+                },
+            );
             ctx.logger.success(`Verified PauserSetWrapper on ${ethereum.name}`);
         }
 

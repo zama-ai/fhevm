@@ -35,9 +35,6 @@ export class Step03LayerzeroLink extends BaseStep {
     protected async execute(
         ctx: DeploymentContext,
     ): Promise<StepExecutionResult> {
-        const existingSender = ctx.env.getAddress("GOVERNANCE_OAPP_SENDER");
-        const existingReceiver = ctx.env.getAddress("GOVERNANCE_OAPP_RECEIVER");
-
         const ethereumNetwork = ctx.networks.getEthereum();
         const gatewayNetwork = ctx.networks.getGateway();
         const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
@@ -62,78 +59,59 @@ export class Step03LayerzeroLink extends BaseStep {
         const reader = new TaskOutputReader(projectRoot);
 
         // Step 1: Deploy GovernanceOAppSender on Ethereum
-        let senderAddress = existingSender;
-        if (!senderAddress) {
-            ctx.logger.info("Deploying GovernanceOAppSender on Ethereum...");
-            await ctx.hardhat.runTask({
-                pkg: this.pkgName,
-                task: "lz:deploy",
-                args: [
-                    "--networks",
-                    ethereumNetwork.name,
-                    "--ci",
-                    "--tags",
-                    "GovernanceOAppSender",
-                ],
-                env: baseEnv,
-            });
-
-            senderAddress = reader.readHardhatDeployment(
-                this.pkgName,
+        ctx.logger.info("Deploying GovernanceOAppSender on Ethereum...");
+        await ctx.hardhat.runTask({
+            pkg: this.pkgName,
+            task: "lz:deploy",
+            args: [
+                "--networks",
                 ethereumNetwork.name,
+                "--ci",
+                "--tags",
                 "GovernanceOAppSender",
-            );
-            ctx.env.recordAddress(
-                "GOVERNANCE_OAPP_SENDER",
-                senderAddress,
-                this.id,
-            );
-            ctx.logger.success(
-                `Deployed GovernanceOAppSender at ${senderAddress}`,
-            );
-        } else {
-            ctx.logger.info(
-                `Using existing GovernanceOAppSender at ${senderAddress}`,
-            );
-        }
+            ],
+            env: baseEnv,
+        });
+
+        const senderAddress = reader.readHardhatDeployment(
+            this.pkgName,
+            ethereumNetwork.name,
+            "GovernanceOAppSender",
+        );
+        ctx.env.recordAddress("GOVERNANCE_OAPP_SENDER", senderAddress, this.id);
+        ctx.logger.success(`Deployed GovernanceOAppSender at ${senderAddress}`);
 
         // Step 2: Deploy GovernanceOAppReceiver on Gateway
-        let receiverAddress = existingReceiver;
-        if (!receiverAddress) {
-            ctx.logger.info("Deploying GovernanceOAppReceiver on Gateway...");
-            await ctx.hardhat.runTask({
-                pkg: this.pkgName,
-                task: "lz:deploy",
-                args: [
-                    "--networks",
-                    gatewayNetwork.name,
-                    "--ci",
-                    "--tags",
-                    "GovernanceOAppReceiver",
-                ],
-                env: baseEnv,
-            });
-
-            receiverAddress = reader.readHardhatDeployment(
-                this.pkgName,
+        ctx.logger.info("Deploying GovernanceOAppReceiver on Gateway...");
+        await ctx.hardhat.runTask({
+            pkg: this.pkgName,
+            task: "lz:deploy",
+            args: [
+                "--networks",
                 gatewayNetwork.name,
+                "--ci",
+                "--tags",
                 "GovernanceOAppReceiver",
-            );
-            ctx.env.recordAddress(
-                "GOVERNANCE_OAPP_RECEIVER",
-                receiverAddress,
-                this.id,
-            );
-            ctx.logger.success(
-                `Deployed GovernanceOAppReceiver at ${receiverAddress}`,
-            );
-        } else {
-            ctx.logger.info(
-                `Using existing GovernanceOAppReceiver at ${receiverAddress}`,
-            );
-        }
+            ],
+            env: baseEnv,
+        });
+
+        const receiverAddress = reader.readHardhatDeployment(
+            this.pkgName,
+            gatewayNetwork.name,
+            "GovernanceOAppReceiver",
+        );
+        ctx.env.recordAddress(
+            "GOVERNANCE_OAPP_RECEIVER",
+            receiverAddress,
+            this.id,
+        );
+        ctx.logger.success(
+            `Deployed GovernanceOAppReceiver at ${receiverAddress}`,
+        );
 
         // Step 3: Wire OApps together (configure LayerZero messaging between chains)
+        // This also sets the delegate according to the layerzero config file.
         const layerzeroConfig = ctx.networks.getLayerzeroConfig();
         ctx.logger.info("Wiring OApps together via LayerZero...");
         await ctx.hardhat.runTask({
@@ -160,10 +138,6 @@ export class Step03LayerzeroLink extends BaseStep {
             env: baseEnv,
         });
         ctx.logger.success("Transferred GovernanceOAppSender ownership to DAO");
-
-        // Note: Safe module integration (AdminModuleMock) and delegation transfers are handled
-        // in the governance contracts deployment scripts, not in this CLI step.
-        // E2E tests can be run separately via: npx hardhat test (in protocol-contracts/governance)
 
         return {
             addresses: {
