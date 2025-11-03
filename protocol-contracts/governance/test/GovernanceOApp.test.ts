@@ -184,7 +184,7 @@ describe('GovernanceOApp Test', function () {
         await owner.sendTransaction({
             to: governanceOAppSender.address,
             value: quotedFee,
-        }) // send funds to the contract before sending proposal
+        }) // send funds to the governanceOAppSender before sending proposal
 
         await governanceOAppSender.sendRemoteProposal(
             [gatewayConfigMock.address],
@@ -239,22 +239,56 @@ describe('GovernanceOApp Test', function () {
     it('owner can wihdraw ETH from prefunded governanceOAppSender', async function () {
         await owner.sendTransaction({
             to: governanceOAppSender.address,
-            value: ethers.utils.parseEther('1.0'),
+            value: ethers.utils.parseEther('1'),
         })
 
         const balanceOwnerBefore = await ethers.provider.getBalance(owner.address)
         const balanceGovSenderBefore = await ethers.provider.getBalance(governanceOAppSender.address)
-        expect(balanceGovSenderBefore.toBigInt()).to.equal(ethers.utils.parseEther('1.0').toBigInt())
+        expect(balanceGovSenderBefore.toBigInt()).to.equal(ethers.utils.parseEther('1').toBigInt())
 
-        await governanceOAppSender.withdrawETH(ethers.utils.parseEther('1.0'), owner.address)
+        await governanceOAppSender.withdrawETH(ethers.utils.parseEther('1'), owner.address)
 
         const balanceOwnerAfter = await ethers.provider.getBalance(owner.address)
         const balanceGovSenderAfter = await ethers.provider.getBalance(governanceOAppSender.address)
         expect(balanceGovSenderAfter.toBigInt()).to.equal(0n)
         const received = balanceOwnerAfter.sub(balanceOwnerBefore).toBigInt()
-        const expected = ethers.utils.parseEther('1.0').toBigInt()
+        const expected = ethers.utils.parseEther('1').toBigInt()
         const tolerance = ethers.utils.parseEther('0.0001').toBigInt() // account gas used for the tx
         const diff = received > expected ? received - expected : expected - received
         expect(diff <= tolerance).to.equal(true)
+    })
+
+    it('should send a payable remote proposal', async function () {
+        expect(BigInt(await gatewayConfigMock.value())).to.equal(0n)
+        await owner.sendTransaction({
+            to: safeProxy.address,
+            value: ethers.utils.parseEther('1'),
+        }) // send funds to the safeProxy before sending proposal
+        const balanceSafeProxyBefore = await ethers.provider.getBalance(safeProxy.address)
+        expect(balanceSafeProxyBefore.toBigInt()).to.equal(ethers.utils.parseEther('1').toBigInt())
+
+        const options = Options.newOptions().addExecutorLzReceiveOption(80000, 0).toHex().toString() // use a high gas value for the expensive update
+
+        const quotedFee = await governanceOAppSender.quoteSendCrossChainTransaction(
+            [gatewayConfigMock.address],
+            [ethers.utils.parseEther('1')],
+            ['payableUpdate(uint256)'],
+            [ethers.utils.defaultAbiCoder.encode(['uint256'], [777n])],
+            [0n],
+            options
+        )
+        await governanceOAppSender.sendRemoteProposal(
+            [gatewayConfigMock.address],
+            [ethers.utils.parseEther('1')],
+            ['payableUpdate(uint256)'],
+            [ethers.utils.defaultAbiCoder.encode(['uint256'], [777n])],
+            [0n],
+            options,
+            { value: quotedFee }
+        )
+        const balanceSafeProxyAfter = await ethers.provider.getBalance(safeProxy.address)
+        expect(balanceSafeProxyAfter.toBigInt()).to.equal(0n)
+
+        expect(BigInt(await gatewayConfigMock.value())).to.equal(777n)
     })
 })

@@ -19,4 +19,9 @@ contract GatewayConfigMock is Ownable2Step {
         }
         value = _value;
     }
+
+    function payableUpdate(uint256 _value) external payable onlyOwner {
+        require(msg.value == 1 ether, "Incorrect value sent");
+        value = _value;
+    }
 }
