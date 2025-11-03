@@ -57,7 +57,7 @@ export class Step03LayerzeroLink extends BaseStep {
       await ctx.hardhat.runTask({
         pkg: this.pkgName,
         task: 'lz:deploy',
-        args: ['--network', ethereumNetwork.name],
+        args: ['--networks', ethereumNetwork.name, '--ci', '--tags', "GovernanceOAppSender"],
         env: baseEnv,
       });
 
@@ -75,7 +75,7 @@ export class Step03LayerzeroLink extends BaseStep {
       await ctx.hardhat.runTask({
         pkg: this.pkgName,
         task: 'lz:deploy',
-        args: ['--network', gatewayNetwork.name],
+        args: ['--networks', gatewayNetwork.name, '--ci', '--tags', "GovernanceOAppReceiver"],
         env: baseEnv,
       });
 
@@ -91,44 +91,21 @@ export class Step03LayerzeroLink extends BaseStep {
     await ctx.hardhat.runTask({
       pkg: this.pkgName,
       task: 'lz:oapp:wire',
-      args: ['--oapp-config', 'layerzero.config.testnet.ts'],
+      args: ['--oapp-config', 'layerzero.config.testnet.ts', '--ci'],
       env: baseEnv,
     });
     ctx.logger.success('Wired GovernanceOAppSender and GovernanceOAppReceiver');
 
-    // Step 4: Transfer ownership of GovernanceOAppSender to DAO
-    ctx.logger.info(`Transferring GovernanceOAppSender ownership to DAO (${daoAddress})...`);
-    await ctx.hardhat.runTask({
-      pkg: this.pkgName,
-      task: 'lz:ownable:transfer-ownership',
-      args: [
-        '--contract-name',
-        'GovernanceOAppSender',
-        '--new-owner',
-        daoAddress,
-        '--network',
-        ethereumNetwork.name
-      ],
-      env: baseEnv
-    });
-    ctx.logger.success('Transferred GovernanceOAppSender ownership to DAO');
-
-    // Step 5: Transfer ownership of GovernanceOAppReceiver to Safe
+    // Step 4: Transfer ownership of GovernanceOAppSender and GovernanceOAppReceiver to DAO and Safe
+    ctx.logger.info(`Transferring GovernanceOAppSender ownership to DAO (${daoAddress}) and...`);
     ctx.logger.info(`Transferring GovernanceOAppReceiver ownership to Safe (${safeAddress})...`);
     await ctx.hardhat.runTask({
       pkg: this.pkgName,
       task: 'lz:ownable:transfer-ownership',
-      args: [
-        '--contract-name',
-        'GovernanceOAppReceiver',
-        '--new-owner',
-        safeAddress,
-        '--network',
-        gatewayNetwork.name
-      ],
+      args: ["--oapp-config", "layerzero.config.testnet.ts", "--ci"],
       env: baseEnv
     });
-    ctx.logger.success('Transferred GovernanceOAppReceiver ownership to Safe');
+    ctx.logger.success('Transferred GovernanceOAppSender ownership to DAO');
 
     // Note: Safe module integration (AdminModuleMock) and delegation transfers are handled
     // in the governance contracts deployment scripts, not in this CLI step.

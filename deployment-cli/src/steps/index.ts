@@ -14,7 +14,7 @@ export function getDeploymentSteps(): DeploymentStep[] {
   return [
     new Step01AragonDao(),
     new Step02Safe(),
-    // new Step03LayerzeroLink(),
+    new Step03LayerzeroLink(),
     new Step04TokenDeployment(),
     new Step05FeesBurner(),
     new Step06GatewayContracts(),
