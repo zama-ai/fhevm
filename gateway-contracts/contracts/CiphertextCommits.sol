@@ -26,6 +26,12 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     IKMSGeneration private constant KMS_GENERATION = IKMSGeneration(kmsGenerationAddress);
 
     /**
+     * @notice The domain separator for the add ciphertext hash.
+     */
+    bytes32 private constant ADD_CIPHERTEXT_DOMAIN_SEPARATOR_HASH =
+        keccak256(bytes("CiphertextCommits.addCiphertextMaterial"));
+
+    /**
      * @dev The following constants are used for versioning the contract. They are made private
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
@@ -131,7 +137,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         // This hash is used to differentiate different calls to the function, in particular when
         // tracking the consensus on the received ciphertext material.
         // Note that chainId is not included in the hash because it is already contained in the ctHandle.
-        bytes32 addCiphertextHash = keccak256(abi.encode(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest));
+        bytes32 addCiphertextHash = _getAddCiphertextHash(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
         $.addCiphertextHashCounters[addCiphertextHash]++;
 
         // Associate the handle to coprocessor context ID 1 to anticipate their introduction in V2.
@@ -298,6 +304,21 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
+    }
+
+    /**
+     * @notice Returns the hash of a add ciphertext hash.
+     */
+    function _getAddCiphertextHash(
+        bytes32 ctHandle,
+        uint256 keyId,
+        bytes32 ciphertextDigest,
+        bytes32 snsCiphertextDigest
+    ) internal pure virtual returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(ADD_CIPHERTEXT_DOMAIN_SEPARATOR_HASH, ctHandle, keyId, ciphertextDigest, snsCiphertextDigest)
+            );
     }
 
     /**

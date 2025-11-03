@@ -140,7 +140,7 @@ describe("Upgrades", function () {
     });
     const inputVerification = await upgrades.upgradeProxy(emptyUUPS, inputVerificationFactoryV1);
     await inputVerification.waitForDeployment();
-    expect(await inputVerification.getVersion()).to.equal("InputVerification v0.2.0");
+    expect(await inputVerification.getVersion()).to.equal("InputVerification v0.3.0");
     const inputVerificationV2 = await upgrades.upgradeProxy(inputVerification, inputVerificationFactoryV2);
     await inputVerificationV2.waitForDeployment();
     expect(await inputVerificationV2.getVersion()).to.equal("InputVerification v1000.0.0");
