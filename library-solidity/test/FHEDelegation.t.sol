@@ -7,7 +7,6 @@ import {CoprocessorConfig} from "../lib/Impl.sol";
 import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ACL} from "@fhevm-host-contracts/contracts/ACL.sol";
 import {aclAdd, fhevmExecutorAdd, kmsVerifierAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
-import {decryptionOracleAdd} from "@fhevm-host-contracts/addresses/DecryptionOracleAddress.sol";
 
 contract DelegationLibraryAdapter {
     function setCoprocessorConfig(CoprocessorConfig memory config) external {
@@ -22,7 +21,11 @@ contract DelegationLibraryAdapter {
         FHE.delegateUserDecryptionWithoutExpiration(delegate, contractAddress);
     }
 
-    function delegateUserDecryptions(address delegate, address[] memory contractAddresses, uint64 expirationDate) external {
+    function delegateUserDecryptions(
+        address delegate,
+        address[] memory contractAddresses,
+        uint64 expirationDate
+    ) external {
         FHE.delegateUserDecryptions(delegate, contractAddresses, expirationDate);
     }
 
@@ -61,12 +64,12 @@ contract DelegationLibraryAdapter {
         return FHE.isDelegatedForUserDecryption(delegator, delegate, contractAddress, handle);
     }
 
-    function getDelegatedUserDecryptionExpirationDate(address delegate, address contractAddress)
-        external
-        view
-        returns (uint64)
-    {
-        return FHE.getDelegatedUserDecryptionExpirationDate(delegate, contractAddress);
+    function getDelegatedUserDecryptionExpirationDate(
+        address delegator,
+        address delegate,
+        address contractAddress
+    ) external view returns (uint64) {
+        return FHE.getDelegatedUserDecryptionExpirationDate(delegator, delegate, contractAddress);
     }
 }
 
@@ -105,7 +108,6 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         CoprocessorConfig memory config = CoprocessorConfig({
             ACLAddress: aclAdd,
             CoprocessorAddress: fhevmExecutorAdd,
-            DecryptionOracleAddress: decryptionOracleAdd,
             KMSVerifierAddress: kmsVerifierAdd
         });
 
@@ -113,11 +115,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
     }
 
     function _expectActiveDelegation(address delegate, address contractContext, uint64 expectedExpiry) internal view {
-        uint64 stored = acl.getUserDecryptionDelegationExpirationDate(
-            address(adapter),
-            delegate,
-            contractContext
-        );
+        uint64 stored = acl.getUserDecryptionDelegationExpirationDate(address(adapter), delegate, contractContext);
         assertEq(stored, expectedExpiry, "delegation expiry mismatch");
     }
 
@@ -133,7 +131,10 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         vm.assume(delegate != contractContext);
     }
 
-    function testFuzz_IsUserDecryptable_ReturnsFalseWhenUserEqualsContract(uint256 plaintext, address contractContext) public {
+    function testFuzz_IsUserDecryptable_ReturnsFalseWhenUserEqualsContract(
+        uint256 plaintext,
+        address contractContext
+    ) public {
         bytes32 handle = adapter.mintAndPersistHandle(plaintext);
         adapter.allowHandle(handle, contractContext);
 
@@ -193,12 +194,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         uint64 expirationDate = uint64(block.timestamp + 2 hours);
         adapter.delegateUserDecryption(delegate, contractContext, expirationDate);
 
-        bool delegated = adapter.isDelegatedForUserDecryption(
-            address(adapter),
-            delegate,
-            contractContext,
-            handle
-        );
+        bool delegated = adapter.isDelegatedForUserDecryption(address(adapter), delegate, contractContext, handle);
         assertTrue(delegated, "delegated handle should be active");
     }
 
@@ -216,12 +212,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
 
         vm.warp(uint256(expirationDate) + 1);
 
-        bool delegated = adapter.isDelegatedForUserDecryption(
-            address(adapter),
-            delegate,
-            contractContext,
-            handle
-        );
+        bool delegated = adapter.isDelegatedForUserDecryption(address(adapter), delegate, contractContext, handle);
         assertFalse(delegated, "delegation past expiry should be inactive");
     }
 
@@ -254,9 +245,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         vm.assume(delegate != address(adapter));
         uint64 expirationDate = uint64(block.timestamp + 2 hours);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(ACL.SenderCannotBeContractAddress.selector, address(adapter))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderCannotBeContractAddress.selector, address(adapter)));
         adapter.delegateUserDecryption(delegate, address(adapter), expirationDate);
     }
 
@@ -272,9 +261,7 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         vm.assume(contractContext != address(adapter));
         uint64 expirationDate = uint64(block.timestamp + 2 hours);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(ACL.DelegateCannotBeContractAddress.selector, contractContext)
-        );
+        vm.expectRevert(abi.encodeWithSelector(ACL.DelegateCannotBeContractAddress.selector, contractContext));
         adapter.delegateUserDecryption(contractContext, contractContext, expirationDate);
     }
 
@@ -355,7 +342,10 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         assertEq(second, boundedExpiry, "second contract expiry mismatch");
     }
 
-    function test_DelegateUserDecryptions_ReturnsEarlyWhenNoContracts(address delegate, address contractContext) public {
+    function test_DelegateUserDecryptions_ReturnsEarlyWhenNoContracts(
+        address delegate,
+        address contractContext
+    ) public {
         address[] memory contracts = new address[](0);
 
         adapter.delegateUserDecryptions(delegate, contracts, uint64(block.timestamp + 2 hours));
@@ -467,7 +457,10 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         assertEq(second, 0, "second contract should be cleared");
     }
 
-    function test_RevokeUserDecryptionDelegation_RevertsWhenNotDelegated(address delegate, address contractContext) public {
+    function test_RevokeUserDecryptionDelegation_RevertsWhenNotDelegated(
+        address delegate,
+        address contractContext
+    ) public {
         vm.expectRevert(
             abi.encodeWithSelector(ACL.NotDelegatedYet.selector, address(adapter), delegate, contractContext)
         );
@@ -535,9 +528,25 @@ contract FHEDelegationTest is HostContractsDeployerTestUtils {
         uint64 boundedExpiry = _boundValidFutureExpiry(expirationDate);
         adapter.delegateUserDecryption(delegate, contractContext, boundedExpiry);
 
-        // Library reads msg.sender for delegator; prank makes the call originate from the adapter like production usage.
-        vm.prank(address(adapter));
-        uint64 fetched = adapter.getDelegatedUserDecryptionExpirationDate(delegate, contractContext);
+        uint64 fetched = adapter.getDelegatedUserDecryptionExpirationDate(address(adapter), delegate, contractContext);
+        assertEq(fetched, boundedExpiry, "library expiry getter mismatch");
+    }
+
+    function testFuzz_AclGetDelegatedUserDecryptionExpirationDate_ReturnsStoredValue(
+        uint256 expirationDate,
+        address contractContext
+    ) public {
+        vm.assume(contractContext != address(adapter));
+
+        address userA = vm.randomAddress();
+        address userB = vm.randomAddress();
+
+        uint64 boundedExpiry = _boundValidFutureExpiry(expirationDate);
+
+        vm.prank(userA);
+        acl.delegateForUserDecryption(userB, contractContext, boundedExpiry);
+
+        uint64 fetched = adapter.getDelegatedUserDecryptionExpirationDate(userA, userB, contractContext);
         assertEq(fetched, boundedExpiry, "library expiry getter mismatch");
     }
 }

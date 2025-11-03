@@ -20,7 +20,7 @@
       "imports": [
         ["instance", "../instance"],
         ["signers", "../signers"],
-        ["typechain", "../../types"]
+        ["typechain", "../../typechain-types/examples/tests"]
       ]
     }
   }

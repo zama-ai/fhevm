@@ -36,9 +36,9 @@ task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (network.name === 'hardhat') {
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
-    const privKeyFhevmRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
-    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
-    await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
+    // const privKeyFhevmRelayer = process.env.PRIVATE_KEY_DECRYPTION_ORACLE_RELAYER;
+    // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
+    // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
 
     await hre.run('compile:specific', { contract: 'contracts/emptyProxy' });
     await hre.run('task:deployEmptyUUPSProxies', {
