@@ -1,4 +1,3 @@
-import { ADDRESS_REGEX } from "../config/schema.js";
 import { ValidationError } from "../utils/errors.js";
 import { resolveProjectRoot } from "../utils/project-paths.js";
 import { TaskOutputReader } from "../utils/task-output-reader.js";

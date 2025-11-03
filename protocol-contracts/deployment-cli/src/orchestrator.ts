@@ -87,7 +87,7 @@ export class DeploymentOrchestrator {
 
         const env = new EnvManager(config, state, logger);
         const hardhat = new HardhatRunner(rootPath, logger);
-        const prompt = new InteractivePrompt(logger);
+        const prompt = new InteractivePrompt();
         const networks = new NetworkRegistry(
             config,
             options.networkEnvironment,

@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
-import { ValidationError } from "../utils/errors.js";
 import { resolveProjectRoot } from "../utils/project-paths.js";
 import { TaskOutputReader } from "../utils/task-output-reader.js";
 import {
@@ -40,7 +37,7 @@ export class Step02Safe extends BaseStep {
                 gateway.name,
                 "SafeL2Proxy",
             );
-        } catch (error) {
+        } catch (_error) {
             safeAddress = undefined;
         }
 
@@ -84,7 +81,7 @@ export class Step02Safe extends BaseStep {
                 gateway.name,
                 "AdminModule",
             );
-        } catch (error) {
+        } catch (_error) {
             adminModuleAddress = undefined;
         }
 
@@ -132,7 +129,7 @@ export class Step02Safe extends BaseStep {
                     env: baseEnv,
                 });
                 ctx.logger.success("Safe contracts verified successfully");
-            } catch (error) {
+            } catch (_error) {
                 ctx.logger.warn(
                     "Safe verification failed (this may be acceptable if already verified)",
                 );
@@ -152,7 +149,7 @@ export class Step02Safe extends BaseStep {
                     env: verifyEnv,
                 });
                 ctx.logger.success("AdminModule verified successfully");
-            } catch (error) {
+            } catch (_error) {
                 ctx.logger.warn(
                     "AdminModule verification failed (this may be acceptable if already verified)",
                 );

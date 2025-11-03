@@ -26,7 +26,9 @@ export class Step01AragonDao extends BaseStep {
             "4. Copy the DAO address once deployment is confirmed.",
         ];
 
-        infoLines.forEach((line) => ctx.logger.info(line));
+        for (const line of infoLines) {
+            ctx.logger.info(line);
+        }
 
         const confirmed = await ctx.prompt.confirm(
             "Have you completed the DAO deployment steps?",

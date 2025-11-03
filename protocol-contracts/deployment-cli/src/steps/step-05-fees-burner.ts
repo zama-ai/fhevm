@@ -35,15 +35,11 @@ export class Step05FeesBurner extends BaseStep {
         const ethereum = ctx.networks.getEthereum();
         const gateway = ctx.networks.getGateway();
         const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
-        const tokenAddress = ctx.env.getAddress("ZAMA_TOKEN")!;
-        const oftAddress = ctx.env.getAddress("ZAMA_OFT")!;
+        const tokenAddress = ctx.env.getAddress("ZAMA_TOKEN");
+        const oftAddress = ctx.env.getAddress("ZAMA_OFT");
 
-        let protocolFeesBurner = ctx.env.getAddress(
-            "PROTOCOL_FEES_BURNER_ADDRESS",
-        );
-        let feesSenderToBurner = ctx.env.getAddress(
-            "FEES_SENDER_TO_BURNER_ADDRESS",
-        );
+        let protocolFeesBurner = ctx.env.getAddress("PROTOCOL_FEES_BURNER");
+        let feesSenderToBurner = ctx.env.getAddress("FEES_SENDER_TO_BURNER");
 
         const baseEnv = ctx.env.buildTaskEnv({
             PRIVATE_KEY: protocolPk,
@@ -111,7 +107,7 @@ export class Step05FeesBurner extends BaseStep {
                         task: "task:verifyProtocolFeesBurner",
                         args: [
                             "--protocol-fees-burner",
-                            protocolFeesBurner!,
+                            protocolFeesBurner,
                             "--network",
                             ethereum.name,
                         ],
@@ -138,13 +134,13 @@ export class Step05FeesBurner extends BaseStep {
                         task: "task:verifyFeesSenderToBurner",
                         args: [
                             "--fees-sender-to-burner",
-                            feesSenderToBurner!,
+                            feesSenderToBurner,
                             "--network",
                             gateway.name,
                         ],
                         env: {
                             ...baseEnv,
-                            PROTOCOL_FEES_BURNER_ADDRESS: protocolFeesBurner!,
+                            PROTOCOL_FEES_BURNER_ADDRESS: protocolFeesBurner,
                         },
                     }),
                 {
@@ -162,8 +158,8 @@ export class Step05FeesBurner extends BaseStep {
 
         return {
             addresses: {
-                PROTOCOL_FEES_BURNER: protocolFeesBurner!,
-                FEES_SENDER_TO_BURNER: feesSenderToBurner!,
+                PROTOCOL_FEES_BURNER: protocolFeesBurner,
+                FEES_SENDER_TO_BURNER: feesSenderToBurner,
             },
         };
     }

@@ -32,8 +32,8 @@ interface EnvironmentNetworks {
 }
 
 export class NetworkRegistry {
-    private readonly ethereum: NetworkInfo;
-    private readonly gateway: NetworkInfo;
+    private readonly ethereum: NetworkInfo & { hostPkgName: string };
+    private readonly gateway: NetworkInfo & { gatewayPkgName: string };
     private readonly layerzeroConfig: string;
     private readonly selectedEnvironment: string;
     private readonly allEnvironments: readonly string[];
@@ -87,11 +87,11 @@ export class NetworkRegistry {
         return undefined;
     }
 
-    public getEthereum(): NetworkInfo {
+    public getEthereum(): NetworkInfo & { hostPkgName: string } {
         return this.ethereum;
     }
 
-    public getGateway(): NetworkInfo {
+    public getGateway(): NetworkInfo & { gatewayPkgName: string } {
         return this.gateway;
     }
 

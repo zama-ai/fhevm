@@ -4,15 +4,8 @@ import {
     text as clackText,
     isCancel,
 } from "@clack/prompts";
-import type { Logger } from "../utils/logger.js";
 
 export class InteractivePrompt {
-    private readonly logger: Logger;
-
-    constructor(logger: Logger) {
-        this.logger = logger.child("prompt");
-    }
-
     public async confirm(message: string, initial = true): Promise<boolean> {
         const result = await clackConfirm({ message, initialValue: initial });
         if (isCancel(result)) {

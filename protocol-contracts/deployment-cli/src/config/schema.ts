@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
 import dotenv from "dotenv";
 import { ethers } from "ethers";
 import YAML from "yaml";
@@ -193,18 +192,6 @@ const ProtocolSchema = z.object({
 const MetadataSchema = z.object({
     deployment_name: z.string().min(1),
 });
-
-const ExistingDeploymentsSchema = z
-    .object({
-        dao_address: AddressSchema.optional(),
-        safe_address: AddressSchema.optional(),
-        gateway_config_address: AddressSchema.optional(),
-        zama_token_address: AddressSchema.optional(),
-        zama_oft_address: AddressSchema.optional(),
-        zama_oft_adapter_address: AddressSchema.optional(),
-    })
-    .partial()
-    .default({});
 
 const EnvironmentNetworksSchema = z.object({
     ethereum: EthereumNetworkSchema,

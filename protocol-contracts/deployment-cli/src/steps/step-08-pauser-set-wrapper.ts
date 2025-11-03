@@ -1,4 +1,3 @@
-import { ADDRESS_REGEX } from "../config/schema.js";
 import { ValidationError } from "../utils/errors.js";
 import { resolveProjectRoot } from "../utils/project-paths.js";
 import { TaskOutputReader } from "../utils/task-output-reader.js";
@@ -32,8 +31,8 @@ export class Step08PauserSetWrapper extends BaseStep {
         const ethereum = ctx.networks.getEthereum();
         const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
 
-        const zamaToken = ctx.env.getAddress("ZAMA_TOKEN")!;
-        const pauserSetAddress = ctx.env.getAddress("PAUSER_SET_HOST")!;
+        const zamaToken = ctx.env.getAddress("ZAMA_TOKEN");
+        const pauserSetAddress = ctx.env.getAddress("PAUSER_SET_HOST");
 
         const baseEnv = ctx.env.buildTaskEnv({
             PRIVATE_KEY: protocolPk,
@@ -73,9 +72,13 @@ export class Step08PauserSetWrapper extends BaseStep {
                 ],
                 env: baseEnv,
             });
-        } catch (error: any) {
-            const stderr = error?.stderr || error?.message || "";
-            if (stderr.includes("already has MINTER_ROLE on contract")) {
+        } catch (error: unknown) {
+            const stderr = ((error as Record<string, unknown>)?.stderr ||
+                (error as Record<string, unknown>)?.message ||
+                "") as string;
+            if (
+                String(stderr).includes("already has MINTER_ROLE on contract")
+            ) {
             } else {
                 throw error;
             }

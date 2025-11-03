@@ -1,5 +1,5 @@
+import path from "node:path";
 import { ethers } from "ethers";
-import path from "path";
 import { ValidationError } from "../utils/errors.js";
 import { resolveProjectRoot } from "../utils/project-paths.js";
 import { TaskOutputReader } from "../utils/task-output-reader.js";
@@ -33,9 +33,9 @@ export class Step07HostContracts extends BaseStep {
             DEPLOYER_PRIVATE_KEY: deployerPk,
             RPC_URL: ethereum.rpcUrl,
             CHAIN_ID_GATEWAY: gatewayChainId.toString(),
-            DECRYPTION_ADDRESS: ctx.env.getAddress("DECRYPTION")!,
+            DECRYPTION_ADDRESS: ctx.env.getAddress("DECRYPTION"),
             INPUT_VERIFICATION_ADDRESS:
-                ctx.env.getAddress("INPUT_VERIFICATION")!,
+                ctx.env.getAddress("INPUT_VERIFICATION"),
         };
 
         const thresholds = ctx.config.protocol.thresholds;
@@ -76,7 +76,7 @@ export class Step07HostContracts extends BaseStep {
         await ctx.hardhat.runTask({
             pkg: this.pkgName,
             task: "task:deployAllHostContracts",
-            args: ["--network", ethereum.hostPkgName!],
+            args: ["--network", ethereum.hostPkgName],
             env: baseEnv,
         });
 
@@ -116,7 +116,7 @@ export class Step07HostContracts extends BaseStep {
 
         const pauserEnv: Record<string, string> = {
             NUM_PAUSERS: pauserAddresses.length.toString(),
-            PAUSER_SET_CONTRACT_ADDRESS: hostAddresses.PAUSER_SET_HOST!,
+            PAUSER_SET_CONTRACT_ADDRESS: hostAddresses.PAUSER_SET_HOST,
         };
 
         pauserAddresses.forEach((address, idx) => {
@@ -127,7 +127,7 @@ export class Step07HostContracts extends BaseStep {
         await ctx.hardhat.runTask({
             pkg: this.pkgName,
             task: "task:addHostPausers",
-            args: ["--network", ethereum.hostPkgName!],
+            args: ["--network", ethereum.hostPkgName],
             env: {
                 ...baseEnv,
                 ...pauserEnv,
@@ -147,7 +147,7 @@ export class Step07HostContracts extends BaseStep {
                     task: "task:verifyAllHostContracts",
                     args: [
                         "--network",
-                        ethereum.hostPkgName!,
+                        ethereum.hostPkgName,
                         "--useInternalProxyAddress",
                         "true",
                     ],

@@ -44,7 +44,7 @@ export abstract class BaseStep implements DeploymentStep {
         const scopedLogger = ctx.logger.child(this.id);
         scopedLogger.info(`Starting ${this.name}`);
 
-        await this.preRequires(ctx, scopedLogger);
+        await this.preRequires(scopedLogger);
         await this.validate(ctx, scopedLogger);
         const result = await this.execute(ctx, scopedLogger);
         await this.after(ctx, result, scopedLogger);
@@ -53,10 +53,7 @@ export abstract class BaseStep implements DeploymentStep {
         return result;
     }
 
-    protected async preRequires(
-        ctx: DeploymentContext,
-        logger: Logger,
-    ): Promise<void> {
+    protected async preRequires(logger: Logger): Promise<void> {
         // Skip dependency installation if this step has no associated package
         if (!this.pkgName) {
             logger.debug("No package dependencies to install for this step");
@@ -72,7 +69,7 @@ export abstract class BaseStep implements DeploymentStep {
                 "pnpm-lock.yaml",
             );
             const pkgManager = fs.existsSync(pnpmLockFile) ? "pnpm" : "npm";
-            const { stdout } = await execa(pkgManager, ["install"], {
+            await execa(pkgManager, ["install"], {
                 cwd: path.join(resolveProjectRoot(), this.pkgName),
                 stdio: ["pipe", "inherit", "inherit"],
             });
@@ -85,7 +82,7 @@ export abstract class BaseStep implements DeploymentStep {
     }
 
     protected async validate(
-        ctx: DeploymentContext,
+        _ctx: DeploymentContext,
         logger: Logger,
     ): Promise<void> {
         logger.debug(`No custom validation for ${this.id}`);

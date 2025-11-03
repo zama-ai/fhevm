@@ -59,12 +59,15 @@ export class EnvManager {
         this.logger.info(`Recorded address ${normalizedKey}=${value}`);
     }
 
-    public getAddress(key: string): string | undefined {
+    public getAddress(key: string): string {
         const normalizedKey = key.toUpperCase();
-        return (
+        const value =
             this.addresses.get(normalizedKey)?.value ??
-            this.state.getAddress(normalizedKey)
-        );
+            this.state.getAddress(normalizedKey);
+        if (!value) {
+            throw new ValidationError(`Address ${key} not found.`);
+        }
+        return value;
     }
 
     public exportAddresses(targetPath: string): void {

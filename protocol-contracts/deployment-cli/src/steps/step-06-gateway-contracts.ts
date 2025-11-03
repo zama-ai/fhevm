@@ -39,10 +39,10 @@ export class Step06GatewayContracts extends BaseStep {
         const baseEnvVars: Record<string, string> = {
             DEPLOYER_PRIVATE_KEY: deployerPk,
             RPC_URL: gateway.rpcUrl,
-            ZAMA_OFT_ADDRESS: ctx.env.getAddress("ZAMA_OFT")!,
+            ZAMA_OFT_ADDRESS: ctx.env.getAddress("ZAMA_OFT"),
             FEES_SENDER_TO_BURNER_ADDRESS: ctx.env.getAddress(
                 "FEES_SENDER_TO_BURNER",
-            )!,
+            ),
             PROTOCOL_NAME: ctx.config.protocol.name,
             PROTOCOL_WEBSITE: ctx.config.protocol.website,
         };
@@ -121,7 +121,7 @@ export class Step06GatewayContracts extends BaseStep {
         await ctx.hardhat.runTask({
             pkg: this.pkgName,
             task: "task:deployAllGatewayContracts",
-            args: ["--network", gateway.gatewayPkgName!],
+            args: ["--network", gateway.gatewayPkgName],
             env: baseEnv,
         });
 
@@ -167,11 +167,11 @@ export class Step06GatewayContracts extends BaseStep {
         await ctx.hardhat.runTask({
             pkg: this.pkgName,
             task: "task:addGatewayPausers",
-            args: ["--network", gateway.gatewayPkgName!],
+            args: ["--network", gateway.gatewayPkgName],
             env: {
                 ...baseEnv,
                 ...pauserEnv,
-                PAUSER_SET_ADDRESS: addressMap.PAUSER_SET_GATEWAY!,
+                PAUSER_SET_ADDRESS: addressMap.PAUSER_SET_GATEWAY,
             },
         });
 
@@ -188,14 +188,14 @@ export class Step06GatewayContracts extends BaseStep {
                     task: "task:verifyAllGatewayContracts",
                     args: [
                         "--network",
-                        gateway.gatewayPkgName!,
+                        gateway.gatewayPkgName,
                         "--useInternalProxyAddress",
                         "true",
                     ],
                     env: baseEnv,
                 });
                 ctx.logger.success("Gateway contracts verified successfully");
-            } catch (error) {
+            } catch (_error) {
                 ctx.logger.warn(
                     "Gateway contracts verification failed (this may be acceptable if already verified)",
                 );

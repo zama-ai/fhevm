@@ -48,7 +48,7 @@ export class Step10HostOwnership extends BaseStep {
                 "--new-owner-address",
                 daoAddress,
                 "--network",
-                ethereum.hostPkgName!,
+                ethereum.hostPkgName,
             ],
             env: offerEnv,
         });

@@ -62,7 +62,7 @@ export class Step09GatewayOwnership extends BaseStep {
             RPC_URL: gateway.rpcUrl,
         });
 
-        const fixedGatewayNetwork = gateway.gatewayPkgName!;
+        const fixedGatewayNetwork = gateway.gatewayPkgName;
 
         // Step 1: Transfer ownership to Safe
         await ctx.hardhat.runTask({

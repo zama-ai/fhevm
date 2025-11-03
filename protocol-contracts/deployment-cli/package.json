@@ -7,7 +7,8 @@
     "scripts": {
         "build": "tsc --project tsconfig.json",
         "start": "bun run src/index.ts",
-        "lint": "echo \"lint not configured\"",
+        "lint": "biome check .",
+        "lint:fix": "biome check --write .",
         "typecheck": "tsc --noEmit --project tsconfig.json",
         "test": "vitest run",
         "test:watch": "vitest"
