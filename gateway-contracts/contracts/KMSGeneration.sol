@@ -107,14 +107,14 @@ contract KMSGeneration is
      */
     string private constant CONTRACT_NAME = "KMSGeneration";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
      * @dev Constant used for making sure the version number using in the `reinitializer` modifier
      * is identical between `initializeFromEmptyProxy` and the reinitializeVX` method
      */
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     // ----------------------------------------------------------------------------------------------
     // Contract storage:
@@ -203,11 +203,11 @@ contract KMSGeneration is
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         $.keyReshareCounter = KEY_RESHARE_COUNTER_BASE;
@@ -300,6 +300,12 @@ contract KMSGeneration is
         bytes calldata signature
     ) external virtual onlyKmsTxSender {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // Make sure the keygen response contains at least one key digest as keygen flow will always
+        // generate at least one key
+        if (keyDigests.length == 0) {
+            revert EmptyKeyDigests(keyId);
+        }
 
         // Get the prepKeygenId associated to the keyId
         uint256 prepKeygenId = $.keygenIdPairs[keyId];

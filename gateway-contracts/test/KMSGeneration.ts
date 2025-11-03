@@ -352,13 +352,19 @@ describe("KMSGeneration", function () {
         // Trigger a keygen request.
         // This is needed to generate and store the necessary values in the KMSGeneration contract
         // fetched in the keygen response.
-        const txRequest = await kmsGeneration.connect(owner).keygen(paramsType);
+        await kmsGeneration.connect(owner).keygen(paramsType);
 
         // Check that triggering a keygen response using a signature from the first KMS signer
         // with the second KMS transaction sender reverts
         await expect(kmsGeneration.connect(kmsTxSenders[1]).keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[0]))
           .to.be.revertedWithCustomError(kmsGeneration, "KmsSignerDoesNotMatchTxSender")
           .withArgs(kmsSigners[0].address, kmsTxSenders[1].address);
+      });
+
+      it("Should revert on keygen response because the key digests are empty", async function () {
+        await expect(kmsGeneration.connect(kmsTxSenders[0]).keygenResponse(keyId, [], kmsSignaturesKeygen[0]))
+          .to.be.revertedWithCustomError(kmsGeneration, "EmptyKeyDigests")
+          .withArgs(keyId);
       });
     });
 
