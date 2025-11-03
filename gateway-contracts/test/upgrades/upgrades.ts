@@ -70,7 +70,7 @@ describe("Upgrades", function () {
     });
     const MultichainACL = await upgrades.upgradeProxy(emptyUUPS, MultichainACLFactoryV1);
     await MultichainACL.waitForDeployment();
-    expect(await MultichainACL.getVersion()).to.equal("MultichainACL v0.1.0");
+    expect(await MultichainACL.getVersion()).to.equal("MultichainACL v0.2.0");
     const MultichainACLV2 = await upgrades.upgradeProxy(MultichainACL, MultichainACLFactoryV2);
     await MultichainACLV2.waitForDeployment();
     expect(await MultichainACLV2.getVersion()).to.equal("MultichainACL v1000.0.0");
