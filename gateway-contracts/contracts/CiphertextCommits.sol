@@ -28,7 +28,8 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     /**
      * @notice The domain separator for the add ciphertext hash.
      */
-    string private constant ADD_CIPHERTEXT_DOMAIN_SEPARATOR = "CiphertextCommits.addCiphertextMaterial";
+    bytes32 private constant ADD_CIPHERTEXT_DOMAIN_SEPARATOR_HASH =
+        keccak256(bytes("CiphertextCommits.addCiphertextMaterial"));
 
     /**
      * @dev The following constants are used for versioning the contract. They are made private
@@ -316,7 +317,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     ) internal pure virtual returns (bytes32) {
         return
             keccak256(
-                abi.encode(ADD_CIPHERTEXT_DOMAIN_SEPARATOR, ctHandle, keyId, ciphertextDigest, snsCiphertextDigest)
+                abi.encode(ADD_CIPHERTEXT_DOMAIN_SEPARATOR_HASH, ctHandle, keyId, ciphertextDigest, snsCiphertextDigest)
             );
     }
 

@@ -23,12 +23,13 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     /**
      * @notice The domain separator for the allow public decrypt hash.
      */
-    string private constant ALLOW_PUBLIC_DECRYPT_DOMAIN_SEPARATOR = "MultichainACL.allowPublicDecrypt";
+    bytes32 private constant ALLOW_PUBLIC_DECRYPT_DOMAIN_SEPARATOR_HASH =
+        keccak256(bytes("MultichainACL.allowPublicDecrypt"));
 
     /**
      * @notice The domain separator for the allow account hash.
      */
-    string private constant ALLOW_ACCOUNT_DOMAIN_SEPARATOR = "MultichainACL.allowAccount";
+    bytes32 private constant ALLOW_ACCOUNT_DOMAIN_SEPARATOR_HASH = keccak256(bytes("MultichainACL.allowAccount"));
 
     /**
      * @dev The following constants are used for versioning the contract. They are made private
@@ -265,14 +266,14 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
      * @notice Returns the hash of a allow public decrypt call.
      */
     function _getAllowPublicDecryptHash(bytes32 ctHandle) internal pure virtual returns (bytes32) {
-        return keccak256(abi.encode(ALLOW_PUBLIC_DECRYPT_DOMAIN_SEPARATOR, ctHandle));
+        return keccak256(abi.encode(ALLOW_PUBLIC_DECRYPT_DOMAIN_SEPARATOR_HASH, ctHandle));
     }
 
     /**
      * @notice Returns the hash of a allow account call.
      */
     function _getAllowAccountHash(bytes32 ctHandle, address accountAddress) internal pure virtual returns (bytes32) {
-        return keccak256(abi.encode(ALLOW_ACCOUNT_DOMAIN_SEPARATOR, ctHandle, accountAddress));
+        return keccak256(abi.encode(ALLOW_ACCOUNT_DOMAIN_SEPARATOR_HASH, ctHandle, accountAddress));
     }
 
     /**
