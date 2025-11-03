@@ -597,6 +597,9 @@ contract Decryption is
         // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
+        // Collect the fee from the transaction sender for this delegated user decryption request.
+        _collectUserDecryptionFee(msg.sender);
+
         emit UserDecryptionRequest(
             userDecryptionId,
             snsCtMaterials,
@@ -707,6 +710,50 @@ contract Decryption is
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             if (
                 !MULTICHAIN_ACL.isAccountAllowed(ctHandleContractPairs[i].ctHandle, userAddress) ||
+                !MULTICHAIN_ACL.isAccountAllowed(
+                    ctHandleContractPairs[i].ctHandle,
+                    ctHandleContractPairs[i].contractAddress
+                ) ||
+                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
+            ) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @dev See {IDecryption-isDelegatedUserDecryptionReady}.
+     */
+    function isDelegatedUserDecryptionReady(
+        uint256 contractsChainId,
+        DelegationAccounts calldata delegationAccounts,
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        address[] calldata contractAddresses,
+        bytes calldata /* extraData */
+    ) external view virtual returns (bool) {
+        // Check that the delegate address has been granted access to the contract addresses by the delegator.
+        for (uint256 i = 0; i < contractAddresses.length; i++) {
+            if (
+                !MULTICHAIN_ACL.isUserDecryptionDelegated(
+                    contractsChainId,
+                    delegationAccounts.delegatorAddress,
+                    delegationAccounts.delegateAddress,
+                    contractAddresses[i]
+                )
+            ) {
+                return false;
+            }
+        }
+
+        // For each handle, check that the delegator and contract addresses have access to it and that the
+        // ciphertext material represented by it has been added.
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            if (
+                !MULTICHAIN_ACL.isAccountAllowed(
+                    ctHandleContractPairs[i].ctHandle,
+                    delegationAccounts.delegatorAddress
+                ) ||
                 !MULTICHAIN_ACL.isAccountAllowed(
                     ctHandleContractPairs[i].ctHandle,
                     ctHandleContractPairs[i].contractAddress

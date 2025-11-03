@@ -71,9 +71,9 @@ abstract contract MultichainACLChecks {
         address[] calldata contractAddresses
     ) internal view {
         for (uint256 i = 0; i < contractAddresses.length; i++) {
-            // if (!MULTICHAIN_ACL.isUserDecryptionDelegated(chainId, delegator, delegate, contractAddresses[i])) {
-            //     revert UserDecryptionNotDelegated(chainId, delegator, delegate, contractAddresses[i]);
-            // }
+            if (!MULTICHAIN_ACL.isUserDecryptionDelegated(chainId, delegator, delegate, contractAddresses[i])) {
+                revert UserDecryptionNotDelegated(chainId, delegator, delegate, contractAddresses[i]);
+            }
         }
     }
 }
