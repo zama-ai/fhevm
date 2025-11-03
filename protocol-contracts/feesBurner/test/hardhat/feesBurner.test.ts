@@ -19,7 +19,6 @@ describe("FeesBurner", () => {
   // Signers
   let deployer: SignerWithAddress;
   let alice: SignerWithAddress;
-  let endpointOwner: SignerWithAddress;
   // Contracts
   let protocolFeesBurner: ProtocolFeesBurner;
   let feesSenderToBurner: FeesSenderToBurner;
@@ -38,7 +37,7 @@ describe("FeesBurner", () => {
   const feesSenderToBurnerInterface = { interface: FeesSenderToBurner__factory.createInterface() };
 
   beforeEach(async () => {
-    [deployer, alice, endpointOwner] = await ethers.getSigners();
+    [deployer, alice] = await ethers.getSigners();
 
     // Mock the LayerZero bridge Chain A <> Chain B
     mockEndpointV2A = await ethers.deployContract("EndpointV2Mock", [eidA]);
