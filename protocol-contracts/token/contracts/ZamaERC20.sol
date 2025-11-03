@@ -22,14 +22,30 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
     event ERC721Recovered(address indexed token, uint256 tokenId, address indexed recipient);
 
     error FailedToSendEther();
+    error AmountsReceiversLengthMismatch();
 
+    /**
+     * @param name Name of the token.
+     * @param symbol Symbol of the token.
+     * @param initialReceivers Array of addresses of the receivers of the initial supply.
+     * @param initialAmounts Array of amounts to be distributed to each initial receiver.
+     * @param initialAdmin Account granted the DEFAULT_ADMIN_ROLE role.
+     * @dev The amounts in initialAmounts are token units, i.e an amount of 1 corresponds to a balance of 1e18
+     */
     constructor(
         string memory name,
         string memory symbol,
-        address initialSupplyReceiver,
+        address[] memory initialReceivers,
+        uint256[] memory initialAmounts,
         address initialAdmin
     ) ERC20(name, symbol) ERC20Permit(name) {
-        _mint(initialSupplyReceiver, 11_000_000_000 * 1e18);
+        uint256 initialReceiversLen = initialReceivers.length;
+        if (initialAmounts.length != initialReceiversLen) revert AmountsReceiversLengthMismatch();
+
+        for (uint256 i = 0; i < initialReceiversLen; i++) {
+            _mint(initialReceivers[i], initialAmounts[i] * 1e18);
+        }
+
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
     }
 
@@ -44,8 +60,8 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
 
     /**
      * @dev Triggers minting paused state.
-     * Only a MINTING_PAUSER address can pause minting.
-     * The contract must not be paused for minting.
+     * @dev Only a MINTING_PAUSER address can pause minting.
+     * @dev The contract must not be paused for minting.
      */
     function pauseMinting() external onlyRole(MINTING_PAUSER_ROLE) {
         _pause();
@@ -53,8 +69,8 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
 
     /**
      * @dev Returns to normal state.
-     * Only DEFAULT_ADMIN_ROLE can unpause minting.
-     * The contract must be paused for minting.
+     * @dev Only DEFAULT_ADMIN_ROLE can unpause minting.
+     * @dev The contract must be paused for minting.
      */
     function unpauseMinting() external onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
@@ -64,7 +80,7 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
      * @dev Allows the sender to recover Ether held by the contract.
      * @param amount Amount of recovered ETH.
      * @param recipient Receiver of the recovered ETH.
-     * Emits an EtherRecovered event upon success.
+     * @dev Emits an EtherRecovered event upon success.
      */
     function recoverEther(uint256 amount, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
         (bool success, ) = recipient.call{ value: amount }("");
@@ -79,7 +95,7 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
      * @param token The address of the ERC20 token to recover.
      * @param amount The amount of the ERC20 token to recover.
      * @param recipient Receiver of the recovered tokens.
-     * Emits an ERC20Recovered event upon success.
+     * @dev Emits an ERC20Recovered event upon success.
      */
     function recoverERC20(address token, uint256 amount, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
         IERC20(token).safeTransfer(recipient, amount);
@@ -91,7 +107,7 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
      * @param token The address of the ERC721 token to recover.
      * @param tokenId The token ID of the ERC721 token to recover.
      * @param recipient Receiver of the recovered ERC721 token.
-     * Emits an ERC721Recovered event upon success.
+     * @dev Emits an ERC721Recovered event upon success.
      */
     function recoverERC721(address token, uint256 tokenId, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
         IERC721(token).safeTransferFrom(address(this), recipient, tokenId);

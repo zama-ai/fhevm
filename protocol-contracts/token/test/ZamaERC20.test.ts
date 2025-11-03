@@ -30,8 +30,10 @@ describe('ZamaERC20 - Unit Test', () => {
 
     // beforeEach hook for setup that runs before each test in the block
     beforeEach(async () => {
-        // The INITIAL_SUPPLY_RECEIVER and INITIAL_ADMIN can be different from the deployer.
-        zamaERC20 = await zamaERC20Factory.connect(deployer).deploy('ZAMAERC20', 'ZAMA', owner.address, admin.address)
+        // The INITIAL_RECEIVER_0 and INITIAL_ADMIN can be different from the deployer.
+        zamaERC20 = await zamaERC20Factory
+            .connect(deployer)
+            .deploy('ZAMAERC20', 'ZAMA', [owner.address], [11_000_000_000n], admin.address)
     })
 
     describe('Initialization', () => {
