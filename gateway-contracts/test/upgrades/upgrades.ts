@@ -127,7 +127,7 @@ describe("Upgrades", function () {
     });
     const kmsGeneration = await upgrades.upgradeProxy(emptyUUPS, kmsGenerationFactoryV1);
     await kmsGeneration.waitForDeployment();
-    expect(await kmsGeneration.getVersion()).to.equal("KMSGeneration v0.2.0");
+    expect(await kmsGeneration.getVersion()).to.equal("KMSGeneration v0.3.0");
     const kmsGenerationV2 = await upgrades.upgradeProxy(kmsGeneration, kmsGenerationFactoryV2);
     await kmsGenerationV2.waitForDeployment();
     expect(await kmsGenerationV2.getVersion()).to.equal("KMSGeneration v1000.0.0");

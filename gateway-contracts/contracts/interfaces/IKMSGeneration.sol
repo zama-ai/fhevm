@@ -97,6 +97,12 @@ interface IKMSGeneration {
     error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
 
     /**
+     * @notice Error thrown when the keygen response contains no key digests.
+     * @param keyId The ID of the key.
+     */
+    error EmptyKeyDigests(uint256 keyId);
+
+    /**
      * @notice Error thrown when a KMS node has already signed for a keygen response.
      * @param keyId The ID of the key.
      * @param kmsSigner The signer address of the KMS node.
