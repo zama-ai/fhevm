@@ -20,13 +20,22 @@ const deploy: DeployFunction = async (hre) => {
     // Token configuration
     const tokenName = 'ZAMAERC20'
     const tokenSymbol = 'ZAMA'
-    const initialSupplyReceiver = getRequiredEnvVar('INITIAL_SUPPLY_RECEIVER')
+
+    const numReceivers = parseInt(getRequiredEnvVar('NUM_INITIAL_RECEIVERS'))
+    // Parse the intial receivers and initial amounts
+    const receivers = []
+    const amounts = []
+    for (let idx = 0; idx < numReceivers; idx++) {
+        receivers.push(getRequiredEnvVar(`INITIAL_RECEIVER_${idx}`))
+        amounts.push(getRequiredEnvVar(`INITIAL_AMOUNT_${idx}`))
+    }
+
     const initialAdmin = getRequiredEnvVar('INITIAL_ADMIN')
 
     //if (hre.network.name === 'ethereum-testnet') {
     const { address } = await deploy(contractName, {
         from: deployer,
-        args: [tokenName, tokenSymbol, initialSupplyReceiver, initialAdmin],
+        args: [tokenName, tokenSymbol, receivers, amounts, initialAdmin],
         log: true,
         skipIfAlreadyDeployed: false,
     })
