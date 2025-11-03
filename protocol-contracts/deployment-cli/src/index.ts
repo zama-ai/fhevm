@@ -1,3 +1,3 @@
-import { runCLI } from './cli.js';
+import { runCLI } from "./cli.js";
 
 void runCLI();
