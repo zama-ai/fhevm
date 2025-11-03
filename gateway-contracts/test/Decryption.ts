@@ -1743,11 +1743,14 @@ describe("Decryption", function () {
     }
 
     beforeEach(async function () {
-      // Initialize globally used variables before each test
+      // Initialize globally used variables before each test.
       const fixtureData = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
       multichainACL = fixtureData.multichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
+      protocolPayment = fixtureData.protocolPayment;
+      mockedZamaOFT = fixtureData.mockedZamaOFT;
+      mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
       owner = fixtureData.owner;
       pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
@@ -1757,6 +1760,11 @@ describe("Decryption", function () {
       coprocessorTxSenders = fixtureData.coprocessorTxSenders;
       eip712RequestMessage = fixtureData.eip712RequestMessage;
       userDecryptedShares = fixtureData.userDecryptedShares;
+      userDecryptionPrice = fixtureData.userDecryptionPrice;
+      zamaFundedSigner = fixtureData.zamaFundedSigner;
+      zamaUnfundedSigner = fixtureData.zamaUnfundedSigner;
+
+      protocolPaymentAddress = await protocolPayment.getAddress();
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
@@ -2392,6 +2400,52 @@ describe("Decryption", function () {
             extraDataV0,
           ),
         ).to.be.false;
+      });
+    });
+
+    describe("$ZAMA fees collection", function () {
+      it("Should collect the $ZAMA fees for the delegated user decryption", async function () {
+        const fundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+
+        // Request the delegated user decryption.
+        await decryption.delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          delegationAccounts,
+          contractsInfo,
+          publicKey,
+          delegateSignature,
+          extraDataV0,
+        );
+
+        // Check that the $ZAMA fees have been collected from the funded signer and added to the
+        // FeesSenderToBurner contract's balance.
+        const newFundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const newFeesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+        expect(newFundedSignerBalance).to.equal(fundedSignerBalance - userDecryptionPrice);
+        expect(newFeesSenderToBurnerBalance).to.equal(feesSenderToBurnerBalance + userDecryptionPrice);
+      });
+
+      it("Should revert because sender has not enough $ZAMA tokens", async function () {
+        // Approve the ProtocolPayment contract with the maximum allowance over the signer's tokens.
+        await approveContractWithMaxAllowance(zamaUnfundedSigner, protocolPaymentAddress, hre.ethers);
+
+        await expect(
+          decryption
+            .connect(zamaUnfundedSigner)
+            .delegatedUserDecryptionRequest(
+              ctHandleContractPairs,
+              requestValidity,
+              delegationAccounts,
+              contractsInfo,
+              publicKey,
+              delegateSignature,
+              extraDataV0,
+            ),
+        )
+          .to.be.revertedWithCustomError(mockedZamaOFT, "ERC20InsufficientBalance")
+          .withArgs(zamaUnfundedSigner.address, 0, userDecryptionPrice);
       });
     });
   });
