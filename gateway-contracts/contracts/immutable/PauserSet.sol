@@ -8,12 +8,14 @@ import { gatewayConfigAddress } from "../../addresses/GatewayAddresses.sol";
 
 /**
  * @title PauserSet smart contract
- * @dev See {IPauserSet}
+ * @notice See {IPauserSet}
  */
 contract PauserSet is IPauserSet, GatewayOwnable {
-    /// @dev The following constants are used for versioning the contract. They are made private
-    /// @dev in order to force derived contracts to consider a different version. Note that
-    /// @dev they can still define their own private constants with the same name.
+    /**
+     * @dev The following constants are used for versioning the contract. They are made private
+     * in order to force derived contracts to consider a different version. Note that
+     * they can still define their own private constants with the same name.
+     */
     string private constant CONTRACT_NAME = "PauserSet";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
@@ -21,7 +23,9 @@ contract PauserSet is IPauserSet, GatewayOwnable {
 
     mapping(address account => bool isPauser) pausers;
 
-    /// @dev See {IPauserSet-addPauser}.
+    /**
+     * @notice See {IPauserSet-addPauser}.
+     */
     function addPauser(address account) external onlyGatewayOwner {
         if (account == address(0)) revert InvalidNullPauser();
         if (pausers[account]) revert AccountAlreadyPauser(account);
@@ -29,7 +33,9 @@ contract PauserSet is IPauserSet, GatewayOwnable {
         emit AddPauser(account);
     }
 
-    /// @dev See {IPauserSet-removePauser}.
+    /**
+     * @notice See {IPauserSet-removePauser}.
+     */
     function removePauser(address account) external onlyGatewayOwner {
         if (account == address(0)) revert InvalidNullPauser();
         if (!pausers[account]) revert AccountNotPauser(account);
@@ -37,7 +43,9 @@ contract PauserSet is IPauserSet, GatewayOwnable {
         emit RemovePauser(account);
     }
 
-    /// @dev See {IPauserSet-swapPauser}.
+    /**
+     * @notice See {IPauserSet-swapPauser}.
+     */
     function swapPauser(address oldAccount, address newAccount) external onlyGatewayOwner {
         if (oldAccount == address(0) || newAccount == address(0)) revert InvalidNullPauser();
         if (!pausers[oldAccount]) revert AccountNotPauser(oldAccount);
@@ -47,12 +55,16 @@ contract PauserSet is IPauserSet, GatewayOwnable {
         emit SwapPauser(oldAccount, newAccount);
     }
 
-    /// @dev See {IPauserSet-isPauser}.
+    /**
+     * @notice See {IPauserSet-isPauser}.
+     */
     function isPauser(address account) external view returns (bool) {
         return pausers[account];
     }
 
-    /// @dev See {IPauserSet-getVersion}.
+    /**
+     * @notice See {IPauserSet-getVersion}.
+     */
     function getVersion() external pure returns (string memory) {
         return
             string(

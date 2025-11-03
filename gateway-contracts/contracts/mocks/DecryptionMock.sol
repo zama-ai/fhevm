@@ -34,15 +34,6 @@ contract DecryptionMock {
         bytes extraData;
     }
 
-    struct DelegatedUserDecryptRequestVerification {
-        bytes publicKey;
-        address[] contractAddresses;
-        address delegatorAddress;
-        uint256 startTimestamp;
-        uint256 durationDays;
-        bytes extraData;
-    }
-
     struct UserDecryptionPayload {
         bytes publicKey;
         bytes32[] ctHandles;
@@ -51,6 +42,14 @@ contract DecryptionMock {
     event PublicDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
+        bytes extraData
+    );
+
+    event PublicDecryptionResponseCall(
+        uint256 indexed decryptionId,
+        bytes decryptedResult,
+        bytes signature,
+        address kmsTxSender,
         bytes extraData
     );
 
@@ -71,10 +70,13 @@ contract DecryptionMock {
 
     event UserDecryptionResponse(
         uint256 indexed decryptionId,
-        bytes[] userDecryptedShares,
-        bytes[] signatures,
+        uint256 indexShare,
+        bytes userDecryptedShare,
+        bytes signature,
         bytes extraData
     );
+
+    event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
 
     uint256 publicDecryptionCounter = 1 << 248;
     uint256 userDecryptionCounter = 2 << 248;
@@ -93,7 +95,10 @@ contract DecryptionMock {
         bytes calldata signature,
         bytes calldata extraData
     ) external {
+        address kmsTxSender;
         bytes[] memory signatures = new bytes[](1);
+
+        emit PublicDecryptionResponseCall(decryptionId, decryptedResult, signature, kmsTxSender, extraData);
 
         emit PublicDecryptionResponse(decryptionId, decryptedResult, signatures, extraData);
     }
@@ -114,32 +119,16 @@ contract DecryptionMock {
         emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
 
-    function delegatedUserDecryptionRequest(
-        CtHandleContractPair[] calldata ctHandleContractPairs,
-        RequestValidity calldata requestValidity,
-        DelegationAccounts calldata delegationAccounts,
-        ContractsInfo calldata contractsInfo,
-        bytes calldata publicKey,
-        bytes calldata signature,
-        bytes calldata extraData
-    ) external {
-        userDecryptionCounter++;
-        uint256 decryptionId = userDecryptionCounter;
-        SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
-        address userAddress;
-
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
-    }
-
     function userDecryptionResponse(
         uint256 decryptionId,
         bytes calldata userDecryptedShare,
         bytes calldata signature,
         bytes calldata extraData
     ) external {
-        bytes[] memory userDecryptedShares = new bytes[](1);
-        bytes[] memory signatures = new bytes[](1);
+        uint256 indexShare;
 
-        emit UserDecryptionResponse(decryptionId, userDecryptedShares, signatures, extraData);
+        emit UserDecryptionResponse(decryptionId, indexShare, userDecryptedShare, signature, extraData);
+
+        emit UserDecryptionResponseThresholdReached(decryptionId);
     }
 }

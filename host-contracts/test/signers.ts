@@ -13,6 +13,7 @@ export interface Signers {
   carol: HardhatEthersSigner;
   dave: HardhatEthersSigner;
   eve: HardhatEthersSigner;
+  fred: HardhatEthersSigner;
 }
 
 let signers: Signers;

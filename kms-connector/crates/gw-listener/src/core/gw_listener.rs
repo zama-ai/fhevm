@@ -9,8 +9,9 @@ use crate::{
 use alloy::{contract::Event, network::Ethereum, providers::Provider, sol_types::SolEvent};
 use connector_utils::{
     conn::{GatewayProvider, connect_to_db, connect_to_gateway},
+    monitoring::otlp::PropagationContext,
     tasks::spawn_with_limit,
-    types::GatewayEvent,
+    types::{GatewayEvent, GatewayEventKind},
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
@@ -21,6 +22,7 @@ use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct monitoring and storing Gateway's events.
 #[derive(Clone)]
@@ -78,7 +80,9 @@ where
         tasks.spawn(self.clone().subscribe_to_user_decryption_requests());
         tasks.spawn(self.clone().subscribe_to_prep_keygen_requests());
         tasks.spawn(self.clone().subscribe_to_keygen_requests());
-        tasks.spawn(self.subscribe_to_crsgen_requests());
+        tasks.spawn(self.clone().subscribe_to_crsgen_requests());
+        tasks.spawn(self.clone().subscribe_to_prss_init());
+        tasks.spawn(self.subscribe_to_key_reshare_same_set());
 
         tasks.join_all().await;
     }
@@ -93,7 +97,7 @@ where
         mut event_filter: Event<&'a Prov, E>,
         poll_interval: Duration,
     ) where
-        E: Into<GatewayEvent> + SolEvent + Send + Sync + 'static,
+        E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
     {
         info!(
             "Starting {} event subscriptions from block {}...",
@@ -131,13 +135,20 @@ where
             EVENT_RECEIVED_COUNTER.inc();
 
             let publisher = self.publisher.clone();
-            spawn_with_limit(async move {
-                if let Err(err) = publisher.publish(event.into()).await {
-                    error!("Failed to publish {event_name}: {err}");
-                    EVENT_STORAGE_ERRORS.inc();
-                }
-            })
-            .await;
+            spawn_with_limit(Self::handle_gateway_event(publisher, event.into())).await;
+        }
+    }
+
+    /// Main function used to trace a single event handling across all Connector's services.
+    #[tracing::instrument(skip(publisher), fields(event = %event_kind))]
+    async fn handle_gateway_event(publisher: Publ, event_kind: GatewayEventKind) {
+        let event = GatewayEvent::new(
+            event_kind,
+            PropagationContext::inject(&tracing::Span::current().context()),
+        );
+        if let Err(err) = publisher.publish(event).await {
+            error!("Failed to publish event: {err}");
+            EVENT_STORAGE_ERRORS.inc();
         }
     }
 
@@ -190,6 +201,26 @@ where
         )
         .await;
     }
+
+    async fn subscribe_to_prss_init(self) {
+        let prss_init_filter = self.kms_generation_contract.PRSSInit_filter();
+        self.subscribe_to_events(
+            "PrssInit",
+            prss_init_filter,
+            self.config.key_management_polling,
+        )
+        .await;
+    }
+
+    async fn subscribe_to_key_reshare_same_set(self) {
+        let key_reshare_same_set_filter = self.kms_generation_contract.KeyReshareSameSet_filter();
+        self.subscribe_to_events(
+            "KeyReshareSameSet",
+            key_reshare_same_set_filter,
+            self.config.key_management_polling,
+        )
+        .await;
+    }
 }
 
 impl GatewayListener<GatewayProvider, DbEventPublisher> {
@@ -219,9 +250,12 @@ mod tests {
         },
     };
     use anyhow::Result;
+    use connector_utils::types::{GatewayEvent, GatewayEventKind};
     use fhevm_gateway_bindings::{
         decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-        kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+        kms_generation::KMSGeneration::{
+            CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
+        },
     };
     use tracing_test::traced_test;
 
@@ -325,6 +359,46 @@ mod tests {
         }
     }
 
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
+    #[tokio::test]
+    #[traced_test]
+    async fn test_prss_init_subscription() {
+        let (asserter, gw_listener) = test_setup().await;
+
+        // Used to mock a new event
+        let rpc_event_log = mock_rpc_event_log(PRSSInit);
+        asserter.push_success(&[rpc_event_log]);
+
+        tokio::spawn(gw_listener.subscribe_to_prss_init());
+        loop {
+            if logs_contain("PrssInit published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
+    #[tokio::test]
+    #[traced_test]
+    async fn test_key_reshare_same_set_subscription() {
+        let (asserter, gw_listener) = test_setup().await;
+
+        // Used to mock a new event
+        let rpc_event_log = mock_rpc_event_log(KeyReshareSameSet::default());
+        asserter.push_success(&[rpc_event_log]);
+
+        tokio::spawn(gw_listener.subscribe_to_key_reshare_same_set());
+        loop {
+            if logs_contain("KeyReshareSameSet published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
     /// Mock the log generated by the publication of a Gateway event.
     fn mock_rpc_event_log(event: impl IntoLogData) -> alloy::rpc::types::Log {
         let event_log = alloy::primitives::Log {
@@ -372,12 +446,18 @@ mod tests {
 
     impl EventPublisher for MockPublisher {
         async fn publish(&self, event: GatewayEvent) -> Result<()> {
-            match event {
-                GatewayEvent::PublicDecryption(_) => info!("PublicDecryptionRequest published!"),
-                GatewayEvent::UserDecryption(_) => info!("UserDecryptionRequest published!"),
-                GatewayEvent::PrepKeygen(_) => info!("PrepKeygenRequest published!"),
-                GatewayEvent::Keygen(_) => info!("KeygenRequest published!"),
-                GatewayEvent::Crsgen(_) => info!("CrsgenRequest published!"),
+            match event.kind {
+                GatewayEventKind::PublicDecryption(_) => {
+                    info!("PublicDecryptionRequest published!")
+                }
+                GatewayEventKind::UserDecryption(_) => info!("UserDecryptionRequest published!"),
+                GatewayEventKind::PrepKeygen(_) => info!("PrepKeygenRequest published!"),
+                GatewayEventKind::Keygen(_) => info!("KeygenRequest published!"),
+                GatewayEventKind::Crsgen(_) => info!("CrsgenRequest published!"),
+                GatewayEventKind::PrssInit(_) => info!("PrssInit published!"),
+                GatewayEventKind::KeyReshareSameSet(_) => {
+                    info!("KeyReshareSameSet published!")
+                }
             }
             Ok(())
         }

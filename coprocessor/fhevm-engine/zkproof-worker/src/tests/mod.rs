@@ -82,7 +82,7 @@ async fn test_max_input_index() {
         )
         .await
         .expect("valid db insert"),
-        50
+        5000
     )
     .await
     .expect("non-expired db query"));
@@ -99,7 +99,7 @@ async fn test_max_input_index() {
         )
         .await
         .expect("valid db insert"),
-        500
+        5000
     )
     .await
     .expect("non-expired db query"));

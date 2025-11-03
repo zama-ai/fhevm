@@ -24,6 +24,7 @@ fn construct_config() -> Config {
     Config {
         tenant_api_key: args.tenant_api_key,
         service_name: args.service_name,
+        metrics_addr: args.metrics_addr,
         db: DBConfig {
             url: db_url,
             listen_channels: args.pg_listen_channels,
@@ -76,7 +77,7 @@ async fn main() {
     // Handle SIGINIT signals
     handle_sigint(parent.clone());
 
-    sns_worker::run_all(config, parent)
+    sns_worker::run_all(config, parent, None)
         .await
         .unwrap_or_else(|err| {
             error!(error = %err, "Error running SNS worker");

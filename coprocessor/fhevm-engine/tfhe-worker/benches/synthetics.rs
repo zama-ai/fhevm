@@ -1,8 +1,8 @@
 #[path = "./utils.rs"]
 mod utils;
 use crate::utils::{
-    allow_handle, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
-    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, OperatorType,
+    default_api_key, default_tenant_id, query_tenant_keys, random_handle, setup_test_app,
+    wait_until_all_allowed_handles_computed, write_to_json, OperatorType,
 };
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
@@ -16,7 +16,6 @@ use tfhe_worker::server::tfhe_worker::{
     fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputeRequest,
     InputToUpload, InputUploadBatch,
 };
-#[cfg(feature = "bench")]
 use tfhe_worker::tfhe_worker::TIMING;
 use tokio::runtime::Runtime;
 use tonic::metadata::MetadataValue;
@@ -34,7 +33,10 @@ fn test_random_contract_address() -> String {
 
 fn main() {
     let ecfg = EnvConfig::new();
-    let mut c = Criterion::default().sample_size(10).configure_from_args();
+    let mut c = Criterion::default()
+        .sample_size(10)
+        .measurement_time(std::time::Duration::from_secs(1000))
+        .configure_from_args();
     let bench_name = "synthetic";
     let bench_optimization_target = if cfg!(feature = "latency") {
         "opt_latency"
@@ -160,7 +162,7 @@ async fn counter_increment(
     };
 
     let transaction_id = next_handle();
-    for _ in 0..=(num_samples - 1) as u32 {
+    for i in 0..num_samples {
         let new_counter = next_handle();
         output_handles.push(new_counter.clone());
 
@@ -175,14 +177,13 @@ async fn counter_increment(
                     input: Some(Input::Scalar(vec![7u8])),
                 },
             ],
+            is_allowed: i == (num_samples - 1),
         });
 
         counter = AsyncComputationInput {
             input: Some(Input::InputHandle(new_counter.clone())),
         };
     }
-
-    allow_handle(output_handles.last().unwrap(), &pool).await?;
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
         computations: async_computations,
@@ -212,7 +213,7 @@ async fn counter_increment(
             })
             .await;
             std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
             )
         });
 
@@ -318,6 +319,7 @@ async fn tree_reduction(
                 transaction_id: transaction_id.clone(),
                 output_handle: output_handle.clone(),
                 inputs: vec![level_inputs[2 * i].clone(), level_inputs[2 * i + 1].clone()],
+                is_allowed: true,
             });
         }
         num_comps_at_level /= 2;
@@ -327,7 +329,6 @@ async fn tree_reduction(
         level_inputs = std::mem::take(&mut level_outputs);
     }
     output_handles.push(output_handle.clone());
-    allow_handle(&output_handle, &pool).await?;
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
         computations: async_computations,
@@ -357,7 +358,7 @@ async fn tree_reduction(
             })
             .await;
             std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
             )
         });
 

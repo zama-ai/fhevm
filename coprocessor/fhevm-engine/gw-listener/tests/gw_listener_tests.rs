@@ -1,4 +1,8 @@
-use std::time::Duration;
+use std::{
+    collections::HashSet,
+    sync::{Arc, OnceLock, RwLock},
+    time::Duration,
+};
 
 use alloy::{
     network::EthereumWallet,
@@ -9,11 +13,17 @@ use alloy::{
     sol,
 };
 
-use aws_sdk_s3::{operation::get_object::GetObjectError, Client};
+use async_trait::async_trait;
+use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
+use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::Client;
+use aws_smithy_mocks::RuleMode;
+use aws_smithy_mocks::{mock, mock_client};
+
 use gw_listener::{
-    aws_s3::{AwsS3Client, AwsS3Interface},
-    gw_listener::{key_id_to_key_bucket, to_bucket_key_prefix, GatewayListener},
-    ConfigSettings,
+    aws_s3::{find_key, AwsS3Client, AwsS3Interface},
+    gw_listener::{key_id_to_aws_key, to_key_prefix, GatewayListener},
+    ConfigSettings, KeyType,
 };
 use serial_test::serial;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
@@ -22,6 +32,7 @@ use tokio::time::sleep;
 use tokio_util::bytes;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
+use tracing_subscriber::fmt::{writer::MakeWriterExt, MakeWriter};
 
 sol!(
     #[sol(rpc)]
@@ -35,6 +46,62 @@ sol!(
     "artifacts/KMSGeneration.sol/KMSGeneration.json"
 );
 
+static TEST_LOGS: OnceLock<Arc<RwLock<String>>> = OnceLock::new();
+
+#[derive(Clone)]
+struct TestLogs {
+    logs: Arc<RwLock<String>>,
+}
+
+impl TestLogs {
+    fn new() -> Self {
+        let logs = TEST_LOGS.get_or_init(|| Arc::new(RwLock::new(String::new())));
+        // Flush logs every time a new test starts.
+        logs.write().unwrap().clear();
+        Self { logs: logs.clone() }
+    }
+
+    fn add(&mut self, data: &[u8]) {
+        let data = String::from_utf8_lossy(data).into_owned();
+        *self.logs.write().unwrap() += &data;
+    }
+
+    fn contains(&self, substr: &str) -> bool {
+        self.logs.read().unwrap().contains(substr)
+    }
+}
+
+struct Writer {
+    logs: TestLogs,
+}
+
+impl Writer {
+    fn new(logs: TestLogs) -> Self {
+        Self { logs }
+    }
+}
+
+impl std::io::Write for Writer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.logs.add(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> MakeWriter<'a> for Writer {
+    type Writer = Self;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        Self {
+            logs: self.logs.clone(),
+        }
+    }
+}
+
 struct TestEnvironment {
     wallet: EthereumWallet,
     conf: ConfigSettings,
@@ -42,15 +109,19 @@ struct TestEnvironment {
     _test_instance: Option<test_harness::instance::DBInstance>, // maintain db alive
     db_pool: Pool<Postgres>,
     anvil: AnvilInstance,
+    test_logs: TestLogs,
 }
 
 impl TestEnvironment {
     async fn new() -> anyhow::Result<Self> {
+        let test_logs = TestLogs::new();
+        let writer = Writer::new(test_logs.clone());
+
         let _ = tracing_subscriber::fmt()
-            .json()
+            .compact()
+            .with_writer(writer.and(std::io::stdout))
             .with_level(true)
-            .with_max_level(Level::DEBUG)
-            .with_test_writer()
+            .with_max_level(Level::INFO)
             .try_init();
 
         let mut conf = ConfigSettings::default();
@@ -64,6 +135,8 @@ impl TestEnvironment {
             conf.database_url = instance.db_url().to_owned();
             _test_instance = Some(instance);
         };
+        conf.error_sleep_initial_secs = 1;
+        conf.error_sleep_max_secs = 1;
         let db_pool = PgPoolOptions::new()
             .max_connections(16)
             .acquire_timeout(Duration::from_secs(5))
@@ -90,11 +163,23 @@ impl TestEnvironment {
             db_pool,
             _test_instance,
             anvil,
+            test_logs,
         })
+    }
+
+    async fn wait_for_log(&self, log: &str) -> anyhow::Result<()> {
+        for _ in 0..LOG_RETRY_COUNT {
+            if self.test_logs.contains(log) {
+                return Ok(());
+            }
+            sleep(RETRY_DELAY).await;
+        }
+        anyhow::bail!("wait_for_log() didn't find {}", log);
     }
 }
 
 const RETRY_EVENT_TO_DB: u64 = 20;
+const LOG_RETRY_COUNT: u64 = 50;
 const RETRY_DELAY: Duration = Duration::from_millis(500);
 
 #[tokio::test]
@@ -162,7 +247,15 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn has_not_public_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_public_key_gen(db_pool, false).await.map(|b| !b)
+}
+
 async fn has_public_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_public_key_gen(db_pool, true).await
+}
+
+async fn has_public_key_gen(db_pool: &Pool<Postgres>, retry: bool) -> anyhow::Result<bool> {
     for _ in 0..RETRY_EVENT_TO_DB {
         sleep(RETRY_DELAY).await;
         let rows = sqlx::query!("SELECT pks_key FROM tenants WHERE chain_id = $1", 12345,)
@@ -174,11 +267,22 @@ async fn has_public_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
                 return Ok(true);
             }
         }
+        if !retry {
+            break;
+        }
     }
     Ok(false)
 }
 
+async fn has_not_server_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_server_key_gen(db_pool, false).await.map(|b| !b)
+}
+
 async fn has_server_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_server_key_gen(db_pool, true).await
+}
+
+async fn has_server_key_gen(db_pool: &Pool<Postgres>, retry: bool) -> anyhow::Result<bool> {
     for _ in 0..RETRY_EVENT_TO_DB {
         sleep(RETRY_DELAY).await;
         let rows = sqlx::query!("SELECT sks_key FROM tenants WHERE chain_id = $1", 12345,)
@@ -190,11 +294,22 @@ async fn has_server_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
                 return Ok(true);
             }
         }
+        if !retry {
+            break;
+        }
     }
     Ok(false)
 }
 
+async fn has_not_crs(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_crs_gen(db_pool, false).await.map(|b| !b)
+}
+
 async fn has_crs(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_crs_gen(db_pool, true).await
+}
+
+async fn has_crs_gen(db_pool: &Pool<Postgres>, retry: bool) -> anyhow::Result<bool> {
     for _ in 0..RETRY_EVENT_TO_DB {
         sleep(RETRY_DELAY).await;
         let rows = sqlx::query!(
@@ -209,6 +324,9 @@ async fn has_crs(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
                 return Ok(true);
             }
         }
+        if !retry {
+            break;
+        }
     }
     Ok(false)
 }
@@ -216,18 +334,20 @@ async fn has_crs(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
 #[derive(Clone)]
 pub struct AwsS3ClientMocked(Client);
 
+#[async_trait]
 impl AwsS3Interface for AwsS3ClientMocked {
     async fn get_bucket_key(
         &self,
-        _url: &str,
+        url: &str,
         bucket: &str,
         key: &str,
     ) -> anyhow::Result<bytes::Bytes> {
+        let full_key = find_key(&self.0, url, bucket, key).await?;
         Ok(self
             .0
             .get_object()
             .bucket(bucket)
-            .key(key)
+            .key(full_key)
             .send()
             .await?
             .body
@@ -237,56 +357,52 @@ impl AwsS3Interface for AwsS3ClientMocked {
     }
 }
 
-// test bad bucket
-// test bad key
-#[tokio::test]
-#[serial(db)]
-async fn keygen_ok() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .compact()
-        .try_init()
-        .ok();
-
-    use aws_sdk_s3::operation::get_object::GetObjectOutput;
-    use aws_sdk_s3::primitives::ByteStream;
-    use aws_sdk_s3::Client;
-    use aws_smithy_mocks::RuleMode;
-    use aws_smithy_mocks::{mock, mock_client};
-    use gw_listener::KeyType;
-
-    // see ../contracts/KMSGeneration.sol
-    let buckets = [
-        "test-bucket1/PUB-P1",
-        "test-bucket2/PUB-P2",
-        "test-bucket3/PUB-P3",
-        "test-bucket4/PUB-P4",
-    ];
-
-    let keys_digests = [KeyType::PublicKey, KeyType::ServerKey];
-
-    let key_id = U256::from(16);
-
+fn rules(
+    buckets: Vec<&'static str>,
+    keys_digests: Vec<KeyType>,
+    key_id: U256,
+    bad_content: bool,
+    bad_key: bool,
+) -> Vec<aws_smithy_mocks::Rule> {
     let mut rules = vec![];
-    for &bucket in &buckets {
+    let mut keys = HashSet::<String>::new();
+    for (i, &bucket) in buckets.iter().enumerate() {
         for key_type in &keys_digests {
-            let key_type_str: &str = to_bucket_key_prefix(*key_type);
-            let key_id_no_0x = key_id_to_key_bucket(key_id);
-            let key = format!("{}/{}", key_type_str, key_id_no_0x);
+            let key_type_str: &str = to_key_prefix(*key_type);
+            let key_id_no_0x = key_id_to_aws_key(key_id);
+            // mpc style PUB-p1
+            let key = format!("PUB-p1{}/{}", key_type_str, key_id_no_0x);
+            keys.insert(key.clone());
             eprintln!("Adding {}/{}", bucket, key);
             let get_object_rule = mock!(Client::get_object)
-                .match_requests(move |req| req.bucket() == Some(bucket) && req.key() == Some(&key))
-                .then_output(|| {
+                .match_requests(move |req| req.bucket() == Some(bucket) && req.key() == Some(&key));
+            let get_object_rule = if bad_key && i < 3 {
+                // most bucket fails
+                get_object_rule.then_error(|| {
+                    let nsk = aws_sdk_s3::types::error::NoSuchKey::builder()
+                        .message("")
+                        .build();
+                    GetObjectError::NoSuchKey(nsk)
+                })
+            } else {
+                get_object_rule.then_output(move || {
                     GetObjectOutput::builder()
-                        .body(ByteStream::from_static(b"key_bytes"))
+                        .body(ByteStream::from_static(if bad_content {
+                            b"bad_key_bytes"
+                        } else {
+                            b"key_bytes"
+                        }))
                         .build()
-                });
+                })
+            };
             rules.push(get_object_rule);
         }
     }
     for &bucket in &buckets {
         let key_id_no_0x = &format!("{key_id:064X}");
+        // centralized style PUB-p1
         let key = format!("PUB/CRS/{key_id_no_0x}");
+        keys.insert(key.clone());
         eprintln!("Adding {}/{}", bucket, key);
         let get_object_rule = mock!(Client::get_object)
             .match_requests(move |req| req.bucket() == Some(bucket) && req.key() == Some(&key))
@@ -297,7 +413,42 @@ async fn keygen_ok() -> anyhow::Result<()> {
             });
         rules.push(get_object_rule);
     }
-    let rules_ref: Vec<_> = rules.iter().collect();
+
+    for &bucket in &buckets {
+        let keys = keys.clone();
+        let get_object_rule = mock!(Client::list_objects_v2)
+            .match_requests(|req| req.bucket() == Some(bucket))
+            .then_output(move || {
+                aws_sdk_s3::operation::list_objects_v2::ListObjectsV2Output::builder()
+                    .set_contents(
+                        keys.iter()
+                            .map(move |k| Some(aws_sdk_s3::types::Object::builder().key(k).build()))
+                            .collect(),
+                    )
+                    .build()
+            });
+        rules.push(get_object_rule);
+    }
+    rules
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn keygen_ok_simple() -> anyhow::Result<()> {
+    use aws_smithy_mocks::mock_client;
+    // see ../contracts/KMSGeneration.sol
+    let buckets = vec![
+        "test-bucket1",
+        "test-bucket2",
+        "test-bucket3",
+        "test-bucket4",
+    ];
+
+    let keys_digests = vec![KeyType::PublicKey, KeyType::ServerKey];
+
+    let key_id = U256::from(16);
+
+    let rules_ref: Vec<_> = rules(buckets, keys_digests, key_id, false, false);
 
     // Create a mocked client with the rule
     let s3 = mock_client!(aws_sdk_s3, RuleMode::MatchAny, &rules_ref);
@@ -321,9 +472,9 @@ async fn keygen_ok() -> anyhow::Result<()> {
 
     let listener = tokio::spawn(async move { gw_listener.run().await });
 
-    assert!(!has_public_key(&env.db_pool.clone()).await?);
-    assert!(!has_server_key(&env.db_pool.clone()).await?);
-    assert!(!has_crs(&env.db_pool.clone()).await?);
+    assert!(has_not_public_key(&env.db_pool.clone()).await?);
+    assert!(has_not_server_key(&env.db_pool.clone()).await?);
+    assert!(has_not_crs(&env.db_pool.clone()).await?);
 
     let txn_req = kms_generation
         .keygen_public_key()
@@ -354,50 +505,30 @@ async fn keygen_ok() -> anyhow::Result<()> {
 
 #[tokio::test]
 #[serial(db)]
-async fn keygen_compromised_key() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .compact()
-        .try_init()
-        .ok();
+async fn keygen_ok_catchup_positive() -> anyhow::Result<()> {
+    keygen_ok_catchup_gen(true).await
+}
 
-    use aws_sdk_s3::operation::get_object::GetObjectOutput;
-    use aws_sdk_s3::primitives::ByteStream;
-    use aws_sdk_s3::Client;
-    use aws_smithy_mocks::RuleMode;
-    use aws_smithy_mocks::{mock, mock_client};
-    use gw_listener::KeyType;
+#[tokio::test]
+#[serial(db)]
+async fn keygen_ok_catchup_negative() -> anyhow::Result<()> {
+    keygen_ok_catchup_gen(false).await
+}
 
+async fn keygen_ok_catchup_gen(positive: bool) -> anyhow::Result<()> {
     // see ../contracts/KMSGeneration.sol
-    let buckets = [
-        "test-bucket1/PUB-P1",
-        "test-bucket2/PUB-P2",
-        "test-bucket3/PUB-P3",
-        "test-bucket4/PUB-P4",
+    let buckets = vec![
+        "test-bucket1",
+        "test-bucket2",
+        "test-bucket3",
+        "test-bucket4",
     ];
 
-    let keys_digests = [KeyType::PublicKey, KeyType::ServerKey];
+    let keys_digests = vec![KeyType::PublicKey, KeyType::ServerKey];
 
     let key_id = U256::from(16);
 
-    let mut rules = vec![];
-    for bucket in buckets {
-        for key_type in &keys_digests {
-            let key_type_str: &str = to_bucket_key_prefix(*key_type);
-            let key_id_no_0x = key_id_to_key_bucket(key_id);
-            let key = format!("{}/{}", key_type_str, key_id_no_0x);
-            eprintln!("Adding {}/{}", bucket, key);
-            let get_object_rule = mock!(Client::get_object)
-                .match_requests(move |req| req.bucket() == Some(bucket) && req.key() == Some(&key))
-                .then_output(|| {
-                    GetObjectOutput::builder()
-                        .body(ByteStream::from_static(b"bad_key_bytes"))
-                        .build()
-                });
-            rules.push(get_object_rule);
-        }
-    }
-    let rules_ref: Vec<_> = rules.iter().collect();
+    let rules_ref: Vec<_> = rules(buckets, keys_digests, key_id, false, false);
 
     // Create a mocked client with the rule
     let s3 = mock_client!(aws_sdk_s3, RuleMode::MatchAny, &rules_ref);
@@ -405,6 +536,88 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::new()
         .wallet(env.wallet)
+        .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
+    let aws_s3_client = AwsS3ClientMocked(s3);
+    let input_verification = InputVerification::deploy(&provider).await?;
+    let kms_generation = KMSGeneration::deploy(&provider).await?;
+
+    assert!(provider.get_block_number().await? > 0);
+
+    let txn_req = kms_generation
+        .keygen_public_key()
+        .into_transaction_request();
+    let pending_txn = provider.send_transaction(txn_req).await?;
+    let receipt = pending_txn.get_receipt().await?;
+    assert!(receipt.status());
+
+    let txn_req = kms_generation
+        .keygen_server_key()
+        .into_transaction_request();
+    let pending_txn = provider.send_transaction(txn_req).await?;
+    let receipt = pending_txn.get_receipt().await?;
+    assert!(receipt.status());
+
+    let txn_req = kms_generation.crsgen().into_transaction_request();
+    let pending_txn = provider.send_transaction(txn_req).await?;
+    let receipt = pending_txn.get_receipt().await?;
+    assert!(receipt.status());
+
+    assert!(has_not_public_key(&env.db_pool.clone()).await?);
+    assert!(has_not_server_key(&env.db_pool.clone()).await?);
+    assert!(has_not_crs(&env.db_pool.clone()).await?);
+
+    let catchup_kms_generation_from_block = if positive {
+        Some(0)
+    } else {
+        Some(-(provider.get_block_number().await? as i64))
+    };
+    let conf = ConfigSettings {
+        catchup_kms_generation_from_block,
+        ..env.conf.clone()
+    };
+    let gw_listener = GatewayListener::new(
+        *input_verification.address(),
+        *kms_generation.address(),
+        conf,
+        env.cancel_token.clone(),
+        provider.clone(),
+        aws_s3_client.clone(),
+    );
+    let listener = tokio::spawn(async move { gw_listener.run().await });
+
+    assert!(has_public_key(&env.db_pool.clone()).await?);
+    assert!(has_server_key(&env.db_pool.clone()).await?);
+    assert!(has_crs(&env.db_pool.clone()).await?);
+
+    env.cancel_token.cancel();
+    listener.abort();
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn keygen_compromised_key() -> anyhow::Result<()> {
+    // see ../contracts/KMSGeneration.sol
+    let buckets = vec![
+        "test-bucket1",
+        "test-bucket2",
+        "test-bucket3",
+        "test-bucket4",
+    ];
+
+    let keys_digests = vec![KeyType::PublicKey, KeyType::ServerKey];
+
+    let key_id = U256::from(16);
+
+    let rules_ref: Vec<_> = rules(buckets, keys_digests, key_id, true, false);
+
+    // Create a mocked client with the rule
+    let s3 = mock_client!(aws_sdk_s3, RuleMode::MatchAny, &rules_ref);
+
+    let env = TestEnvironment::new().await?;
+    let provider = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
         .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
         .await?;
     let aws_s3_client = AwsS3ClientMocked(s3);
@@ -419,13 +632,10 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
         aws_s3_client.clone(),
     );
 
-    let mut sleep_duration = 6_u64;
-    let db_pool = env.db_pool.clone();
-    let result =
-        tokio::spawn(async move { gw_listener.run_loop(&db_pool, &mut sleep_duration).await });
+    let result = tokio::spawn(async move { gw_listener.run().await });
 
-    assert!(!has_public_key(&env.db_pool.clone()).await?);
-    assert!(!has_server_key(&env.db_pool.clone()).await?);
+    assert!(has_not_public_key(&env.db_pool.clone()).await?);
+    assert!(has_not_server_key(&env.db_pool.clone()).await?);
 
     let txn_req = kms_generation
         .keygen(1) // Test
@@ -433,77 +643,34 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
     let pending_txn = provider.send_transaction(txn_req).await?;
     let receipt = pending_txn.get_receipt().await?;
     assert!(receipt.status());
-    assert!(result.is_finished());
-    let result = result.await;
-    assert!(result.is_ok());
-    let result = result.unwrap();
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.to_string().contains("Invalid Key digest"));
 
-    assert!(!has_public_key(&env.db_pool.clone()).await?);
-    assert!(!has_server_key(&env.db_pool.clone()).await?);
+    env.wait_for_log("Invalid Key digest").await?;
+
+    assert!(has_not_public_key(&env.db_pool.clone()).await?);
+    assert!(has_not_server_key(&env.db_pool.clone()).await?);
 
     env.cancel_token.cancel();
+    result.await??;
+
     Ok(())
 }
 
 #[tokio::test]
 #[serial(db)]
 async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .compact()
-        .try_init()
-        .ok();
-
-    use aws_sdk_s3::operation::get_object::GetObjectOutput;
-    use aws_sdk_s3::primitives::ByteStream;
-    use aws_sdk_s3::Client;
-    use aws_smithy_mocks::RuleMode;
-    use aws_smithy_mocks::{mock, mock_client};
-    use gw_listener::KeyType;
-
     // see ../contracts/KMSGeneration.sol
-    let buckets = [
-        "test-bucket1/PUB-P1",
-        "test-bucket2/PUB-P2",
-        "test-bucket3/PUB-P3",
-        "test-bucket4/PUB-P4",
+    let buckets = vec![
+        "test-bucket1",
+        "test-bucket2",
+        "test-bucket3",
+        "test-bucket4",
     ];
 
-    let keys_digests = [KeyType::PublicKey, KeyType::ServerKey];
+    let keys_digests = vec![KeyType::PublicKey, KeyType::ServerKey];
 
     let key_id = U256::from(16);
 
-    let mut rules = vec![];
-    for (i, bucket) in buckets.iter().copied().enumerate() {
-        for key_type in &keys_digests {
-            let key_type_str: &str = to_bucket_key_prefix(*key_type);
-            let key_id_no_0x = key_id_to_key_bucket(key_id);
-            let key = format!("{}/{}", key_type_str, key_id_no_0x);
-            eprintln!("Adding {}/{}", bucket, key);
-            let get_object_rule = mock!(Client::get_object)
-                .match_requests(move |req| req.bucket() == Some(bucket) && req.key() == Some(&key));
-            let get_object_rule = if i < 3 {
-                // most bucket fails
-                get_object_rule.then_error(|| {
-                    let nsk = aws_sdk_s3::types::error::NoSuchKey::builder()
-                        .message("")
-                        .build();
-                    GetObjectError::NoSuchKey(nsk)
-                })
-            } else {
-                get_object_rule.then_output(|| {
-                    GetObjectOutput::builder()
-                        .body(ByteStream::from_static(b"key_bytes"))
-                        .build()
-                })
-            };
-            rules.push(get_object_rule);
-        }
-    }
-    let rules_ref: Vec<_> = rules.iter().collect();
+    let rules_ref: Vec<_> = rules(buckets, keys_digests, key_id, false, true);
 
     // Create a mocked client with the rule
     let s3 = mock_client!(aws_sdk_s3, RuleMode::MatchAny, &rules_ref);
@@ -527,8 +694,8 @@ async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
 
     let listener = tokio::spawn(async move { gw_listener.run().await });
 
-    assert!(!has_public_key(&env.db_pool.clone()).await?);
-    assert!(!has_server_key(&env.db_pool.clone()).await?);
+    assert!(has_not_public_key(&env.db_pool.clone()).await?);
+    assert!(has_not_server_key(&env.db_pool.clone()).await?);
 
     let txn_req = kms_generation
         .keygen(1) // Test

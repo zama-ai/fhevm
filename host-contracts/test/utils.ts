@@ -3,12 +3,11 @@ import { toBufferBE } from 'bigint-buffer';
 import { ContractMethodArgs, Typed } from 'ethers';
 import { Signer } from 'ethers';
 import { ethers, network } from 'hardhat';
+import hre from 'hardhat';
 
 import type { Counter } from '../types';
 import { TypedContractMethod } from '../types/common';
 import { getSigners } from './signers';
-
-const hre = require('hardhat');
 
 export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
   const signers = await hre.ethers.getSigners();
@@ -152,6 +151,8 @@ export const userDecryptSingleHandle = async (
     eip712.message,
   );
 
+  const signerAddress = await signer.getAddress();
+
   const decryptedValue = (
     await instance.userDecrypt(
       ctHandleContractPairs,
@@ -159,7 +160,7 @@ export const userDecryptSingleHandle = async (
       publicKey,
       signature.replace('0x', ''),
       contractAddresses,
-      signer.address,
+      signerAddress,
       startTimeStamp,
       durationDays,
     )

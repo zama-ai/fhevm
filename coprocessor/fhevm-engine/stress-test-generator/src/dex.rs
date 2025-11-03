@@ -60,7 +60,7 @@ async fn dex_swap_request_update_dex_balance(
         result: sent_amount,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+    insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
     Ok((sent_amount, new_current_balance))
 }
 
@@ -97,7 +97,7 @@ async fn dex_swap_request_finalize(
         result: pending_in,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+    insert_tfhe_event(listener_event_to_db, transaction_id, event, true).await?;
     let pending_total_token_in = next_random_handle(DEF_TYPE);
     let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
         caller,
@@ -106,7 +106,7 @@ async fn dex_swap_request_finalize(
         result: pending_total_token_in,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+    insert_tfhe_event(listener_event_to_db, transaction_id, event, true).await?;
     Ok((pending_in, pending_total_token_in))
 }
 
@@ -224,6 +224,7 @@ pub async fn dex_swap_request_transaction(
         &pending_in_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -231,6 +232,7 @@ pub async fn dex_swap_request_transaction(
         &pending_in_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -238,6 +240,7 @@ pub async fn dex_swap_request_transaction(
         &pending_total_token_in_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -245,6 +248,7 @@ pub async fn dex_swap_request_transaction(
         &pending_total_token_in_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -252,6 +256,7 @@ pub async fn dex_swap_request_transaction(
         &new_current_balance_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -259,6 +264,7 @@ pub async fn dex_swap_request_transaction(
         &new_current_balance_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -298,7 +304,7 @@ async fn dex_swap_claim_prepare(
             toType: crate::utils::FheType::FheUint128 as u8,
             result: big_pending_1_in,
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
         let total_dex_token_0_out_te = generate_trivial_encrypt(
             contract_address,
             user_address,
@@ -306,6 +312,7 @@ async fn dex_swap_claim_prepare(
             listener_event_to_db,
             Some(crate::utils::FheType::FheUint128),
             Some(total_dex_token_0_out.into()),
+            false,
         )
         .await?;
         let big_amount_0_out_mul = next_random_handle(crate::utils::FheType::FheUint128);
@@ -316,7 +323,7 @@ async fn dex_swap_claim_prepare(
             result: big_amount_0_out_mul,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
         let total_dex_token_1_in_te = generate_trivial_encrypt(
             contract_address,
             user_address,
@@ -324,6 +331,7 @@ async fn dex_swap_claim_prepare(
             listener_event_to_db,
             Some(crate::utils::FheType::FheUint128),
             Some(total_dex_token_1_in.into()),
+            false,
         )
         .await?;
         let big_amount_0_out_div = next_random_handle(crate::utils::FheType::FheUint128);
@@ -334,7 +342,7 @@ async fn dex_swap_claim_prepare(
             result: big_amount_0_out_div,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
         amount_0_out = next_random_handle(crate::utils::FheType::FheUint64);
         let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
             caller,
@@ -342,7 +350,7 @@ async fn dex_swap_claim_prepare(
             toType: crate::utils::FheType::FheUint64 as u8,
             result: amount_0_out,
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
     }
     if total_dex_token_0_in != 0 {
         let big_pending_0_in = next_random_handle(crate::utils::FheType::FheUint128);
@@ -352,7 +360,7 @@ async fn dex_swap_claim_prepare(
             toType: crate::utils::FheType::FheUint128 as u8,
             result: big_pending_0_in,
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
         let total_dex_token_1_out_te = generate_trivial_encrypt(
             contract_address,
             user_address,
@@ -360,6 +368,7 @@ async fn dex_swap_claim_prepare(
             listener_event_to_db,
             Some(crate::utils::FheType::FheUint128),
             Some(total_dex_token_1_out.into()),
+            false,
         )
         .await?;
         let big_amount_1_out_mul = next_random_handle(crate::utils::FheType::FheUint128);
@@ -370,7 +379,7 @@ async fn dex_swap_claim_prepare(
             result: big_amount_1_out_mul,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
         let total_dex_token_0_in_te = generate_trivial_encrypt(
             contract_address,
             user_address,
@@ -378,6 +387,7 @@ async fn dex_swap_claim_prepare(
             listener_event_to_db,
             Some(crate::utils::FheType::FheUint128),
             Some(total_dex_token_0_in.into()),
+            false,
         )
         .await?;
         let big_amount_1_out_div = next_random_handle(crate::utils::FheType::FheUint128);
@@ -388,7 +398,7 @@ async fn dex_swap_claim_prepare(
             result: big_amount_1_out_div,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
         amount_1_out = next_random_handle(crate::utils::FheType::FheUint64);
         let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
             caller,
@@ -396,7 +406,7 @@ async fn dex_swap_claim_prepare(
             toType: crate::utils::FheType::FheUint64 as u8,
             result: amount_1_out,
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
+        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
     }
     Ok((amount_0_out, amount_1_out))
 }
@@ -544,6 +554,7 @@ pub async fn dex_swap_claim_transaction(
         &new_balance_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -551,6 +562,7 @@ pub async fn dex_swap_claim_transaction(
         &new_balance_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -558,6 +570,7 @@ pub async fn dex_swap_claim_transaction(
         &new_dex_balance_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;
@@ -565,6 +578,7 @@ pub async fn dex_swap_claim_transaction(
         &new_dex_balance_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
+        transaction_id,
         pool,
     )
     .await?;

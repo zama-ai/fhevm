@@ -15,13 +15,13 @@ This ensures Hardhat can compile and test your contracts as expected.
 
 {% tab title="VestingWalletExample.sol" %}
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 import {FHE, ebool, euint64, euint128} from "@fhevm/solidity/lib/FHE.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import {EthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {IERC7984} from "../interfaces/IERC7984.sol";
 
 /**
@@ -33,7 +33,7 @@ import {IERC7984} from "../interfaces/IERC7984.sol";
  * 
  * This is a non-upgradeable version for demonstration purposes.
  */
-contract VestingWalletExample is Ownable, ReentrancyGuardTransient, SepoliaConfig {
+contract VestingWalletExample is Ownable, ReentrancyGuardTransient, EthereumConfig {
     mapping(address token => euint128) private _tokenReleased;
     uint64 private _start;
     uint64 private _duration;

@@ -23,7 +23,9 @@ use alloy::{
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{tenant_keys::query_tenant_info, types::AllowEvents, utils::compact_hex};
+use fhevm_engine_common::{
+    telemetry, tenant_keys::query_tenant_info, types::AllowEvents, utils::compact_hex,
+};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
@@ -74,10 +76,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
         txn_request: impl Into<TransactionRequest>,
         current_limited_retries_count: i32,
         current_unlimited_retries_count: i32,
+        src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         let h = compact_hex(&key.handle);
 
         info!(handle = h, "Processing transaction");
+        let _t = telemetry::tracer("call_allow_account", &src_transaction_id);
 
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request,
@@ -97,7 +101,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
                     handle = h,
                     "Coprocessor has already added the ACL entry"
                 );
-                self.set_txn_is_sent(key, None, None).await?;
+                self.set_txn_is_sent(key, None, None, src_transaction_id)
+                    .await?;
                 return Ok(());
             }
             // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
@@ -168,6 +173,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
                 key,
                 Some(receipt.transaction_hash.as_slice()),
                 receipt.block_number.map(|bn| bn as i64),
+                src_transaction_id,
             )
             .await?;
 
@@ -217,6 +223,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
         key: &Key,
         txn_hash: Option<&[u8]>,
         txn_block_number: Option<i64>,
+        src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         sqlx::query!(
             "UPDATE allowed_handles
@@ -235,6 +242,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
         )
         .execute(&self.db_pool)
         .await?;
+
+        telemetry::try_end_l1_transaction(&self.db_pool, &src_transaction_id.unwrap_or_default())
+            .await?;
+
         Ok(())
     }
 }
@@ -270,7 +281,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
     ) -> anyhow::Result<()> {
         debug!("Updating retry count for key {}", key);
 
-        if current_limited_retries_count == (self.conf.allow_handle_max_retries as i32) - 1 {
+        if current_limited_retries_count == self.conf.allow_handle_max_retries - 1 {
             error!(
                 action = REVIEW,
                 key = %key,
@@ -360,13 +371,13 @@ where
     async fn execute(&self) -> anyhow::Result<bool> {
         let rows = sqlx::query!(
             "
-            SELECT handle, tenant_id, account_address, event_type, txn_limited_retries_count, txn_unlimited_retries_count
+            SELECT handle, tenant_id, account_address, event_type, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
             FROM allowed_handles 
             WHERE txn_is_sent = false 
             AND txn_limited_retries_count < $1
             LIMIT $2;
             ",
-            self.conf.allow_handle_max_retries as i32,
+            self.conf.allow_handle_max_retries,
             self.conf.allow_handle_batch_limit as i32,
         )
         .fetch_all(&self.db_pool)
@@ -380,6 +391,9 @@ where
 
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
+            let src_transaction_id = row.transaction_id.clone();
+            let t = telemetry::tracer("prepare_allow_account", &src_transaction_id);
+
             let tenant = match query_tenant_info(&self.db_pool, row.tenant_id).await {
                 Ok(res) => res,
                 Err(_) => {
@@ -464,6 +478,8 @@ where
                 event_type,
             };
 
+            t.end();
+
             let operation = self.clone();
             join_set.spawn(async move {
                 operation
@@ -472,6 +488,7 @@ where
                         txn_request,
                         row.txn_limited_retries_count,
                         row.txn_unlimited_retries_count,
+                        src_transaction_id,
                     )
                     .await
             });

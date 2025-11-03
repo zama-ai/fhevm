@@ -1,7 +1,7 @@
-use fhevm_engine_common::types::AllowEvents;
+use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::utils::safe_deserialize_key;
 use rand::Rng;
-use sqlx::{query, Postgres};
+use sqlx::query;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
@@ -94,18 +94,20 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         work_items_batch_size: ecfg.batch_size,
         dependence_chains_per_batch: 2000,
         tenant_key_cache_size: 4,
-        coprocessor_fhe_threads: 128,
+        coprocessor_fhe_threads: 64,
         maximum_handles_per_input: 255,
-        tokio_threads: 16,
+        tokio_threads: 32,
         pg_pool_max_connections: 2,
         server_addr: format!("127.0.0.1:{app_port}"),
-        metrics_addr: "".to_string(),
+        metrics_addr: None,
         database_url: Some(db_url.to_string()),
         maximum_compact_inputs_upload: 10,
         coprocessor_private_key: "./coprocessor.key".to_string(),
         service_name: "coprocessor".to_string(),
         log_level: Level::INFO,
         health_check_port: 8080,
+        metric_rerand_batch_latency: MetricsConfig::default(),
+        metric_fhe_batch_latency: MetricsConfig::default(),
     };
 
     std::thread::spawn(move || {
@@ -168,48 +170,6 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
 }
 
 #[allow(dead_code)]
-pub async fn allow_handle(
-    handle: &Vec<u8>,
-    pool: &sqlx::Pool<Postgres>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let tenant_id = default_tenant_id();
-    let account_address = String::new();
-    let event_type = AllowEvents::AllowedForDecryption;
-    let _query =
-            sqlx::query!(
-                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
-                     ON CONFLICT DO NOTHING;",
-                tenant_id,
-                handle,
-                account_address,
-                event_type as i16,
-            ).execute(pool).await?;
-    Ok(())
-}
-
-#[allow(dead_code)]
-pub async fn allow_handles(
-    handles: &Vec<Vec<u8>>,
-    pool: &sqlx::Pool<Postgres>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let tenant_id = vec![default_tenant_id(); handles.len()];
-    let account_address = vec![String::new(); handles.len()];
-    let event_type = vec![AllowEvents::AllowedForDecryption as i16; handles.len()];
-    let _query = sqlx::query!(
-        "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type)
-                 SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::TEXT[], $4::SMALLINT[])
-                 ON CONFLICT DO NOTHING;",
-        &tenant_id,
-        handles,
-        &account_address,
-        &event_type,
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-#[allow(dead_code)]
 pub async fn wait_until_all_allowed_handles_computed(
     db_url: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -220,9 +180,11 @@ pub async fn wait_until_all_allowed_handles_computed(
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        let count = sqlx::query!("SELECT count(1) FROM allowed_handles WHERE is_computed = FALSE")
-            .fetch_one(&pool)
-            .await?;
+        let count = sqlx::query!(
+            "SELECT count(1) FROM computations WHERE is_allowed = TRUE AND is_completed = FALSE"
+        )
+        .fetch_one(&pool)
+        .await?;
         let current_count = count.count.unwrap();
         if current_count == 0 {
             break;

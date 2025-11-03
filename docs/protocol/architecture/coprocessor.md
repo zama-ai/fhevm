@@ -6,7 +6,7 @@ This document explains one of the key components of the Zama Protocol - Coproces
 
 Coprocessor performs the heavy cryptographic operations—specifically, fully homomorphic encryption (FHE) computations—on behalf of smart contracts that operate on encrypted data. Acting as a decentralized compute layer, the coprocessor bridges symbolic on-chain logic with real-world encrypted execution.
 
-Coprocessor works together with the Gateway, verifying encrypted inputs, executing FHE instructions, and maintaining synchronization of access permissions, in particula
+Coprocessor works together with the Gateway, verifying encrypted inputs, executing FHE instructions, and maintaining synchronization of access permissions, in particular:
 
 - Listens to events emitted by host chains and the Gateway.
 - Executes FHE computations (`add`, `mul`, `div`, `cmp`, etc.) on ciphertexts.
@@ -67,8 +67,7 @@ This is essential for fraud-proof mechanisms and eventual slashing of malicious 
 Coprocessors assist in:
 
 - Bridging encrypted values between host chains by generating new handles and signatures.
-- Preparing ciphertexts for public and user decryption using operations like Switch-n-Squash to normalize ciphertexts\
-  for the KMS.
+- Preparing ciphertexts for public and user decryption using operations like Switch-n-Squash to normalize ciphertexts for the KMS.
 
 These roles help maintain cross-chain interoperability and enable privacy-preserving data access for users and smart contracts .
 
@@ -91,5 +90,4 @@ The coprocessor architecture includes:
 - Worker threads that process tasks in parallel
 - A public storage layer (e.g., S3) for ciphertext availability
 
-This modular setup supports horizontal scaling: adding more workers or machines increases throughput. Symbolic\
-computation and delayed execution also ensure low gas costs on-chain .
+This modular setup supports horizontal scaling: adding more workers or machines increases throughput. Symbolic computation and delayed execution also ensure low gas costs on-chain .

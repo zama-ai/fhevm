@@ -17,6 +17,10 @@ gateway_url = "ws://localhost:8545"
 # ENV: KMS_CONNECTOR_DATABASE_URL
 database_url = "postgres://postgres:postgres@localhost/kms-connector"
 
+# Timeout for polling the database for responses (optional, defaults to 5 seconds)
+# ENV: KMS_CONNECTOR_DATABASE_POLLING_TIMEOUT
+# database_polling_timeout = 5
+
 # Configuration of the Decryption contract (required)
 [decryption_contract]
 # Address of the Decryption contract (required)
@@ -70,13 +74,13 @@ private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 # ENV: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT_SECS
 # healthcheck_timeout_secs = 3
 
-# The limit number of KMS Core responses to fetch from the database (optional, defaults to 10)
+# The limit number of KMS Core responses to fetch from the database (optional, defaults to 50)
 # ENV: KMS_CONNECTOR_RESPONSES_BATCH_SIZE
-# responses_batch_size = 10
+# responses_batch_size = 50
 
-# Number of retries for transactions sent to the Gateway (optional, defaults to 3)
+# Number of retries for transactions sent to the Gateway (optional, defaults to 4)
 # ENV: KMS_CONNECTOR_TX_RETRIES
-# tx_retries = 3
+# tx_retries = 4
 
 # Interval between retries for transactions sent to the Gateway, in milliseconds (optional, defaults to 100ms)
 # ENV: KMS_CONNECTOR_TX_RETRY_INTERVAL_MS
@@ -86,9 +90,9 @@ private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 # ENV: KMS_CONNECTOR_TRACE_REVERTED_TX
 # trace_reverted_tx = true
 
-# The gas multiplier percentage after each transaction attempt (optional, defaults to 130%)
+# The gas multiplier percentage after each transaction attempt (optional, defaults to 115%)
 # ENV: KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT
-# gas_multiplier_percent = 130
+# gas_multiplier_percent = 115
 
 # The maximum number of tasks to process events/responses concurrently (optional, defaults to 1000)
 # ENV: KMS_CONNECTOR_TASK_LIMIT

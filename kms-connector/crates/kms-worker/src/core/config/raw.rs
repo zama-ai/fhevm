@@ -12,25 +12,16 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tracing::info;
 
-/// Configuration for S3 ciphertext storage.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct S3Config {
-    /// AWS S3 region for ciphertext storage.
-    pub region: String,
-    /// AWS S3 bucket for ciphertext storage.
-    pub bucket: String,
-    /// AWS S3 endpoint URL for ciphertext storage.
-    pub endpoint: Option<String>,
-}
-
 /// Deserializable representation of the `KmsWorker` configuration.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RawConfig {
     pub database_url: String,
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
-    #[serde(default = "default_database_polling_timeout_secs")]
-    pub database_polling_timeout_secs: u64,
+    #[serde(default = "default_db_fast_event_polling_secs")]
+    pub db_fast_event_polling_secs: u64,
+    #[serde(default = "default_db_long_event_polling_secs")]
+    pub db_long_event_polling_secs: u64,
     pub gateway_url: String,
     #[serde(default)]
     pub kms_core_endpoints: Vec<String>,
@@ -51,8 +42,6 @@ pub struct RawConfig {
     pub user_decryption_timeout_secs: u64,
     #[serde(default = "default_grpc_poll_interval")]
     pub grpc_poll_interval_secs: u64,
-    #[serde(default)]
-    pub s3_config: Option<S3Config>,
     #[serde(default = "default_s3_ciphertext_retrieval_retries")]
     pub s3_ciphertext_retrieval_retries: u8,
     #[serde(default = "default_s3_connect_timeout")]
@@ -69,12 +58,16 @@ fn default_service_name() -> String {
     "kms-connector-kms-worker".to_string()
 }
 
-fn default_database_polling_timeout_secs() -> u64 {
-    5
+fn default_db_fast_event_polling_secs() -> u64 {
+    3
+}
+
+fn default_db_long_event_polling_secs() -> u64 {
+    60
 }
 
 fn default_events_batch_size() -> u8 {
-    10
+    50
 }
 
 fn default_grpc_request_retries() -> u8 {
@@ -90,7 +83,7 @@ fn default_user_decryption_timeout() -> u64 {
 }
 
 fn default_grpc_poll_interval() -> u64 {
-    5 // 5 seconds
+    1 // 1 seconds
 }
 
 fn default_s3_ciphertext_retrieval_retries() -> u8 {
@@ -138,7 +131,8 @@ impl Default for RawConfig {
         Self {
             database_url: "postgres://postgres:postgres@localhost".to_string(),
             database_pool_size: 16,
-            database_polling_timeout_secs: default_database_polling_timeout_secs(),
+            db_fast_event_polling_secs: default_db_fast_event_polling_secs(),
+            db_long_event_polling_secs: default_db_long_event_polling_secs(),
             gateway_url: "ws://localhost:8545".to_string(),
             kms_core_endpoints: vec!["http://localhost:50052".to_string()],
             kms_core_endpoint: None,
@@ -166,7 +160,6 @@ impl Default for RawConfig {
             grpc_poll_interval_secs: 5,
             s3_ciphertext_retrieval_retries: 3,
             s3_connect_timeout: 2,
-            s3_config: None,
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout_secs: default_healthcheck_timeout_secs(),

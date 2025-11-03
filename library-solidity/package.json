@@ -1,7 +1,7 @@
 {
   "name": "@fhevm/solidity",
   "description": "A Solidity library for interacting with fhevm protocol",
-  "version": "0.8.0",
+  "version": "0.9.0-1",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -14,17 +14,15 @@
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
-    "test:inband": "hardhat test",
-    "test": "HARDHAT_PARALLEL=1 hardhat test --parallel",
-    "test:mock": "hardhat test --network hardhat",
-    "coverage:mock": "SOLIDITY_COVERAGE=true hardhat coverage",
+    "test": "hardhat test",
+    "coverage": "SOLIDITY_COVERAGE=true hardhat coverage",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
-    "codegen": "npx ts-node codegen/main.ts && npm run prettier",
-    "codegen:overloads": "npx ts-node codegen/generateOverloads.ts",
+    "codegen": "./codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
+    "codegen:overloads": "./codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "task:getEthereumAddress": "hardhat task:getEthereumAddress",
-    "task:deployGateway": "hardhat task:deployGateway",
-    "task:addRelayer": "hardhat task:addRelayer",
-    "task:removeRelayer": "hardhat task:removeRelayer"
+    "tsc": "tsc --project ./tsconfig.json --noEmit",
+    "test:forge": "forge test",
+    "forge:soldeer": "forge soldeer install"
   },
   "repository": {
     "type": "git",
@@ -37,8 +35,8 @@
   },
   "homepage": "https://github.com/zama-ai/fhevm-solidity#readme",
   "devDependencies": {
+    "@zama-fhe/relayer-sdk": "^0.3.0-2",
     "@fhevm/host-contracts": "*",
-    "@fhevm/sdk": "^0.7.0-21",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.4",
     "@nomicfoundation/hardhat-network-helpers": "^1.0.6",
@@ -56,7 +54,6 @@
     "@types/node": "^20.14.9",
     "@typescript-eslint/eslint-plugin": "^5.44.0",
     "@typescript-eslint/parser": "^5.44.0",
-    "@zama-fhe/oracle-solidity": "^0.1.0",
     "bigint-buffer": "^1.1.5",
     "chai": "^4.3.7",
     "chalk": "^4.1.2",
@@ -80,7 +77,6 @@
     "solidity-coverage": "0.8.15",
     "sqlite3": "^5.1.7",
     "ts-generator": "^0.1.1",
-    "ts-node": "^10.9.2",
     "typechain": "^8.2.0",
     "typescript": "^5.1.6",
     "web3-validator": "^2.0.6"
