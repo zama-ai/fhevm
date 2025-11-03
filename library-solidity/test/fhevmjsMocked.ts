@@ -183,7 +183,7 @@ export const userDecryptRequestMocked =
       contractAddresses: contractAddresses,
       startTimestamp: startTimestamp,
       durationDays: durationDays,
-      extraData: "0x00"
+      extraData: '0x00',
     };
     const signerAddress = ethers.verifyTypedData(domain, types, value, `0x${signature}`);
     const normalizedSignerAddress = ethers.getAddress(signerAddress);

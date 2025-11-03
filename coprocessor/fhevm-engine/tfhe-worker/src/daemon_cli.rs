@@ -1,4 +1,5 @@
 use clap::Parser;
+use fhevm_engine_common::telemetry::MetricsConfig;
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -66,7 +67,7 @@ pub struct Args {
 
     /// Prometheus metrics server address
     #[arg(long, default_value = "0.0.0.0:9100")]
-    pub metrics_addr: String,
+    pub metrics_addr: Option<String>,
 
     /// Postgres database url. If unspecified DATABASE_URL environment variable is used
     #[arg(long)]
@@ -90,8 +91,20 @@ pub struct Args {
 
     #[arg(long, default_value_t = 8080)]
     pub health_check_port: u16,
+
+    /// Prometheus metrics: coprocessor_rerand_batch_latency_seconds
+    #[arg(long, default_value = "0.1:5.0:0.01", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_rerand_batch_latency: MetricsConfig,
+
+    /// Prometheus metrics: coprocessor_fhe_batch_latency_seconds
+    #[arg(long, default_value = "0.2:5.0:0.05", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_fhe_batch_latency: MetricsConfig,
 }
 
 pub fn parse_args() -> Args {
-    Args::parse()
+    let args = Args::parse();
+    // Set global configs from args
+    let _ = scheduler::RERAND_LATENCY_BATCH_HISTOGRAM_CONF.set(args.metric_rerand_batch_latency);
+    let _ = scheduler::FHE_BATCH_LATENCY_HISTOGRAM_CONF.set(args.metric_fhe_batch_latency);
+    args
 }

@@ -15,7 +15,7 @@ This ensures Hardhat can compile and test your contracts as expected.
 
 {% tab title="VestingWalletExample.sol" %}
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 import {FHE, ebool, euint64, euint128} from "@fhevm/solidity/lib/FHE.sol";

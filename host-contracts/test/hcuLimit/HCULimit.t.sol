@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
@@ -62,11 +62,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
         implementation = address(new MockHCULimit());
         vm.startPrank(owner);
-        UnsafeUpgrades.upgradeProxy(
-            proxy,
-            implementation,
-            abi.encodeCall(hcuLimit.initializeFromEmptyProxy, ())
-        );
+        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(hcuLimit.initializeFromEmptyProxy, ()));
         vm.stopPrank();
         hcuLimit = MockHCULimit(proxy);
         fhevmExecutor = hcuLimit.getFHEVMExecutorAddress();

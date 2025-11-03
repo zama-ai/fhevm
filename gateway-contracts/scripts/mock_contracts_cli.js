@@ -26,6 +26,7 @@ const KMS_REQUEST_TYPES_MAPPING = {
   prepKeygen: 3,
   key: 4,
   crs: 5,
+  keyReshare: 6,
 };
 
 const KMS_REQUEST_TYPES_SHIFT = 248;
@@ -537,12 +538,7 @@ function findCounterOperators(nodes) {
   const counterOperators = [];
 
   for (const node of nodes) {
-    if (
-      node.type === "UnaryOperation" &&
-      node.operator === "++" &&
-      node.subExpression &&
-      node.subExpression.type === "MemberAccess"
-    ) {
+    if (node?.type === "UnaryOperation" && node.operator === "++" && node.subExpression?.type === "MemberAccess") {
       counterOperators.push(node.subExpression.memberName);
     } else {
       // Recursively check all object properties and array elements
@@ -571,10 +567,9 @@ function findCounterIdAssignments(nodes, counterNames) {
   for (const node of nodes) {
     // Check for VariableDeclarationStatement with initialValue from a counter
     if (
-      node.type === "VariableDeclarationStatement" &&
+      node?.type === "VariableDeclarationStatement" &&
       node.variables &&
-      node.initialValue &&
-      node.initialValue.type === "MemberAccess" &&
+      node.initialValue?.type === "MemberAccess" &&
       counterNames.includes(node.initialValue.memberName)
     ) {
       // Get the variable name being assigned

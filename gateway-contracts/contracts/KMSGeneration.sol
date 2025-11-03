@@ -10,7 +10,12 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
-import { PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
+import {
+    PREP_KEYGEN_COUNTER_BASE,
+    KEY_COUNTER_BASE,
+    CRS_COUNTER_BASE,
+    KEY_RESHARE_COUNTER_BASE
+} from "./shared/KMSRequestCounters.sol";
 
 /**
  * @title KMSGeneration contract
@@ -102,14 +107,14 @@ contract KMSGeneration is
      */
     string private constant CONTRACT_NAME = "KMSGeneration";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
      * @dev Constant used for making sure the version number using in the `reinitializer` modifier
      * is identical between `initializeFromEmptyProxy` and the reinitializeVX` method
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     // ----------------------------------------------------------------------------------------------
     // Contract storage:
@@ -163,6 +168,8 @@ contract KMSGeneration is
         // ----------------------------------------------------------------------------------------------
         /// @notice The parameters type used for the request
         mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
+        /// @notice The number of key resharing, used to generate the keyReshareIds.
+        uint256 keyReshareCounter;
     }
 
     /**
@@ -192,13 +199,28 @@ contract KMSGeneration is
         $.prepKeygenCounter = PREP_KEYGEN_COUNTER_BASE;
         $.keyCounter = KEY_COUNTER_BASE;
         $.crsCounter = CRS_COUNTER_BASE;
+        $.keyReshareCounter = KEY_RESHARE_COUNTER_BASE;
     }
+
+    /**
+     * @notice Re-initializes the contract from V2.
+     */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IKMSGeneration-keygen}.
      */
     function keygen(ParamsType paramsType) external virtual onlyGatewayOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // Check that the previous keygen request has reached consensus
+        // Exception for the first keygen request, which has no previous key (counter is KEY_COUNTER_BASE)
+        uint256 previousKeyId = $.keyCounter;
+        if (previousKeyId != KEY_COUNTER_BASE && !$.isRequestDone[previousKeyId]) {
+            revert KeygenOngoing(previousKeyId);
+        }
 
         // Generate a globally unique prepKeygenId for the key generation preprocessing
         // The counter is initialized at deployment such that prepKeygenId's first byte uniquely
@@ -238,6 +260,11 @@ contract KMSGeneration is
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external virtual onlyKmsTxSender {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
+        // Make sure the prepKeygenId corresponds to a generated preprocessing keygen request.
+        if (prepKeygenId > $.prepKeygenCounter || prepKeygenId == 0) {
+            revert PrepKeygenNotRequested(prepKeygenId);
+        }
+
         // Compute the digest of the PrepKeygenVerification struct.
         bytes32 digest = _hashPrepKeygenVerification(prepKeygenId);
 
@@ -256,6 +283,9 @@ contract KMSGeneration is
         // A "late" valid KMS transaction sender address will still be added in the list
         address[] storage consensusTxSenders = $.consensusTxSenderAddresses[prepKeygenId][digest];
         consensusTxSenders.push(msg.sender);
+
+        // Emit the event at each call for monitoring purposes.
+        emit PrepKeygenResponse(prepKeygenId, signature, msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
@@ -282,6 +312,11 @@ contract KMSGeneration is
     ) external virtual onlyKmsTxSender {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
+        // Make sure the keyId corresponds to a generated keygen request.
+        if (keyId > $.keyCounter || keyId == 0) {
+            revert KeygenNotRequested(keyId);
+        }
+
         // Get the prepKeygenId associated to the keyId
         uint256 prepKeygenId = $.keygenIdPairs[keyId];
 
@@ -304,6 +339,9 @@ contract KMSGeneration is
         consensusTxSenders.push(msg.sender);
 
         uint256 consensusTxSendersLength = consensusTxSenders.length;
+
+        // Emit the event at each call for monitoring purposes.
+        emit KeygenResponse(keyId, keyDigests, signature, msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
@@ -339,6 +377,13 @@ contract KMSGeneration is
     function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external virtual onlyGatewayOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
+        // Check that the previous CRS generation request has reached consensus
+        // Exception for the first CRS generation request, which has no previous CRS (counter is CRS_COUNTER_BASE)
+        uint256 previousCrsId = $.crsCounter;
+        if (previousCrsId != CRS_COUNTER_BASE && !$.isRequestDone[previousCrsId]) {
+            revert CrsgenOngoing(previousCrsId);
+        }
+
         // Generate a globally unique crsId for the CRS generation
         // The counter is initialized at deployment such that crsId's first byte uniquely
         // represents a crsgen request, with format: [0000 0101 | counter_1..31]
@@ -366,6 +411,11 @@ contract KMSGeneration is
     ) external virtual onlyKmsTxSender {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
+        // Make sure the crsId corresponds to a generated CRS generation request.
+        if (crsId > $.crsCounter || crsId == 0) {
+            revert CrsgenNotRequested(crsId);
+        }
+
         uint256 maxBitLength = $.crsMaxBitLength[crsId];
 
         // Compute the digest of the CrsgenVerification struct.
@@ -388,6 +438,9 @@ contract KMSGeneration is
 
         uint256 consensusTxSendersLength = consensusTxSenders.length;
 
+        // Emit the event at each call for monitoring purposes.
+        emit CrsgenResponse(crsId, crsDigest, signature, msg.sender);
+
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.isRequestDone[crsId] && _isKmsConsensusReached(consensusTxSendersLength)) {
@@ -408,6 +461,39 @@ contract KMSGeneration is
             }
             emit ActivateCrs(crsId, consensusUrls, crsDigest);
         }
+    }
+
+    /**
+     * @notice See {IKMSGeneration-prssInit}.
+     */
+    function prssInit() external virtual onlyGatewayOwner {
+        emit PRSSInit();
+    }
+
+    /**
+     * @notice See {IKMSGeneration-keyReshareSameSet}.
+     * @dev ⚠️ This function should only be called under exceptional circumstances.
+     * It is intended for corrective flows when a previous resharing attempt failed.
+     * Use with caution since incorrect usage may cause inconsistent key generation states.
+     */
+    function keyReshareSameSet(uint256 keyId) external virtual onlyGatewayOwner {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        if (!$.isRequestDone[keyId]) {
+            revert KeyNotGenerated(keyId);
+        }
+
+        // Get the prepKeygenId associated to the keyId and its params type.
+        uint256 prepKeygenId = $.keygenIdPairs[keyId];
+        ParamsType paramsType = $.requestParamsType[prepKeygenId];
+
+        // Generate a globally unique keyReshareId for the key resharing.
+        // The counter is initialized at deployment such that keyReshareId's first byte uniquely
+        // represents a key reshare request, with format: [0000 0110 | counter_1..31]
+        $.keyReshareCounter++;
+        uint256 keyReshareId = $.keyReshareCounter;
+
+        emit KeyReshareSameSet(prepKeygenId, keyId, keyReshareId, paramsType);
     }
 
     /**
@@ -540,8 +626,8 @@ contract KMSGeneration is
         // Recover the signer address from the signature
         address signer = ECDSA.recover(digest, signature);
 
-        // Check that the signer is a KMS signer
-        _checkIsKmsSigner(signer);
+        // Check that the signer is a KMS signer, and that it corresponds to the transaction sender of the same KMS node.
+        _checkKmsSignerMatchesTxSender(signer, msg.sender);
 
         return signer;
     }

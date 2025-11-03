@@ -13,7 +13,7 @@ RUN npm install && \
     DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
 
 # Stage 1: Build GW Listener
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.90.0 AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
 USER root
 
@@ -22,6 +22,7 @@ WORKDIR /app
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/contracts/ ./gateway-contracts/contracts/
+COPY gateway-contracts/rust_bindings/ ./gateway-contracts/rust_bindings
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 

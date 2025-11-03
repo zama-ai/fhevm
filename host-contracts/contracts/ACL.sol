@@ -25,6 +25,18 @@ contract ACL is
     MulticallUpgradeable
 {
     /**
+     * @notice Returned if an account is already in the deny list.
+     * @param account The address of the account that is already blocked.
+     */
+    error AccountAlreadyBlocked(address account);
+
+    /**
+     * @notice Returned if an account is not in the deny list.
+     * @param account The address of the account that is not blocked.
+     */
+    error AccountNotBlocked(address account);
+
+    /**
      * @notice Returned if a delegation or revoke has already been done in a same block.
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
@@ -44,25 +56,22 @@ contract ACL is
      */
     error DelegateCannotBeContractAddress(address contractAddress);
 
-    /// @notice Returned if the requested expiry date for delegation is after the next year.
-    error ExpiryDateAfterOneYear();
-
     /**
-     * @notice Returned if the requested expiry date was already set to same expiry for (delegate,contractAddress).
+     * @notice Returned if the requested expiration date was already set to same expiration for (delegate,contractAddress).
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to.
-     * @param expiryDate The expiration date for the intended delegation.
+     * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
-    error ExpiryDateAlreadySetToSameValue(
+    error ExpirationDateAlreadySetToSameValue(
         address delegator,
         address delegate,
         address contractAddress,
-        uint256 expiryDate
+        uint256 expirationDate
     );
 
-    /// @notice Returned if the requested expiry date array is before the next hour.
-    error ExpiryDateBeforeOneHour();
+    /// @notice Returned if the requested expiration date for user decryption delegation is before the next hour.
+    error ExpirationDateBeforeOneHour();
 
     /// @notice Returned if the handlesList array is empty.
     error HandlesListIsEmpty();
@@ -97,13 +106,19 @@ contract ACL is
     error SenderNotAllowed(address sender);
 
     /**
+     * @notice Returned if the sender address is in the deny list.
+     * @param sender The address of the account that is denied.
+     */
+    error SenderDenied(address sender);
+
+    /**
      * @notice Struct that represents a delegation.
      * @dev The `delegationCounter` is incremented at each delegation or revocation
      *      to allow off-chain clients to track changes.
      */
-    struct Delegation {
-        /// @notice Date when the delegation expires.
-        uint64 expiryDate;
+    struct UserDecryptionDelegation {
+        /// @notice The UNIX timestamp when the user decryption delegation expires.
+        uint64 expirationDate;
         /// @notice The last block number when a delegation or revocation happened.
         uint64 lastBlockDelegateOrRevoke;
         /// @notice Counter that tracks the order of each delegation or revocation.
@@ -114,7 +129,11 @@ contract ACL is
     struct ACLStorage {
         mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
-        mapping(address account => mapping(address delegate => mapping(address contractAddress => Delegation delegation))) delegations;
+        // prettier-ignore
+        mapping(address account =>
+            mapping(address delegate => mapping(address contractAddress => UserDecryptionDelegation delegation)))
+                userDecryptionDelegations;
+        mapping(address account => bool isDenied) denyList;
     }
 
     /// @notice Name of the contract.
@@ -166,27 +185,36 @@ contract ACL is
 
     /**
      * @notice Allows the use of `handle` for the address `account`.
-     * @dev The caller must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
+     * @dev The caller must not be in the deny list and must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
      * @param handle Handle.
      * @param account Address of the account.
      */
     function allow(bytes32 handle, address account) public virtual whenNotPaused {
-        ACLStorage storage $ = _getACLStorage();
+        if (isAccountDenied(msg.sender)) {
+            revert SenderDenied(msg.sender);
+        }
         if (!isAllowed(handle, msg.sender)) {
             revert SenderNotAllowed(msg.sender);
         }
+        ACLStorage storage $ = _getACLStorage();
         $.persistedAllowedPairs[handle][account] = true;
         emit Allowed(msg.sender, account, handle);
     }
 
     /**
      * @notice Allows a list of handles to be decrypted.
+     * @dev The caller must not be in the deny list and must be allowed to use `handlesList[i]` for allowForDecryption() to succeed.
+     *      If not, allowForDecryption() reverts.
      * @param handlesList List of handles.
      */
     function allowForDecryption(bytes32[] memory handlesList) public virtual whenNotPaused {
         uint256 lenHandlesList = handlesList.length;
         if (lenHandlesList == 0) {
             revert HandlesListIsEmpty();
+        }
+
+        if (isAccountDenied(msg.sender)) {
+            revert SenderDenied(msg.sender);
         }
 
         ACLStorage storage $ = _getACLStorage();
@@ -202,17 +230,23 @@ contract ACL is
 
     /**
      * @notice Allows the use of `handle` by address `account` for this transaction.
-     * @dev The caller must be allowed to use `handle` for allowTransient() to succeed.
-     * If not, allowTransient() reverts. The Coprocessor contract can always `allowTransient`, contrarily to `allow`.
+     * @dev The caller must not be in the deny list and must be allowed to use `handle` for allowTransient() to succeed.
+     *      If not, allowTransient() reverts. The Coprocessor contract can always `allowTransient`,
+     *      contrarily to `allow`.
      * @param handle Handle.
      * @param account Address of the account.
      */
     function allowTransient(bytes32 handle, address account) public virtual whenNotPaused {
         if (msg.sender != fhevmExecutorAddress) {
+            if (isAccountDenied(msg.sender)) {
+                revert SenderDenied(msg.sender);
+            }
+
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
             }
         }
+
         bytes32 key = keccak256(abi.encodePacked(handle, account));
         assembly {
             tstore(key, 1)
@@ -224,34 +258,42 @@ contract ACL is
     }
 
     /**
-     * @notice Delegates the access of handles, for instance, in the context of account
-     *  abstraction for issuing user decryption requests from a smart contract account.
+     * @notice Delegates an account the access to handles for user decryption, for instance, in the context of account
+     * abstraction for issuing user decryption requests from a smart contract account.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to.
-     * @param expiryDate Expiry date in seconds, between 1 hour and 1 year in the future.
+     * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
-    function delegateAccount(
+    function delegateForUserDecryption(
         address delegate,
         address contractAddress,
-        uint64 expiryDate
+        uint64 expirationDate
     ) public virtual whenNotPaused {
-        if (expiryDate < block.timestamp + 1 hours) {
-            revert ExpiryDateBeforeOneHour();
-        }
-        if (expiryDate > block.timestamp + 365 days) {
-            revert ExpiryDateAfterOneYear();
+        /**
+         * @dev Arbitrum block timestamps may be up to one hour ahead of L1.
+         *
+         * Since the expiration is propagated to the Gateway MultichainACL contract deployed on Arbitrum,
+         * we enforce a 1-hour lower bound to stay within Arbitrum’s valid timestamp range
+         * and avoid premature expiration due to clock drift.
+         *
+         * (See https://docs.arbitrum.io/build-decentralized-apps/arbitrum-vs-ethereum/block-numbers-and-time#block-timestamps-arbitrum-vs-ethereum)
+         */
+        if (expirationDate < block.timestamp + 1 hours) {
+            revert ExpirationDateBeforeOneHour();
         }
 
         ACLStorage storage $ = _getACLStorage();
-        Delegation storage delegation = $.delegations[msg.sender][delegate][contractAddress];
+        UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[msg.sender][delegate][
+            contractAddress
+        ];
         uint256 blockNumber = block.number;
 
-        if (delegation.lastBlockDelegateOrRevoke == blockNumber) {
+        if (userDecryptionDelegation.lastBlockDelegateOrRevoke == blockNumber) {
             revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegate, contractAddress, blockNumber);
         }
 
         // Set the last block where the delegation happened.
-        delegation.lastBlockDelegateOrRevoke = uint64(blockNumber);
+        userDecryptionDelegation.lastBlockDelegateOrRevoke = uint64(blockNumber);
 
         if (contractAddress == msg.sender) {
             revert SenderCannotBeContractAddress(contractAddress);
@@ -263,51 +305,59 @@ contract ACL is
             revert DelegateCannotBeContractAddress(contractAddress);
         }
 
-        uint64 newExpiryDate = expiryDate;
-        uint64 oldExpiryDate = delegation.expiryDate;
-        if (oldExpiryDate == newExpiryDate) {
-            revert ExpiryDateAlreadySetToSameValue(msg.sender, delegate, contractAddress, oldExpiryDate);
+        uint64 oldExpirationDate = userDecryptionDelegation.expirationDate;
+        uint64 newExpirationDate = expirationDate;
+        if (oldExpirationDate == newExpirationDate) {
+            revert ExpirationDateAlreadySetToSameValue(msg.sender, delegate, contractAddress, oldExpirationDate);
         }
 
-        // Set the delegation expiry date.
-        delegation.expiryDate = newExpiryDate;
+        // Set the delegation expiration date.
+        userDecryptionDelegation.expirationDate = newExpirationDate;
 
-        emit DelegatedAccount(
+        emit DelegatedForUserDecryption(
             msg.sender,
             delegate,
             contractAddress,
-            delegation.delegationCounter++,
-            oldExpiryDate,
-            newExpiryDate
+            ++userDecryptionDelegation.delegationCounter,
+            oldExpirationDate,
+            newExpirationDate
         );
     }
 
     /**
-     * @notice Revokes delegated access to handles.
+     * @notice Revokes the access to handles for user decryption delegated to an account.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to.
      */
-    function revokeDelegation(address delegate, address contractAddress) public virtual whenNotPaused {
+    function revokeDelegationForUserDecryption(address delegate, address contractAddress) public virtual whenNotPaused {
         ACLStorage storage $ = _getACLStorage();
-        Delegation storage delegation = $.delegations[msg.sender][delegate][contractAddress];
+        UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[msg.sender][delegate][
+            contractAddress
+        ];
         uint256 blockNumber = block.number;
 
-        if (delegation.lastBlockDelegateOrRevoke == blockNumber) {
+        if (userDecryptionDelegation.lastBlockDelegateOrRevoke == blockNumber) {
             revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegate, contractAddress, blockNumber);
         }
 
         // Set the last block where the revocation happened.
-        delegation.lastBlockDelegateOrRevoke = uint64(blockNumber);
+        userDecryptionDelegation.lastBlockDelegateOrRevoke = uint64(blockNumber);
 
-        uint64 oldExpiryDate = delegation.expiryDate;
-        if (oldExpiryDate == 0) {
+        uint64 oldExpirationDate = userDecryptionDelegation.expirationDate;
+        if (oldExpirationDate == 0) {
             revert NotDelegatedYet(msg.sender, delegate, contractAddress);
         }
 
-        // Reset the delegation expiry date.
-        delegation.expiryDate = 0;
+        // Reset the delegation expiration date.
+        userDecryptionDelegation.expirationDate = 0;
 
-        emit RevokedDelegation(msg.sender, delegate, contractAddress, delegation.delegationCounter++, oldExpiryDate);
+        emit RevokedDelegationForUserDecryption(
+            msg.sender,
+            delegate,
+            contractAddress,
+            ++userDecryptionDelegation.delegationCounter,
+            oldExpirationDate
+        );
     }
 
     /**
@@ -332,43 +382,22 @@ contract ACL is
     }
 
     /**
-     * @notice Returns whether the delegate is allowed to access the handle via delegated user decryption.
-     * @param delegate The address of the account that receives the delegation.
+     * @notice Get the expiration date of a delegation for user decryption.
      * @param delegator The address of the account that delegates access to its handles.
-     * @param handle Handle.
-     * @param contractAddress The contract address to delegate access to.
-     * @return isAllowed Whether the handle can be accessed.
-     */
-    function allowedOnBehalf(
-        address delegate,
-        address delegator,
-        address contractAddress,
-        bytes32 handle
-    ) public view virtual returns (bool) {
-        ACLStorage storage $ = _getACLStorage();
-        Delegation storage delegation = $.delegations[delegator][delegate][contractAddress];
-        return
-            $.persistedAllowedPairs[handle][delegator] &&
-            $.persistedAllowedPairs[handle][contractAddress] &&
-            delegation.expiryDate >= block.timestamp;
-    }
-
-    /**
-     * @notice Get the delegation expiry date.
      * @param delegate The address of the account that receives the delegation.
-     * @param delegator The address of the account that delegates access to its handles.
      * @param contractAddress The contract address to delegate access to.
-     * @return expiryDate the expiryDate (0 means delegation is inactive).
+     * @return expirationDate The UNIX timestamp when the user decryption delegation expires (0 means delegation is inactive).
      */
-    function getDelegationExpiryDate(
-        address delegate,
+    function getUserDecryptionDelegationExpirationDate(
         address delegator,
+        address delegate,
         address contractAddress
     ) public view virtual returns (uint64) {
         ACLStorage storage $ = _getACLStorage();
-        Delegation storage delegation = $.delegations[delegator][delegate][contractAddress];
-        uint64 expiryDate = delegation.expiryDate;
-        return expiryDate;
+        UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[delegator][delegate][
+            contractAddress
+        ];
+        return userDecryptionDelegation.expirationDate;
     }
 
     /**
@@ -425,6 +454,30 @@ contract ACL is
     }
 
     /**
+     * @notice Returns whether an account is delegated to access the handle for user decryption.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The contract address to delegate access to.
+     * @param handle The handle to check for delegated user decryption.
+     * @return isDelegatedForUserDecryption Whether the handle can be accessed for delegated user decryption.
+     */
+    function isHandleDelegatedForUserDecryption(
+        address delegator,
+        address delegate,
+        address contractAddress,
+        bytes32 handle
+    ) public view virtual returns (bool) {
+        ACLStorage storage $ = _getACLStorage();
+        UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[delegator][delegate][
+            contractAddress
+        ];
+        return
+            $.persistedAllowedPairs[handle][delegator] &&
+            $.persistedAllowedPairs[handle][contractAddress] &&
+            userDecryptionDelegation.expirationDate >= block.timestamp;
+    }
+
+    /**
      * @notice Returns `true` if address `a` is allowed to use `c` and `false` otherwise.
      * @param handle Handle.
      * @param account Address of the account.
@@ -433,6 +486,42 @@ contract ACL is
     function persistAllowed(bytes32 handle, address account) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
         return $.persistedAllowedPairs[handle][account];
+    }
+
+    /**
+     * @notice Returns `true` if `account` is deny-listed and `false` otherwise.
+     * @param account Address of the account.
+     * @return isAccountDenied Whether the account is on the deny list.
+     */
+    function isAccountDenied(address account) public view virtual returns (bool) {
+        ACLStorage storage $ = _getACLStorage();
+        return $.denyList[account];
+    }
+
+    /**
+     * @notice Adds `account` to the deny list
+     * @param account Address of the account.
+     */
+    function blockAccount(address account) public virtual onlyOwner {
+        ACLStorage storage $ = _getACLStorage();
+        if ($.denyList[account]) {
+            revert AccountAlreadyBlocked(account);
+        }
+        $.denyList[account] = true;
+        emit BlockedAccount(account);
+    }
+
+    /**
+     * @notice Removes `account` from the deny list
+     * @param account Address of the account.
+     */
+    function unblockAccount(address account) public virtual onlyOwner {
+        ACLStorage storage $ = _getACLStorage();
+        if (!$.denyList[account]) {
+            revert AccountNotBlocked(account);
+        }
+        $.denyList[account] = false;
+        emit UnblockedAccount(account);
     }
 
     /**

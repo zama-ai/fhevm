@@ -13,14 +13,14 @@ contract ACLEvents {
     /// @param handlesList  List of handles allowed for decryption.
     event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
 
-    /// @notice                 Emitted when an account delegation is requested.
-    /// @param delegator        The address of the account that delegates access to its handles.
-    /// @param delegate         The address of the account that receives the delegation.
-    /// @param contractAddress  The contract address to delegate access to.
-    /// @param delegationCounter    Delegation counter.
-    /// @param oldExpiryDate    Previous Expiry Date.
-    /// @param newExpiryDate    New Expiry Date.
-    event DelegatedAccount(
+    /// @notice                     Emitted when an account is delegated for user decryption.
+    /// @param delegator            The address of the account that delegates access to its handles.
+    /// @param delegate             The address of the account that receives the delegation.
+    /// @param contractAddress      The contract address to delegate access to.
+    /// @param delegationCounter    Counter that tracks the order of each delegation or revocation.
+    /// @param oldExpiryDate        The previous UNIX timestamp when the user decryption delegation expires.
+    /// @param newExpiryDate        The new UNIX timestamp when the user decryption delegation expires.
+    event DelegatedForUserDecryption(
         address indexed delegator,
         address indexed delegate,
         address contractAddress,
@@ -29,17 +29,25 @@ contract ACLEvents {
         uint64 newExpiryDate
     );
 
-    /// @notice                 Emitted when a delegation is revoked.
-    /// @param delegator        The address of the account that delegates access to its handles.
-    /// @param delegate         The address of the account that receives the delegation.
-    /// @param contractAddress  The contract address to delegate access to.
-    /// @param delegationCounter    Delegation counter.
-    /// @param oldExpiryDate    Previous Expiry Date.
-    event RevokedDelegation(
+    /// @notice                     Emitted when a delegation for user decryption is revoked.
+    /// @param delegator            The address of the account that delegates access to its handles.
+    /// @param delegate             The address of the account that receives the delegation.
+    /// @param contractAddress      The contract address to delegate access to.
+    /// @param delegationCounter    Counter that tracks the order of each delegation or revocation.
+    /// @param oldExpiryDate        The expiration UNIX timestamp of the revoked user decryption delegation.
+    event RevokedDelegationForUserDecryption(
         address indexed delegator,
         address indexed delegate,
         address contractAddress,
         uint64 delegationCounter,
         uint64 oldExpiryDate
     );
+
+    /// @notice Emitted when an account is added to the deny list.
+    /// @param account The address of the account that is blocked.
+    event BlockedAccount(address indexed account);
+
+    /// @notice Emitted when an account is removed from the deny list.
+    /// @param account The address of the account that is unblocked.
+    event UnblockedAccount(address indexed account);
 }

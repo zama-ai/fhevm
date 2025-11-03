@@ -24,6 +24,7 @@ fn construct_config() -> Config {
     Config {
         tenant_api_key: args.tenant_api_key,
         service_name: args.service_name,
+        metrics_addr: args.metrics_addr,
         db: DBConfig {
             url: db_url,
             listen_channels: args.pg_listen_channels,

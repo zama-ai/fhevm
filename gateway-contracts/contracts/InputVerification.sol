@@ -11,6 +11,7 @@ import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.so
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { Pausable } from "./shared/Pausable.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
+import { ProtocolPaymentUtils } from "./shared/ProtocolPaymentUtils.sol";
 import { Coprocessor } from "./shared/Structs.sol";
 
 /**
@@ -23,6 +24,7 @@ contract InputVerification is
     UUPSUpgradeableEmptyProxy,
     GatewayOwnable,
     GatewayConfigChecks,
+    ProtocolPaymentUtils,
     Pausable
 {
     /**
@@ -78,7 +80,7 @@ contract InputVerification is
      */
     string private constant CONTRACT_NAME = "InputVerification";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -87,7 +89,7 @@ contract InputVerification is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -160,14 +162,11 @@ contract InputVerification is
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
-        /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
-        $.zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IInputVerification-verifyProofRequest}.
@@ -189,6 +188,9 @@ contract InputVerification is
 
         // Associate the request to coprocessor context ID 1 to anticipate their introduction in V2.
         $.inputVerificationContextId[zkProofId] = 1;
+
+        // Collect the fee from the transaction sender for this input verification request.
+        _collectInputVerificationFee(msg.sender);
 
         emit VerifyProofRequest(
             zkProofId,
@@ -236,11 +238,12 @@ contract InputVerification is
         // Recover the signer address from the signature,
         address signerAddress = ECDSA.recover(digest, signature);
 
-        // Check that the signer is a coprocessor signer.
-        _checkIsCoprocessorSigner(signerAddress);
+        // Check that the signer is a coprocessor signer, and that it corresponds to the transaction
+        // sender of the same coprocessor.
+        _checkCoprocessorSignerMatchesTxSender(signerAddress, msg.sender);
 
         // Check that the coprocessor has not already responded to the ZKPoK verification request.
-        _checkCoprocessorAlreadyResponded(zkProofId, msg.sender, signerAddress);
+        _checkCoprocessorAlreadyResponded(zkProofId, signerAddress);
 
         bytes[] storage currentSignatures = $.zkProofSignatures[zkProofId][digest];
         currentSignatures.push(signature);
@@ -251,9 +254,19 @@ contract InputVerification is
         // A "late" valid coprocessor transaction sender address will still be added in the list.
         $.verifyProofConsensusTxSenders[zkProofId][digest].push(msg.sender);
 
+        // Emit the event at each call for monitoring purposes.
+        emit VerifyProofResponseCall(zkProofId, ctHandles, signature, msg.sender, extraData);
+
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.verifiedZKProofs[zkProofId] && _isConsensusReached(currentSignatures.length)) {
+        // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
+        // coprocessors to be able to send both a verification and a rejection response by waiting for
+        // a coprocessor threshold decrement before sending some responses.
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached(currentSignatures.length)
+        ) {
             $.verifiedZKProofs[zkProofId] = true;
 
             // A "late" valid coprocessor could still see its transaction sender address be added to
@@ -269,10 +282,7 @@ contract InputVerification is
     /**
      * @notice See {IInputVerification-rejectProofResponse}.
      */
-    function rejectProofResponse(
-        uint256 zkProofId,
-        bytes calldata /* extraData */
-    ) external virtual onlyCoprocessorTxSender {
+    function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
@@ -291,7 +301,7 @@ contract InputVerification is
         address coprocessorSignerAddress = coprocessor.signerAddress;
 
         // Check that the coprocessor has not already responded to the ZKPoK verification request.
-        _checkCoprocessorAlreadyResponded(zkProofId, msg.sender, coprocessorSignerAddress);
+        _checkCoprocessorAlreadyResponded(zkProofId, coprocessorSignerAddress);
 
         $.rejectedProofResponseCounter[zkProofId]++;
         $.signerRejectedZKPoK[zkProofId][coprocessorSignerAddress] = true;
@@ -301,9 +311,19 @@ contract InputVerification is
         // A "late" valid coprocessor transaction sender address will still be added in the list.
         $.rejectProofConsensusTxSenders[zkProofId].push(msg.sender);
 
+        // Emit the event at each call for monitoring purposes.
+        emit RejectProofResponseCall(zkProofId, extraData);
+
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.rejectedZKProofs[zkProofId] && _isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
+        // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
+        // coprocessors to be able to send both a verification and a rejection response by waiting for
+        // a coprocessor threshold decrement before sending some responses.
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached($.rejectedProofResponseCounter[zkProofId])
+        ) {
             $.rejectedZKProofs[zkProofId] = true;
 
             emit RejectProofResponse(zkProofId);
@@ -378,22 +398,17 @@ contract InputVerification is
     /**
      * @notice Checks if the coprocessor has already verified or rejected a ZKPoK verification request.
      * @param zkProofId The ID of the ZK Proof.
-     * @param txSenderAddress The transaction sender address of the coprocessor.
      * @param signerAddress The signer address of the coprocessor.
      */
-    function _checkCoprocessorAlreadyResponded(
-        uint256 zkProofId,
-        address txSenderAddress,
-        address signerAddress
-    ) internal virtual {
+    function _checkCoprocessorAlreadyResponded(uint256 zkProofId, address signerAddress) internal virtual {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         if ($.signerVerifiedZKPoK[zkProofId][signerAddress]) {
-            revert CoprocessorAlreadyVerified(zkProofId, txSenderAddress, signerAddress);
+            revert CoprocessorAlreadyVerified(zkProofId, msg.sender, signerAddress);
         }
 
         if ($.signerRejectedZKPoK[zkProofId][signerAddress]) {
-            revert CoprocessorAlreadyRejected(zkProofId, txSenderAddress, signerAddress);
+            revert CoprocessorAlreadyRejected(zkProofId, msg.sender, signerAddress);
         }
     }
 

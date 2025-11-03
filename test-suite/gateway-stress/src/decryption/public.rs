@@ -1,4 +1,5 @@
 use crate::{
+    blockchain::manager::AppProvider,
     config::Config,
     decryption::{
         BurstResult, EVENT_LISTENER_POLLING, extract_id_from_receipt, send_tx_with_retries,
@@ -30,6 +31,8 @@ use tokio::{
 };
 use tracing::{Instrument, debug, error, trace};
 
+pub type PublicDecryptThresholdEvent = sol_types::Result<(PublicDecryptionResponse, Log)>;
+
 /// Sends a burst of PublicDecryptionRequest.
 #[tracing::instrument(skip(
     config,
@@ -38,16 +41,15 @@ use tracing::{Instrument, debug, error, trace};
     requests_pb,
     responses_pb
 ))]
-pub async fn public_decryption_burst<P, S>(
+pub async fn public_decryption_burst<S>(
     burst_index: usize,
     config: Config,
-    decryption_contract: DecryptionInstance<P>,
+    decryption_contract: DecryptionInstance<AppProvider>,
     response_listener: Arc<Mutex<S>>,
     requests_pb: ProgressBar,
     responses_pb: ProgressBar,
 ) -> anyhow::Result<BurstResult>
 where
-    P: Provider + Clone + 'static,
     S: Stream<Item = sol_types::Result<(PublicDecryptionResponse, Log)>> + Unpin + Send + 'static,
 {
     debug!("Start of the burst...");
@@ -69,7 +71,7 @@ where
             send_public_decryption(
                 index,
                 decryption_contract.clone(),
-                config.public_ct_handles.clone(),
+                config.public_ct.iter().map(|ct| ct.handle).collect(),
                 id_sender.clone(),
             )
             .in_current_span(),
@@ -94,9 +96,9 @@ where
 
 /// Sends a PublicDecryptionRequest transaction to the Gateway.
 #[tracing::instrument(skip(decryption_contract, handles, id_sender))]
-async fn send_public_decryption<P: Provider>(
+async fn send_public_decryption(
     index: u32,
-    decryption_contract: DecryptionInstance<P>,
+    decryption_contract: DecryptionInstance<AppProvider>,
     handles: Vec<FixedBytes<32>>,
     id_sender: UnboundedSender<U256>,
 ) {
@@ -105,8 +107,8 @@ async fn send_public_decryption<P: Provider>(
     }
 }
 
-async fn send_public_decryption_inner<P: Provider>(
-    decryption_contract: DecryptionInstance<P>,
+async fn send_public_decryption_inner(
+    decryption_contract: DecryptionInstance<AppProvider>,
     handles: Vec<FixedBytes<32>>,
     id_sender: UnboundedSender<U256>,
 ) -> anyhow::Result<()> {

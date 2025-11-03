@@ -551,10 +551,10 @@ impl Database {
             AclContractEvents::Initialized(initialized) => {
                 warn!(event = ?initialized, "unhandled Acl::Initialized event");
             }
-            AclContractEvents::DelegatedAccount(delegate_account) => {
+            AclContractEvents::DelegatedForUserDecryption(delegate_account) => {
                 warn!(
                     event = ?delegate_account,
-                    "unhandled Acl::DelegatedAccount event"
+                    "unhandled Acl::DelegatedForUserDecryption event"
                 );
             }
             AclContractEvents::OwnershipTransferStarted(
@@ -565,10 +565,12 @@ impl Database {
                     "unhandled Acl::OwnershipTransferStarted event"
                 );
             }
-            AclContractEvents::RevokedDelegation(revoked_delegation) => {
+            AclContractEvents::RevokedDelegationForUserDecryption(
+                revoked_delegation,
+            ) => {
                 warn!(
                     event = ?revoked_delegation,
-                    "unhandled Acl::RevokedDelegation event"
+                    "unhandled Acl::RevokedDelegationForUserDecryption event"
                 );
             }
             AclContractEvents::OwnershipTransferred(ownership_transferred) => {
@@ -593,6 +595,18 @@ impl Database {
                 warn!(
                     event = ?unpaused,
                     "unhandled Acl::Unpaused event"
+                );
+            }
+            AclContractEvents::BlockedAccount(blocked_account) => {
+                warn!(
+                    event = ?blocked_account,
+                    "unhandled Acl::BlockedAccount event"
+                );
+            }
+            AclContractEvents::UnblockedAccount(unblocked_account) => {
+                warn!(
+                    event = ?unblocked_account,
+                    "unhandled Acl::UnblockedAccount event"
                 );
             }
         }
@@ -779,12 +793,14 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
             allowed_for_decryption.handlesList.clone()
         }
         AclContractEvents::Initialized(_)
-        | AclContractEvents::DelegatedAccount(_)
+        | AclContractEvents::DelegatedForUserDecryption(_)
         | AclContractEvents::OwnershipTransferStarted(_)
         | AclContractEvents::OwnershipTransferred(_)
-        | AclContractEvents::RevokedDelegation(_)
+        | AclContractEvents::RevokedDelegationForUserDecryption(_)
         | AclContractEvents::Upgraded(_)
         | AclContractEvents::Paused(_)
-        | AclContractEvents::Unpaused(_) => vec![],
+        | AclContractEvents::Unpaused(_)
+        | AclContractEvents::BlockedAccount(_)
+        | AclContractEvents::UnblockedAccount(_) => vec![],
     }
 }

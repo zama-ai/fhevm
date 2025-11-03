@@ -26,12 +26,37 @@ interface IInputVerification {
     );
 
     /**
+     * @notice Emitted when a coprocessor transaction sender responds to a ZK Proof verification
+     * request for a proof validation.
+     * @param zkProofId The ID of the ZK Proof.
+     * @param ctHandles The coprocessor's computed ciphertext handles.
+     * @param signature The coprocessor's signature.
+     * @param coprocessorTxSender The transaction sender of the coprocessor that has called the function.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    event VerifyProofResponseCall(
+        uint256 indexed zkProofId,
+        bytes32[] ctHandles,
+        bytes signature,
+        address coprocessorTxSender,
+        bytes extraData
+    );
+
+    /**
      * @notice Emitted once a correct ZK Proof verification is completed.
      * @param zkProofId The ID of the ZK Proof.
      * @param ctHandles The coprocessor's computed ciphertext handles.
      * @param signatures The coprocessor's signature.
      */
     event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
+
+    /**
+     * @notice Emitted when a coprocessor transaction sender responds to a ZK Proof verification
+     * request for a proof rejection.
+     * @param zkProofId The ID of the ZK Proof.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    event RejectProofResponseCall(uint256 indexed zkProofId, bytes extraData);
 
     /**
      * @notice Emitted once an ZK Proof verification is rejected.

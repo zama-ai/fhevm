@@ -14,7 +14,7 @@ services:
     command:
       - npx hardhat task:deployAllGatewayContracts
     volumes:
-      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
+      - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-add-network:
     container_name: gateway-sc-add-network
@@ -36,7 +36,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
-      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
+      - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-add-pausers:
     container_name: gateway-sc-add-pausers
@@ -58,7 +58,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because the PauserSet
     # contract is compiled, and it imports these addresses.
     volumes:
-      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
+      - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-trigger-keygen:
     container_name: gateway-sc-trigger-keygen
@@ -80,7 +80,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
-      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
+      - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
   gateway-sc-trigger-crsgen:
     container_name: gateway-sc-trigger-crsgen
@@ -102,7 +102,7 @@ services:
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
-      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
+      - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
 volumes:
   addresses-volume:

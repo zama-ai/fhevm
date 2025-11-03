@@ -35,7 +35,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -44,7 +44,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /**
      * @notice The address of the all gateway contracts
@@ -117,6 +117,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address custodianSignerAddress => bool isSigner) isCustodianSigner;
         /// @notice The threshold to consider for the KMS public material (FHE key, CRS) generation consensus.
         uint256 kmsGenThreshold;
+        // ----------------------------------------------------------------------------------------------
+        // Coprocessor threshold state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The threshold to consider for coprocessor consensus
+        uint256 coprocessorThreshold;
     }
 
     /**
@@ -143,79 +148,42 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice Initializes the contract
      * @dev This function needs to be public in order to be called by the UUPS proxy.
      * @param initialMetadata Metadata of the protocol
-     * @param initialMpcThreshold The MPC threshold
-     * @param initialPublicDecryptionThreshold The public decryption threshold
-     * @param initialUserDecryptionThreshold The user decryption threshold
-     * @param initialKmsGenThreshold The KMS generation threshold
+     * @param initialThresholds The operator thresholds
      * @param initialKmsNodes List of KMS nodes
      * @param initialCoprocessors List of coprocessors
      * @param initialCustodians List of custodians
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
-        ProtocolMetadata memory initialMetadata,
-        uint256 initialMpcThreshold,
-        uint256 initialPublicDecryptionThreshold,
-        uint256 initialUserDecryptionThreshold,
-        uint256 initialKmsGenThreshold,
-        KmsNode[] memory initialKmsNodes,
-        Coprocessor[] memory initialCoprocessors,
-        Custodian[] memory initialCustodians
+        ProtocolMetadata calldata initialMetadata,
+        Thresholds calldata initialThresholds,
+        KmsNode[] calldata initialKmsNodes,
+        Coprocessor[] calldata initialCoprocessors,
+        Custodian[] calldata initialCustodians
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
-
-        if (initialKmsNodes.length == 0) {
-            revert EmptyKmsNodes();
-        }
-
-        if (initialCoprocessors.length == 0) {
-            revert EmptyCoprocessors();
-        }
-
-        if (initialCustodians.length == 0) {
-            revert EmptyCustodians();
-        }
 
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         $.protocolMetadata = initialMetadata;
 
-        // Register the KMS nodes
-        for (uint256 i = 0; i < initialKmsNodes.length; i++) {
-            $.isKmsTxSender[initialKmsNodes[i].txSenderAddress] = true;
-            $.kmsNodes[initialKmsNodes[i].txSenderAddress] = initialKmsNodes[i];
-            $.kmsTxSenderAddresses.push(initialKmsNodes[i].txSenderAddress);
-            $.isKmsSigner[initialKmsNodes[i].signerAddress] = true;
-            $.kmsSignerAddresses.push(initialKmsNodes[i].signerAddress);
-        }
+        // Set the KMS nodes and their thresholds
+        _setKmsNodes(
+            initialKmsNodes,
+            initialThresholds.mpcThreshold,
+            initialThresholds.publicDecryptionThreshold,
+            initialThresholds.userDecryptionThreshold,
+            initialThresholds.kmsGenThreshold
+        );
 
-        // Setting the threshold should be done after the KMS nodes have been registered as the functions
-        // reading the `kmsSignerAddresses` array.
-        _setMpcThreshold(initialMpcThreshold);
-        _setPublicDecryptionThreshold(initialPublicDecryptionThreshold);
-        _setUserDecryptionThreshold(initialUserDecryptionThreshold);
-        _setKmsGenThreshold(initialKmsGenThreshold);
+        // Set the coprocessors and their threshold
+        _setCoprocessors(initialCoprocessors, initialThresholds.coprocessorThreshold);
 
-        // Register the coprocessors
-        for (uint256 i = 0; i < initialCoprocessors.length; i++) {
-            $.isCoprocessorTxSender[initialCoprocessors[i].txSenderAddress] = true;
-            $.coprocessors[initialCoprocessors[i].txSenderAddress] = initialCoprocessors[i];
-            $.coprocessorTxSenderAddresses.push(initialCoprocessors[i].txSenderAddress);
-            $.isCoprocessorSigner[initialCoprocessors[i].signerAddress] = true;
-            $.coprocessorSignerAddresses.push(initialCoprocessors[i].signerAddress);
-        }
-
-        // Register the custodians
-        for (uint256 i = 0; i < initialCustodians.length; i++) {
-            $.custodians[initialCustodians[i].txSenderAddress] = initialCustodians[i];
-            $.custodianTxSenderAddresses.push(initialCustodians[i].txSenderAddress);
-            $.isCustodianTxSender[initialCustodians[i].txSenderAddress] = true;
-            $.custodianSignerAddresses.push(initialCustodians[i].signerAddress);
-            $.isCustodianSigner[initialCustodians[i].signerAddress] = true;
-        }
+        // Set the custodians
+        _setCustodians(initialCustodians);
 
         emit InitializeGatewayConfig(
             initialMetadata,
-            initialMpcThreshold,
+            initialThresholds,
             initialKmsNodes,
             initialCoprocessors,
             initialCustodians
@@ -223,18 +191,118 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3(KmsNode[] calldata newKmsNodes) public virtual reinitializer(REINITIALIZER_VERSION) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        updateKmsNodes(
+            newKmsNodes,
+            $.mpcThreshold,
+            $.publicDecryptionThreshold,
+            $.userDecryptionThreshold,
+            $.kmsGenThreshold
+        );
+        emit ReinitializeGatewayConfigV3(newKmsNodes);
+    }
 
     /**
      * @notice See {IGatewayConfig-isPauser}.
      */
     function isPauser(address account) public view virtual returns (bool) {
         return PAUSER_SET.isPauser(account);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-updateKmsNodes}.
+     */
+    function updateKmsNodes(
+        KmsNode[] calldata newKmsNodes,
+        uint256 newMpcThreshold,
+        uint256 newPublicDecryptionThreshold,
+        uint256 newUserDecryptionThreshold,
+        uint256 newKmsGenThreshold
+    ) public virtual onlyOwner {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        // Remove the old KMS nodes
+        uint256 oldKmsTxSenderAddressesLength = $.kmsTxSenderAddresses.length;
+        for (uint256 i = 0; i < oldKmsTxSenderAddressesLength; i++) {
+            $.isKmsTxSender[$.kmsTxSenderAddresses[i]] = false;
+            $.isKmsSigner[$.kmsSignerAddresses[i]] = false;
+            delete $.kmsNodes[$.kmsTxSenderAddresses[i]];
+        }
+
+        delete $.kmsTxSenderAddresses;
+        delete $.kmsSignerAddresses;
+
+        // Set the new KMS nodes and their thresholds
+        _setKmsNodes(
+            newKmsNodes,
+            newMpcThreshold,
+            newPublicDecryptionThreshold,
+            newUserDecryptionThreshold,
+            newKmsGenThreshold
+        );
+
+        emit UpdateKmsNodes(
+            newKmsNodes,
+            newMpcThreshold,
+            newPublicDecryptionThreshold,
+            newUserDecryptionThreshold,
+            newKmsGenThreshold
+        );
+    }
+
+    /**
+     * @notice See {IGatewayConfig-updateCoprocessors}.
+     */
+    function updateCoprocessors(
+        Coprocessor[] calldata newCoprocessors,
+        uint256 newCoprocessorThreshold
+    ) external virtual onlyOwner {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        // Remove the old coprocessors
+        uint256 oldCoprocessorTxSenderAddressesLength = $.coprocessorTxSenderAddresses.length;
+        for (uint256 i = 0; i < oldCoprocessorTxSenderAddressesLength; i++) {
+            $.isCoprocessorTxSender[$.coprocessorTxSenderAddresses[i]] = false;
+            $.isCoprocessorSigner[$.coprocessorSignerAddresses[i]] = false;
+            delete $.coprocessors[$.coprocessorTxSenderAddresses[i]];
+        }
+
+        delete $.coprocessorTxSenderAddresses;
+        delete $.coprocessorSignerAddresses;
+
+        // Set the new coprocessors and their threshold
+        _setCoprocessors(newCoprocessors, newCoprocessorThreshold);
+
+        emit UpdateCoprocessors(newCoprocessors, newCoprocessorThreshold);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-updateCustodians}.
+     */
+    function updateCustodians(Custodian[] calldata newCustodians) external virtual onlyOwner {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        // Remove the old custodians
+        uint256 oldCustodianTxSenderAddressesLength = $.custodianTxSenderAddresses.length;
+        for (uint256 i = 0; i < oldCustodianTxSenderAddressesLength; i++) {
+            $.isCustodianTxSender[$.custodianTxSenderAddresses[i]] = false;
+            $.isCustodianSigner[$.custodianSignerAddresses[i]] = false;
+            delete $.custodians[$.custodianTxSenderAddresses[i]];
+        }
+
+        delete $.custodianTxSenderAddresses;
+        delete $.custodianSignerAddresses;
+
+        // Set the new custodians
+        _setCustodians(newCustodians);
+
+        emit UpdateCustodians(newCustodians);
     }
 
     /**
@@ -267,6 +335,14 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function updateKmsGenThreshold(uint256 newKmsGenThreshold) external virtual onlyOwner {
         _setKmsGenThreshold(newKmsGenThreshold);
         emit UpdateKmsGenThreshold(newKmsGenThreshold);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-updateCoprocessorThreshold}.
+     */
+    function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external virtual onlyOwner {
+        _setCoprocessorThreshold(newCoprocessorThreshold);
+        emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
     }
 
     /**
@@ -412,7 +488,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function getCoprocessorMajorityThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.coprocessorTxSenderAddresses.length / 2 + 1;
+        return $.coprocessorThreshold;
     }
 
     /**
@@ -522,6 +598,94 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
+     * @notice Sets the KMS nodes and their thresholds.
+     * @param newKmsNodes The new KMS nodes.
+     * @param newMpcThreshold The new MPC threshold.
+     * @param newPublicDecryptionThreshold The new public decryption threshold.
+     * @param newUserDecryptionThreshold The new user decryption threshold.
+     * @param newKmsGenThreshold The new key and CRS generation threshold.
+     */
+    function _setKmsNodes(
+        KmsNode[] calldata newKmsNodes,
+        uint256 newMpcThreshold,
+        uint256 newPublicDecryptionThreshold,
+        uint256 newUserDecryptionThreshold,
+        uint256 newKmsGenThreshold
+    ) internal virtual {
+        if (newKmsNodes.length == 0) {
+            revert EmptyKmsNodes();
+        }
+
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        // Register the new KMS nodes
+        for (uint256 i = 0; i < newKmsNodes.length; i++) {
+            $.isKmsTxSender[newKmsNodes[i].txSenderAddress] = true;
+            $.kmsNodes[newKmsNodes[i].txSenderAddress] = newKmsNodes[i];
+            $.kmsTxSenderAddresses.push(newKmsNodes[i].txSenderAddress);
+            $.isKmsSigner[newKmsNodes[i].signerAddress] = true;
+            $.kmsSignerAddresses.push(newKmsNodes[i].signerAddress);
+        }
+
+        // Setting the thresholds should be done after the KMS nodes have been registered as the functions
+        // reading the `kmsSignerAddresses` array.
+        _setMpcThreshold(newMpcThreshold);
+        _setPublicDecryptionThreshold(newPublicDecryptionThreshold);
+        _setUserDecryptionThreshold(newUserDecryptionThreshold);
+        _setKmsGenThreshold(newKmsGenThreshold);
+    }
+
+    /**
+     * @notice Sets the coprocessors and their threshold.
+     * @param newCoprocessors The new coprocessors.
+     * @param newCoprocessorThreshold The new coprocessor threshold.
+     */
+    function _setCoprocessors(
+        Coprocessor[] calldata newCoprocessors,
+        uint256 newCoprocessorThreshold
+    ) internal virtual {
+        if (newCoprocessors.length == 0) {
+            revert EmptyCoprocessors();
+        }
+
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        // Register the new coprocessors
+        for (uint256 i = 0; i < newCoprocessors.length; i++) {
+            $.isCoprocessorTxSender[newCoprocessors[i].txSenderAddress] = true;
+            $.coprocessors[newCoprocessors[i].txSenderAddress] = newCoprocessors[i];
+            $.coprocessorTxSenderAddresses.push(newCoprocessors[i].txSenderAddress);
+            $.isCoprocessorSigner[newCoprocessors[i].signerAddress] = true;
+            $.coprocessorSignerAddresses.push(newCoprocessors[i].signerAddress);
+        }
+
+        // Setting the coprocessor threshold should be done after the coprocessors have been
+        // registered as the functions reading the `coprocessorSignerAddresses` array.
+        _setCoprocessorThreshold(newCoprocessorThreshold);
+    }
+
+    /**
+     * @notice Sets the custodians.
+     * @param newCustodians The new custodians.
+     */
+    function _setCustodians(Custodian[] calldata newCustodians) internal virtual {
+        if (newCustodians.length == 0) {
+            revert EmptyCustodians();
+        }
+
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        // Register the new custodians
+        for (uint256 i = 0; i < newCustodians.length; i++) {
+            $.custodians[newCustodians[i].txSenderAddress] = newCustodians[i];
+            $.custodianTxSenderAddresses.push(newCustodians[i].txSenderAddress);
+            $.isCustodianTxSender[newCustodians[i].txSenderAddress] = true;
+            $.custodianSignerAddresses.push(newCustodians[i].signerAddress);
+            $.isCustodianSigner[newCustodians[i].signerAddress] = true;
+        }
+    }
+
+    /**
      * @notice Sets the MPC threshold.
      * @param newMpcThreshold The new MPC threshold.
      */
@@ -579,6 +743,27 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
 
         $.userDecryptionThreshold = newUserDecryptionThreshold;
+    }
+
+    /**
+     * @notice Sets the coprocessor threshold.
+     * @param newCoprocessorThreshold The new coprocessor threshold.
+     */
+    function _setCoprocessorThreshold(uint256 newCoprocessorThreshold) internal virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        uint256 nCoprocessors = $.coprocessorSignerAddresses.length;
+
+        // Check that the coprocessor threshold `t` is valid. It must verify:
+        // - `t >= 1` : the coprocessor consensus should require at least one vote
+        // - `t <= n` : it should be less than the number of registered coprocessors
+        if (newCoprocessorThreshold == 0) {
+            revert InvalidNullCoprocessorThreshold();
+        }
+        if (newCoprocessorThreshold > nCoprocessors) {
+            revert InvalidHighCoprocessorThreshold(newCoprocessorThreshold, nCoprocessors);
+        }
+
+        $.coprocessorThreshold = newCoprocessorThreshold;
     }
 
     /**

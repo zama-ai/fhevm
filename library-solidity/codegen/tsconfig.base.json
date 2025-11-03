@@ -1,0 +1,58 @@
+{
+  // This tsconfig file contains the shared config for the build and type checking
+  "include": [],
+  "compilerOptions": {
+    // Projects
+    // ========
+    // NOTE: Enabling incremental builds speeds up `tsc`.
+    // Keep in mind though that it does not reliably bust the cache when the `tsconfig.json` file changes.
+    // Generates .tsbuildinfo files
+    "incremental": true,
+
+    // Language and Environment
+    // ========================
+    "strict": true,
+    "useDefineForClassFields": true, // Not enabled by default in `strict` mode unless we bump `target` to ES2022.
+
+    // Type Checking
+    // =============
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true, // Not enabled by default in `strict` mode.
+    "noImplicitOverride": true, // Not enabled by default in `strict` mode.
+    "noImplicitReturns": true, // Not enabled by default in `strict` mode.
+    "noUnusedParameters": true, // Not enabled by default in `strict` mode.
+    "noUnusedLocals": true, // Not enabled by default in `strict` mode.
+    "useUnknownInCatchVariables": true, // TODO: This would normally be enabled in `strict` mode but would require some adjustments to the codebase.
+    // TODO: too strict for the moment
+    //"noUncheckedIndexedAccess": true,
+
+    // JavaScript Support
+    // ==================
+    "allowJs": false,
+    "checkJs": false,
+
+    // Interop Constraints
+    // ===================
+    "esModuleInterop": false,
+    "allowSyntheticDefaultImports": true, // required for JSON import
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    //"verbatimModuleSyntax": true,
+
+    // Modules
+    // =======
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
+    // Language and Environment
+    // ========================
+    "target": "ES2022", // Setting this to `ES2021` enables native support for `Node v16+`: https://github.com/microsoft/TypeScript/wiki/Node-Target-Mapping.
+    "lib": [
+      "ES2022" // By using ES2022 we get access to the `.cause` property on `Error` instances.
+    ],
+
+    // Completeness
+    // ============
+    "skipLibCheck": true
+  }
+}

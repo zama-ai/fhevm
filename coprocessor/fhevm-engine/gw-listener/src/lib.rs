@@ -9,6 +9,7 @@ pub(crate) mod database;
 pub(crate) mod digest;
 pub mod gw_listener;
 pub mod http_server;
+pub(crate) mod metrics;
 pub(crate) mod sks_key;
 
 pub(crate) type ChainId = u64;
@@ -43,11 +44,14 @@ pub struct ConfigSettings {
 
     pub error_sleep_initial_secs: u16,
     pub error_sleep_max_secs: u16,
+
     pub health_check_port: u16,
+
     pub health_check_timeout: Duration,
 
     pub get_logs_poll_interval: Duration,
     pub get_logs_block_batch_size: u64,
+    pub catchup_kms_generation_from_block: Option<i64>,
 }
 
 pub fn chain_id_from_env() -> Option<ChainId> {
@@ -66,7 +70,7 @@ impl Default for ConfigSettings {
             database_url: std::env::var("DATABASE_URL")
                 .unwrap_or("postgres://postgres:postgres@localhost/coprocessor".to_owned()),
             database_pool_size: 16,
-            verify_proof_req_db_channel: "verify_proof_requests".to_owned(),
+            verify_proof_req_db_channel: "event_zkpok_new_work".to_owned(),
             gw_url: "ws://127.0.0.1:8546".try_into().expect("Invalid URL"),
             error_sleep_initial_secs: 1,
             error_sleep_max_secs: 10,
@@ -74,6 +78,7 @@ impl Default for ConfigSettings {
             health_check_timeout: Duration::from_secs(4),
             get_logs_poll_interval: Duration::from_secs(1),
             get_logs_block_batch_size: 100,
+            catchup_kms_generation_from_block: None,
         }
     }
 }

@@ -9,7 +9,8 @@
     "prettier-plugin-solidity": "^2.0.0"
   },
   "scripts": {
-    "codegen": "npx ts-node codegen/main.ts && npm run prettier && npx hardhat compile",
+    "codegen": "../../library-solidity/codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
+    "codegen:overloads": "../../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
   },
   "dependencies": {

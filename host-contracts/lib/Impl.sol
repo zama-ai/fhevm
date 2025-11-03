@@ -222,6 +222,7 @@ interface IFHEVMExecutor {
      * @return result       Result.
      */
     function fheNot(bytes32 ct) external returns (bytes32 result);
+
     /**
      * @notice                Verifies the ciphertext.
      * @param inputHandle     Input handle.
@@ -291,6 +292,13 @@ interface IFHEVMExecutor {
  */
 interface IACL {
     /**
+     * @notice              Executes a batch of encoded calls on the ACL contract.
+     * @param data          Array containing the ABI-encoded function calls.
+     * @return results      Return payloads for each call in `data`.
+     */
+    function multicall(bytes[] calldata data) external payable returns (bytes[] memory results);
+
+    /**
      * @notice              Allows the use of handle by address account for this transaction.
      * @dev                 The caller must be allowed to use handle for allowTransient() to succeed.
      *                      If not, allowTransient() reverts.
@@ -335,6 +343,62 @@ interface IACL {
      * @return isDecryptable    Whether the handle can be publicly decrypted.
      */
     function isAllowedForDecryption(bytes32 handle) external view returns (bool);
+
+    /**
+     * @notice              Returns whether the account is persistently allowed to use the handle.
+     * @param handle        Handle.
+     * @param account       Address of the account.
+     */
+    function persistAllowed(bytes32 handle, address account) external view returns (bool);
+
+    /**
+     * @notice                  Returns whether the account is on the deny list.
+     * @param account           Address of the account.
+     * @return isAccountDenied  Whether the account is on the deny list.
+     */
+    function isAccountDenied(address account) external view returns (bool);
+
+    /**
+     * @notice              Delegates user decryption rights to `delegate` for the specified `contractAddress`.
+     * @param delegate      The delegate account.
+     * @param contractAddress The contract address forming the user decryption context.
+     * @param expirationDate UNIX timestamp when the delegation expires.
+     */
+    function delegateForUserDecryption(address delegate, address contractAddress, uint64 expirationDate) external;
+
+    /**
+     * @notice              Revokes previously delegated user decryption rights.
+     * @param delegate      The delegate account.
+     * @param contractAddress The contract address forming the user decryption context.
+     */
+    function revokeDelegationForUserDecryption(address delegate, address contractAddress) external;
+
+    /**
+     * @notice              Returns the expiration date for delegated user decryption rights.
+     * @param delegator     The delegator account.
+     * @param delegate      The delegate account.
+     * @param contractAddress The contract address forming the user decryption context.
+     */
+    function getUserDecryptionDelegationExpirationDate(
+        address delegator,
+        address delegate,
+        address contractAddress
+    ) external view returns (uint64);
+
+    /**
+     * @notice Returns whether an account is delegated to access the handle for user decryption.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The contract address to delegate access to.
+     * @param handle The handle to check for delegated user decryption.
+     * @return isDelegatedForUserDecryption Whether the handle can be accessed for delegated user decryption.
+     */
+    function isHandleDelegatedForUserDecryption(
+        address delegator,
+        address delegate,
+        address contractAddress,
+        bytes32 handle
+    ) external view returns (bool);
 }
 
 /**
@@ -742,5 +806,136 @@ library Impl {
     function isPubliclyDecryptable(bytes32 handle) internal view returns (bool) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
         return IACL($.ACLAddress).isAllowedForDecryption(handle);
+    }
+
+    /**
+     * @notice              Returns whether the account is persistently allowed to use the handle.
+     * @param handle        Handle.
+     * @param account       Address of the account.
+     * @return isAllowed    Whether the account can access the handle persistently.
+     */
+    function persistAllowed(bytes32 handle, address account) internal view returns (bool) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        return IACL($.ACLAddress).persistAllowed(handle, account);
+    }
+
+    /**
+     * @notice                  Returns whether the account is on the deny list.
+     * @param account           Address of the account.
+     * @return isAccountDenied  Whether the account is on the deny list.
+     */
+    function isAccountDenied(address account) internal view returns (bool) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        return IACL($.ACLAddress).isAccountDenied(account);
+    }
+
+    /**
+     * @notice              Delegates user decryption rights to `delegate` for the specified `contractAddress`.
+     * @param delegate      The delegate account.
+     * @param contractAddress The contract address forming the user decryption context.
+     * @param expirationDate UNIX timestamp when the delegation expires.
+     */
+    function delegateForUserDecryption(address delegate, address contractAddress, uint64 expirationDate) internal {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        IACL($.ACLAddress).delegateForUserDecryption(delegate, contractAddress, expirationDate);
+    }
+
+    /**
+     * @notice              Delegates user decryption rights in batch leveraging the ACL multicall helper.
+     * @param delegate      The delegate account.
+     * @param contractAddresses Array of contract addresses forming the user decryption contexts.
+     * @param expirationDate UNIX timestamp when the delegation expires.
+     */
+    function delegateForUserDecryptions(
+        address delegate,
+        address[] memory contractAddresses,
+        uint64 expirationDate
+    ) internal {
+        uint256 length = contractAddresses.length;
+        if (length == 0) {
+            return;
+        }
+
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+
+        if (length == 1) {
+            IACL($.ACLAddress).delegateForUserDecryption(delegate, contractAddresses[0], expirationDate);
+            return;
+        }
+
+        bytes[] memory calls = new bytes[](length);
+        for (uint256 i = 0; i < length; ++i) {
+            calls[i] = abi.encodeCall(IACL.delegateForUserDecryption, (delegate, contractAddresses[i], expirationDate));
+        }
+        IACL($.ACLAddress).multicall(calls);
+    }
+
+    /**
+     * @notice              Revokes previously delegated user decryption rights.
+     * @param delegate      The delegate account.
+     * @param contractAddress The contract address forming the user decryption context.
+     */
+    function revokeDelegationForUserDecryption(address delegate, address contractAddress) internal {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        IACL($.ACLAddress).revokeDelegationForUserDecryption(delegate, contractAddress);
+    }
+
+    /**
+     * @notice              Revokes delegated user decryption rights in batch leveraging the ACL multicall helper.
+     * @param delegate      The delegate account.
+     * @param contractAddresses Array of contract addresses forming the user decryption contexts.
+     */
+    function revokeDelegationsForUserDecryption(address delegate, address[] memory contractAddresses) internal {
+        uint256 length = contractAddresses.length;
+        if (length == 0) {
+            return;
+        }
+
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+
+        if (length == 1) {
+            IACL($.ACLAddress).revokeDelegationForUserDecryption(delegate, contractAddresses[0]);
+            return;
+        }
+
+        bytes[] memory calls = new bytes[](length);
+        for (uint256 i = 0; i < length; ++i) {
+            calls[i] = abi.encodeCall(IACL.revokeDelegationForUserDecryption, (delegate, contractAddresses[i]));
+        }
+        IACL($.ACLAddress).multicall(calls);
+    }
+
+    /**
+     * @notice              Returns the expiration date for delegated user decryption rights.
+     * @param delegator     The delegator account.
+     * @param delegate      The delegate account.
+     * @param contractAddress The contract address forming the user decryption context.
+     * @return expirationDate The UNIX timestamp when the delegation expires.
+     */
+    function getUserDecryptionDelegationExpirationDate(
+        address delegator,
+        address delegate,
+        address contractAddress
+    ) internal view returns (uint64) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        return IACL($.ACLAddress).getUserDecryptionDelegationExpirationDate(delegator, delegate, contractAddress);
+    }
+
+    /**
+     * @notice              Returns whether the handle is delegated for user decryption.
+     * @param delegator     The delegator account.
+     * @param delegate      The delegate account.
+     * @param contractAddress The contract address forming the user decryption context.
+     * @param handle          The handle.
+     * @return isDelegated    Whether the handle is delegated for user decryption.
+     */
+    function isDelegatedForUserDecryption(
+        address delegator,
+        address delegate,
+        address contractAddress,
+        bytes32 handle
+    ) internal view returns (bool) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        return IACL($.ACLAddress).isHandleDelegatedForUserDecryption(delegator, delegate, contractAddress, handle);
     }
 }

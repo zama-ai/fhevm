@@ -31,7 +31,7 @@ cd <your-project-root-directory>/contracts
 From there, create a new file named `Counter.sol` and copy/paste the following Solidity code in it.
 
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 /// @title A simple counter contract

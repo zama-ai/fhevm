@@ -105,6 +105,16 @@ describe("CiphertextCommits", function () {
         .withArgs(fakeHostChainId);
     });
 
+    it("Should emit an event when calling a single addCiphertextMaterial", async function () {
+      await expect(
+        ciphertextCommits
+          .connect(coprocessorTxSenders[0])
+          .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
+      )
+        .to.emit(ciphertextCommits, "AddCiphertextMaterial")
+        .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, coprocessorTxSenders[0].address);
+    });
+
     it("Should add a ciphertext material with 2 valid calls", async function () {
       // Trigger 2 valid add ciphertext material calls
       await ciphertextCommits
@@ -118,8 +128,8 @@ describe("CiphertextCommits", function () {
       // Consensus should be reached at the second call
       // Check 2nd call event: it should only contain the 2 coprocessor transaction sender addresses
       await expect(resultTx2)
-        .to.emit(ciphertextCommits, "AddCiphertextMaterial")
-        .withArgs(ctHandle, ciphertextDigest, snsCiphertextDigest, [
+        .to.emit(ciphertextCommits, "AddCiphertextMaterialConsensus")
+        .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, [
           coprocessorTxSenders[0].address,
           coprocessorTxSenders[1].address,
         ]);
@@ -142,8 +152,8 @@ describe("CiphertextCommits", function () {
       // Check that the 1st and 3rd calls do not emit an event:
       // - 1st call is ignored because consensus is not reached yet
       // - 3rd call is ignored (not reverted) even though it is late
-      await expect(resultTx1).to.not.emit(ciphertextCommits, "AddCiphertextMaterial");
-      await expect(resultTx3).to.not.emit(ciphertextCommits, "AddCiphertextMaterial");
+      await expect(resultTx1).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
+      await expect(resultTx3).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
     });
 
     it("Should add a ciphertext material with 2 valid and 1 malicious calls ", async function () {
@@ -160,7 +170,7 @@ describe("CiphertextCommits", function () {
         .addCiphertextMaterial(ctHandle, keyId, fakeCiphertextDigest, snsCiphertextDigest);
 
       // Make sure that the consensus has not been reached yet
-      await expect(fakeResultTx2).to.not.emit(ciphertextCommits, "AddCiphertextMaterial");
+      await expect(fakeResultTx2).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
 
       // Trigger a 2nd valid add ciphertext material call: consensus should then be reached for this
       // handle and the associated infos
@@ -171,8 +181,8 @@ describe("CiphertextCommits", function () {
       // Check 2nd call event: it should only contain 2 coprocessor transaction sender addresses, the
       // 1st and 3rd one
       await expect(resultTx3)
-        .to.emit(ciphertextCommits, "AddCiphertextMaterial")
-        .withArgs(ctHandle, ciphertextDigest, snsCiphertextDigest, [
+        .to.emit(ciphertextCommits, "AddCiphertextMaterialConsensus")
+        .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, [
           coprocessorTxSenders[0].address,
           coprocessorTxSenders[2].address,
         ]);

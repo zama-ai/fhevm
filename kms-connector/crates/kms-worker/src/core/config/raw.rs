@@ -18,8 +18,10 @@ pub struct RawConfig {
     pub database_url: String,
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
-    #[serde(default = "default_database_polling_timeout_secs")]
-    pub database_polling_timeout_secs: u64,
+    #[serde(default = "default_db_fast_event_polling_secs")]
+    pub db_fast_event_polling_secs: u64,
+    #[serde(default = "default_db_long_event_polling_secs")]
+    pub db_long_event_polling_secs: u64,
     pub gateway_url: String,
     #[serde(default)]
     pub kms_core_endpoints: Vec<String>,
@@ -56,8 +58,12 @@ fn default_service_name() -> String {
     "kms-connector-kms-worker".to_string()
 }
 
-fn default_database_polling_timeout_secs() -> u64 {
-    5
+fn default_db_fast_event_polling_secs() -> u64 {
+    3
+}
+
+fn default_db_long_event_polling_secs() -> u64 {
+    60
 }
 
 fn default_events_batch_size() -> u8 {
@@ -125,7 +131,8 @@ impl Default for RawConfig {
         Self {
             database_url: "postgres://postgres:postgres@localhost".to_string(),
             database_pool_size: 16,
-            database_polling_timeout_secs: default_database_polling_timeout_secs(),
+            db_fast_event_polling_secs: default_db_fast_event_polling_secs(),
+            db_long_event_polling_secs: default_db_long_event_polling_secs(),
             gateway_url: "ws://localhost:8545".to_string(),
             kms_core_endpoints: vec!["http://localhost:50052".to_string()],
             kms_core_endpoint: None,

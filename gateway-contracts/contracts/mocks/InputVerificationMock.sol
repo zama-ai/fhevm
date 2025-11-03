@@ -25,7 +25,17 @@ contract InputVerificationMock {
         bytes extraData
     );
 
+    event VerifyProofResponseCall(
+        uint256 indexed zkProofId,
+        bytes32[] ctHandles,
+        bytes signature,
+        address coprocessorTxSender,
+        bytes extraData
+    );
+
     event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
+
+    event RejectProofResponseCall(uint256 indexed zkProofId, bytes extraData);
 
     event RejectProofResponse(uint256 indexed zkProofId);
 
@@ -57,12 +67,17 @@ contract InputVerificationMock {
         bytes calldata signature,
         bytes calldata extraData
     ) external {
+        address coprocessorTxSender;
         bytes[] memory signatures = new bytes[](1);
+
+        emit VerifyProofResponseCall(zkProofId, ctHandles, signature, coprocessorTxSender, extraData);
 
         emit VerifyProofResponse(zkProofId, ctHandles, signatures);
     }
 
-    function rejectProofResponse(uint256 zkProofId, bytes calldata /* unusedVariable */) external {
+    function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external {
+        emit RejectProofResponseCall(zkProofId, extraData);
+
         emit RejectProofResponse(zkProofId);
     }
 }

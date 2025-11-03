@@ -18,7 +18,10 @@ use transaction_sender::{
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::{
+    metrics_server,
+    telemetry::{self, MetricsConfig},
+};
 use humantime::parse_duration;
 
 #[derive(Parser, Debug, Clone, ValueEnum)]
@@ -54,63 +57,68 @@ struct Conf {
     #[arg(long, default_value = "10")]
     database_pool_size: u32,
 
-    #[arg(long, default_value = "5")]
+    #[arg(long, default_value = "1")]
     database_polling_interval_secs: u16,
 
-    #[arg(long, default_value = "verify_proof_responses")]
+    #[arg(long, default_value = "event_zkpok_computed")]
     verify_proof_resp_database_channel: String,
 
-    #[arg(long, default_value = "add_ciphertexts")]
+    #[arg(long, default_value = "event_ciphertexts_uploaded")]
     add_ciphertexts_database_channel: String,
 
     #[arg(long, default_value = "event_allowed_handle")]
     allow_handle_database_channel: String,
 
-    #[arg(long, default_value = "128")]
+    #[arg(long, default_value_t = 128)]
     verify_proof_resp_batch_limit: u32,
 
-    #[arg(long, default_value = "3")]
+    #[arg(long, default_value_t = 6)]
     verify_proof_resp_max_retries: u32,
 
-    #[arg(long, default_value = "true")]
+    #[arg(long, default_value_t = true)]
     verify_proof_remove_after_max_retries: bool,
 
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value_t = 10)]
     add_ciphertexts_batch_limit: u32,
 
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value_t = 10)]
     allow_handle_batch_limit: u32,
 
-    #[arg(long, default_value = "10")]
-    allow_handle_max_retries: u32,
+    // For now, use i32 as that's what we have in the DB as integer type.
+    #[arg(long, default_value_t = i32::MAX, value_parser = clap::value_parser!(i32).range(0..))]
+    allow_handle_max_retries: i32,
 
-    #[arg(long, default_value = "15")]
-    add_ciphertexts_max_retries: u32,
+    // For now, use i32 as that's what we have in the DB as integer type.
+    #[arg(long, default_value_t = i32::MAX, value_parser = clap::value_parser!(i32).range(0..))]
+    add_ciphertexts_max_retries: i32,
 
-    #[arg(long, default_value = "1")]
+    #[arg(long, default_value_t = 1)]
     error_sleep_initial_secs: u16,
 
-    #[arg(long, default_value = "16")]
+    #[arg(long, default_value_t = 300)]
     error_sleep_max_secs: u16,
 
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value_t = 10)]
     txn_receipt_timeout_secs: u16,
 
-    #[arg(long, default_value = "0")]
+    #[arg(long, default_value_t = 0)]
     required_txn_confirmations: u16,
 
-    #[arg(long, default_value = "30")]
+    #[arg(long, default_value_t = 30)]
     review_after_unlimited_retries: u16,
 
-    #[arg(long, default_value = "1000000")]
+    #[arg(long, default_value_t = u32::MAX)]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     provider_retry_interval: Duration,
 
-    /// HTTP server port
-    #[arg(long, alias = "health-check-port", default_value_t = 8080)]
-    http_server_port: u16,
+    #[arg(long, default_value_t = 8080)]
+    health_check_port: u16,
+
+    /// Prometheus metrics server address
+    #[arg(long, default_value = "0.0.0.0:9100")]
+    metrics_addr: Option<String>,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     health_check_timeout: Duration,
@@ -130,6 +138,14 @@ struct Conf {
     /// service name in OTLP traces
     #[arg(long, default_value = "txn-sender")]
     pub service_name: String,
+
+    /// Prometheus metrics: coprocessor_host_txn_latency_seconds
+    #[arg(long, default_value = "0.1:60.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_host_txn_latency: MetricsConfig,
+
+    /// Prometheus metrics: coprocessor_zkproof_txn_latency_seconds
+    #[arg(long, default_value = "0.1:60.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_zkproof_txn_latency: MetricsConfig,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -146,11 +162,19 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
     Ok(())
 }
 
+fn parse_args() -> Conf {
+    let args = Conf::parse();
+    // Set global configs from args
+    let _ = telemetry::HOST_TXN_LATENCY_CONFIG.set(args.metric_host_txn_latency);
+    let _ = telemetry::ZKPROOF_TXN_LATENCY_CONFIG.set(args.metric_zkproof_txn_latency);
+    args
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
-    let conf = Conf::parse();
+    let conf = parse_args();
 
     tracing_subscriber::fmt()
         .json()
@@ -267,7 +291,7 @@ async fn main() -> anyhow::Result<()> {
         txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
         required_txn_confirmations: conf.required_txn_confirmations,
         review_after_unlimited_retries: conf.review_after_unlimited_retries,
-        http_server_port: conf.http_server_port,
+        health_check_port: conf.health_check_port,
         health_check_timeout: conf.health_check_timeout,
         gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
         graceful_shutdown_timeout: conf.graceful_shutdown_timeout,
@@ -289,19 +313,22 @@ async fn main() -> anyhow::Result<()> {
 
     let http_server = HttpServer::new(
         transaction_sender.clone(),
-        conf.http_server_port,
+        conf.health_check_port,
         cancel_token.clone(),
     );
 
     info!(
-        http_server_port = conf.http_server_port,
+        health_check_port = conf.health_check_port,
         conf = ?config,
-        "Transaction sender and HTTP server starting"
+        "Transaction sender and HTTP health check server starting"
     );
 
-    // Run both services concurrently. Here we assume that if transaction sender stops without an error, HTTP server should also stop.
+    // Run both services in parallel. Here we assume that if transaction sender stops without an error, HTTP server should also stop.
     let transaction_sender_fut = tokio::spawn(async move { transaction_sender.run().await });
     let http_server_fut = tokio::spawn(async move { http_server.start().await });
+
+    // Start metrics server
+    metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
 
     let transaction_sender_res = transaction_sender_fut.await;
     let http_server_res = http_server_fut.await;
@@ -309,13 +336,13 @@ async fn main() -> anyhow::Result<()> {
     info!(
         transaction_sender_res = ?transaction_sender_res,
         http_server_res = ?http_server_res,
-        "Transaction sender and HTTP server tasks have stopped"
+        "Transaction sender and HTTP health check server tasks have stopped"
     );
 
     transaction_sender_res??;
     http_server_res??;
 
-    info!("Transaction sender and HTTP server stopped gracefully");
+    info!("Transaction sender and HTTP health check server stopped gracefully");
 
     Ok(())
 }

@@ -17,8 +17,10 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
-    /// The timeout for polling the database for events.
-    pub database_polling_timeout: Duration,
+    /// The timeout for polling the database for fast events (decryption for ex).
+    pub db_fast_event_polling: Duration,
+    /// The timeout for polling the database for long events (prep keygen for ex).
+    pub db_long_event_polling: Duration,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
     /// The KMS Core endpoints.
@@ -106,8 +108,8 @@ impl Config {
             kms_core_endpoints = raw_config.kms_core_endpoints;
         }
 
-        let database_polling_timeout =
-            Duration::from_secs(raw_config.database_polling_timeout_secs);
+        let db_fast_event_polling = Duration::from_secs(raw_config.db_fast_event_polling_secs);
+        let db_long_event_polling = Duration::from_secs(raw_config.db_long_event_polling_secs);
         let public_decryption_timeout =
             Duration::from_secs(raw_config.public_decryption_timeout_secs);
         let user_decryption_timeout = Duration::from_secs(raw_config.user_decryption_timeout_secs);
@@ -118,7 +120,8 @@ impl Config {
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
-            database_polling_timeout,
+            db_fast_event_polling,
+            db_long_event_polling,
             gateway_url: raw_config.gateway_url,
             kms_core_endpoints,
             chain_id: raw_config.chain_id,

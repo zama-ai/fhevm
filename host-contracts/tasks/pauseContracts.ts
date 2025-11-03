@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { task } from 'hardhat/config';
+import { task, types } from 'hardhat/config';
 import path from 'path';
 
 import { getRequiredEnvVar } from './utils/loadVariables';

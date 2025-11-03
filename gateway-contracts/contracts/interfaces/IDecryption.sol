@@ -56,6 +56,22 @@ interface IDecryption {
     );
 
     /**
+     * @notice Emitted when a KMS connector responds to a public decryption request.
+     * @param decryptionId The decryption request ID associated with the response.
+     * @param decryptedResult The decrypted result.
+     * @param signature The signature of the KMS connector that responded.
+     * @param kmsTxSender The transaction sender of the KMS connector that responded.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    event PublicDecryptionResponseCall(
+        uint256 indexed decryptionId,
+        bytes decryptedResult,
+        bytes signature,
+        address kmsTxSender,
+        bytes extraData
+    );
+
+    /**
      * @notice Emitted when an public decryption response is made.
      * @param decryptionId The decryption request ID associated with the response.
      * @param decryptedResult The decrypted result.
