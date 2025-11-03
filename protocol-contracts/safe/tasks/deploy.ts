@@ -92,7 +92,6 @@ task("task:deploySafe").setAction(async function (
     0n,
   );
 
-  console.log(`Safe proxy address: ${safeAddress}`);
   // Save the proxy deployment so it can be accessed via deployments.get
   const safeProxyName = "SafeL2Proxy";
   await deployments.save(safeProxyName, {
