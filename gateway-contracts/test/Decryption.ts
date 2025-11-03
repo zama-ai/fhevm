@@ -98,6 +98,8 @@ describe("Decryption", function () {
   const fakeSigner = createRandomWallet();
   const tooLowDecryptionId = 0;
   const tooHighDecryptionId = getPublicDecryptId(1000) + getUserDecryptId(1000);
+  const fakeHostChainId = 123;
+  const fakeChainIdCtHandle = createCtHandle(fakeHostChainId);
 
   // Define extra data for version 0
   const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
@@ -879,6 +881,46 @@ describe("Decryption", function () {
           extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "EmptyCtHandleContractPairs");
+    });
+
+    it("Should revert because a ctHandleContractPair has a chain ID that differs from the contract chain ID", async function () {
+      const invalidChainIdCtHandleContractPairs: CtHandleContractPairStruct[] = [
+        {
+          contractAddress,
+          ctHandle: fakeChainIdCtHandle,
+        },
+      ];
+      await expect(
+        decryption.userDecryptionRequest(
+          invalidChainIdCtHandleContractPairs,
+          requestValidity,
+          contractsInfo,
+          user.address,
+          publicKey,
+          userSignature,
+          extraDataV0,
+        ),
+      )
+        .to.be.revertedWithCustomError(decryption, "CtHandleChainIdDiffersFromContractChainId")
+        .withArgs(fakeChainIdCtHandle, fakeHostChainId, contractsInfo.chainId);
+    });
+
+    it("Should revert because contract chain ID is not registered in the GatewayConfig", async function () {
+      const invalidContractsInfo: IDecryption.ContractsInfoStruct = {
+        addresses: [contractAddress],
+        chainId: fakeHostChainId,
+      };
+      await expect(
+        decryption.userDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          invalidContractsInfo,
+          user.address,
+          publicKey,
+          userSignature,
+          extraDataV0,
+        ),
+      ).to.be.revertedWithCustomError(decryption, "HostChainNotRegistered");
     });
 
     it("Should revert because contract addresses is empty", async function () {
