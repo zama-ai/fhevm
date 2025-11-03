@@ -38,7 +38,7 @@ export HOST_VERSION=${HOST_VERSION:-"v0.9.5"}
 # Other services.
 export CORE_VERSION=${CORE_VERSION:-"v0.12.2"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.5.0-2"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"390658c"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"7d97404"}
 
 
 function print_logo() {
@@ -194,7 +194,7 @@ case $COMMAND in
           ;;
         operators)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
-          docker_args+=("--parallel" "-g" "test operator|FHEVM manual operations")
+          docker_args+=("-g" "test operator|FHEVM manual operations")
           ;;
         random)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
