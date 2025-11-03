@@ -5,16 +5,12 @@
   "license": "MIT",
   "scripts": {
     "clean": "rm -rf artifacts cache out",
-    "compile": "concurrently -c auto --names forge,hardhat '$npm_execpath run compile:forge' '$npm_execpath run compile:hardhat'",
-    "compile:forge": "forge build",
-    "compile:hardhat": "hardhat compile",
+    "compile": "hardhat compile",
     "lint": "$npm_execpath run lint:js && $npm_execpath run lint:sol",
     "lint:fix": "eslint --fix '**/*.{js,ts,json}' && prettier --write . && solhint 'contracts/**/*.sol' --fix --noPrompt",
     "lint:js": "eslint '**/*.{js,ts,json}' && prettier --check .",
     "lint:sol": "solhint 'contracts/**/*.sol'",
-    "test": "$npm_execpath run test:forge && $npm_execpath run test:hardhat",
-    "test:forge": "forge test",
-    "test:hardhat": "hardhat test",
+    "test": "hardhat test",
     "verify:etherscan:ethereum:mainnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n ethereum-mainnet -u https://api.etherscan.io/v2/api?chainid=1 -k $ETHERSCAN_API'",
     "verify:etherscan:ethereum:testnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n ethereum-testnet -u https://api.etherscan.io/v2/api?chainid=11155111 -k $ETHERSCAN_API'",
     "verify:etherscan:gateway:mainnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n gateway-mainnet -u $BLOCKSCOUT_API'",
@@ -37,8 +33,6 @@
     "@layerzerolabs/oapp-evm": "^0.3.2",
     "@layerzerolabs/prettier-config-next": "^2.3.39",
     "@layerzerolabs/solhint-config": "^3.0.12",
-    "@layerzerolabs/test-devtools-evm-foundry": "~7.0.0",
-    "@layerzerolabs/toolbox-foundry": "~0.1.12",
     "@layerzerolabs/toolbox-hardhat": "~0.6.12",
     "@nomicfoundation/hardhat-ethers": "^3.0.5",
     "@nomiclabs/hardhat-ethers": "^2.2.3",
@@ -77,5 +71,8 @@
   "overrides": {
     "ethers": "^5.7.2",
     "hardhat-deploy": "^0.12.1"
+  },
+  "dependencies": {
+    "@safe-global/safe-contracts": "1.4.1-2"
   }
 }

@@ -281,7 +281,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
     ) -> anyhow::Result<()> {
         debug!("Updating retry count for key {}", key);
 
-        if current_limited_retries_count == (self.conf.allow_handle_max_retries as i32) - 1 {
+        if current_limited_retries_count == self.conf.allow_handle_max_retries - 1 {
             error!(
                 action = REVIEW,
                 key = %key,
@@ -377,7 +377,7 @@ where
             AND txn_limited_retries_count < $1
             LIMIT $2;
             ",
-            self.conf.allow_handle_max_retries as i32,
+            self.conf.allow_handle_max_retries,
             self.conf.allow_handle_batch_limit as i32,
         )
         .fetch_all(&self.db_pool)

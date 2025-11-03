@@ -21,7 +21,6 @@ contract FeesSenderToBurner {
 
     event FeesForwarded(uint256 amount, uint32 dstEid, address to, bytes options, uint256 nativeFeePaid);
 
-    error InsufficientFee();
     error NotEnoughZAMAToSend();
     error UnsupportedChainID();
 
@@ -60,9 +59,6 @@ contract FeesSenderToBurner {
             composeMsg: bytes(""),
             oftCmd: bytes("")
         });
-
-        MessagingFee memory quotedFee = IOFT(ZAMA_OFT).quoteSend(sendParam, false);
-        if(msg.value < quotedFee.nativeFee) revert InsufficientFee();
 
         MessagingFee memory msgFee = MessagingFee({ nativeFee: msg.value, lzTokenFee: 0 });
 

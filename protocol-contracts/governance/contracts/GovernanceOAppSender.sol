@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { OAppSender, OAppCore, Origin, MessagingFee, MessagingReceipt } from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
 import { OAppOptionsType3 } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OAppOptionsType3.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { MessagingParams } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
 contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     /// @notice Msg type for sending data, for use in OAppOptionsType3 as an enforced option.
@@ -24,8 +25,10 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
         bytes options;
     }
 
-    /// @notice Thrown when trying to send cross-chain tx without sending enough ETH fees.
-    error InsufficientFee();
+    /// @notice Thrown when failing to withdraw ETH from the contract.
+    error FailedToWithdrawETH();
+    /// @notice Thrown when trying to send cross-chain tx if contract holds unsufficient ETH to pay the LZ fees.
+    error InsufficientBalanceForFee();
     /// @notice Thrown when trying to deploy this contract on an unsupported blockchain.
     error UnsupportedChainID();
 
@@ -40,7 +43,7 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     /// @notice Thrown when length of targets array is different than length of functionSignatures array.
     error TargetsNotSameLengthAsFunctionSignatures();
 
-    /// @notice Emitted when a proposal has been successfully sent to Zama Gateway chain;
+    /// @notice Emitted when a proposal has been successfully sent to Zama Gateway chain.
     event RemoteProposalSent(
         address[] targets,
         uint256[] values,
@@ -49,6 +52,8 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
         Operation[] operations,
         MessagingReceiptOptions receiptOptions
     );
+    /// @notice Emitted when ETH has been successfully withdrawn from the contract.
+    event WithdrawnETH(address indexed recipient, uint256 amount);
 
     /// @notice Initialize with Endpoint V2 and owner address.
     /// @param endpoint The local chain's LayerZero Endpoint V2 address.
@@ -114,7 +119,7 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
             operations,
             options
         );
-        if (msg.value < quotedFee) revert InsufficientFee();
+        if (address(this).balance < quotedFee) revert InsufficientBalanceForFee();
 
         {
             // local scope to avoid stack too deep error
@@ -134,12 +139,49 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
             DESTINATION_EID,
             abi.encode(targets, values, functionSignatures, datas, operations),
             combineOptions(DESTINATION_EID, SEND, options),
-            MessagingFee(msg.value, 0),
-            payable(msg.sender)
+            MessagingFee(quotedFee, 0),
+            address(this)
         );
 
         MessagingReceiptOptions memory receiptOptions = MessagingReceiptOptions({ receipt: receipt, options: options });
 
         emit RemoteProposalSent(targets, values, functionSignatures, datas, operations, receiptOptions);
     }
+
+    /// @dev We override the default LZ internal _lzSend function, to make the contract able to pay LZ fees.
+    /// @dev This is to avoid race condition during quote, since it could be called by a DAO with timelock.
+    /// @dev Internal function to interact with the LayerZero EndpointV2.send() for sending a message.
+    /// @param dstEid The destination endpoint ID.
+    /// @param message The message payload.
+    /// @param options Additional options for the message.
+    /// @param fee The calculated LayerZero fee for the message.
+    /// @param refundAddress The address to receive any excess fee values sent to the endpoint.
+    /// @return receipt The receipt for the sent message.
+    function _lzSend(
+        uint32 dstEid,
+        bytes memory message,
+        bytes memory options,
+        MessagingFee memory fee,
+        address refundAddress
+    ) internal override returns (MessagingReceipt memory receipt) {
+        return
+            // solhint-disable-next-line check-send-result
+            endpoint.send{ value: fee.nativeFee }(
+                MessagingParams(dstEid, _getPeerOrRevert(dstEid), message, options, fee.lzTokenFee > 0),
+                refundAddress
+            );
+    }
+
+    /// @dev Allows the owner to withdraw ETH held by the contract.
+    /// @param amount Amount of withdrawn ETH.
+    /// @param recipient Receiver of the withdrawn ETH.
+    function withdrawETH(uint256 amount, address recipient) external onlyOwner {
+        (bool success, ) = recipient.call{ value: amount }("");
+        if (!success) {
+            revert FailedToWithdrawETH();
+        }
+        emit WithdrawnETH(recipient, amount);
+    }
+
+    receive() external payable {}
 }
