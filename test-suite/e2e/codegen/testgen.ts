@@ -289,7 +289,7 @@ async function deployFHEVMTestFixture${os.shardNumber}(signer: HardhatEthersSign
   intro.push(`
     describe('FHEVM operations ${idxSplit}', function () {
         before(async function () {
-            this.signer = await getSigner(${idxSplit});
+            this.signer = await getSigner(${idxSplit - 1});
   `);
 
   shards.forEach((os) => {

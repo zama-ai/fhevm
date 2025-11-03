@@ -25,7 +25,7 @@ import { ALL_FHE_TYPES } from './types';
  *
  */
 function generateAllFiles() {
-  const numberOfTestSplits = 96;
+  const numberOfTestSplits = 7;
 
   // Validate the FHE types
   validateFHETypes(ALL_FHE_TYPES);
@@ -46,7 +46,7 @@ function generateAllFiles() {
     writeFileSync(`contracts/operations/FHEVMTestSuite${os.shardNumber}.sol`, generateSolidityUnitTestContracts(os));
   });
 
-  const tsSplits: string[] = generateTypeScriptTestCode(overloadShards, numberOfTestSplits);
+  const tsSplits: string[] = generateTypeScriptTestCode(overloadShards, numberOfTestSplits - 1);
   tsSplits.forEach((split, splitIdx) => writeFileSync(`test/fhevmOperations/fhevmOperations${splitIdx + 1}.ts`, split));
 }
 

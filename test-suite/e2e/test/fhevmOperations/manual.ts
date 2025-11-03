@@ -7,7 +7,7 @@ import { getSigner } from '../signers';
 import { bigIntToBytes256 } from '../utils';
 
 async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
-  const admin = await getSigner(119);
+  const admin = await getSigner(7);
 
   const contractFactory = await ethers.getContractFactory('FHEVMManualTestSuite');
   const contract = await contractFactory.connect(admin).deploy();
@@ -18,7 +18,7 @@ async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
 
 describe('FHEVM manual operations', function () {
   beforeEach(async function () {
-    this.signer = await getSigner(119);
+    this.signer = await getSigner(7);
 
     const contract = await deployFHEVMManualTestFixture();
     this.contractAddress = await contract.getAddress();

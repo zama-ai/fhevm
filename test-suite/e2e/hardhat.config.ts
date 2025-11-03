@@ -5,7 +5,7 @@ import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 
-const NUM_ACCOUNTS = 120;
+const NUM_ACCOUNTS = 8;
 
 task('compile:specific', 'Compiles only the specified contract')
   .addParam('contract', "The contract's path")
