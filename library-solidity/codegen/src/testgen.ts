@@ -284,20 +284,20 @@ function generateIntroTestCode(
 function generateIntroTestCodeUserDecrypt(
   shards: OverloadShard[],
   idxSplit: number,
-  imports: TypescriptTestGroupImports,
+  typescriptImports: TypescriptTestGroupImports,
 ): string {
   const intro: string[] = [];
   intro.push(`
     import { expect } from 'chai';
     import { ethers } from 'hardhat';
     import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-    import { createInstances, decrypt8, decrypt16, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '${imports.instance}';
-    import { getSigners, initSigners } from '${imports.signers}';
+    import { createInstances, decrypt8, decrypt16, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '${typescriptImports.instance}';
+    import { getSigners, initSigners } from '${typescriptImports.signers}';
 
   `);
   shards.forEach((os) => {
     intro.push(`
-  import type { FHEVMTestSuite${os.shardNumber} } from '${imports.typechain}/contracts/tests/FHEVMTestSuite${os.shardNumber}';
+  import type { FHEVMTestSuite${os.shardNumber} } from '${typescriptImports.typechain}/FHEVMTestSuite${os.shardNumber}';
   `);
   });
 
@@ -311,7 +311,7 @@ async function deployFHEVMTestFixture${os.shardNumber}(): Promise<FHEVMTestSuite
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
-  return contract;
+  return contract as unknown as FHEVMTestSuite${os.shardNumber};
 }
     `);
   });
@@ -357,7 +357,7 @@ function generateIntroTestCodePublicDecrypt(
   `);
   shards.forEach((os) => {
     intro.push(`
-  import type { FHEVMTestSuite${os.shardNumber} } from '${imports.typechain}/contracts/tests/FHEVMTestSuite${os.shardNumber}';
+  import type { FHEVMTestSuite${os.shardNumber} } from '${imports.typechain}/FHEVMTestSuite${os.shardNumber}';
   `);
   });
 

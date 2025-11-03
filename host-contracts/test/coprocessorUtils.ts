@@ -570,7 +570,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       try {
         await getClearText(BigInt(handle));
       } catch {
-        throw Error('User input was not found in DB');
+        throw Error(`User input handle was not found in DB: ${handle}`);
       }
       break;
 

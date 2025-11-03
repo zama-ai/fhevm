@@ -6,8 +6,38 @@ import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, TaskArguments } from 'hardhat/types';
 import path from 'path';
 
-import { InputVerifier, KMSVerifier } from '../types';
 import { getRequiredEnvVar } from './utils/loadVariables';
+
+////////////////////////////////////////////////////////////////////////////////
+// All Host Contracts
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployAllHostContracts').setAction(async function (_, hre) {
+  if (process.env.SOLIDITY_COVERAGE !== 'true') {
+    await hre.run('clean');
+  }
+
+  await hre.run('task:deployEmptyUUPSProxies');
+  await hre.run('compile:specific', { contract: 'contracts/immutable' });
+  await hre.run('task:deployPauserSet');
+
+  // The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
+  // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
+  // used.
+  await hre.run('compile:specific', { contract: 'contracts' });
+
+  await hre.run('task:deployACL');
+  await hre.run('task:deployFHEVMExecutor');
+  await hre.run('task:deployKMSVerifier');
+  await hre.run('task:deployInputVerifier');
+  await hre.run('task:deployHCULimit');
+
+  console.log('Contract deployment done!');
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// UUPS
+////////////////////////////////////////////////////////////////////////////////
 
 async function deployEmptyUUPSForACL(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
   console.log('Deploying an EmptyUUPSProxyACL proxy contract...');
@@ -45,64 +75,33 @@ task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: Tas
   // Ensure the addresses directory exists
   fs.mkdirSync(path.join(__dirname, '../addresses'), { recursive: true });
 
+  // Set ACL Address
   const aclAddress = await deployEmptyUUPSForACL(ethers, upgrades, deployer);
   await run('task:setACLAddress', { address: aclAddress });
 
   // Compile the EmptyUUPS proxy contract for other contracts
   await run('compile:specific', { contract: 'contracts/emptyProxy' });
 
+  // Set FHEVMExecutor Address
   const fhevmExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setFHEVMExecutorAddress', { address: fhevmExecutorAddress });
 
+  // Set KMSVerifier Address
   const kmsVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setKMSVerifierAddress', { address: kmsVerifierAddress });
 
+  // Set InputVerifier Address
   const inputVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setInputVerifierAddress', { address: inputVerifierAddress });
 
+  // Set HCULimit Address
   const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run('task:setHCULimitAddress', { address: HCULimitAddress });
 });
 
-task('task:deployDecryptionOracle').setAction(async function (_, { ethers, upgrades }) {
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const factory = await ethers.getContractFactory('DecryptionOracle', deployer);
-  const decryptionOracle = await upgrades.deployProxy(factory, [deployer.address], {
-    initializer: 'initialize',
-    kind: 'uups',
-  });
-  await decryptionOracle.waitForDeployment();
-  const proxyAddress = await decryptionOracle.getAddress();
-  console.log('DecryptionOracle code set successfully at address:', proxyAddress);
-  // Ensure the addresses/ directory exists or create it
-  fs.mkdirSync('./addresses', { recursive: true });
-  const envFilePath = path.join(__dirname, '../addresses/.env.decryptionoracle');
-  const content = `DECRYPTION_ORACLE_ADDRESS=${proxyAddress}`;
-  try {
-    fs.writeFileSync(envFilePath, content, { flag: 'w' });
-    console.log('decryptionOracleAddress written to addresses/.env.decryptionoracle successfully!');
-  } catch (err) {
-    console.error('Failed to write to addresses/.env.decryptionoracle:', err);
-  }
-
-  const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
-address constant decryptionOracleAdd = ${proxyAddress};
-`;
-
-  try {
-    fs.writeFileSync('./addresses/DecryptionOracleAddress.sol', solidityTemplate, {
-      encoding: 'utf8',
-      flag: 'w',
-    });
-    console.log('addresses/DecryptionOracleAddress.sol file has been generated successfully.');
-  } catch (error) {
-    console.error('Failed to write addresses/DecryptionOracleAddress.sol', error);
-  }
-});
+////////////////////////////////////////////////////////////////////////////////
+// ACL
+////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployACL').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
@@ -118,6 +117,10 @@ task('task:deployACL').setAction(async function (taskArguments: TaskArguments, {
   console.log('ACL code set successfully at address:', proxyAddress);
 });
 
+////////////////////////////////////////////////////////////////////////////////
+// FHEVMExecutor
+////////////////////////////////////////////////////////////////////////////////
+
 task('task:deployFHEVMExecutor').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
@@ -129,6 +132,10 @@ task('task:deployFHEVMExecutor').setAction(async function (taskArguments: TaskAr
   await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: 'initializeFromEmptyProxy' } });
   console.log('FHEVMExecutor code set successfully at address:', proxyAddress);
 });
+
+////////////////////////////////////////////////////////////////////////////////
+// KMSVerifier
+////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployKMSVerifier')
   .addOptionalParam(
@@ -173,6 +180,10 @@ task('task:deployKMSVerifier')
     );
     console.log('Threshold for KMSVerifier is:', initialThreshold);
   });
+
+////////////////////////////////////////////////////////////////////////////////
+// InputVerifier
+////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployInputVerifier')
   .addOptionalParam(
@@ -220,6 +231,10 @@ task('task:deployInputVerifier')
     console.log('Threshold for InputVerifier is:', initialThreshold);
   });
 
+////////////////////////////////////////////////////////////////////////////////
+// HCULimit
+////////////////////////////////////////////////////////////////////////////////
+
 task('task:deployHCULimit').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
@@ -232,71 +247,28 @@ task('task:deployHCULimit').setAction(async function (taskArguments: TaskArgumen
   console.log('HCULimit code set successfully at address:', proxyAddress);
 });
 
-task('task:getKmsSigners')
-  .addOptionalParam(
-    'customKmsVerifierAddress',
-    'Use a custom address for the KMSVerifier contract instead of the default one - ie stored inside .env.host',
-  )
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const factory = await ethers.getContractFactory('./contracts/KMSVerifier.sol:KMSVerifier');
-    let kmsAdd;
-    if (taskArguments.customKmsVerifierAddress) {
-      kmsAdd = taskArguments.customKmsVerifierAddress;
-    } else {
-      kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).KMS_VERIFIER_CONTRACT_ADDRESS;
-    }
-    const kmsVerifier = factory.attach(kmsAdd).connect(ethers.provider) as KMSVerifier;
-    const listCurrentKMSSigners = await kmsVerifier.getKmsSigners();
-    console.log('The list of current KMS Signers stored inside KMSVerifier contract is: ', listCurrentKMSSigners);
+////////////////////////////////////////////////////////////////////////////////
+// PauserSet
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployPauserSet').setAction(async function (_, hre) {
+  // Get a deployer wallet
+  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+
+  console.log('Deploying PauserSet...');
+  const pauserSetFactory = await hre.ethers.getContractFactory('PauserSet', deployer);
+  const pauserSet = await pauserSetFactory.deploy();
+  const pauserSetAddress = await pauserSet.getAddress();
+
+  await hre.run('task:setPauserSetAddress', {
+    address: pauserSetAddress,
   });
+});
 
-task('task:getCoprocessorSigners')
-  .addOptionalParam(
-    'customInputVerifierAddress',
-    'Use a custom address for the InputVerifier contract instead of the default one - ie stored inside .env.host',
-  )
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const factory = await ethers.getContractFactory('./contracts/InputVerifier.sol:InputVerifier');
-    let inputVerifierAdd;
-    if (taskArguments.customInputVerifierAddress) {
-      inputVerifierAdd = taskArguments.customInputVerifierAddress;
-    } else {
-      inputVerifierAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).INPUT_VERIFIER_CONTRACT_ADDRESS;
-    }
-    const inputVerifier = factory.attach(inputVerifierAdd).connect(ethers.provider) as InputVerifier;
-    const listCurrentCoprocessorSigners = await inputVerifier.getCoprocessorSigners();
-    console.log(
-      'The list of current Coprocessor Signers stored inside InputVerifier contract is: ',
-      listCurrentCoprocessorSigners,
-    );
-  });
-
-task('task:setDecryptionOracleAddress')
-  .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const envFilePath = path.join(__dirname, '../addresses/.env.decryptionoracle');
-    const content = `DECRYPTION_ORACLE_ADDRESS=${taskArguments.address}`;
-    try {
-      fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.log('DecryptionOracle address written to addresses/.env.decryptionoracle successfully!');
-    } catch (err) {
-      console.error('Failed to write to addresses/.env.decryptionoracle:', err);
-    }
-
-    const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
-
-pragma solidity ^0.8.24;
-
-address constant decryptionOracleAdd = ${taskArguments.address};
-`;
-
-    try {
-      fs.writeFileSync('./addresses/DecryptionOracleAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
-      console.log('addresses/DecryptionOracleAddress.sol file has been generated successfully.');
-    } catch (error) {
-      console.error('Failed to write addresses/DecryptionOracleAddress.sol', error);
-    }
-  });
+////////////////////////////////////////////////////////////////////////////////
+// Setup ACL Address
+////////////////////////////////////////////////////////////////////////////////
 
 task('task:setACLAddress')
   .addParam('address', 'The address of the contract')
@@ -324,6 +296,10 @@ address constant aclAdd = ${taskArguments.address};\n`;
     }
   });
 
+////////////////////////////////////////////////////////////////////////////////
+// Setup FHEVMExecutor Address
+////////////////////////////////////////////////////////////////////////////////
+
 task('task:setFHEVMExecutorAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
@@ -347,6 +323,10 @@ address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
     }
   });
 
+////////////////////////////////////////////////////////////////////////////////
+// Setup KMSVerifier Address
+////////////////////////////////////////////////////////////////////////////////
+
 task('task:setKMSVerifierAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
@@ -369,6 +349,10 @@ address constant kmsVerifierAdd = ${taskArguments.address};\n`;
       console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
     }
   });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup InputVerifier Address
+////////////////////////////////////////////////////////////////////////////////
 
 task('task:setInputVerifierAddress')
   .addParam('address', 'The address of the contract')
@@ -394,6 +378,10 @@ address constant inputVerifierAdd = ${taskArguments.address};\n`;
     }
   });
 
+////////////////////////////////////////////////////////////////////////////////
+// Setup HCULimit Address
+////////////////////////////////////////////////////////////////////////////////
+
 task('task:setHCULimitAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
@@ -417,6 +405,10 @@ address constant hcuLimitAdd = ${taskArguments.address};\n`;
     }
   });
 
+////////////////////////////////////////////////////////////////////////////////
+// Setup PauserSet Address
+////////////////////////////////////////////////////////////////////////////////
+
 task('task:setPauserSetAddress')
   .addParam('address', 'The address of the contract')
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
@@ -439,44 +431,3 @@ address constant pauserSetAdd = ${taskArguments.address};\n`;
       console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
     }
   });
-
-// Deploy the PauserSet contract
-task('task:deployPauserSet').setAction(async function (_, hre) {
-  // Get a deployer wallet
-  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
-
-  console.log('Deploying PauserSet...');
-  const pauserSetFactory = await hre.ethers.getContractFactory('PauserSet', deployer);
-  const pauserSet = await pauserSetFactory.deploy();
-  const pauserSetAddress = await pauserSet.getAddress();
-
-  await hre.run('task:setPauserSetAddress', {
-    address: pauserSetAddress,
-  });
-});
-
-task('task:deployAllHostContracts').setAction(async function (_, hre) {
-  if (process.env.SOLIDITY_COVERAGE !== 'true') {
-    await hre.run('clean');
-  }
-
-  await hre.run('task:deployEmptyUUPSProxies');
-  await hre.run('compile:specific', { contract: 'contracts/immutable' });
-  await hre.run('task:deployPauserSet');
-
-  // The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
-  // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be
-  // used.
-  await hre.run('compile:specific', { contract: 'contracts' });
-  await hre.run('compile:specific', { contract: 'decryptionOracle' });
-
-  await hre.run('task:deployACL');
-  await hre.run('task:deployFHEVMExecutor');
-  await hre.run('task:deployKMSVerifier');
-  await hre.run('task:deployInputVerifier');
-  await hre.run('task:deployHCULimit');
-  await hre.run('task:deployDecryptionOracle');
-
-  console.log('Contract deployment done!');
-});

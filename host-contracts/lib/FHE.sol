@@ -19,34 +19,13 @@ interface IKMSVerifier {
 }
 
 /**
- * @title IDecryptionOracle
- * @notice This interface contains the only function required from DecryptionOracle.
- */
-interface IDecryptionOracle {
-    function requestDecryption(
-        uint256 requestID,
-        bytes32[] calldata ctsHandles,
-        bytes4 callbackSelector
-    ) external payable;
-}
-
-/**
  * @title   FHE
  * @notice  This library is the interaction point for all smart contract developers
  *          that interact with the FHEVM protocol.
  */
 library FHE {
-    /// @notice Returned if some handles were already saved for corresponding ID.
-    error HandlesAlreadySavedForRequestID();
-
-    /// @notice Returned if there was not handle found for the requested ID.
-    error NoHandleFoundForRequestID();
-
     /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
-
-    /// @notice This event is emitted when requested decryption has been fulfilled.
-    event DecryptionFulfilled(uint256 indexed requestID);
 
     /**
      * @notice                  Sets the coprocessor addresses.
@@ -8936,108 +8915,22 @@ library FHE {
         return Impl.isPubliclyDecryptable(euint256.unwrap(value));
     }
 
-    /**
-     * @dev Recovers the stored array of handles corresponding to requestID.
-     */
-    function loadRequestedHandles(uint256 requestID) internal view returns (bytes32[] memory) {
-        DecryptionRequests storage $ = Impl.getDecryptionRequests();
-        if ($.requestedHandles[requestID].length == 0) {
-            revert NoHandleFoundForRequestID();
+    /// @notice Checks if the `handle` can be decrypted in the given context (`user`, `contractAddress`).
+    /// @param handle The handle as a bytes32.
+    /// @param user The account address that is part of the user decryption context.
+    /// @param contractAddress The address of the contract that is part of the user decryption context.
+    /// @return False if `user` has not (user, contractAddress) context.
+    function isUserDecryptable(bytes32 handle, address user, address contractAddress) internal view returns (bool) {
+        if (user == contractAddress) {
+            return false;
         }
-        return $.requestedHandles[requestID];
-    }
-
-    /**
-     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles.
-     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
-     */
-    function requestDecryptionWithoutSavingHandles(
-        bytes32[] memory ctsHandles,
-        bytes4 callbackSelector
-    ) internal returns (uint256 requestID) {
-        requestID = requestDecryptionWithoutSavingHandles(ctsHandles, callbackSelector, 0);
-    }
-
-    /**
-     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles, with a custom msgValue.
-     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
-     */
-    function requestDecryptionWithoutSavingHandles(
-        bytes32[] memory ctsHandles,
-        bytes4 callbackSelector,
-        uint256 msgValue
-    ) internal returns (uint256 requestID) {
-        DecryptionRequests storage $ = Impl.getDecryptionRequests();
-        requestID = $.counterRequest;
-        CoprocessorConfig storage $$ = Impl.getCoprocessorConfig();
-        IACL($$.ACLAddress).allowForDecryption(ctsHandles);
-        IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption{value: msgValue}(
-            requestID,
-            ctsHandles,
-            callbackSelector
-        );
-        $.counterRequest++;
-    }
-
-    /**
-     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles.
-     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
-     */
-    function requestDecryption(
-        bytes32[] memory ctsHandles,
-        bytes4 callbackSelector
-    ) internal returns (uint256 requestID) {
-        requestID = requestDecryption(ctsHandles, callbackSelector, 0);
-    }
-
-    /**
-     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles, with a custom msgValue.
-     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
-     */
-    function requestDecryption(
-        bytes32[] memory ctsHandles,
-        bytes4 callbackSelector,
-        uint256 msgValue
-    ) internal returns (uint256 requestID) {
-        requestID = requestDecryptionWithoutSavingHandles(ctsHandles, callbackSelector, msgValue);
-        _saveRequestedHandles(requestID, ctsHandles);
-    }
-
-    /**
-     * @dev     MUST be called inside the callback function the dApp contract to verify the signatures,
-     * @dev     otherwise fake decryption results could be submitted.
-     * @notice  Warning: MUST be called directly in the callback function called by the relayer.
-     */
-    function checkSignatures(uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) internal {
-        bytes32[] memory handlesList = loadRequestedHandles(requestID);
-        bool isVerified = verifySignatures(handlesList, cleartexts, decryptionProof);
-        if (!isVerified) {
-            revert InvalidKMSSignatures();
-        }
-        emit DecryptionFulfilled(requestID);
-    }
-
-    /**
-     * @dev Private low-level function used to link in storage an array of handles to its associated requestID.
-     */
-    function _saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
-        DecryptionRequests storage $ = Impl.getDecryptionRequests();
-        if ($.requestedHandles[requestID].length != 0) {
-            revert HandlesAlreadySavedForRequestID();
-        }
-        $.requestedHandles[requestID] = handlesList;
+        return Impl.persistAllowed(handle, user) && Impl.persistAllowed(handle, contractAddress);
     }
 
     /**
      * @dev Internal low-level function used to verify the KMS signatures.
-     * @notice Prefer using the higher-level `checkSignatures` function whenever possible, in combination with `requestDecryption`
-     * @notice This low-level function is useful in combination with the less practical `requestDecryptionWithoutSavingHandles`
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
      * @notice Warning: this function never reverts, its boolean return value must be checked.
-     * @dev The callback function has the following signature:
-     * @dev   - requestID (static uint256)
-     * @dev   - cleartexts (dynamic bytes)
-     * @dev   - decryptionProof (dynamic bytes)
      * @dev clearTexts is the abi-encoding of the list of all decrypted values assiociated to handlesList, in same order.
      * @dev Only static native solidity types for clear values are supported, so clearTexts is the concatenation of all clear values appended to 32 bytes.
      * @dev decryptionProof contains KMS signatures corresponding to clearTexts and associated handlesList, and needed metadata for KMS context.
