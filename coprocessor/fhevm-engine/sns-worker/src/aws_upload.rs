@@ -1,5 +1,6 @@
 use crate::{
-    BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, UploadJob,
+    BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, TaskStatus,
+    UploadJob,
 };
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::head_bucket::HeadBucketError;
@@ -486,6 +487,7 @@ async fn fetch_pending_uploads(
                 ct128: Arc::new(ct128),
                 otel: telemetry::tracer_with_handle("recovery_task", handle, &transaction_id),
                 transaction_id,
+                status: TaskStatus::default(),
             };
 
             // Instruct the uploader to acquire DB lock when processing the item
