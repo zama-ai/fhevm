@@ -68,22 +68,6 @@ library FHE {
     $${ACLFunctions}$$
     //$$ -----------------------------------------------------------------------
 
-    /// @notice Checks if the `handle` can be decrypted in the given context (`user`, `contractAddress`).
-    /// @param handle The handle as a bytes32.
-    /// @param user The account address that is part of the user decryption context.
-    /// @param contractAddress The address of the contract that is part of the user decryption context.
-    /// @return False if `user` has not (user, contractAddress) context.
-    function isUserDecryptable(
-        bytes32 handle,
-        address user,
-        address contractAddress
-    ) internal view returns (bool) {
-        if (user == contractAddress) {
-            return false;
-        }
-        return Impl.persistAllowed(handle, user) && Impl.persistAllowed(handle, contractAddress);
-    }
-
     /**
      * @dev Internal low-level function used to verify the KMS signatures.
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
