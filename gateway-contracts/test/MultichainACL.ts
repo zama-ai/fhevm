@@ -507,6 +507,23 @@ describe("MultichainACL", function () {
         .withArgs(tooLowDelegationCounter);
     });
 
+    it("Should revert because the hostChainId is not registered in the GatewayConfig contract", async function () {
+      await expect(
+        multichainACL
+          .connect(coprocessorTxSenders[0])
+          .delegateUserDecryption(
+            fakeHostChainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate,
+          ),
+      )
+        .revertedWithCustomError(multichainACL, "HostChainNotRegistered")
+        .withArgs(fakeHostChainId);
+    });
+
     it("Should be false because the user decryption is not delegated", async function () {
       expect(await multichainACL.isUserDecryptionDelegated(hostChainId, delegator, delegate, contractAddress)).to.be
         .false;
@@ -825,6 +842,23 @@ describe("MultichainACL", function () {
       )
         .revertedWithCustomError(multichainACL, "UserDecryptionDelegationCounterTooLow")
         .withArgs(revokeDelegationCounter);
+    });
+
+    it("Should revert because the hostChainId is not registered in the GatewayConfig contract", async function () {
+      await expect(
+        multichainACL
+          .connect(coprocessorTxSenders[0])
+          .revokeUserDecryptionDelegation(
+            fakeHostChainId,
+            delegator,
+            delegate,
+            contractAddress,
+            revokeDelegationCounter,
+            expirationDate,
+          ),
+      )
+        .revertedWithCustomError(multichainACL, "HostChainNotRegistered")
+        .withArgs(fakeHostChainId);
     });
 
     it("Should be true because the user decryption is delegated", async function () {
