@@ -85,37 +85,56 @@ export class Step08PauserSetWrapper extends BaseStep {
             }
         }
 
-        if (ctx.config.options.auto_verify_contracts) {
-            await withRetry(
-                () =>
-                    ctx.hardhat.runTask({
-                        pkg: this.pkgName,
-                        task: "task:verifyPauserSetWrapper",
-                        args: [
-                            "--address",
-                            wrapperAddress,
-                            "--network",
-                            ethereum.name,
-                        ],
-                        env: baseEnv,
-                    }),
-                {
-                    maxAttempts: 3,
-                    initialDelayMs: 10000,
-                    onRetry: (attempt) => {
-                        ctx.logger.warn(
-                            `PauserSetWrapper verification failed, retrying (attempt ${attempt}/3)...`,
-                        );
-                    },
-                },
-            );
-            ctx.logger.success(`Verified PauserSetWrapper on ${ethereum.name}`);
-        }
-
         return {
             addresses: {
                 PAUSER_SET_WRAPPER: wrapperAddress,
             },
         };
+    }
+
+    protected async verifyDeployments(
+        ctx: DeploymentContext,
+        result: StepExecutionResult & {
+            addresses: { PAUSER_SET_WRAPPER: string };
+        },
+    ): Promise<void> {
+        const ethereum = ctx.networks.getEthereum();
+        const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const zamaToken = ctx.env.getAddress("ZAMA_TOKEN");
+        const pauserSetAddress = ctx.env.getAddress("PAUSER_SET_HOST");
+        const wrapperAddress = result.addresses.PAUSER_SET_WRAPPER;
+
+        const baseEnv = ctx.env.buildTaskEnv({
+            PRIVATE_KEY: protocolPk,
+            SEPOLIA_RPC_URL: ethereum.rpcUrl,
+            CONTRACT_TARGET: zamaToken,
+            FUNCTION_SIGNATURE: "pauseMinting()",
+            PAUSER_SET: pauserSetAddress,
+        });
+
+        await withRetry(
+            () =>
+                ctx.hardhat.runTask({
+                    pkg: this.pkgName,
+                    task: "task:verifyPauserSetWrapper",
+                    args: [
+                        "--address",
+                        wrapperAddress,
+                        "--network",
+                        ethereum.name,
+                    ],
+                    env: baseEnv,
+                }),
+            {
+                maxAttempts: 3,
+                initialDelayMs: 10000,
+                onRetry: (attempt) => {
+                    ctx.logger.warn(
+                        `PauserSetWrapper verification failed, retrying (attempt ${attempt}/3)...`,
+                    );
+                },
+            },
+        );
+        ctx.logger.success(`Verified PauserSetWrapper on ${ethereum.name}`);
     }
 }

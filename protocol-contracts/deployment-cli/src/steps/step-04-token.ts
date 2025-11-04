@@ -1,5 +1,8 @@
+import path from "node:path";
+import { execa } from "execa";
 import { ValidationError } from "../utils/errors.js";
 import { resolveProjectRoot } from "../utils/project-paths.js";
+import { withRetry } from "../utils/retry.js";
 import { TaskOutputReader } from "../utils/task-output-reader.js";
 import {
     BaseStep,
@@ -73,13 +76,7 @@ export class Step04TokenDeployment extends BaseStep {
         const presetName = ctx.networks.getSelectedEnvironment();
 
         // Run the orchestrated token deployment task
-        const args = [
-            "--preset",
-            presetName,
-            ...(ctx.config.options.auto_verify_contracts
-                ? ["--verify", "true"]
-                : []),
-        ];
+        const args = ["--preset", presetName];
         await ctx.hardhat.runTask({
             pkg: this.pkgName,
             task: "deploy:token",
@@ -171,5 +168,109 @@ export class Step04TokenDeployment extends BaseStep {
                 ZAMA_OFT_ADAPTER: zamaOftAdapter,
             },
         };
+    }
+
+    protected async verifyDeployments(ctx: DeploymentContext): Promise<void> {
+        const ethereum = ctx.networks.getEthereum();
+        const gateway = ctx.networks.getGateway();
+        const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const daoAddress = ctx.env.getAddress("DAO_ADDRESS");
+        const safeAddress = ctx.env.getAddress("SAFE_ADDRESS");
+
+        const baseEnv = ctx.env.buildTaskEnv({
+            PRIVATE_KEY: protocolPk,
+            INITIAL_ADMIN: ctx.config.wallets.protocol_deployer.address,
+            SEPOLIA_RPC_URL: ethereum.rpcUrl,
+            RPC_URL_ZAMA_GATEWAY_TESTNET: gateway.rpcUrl,
+            DAO_ADDRESS: daoAddress,
+            SAFE_ADDRESS: safeAddress,
+            ETHERSCAN_API: ethereum.explorerApiKey,
+            BLOCKSCOUT_API: gateway.blockscoutApiUrl,
+        });
+
+        const networkEnvironment = ctx.networks.getSelectedEnvironment();
+        const pkgDir = path.join(resolveProjectRoot(), this.pkgName);
+        const pkgManager = this.getPackageManager();
+
+        const ethereumVerifyScript = this.getVerificationScriptName(
+            networkEnvironment,
+            "ethereum",
+        );
+        const gatewayVerifyScript = this.getVerificationScriptName(
+            networkEnvironment,
+            "gateway",
+        );
+
+        ctx.logger.info("Verifying token contracts on block explorers...");
+        ctx.logger.info(
+            `Verifying ZamaERC20 and ZamaOFTAdapter on ${ethereum.name}...`,
+        );
+        await withRetry(
+            async () => {
+                await execa(pkgManager, ["run", ethereumVerifyScript], {
+                    cwd: pkgDir,
+                    env: baseEnv,
+                    stdio: ["inherit", "inherit", "inherit"],
+                });
+            },
+            {
+                maxAttempts: 3,
+                initialDelayMs: 10000,
+                onRetry: (attempt) => {
+                    ctx.logger.warn(
+                        `Token contracts verification on ${ethereum.name} failed, retrying (attempt ${attempt}/3)...`,
+                    );
+                },
+            },
+        );
+        ctx.logger.success(
+            `Verified ZamaERC20 and ZamaOFTAdapter on ${ethereum.name}`,
+        );
+
+        // Verify ZamaOFT on Gateway
+        ctx.logger.info(`Verifying ZamaOFT on ${gateway.name}...`);
+        await withRetry(
+            async () => {
+                await execa(pkgManager, ["run", gatewayVerifyScript], {
+                    cwd: pkgDir,
+                    env: baseEnv,
+                    stdio: ["inherit", "inherit", "inherit"],
+                });
+            },
+            {
+                maxAttempts: 3,
+                initialDelayMs: 10000,
+                onRetry: (attempt) => {
+                    ctx.logger.warn(
+                        `ZamaOFT verification on ${gateway.name} failed, retrying (attempt ${attempt}/3)...`,
+                    );
+                },
+            },
+        );
+        ctx.logger.success(`Verified ZamaOFT on ${gateway.name}`);
+    }
+
+    /**
+     * Maps network names to verification script names in package.json
+     * @param networkEnvironment The network environment from config (e.g., "testnet", "mainnet")
+     * @param chainType Either "ethereum" or "gateway"
+     * @returns The verification script name
+     */
+    private getVerificationScriptName(
+        networkEnvironment: "testnet" | "mainnet",
+        chainType: "ethereum" | "gateway",
+    ): string {
+        switch (networkEnvironment) {
+            case "testnet":
+                return chainType === "ethereum"
+                    ? "verify:etherscan:ethereum:sepolia"
+                    : "verify:etherscan:gateway:testnet";
+            case "mainnet":
+                return `verify:etherscan:${chainType}:mainnet`;
+            default:
+                throw new Error(
+                    `Unsupported network environment: ${networkEnvironment}`,
+                );
+        }
     }
 }

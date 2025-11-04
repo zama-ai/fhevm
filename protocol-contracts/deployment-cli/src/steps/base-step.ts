@@ -49,6 +49,10 @@ export abstract class BaseStep implements DeploymentStep {
         const result = await this.execute(ctx, scopedLogger);
         await this.after(ctx, result, scopedLogger);
 
+        if (ctx.config.options.auto_verify_contracts) {
+            await this.verifyDeployments(ctx, result, scopedLogger);
+        }
+
         scopedLogger.success(`Finished ${this.name}`);
         return result;
     }
@@ -116,5 +120,14 @@ export abstract class BaseStep implements DeploymentStep {
                 logger.info(note);
             }
         }
+    }
+
+    protected async verifyDeployments(
+        _ctx: DeploymentContext,
+        _result: StepExecutionResult,
+        logger: Logger,
+    ): Promise<void> {
+        logger.debug(`No contract verification needed for ${this.id}`);
+        return Promise.resolve();
     }
 }

@@ -180,37 +180,51 @@ export class Step06GatewayContracts extends BaseStep {
             ctx.env.recordAddress(key, value, this.id);
         }
 
-        // Verify gateway contracts if auto verification is enabled
-        if (ctx.config.options.auto_verify_contracts) {
-            ctx.logger.info("Verifying gateway contracts...");
-            await withRetry(
-                () =>
-                    ctx.hardhat.runTask({
-                        pkg: this.pkgName,
-                        task: "task:verifyAllGatewayContracts",
-                        args: [
-                            "--network",
-                            gateway.gatewayPkgName,
-                            "--use-internal-proxy-address",
-                            "true",
-                        ],
-                        env: baseEnv,
-                    }),
-                {
-                    maxAttempts: 3,
-                    initialDelayMs: 10000,
-                    onRetry: (attempt) => {
-                        ctx.logger.warn(
-                            `Gateway contracts verification failed, retrying (attempt ${attempt}/3)...`,
-                        );
-                    },
-                },
-            );
-            ctx.logger.info("Gateway contracts verified successfully");
-        }
-
         return {
             addresses: addressMap,
         };
+    }
+
+    protected async verifyDeployments(ctx: DeploymentContext): Promise<void> {
+        const gateway = ctx.networks.getGateway();
+        const deployerPk = ctx.env.resolveWalletPrivateKey("deployer");
+
+        const baseEnvVars: Record<string, string> = {
+            DEPLOYER_PRIVATE_KEY: deployerPk,
+            RPC_URL: gateway.rpcUrl,
+            ZAMA_OFT_ADDRESS: ctx.env.getAddress("ZAMA_OFT"),
+            FEES_SENDER_TO_BURNER_ADDRESS: ctx.env.getAddress(
+                "FEES_SENDER_TO_BURNER",
+            ),
+            PROTOCOL_NAME: ctx.config.protocol.name,
+            PROTOCOL_WEBSITE: ctx.config.protocol.website,
+        };
+
+        const baseEnv = ctx.env.buildTaskEnv(baseEnvVars);
+        ctx.logger.info("Verifying gateway contracts...");
+        await withRetry(
+            () =>
+                ctx.hardhat.runTask({
+                    pkg: this.pkgName,
+                    task: "task:verifyAllGatewayContracts",
+                    args: [
+                        "--network",
+                        gateway.gatewayPkgName,
+                        "--use-internal-proxy-address",
+                        "true",
+                    ],
+                    env: baseEnv,
+                }),
+            {
+                maxAttempts: 3,
+                initialDelayMs: 10000,
+                onRetry: (attempt) => {
+                    ctx.logger.warn(
+                        `Gateway contracts verification failed, retrying (attempt ${attempt}/3)...`,
+                    );
+                },
+            },
+        );
+        ctx.logger.success("Gateway contracts verified successfully");
     }
 }

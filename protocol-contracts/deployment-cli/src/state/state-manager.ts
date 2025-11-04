@@ -39,7 +39,12 @@ export class StateManager {
     ): Promise<StateManager> {
         const { deploymentName, configPath, configHash, steps } = options;
         const projectRoot = resolveProjectRoot();
-        const stateDir = path.resolve(projectRoot, DEFAULT_STATE_DIR);
+        const stateDir = path.resolve(
+            projectRoot,
+            "protocol-contracts",
+            "deployment-cli",
+            DEFAULT_STATE_DIR,
+        );
         fs.mkdirSync(stateDir, { recursive: true });
 
         const stateFileName = `${deploymentName.replace(/[^a-zA-Z0-9-_]/g, "_")}.state.json`;

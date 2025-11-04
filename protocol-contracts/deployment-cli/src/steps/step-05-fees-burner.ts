@@ -76,70 +76,95 @@ export class Step05FeesBurner extends BaseStep {
             "FeesSenderToBurner",
         );
 
-        if (ctx.config.options.auto_verify_contracts) {
-            ctx.logger.info("Verifying contracts on block explorers...");
-
-            await withRetry(
-                () =>
-                    ctx.hardhat.runTask({
-                        pkg: this.pkgName,
-                        task: "task:verifyProtocolFeesBurner",
-                        args: [
-                            "--protocol-fees-burner",
-                            protocolFeesBurner,
-                            "--network",
-                            ethereum.name,
-                        ],
-                        env: baseEnv,
-                    }),
-                {
-                    maxAttempts: 3,
-                    initialDelayMs: 10000,
-                    onRetry: (attempt) => {
-                        ctx.logger.warn(
-                            `ProtocolFeesBurner verification failed, retrying (attempt ${attempt}/3)...`,
-                        );
-                    },
-                },
-            );
-            ctx.logger.info(`Verified ProtocolFeesBurner on ${ethereum.name}`);
-
-            // Reset ETHERSCAN_API_KEY to force usage of BlockScout API
-            baseEnv.ETHERSCAN_API_KEY = "";
-            await withRetry(
-                () =>
-                    ctx.hardhat.runTask({
-                        pkg: this.pkgName,
-                        task: "task:verifyFeesSenderToBurner",
-                        args: [
-                            "--fees-sender-to-burner",
-                            feesSenderToBurner,
-                            "--network",
-                            gateway.name,
-                        ],
-                        env: {
-                            ...baseEnv,
-                            PROTOCOL_FEES_BURNER_ADDRESS: protocolFeesBurner,
-                        },
-                    }),
-                {
-                    maxAttempts: 3,
-                    initialDelayMs: 10000,
-                    onRetry: (attempt) => {
-                        ctx.logger.warn(
-                            `FeesSenderToBurner verification failed, retrying (attempt ${attempt}/3)...`,
-                        );
-                    },
-                },
-            );
-            ctx.logger.info(`Verified FeesSenderToBurner on ${gateway.name}`);
-        }
-
         return {
             addresses: {
                 PROTOCOL_FEES_BURNER: protocolFeesBurner,
                 FEES_SENDER_TO_BURNER: feesSenderToBurner,
             },
         };
+    }
+
+    protected async verifyDeployments(
+        ctx: DeploymentContext,
+        result: StepExecutionResult & {
+            addresses: {
+                PROTOCOL_FEES_BURNER: string;
+                FEES_SENDER_TO_BURNER: string;
+            };
+        },
+    ): Promise<void> {
+        const ethereum = ctx.networks.getEthereum();
+        const gateway = ctx.networks.getGateway();
+        const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const tokenAddress = ctx.env.getAddress("ZAMA_TOKEN");
+        const oftAddress = ctx.env.getAddress("ZAMA_OFT");
+        const protocolFeesBurner = result.addresses.PROTOCOL_FEES_BURNER;
+        const feesSenderToBurner = result.addresses.FEES_SENDER_TO_BURNER;
+
+        const baseEnv = ctx.env.buildTaskEnv({
+            PRIVATE_KEY: protocolPk,
+            SEPOLIA_RPC_URL: ethereum.rpcUrl,
+            RPC_URL_ZAMA_GATEWAY_TESTNET: gateway.rpcUrl,
+            ZAMA_ERC20_ADDRESS: tokenAddress,
+            ZAMA_OFT_ADDRESS: oftAddress,
+            ETHERSCAN_API: ethereum.explorerApiKey,
+        });
+
+        ctx.logger.info("Verifying contracts on block explorers...");
+
+        await withRetry(
+            () =>
+                ctx.hardhat.runTask({
+                    pkg: this.pkgName,
+                    task: "task:verifyProtocolFeesBurner",
+                    args: [
+                        "--protocol-fees-burner",
+                        protocolFeesBurner,
+                        "--network",
+                        ethereum.name,
+                    ],
+                    env: baseEnv,
+                }),
+            {
+                maxAttempts: 3,
+                initialDelayMs: 10000,
+                onRetry: (attempt) => {
+                    ctx.logger.warn(
+                        `ProtocolFeesBurner verification failed, retrying (attempt ${attempt}/3)...`,
+                    );
+                },
+            },
+        );
+        ctx.logger.success(`Verified ProtocolFeesBurner on ${ethereum.name}`);
+
+        // Reset ETHERSCAN_API_KEY to force usage of BlockScout API
+        baseEnv.ETHERSCAN_API_KEY = "";
+        await withRetry(
+            () =>
+                ctx.hardhat.runTask({
+                    pkg: this.pkgName,
+                    task: "task:verifyFeesSenderToBurner",
+                    args: [
+                        "--fees-sender-to-burner",
+                        feesSenderToBurner,
+                        "--network",
+                        gateway.name,
+                    ],
+                    env: {
+                        ...baseEnv,
+                        PROTOCOL_FEES_BURNER_ADDRESS: protocolFeesBurner,
+                    },
+                }),
+            {
+                maxAttempts: 3,
+                initialDelayMs: 10000,
+                onRetry: (attempt) => {
+                    ctx.logger.warn(
+                        `FeesSenderToBurner verification failed, retrying (attempt ${attempt}/3)...`,
+                    );
+                },
+            },
+        );
+        ctx.logger.success(`Verified FeesSenderToBurner on ${gateway.name}`);
     }
 }

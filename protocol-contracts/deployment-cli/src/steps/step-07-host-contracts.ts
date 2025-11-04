@@ -138,34 +138,50 @@ export class Step07HostContracts extends BaseStep {
             ctx.env.recordAddress(key, value, this.id);
         }
 
-        // Verify host contracts if auto verification is enabled
-        if (ctx.config.options.auto_verify_contracts) {
-            ctx.logger.info("Verifying host contracts...");
-            try {
-                await ctx.hardhat.runTask({
-                    pkg: this.pkgName,
-                    task: "task:verifyAllHostContracts",
-                    args: [
-                        "--network",
-                        ethereum.hostPkgName,
-                        "--use-internal-proxy-address",
-                        "true",
-                    ],
-                    env: baseEnv,
-                });
-                ctx.logger.success("Host contracts verified successfully");
-            } catch (error) {
-                ctx.logger.warn(
-                    "Host contracts verification failed (this may be acceptable if already verified)",
-                );
-                ctx.logger.error(
-                    error instanceof Error ? error.message : String(error),
-                );
-            }
-        }
-
         return {
             addresses: addressMap,
         };
+    }
+
+    protected async verifyDeployments(ctx: DeploymentContext): Promise<void> {
+        const ethereum = ctx.networks.getEthereum();
+        const gateway = ctx.networks.getGateway();
+        const deployerPk = ctx.env.resolveWalletPrivateKey("deployer");
+
+        const gatewayProvider = new ethers.JsonRpcProvider(gateway.rpcUrl);
+        const gatewayNetwork = await gatewayProvider.getNetwork();
+        const gatewayChainId = gatewayNetwork.chainId;
+
+        const baseEnvVars: Record<string, string> = {
+            DEPLOYER_PRIVATE_KEY: deployerPk,
+            RPC_URL: ethereum.rpcUrl,
+            CHAIN_ID_GATEWAY: gatewayChainId.toString(),
+            DECRYPTION_ADDRESS: ctx.env.getAddress("DECRYPTION"),
+            INPUT_VERIFICATION_ADDRESS:
+                ctx.env.getAddress("INPUT_VERIFICATION"),
+        };
+        const baseEnv = ctx.env.buildTaskEnv(baseEnvVars);
+        ctx.logger.info("Verifying host contracts...");
+        try {
+            await ctx.hardhat.runTask({
+                pkg: this.pkgName,
+                task: "task:verifyAllHostContracts",
+                args: [
+                    "--network",
+                    ethereum.hostPkgName,
+                    "--use-internal-proxy-address",
+                    "true",
+                ],
+                env: baseEnv,
+            });
+            ctx.logger.success("Host contracts verified successfully");
+        } catch (error) {
+            ctx.logger.warn(
+                "Host contracts verification failed (this may be acceptable if already verified)",
+            );
+            ctx.logger.error(
+                error instanceof Error ? error.message : String(error),
+            );
+        }
     }
 }

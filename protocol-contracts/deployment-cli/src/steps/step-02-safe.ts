@@ -118,44 +118,6 @@ export class Step02Safe extends BaseStep {
             ctx.logger.success(`Deployed AdminModule at ${adminModuleAddress}`);
         }
 
-        // Step 3: Verify contracts if auto verification is enabled
-        if (ctx.config.options.auto_verify_contracts) {
-            ctx.logger.info("Verifying Safe contracts...");
-            try {
-                await ctx.hardhat.runTask({
-                    pkg: this.pkgName,
-                    task: "task:verifySafe",
-                    args: ["--network", gateway.name],
-                    env: baseEnv,
-                });
-                ctx.logger.success("Safe contracts verified successfully");
-            } catch (_error) {
-                ctx.logger.warn(
-                    "Safe verification failed (this may be acceptable if already verified)",
-                );
-            }
-
-            ctx.logger.info("Verifying AdminModule...");
-            try {
-                const verifyEnv = ctx.env.buildTaskEnv({
-                    ...baseEnv,
-                    ADMIN_ADDRESS: deployerAddress,
-                    SAFE_ADDRESS: safeAddress,
-                });
-                await ctx.hardhat.runTask({
-                    pkg: this.pkgName,
-                    task: "task:verifyAdminModule",
-                    args: ["--network", gateway.name],
-                    env: verifyEnv,
-                });
-                ctx.logger.success("AdminModule verified successfully");
-            } catch (_error) {
-                ctx.logger.warn(
-                    "AdminModule verification failed (this may be acceptable if already verified)",
-                );
-            }
-        }
-
         return {
             addresses: {
                 SAFE_ADDRESS: safeAddress,
@@ -167,5 +129,55 @@ export class Step02Safe extends BaseStep {
                 "Next: EnableAdminModule in Safe (handled in subsequent governance setup)",
             ],
         };
+    }
+
+    protected async verifyDeployments(
+        ctx: DeploymentContext,
+        result: StepExecutionResult,
+    ): Promise<void> {
+        const gateway = ctx.networks.getGateway();
+        const deployerAddress = ctx.config.wallets.protocol_deployer.address;
+        const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const safeAddress = result.addresses?.SAFE_ADDRESS;
+
+        const baseEnv = ctx.env.buildTaskEnv({
+            PRIVATE_KEY: deployerPk,
+            RPC_URL_ZAMA_GATEWAY_TESTNET: gateway.rpcUrl,
+        });
+
+        ctx.logger.info("Verifying Safe contracts...");
+        try {
+            await ctx.hardhat.runTask({
+                pkg: this.pkgName,
+                task: "task:verifySafe",
+                args: ["--network", gateway.name],
+                env: baseEnv,
+            });
+            ctx.logger.success("Safe contracts verified successfully");
+        } catch (_error) {
+            ctx.logger.warn(
+                "Safe verification failed (this may be acceptable if already verified)",
+            );
+        }
+
+        ctx.logger.info("Verifying AdminModule...");
+        try {
+            const verifyEnv = ctx.env.buildTaskEnv({
+                ...baseEnv,
+                ADMIN_ADDRESS: deployerAddress,
+                SAFE_ADDRESS: safeAddress,
+            });
+            await ctx.hardhat.runTask({
+                pkg: this.pkgName,
+                task: "task:verifyAdminModule",
+                args: ["--network", gateway.name],
+                env: verifyEnv,
+            });
+            ctx.logger.success("AdminModule verified successfully");
+        } catch (_error) {
+            ctx.logger.warn(
+                "AdminModule verification failed (this may be acceptable if already verified)",
+            );
+        }
     }
 }

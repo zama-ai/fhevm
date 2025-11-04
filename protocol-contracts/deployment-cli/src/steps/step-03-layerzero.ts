@@ -40,7 +40,6 @@ export class Step03LayerzeroLink extends BaseStep {
     ): Promise<StepExecutionResult> {
         const ethereumNetwork = ctx.networks.getEthereum();
         const gatewayNetwork = ctx.networks.getGateway();
-        const networkEnvironment = ctx.networks.getSelectedEnvironment();
         const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
         const daoAddress = ctx.env.getAddress("DAO_ADDRESS");
         const safeAddress = ctx.env.getAddress("SAFE_ADDRESS");
@@ -145,84 +144,6 @@ export class Step03LayerzeroLink extends BaseStep {
         });
         ctx.logger.success("Transferred GovernanceOAppSender ownership to DAO");
 
-        // Step 5: Verify contracts if auto verification is enabled
-        if (ctx.config.options.auto_verify_contracts) {
-            ctx.logger.info(
-                "Verifying LayerZero contracts on block explorers...",
-            );
-
-            const pkgDir = path.join(resolveProjectRoot(), this.pkgName);
-            const pkgManager = this.getPackageManager();
-
-            // Determine verification script names based on network names
-            const ethereumVerifyScript = this.getVerificationScriptName(
-                networkEnvironment,
-                "ethereum",
-            );
-            const gatewayVerifyScript = this.getVerificationScriptName(
-                networkEnvironment,
-                "gateway",
-            );
-
-            // Verify GovernanceOAppSender on Ethereum
-            if (ethereumVerifyScript) {
-                await withRetry(
-                    async () => {
-                        await execa(pkgManager, ["run", ethereumVerifyScript], {
-                            cwd: pkgDir,
-                            env: baseEnv,
-                            stdio: ["inherit", "inherit", "inherit"],
-                        });
-                    },
-                    {
-                        maxAttempts: 3,
-                        initialDelayMs: 10000,
-                        onRetry: (attempt) => {
-                            ctx.logger.warn(
-                                `GovernanceOAppSender verification failed, retrying (attempt ${attempt}/3)...`,
-                            );
-                        },
-                    },
-                );
-                ctx.logger.success(
-                    `Verified GovernanceOAppSender on ${ethereumNetwork.name}`,
-                );
-            } else {
-                ctx.logger.warn(
-                    `No verification script found for Ethereum network: ${ethereumNetwork.name}`,
-                );
-            }
-
-            // Verify GovernanceOAppReceiver on Gateway
-            if (gatewayVerifyScript) {
-                await withRetry(
-                    async () => {
-                        await execa(pkgManager, ["run", gatewayVerifyScript], {
-                            cwd: pkgDir,
-                            env: baseEnv,
-                            stdio: ["inherit", "inherit", "inherit"],
-                        });
-                    },
-                    {
-                        maxAttempts: 3,
-                        initialDelayMs: 10000,
-                        onRetry: (attempt) => {
-                            ctx.logger.warn(
-                                `GovernanceOAppReceiver verification failed, retrying (attempt ${attempt}/3)...`,
-                            );
-                        },
-                    },
-                );
-                ctx.logger.success(
-                    `Verified GovernanceOAppReceiver on ${gatewayNetwork.name}`,
-                );
-            } else {
-                ctx.logger.warn(
-                    `No verification script found for Gateway network: ${gatewayNetwork.name}`,
-                );
-            }
-        }
-
         return {
             addresses: {
                 GOVERNANCE_OAPP_SENDER: senderAddress,
@@ -233,6 +154,95 @@ export class Step03LayerzeroLink extends BaseStep {
                 `Run E2E tests manually: cd ${this.pkgName} && npx hardhat test`,
             ],
         };
+    }
+
+    protected async verifyDeployments(ctx: DeploymentContext): Promise<void> {
+        const ethereumNetwork = ctx.networks.getEthereum();
+        const gatewayNetwork = ctx.networks.getGateway();
+        const networkEnvironment = ctx.networks.getSelectedEnvironment();
+        const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const daoAddress = ctx.env.getAddress("DAO_ADDRESS");
+        const safeAddress = ctx.env.getAddress("SAFE_ADDRESS");
+
+        const baseEnv = ctx.env.buildTaskEnv({
+            PRIVATE_KEY: protocolPk,
+            SEPOLIA_RPC_URL: ethereumNetwork.rpcUrl,
+            RPC_URL_ZAMA_GATEWAY_TESTNET: gatewayNetwork.rpcUrl,
+            DAO_ADDRESS: daoAddress,
+            SAFE_ADDRESS: safeAddress,
+            ETHERSCAN_API: ethereumNetwork.explorerApiKey,
+            BLOCKSCOUT_API: gatewayNetwork.blockscoutApiUrl,
+        });
+
+        ctx.logger.info("Verifying LayerZero contracts on block explorers...");
+
+        const pkgDir = path.join(resolveProjectRoot(), this.pkgName);
+        const pkgManager = this.getPackageManager();
+
+        const ethereumVerifyScript = this.getVerificationScriptName(
+            networkEnvironment,
+            "ethereum",
+        );
+        const gatewayVerifyScript = this.getVerificationScriptName(
+            networkEnvironment,
+            "gateway",
+        );
+
+        if (ethereumVerifyScript) {
+            await withRetry(
+                async () => {
+                    await execa(pkgManager, ["run", ethereumVerifyScript], {
+                        cwd: pkgDir,
+                        env: baseEnv,
+                        stdio: ["inherit", "inherit", "inherit"],
+                    });
+                },
+                {
+                    maxAttempts: 3,
+                    initialDelayMs: 10000,
+                    onRetry: (attempt) => {
+                        ctx.logger.warn(
+                            `GovernanceOAppSender verification failed, retrying (attempt ${attempt}/3)...`,
+                        );
+                    },
+                },
+            );
+            ctx.logger.success(
+                `Verified GovernanceOAppSender on ${ethereumNetwork.name}`,
+            );
+        } else {
+            ctx.logger.warn(
+                `No verification script found for Ethereum network: ${ethereumNetwork.name}`,
+            );
+        }
+
+        if (gatewayVerifyScript) {
+            await withRetry(
+                async () => {
+                    await execa(pkgManager, ["run", gatewayVerifyScript], {
+                        cwd: pkgDir,
+                        env: baseEnv,
+                        stdio: ["inherit", "inherit", "inherit"],
+                    });
+                },
+                {
+                    maxAttempts: 3,
+                    initialDelayMs: 10000,
+                    onRetry: (attempt) => {
+                        ctx.logger.warn(
+                            `GovernanceOAppReceiver verification failed, retrying (attempt ${attempt}/3)...`,
+                        );
+                    },
+                },
+            );
+            ctx.logger.success(
+                `Verified GovernanceOAppReceiver on ${gatewayNetwork.name}`,
+            );
+        } else {
+            ctx.logger.warn(
+                `No verification script found for Gateway network: ${gatewayNetwork.name}`,
+            );
+        }
     }
 
     /**
