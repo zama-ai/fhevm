@@ -52,7 +52,7 @@ jobs:
         run: npm run compile
 
       - name: Publish prerelease to npm
-        if: ${{ inputs.release != 'true' }}
+        if: ${{ inputs.release != true }}
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
           package: ./host-contracts/package.json
@@ -62,7 +62,7 @@ jobs:
           access: public
 
       - name: Publish release to npm
-        if: ${{ inputs.release == 'true' }}
+        if: ${{ inputs.release == true }}
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
           package: ./host-contracts/package.json
