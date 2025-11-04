@@ -144,6 +144,81 @@ export const userDecryptSingleHandle = async (
   return decryptedValue;
 };
 
+export const delegatedUserDecryptSingleHandle = async (params: {
+  instance: any;
+  handle: string;
+  contractAddress: string;
+  delegate: Signer;
+  delegatorAddress: string;
+  delegateKmsPrivateKey: string;
+  delegateKmsPublicKey: string;
+}): Promise<bigint | boolean | string> => {
+  const HandleContractPairs = [
+    {
+      handle: params.handle,
+      contractAddress: params.contractAddress,
+    },
+  ];
+  const startTimeStamp = Math.floor(Date.now() / 1000).toString();
+  const durationDays = '10'; // String for consistency
+  const contractAddresses = [params.contractAddress];
+  const instance = params.instance;
+  const delegate = params.delegate;
+  const delegateAddress = await delegate.getAddress();
+
+  // The `delegate` creates a EIP712 with the `delegator` address
+  const eip712 = instance.createEIP712(
+    params.delegateKmsPublicKey,
+    contractAddresses,
+    startTimeStamp,
+    durationDays,
+    // ============================================
+    // Todo: uncomment this line when ready!
+    //
+    // params.delegatorAddress,
+    //
+    // ============================================
+  );
+
+  // Update the signing to match the new primaryType
+  const delegateSignature = await delegate.signTypedData(
+    eip712.domain,
+    {
+      // ============================================
+      // Todo: uncomment this line when ready!
+      //
+      // DelegatedUserDecryptRequestVerification: eip712.types.DelegatedUserDecryptRequestVerification,
+      //
+      // ============================================
+      //
+      // Remove This line when ready!
+      UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
+      //
+      // ============================================
+    },
+    eip712.message,
+  );
+
+  // ========================================================
+  //
+  // Todo: Call the delegate user decrypt function instead!
+  //
+  // ========================================================
+  const result = await instance.userDecrypt(
+    HandleContractPairs,
+    params.delegateKmsPrivateKey,
+    params.delegateKmsPublicKey,
+    delegateSignature.replace('0x', ''),
+    contractAddresses,
+    delegateAddress,
+    startTimeStamp,
+    durationDays,
+  );
+
+  const decryptedValue = result[params.handle];
+  return decryptedValue;
+};
+
 const abi = [
   'event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result)',
   'event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result)',

@@ -42,7 +42,7 @@ describe('Rand', function () {
   });
 
   it('8 bits generate and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate8();
       await txn.wait();
@@ -57,7 +57,7 @@ describe('Rand', function () {
   });
 
   it('8 bits generate with upper bound and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate8UpperBound(128);
       await txn.wait();
@@ -72,7 +72,7 @@ describe('Rand', function () {
   });
 
   it('16 bits generate and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     let has16bit: boolean = false;
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate16();
@@ -93,7 +93,7 @@ describe('Rand', function () {
   });
 
   it('16 bits generate with upper bound and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate16UpperBound(8192);
       await txn.wait();
@@ -108,7 +108,7 @@ describe('Rand', function () {
   });
 
   it('32 bits generate and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     let has32bit: boolean = false;
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate32();
@@ -129,7 +129,7 @@ describe('Rand', function () {
   });
 
   it('32 bits generate with upper bound and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate32UpperBound(262144);
       await txn.wait();
@@ -256,7 +256,7 @@ describe('Rand', function () {
     if (network.name === 'hardhat') {
       // snapshots are only possible in hardhat node, i.e in mocked mode
       this.snapshotId = await ethers.provider.send('evm_snapshot');
-      const values: number[] = [];
+      const values: bigint[] = [];
       for (let i = 0; i < 5; i++) {
         const txn = await this.rand.generate8();
         await txn.wait();
@@ -272,7 +272,7 @@ describe('Rand', function () {
       await ethers.provider.send('evm_revert', [this.snapshotId]);
       this.snapshotId = await ethers.provider.send('evm_snapshot');
 
-      const values2: number[] = [];
+      const values2: bigint[] = [];
       for (let i = 0; i < 5; i++) {
         const txn = await this.rand.generate8();
         await txn.wait();
@@ -286,7 +286,7 @@ describe('Rand', function () {
       expect(unique2.size).to.be.greaterThanOrEqual(2);
 
       await ethers.provider.send('evm_revert', [this.snapshotId]);
-      const values3: number[] = [];
+      const values3: bigint[] = [];
       let has16bit: boolean = false;
       for (let i = 0; i < 5; i++) {
         const txn = await this.rand.generate16();

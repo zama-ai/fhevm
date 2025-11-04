@@ -9,7 +9,6 @@ library DefaultCoprocessorConfig {
             CoprocessorConfig({
                 ACLAddress: 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c,
                 CoprocessorAddress: 0xcCAe95fF1d11656358E782570dF0418F59fA40e1,
-                DecryptionOracleAddress: 0xD0fA6194Db6cfCDF733c64F1F272AeA66e968D3C,
                 KMSVerifierAddress: 0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11
             });
     }

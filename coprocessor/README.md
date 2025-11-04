@@ -234,9 +234,9 @@ Options:
       --allow-handle-batch-limit <ALLOW_HANDLE_BATCH_LIMIT>
           [default: 10]
       --allow-handle-max-retries <ALLOW_HANDLE_MAX_RETRIES>
-          [default: 4294967295]
+          [default: 2147483647]
       --add-ciphertexts-max-retries <ADD_CIPHERTEXTS_MAX_RETRIES>
-          [default: 4294967295]
+          [default: 2147483647]
       --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
           [default: 1]
       --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>

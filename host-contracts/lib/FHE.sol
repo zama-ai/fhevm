@@ -19,34 +19,13 @@ interface IKMSVerifier {
 }
 
 /**
- * @title IDecryptionOracle
- * @notice This interface contains the only function required from DecryptionOracle.
- */
-interface IDecryptionOracle {
-    function requestDecryption(
-        uint256 requestID,
-        bytes32[] calldata ctsHandles,
-        bytes4 callbackSelector
-    ) external payable;
-}
-
-/**
  * @title   FHE
  * @notice  This library is the interaction point for all smart contract developers
  *          that interact with the FHEVM protocol.
  */
 library FHE {
-    /// @notice Returned if some handles were already saved for corresponding ID.
-    error HandlesAlreadySavedForRequestID();
-
-    /// @notice Returned if there was not handle found for the requested ID.
-    error NoHandleFoundForRequestID();
-
     /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
-
-    /// @notice This event is emitted when requested decryption has been fulfilled.
-    event DecryptionFulfilled(uint256 indexed requestID);
 
     /**
      * @notice                  Sets the coprocessor addresses.
@@ -8971,12 +8950,12 @@ library FHE {
         return Impl.isDelegatedForUserDecryption(delegator, delegate, contractAddress, handle);
     }
 
-    /// @notice Delegates the user decryption rights that the caller (`msg.sender`) holds in the context
+    /// @notice Delegates the user decryption rights that caller contract (`address(this)`) holds in the context
     ///         of the given `contractAddress` to a new `delegate` account for a limited amount of time.
     /// @dev The ACL grants user decryption permission based on a (User, Contract) pair. If the pair
-    ///      (`msg.sender`, `contractAddress`) has permission to decrypt a handle, calling this function grants
+    ///      (`address(this)`, `contractAddress`) has permission to decrypt a handle, calling this function grants
     ///      the temporary permission to the new pair (`delegate`, `contractAddress`) to decrypt the same handle.
-    /// @param delegate The account that will request a user decryption on behalf of delegator (`msg.sender`).
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`address(this)`).
     /// @param contractAddress The address of the contract that is part of the user decryption context.
     /// @param expirationDate UNIX timestamp when the delegation expires.
     ///
@@ -8992,19 +8971,19 @@ library FHE {
     ///        Reverts with an {IACL-ExpirationDateAlreadySetToSameValue} error otherwise.
     ///
     ///      - at most one delegate OR revoke per block for this
-    ///        (msg.sender, delegate, contractAddress) tuple to avoid racey
+    ///        (address(this), delegate, contractAddress) tuple to avoid racey
     ///        state updates.
     ///        Reverts with an {IACL-AlreadyDelegatedOrRevokedInSameBlock} error
     ///        if a delegate OR revoke operation already occurred in the current
     ///        block. See {canDelegateOrRevokeNow}
     ///
-    ///      - The `contractAddress` cannot be the sender (`msg.sender`).
+    ///      - The `contractAddress` cannot be the caller contract (`address(this)`).
     ///        Reverts with an {IACL-SenderCannotBeContractAddress} error if
-    ///        `contractAddress == msg.sender`.
+    ///        `contractAddress == address(this)`.
     ///
-    ///      - The `delegate` address cannot be the sender (`msg.sender`).
+    ///      - The `delegate` address cannot be the caller contract (`address(this)`).
     ///        Reverts with an {IACL-SenderCannotBeDelegate} error if
-    ///        `delegate == msg.sender`.
+    ///        `delegate == address(this)`.
     ///
     ///      - The `delegate` address cannot be the `contractAddress`.
     ///        Reverts with an {IACL-DelegateCannotBeContractAddress} error if
@@ -9013,21 +8992,21 @@ library FHE {
         Impl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
     }
 
-    /// @notice Permanently delegates the user decryption rights that the caller (`msg.sender`) holds in the
+    /// @notice Permanently delegates the user decryption rights that the caller contract (`address(this)`) holds in the
     ///         context of the given `contractAddress` to a new `delegate` account.
     /// @dev This is the version without expiration of {delegateUserDecryption}. The permission remains active until explicitly
     ///      revoked by the delegator using {revokeUserDecryptionDelegation}.
-    /// @param delegate The account that will request a user decryption on behalf of delegator (`msg.sender`).
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`address(this)`).
     /// @param contractAddress The address of the contract that is part of the user decryption context.
     function delegateUserDecryptionWithoutExpiration(address delegate, address contractAddress) internal {
         Impl.delegateForUserDecryption(delegate, contractAddress, type(uint64).max);
     }
 
-    /// @notice Batch delegates the user decryption rights that the caller (`msg.sender`) holds in the context of the
+    /// @notice Batch delegates the user decryption rights that the caller contract (`address(this)`) holds in the context of the
     ///         given `contractAddresses[i]` to a new `delegate` account for a limited amount of time.
-    /// @param delegate The account that will request a user decryption on behalf of delegator (`msg.sender`).
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`address(this)`)..
     /// @param contractAddresses The array of contract addresses that form the user decryption context tuples
-    ///                          (`msg.sender`, `contractAddresses[i]`).
+    ///                          (`address(this)`, `contractAddresses[i]`).
     /// @param expirationDate UNIX timestamp when the delegation expires.
     function delegateUserDecryptions(
         address delegate,
@@ -9037,25 +9016,25 @@ library FHE {
         Impl.delegateForUserDecryptions(delegate, contractAddresses, expirationDate);
     }
 
-    /// @notice Batch delegates user decryption rights without expiration that the caller (`msg.sender`) holds in the context of
+    /// @notice Batch delegates user decryption rights without expiration that the caller contract (`address(this)`) holds in the context of
     ///         the given `contractAddresses[i]` to a new `delegate` account.
-    /// @param delegate The account that will request a user decryption on behalf of delegator (`msg.sender`).
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`address(this)`)..
     /// @param contractAddresses The array of contract addresses that form the user decryption context tuples
-    ///                          (`msg.sender`, `contractAddresses[i]`).
+    ///                          (`address(this)`, `contractAddresses[i]`).
     function delegateUserDecryptionsWithoutExpiration(address delegate, address[] memory contractAddresses) internal {
         Impl.delegateForUserDecryptions(delegate, contractAddresses, type(uint64).max);
     }
 
-    /// @notice Revoke an existing delegation from delegator `msg.sender` to a (delegate, contractAddress) user
+    /// @notice Revoke an existing delegation from delegator `address(this)` to a (delegate, contractAddress) user
     ///         decryption context.
-    /// @param delegate The account that was authorized to request user decryptions on behalf of `msg.sender`
+    /// @param delegate The account that was authorized to request user decryptions on behalf of the caller contract `address(this)`
     /// @param contractAddress The address of the contract that is part of the user decryption context
     /// @dev Requirements:
     ///      - the ACL contract must not be paused.
     ///        Reverts with an {PausableUpgradeable-EnforcedPause} error otherwise.
     ///
     ///      - at most one delegate OR revoke per block for this
-    ///        (msg.sender, delegate, contractAddress) tuple to avoid racey
+    ///        (address(this), delegate, contractAddress) tuple to avoid racey
     ///        state updates.
     ///        Reverts with an {IACL-AlreadyDelegatedOrRevokedInSameBlock} error
     ///        if a delegate OR revoke operation already occurred in the current
@@ -9068,131 +9047,35 @@ library FHE {
         Impl.revokeDelegationForUserDecryption(delegate, contractAddress);
     }
 
-    /// @notice Batch revoke existing delegations from delegator `msg.sender` to the given
+    /// @notice Batch revoke existing delegations from delegator `address(this)` to the given
     ///         (delegate, contractAddresses[i]) pairs.
-    /// @param delegate The account that was authorized to request user decryptions on behalf of `msg.sender`
+    /// @param delegate The account that was authorized to request user decryptions on behalf of the caller contract `address(this)`
     /// @param contractAddresses The array of contract addresses that form the user decryption context tuples
-    ///                          (`msg.sender`, `contractAddresses[i]`).
+    ///                          (`address(this)`, `contractAddresses[i]`).
     function revokeUserDecryptionDelegations(address delegate, address[] memory contractAddresses) internal {
         Impl.revokeDelegationsForUserDecryption(delegate, contractAddresses);
     }
 
-    /// @notice Get the expiry date of the delegation from delegator `msg.sender` to a (delegate, contractAddress) pair.
-    /// @param delegate The account authorized to request user decryptions on behalf of `msg.sender`
+    /// @notice Get the expiry date of the delegation from delegator to a (delegate, contractAddress) pair.
+    /// @param delegator The delegator address
+    /// @param delegate The account authorized to request user decryptions on behalf of delegator
     /// @param contractAddress The address of the contract that is part of the user decryption context
     /// @return expirationDate The delegation's expiration limit, which can be one of:
     ///         - 0 :  If no delegation is currently active for the (delegate, contractAddress) context.
     ///         - type(uint64).max : If the delegation is permanent (no expiry).
     ///         - A strictly positive UNIX timestamp when this delegation expires.
     function getDelegatedUserDecryptionExpirationDate(
+        address delegator,
         address delegate,
         address contractAddress
     ) internal view returns (uint64 expirationDate) {
-        expirationDate = Impl.getUserDecryptionDelegationExpirationDate(msg.sender, delegate, contractAddress);
-    }
-
-    /**
-     * @dev Recovers the stored array of handles corresponding to requestID.
-     */
-    function loadRequestedHandles(uint256 requestID) internal view returns (bytes32[] memory) {
-        DecryptionRequests storage $ = Impl.getDecryptionRequests();
-        if ($.requestedHandles[requestID].length == 0) {
-            revert NoHandleFoundForRequestID();
-        }
-        return $.requestedHandles[requestID];
-    }
-
-    /**
-     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles.
-     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
-     */
-    function requestDecryptionWithoutSavingHandles(
-        bytes32[] memory ctsHandles,
-        bytes4 callbackSelector
-    ) internal returns (uint256 requestID) {
-        requestID = requestDecryptionWithoutSavingHandles(ctsHandles, callbackSelector, 0);
-    }
-
-    /**
-     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles, with a custom msgValue.
-     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
-     */
-    function requestDecryptionWithoutSavingHandles(
-        bytes32[] memory ctsHandles,
-        bytes4 callbackSelector,
-        uint256 msgValue
-    ) internal returns (uint256 requestID) {
-        DecryptionRequests storage $ = Impl.getDecryptionRequests();
-        requestID = $.counterRequest;
-        CoprocessorConfig storage $$ = Impl.getCoprocessorConfig();
-        IACL($$.ACLAddress).allowForDecryption(ctsHandles);
-        IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption{value: msgValue}(
-            requestID,
-            ctsHandles,
-            callbackSelector
-        );
-        $.counterRequest++;
-    }
-
-    /**
-     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles.
-     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
-     */
-    function requestDecryption(
-        bytes32[] memory ctsHandles,
-        bytes4 callbackSelector
-    ) internal returns (uint256 requestID) {
-        requestID = requestDecryption(ctsHandles, callbackSelector, 0);
-    }
-
-    /**
-     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles, with a custom msgValue.
-     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
-     */
-    function requestDecryption(
-        bytes32[] memory ctsHandles,
-        bytes4 callbackSelector,
-        uint256 msgValue
-    ) internal returns (uint256 requestID) {
-        requestID = requestDecryptionWithoutSavingHandles(ctsHandles, callbackSelector, msgValue);
-        _saveRequestedHandles(requestID, ctsHandles);
-    }
-
-    /**
-     * @dev     MUST be called inside the callback function the dApp contract to verify the signatures,
-     * @dev     otherwise fake decryption results could be submitted.
-     * @notice  Warning: MUST be called directly in the callback function called by the relayer.
-     */
-    function checkSignatures(uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) internal {
-        bytes32[] memory handlesList = loadRequestedHandles(requestID);
-        bool isVerified = verifySignatures(handlesList, cleartexts, decryptionProof);
-        if (!isVerified) {
-            revert InvalidKMSSignatures();
-        }
-        emit DecryptionFulfilled(requestID);
-    }
-
-    /**
-     * @dev Private low-level function used to link in storage an array of handles to its associated requestID.
-     */
-    function _saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
-        DecryptionRequests storage $ = Impl.getDecryptionRequests();
-        if ($.requestedHandles[requestID].length != 0) {
-            revert HandlesAlreadySavedForRequestID();
-        }
-        $.requestedHandles[requestID] = handlesList;
+        expirationDate = Impl.getUserDecryptionDelegationExpirationDate(delegator, delegate, contractAddress);
     }
 
     /**
      * @dev Internal low-level function used to verify the KMS signatures.
-     * @notice Prefer using the higher-level `checkSignatures` function whenever possible, in combination with `requestDecryption`
-     * @notice This low-level function is useful in combination with the less practical `requestDecryptionWithoutSavingHandles`
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
      * @notice Warning: this function never reverts, its boolean return value must be checked.
-     * @dev The callback function has the following signature:
-     * @dev   - requestID (static uint256)
-     * @dev   - cleartexts (dynamic bytes)
-     * @dev   - decryptionProof (dynamic bytes)
      * @dev clearTexts is the abi-encoding of the list of all decrypted values assiociated to handlesList, in same order.
      * @dev Only static native solidity types for clear values are supported, so clearTexts is the concatenation of all clear values appended to 32 bytes.
      * @dev decryptionProof contains KMS signatures corresponding to clearTexts and associated handlesList, and needed metadata for KMS context.

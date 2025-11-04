@@ -28,7 +28,7 @@ Our confidential token will inherit from several key contracts:
 
 1. **`ERC7984`** - OpenZeppelin's base for confidential tokens
 2. **`Ownable2Step`** - Access control for minting and administrative functions
-3. **`SepoliaConfig`** - FHE configuration for the Sepolia testnet
+3. **`EthereumConfig`** - FHE configuration for the Ethereum mainnet or Ethereum Sepolia testnet networks
 
 ## The base smart contract
 
@@ -52,10 +52,10 @@ pragma solidity ^0.8.24;
 
 import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {FHE, externalEuint64, euint64} from "@fhevm/solidity/lib/FHE.sol";
-import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import {EthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {ERC7984} from "@openzeppelin/confidential-contracts/token/ERC7984.sol";
 
-contract ERC7984Example is SepoliaConfig, ERC7984, Ownable2Step {
+contract ERC7984Example is EthereumConfig, ERC7984, Ownable2Step {
     constructor(
         address owner,
         uint64 amount,

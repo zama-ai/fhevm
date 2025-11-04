@@ -163,7 +163,13 @@ async function getDeployedAddress(network: string, contractName: string): Promis
  * Checks that required environment variables are set
  */
 function checkEnvVariables(preset?: string) {
-    const baseRequired = ['PRIVATE_KEY', 'INITIAL_SUPPLY_RECEIVER', 'INITIAL_ADMIN']
+    const baseRequired = [
+        'PRIVATE_KEY',
+        'INITIAL_RECEIVER_0',
+        'INITIAL_AMOUNT_0',
+        'NUM_INITIAL_RECEIVERS',
+        'INITIAL_ADMIN',
+    ]
 
     // Add network-specific RPC URL requirements based on preset
     const required = [...baseRequired]

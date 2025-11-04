@@ -67,8 +67,7 @@ This is essential for fraud-proof mechanisms and eventual slashing of malicious 
 Coprocessors assist in:
 
 - Bridging encrypted values between host chains by generating new handles and signatures.
-- Preparing ciphertexts for public and user decryption using operations like Switch-n-Squash to normalize ciphertexts\
-  for the KMS.
+- Preparing ciphertexts for public and user decryption using operations like Switch-n-Squash to normalize ciphertexts for the KMS.
 
 These roles help maintain cross-chain interoperability and enable privacy-preserving data access for users and smart contracts .
 
@@ -91,5 +90,4 @@ The coprocessor architecture includes:
 - Worker threads that process tasks in parallel
 - A public storage layer (e.g., S3) for ciphertext availability
 
-This modular setup supports horizontal scaling: adding more workers or machines increases throughput. Symbolic\
-computation and delayed execution also ensure low gas costs on-chain .
+This modular setup supports horizontal scaling: adding more workers or machines increases throughput. Symbolic computation and delayed execution also ensure low gas costs on-chain .
