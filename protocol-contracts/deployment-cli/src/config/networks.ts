@@ -9,6 +9,7 @@ export interface NetworkInfo {
     readonly explorerApiKey?: string;
     readonly hostPkgName?: string; // Network name used by host-contracts package for Hardhat tasks
     readonly gatewayPkgName?: string; // Network name used by gateway-contracts package for Hardhat tasks
+    readonly blockscoutApiUrl?: string; // Blockscout API URL for contract verification
 }
 
 interface EnvironmentNetworks {
@@ -27,6 +28,7 @@ interface EnvironmentNetworks {
         chain_id: number;
         explorer_url?: string;
         etherscan_api_key?: string;
+        blockscout_api_url?: string;
     };
     layerzero_config: string;
 }
@@ -35,10 +37,13 @@ export class NetworkRegistry {
     private readonly ethereum: NetworkInfo & { hostPkgName: string };
     private readonly gateway: NetworkInfo & { gatewayPkgName: string };
     private readonly layerzeroConfig: string;
-    private readonly selectedEnvironment: string;
+    private readonly selectedEnvironment: "testnet" | "mainnet";
     private readonly allEnvironments: readonly string[];
 
-    constructor(config: DeploymentConfig, selectedEnvironment: string) {
+    constructor(
+        config: DeploymentConfig,
+        selectedEnvironment: "testnet" | "mainnet",
+    ) {
         const networksList = Object.entries(config.networks);
         this.allEnvironments = networksList.map(([key]) => key);
 
@@ -95,7 +100,7 @@ export class NetworkRegistry {
         return this.gateway;
     }
 
-    public getSelectedEnvironment(): string {
+    public getSelectedEnvironment(): "testnet" | "mainnet" {
         return this.selectedEnvironment;
     }
 

@@ -62,7 +62,7 @@ export class DeploymentOrchestrator {
 
     public static async create(
         logger: Logger,
-        options: { networkEnvironment: string },
+        options: { networkEnvironment: "testnet" | "mainnet" },
     ): Promise<DeploymentOrchestrator> {
         const rootPath = resolveProjectRoot();
         const resolvedConfigPath = path.resolve(

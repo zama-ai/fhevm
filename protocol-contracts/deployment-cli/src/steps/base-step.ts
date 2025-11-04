@@ -62,13 +62,7 @@ export abstract class BaseStep implements DeploymentStep {
 
         logger.info(`Installing npm dependencies for ${this.pkgName}...`);
         try {
-            // Get either pnpm-lock.yaml or package-lock.json to decide which package manager to use
-            const pnpmLockFile = path.join(
-                resolveProjectRoot(),
-                this.pkgName,
-                "pnpm-lock.yaml",
-            );
-            const pkgManager = fs.existsSync(pnpmLockFile) ? "pnpm" : "npm";
+            const pkgManager = this.getPackageManager();
             await execa(pkgManager, ["install"], {
                 cwd: path.join(resolveProjectRoot(), this.pkgName),
                 stdio: ["pipe", "inherit", "inherit"],
@@ -79,6 +73,18 @@ export abstract class BaseStep implements DeploymentStep {
                 `Failed to install ${this.pkgName} dependencies: ${error}`,
             );
         }
+    }
+
+    protected getPackageManager(): "pnpm" | "npm" {
+        if (!this.pkgName) {
+            throw new Error("This step has no associated package");
+        }
+        const pnpmLockFile = path.join(
+            resolveProjectRoot(),
+            this.pkgName,
+            "pnpm-lock.yaml",
+        );
+        return fs.existsSync(pnpmLockFile) ? "pnpm" : "npm";
     }
 
     protected async validate(

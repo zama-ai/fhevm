@@ -48,7 +48,7 @@ export async function runCLI(): Promise<void> {
             }) => {
                 const stepIds = getDeploymentSteps().map((s) => s.id);
                 const schema = z.object({
-                    network: z.string().min(1),
+                    network: z.enum(["testnet", "mainnet"]),
                     resume: z.boolean().default(true),
                     step: z
                         .string()
@@ -82,7 +82,7 @@ export async function runCLI(): Promise<void> {
         )
         .action(async (opts: { network: string }) => {
             const schema = z.object({
-                network: z.string().min(1),
+                network: z.enum(["testnet", "mainnet"]),
             });
             const { network } = parseWithSchema(schema, opts);
             const logger = new Logger({ scope: "status" });
