@@ -84,7 +84,9 @@ where
         tasks.spawn(self.clone().subscribe_to_prss_init());
         tasks.spawn(self.subscribe_to_key_reshare_same_set());
 
-        tasks.join_all().await;
+        // If any of the subscription tasks are finished, this means the `GatewayListener` is
+        // "broken" and should be exited. Thus, we only join the first task of the `JoinSet`.
+        tasks.join_next().await;
     }
 
     /// Subscribes to a particular set of events.
@@ -130,7 +132,7 @@ where
                     EVENT_RECEIVED_ERRORS.inc();
                     continue;
                 }
-                None => break error!("Alloy Provider was dropped"),
+                None => break error!("Alloy Provider was dropped for {event_name}"),
             };
             EVENT_RECEIVED_COUNTER.inc();
 
@@ -248,155 +250,151 @@ mod tests {
             },
             mock::Asserter,
         },
+        rpc::json_rpc::ErrorPayload,
     };
     use anyhow::Result;
-    use connector_utils::types::{GatewayEvent, GatewayEventKind};
+    use connector_utils::{
+        tests::setup::TestInstance,
+        types::{GatewayEvent, GatewayEventKind},
+    };
     use fhevm_gateway_bindings::{
         decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
         kms_generation::KMSGeneration::{
             CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
         },
     };
-    use tracing_test::traced_test;
 
     #[rstest::rstest]
     #[timeout(Duration::from_secs(5))]
     #[tokio::test]
-    #[traced_test]
     async fn test_public_decryption_requests_subscription() {
-        let (asserter, gw_listener) = test_setup().await;
+        let (mut test_instance, asserter, gw_listener) = test_setup().await;
 
         // Used to mock a new event
         let rpc_event_log = mock_rpc_event_log(PublicDecryptionRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
         tokio::spawn(gw_listener.subscribe_to_public_decryption_requests());
-        loop {
-            if logs_contain("PublicDecryptionRequest published!") {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
+        test_instance
+            .wait_for_log("PublicDecryptionRequest published!")
+            .await;
     }
 
     #[rstest::rstest]
     #[timeout(Duration::from_secs(5))]
     #[tokio::test]
-    #[traced_test]
     async fn test_user_decryption_requests_subscription() {
-        let (asserter, gw_listener) = test_setup().await;
+        let (mut test_instance, asserter, gw_listener) = test_setup().await;
 
         // Used to mock a new event
         let rpc_event_log = mock_rpc_event_log(UserDecryptionRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
         tokio::spawn(gw_listener.subscribe_to_user_decryption_requests());
-        loop {
-            if logs_contain("UserDecryptionRequest published!") {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
+        test_instance
+            .wait_for_log("UserDecryptionRequest published!")
+            .await;
     }
 
     #[rstest::rstest]
     #[timeout(Duration::from_secs(5))]
     #[tokio::test]
-    #[traced_test]
     async fn test_prep_keygen_requests_subscription() {
-        let (asserter, gw_listener) = test_setup().await;
+        let (mut test_instance, asserter, gw_listener) = test_setup().await;
 
         // Used to mock a new event
         let rpc_event_log = mock_rpc_event_log(PrepKeygenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
         tokio::spawn(gw_listener.subscribe_to_prep_keygen_requests());
-        loop {
-            if logs_contain("PrepKeygenRequest published!") {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
+        test_instance
+            .wait_for_log("PrepKeygenRequest published!")
+            .await;
     }
 
     #[rstest::rstest]
     #[timeout(Duration::from_secs(5))]
     #[tokio::test]
-    #[traced_test]
     async fn test_keygen_requests_subscription() {
-        let (asserter, gw_listener) = test_setup().await;
+        let (mut test_instance, asserter, gw_listener) = test_setup().await;
 
         // Used to mock a new event
         let rpc_event_log = mock_rpc_event_log(KeygenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
         tokio::spawn(gw_listener.subscribe_to_keygen_requests());
-        loop {
-            if logs_contain("KeygenRequest published!") {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
+        test_instance.wait_for_log("KeygenRequest published!").await;
     }
 
     #[rstest::rstest]
     #[timeout(Duration::from_secs(5))]
     #[tokio::test]
-    #[traced_test]
     async fn test_crsgen_requests_subscription() {
-        let (asserter, gw_listener) = test_setup().await;
+        let (mut test_instance, asserter, gw_listener) = test_setup().await;
 
         // Used to mock a new event
         let rpc_event_log = mock_rpc_event_log(CrsgenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
         tokio::spawn(gw_listener.subscribe_to_crsgen_requests());
-        loop {
-            if logs_contain("CrsgenRequest published!") {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
+        test_instance.wait_for_log("CrsgenRequest published!").await;
     }
 
     #[rstest::rstest]
     #[timeout(Duration::from_secs(5))]
     #[tokio::test]
-    #[traced_test]
     async fn test_prss_init_subscription() {
-        let (asserter, gw_listener) = test_setup().await;
+        let (mut test_instance, asserter, gw_listener) = test_setup().await;
 
         // Used to mock a new event
         let rpc_event_log = mock_rpc_event_log(PRSSInit);
         asserter.push_success(&[rpc_event_log]);
 
         tokio::spawn(gw_listener.subscribe_to_prss_init());
-        loop {
-            if logs_contain("PrssInit published!") {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
+        test_instance.wait_for_log("PrssInit published!").await;
     }
 
     #[rstest::rstest]
     #[timeout(Duration::from_secs(5))]
     #[tokio::test]
-    #[traced_test]
     async fn test_key_reshare_same_set_subscription() {
-        let (asserter, gw_listener) = test_setup().await;
+        let (mut test_instance, asserter, gw_listener) = test_setup().await;
 
         // Used to mock a new event
         let rpc_event_log = mock_rpc_event_log(KeyReshareSameSet::default());
         asserter.push_success(&[rpc_event_log]);
 
         tokio::spawn(gw_listener.subscribe_to_key_reshare_same_set());
-        loop {
-            if logs_contain("KeyReshareSameSet published!") {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
+        test_instance
+            .wait_for_log("KeyReshareSameSet published!")
+            .await;
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
+    #[tokio::test]
+    async fn test_reset_filter_stops_listener() {
+        let (_test_instance, asserter, gw_listener) = test_setup().await;
+
+        asserter.push_failure(ErrorPayload {
+            code: -32000,
+            message: "filter not found".into(),
+            data: None,
+        });
+
+        gw_listener.subscribe_to_crsgen_requests().await;
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
+    #[tokio::test]
+    async fn test_listener_ended_by_end_of_any_task() {
+        let (mut test_instance, _asserter, gw_listener) = test_setup().await;
+
+        // Will stop because some subcription tasks will not be able to init their event filter
+        gw_listener.run().await;
+
+        test_instance.wait_for_log("Failed to subscribe to").await;
     }
 
     /// Mock the log generated by the publication of a Gateway event.
@@ -420,7 +418,13 @@ mod tests {
         RootProvider,
     >;
 
-    async fn test_setup() -> (Asserter, GatewayListener<MockProvider, MockPublisher>) {
+    async fn test_setup() -> (
+        TestInstance,
+        Asserter,
+        GatewayListener<MockProvider, MockPublisher>,
+    ) {
+        let test_instance = TestInstance::builder().build();
+
         // Create a mocked `alloy::Provider`
         let asserter = Asserter::new();
         let mock_provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
@@ -430,9 +434,13 @@ mod tests {
         asserter.push_success(&mocked_eth_get_filter_changes_result);
 
         let mock_publisher = MockPublisher::new();
-        let config = Config::default();
+        let config = Config {
+            decryption_polling: Duration::from_millis(500),
+            key_management_polling: Duration::from_millis(500),
+            ..Default::default()
+        };
         let listener = GatewayListener::new(&config, mock_provider, mock_publisher);
-        (asserter, listener)
+        (test_instance, asserter, listener)
     }
 
     #[derive(Clone)]
