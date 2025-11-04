@@ -1,25 +1,25 @@
 {
-  "image": "mcr.microsoft.com/devcontainers/universal:2",
-  "mounts": [
-        "source=command_history,target=/command_history,type=volume",
-        "source=docker_cache,target=/var/lib/docker,type=volume"
-    ],
-  "features": {
-    "ghcr.io/devcontainers/features/rust:1": {
-      "version": "1.91"
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+    // "mounts": [
+    //     "source=command_history,target=/command_history,type=volume",
+    //     "source=docker_cache,target=/var/lib/docker,type=volume"
+    // ],
+    "features": {
+        "ghcr.io/devcontainers/features/rust:1": {
+            "version": "1.91"
+        },
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+        "ghcr.io/devcontainers/features/common-utils:2": {}
     },
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/common-utils:2": {}
-  },
-  "postCreateCommand": "./.devcontainer/post_create_command.sh",
-  "customizations": {
-    "vscode": {
-      "extensions": [
-        "rust-lang.rust-analyzer",
-        "vadimcn.vscode-lldb",
-        "juanblanco.solidity",
-        "eamodio.gitlens"
-      ]
+    "postCreateCommand": "./.devcontainer/post_create_command.sh",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "vadimcn.vscode-lldb",
+                "juanblanco.solidity",
+                "eamodio.gitlens"
+            ]
+        }
     }
-  }
 }
