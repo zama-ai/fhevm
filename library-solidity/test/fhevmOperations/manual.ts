@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { ZeroAddress } from 'ethers';
 import { ethers } from 'hardhat';
 
-import type { FHEVMManualTestSuite } from '../../types/contracts/tests/FHEVMManualTestSuite';
+import type { FHEVMManualTestSuite } from '../../typechain-types/examples/tests/FHEVMManualTestSuite';
 import {
   createInstances,
   decrypt8,
@@ -24,7 +24,7 @@ async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
-  return contract;
+  return contract as unknown as FHEVMManualTestSuite;
 }
 
 describe('FHEVM manual operations', function () {

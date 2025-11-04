@@ -1,3 +1,4 @@
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { assert } from 'chai';
 import { ethers } from 'hardhat';
 
@@ -117,12 +118,12 @@ describe('FHEVM operations 105', function () {
     this.instance = instance;
   });
 
-  it('test operator "and" overload (euint16, euint128) => euint128 test 1 (1223, 340282366920938463463368568459359623553)', async function () {
+  it('test operator "and" overload (euint128, euint8) => euint128 test 1 (340282366920938463463366153576545633403, 8)', async function () {
     const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add16(1223n);
-    input.add128(340282366920938463463368568459359623553n);
+    input.add128(340282366920938463463366153576545633403n);
+    input.add8(8n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract7.and_euint16_euint128(
+    const tx = await this.contract7.and_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
       encryptedAmount.inputProof,
@@ -131,17 +132,17 @@ describe('FHEVM operations 105', function () {
     const handle = await this.contract7.resEuint128();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: 129n,
+      [handle]: 8n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "and" overload (euint16, euint128) => euint128 test 2 (1219, 1223)', async function () {
+  it('test operator "and" overload (euint128, euint8) => euint128 test 2 (4, 8)', async function () {
     const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add16(1219n);
-    input.add128(1223n);
+    input.add128(4n);
+    input.add8(8n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract7.and_euint16_euint128(
+    const tx = await this.contract7.and_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
       encryptedAmount.inputProof,
@@ -150,17 +151,17 @@ describe('FHEVM operations 105', function () {
     const handle = await this.contract7.resEuint128();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: 1219n,
+      [handle]: 0n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "and" overload (euint16, euint128) => euint128 test 3 (1223, 1223)', async function () {
+  it('test operator "and" overload (euint128, euint8) => euint128 test 3 (8, 8)', async function () {
     const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add16(1223n);
-    input.add128(1223n);
+    input.add128(8n);
+    input.add8(8n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract7.and_euint16_euint128(
+    const tx = await this.contract7.and_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
       encryptedAmount.inputProof,
@@ -169,17 +170,17 @@ describe('FHEVM operations 105', function () {
     const handle = await this.contract7.resEuint128();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: 1223n,
+      [handle]: 8n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "and" overload (euint16, euint128) => euint128 test 4 (1223, 1219)', async function () {
+  it('test operator "and" overload (euint128, euint8) => euint128 test 4 (8, 4)', async function () {
     const input = this.instance.createEncryptedInput(this.contract7Address, this.signer.address);
-    input.add16(1223n);
-    input.add128(1219n);
+    input.add128(8n);
+    input.add8(4n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract7.and_euint16_euint128(
+    const tx = await this.contract7.and_euint128_euint8(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
       encryptedAmount.inputProof,
@@ -188,7 +189,7 @@ describe('FHEVM operations 105', function () {
     const handle = await this.contract7.resEuint128();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: 1219n,
+      [handle]: 0n,
     };
     assert.deepEqual(res, expectedRes);
   });

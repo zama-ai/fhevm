@@ -2,13 +2,12 @@
 pragma solidity ^0.8.24;
 
 import "../addresses/FHEVMHostAddresses.sol";
-import "../addresses/DecryptionOracleAddress.sol";
 
 import {CoprocessorConfig} from "./Impl.sol";
 
 /**
  * @title   Coprocessor
- * @notice  This library returns all addresses for the ACL, FHEVMExecutor, DecryptionOracle,
+ * @notice  This library returns all addresses for the ACL, FHEVMExecutor,
  *          and KMSVerifier contracts.
  */
 library CoprocessorSetup {
@@ -21,7 +20,6 @@ library CoprocessorSetup {
             CoprocessorConfig({
                 ACLAddress: aclAdd,
                 CoprocessorAddress: fhevmExecutorAdd,
-                DecryptionOracleAddress: decryptionOracleAdd,
                 KMSVerifierAddress: kmsVerifierAdd
             });
     }

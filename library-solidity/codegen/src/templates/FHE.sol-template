@@ -1,0 +1,100 @@
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+pragma solidity ^0.8.24;
+
+//$$ -----------------------------------------------------------------------
+//$$ -                                                                     
+//$$ -             🚚 Imports Template Placeholder 
+//$$ -                                                                     
+//$$ -----------------------------------------------------------------------
+import "$${ImplDotSol}$$";
+import {FheType} from "$${FheTypeDotSol}$$";
+//$$ -----------------------------------------------------------------------
+
+import "encrypted-types/EncryptedTypes.sol";
+
+/**
+ * @title IKMSVerifier
+ * @notice This interface contains the only function required from KMSVerifier.
+ */
+interface IKMSVerifier {
+    function verifyDecryptionEIP712KMSSignatures(
+        bytes32[] memory handlesList,
+        bytes memory decryptedResult,
+        bytes memory decryptionProof
+    ) external returns (bool);
+}
+
+/**
+ * @title   FHE
+ * @notice  This library is the interaction point for all smart contract developers
+ *          that interact with the FHEVM protocol.
+ */
+library FHE {
+    /// @notice Returned if the returned KMS signatures are not valid.
+    error InvalidKMSSignatures();
+
+    /**
+     * @notice                  Sets the coprocessor addresses.
+     * @param coprocessorConfig Coprocessor config struct that contains contract addresses.
+     */
+    function setCoprocessor(CoprocessorConfig memory coprocessorConfig) internal {
+        Impl.setCoprocessor(coprocessorConfig);
+    }
+
+    //$$ -----------------------------------------------------------------------
+    //$$ -                                                                     
+    //$$ -             🚚 FHE Operators Template Placeholder                   
+    //$$ -                                                                     
+    //$$ -----------------------------------------------------------------------
+    $${FHEOperators}$$
+    //$$ -----------------------------------------------------------------------
+
+    /**
+     * @dev This function cleans the transient storage for the ACL (accounts) and the InputVerifier
+     *      (input proofs).
+     *      This could be useful for integration with Account Abstraction when bundling several
+     *      UserOps calling the FHEVMExecutor.
+     */
+    function cleanTransientStorage() internal {
+        Impl.cleanTransientStorageACL();
+        Impl.cleanTransientStorageInputVerifier();
+    }
+
+    //$$ -----------------------------------------------------------------------
+    //$$ -                                                                     
+    //$$ -          🚚 ACL Allow Functions Template Placeholder                   
+    //$$ -                                                                     
+    //$$ -----------------------------------------------------------------------
+    $${ACLFunctions}$$
+    //$$ -----------------------------------------------------------------------
+
+    /**
+     * @dev Internal low-level function used to verify the KMS signatures.
+     * @notice  Warning: MUST be called directly in the callback function called by the relayer.
+     * @notice Warning: this function never reverts, its boolean return value must be checked.
+     * @dev clearTexts is the abi-encoding of the list of all decrypted values assiociated to handlesList, in same order.
+     * @dev Only static native solidity types for clear values are supported, so clearTexts is the concatenation of all clear values appended to 32 bytes.
+     * @dev decryptionProof contains KMS signatures corresponding to clearTexts and associated handlesList, and needed metadata for KMS context.
+     **/
+    function verifySignatures(
+        bytes32[] memory handlesList,
+        bytes memory cleartexts,
+        bytes memory decryptionProof
+    ) internal returns (bool) {
+        CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
+        return
+            IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
+                handlesList,
+                cleartexts,
+                decryptionProof
+            );
+    }
+
+    //$$ -----------------------------------------------------------------------
+    //$$ -                                                                     
+    //$$ -             🚚 FHE toBytes32 Template Placeholder 
+    //$$ -                                                                     
+    //$$ -----------------------------------------------------------------------
+    $${FHEtoBytes32}$$
+    //$$ -----------------------------------------------------------------------
+}

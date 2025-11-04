@@ -2,7 +2,7 @@ import { toBigIntBE } from 'bigint-buffer';
 import { toBufferBE } from 'bigint-buffer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { Wallet, ethers } from 'ethers';
+import { type BigNumberish, type Signer, ethers } from 'ethers';
 import * as fs from 'fs';
 import hre from 'hardhat';
 import { Keccak } from 'sha3';
@@ -302,36 +302,6 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;
     },
-    addBytes64(value: Uint8Array) {
-      if (value.length !== 64) throw Error('Uncorrect length of input Uint8Array, should be 64 for an ebytes64');
-      const bigIntValue = bytesToBigInt(value);
-      checkEncryptedValue(bigIntValue, 512);
-      values.push(bigIntValue);
-      bits.push(512);
-      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
-      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
-      return this;
-    },
-    addBytes128(value: Uint8Array) {
-      if (value.length !== 128) throw Error('Uncorrect length of input Uint8Array, should be 128 for an ebytes128');
-      const bigIntValue = bytesToBigInt(value);
-      checkEncryptedValue(bigIntValue, 1024);
-      values.push(bigIntValue);
-      bits.push(1024);
-      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
-      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
-      return this;
-    },
-    addBytes256(value: Uint8Array) {
-      if (value.length !== 256) throw Error('Uncorrect length of input Uint8Array, should be 256 for an ebytes256');
-      const bigIntValue = bytesToBigInt(value);
-      checkEncryptedValue(bigIntValue, 2048);
-      values.push(bigIntValue);
-      bits.push(2048);
-      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
-      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
-      return this;
-    },
     getValues() {
       return values;
     },
@@ -449,7 +419,7 @@ export const ENCRYPTION_TYPES = {
 };
 
 async function computeInputSignaturesCopro(
-  handlesList: string[],
+  handlesList: BigNumberish[],
   userAddress: string,
   contractAddress: string,
   extraData: string,
@@ -467,11 +437,11 @@ async function computeInputSignaturesCopro(
 }
 
 async function coprocSign(
-  handlesList: string[],
+  handlesList: BigNumberish[],
   userAddress: string,
   contractAddress: string,
   extraData: string,
-  signer: Wallet,
+  signer: Signer,
 ): Promise<string> {
   const inputVerificationAdd = process.env.INPUT_VERIFICATION_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;

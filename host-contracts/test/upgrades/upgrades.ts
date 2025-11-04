@@ -14,8 +14,6 @@ describe('Upgrades', function () {
     this.emptyUUPSFactory = await ethers.getContractFactory('EmptyUUPSProxy');
     this.aclFactory = await ethers.getContractFactory('ACL');
     this.aclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample');
-    this.decryptionOracleFactory = await ethers.getContractFactory('DecryptionOracle');
-    this.decryptionOracleFactoryUpgraded = await ethers.getContractFactory('DecryptionOracleUpgradedExample');
   });
 
   it('deploy upgradeable ACL', async function () {
@@ -92,18 +90,6 @@ describe('Upgrades', function () {
     const payment2 = await upgrades.upgradeProxy(payment, paymentFactoryUpgraded);
     await payment2.waitForDeployment();
     expect(await payment2.getVersion()).to.equal('HCULimit v0.4.0');
-  });
-
-  it('deploy upgradeable DecryptionOracle', async function () {
-    const decryptionOracle = await upgrades.deployProxy(this.decryptionOracleFactory, [this.signers.alice.address], {
-      initializer: 'initialize',
-      kind: 'uups',
-    });
-    await decryptionOracle.waitForDeployment();
-    expect(await decryptionOracle.getVersion()).to.equal('DecryptionOracle v0.1.0');
-    const decryptionOracle2 = await upgrades.upgradeProxy(decryptionOracle, this.decryptionOracleFactoryUpgraded);
-    await decryptionOracle2.waitForDeployment();
-    expect(await decryptionOracle2.getVersion()).to.equal('DecryptionOracle v0.2.0');
   });
 
   it('original owner upgrades the original ACL and transfer ownership', async function () {

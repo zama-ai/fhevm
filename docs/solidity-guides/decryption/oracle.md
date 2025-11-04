@@ -17,9 +17,9 @@ Decryption in FHEVM is an asynchronous process that involves the Relayer and Key
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import { EthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract TestAsyncDecrypt is SepoliaConfig {
+contract TestAsyncDecrypt is EthereumConfig {
   ebool xBool;
   bool public yBool;
   bool isDecryptionPending;

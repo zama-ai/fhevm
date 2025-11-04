@@ -136,29 +136,6 @@ task('task:verifyPauserSet')
     });
   });
 
-task('task:verifyDecryptionOracle')
-  .addOptionalParam(
-    'useInternalProxyAddress',
-    'If proxy address from the /addresses directory should be used',
-    false,
-    types.boolean,
-  )
-  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
-    if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.decryptionoracle', override: true });
-    }
-    const proxyAddress = getRequiredEnvVar('DECRYPTION_ORACLE_ADDRESS');
-    const implementationDecryptionOracleAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
-    await run('verify:verify', {
-      address: implementationDecryptionOracleAddress,
-      constructorArguments: [],
-    });
-    await run('verify:verify', {
-      address: proxyAddress,
-      constructorArguments: [],
-    });
-  });
-
 task('task:verifyAllHostContracts')
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -215,12 +192,5 @@ task('task:verifyAllHostContracts')
       console.error('An error occurred:', error);
     }
 
-    try {
-      // to not panic if Etherscan throws an error due to already verified implementation
-      console.log('Verify DecryptionOracle contract:');
-      await hre.run('task:verifyDecryptionOracle', { useInternalProxyAddress });
-    } catch (error) {
-      console.error('An error occurred:', error);
-    }
     console.log('Contract verification done!');
   });

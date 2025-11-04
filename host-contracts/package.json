@@ -9,7 +9,6 @@
   "main": "contracts/ACL.sol",
   "scripts": {
     "compile": "HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
-    "compile:decryptionOracle": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile:specific --contract decryptionOracle",
     "deploy:emptyProxies": "hardhat task:deployEmptyUUPSProxies &&  hardhat compile:specific --contract 'contracts/immutable' && hardhat task:deployPauserSet",
     "lint": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
@@ -17,12 +16,14 @@
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "test": "hardhat test",
     "coverage": "SOLIDITY_COVERAGE=true hardhat coverage",
-    "codegen": "npx ts-node codegen/main.ts && npm run prettier",
+    "codegen": "../library-solidity/codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
+    "codegen:overloads": "../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "test:gas": "hardhat test --grep Gas"
   },
   "author": "",
   "license": "BSD-3-Clause-Clear",
   "devDependencies": {
+    "@fhevm/solidity": "*",
     "@zama-fhe/relayer-sdk": "^0.3.0-2",
     "@nomicfoundation/hardhat-toolbox": "5.0.0",
     "@nomicfoundation/solidity-analyzer": "0.1.2",
@@ -31,7 +32,6 @@
     "@openzeppelin/hardhat-upgrades": "^3.9.1",
     "@openzeppelin/upgrades-core": "^1.44.1",
     "@trivago/prettier-plugin-sort-imports": "^4.0.0",
-    "@zama-fhe/oracle-solidity": "^0.3.0-2",
     "bigint-buffer": "^1.1.5",
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",

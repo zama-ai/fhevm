@@ -114,7 +114,7 @@ describe('EncryptedERC20', function () {
       );
       expect.fail('Expected an error to be thrown - Bob should not be able to reencrypt Alice balance');
     } catch (error) {
-      expect(error.message).to.equal('User is not authorized to reencrypt this handle!');
+      expect((error as Error).message).to.equal('User is not authorized to reencrypt this handle!');
     }
   });
 

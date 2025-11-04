@@ -1,4 +1,5 @@
 import { createInstance as createFhevmInstance } from '@zama-fhe/relayer-sdk/node';
+import type { RelayerEncryptedInput } from '@zama-fhe/relayer-sdk/node';
 import { network } from 'hardhat';
 
 import type { Signers } from './signers';
@@ -38,3 +39,13 @@ export const createInstance = async () => {
   });
   return instance;
 };
+
+export function getTotalBits(input: RelayerEncryptedInput): number {
+  let bits = input.getBits();
+  let total = 0;
+  for (let i = 0; i < bits.length; ++i) {
+    total += bits[i];
+  }
+  return total;
+}
+
