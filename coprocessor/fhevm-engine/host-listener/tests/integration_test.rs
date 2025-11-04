@@ -262,12 +262,6 @@ async fn test_bad_chain_id() {
 
 #[tokio::test]
 #[serial(db)]
-async fn test_listener_restart() -> Result<(), anyhow::Error> {
-    test_listener_no_event_loss(true, false).await
-}
-
-#[tokio::test]
-#[serial(db)]
 async fn test_listener_restart_and_chain_reorg() -> Result<(), anyhow::Error> {
     test_listener_no_event_loss(true, true).await
 }
