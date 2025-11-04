@@ -58,7 +58,6 @@ interface IGatewayConfig {
     event AddHostChain(HostChain hostChain);
     event InitializeGatewayConfig(ProtocolMetadata metadata, Thresholds thresholds, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
     event PauseAllGatewayContracts();
-    event ReinitializeGatewayConfigV3(KmsNode[] newKmsNodes);
     event UnpauseAllGatewayContracts();
     event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
     event UpdateCoprocessors(Coprocessor[] newCoprocessors, uint256 newCoprocessorThreshold);
@@ -1059,41 +1058,6 @@ interface IGatewayConfig {
     "type": "event",
     "name": "PauseAllGatewayContracts",
     "inputs": [],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ReinitializeGatewayConfigV3",
-    "inputs": [
-      {
-        "name": "newKmsNodes",
-        "type": "tuple[]",
-        "indexed": false,
-        "internalType": "struct KmsNode[]",
-        "components": [
-          {
-            "name": "txSenderAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "signerAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "ipAddress",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "storageUrl",
-            "type": "string",
-            "internalType": "string"
-          }
-        ]
-      }
-    ],
     "anonymous": false
   },
   {
@@ -4419,109 +4383,6 @@ pub mod IGatewayConfig {
         impl From<&PauseAllGatewayContracts> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &PauseAllGatewayContracts) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `ReinitializeGatewayConfigV3((address,address,string,string)[])` and selector `0x430929cffdf43b3681bb03eae5802745e335ec0159968d301e2a8e3d209eefb8`.
-    ```solidity
-    event ReinitializeGatewayConfigV3(KmsNode[] newKmsNodes);
-    ```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct ReinitializeGatewayConfigV3 {
-        #[allow(missing_docs)]
-        pub newKmsNodes:
-            alloy::sol_types::private::Vec<<KmsNode as alloy::sol_types::SolType>::RustType>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for ReinitializeGatewayConfigV3 {
-            type DataTuple<'a> = (alloy::sol_types::sol_data::Array<KmsNode>,);
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str =
-                "ReinitializeGatewayConfigV3((address,address,string,string)[])";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    67u8, 9u8, 41u8, 207u8, 253u8, 244u8, 59u8, 54u8, 129u8, 187u8, 3u8, 234u8,
-                    229u8, 128u8, 39u8, 69u8, 227u8, 53u8, 236u8, 1u8, 89u8, 150u8, 141u8, 48u8,
-                    30u8, 42u8, 142u8, 61u8, 32u8, 158u8, 239u8, 184u8,
-                ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self {
-                    newKmsNodes: data.0,
-                }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Array<
-                        KmsNode,
-                    > as alloy_sol_types::SolType>::tokenize(&self.newKmsNodes),
-                )
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(),)
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for ReinitializeGatewayConfigV3 {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&ReinitializeGatewayConfigV3> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(this: &ReinitializeGatewayConfigV3) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -12495,8 +12356,6 @@ pub mod IGatewayConfig {
         #[allow(missing_docs)]
         PauseAllGatewayContracts(PauseAllGatewayContracts),
         #[allow(missing_docs)]
-        ReinitializeGatewayConfigV3(ReinitializeGatewayConfigV3),
-        #[allow(missing_docs)]
         UnpauseAllGatewayContracts(UnpauseAllGatewayContracts),
         #[allow(missing_docs)]
         UpdateCoprocessorThreshold(UpdateCoprocessorThreshold),
@@ -12545,11 +12404,6 @@ pub mod IGatewayConfig {
                 37u8, 67u8, 252u8, 118u8, 48u8, 132u8, 55u8,
             ],
             [
-                67u8, 9u8, 41u8, 207u8, 253u8, 244u8, 59u8, 54u8, 129u8, 187u8, 3u8, 234u8, 229u8,
-                128u8, 39u8, 69u8, 227u8, 53u8, 236u8, 1u8, 89u8, 150u8, 141u8, 48u8, 30u8, 42u8,
-                142u8, 61u8, 32u8, 158u8, 239u8, 184u8,
-            ],
-            [
                 102u8, 118u8, 147u8, 65u8, 239u8, 253u8, 38u8, 143u8, 196u8, 233u8, 169u8, 200u8,
                 242u8, 123u8, 252u8, 150u8, 133u8, 7u8, 181u8, 25u8, 176u8, 221u8, 185u8, 180u8,
                 173u8, 61u8, 237u8, 95u8, 3u8, 1u8, 104u8, 55u8,
@@ -12594,7 +12448,7 @@ pub mod IGatewayConfig {
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IGatewayConfigEvents {
         const NAME: &'static str = "IGatewayConfigEvents";
-        const COUNT: usize = 13usize;
+        const COUNT: usize = 12usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -12616,12 +12470,6 @@ pub mod IGatewayConfig {
                     )
                     .map(Self::PauseAllGatewayContracts)
                 }
-                Some(
-                    <ReinitializeGatewayConfigV3 as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => <ReinitializeGatewayConfigV3 as alloy_sol_types::SolEvent>::decode_raw_log(
-                    topics, data,
-                )
-                .map(Self::ReinitializeGatewayConfigV3),
                 Some(<UnpauseAllGatewayContracts as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <UnpauseAllGatewayContracts as alloy_sol_types::SolEvent>::decode_raw_log(
                         topics, data,
@@ -12695,9 +12543,6 @@ pub mod IGatewayConfig {
                 Self::PauseAllGatewayContracts(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::ReinitializeGatewayConfigV3(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
                 Self::UnpauseAllGatewayContracts(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -12736,9 +12581,6 @@ pub mod IGatewayConfig {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::PauseAllGatewayContracts(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::ReinitializeGatewayConfigV3(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UnpauseAllGatewayContracts(inner) => {
@@ -13220,12 +13062,6 @@ pub mod IGatewayConfig {
             &self,
         ) -> alloy_contract::Event<&P, PauseAllGatewayContracts, N> {
             self.event_filter::<PauseAllGatewayContracts>()
-        }
-        ///Creates a new event filter for the [`ReinitializeGatewayConfigV3`] event.
-        pub fn ReinitializeGatewayConfigV3_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, ReinitializeGatewayConfigV3, N> {
-            self.event_filter::<ReinitializeGatewayConfigV3>()
         }
         ///Creates a new event filter for the [`UnpauseAllGatewayContracts`] event.
         pub fn UnpauseAllGatewayContracts_filter(

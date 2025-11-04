@@ -52,12 +52,6 @@ interface IGatewayConfig {
     );
 
     /**
-     * @notice Emitted when the GatewayConfig is re-initialized from V3.
-     * @param newKmsNodes The new KMS nodes.
-     */
-    event ReinitializeGatewayConfigV3(KmsNode[] newKmsNodes);
-
-    /**
      * @notice Emitted when the KMS nodes have been updated.
      * @param newKmsNodes The new KMS nodes.
      * @param newMpcThreshold The new MPC threshold.
