@@ -199,7 +199,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             };
             // clipped to positive block number
             // note, we cannot catchup block 0
-            last_processed_block_num = Some(from_block.try_into().unwrap_or(0));
+            last_processed_block_num = Some((from_block - 1).try_into().unwrap_or(0));
         }
 
         loop {
