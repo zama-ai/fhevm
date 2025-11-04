@@ -102,49 +102,7 @@ impl EthRpcApiServer for MockRpcHandler {
     async fn get_transaction_receipt(&self, hash: String) -> RpcResult<Option<Value>> {
         let hash_parsed = hash.parse().unwrap_or_default();
         if let Some(receipt) = self.blockchain_state.get_transaction_receipt(hash_parsed) {
-            let inner_logs: Vec<InnerLog> = receipt
-                .logs()
-                .iter()
-                .map(|rpc_log| rpc_log.inner.clone())
-                .collect();
-            let mut receipt_json = self
-                .blockchain_state
-                .build_receipt_json(&inner_logs, receipt.transaction_hash);
-
-            // Update fields from actual receipt
-            if let Some(receipt_obj) = receipt_json.as_object_mut() {
-                receipt_obj.insert(
-                    "to".to_string(),
-                    receipt
-                        .to
-                        .map(|addr| serde_json::Value::String(format!("{:#x}", addr)))
-                        .unwrap_or(serde_json::Value::Null),
-                );
-                receipt_obj.insert(
-                    "gasUsed".to_string(),
-                    serde_json::Value::String(format!("0x{:x}", receipt.gas_used)),
-                );
-                receipt_obj.insert(
-                    "status".to_string(),
-                    serde_json::Value::String(if receipt.status() {
-                        "0x1".to_string()
-                    } else {
-                        "0x0".to_string()
-                    }),
-                );
-                receipt_obj.insert(
-                    "type".to_string(),
-                    serde_json::Value::String(format!("0x{:x}", receipt.transaction_type() as u64)),
-                );
-                receipt_obj.insert(
-                    "effectiveGasPrice".to_string(),
-                    serde_json::Value::String(format!(
-                        "0x{:x}",
-                        receipt.effective_gas_price as u64
-                    )),
-                );
-            }
-
+            let receipt_json = self.build_complete_receipt_json(&receipt);
             return Ok(Some(receipt_json));
         }
         Ok(None)
@@ -290,94 +248,13 @@ impl EthRpcApiServer for MockRpcHandler {
     }
 
     async fn send_raw_transaction(&self, tx: String) -> RpcResult<String> {
-        // Parse transaction parameters using idiomatic conversion trait
-        let tx_params = match TxParams::try_from(tx.as_str()) {
-            Ok(params) => params,
-            Err(e) => {
-                error!("Transaction parsing failed: {}", e);
-                return Err(ErrorObject::owned(
-                    -32602,
-                    format!("Invalid transaction: {}", e),
-                    None::<()>,
-                ));
-            }
-        };
+        let (hash, _receipt_json) = self.process_raw_transaction_internal(tx).await?;
+        Ok(hash)
+    }
 
-        // Try to find a matching pattern using PatternMatcher
-        let response =
-            if let Some(tx_response) = self.pattern_matcher.find_transaction_match(&tx_params) {
-                tx_response
-            } else {
-                // Default behavior: accept transaction with random hash
-                Response::Success {
-                    hash: Some(BlockchainState::generate_random_hash()),
-                    data: ResponseData::Logs(vec![]),
-                    scheduled_transactions: Vec::new(),
-                }
-            };
-
-        // Simplified transaction flow (no validation, no state mutations)
-        match response {
-            Response::Success {
-                hash,
-                data: ResponseData::Logs(logs),
-                scheduled_transactions,
-            } => {
-                // Create and store receipt using BlockchainState
-                let _receipt = self.blockchain_state.create_and_store_receipt(
-                    hash.unwrap_or_default(),
-                    &logs,
-                    tx_params.to,
-                );
-
-                // Emit logs to WebSocket subscribers if any
-                if !logs.is_empty() {
-                    for log in &logs {
-                        if let Err(e) = self.emit_to_log_subscribers(log.clone()).await {
-                            warn!("Failed to emit log event: {}", e);
-                        }
-                    }
-                }
-
-                // Schedule delayed transactions if present
-                for scheduled_tx in scheduled_transactions {
-                    debug!(
-                        num_events = scheduled_tx.response_events.len(),
-                        "Scheduling follow-up transaction after transaction execution"
-                    );
-                    self.blockchain_state
-                        .schedule_delayed_transaction(scheduled_tx, self.log_subscriptions.clone());
-                }
-
-                // Increment block number and emit new head event
-                self.blockchain_state.increment_block();
-                if let Err(e) = self.emit_new_head_event().await {
-                    warn!("Failed to emit new head event: {}", e);
-                }
-
-                Ok(format!("{:#x}", hash.unwrap_or_default()))
-            }
-            Response::Success {
-                data: ResponseData::Bytes(_),
-                hash,
-                ..
-            } => {
-                // This shouldn't happen for transaction responses, but handle it gracefully
-                warn!(
-                    "Received Bytes data for transaction response, treating as empty transaction"
-                );
-                Ok(format!("{:#x}", hash.unwrap_or_default()))
-            }
-            Response::Revert { hash: _, reason } => {
-                let error_message = reason.as_deref().unwrap_or("Transaction reverted");
-                warn!("Transaction reverted: {}", error_message);
-                Err(ErrorObject::owned(-32000, error_message, None::<()>))
-            }
-            Response::Error(message) => {
-                error!("Transaction error: {}", message);
-                Err(ErrorObject::owned(-32603, message, None::<()>))
-            }
-        }
+    async fn send_raw_transaction_sync(&self, tx: String) -> RpcResult<Value> {
+        let (_hash, receipt_json) = self.process_raw_transaction_internal(tx).await?;
+        Ok(receipt_json)
     }
 
     fn subscribe(
@@ -479,6 +356,160 @@ impl MockRpcHandler {
                 }
             })
             .collect()
+    }
+
+    /// Build complete receipt JSON from TransactionReceipt with all fields populated
+    fn build_complete_receipt_json(
+        &self,
+        receipt: &alloy::rpc::types::eth::TransactionReceipt,
+    ) -> Value {
+        let inner_logs: Vec<InnerLog> = receipt
+            .logs()
+            .iter()
+            .map(|rpc_log| rpc_log.inner.clone())
+            .collect();
+        let mut receipt_json = self
+            .blockchain_state
+            .build_receipt_json(&inner_logs, receipt.transaction_hash);
+
+        // Update fields from actual receipt
+        if let Some(receipt_obj) = receipt_json.as_object_mut() {
+            receipt_obj.insert(
+                "to".to_string(),
+                receipt
+                    .to
+                    .map(|addr| serde_json::Value::String(format!("{:#x}", addr)))
+                    .unwrap_or(serde_json::Value::Null),
+            );
+            receipt_obj.insert(
+                "gasUsed".to_string(),
+                serde_json::Value::String(format!("0x{:x}", receipt.gas_used)),
+            );
+            receipt_obj.insert(
+                "status".to_string(),
+                serde_json::Value::String(if receipt.status() {
+                    "0x1".to_string()
+                } else {
+                    "0x0".to_string()
+                }),
+            );
+            receipt_obj.insert(
+                "type".to_string(),
+                serde_json::Value::String(format!("0x{:x}", receipt.transaction_type() as u64)),
+            );
+            receipt_obj.insert(
+                "effectiveGasPrice".to_string(),
+                serde_json::Value::String(format!("0x{:x}", receipt.effective_gas_price as u64)),
+            );
+        }
+
+        receipt_json
+    }
+
+    /// Internal helper that processes a raw transaction and returns both hash and receipt JSON
+    async fn process_raw_transaction_internal(&self, tx: String) -> RpcResult<(String, Value)> {
+        // Parse transaction parameters using idiomatic conversion trait
+        let tx_params = match TxParams::try_from(tx.as_str()) {
+            Ok(params) => params,
+            Err(e) => {
+                error!("Transaction parsing failed: {}", e);
+                return Err(ErrorObject::owned(
+                    -32602,
+                    format!("Invalid transaction: {}", e),
+                    None::<()>,
+                ));
+            }
+        };
+
+        // Try to find a matching pattern using PatternMatcher
+        let response =
+            if let Some(tx_response) = self.pattern_matcher.find_transaction_match(&tx_params) {
+                tx_response
+            } else {
+                // Default behavior: accept transaction with random hash
+                Response::Success {
+                    hash: Some(BlockchainState::generate_random_hash()),
+                    data: ResponseData::Logs(vec![]),
+                    scheduled_transactions: Vec::new(),
+                }
+            };
+
+        // Simplified transaction flow (no validation, no state mutations)
+        match response {
+            Response::Success {
+                hash,
+                data: ResponseData::Logs(logs),
+                scheduled_transactions,
+            } => {
+                let tx_hash = hash.unwrap_or_default();
+
+                // Create and store receipt using BlockchainState
+                let receipt =
+                    self.blockchain_state
+                        .create_and_store_receipt(tx_hash, &logs, tx_params.to);
+
+                // Build complete receipt JSON using our helper
+                let receipt_json = self.build_complete_receipt_json(&receipt);
+
+                // Emit logs to WebSocket subscribers if any
+                if !logs.is_empty() {
+                    for log in &logs {
+                        if let Err(e) = self.emit_to_log_subscribers(log.clone()).await {
+                            warn!("Failed to emit log event: {}", e);
+                        }
+                    }
+                }
+
+                // Schedule delayed transactions if present
+                for scheduled_tx in scheduled_transactions {
+                    debug!(
+                        num_events = scheduled_tx.response_events.len(),
+                        "Scheduling follow-up transaction after transaction execution"
+                    );
+                    self.blockchain_state
+                        .schedule_delayed_transaction(scheduled_tx, self.log_subscriptions.clone());
+                }
+
+                // Increment block number and emit new head event
+                self.blockchain_state.increment_block();
+                if let Err(e) = self.emit_new_head_event().await {
+                    warn!("Failed to emit new head event: {}", e);
+                }
+
+                Ok((format!("{:#x}", tx_hash), receipt_json))
+            }
+            Response::Success {
+                data: ResponseData::Bytes(_),
+                hash,
+                ..
+            } => {
+                // This shouldn't happen for transaction responses, but handle it gracefully
+                let tx_hash = hash.unwrap_or_default();
+                warn!(
+                    "Received Bytes data for transaction response, treating as empty transaction"
+                );
+
+                // Create a minimal receipt for this case
+                let empty_logs = Vec::new();
+                let receipt = self.blockchain_state.create_and_store_receipt(
+                    tx_hash,
+                    &empty_logs,
+                    tx_params.to,
+                );
+                let receipt_json = self.build_complete_receipt_json(&receipt);
+
+                Ok((format!("{:#x}", tx_hash), receipt_json))
+            }
+            Response::Revert { hash: _, reason } => {
+                let error_message = reason.as_deref().unwrap_or("Transaction reverted");
+                warn!("Transaction reverted: {}", error_message);
+                Err(ErrorObject::owned(-32000, error_message, None::<()>))
+            }
+            Response::Error(message) => {
+                error!("Transaction error: {}", message);
+                Err(ErrorObject::owned(-32603, message, None::<()>))
+            }
+        }
     }
 
     /// Emit new head event to WebSocket subscribers

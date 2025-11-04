@@ -93,6 +93,10 @@ pub trait EthRpcApi {
     #[method(name = "eth_sendRawTransaction")]
     async fn send_raw_transaction(&self, tx: String) -> RpcResult<String>;
 
+    /// Submits a raw transaction to the network and returns the receipt synchronously
+    #[method(name = "eth_sendRawTransactionSync")]
+    async fn send_raw_transaction_sync(&self, tx: String) -> RpcResult<Value>;
+
     /// Subscribe to events using WebSocket
     #[subscription(name = "eth_subscribe", unsubscribe = "eth_unsubscribe", item = Value)]
     fn subscribe(&self, subscription_type: String, filter: Option<Value>);
