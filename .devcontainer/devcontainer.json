@@ -1,5 +1,9 @@
 {
   "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "mounts": [
+        "source=command_history,target=/command_history,type=volume",
+        "source=docker_cache,target=/var/lib/docker,type=volume"
+    ],
   "features": {
     "ghcr.io/devcontainers/features/rust:1": {
       "version": "1.91"
@@ -7,7 +11,7 @@
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
     "ghcr.io/devcontainers/features/common-utils:2": {}
   },
-  "postCreateCommand": "./.devcontainer/postCreateCommand.sh",
+  "postCreateCommand": "./.devcontainer/post_create_command.sh",
   "customizations": {
     "vscode": {
       "extensions": [
