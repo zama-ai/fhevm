@@ -9,11 +9,10 @@ use alloy::{
         },
         Identity, Network, Provider, ProviderBuilder, RootProvider,
     },
-    rpc::types::TransactionRequest,
+    rpc::{json_rpc::ErrorPayload, types::TransactionRequest},
     signers::{Signature, Signer},
     transports::{http::reqwest::Url, RpcError},
 };
-use alloy_json_rpc::ErrorPayload;
 use anyhow::Result;
 use std::{sync::Arc, time::Instant};
 use thiserror::Error;

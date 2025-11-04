@@ -14,7 +14,7 @@ tracing-chrome = ["dep:tracing-chrome"]
 
 [dependencies]
 xxhash-rust = { version = "0.8.12", features = ["xxh3", "const_xxh3"] }
-alloy = { version = "1.0.22", features = ["provider-ws", "serde"] }
+alloy = { version = "1.0.22", features = ["consensus", "json-rpc", "provider-ws", "serde"] }
 alloy-dyn-abi = "1.4.1"
 dashmap = "6.1.0"
 eyre = "0.6.12"
