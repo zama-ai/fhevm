@@ -1,9 +1,5 @@
 {
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-    // "mounts": [
-    //     "source=command_history,target=/command_history,type=volume",
-    //     "source=docker_cache,target=/var/lib/docker,type=volume"
-    // ],
     "features": {
         "ghcr.io/devcontainers/features/rust:1": {
             "version": "1.91"
