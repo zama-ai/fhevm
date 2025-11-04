@@ -517,7 +517,7 @@ contract Decryption is
         bytes calldata publicKey,
         bytes calldata signature,
         bytes calldata extraData
-    ) external virtual whenNotPaused {
+    ) external virtual whenNotPaused onlyRegisteredHostChain(contractsInfo.chainId) {
         if (contractsInfo.addresses.length == 0) {
             revert EmptyContractAddresses();
         }
@@ -551,24 +551,28 @@ contract Decryption is
             contractsInfo.addresses
         );
 
-        // Initialize the DelegatedUserDecryptRequestVerification structure for the signature validation.
-        DelegatedUserDecryptRequestVerification
-            memory delegatedUserDecryptRequestVerification = DelegatedUserDecryptRequestVerification(
-                publicKey,
-                contractsInfo.addresses,
-                delegationAccounts.delegatorAddress,
-                requestValidity.startTimestamp,
-                requestValidity.durationDays,
-                extraData
-            );
+        // Using scoped local variable to avoid "stack too deep" errors. This will be revisited during the EIP-712 struct refactor.
+        // See: https://github.com/zama-ai/fhevm-internal/issues/403
+        {
+            // Initialize the DelegatedUserDecryptRequestVerification structure for the signature validation.
+            DelegatedUserDecryptRequestVerification
+                memory delegatedUserDecryptRequestVerification = DelegatedUserDecryptRequestVerification(
+                    publicKey,
+                    contractsInfo.addresses,
+                    delegationAccounts.delegatorAddress,
+                    requestValidity.startTimestamp,
+                    requestValidity.durationDays,
+                    extraData
+                );
 
-        // Validate the received EIP712 signature on the delegated user decryption request.
-        _validateDelegatedUserDecryptRequestEIP712Signature(
-            delegatedUserDecryptRequestVerification,
-            delegationAccounts.delegateAddress,
-            signature,
-            contractsInfo.chainId
-        );
+            // Validate the received EIP712 signature on the delegated user decryption request.
+            _validateDelegatedUserDecryptRequestEIP712Signature(
+                delegatedUserDecryptRequestVerification,
+                delegationAccounts.delegateAddress,
+                signature,
+                contractsInfo.chainId
+            );
+        }
 
         // Fetch the ciphertexts from the CiphertextCommits contract.
         // This call is reverted if any of the ciphertexts are not found in the contract, but
@@ -732,6 +736,10 @@ contract Decryption is
         address[] calldata contractAddresses,
         bytes calldata /* extraData */
     ) external view virtual returns (bool) {
+        if (ctHandleContractPairs.length == 0 || contractAddresses.length == 0) {
+            return false;
+        }
+
         // Check that the delegate address has been granted access to the contract addresses by the delegator.
         for (uint256 i = 0; i < contractAddresses.length; i++) {
             if (

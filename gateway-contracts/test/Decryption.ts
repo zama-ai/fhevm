@@ -1875,6 +1875,46 @@ describe("Decryption", function () {
       ).to.be.revertedWithCustomError(decryption, "EmptyCtHandleContractPairs");
     });
 
+    it("Should revert because a ctHandleContractPair has a chain ID that differs from the contract chain ID", async function () {
+      const invalidChainIdCtHandleContractPairs: CtHandleContractPairStruct[] = [
+        {
+          contractAddress,
+          ctHandle: fakeChainIdCtHandle,
+        },
+      ];
+      await expect(
+        decryption.delegatedUserDecryptionRequest(
+          invalidChainIdCtHandleContractPairs,
+          requestValidity,
+          delegationAccounts,
+          contractsInfo,
+          publicKey,
+          delegateSignature,
+          extraDataV0,
+        ),
+      )
+        .to.be.revertedWithCustomError(decryption, "CtHandleChainIdDiffersFromContractChainId")
+        .withArgs(fakeChainIdCtHandle, fakeHostChainId, contractsInfo.chainId);
+    });
+
+    it("Should revert because contract chain ID is not registered in the GatewayConfig", async function () {
+      const invalidContractsInfo: IDecryption.ContractsInfoStruct = {
+        addresses: [contractAddress],
+        chainId: fakeHostChainId,
+      };
+      await expect(
+        decryption.delegatedUserDecryptionRequest(
+          ctHandleContractPairs,
+          requestValidity,
+          delegationAccounts,
+          invalidContractsInfo,
+          publicKey,
+          delegateSignature,
+          extraDataV0,
+        ),
+      ).to.be.revertedWithCustomError(decryption, "HostChainNotRegistered");
+    });
+
     it("Should revert because contract addresses is empty", async function () {
       const contractsInfo: IDecryption.ContractsInfoStruct = {
         addresses: [],
@@ -2419,7 +2459,7 @@ describe("Decryption", function () {
         ).to.be.false;
       });
 
-      it("Should be false because the delegated address has not been delegated for a contract", async function () {
+      it("Should be false because the user decryption has not been delegated for a contract", async function () {
         const fakeContractAddresses = [fakeContractAddress];
         expect(
           await decryption.isDelegatedUserDecryptionReady(
@@ -2439,6 +2479,30 @@ describe("Decryption", function () {
             delegationAccounts,
             [newCtHandleContractPair],
             contractsInfo.addresses,
+            extraDataV0,
+          ),
+        ).to.be.false;
+      });
+
+      it("Should be false because the ctHandleContractPairs list is empty", async function () {
+        expect(
+          await decryption.isDelegatedUserDecryptionReady(
+            hostChainId,
+            delegationAccounts,
+            [],
+            contractsInfo.addresses,
+            extraDataV0,
+          ),
+        ).to.be.false;
+      });
+
+      it("Should be false because the contractsInfo addresses list is empty", async function () {
+        expect(
+          await decryption.isDelegatedUserDecryptionReady(
+            hostChainId,
+            delegationAccounts,
+            ctHandleContractPairs,
+            [],
             extraDataV0,
           ),
         ).to.be.false;
