@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 
-import { createInstances } from '../instance';
+import { createInstances, getTotalBits } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { bigIntToBytes64, bigIntToBytes128 } from '../utils';
 
@@ -17,6 +17,8 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     for (let i = 0; i < 256; i++) {
       input.addBool(false);
     }
+    const total = getTotalBits(input);
+    expect(total).to.eq(2048);
     await input.encrypt();
   });
 
@@ -25,6 +27,8 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     for (let i = 0; i < 256; i++) {
       input.addBool(true);
     }
+    const total = getTotalBits(input);
+    expect(total).to.eq(2048);
     expect(() => input.addBool(false)).to.throw(
       'Packing more than 256 variables in a single input ciphertext is unsupported',
     );
@@ -35,6 +39,8 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     for (let i = 0; i < 32; i++) {
       input.add64(1024n);
     }
+    const total = getTotalBits(input);
+    expect(total).to.eq(2048);
     await input.encrypt();
   });
 
@@ -43,6 +49,8 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     for (let i = 0; i < 32; i++) {
       input.add64(37n);
     }
+    const total = getTotalBits(input);
+    expect(total).to.eq(2048);
     expect(() => input.add64(1n)).to.throw('Packing more than 2048 bits in a single input ciphertext is unsupported');
   });
 
@@ -51,6 +59,8 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     for (let i = 0; i < 8; i++) {
       input.add256(797979n);
     }
+    const total = getTotalBits(input);
+    expect(total).to.eq(2048);
     await input.encrypt();
   });
 
@@ -59,6 +69,8 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     for (let i = 0; i < 8; i++) {
       input.add256(797979n);
     }
+    const total = getTotalBits(input);
+    expect(total).to.eq(2048);
     expect(() => input.addBool(false)).to.throw(
       'Packing more than 2048 bits in a single input ciphertext is unsupported',
     );
@@ -76,11 +88,7 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     input.add128(6887n);
     input.add64(6887n);
     input.add64(6887n);
-    let bits = input.getBits();
-    let total = 0;
-    for (let i = 0; i < bits.length; ++i) {
-      total += bits[i];
-    }
+    const total = getTotalBits(input);
     expect(total).to.eq(2048);
     expect(() => input.addBool(false)).to.throw(
       'Packing more than 2048 bits in a single input ciphertext is unsupported',
