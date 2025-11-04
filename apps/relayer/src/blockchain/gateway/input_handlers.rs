@@ -277,7 +277,7 @@ impl GatewayHandler {
         );
 
         self.tx_helper
-            .send_transaction(
+            .send_raw_transaction_sync(
                 TransactionType::InputRequest,
                 input_verification_address,
                 || {

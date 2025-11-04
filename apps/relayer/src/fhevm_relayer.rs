@@ -32,7 +32,6 @@
 //! [fhevm] ← [fhevm Handler] ← [Orchestrator] ← [gateway Listener]
 //! ```
 
-use crate::blockchain::gateway::arbitrum::transaction::TransactionHelper as GatewayTransactionHelper;
 use crate::store::{
     BlockNumberStore, PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore,
     UserDecryptRequestCacheStore, UserDecryptResponseCacheStore, UserDecryptResponseStore,
@@ -46,22 +45,22 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, span, Level};
 
 use crate::{
+    blockchain::fhevm::ethereum::transaction::{
+        TransactionService as FhevmTransactionService, TxConfig as FhevmTxConfig,
+    },
     blockchain::{
         fhevm::ethereum::listener::ethereum_listener as fhevm_ethereum_listener,
         fhevm::ethereum::{
             parse_private_key, ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
         },
-        gateway::arbitrum::listener::ethereum_listener as gateway_ethereum_listener,
+        gateway::arbitrum::{
+            listener::ethereum_listener as gateway_ethereum_listener,
+            transaction::{
+                helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
+            },
+        },
         InputProofGatewayHandler, PublicDecryptFhevmHandler, PublicDecryptGatewayHandler,
         UserDecryptGatewayHandler,
-    },
-    blockchain::{
-        fhevm::ethereum::transaction::{
-            TransactionService as FhevmTransactionService, TxConfig as FhevmTxConfig,
-        },
-        gateway::arbitrum::transaction::{
-            TransactionService as GatewayTransactionService, TxConfig as GatewayTxConfig,
-        },
     },
     config::settings::Settings,
     core::event::{
@@ -154,15 +153,14 @@ pub async fn run_fhevm_relayer(
     let mut gateway_signer = parse_private_key(&settings.transaction.private_key_gateway)?;
     gateway_signer.set_chain_id(Some(gateway_settings.chain_id));
 
-    // Prepare tx service for gateway
-    let tx_service_gateway =
-        GatewayTransactionService::new(&gateway_settings.http_url, Arc::new(gateway_signer))
-            .await
-            .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
+    // Clone the signer for multiple consumers
+    let gateway_signer_arc = Arc::new(gateway_signer);
 
-    Arc::clone(&tx_service_gateway).spawn_maintenance_tasks(
-        tokio::time::Duration::from_secs(5),
-        tokio::time::Duration::from_secs(10),
+    let tx_engine_gateway = GatewayTransactionEngine::new(
+        &gateway_settings.http_url,
+        gateway_signer_arc.clone(),
+        true,
+        100,
     );
 
     let decryption_address = Address::from_str(&settings.contracts.decryption_address)
@@ -197,10 +195,9 @@ pub async fn run_fhevm_relayer(
         settings.networks.fhevm.chain_id,
     )?;
 
-    let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
+    // let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
     let gateway_tx_helper = Arc::new(GatewayTransactionHelper::new(
-        tx_service_gateway.clone(),
-        gateway_tx_config.clone(),
+        tx_engine_gateway.clone().into(),
         settings.networks.gateway.chain_id,
     ));
     setup_input_proof_gateway_handler(

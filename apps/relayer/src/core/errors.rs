@@ -1,4 +1,5 @@
 use crate::blockchain::fhevm::ethereum::transaction::fhevm::FhevmError;
+use crate::blockchain::gateway::arbitrum::transaction::engine::TransactionError;
 use crate::{
     blockchain::fhevm::ethereum::transaction::TransactionServiceError as FhevmTransactionServiceError,
     blockchain::gateway::arbitrum::transaction::TransactionServiceError as GatewayTransactionServiceError,
@@ -116,5 +117,11 @@ impl From<GatewayTransactionServiceError> for EventProcessingError {
             }
             GatewayTransactionServiceError::Other(err) => Self::TransactionError(err.to_string()),
         }
+    }
+}
+
+impl From<TransactionError> for EventProcessingError {
+    fn from(e: TransactionError) -> Self {
+        EventProcessingError::TransactionError(e.to_string())
     }
 }

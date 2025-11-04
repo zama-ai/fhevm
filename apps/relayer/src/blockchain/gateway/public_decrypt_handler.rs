@@ -596,7 +596,7 @@ impl GatewayHandler {
                 )
             })?;
         self.tx_helper
-            .send_transaction(
+            .send_raw_transaction_sync(
                 TransactionType::PublicDecryptRequest,
                 decryption_address,
                 || ComputeCalldata::public_decryption_req(handles.clone(), extra_data.clone()),

@@ -14,7 +14,7 @@ use alloy::{
     transports::{http::reqwest::Url, RpcError},
 };
 use anyhow::Result;
-use std::{sync::Arc, time::Instant};
+use std::{fmt::Debug, sync::Arc, time::Instant};
 use thiserror::Error;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
@@ -23,19 +23,20 @@ use crate::blockchain::gateway::arbitrum::transaction::{
     nonce_manager::ZamaNonceManager, provider::NonceManagedProvider,
 };
 
-pub trait SignerCombined: TxSigner<Signature> + Signer + Send + Sync {}
+pub trait SignerCombined: TxSigner<Signature> + Signer + Send + Sync + Debug {}
 
-// Automatically implement SignerCombined for any type that satisfies all the required traits
-impl<T: TxSigner<Signature> + Signer + Send + Sync> SignerCombined for T {}
+// This implementation doesn't need to change. It will still work for any `T`
+// as long as `T` now also implements `Debug`.
+impl<T: TxSigner<Signature> + Signer + Send + Sync + Debug> SignerCombined for T {}
 
-// REWORK A PROPER TRANSACTION ERROR.
+// TODO: Rework a proper trsnsaction error manager.
 #[derive(Error, Debug)]
 pub enum TransactionError {
+    #[error("Invalid private key: {0}")]
+    InvalidPrivateKey(String),
+
     #[error("Invalid contract address: {0}")]
     InvalidAddress(String),
-
-    #[error("Could not sign transaction: {0}")]
-    CouldNotSign(String),
 
     #[error("RPC error: {0}")]
     RpcError(String),
@@ -49,11 +50,24 @@ pub enum TransactionError {
     #[error("Gas estimation failed: {0}")]
     GasEstimationFailed(String),
 
+    #[error(
+        "Transaction monitoring timed out after {0} seconds, but transaction may still succeed"
+    )]
+    MonitoringTimeout(u64),
+
     #[error("Receipt not found after {0} attempts")]
     ReceiptNotFound(u32),
 
+    #[error("Insufficient confirmations: required {required}, got {actual}")]
+    InsufficientConfirmations { required: u64, actual: u64 },
+
+    #[error("Network connectivity error: {0}")]
+    NetworkError(String),
+
     #[error("Transport error: {0}")]
     TransportError(#[from] alloy::transports::TransportError),
+    #[error("Invalid chain-id: {0}")]
+    InvalidChainId(String),
 }
 
 impl From<eyre::Report> for TransactionError {
@@ -62,7 +76,7 @@ impl From<eyre::Report> for TransactionError {
     }
 }
 
-type CustomFillers = JoinFill<
+pub type CustomFillers = JoinFill<
     JoinFill<
         JoinFill<
             JoinFill<
@@ -83,6 +97,7 @@ const RETRY_DELAY: u64 = 500;
 // TODO: Check if necessary inside send_raw_transaction_sync_with_retries function.
 // const MAX_TX_RETRIES: u32 = 100;
 
+#[derive(Debug, Clone)]
 pub struct TransactionEngine<F, P, N = AnyNetwork>
 where
     N: Network,
@@ -94,7 +109,7 @@ where
     pub nonce_manager: Arc<ZamaNonceManager>,
     // No need for Arc in this case, since the tx manager is shared by arc at the top level application.
     limit_concurrent_requests: bool,
-    pub rpc_semaphore: Semaphore,
+    pub rpc_semaphore: Arc<Semaphore>,
 }
 
 impl
@@ -133,7 +148,7 @@ impl
             signer,
             nonce_manager,
             limit_concurrent_requests,
-            rpc_semaphore: Semaphore::new(max_concurrent_rpc_requests),
+            rpc_semaphore: Arc::new(Semaphore::new(max_concurrent_rpc_requests)),
         }
     }
 

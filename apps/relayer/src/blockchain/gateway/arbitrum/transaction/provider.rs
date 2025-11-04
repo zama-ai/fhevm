@@ -16,6 +16,7 @@ use crate::blockchain::gateway::arbitrum::transaction::nonce_manager::ZamaNonceM
 
 pub type FillersWithoutNonceManagement = JoinFill<GasFiller, BlobGasFiller>;
 
+#[derive(Debug)]
 pub struct NonceManagedProvider<F, P, N = Ethereum>
 where
     N: Network,

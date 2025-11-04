@@ -642,7 +642,7 @@ impl GatewayHandler {
         }
 
         self.tx_helper
-            .send_transaction(
+            .send_raw_transaction_sync(
                 TransactionType::UserDecryptRequest,
                 decryption_address,
                 || ComputeCalldata::user_decryption_req(user_decrypt_request.clone()),
