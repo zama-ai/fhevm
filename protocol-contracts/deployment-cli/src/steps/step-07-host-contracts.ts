@@ -148,7 +148,7 @@ export class Step07HostContracts extends BaseStep {
                     args: [
                         "--network",
                         ethereum.hostPkgName,
-                        "--useInternalProxyAddress",
+                        "--use-internal-proxy-address",
                         "true",
                     ],
                     env: baseEnv,

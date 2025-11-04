@@ -57,6 +57,7 @@ export class Step03LayerzeroLink extends BaseStep {
             RPC_URL_ZAMA_GATEWAY_TESTNET: gatewayNetwork.rpcUrl,
             DAO_ADDRESS: daoAddress,
             SAFE_ADDRESS: safeAddress,
+            ETHERSCAN_API: ethereumNetwork.explorerApiKey,
             BLOCKSCOUT_API: gatewayNetwork.blockscoutApiUrl,
         });
 

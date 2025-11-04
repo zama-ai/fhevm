@@ -75,6 +75,7 @@ export class NetworkRegistry {
             chainId: selectedNetworks.gateway.chain_id,
             explorerUrl: selectedNetworks.gateway.explorer_url,
             explorerApiKey: selectedNetworks.gateway.etherscan_api_key,
+            blockscoutApiUrl: selectedNetworks.gateway.blockscout_api_url,
         };
 
         this.layerzeroConfig = selectedNetworks.layerzero_config;

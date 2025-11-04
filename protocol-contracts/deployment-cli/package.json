@@ -11,6 +11,7 @@
         "lint:fix": "biome check --write .",
         "format": "biome format --write .",
         "typecheck": "tsc --noEmit --project tsconfig.json",
+        "clearAllDeployments": "find ../ -type d -name 'deployments' -not -path '*/node_modules/*' -exec rm -rf {} +",
         "test": "vitest run",
         "test:watch": "vitest"
     },

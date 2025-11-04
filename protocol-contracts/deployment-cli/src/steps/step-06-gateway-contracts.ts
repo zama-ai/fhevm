@@ -191,7 +191,7 @@ export class Step06GatewayContracts extends BaseStep {
                         args: [
                             "--network",
                             gateway.gatewayPkgName,
-                            "--useInternalProxyAddress",
+                            "--use-internal-proxy-address",
                             "true",
                         ],
                         env: baseEnv,
