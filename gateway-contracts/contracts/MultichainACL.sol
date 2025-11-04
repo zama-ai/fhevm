@@ -54,7 +54,7 @@ contract MultichainACL is
      */
     string private constant CONTRACT_NAME = "MultichainACL";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -237,7 +237,7 @@ contract MultichainACL is
         address contractAddress,
         uint64 delegationCounter,
         uint64 expirationDate
-    ) external virtual onlyCoprocessorTxSender {
+    ) external virtual onlyCoprocessorTxSender onlyRegisteredHostChain(chainId) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
         bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
             chainId,
@@ -317,7 +317,7 @@ contract MultichainACL is
         address contractAddress,
         uint64 delegationCounter,
         uint64 expirationDate
-    ) external virtual onlyCoprocessorTxSender {
+    ) external virtual onlyCoprocessorTxSender onlyRegisteredHostChain(chainId) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
         bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
             chainId,
