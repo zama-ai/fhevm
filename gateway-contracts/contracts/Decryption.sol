@@ -301,7 +301,7 @@ contract Decryption is
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
@@ -430,7 +430,7 @@ contract Decryption is
         bytes calldata publicKey,
         bytes calldata signature,
         bytes calldata extraData
-    ) external virtual whenNotPaused {
+    ) external virtual whenNotPaused onlyRegisteredHostChain(contractsInfo.chainId) {
         if (contractsInfo.addresses.length == 0) {
             revert EmptyContractAddresses();
         }
@@ -452,7 +452,7 @@ contract Decryption is
         // - Extract the handles and check their conformance
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
             ctHandleContractPairs,
-            contractsInfo.addresses,
+            contractsInfo,
             userAddress
         );
 
@@ -539,7 +539,7 @@ contract Decryption is
         // Extract the handles and check their conformance.
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
             ctHandleContractPairs,
-            contractsInfo.addresses,
+            contractsInfo,
             delegationAccounts.delegatorAddress
         );
 
@@ -1049,13 +1049,13 @@ contract Decryption is
      * @dev - Allowed address has access to the handles
      * @dev - Contract address inclusion in the list of allowed contract addresses
      * @param ctHandleContractPairs The list of ciphertext handles and contract addresses
-     * @param contractAddresses The list of allowed contract addresses
+     * @param contractsInfo The contracts' information (chain ID, addresses).
      * @param allowedAddress The address that is allowed to access the handles
      * @return ctHandles The list of ciphertext handles
      */
     function _extractCtHandlesCheckConformanceUser(
         CtHandleContractPair[] calldata ctHandleContractPairs,
-        address[] memory contractAddresses,
+        ContractsInfo calldata contractsInfo,
         address allowedAddress
     ) internal view virtual returns (bytes32[] memory ctHandles) {
         // Check that the list of ctHandleContractPair is not empty
@@ -1070,6 +1070,12 @@ contract Decryption is
             bytes32 ctHandle = ctHandleContractPairs[i].ctHandle;
             address contractAddress = ctHandleContractPairs[i].contractAddress;
 
+            // Extract the chain ID from the ciphertext handle
+            uint256 chainId = HandleOps.extractChainId(ctHandle);
+            if (chainId != contractsInfo.chainId) {
+                revert CtHandleChainIdDiffersFromContractChainId(ctHandle, chainId, contractsInfo.chainId);
+            }
+
             // Extract the FHE type from the ciphertext handle
             FheType fheType = HandleOps.extractFheType(ctHandle);
 
@@ -1082,8 +1088,8 @@ contract Decryption is
             _checkIsAccountAllowed(ctHandle, contractAddress);
 
             // Check the contract is included in the list of allowed contract addresses.
-            if (!_containsContractAddress(contractAddresses, contractAddress)) {
-                revert ContractNotInContractAddresses(contractAddress, contractAddresses);
+            if (!_containsContractAddress(contractsInfo.addresses, contractAddress)) {
+                revert ContractNotInContractAddresses(contractAddress, contractsInfo.addresses);
             }
 
             ctHandles[i] = ctHandle;

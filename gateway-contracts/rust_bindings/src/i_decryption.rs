@@ -28,6 +28,7 @@ interface IDecryption {
 
     error ContractAddressesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
     error ContractNotInContractAddresses(address contractAddress, address[] contractAddresses);
+    error CtHandleChainIdDiffersFromContractChainId(bytes32 ctHandle, uint256 chainId, uint256 contractChainId);
     error DecryptionNotRequested(uint256 decryptionId);
     error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
     error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCiphertextMaterial invalidSnsCtMaterial);
@@ -743,6 +744,27 @@ interface IDecryption {
         "name": "contractAddresses",
         "type": "address[]",
         "internalType": "address[]"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CtHandleChainIdDiffersFromContractChainId",
+    "inputs": [
+      {
+        "name": "ctHandle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "contractChainId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },
@@ -2227,6 +2249,104 @@ pub mod IDecryption {
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::Address,
                     > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CtHandleChainIdDiffersFromContractChainId(bytes32,uint256,uint256)` and selector `0x9590e916`.
+    ```solidity
+    error CtHandleChainIdDiffersFromContractChainId(bytes32 ctHandle, uint256 chainId, uint256 contractChainId);
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CtHandleChainIdDiffersFromContractChainId {
+        #[allow(missing_docs)]
+        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub contractChainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::FixedBytes<32>,
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::FixedBytes<32>,
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CtHandleChainIdDiffersFromContractChainId> for UnderlyingRustTuple<'_> {
+            fn from(value: CtHandleChainIdDiffersFromContractChainId) -> Self {
+                (value.ctHandle, value.chainId, value.contractChainId)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CtHandleChainIdDiffersFromContractChainId {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    ctHandle: tuple.0,
+                    chainId: tuple.1,
+                    contractChainId: tuple.2,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CtHandleChainIdDiffersFromContractChainId {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "CtHandleChainIdDiffersFromContractChainId(bytes32,uint256,uint256)";
+            const SELECTOR: [u8; 4] = [149u8, 144u8, 233u8, 22u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contractChainId),
                 )
             }
             #[inline]
@@ -6428,6 +6548,8 @@ pub mod IDecryption {
         #[allow(missing_docs)]
         ContractNotInContractAddresses(ContractNotInContractAddresses),
         #[allow(missing_docs)]
+        CtHandleChainIdDiffersFromContractChainId(CtHandleChainIdDiffersFromContractChainId),
+        #[allow(missing_docs)]
         DecryptionNotRequested(DecryptionNotRequested),
         #[allow(missing_docs)]
         DelegatorAddressInContractAddresses(DelegatorAddressInContractAddresses),
@@ -6470,6 +6592,7 @@ pub mod IDecryption {
             [48u8, 52u8, 128u8, 64u8],
             [50u8, 149u8, 24u8, 99u8],
             [87u8, 207u8, 162u8, 23u8],
+            [149u8, 144u8, 233u8, 22u8],
             [153u8, 236u8, 72u8, 217u8],
             [164u8, 195u8, 3u8, 145u8],
             [166u8, 166u8, 203u8, 33u8],
@@ -6487,7 +6610,7 @@ pub mod IDecryption {
     impl alloy_sol_types::SolInterface for IDecryptionErrors {
         const NAME: &'static str = "IDecryptionErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 16usize;
+        const COUNT: usize = 17usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -6496,6 +6619,9 @@ pub mod IDecryption {
                 }
                 Self::ContractNotInContractAddresses(_) => {
                     <ContractNotInContractAddresses as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::CtHandleChainIdDiffersFromContractChainId(_) => {
+                    <CtHandleChainIdDiffersFromContractChainId as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::DecryptionNotRequested(_) => {
                     <DecryptionNotRequested as alloy_sol_types::SolError>::SELECTOR
@@ -6512,7 +6638,9 @@ pub mod IDecryption {
                 Self::EmptyCtHandleContractPairs(_) => {
                     <EmptyCtHandleContractPairs as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::EmptyCtHandles(_) => <EmptyCtHandles as alloy_sol_types::SolError>::SELECTOR,
+                Self::EmptyCtHandles(_) => {
+                    <EmptyCtHandles as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::InvalidNullDurationDays(_) => {
                     <InvalidNullDurationDays as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -6595,6 +6723,19 @@ pub mod IDecryption {
                             .map(IDecryptionErrors::EmptyContractAddresses)
                     }
                     EmptyContractAddresses
+                },
+                {
+                    fn CtHandleChainIdDiffersFromContractChainId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <CtHandleChainIdDiffersFromContractChainId as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IDecryptionErrors::CtHandleChainIdDiffersFromContractChainId,
+                            )
+                    }
+                    CtHandleChainIdDiffersFromContractChainId
                 },
                 {
                     fn KmsNodeAlreadySigned(
@@ -6780,6 +6921,19 @@ pub mod IDecryption {
                     EmptyContractAddresses
                 },
                 {
+                    fn CtHandleChainIdDiffersFromContractChainId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <CtHandleChainIdDiffersFromContractChainId as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IDecryptionErrors::CtHandleChainIdDiffersFromContractChainId,
+                            )
+                    }
+                    CtHandleChainIdDiffersFromContractChainId
+                },
+                {
                     fn KmsNodeAlreadySigned(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionErrors> {
@@ -6922,6 +7076,11 @@ pub mod IDecryption {
                         inner,
                     )
                 }
+                Self::CtHandleChainIdDiffersFromContractChainId(inner) => {
+                    <CtHandleChainIdDiffersFromContractChainId as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::DecryptionNotRequested(inner) => {
                     <DecryptionNotRequested as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -7005,6 +7164,12 @@ pub mod IDecryption {
                 }
                 Self::ContractNotInContractAddresses(inner) => {
                     <ContractNotInContractAddresses as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::CtHandleChainIdDiffersFromContractChainId(inner) => {
+                    <CtHandleChainIdDiffersFromContractChainId as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
