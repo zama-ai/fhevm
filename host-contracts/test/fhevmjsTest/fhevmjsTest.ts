@@ -17,7 +17,7 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
       input.addBool(false);
     }
     const total = getTotalBits(input);
-    expect(total).to.eq(2048);
+    expect(total).to.eq(512);
     await input.encrypt();
   });
 
@@ -27,7 +27,7 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
       input.addBool(true);
     }
     const total = getTotalBits(input);
-    expect(total).to.eq(2048);
+    expect(total).to.eq(512);
     expect(() => input.addBool(false)).to.throw(
       'Packing more than 256 variables in a single input ciphertext is unsupported',
     );
