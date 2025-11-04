@@ -591,9 +591,6 @@ contract MultichainACL is
         mapping(address => bool) storage alreadyDelegatedUserDecryptionCoprocessors = $
             .alreadyDelegatedUserDecryptionCoprocessors[delegateUserDecryptionHash];
 
-        mapping(address => bool) storage alreadyRevokedUserDecryptionCoprocessors = $
-            .alreadyRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash];
-
         // Check if the coprocessor has already delegated the user decryption.
         if (alreadyDelegatedUserDecryptionCoprocessors[msg.sender]) {
             revert CoprocessorAlreadyDelegatedUserDecryption(
@@ -606,6 +603,9 @@ contract MultichainACL is
                 msg.sender
             );
         }
+
+        mapping(address => bool) storage alreadyRevokedUserDecryptionCoprocessors = $
+            .alreadyRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash];
 
         // Check if the coprocessor has already revoked the user decryption delegation.
         if (alreadyRevokedUserDecryptionCoprocessors[msg.sender]) {
