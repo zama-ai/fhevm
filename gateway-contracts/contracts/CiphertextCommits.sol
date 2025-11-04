@@ -202,7 +202,13 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function getCiphertextMaterials(
         bytes32[] calldata ctHandles
     ) external view virtual returns (CiphertextMaterial[] memory ctMaterials) {
+        // Check that the list of handles is not empty
+        if (ctHandles.length == 0) {
+            revert EmptyCtHandles();
+        }
+
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
+
         ctMaterials = new CiphertextMaterial[](ctHandles.length);
 
         for (uint256 i = 0; i < ctHandles.length; i++) {
@@ -233,6 +239,11 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function getSnsCiphertextMaterials(
         bytes32[] calldata ctHandles
     ) external view virtual returns (SnsCiphertextMaterial[] memory snsCtMaterials) {
+        // Check that the list of handles is not empty
+        if (ctHandles.length == 0) {
+            revert EmptyCtHandles();
+        }
+
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
         snsCtMaterials = new SnsCiphertextMaterial[](ctHandles.length);
 

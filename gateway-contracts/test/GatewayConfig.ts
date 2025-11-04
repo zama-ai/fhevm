@@ -206,6 +206,40 @@ describe("GatewayConfig", function () {
       ).to.be.revertedWithCustomError(gatewayConfig, "EmptyKmsNodes");
     });
 
+    it("Should revert because the KMS transaction sender is already registered", async function () {
+      // Deep copy the KMS nodes and duplicate the first KMS node's transaction sender address
+      const duplicatedTxSenderKmsNode = kmsNodes.map((node) => ({ ...node }));
+      duplicatedTxSenderKmsNode[0].txSenderAddress = duplicatedTxSenderKmsNode[1].txSenderAddress;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [protocolMetadata, thresholds, duplicatedTxSenderKmsNode, coprocessors, custodians],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "KmsTxSenderAlreadyRegistered")
+        .withArgs(duplicatedTxSenderKmsNode[0].txSenderAddress);
+    });
+
+    it("Should revert because the KMS signer is already registered", async function () {
+      // Deep copy the KMS nodes and duplicate the first KMS node's signer address
+      const duplicatedSignerKmsNode = kmsNodes.map((node) => ({ ...node }));
+      duplicatedSignerKmsNode[0].signerAddress = duplicatedSignerKmsNode[1].signerAddress;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [protocolMetadata, thresholds, duplicatedSignerKmsNode, coprocessors, custodians],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "KmsSignerAlreadyRegistered")
+        .withArgs(duplicatedSignerKmsNode[0].signerAddress);
+    });
+
     it("Should revert because the coprocessors list is empty", async function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
@@ -217,6 +251,40 @@ describe("GatewayConfig", function () {
       ).to.be.revertedWithCustomError(gatewayConfig, "EmptyCoprocessors");
     });
 
+    it("Should revert because the coprocessor transaction sender is already registered", async function () {
+      // Deep copy the coprocessors and duplicate the first coprocessor's transaction sender address
+      const duplicatedTxSenderCoprocessor = coprocessors.map((processor) => ({ ...processor }));
+      duplicatedTxSenderCoprocessor[0].txSenderAddress = duplicatedTxSenderCoprocessor[1].txSenderAddress;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [protocolMetadata, thresholds, kmsNodes, duplicatedTxSenderCoprocessor, custodians],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "CoprocessorTxSenderAlreadyRegistered")
+        .withArgs(duplicatedTxSenderCoprocessor[0].txSenderAddress);
+    });
+
+    it("Should revert because the coprocessor signer is already registered", async function () {
+      // Deep copy the coprocessors and duplicate the first coprocessor's signer address
+      const duplicatedSignerCoprocessor = coprocessors.map((processor) => ({ ...processor }));
+      duplicatedSignerCoprocessor[0].signerAddress = duplicatedSignerCoprocessor[1].signerAddress;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [protocolMetadata, thresholds, kmsNodes, duplicatedSignerCoprocessor, custodians],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "CoprocessorSignerAlreadyRegistered")
+        .withArgs(duplicatedSignerCoprocessor[0].signerAddress);
+    });
+
     it("Should revert because the custodians list is empty", async function () {
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
@@ -226,6 +294,40 @@ describe("GatewayConfig", function () {
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, "EmptyCustodians");
+    });
+
+    it("Should revert because the custodian transaction sender is already registered", async function () {
+      // Deep copy the custodians and duplicate the first custodian's transaction sender address
+      const duplicatedTxSenderCustodian = custodians.map((custodian) => ({ ...custodian }));
+      duplicatedTxSenderCustodian[0].txSenderAddress = duplicatedTxSenderCustodian[1].txSenderAddress;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [protocolMetadata, thresholds, kmsNodes, coprocessors, duplicatedTxSenderCustodian],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "CustodianTxSenderAlreadyRegistered")
+        .withArgs(duplicatedTxSenderCustodian[0].txSenderAddress);
+    });
+
+    it("Should revert because the custodian signer is already registered", async function () {
+      // Deep copy the custodians and duplicate the first custodian's signer address
+      const duplicatedSignerCustodian = custodians.map((custodian) => ({ ...custodian }));
+      duplicatedSignerCustodian[0].signerAddress = duplicatedSignerCustodian[1].signerAddress;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [protocolMetadata, thresholds, kmsNodes, coprocessors, duplicatedSignerCustodian],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "CustodianSignerAlreadyRegistered")
+        .withArgs(duplicatedSignerCustodian[0].signerAddress);
     });
 
     it("Should revert because the MPC threshold is too high", async function () {

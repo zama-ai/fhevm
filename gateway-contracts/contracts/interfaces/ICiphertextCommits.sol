@@ -49,6 +49,11 @@ interface ICiphertextCommits {
     error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
 
     /**
+     * @notice Error indicating that the list of handles is empty.
+     */
+    error EmptyCtHandles();
+
+    /**
      * @notice Error indicating that the given ciphertext material represented by the given handle has not
      * been added in the contract.
      * @param ctHandle The handle of the not found ciphertext.

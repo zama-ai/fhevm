@@ -39,6 +39,10 @@ interface IGatewayConfig {
     }
 
     error ChainIdNotUint64(uint256 chainId);
+    error CoprocessorSignerAlreadyRegistered(address coprocessorSignerAddress);
+    error CoprocessorTxSenderAlreadyRegistered(address coprocessorTxSenderAddress);
+    error CustodianSignerAlreadyRegistered(address custodianSignerAddress);
+    error CustodianTxSenderAlreadyRegistered(address custodianTxSenderAddress);
     error EmptyCoprocessors();
     error EmptyCustodians();
     error EmptyKmsNodes();
@@ -53,6 +57,8 @@ interface IGatewayConfig {
     error InvalidNullKmsGenThreshold();
     error InvalidNullPublicDecryptionThreshold();
     error InvalidNullUserDecryptionThreshold();
+    error KmsSignerAlreadyRegistered(address kmsSignerAddress);
+    error KmsTxSenderAlreadyRegistered(address kmsTxSenderAddress);
     error NotPauser(address account);
 
     event AddHostChain(HostChain hostChain);
@@ -1269,6 +1275,50 @@ interface IGatewayConfig {
   },
   {
     "type": "error",
+    "name": "CoprocessorSignerAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "coprocessorSignerAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CoprocessorTxSenderAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "coprocessorTxSenderAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CustodianSignerAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "custodianSignerAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CustodianTxSenderAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "custodianTxSenderAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "EmptyCoprocessors",
     "inputs": []
   },
@@ -1397,6 +1447,28 @@ interface IGatewayConfig {
     "type": "error",
     "name": "InvalidNullUserDecryptionThreshold",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "KmsSignerAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "kmsSignerAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "KmsTxSenderAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "kmsTxSenderAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -2928,6 +3000,314 @@ pub mod IGatewayConfig {
         }
     };
     #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CoprocessorSignerAlreadyRegistered(address)` and selector `0x0131b5e9`.
+    ```solidity
+    error CoprocessorSignerAlreadyRegistered(address coprocessorSignerAddress);
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CoprocessorSignerAlreadyRegistered {
+        #[allow(missing_docs)]
+        pub coprocessorSignerAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CoprocessorSignerAlreadyRegistered> for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorSignerAlreadyRegistered) -> Self {
+                (value.coprocessorSignerAddress,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CoprocessorSignerAlreadyRegistered {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    coprocessorSignerAddress: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CoprocessorSignerAlreadyRegistered {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CoprocessorSignerAlreadyRegistered(address)";
+            const SELECTOR: [u8; 4] = [1u8, 49u8, 181u8, 233u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.coprocessorSignerAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CoprocessorTxSenderAlreadyRegistered(address)` and selector `0xbd7cb881`.
+    ```solidity
+    error CoprocessorTxSenderAlreadyRegistered(address coprocessorTxSenderAddress);
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CoprocessorTxSenderAlreadyRegistered {
+        #[allow(missing_docs)]
+        pub coprocessorTxSenderAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CoprocessorTxSenderAlreadyRegistered> for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorTxSenderAlreadyRegistered) -> Self {
+                (value.coprocessorTxSenderAddress,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CoprocessorTxSenderAlreadyRegistered {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    coprocessorTxSenderAddress: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CoprocessorTxSenderAlreadyRegistered {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CoprocessorTxSenderAlreadyRegistered(address)";
+            const SELECTOR: [u8; 4] = [189u8, 124u8, 184u8, 129u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.coprocessorTxSenderAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CustodianSignerAlreadyRegistered(address)` and selector `0x3bb99e22`.
+    ```solidity
+    error CustodianSignerAlreadyRegistered(address custodianSignerAddress);
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CustodianSignerAlreadyRegistered {
+        #[allow(missing_docs)]
+        pub custodianSignerAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CustodianSignerAlreadyRegistered> for UnderlyingRustTuple<'_> {
+            fn from(value: CustodianSignerAlreadyRegistered) -> Self {
+                (value.custodianSignerAddress,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CustodianSignerAlreadyRegistered {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    custodianSignerAddress: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CustodianSignerAlreadyRegistered {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CustodianSignerAlreadyRegistered(address)";
+            const SELECTOR: [u8; 4] = [59u8, 185u8, 158u8, 34u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.custodianSignerAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CustodianTxSenderAlreadyRegistered(address)` and selector `0x6da57f99`.
+    ```solidity
+    error CustodianTxSenderAlreadyRegistered(address custodianTxSenderAddress);
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CustodianTxSenderAlreadyRegistered {
+        #[allow(missing_docs)]
+        pub custodianTxSenderAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CustodianTxSenderAlreadyRegistered> for UnderlyingRustTuple<'_> {
+            fn from(value: CustodianTxSenderAlreadyRegistered) -> Self {
+                (value.custodianTxSenderAddress,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CustodianTxSenderAlreadyRegistered {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    custodianTxSenderAddress: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CustodianTxSenderAlreadyRegistered {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CustodianTxSenderAlreadyRegistered(address)";
+            const SELECTOR: [u8; 4] = [109u8, 165u8, 127u8, 153u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.custodianTxSenderAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `EmptyCoprocessors()` and selector `0x8af082ef`.
     ```solidity
     error EmptyCoprocessors();
@@ -3981,6 +4361,160 @@ pub mod IGatewayConfig {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `KmsSignerAlreadyRegistered(address)` and selector `0xf51af6bb`.
+    ```solidity
+    error KmsSignerAlreadyRegistered(address kmsSignerAddress);
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct KmsSignerAlreadyRegistered {
+        #[allow(missing_docs)]
+        pub kmsSignerAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<KmsSignerAlreadyRegistered> for UnderlyingRustTuple<'_> {
+            fn from(value: KmsSignerAlreadyRegistered) -> Self {
+                (value.kmsSignerAddress,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsSignerAlreadyRegistered {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    kmsSignerAddress: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for KmsSignerAlreadyRegistered {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "KmsSignerAlreadyRegistered(address)";
+            const SELECTOR: [u8; 4] = [245u8, 26u8, 246u8, 187u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.kmsSignerAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `KmsTxSenderAlreadyRegistered(address)` and selector `0xd18c4ff0`.
+    ```solidity
+    error KmsTxSenderAlreadyRegistered(address kmsTxSenderAddress);
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct KmsTxSenderAlreadyRegistered {
+        #[allow(missing_docs)]
+        pub kmsTxSenderAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<KmsTxSenderAlreadyRegistered> for UnderlyingRustTuple<'_> {
+            fn from(value: KmsTxSenderAlreadyRegistered) -> Self {
+                (value.kmsTxSenderAddress,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsTxSenderAlreadyRegistered {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    kmsTxSenderAddress: tuple.0,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for KmsTxSenderAlreadyRegistered {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "KmsTxSenderAlreadyRegistered(address)";
+            const SELECTOR: [u8; 4] = [209u8, 140u8, 79u8, 240u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.kmsTxSenderAddress,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -11673,6 +12207,14 @@ pub mod IGatewayConfig {
         #[allow(missing_docs)]
         ChainIdNotUint64(ChainIdNotUint64),
         #[allow(missing_docs)]
+        CoprocessorSignerAlreadyRegistered(CoprocessorSignerAlreadyRegistered),
+        #[allow(missing_docs)]
+        CoprocessorTxSenderAlreadyRegistered(CoprocessorTxSenderAlreadyRegistered),
+        #[allow(missing_docs)]
+        CustodianSignerAlreadyRegistered(CustodianSignerAlreadyRegistered),
+        #[allow(missing_docs)]
+        CustodianTxSenderAlreadyRegistered(CustodianTxSenderAlreadyRegistered),
+        #[allow(missing_docs)]
         EmptyCoprocessors(EmptyCoprocessors),
         #[allow(missing_docs)]
         EmptyCustodians(EmptyCustodians),
@@ -11701,6 +12243,10 @@ pub mod IGatewayConfig {
         #[allow(missing_docs)]
         InvalidNullUserDecryptionThreshold(InvalidNullUserDecryptionThreshold),
         #[allow(missing_docs)]
+        KmsSignerAlreadyRegistered(KmsSignerAlreadyRegistered),
+        #[allow(missing_docs)]
+        KmsTxSenderAlreadyRegistered(KmsTxSenderAlreadyRegistered),
+        #[allow(missing_docs)]
         NotPauser(NotPauser),
     }
     #[automatically_derived]
@@ -11712,12 +12258,15 @@ pub mod IGatewayConfig {
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [1u8, 49u8, 181u8, 233u8],
             [6u8, 140u8, 141u8, 64u8],
             [15u8, 105u8, 203u8, 252u8],
             [32u8, 106u8, 52u8, 110u8],
             [34u8, 247u8, 63u8, 234u8],
+            [59u8, 185u8, 158u8, 34u8],
             [62u8, 229u8, 7u8, 116u8],
             [65u8, 120u8, 222u8, 66u8],
+            [109u8, 165u8, 127u8, 153u8],
             [132u8, 32u8, 143u8, 35u8],
             [138u8, 240u8, 130u8, 239u8],
             [144u8, 126u8, 102u8, 129u8],
@@ -11725,21 +12274,36 @@ pub mod IGatewayConfig {
             [151u8, 190u8, 171u8, 173u8],
             [177u8, 174u8, 146u8, 234u8],
             [182u8, 13u8, 36u8, 65u8],
+            [189u8, 124u8, 184u8, 129u8],
             [202u8, 209u8, 213u8, 52u8],
+            [209u8, 140u8, 79u8, 240u8],
             [210u8, 83u8, 94u8, 17u8],
             [230u8, 10u8, 114u8, 113u8],
+            [245u8, 26u8, 246u8, 187u8],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 16usize;
+        const COUNT: usize = 22usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::ChainIdNotUint64(_) => {
                     <ChainIdNotUint64 as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::CoprocessorSignerAlreadyRegistered(_) => {
+                    <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::CoprocessorTxSenderAlreadyRegistered(_) => {
+                    <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::CustodianSignerAlreadyRegistered(_) => {
+                    <CustodianSignerAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::CustodianTxSenderAlreadyRegistered(_) => {
+                    <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::EmptyCoprocessors(_) => {
                     <EmptyCoprocessors as alloy_sol_types::SolError>::SELECTOR
@@ -11781,6 +12345,12 @@ pub mod IGatewayConfig {
                 Self::InvalidNullUserDecryptionThreshold(_) => {
                     <InvalidNullUserDecryptionThreshold as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::KmsSignerAlreadyRegistered(_) => {
+                    <KmsSignerAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::KmsTxSenderAlreadyRegistered(_) => {
+                    <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::NotPauser(_) => <NotPauser as alloy_sol_types::SolError>::SELECTOR,
             }
         }
@@ -11796,6 +12366,19 @@ pub mod IGatewayConfig {
         #[allow(non_snake_case)]
         fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<IGatewayConfigErrors>] = &[
+                {
+                    fn CoprocessorSignerAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::CoprocessorSignerAlreadyRegistered,
+                            )
+                    }
+                    CoprocessorSignerAlreadyRegistered
+                },
                 {
                     fn EmptyKmsNodes(data: &[u8]) -> alloy_sol_types::Result<IGatewayConfigErrors> {
                         <EmptyKmsNodes as alloy_sol_types::SolError>::abi_decode_raw(data)
@@ -11831,6 +12414,17 @@ pub mod IGatewayConfig {
                     InvalidNullChainId
                 },
                 {
+                    fn CustodianSignerAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CustodianSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::CustodianSignerAlreadyRegistered)
+                    }
+                    CustodianSignerAlreadyRegistered
+                },
+                {
                     fn InvalidNullKmsGenThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -11849,6 +12443,19 @@ pub mod IGatewayConfig {
                             .map(IGatewayConfigErrors::ChainIdNotUint64)
                     }
                     ChainIdNotUint64
+                },
+                {
+                    fn CustodianTxSenderAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::CustodianTxSenderAlreadyRegistered,
+                            )
+                    }
+                    CustodianTxSenderAlreadyRegistered
                 },
                 {
                     fn InvalidHighPublicDecryptionThreshold(
@@ -11928,6 +12535,19 @@ pub mod IGatewayConfig {
                     InvalidNullCoprocessorThreshold
                 },
                 {
+                    fn CoprocessorTxSenderAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::CoprocessorTxSenderAlreadyRegistered,
+                            )
+                    }
+                    CoprocessorTxSenderAlreadyRegistered
+                },
+                {
                     fn EmptyCustodians(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -11935,6 +12555,17 @@ pub mod IGatewayConfig {
                             .map(IGatewayConfigErrors::EmptyCustodians)
                     }
                     EmptyCustodians
+                },
+                {
+                    fn KmsTxSenderAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                            data,
+                        )
+                        .map(IGatewayConfigErrors::KmsTxSenderAlreadyRegistered)
+                    }
+                    KmsTxSenderAlreadyRegistered
                 },
                 {
                     fn InvalidHighUserDecryptionThreshold(
@@ -11962,6 +12593,17 @@ pub mod IGatewayConfig {
                     }
                     InvalidNullUserDecryptionThreshold
                 },
+                {
+                    fn KmsSignerAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <KmsSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw(
+                            data,
+                        )
+                        .map(IGatewayConfigErrors::KmsSignerAlreadyRegistered)
+                    }
+                    KmsSignerAlreadyRegistered
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(alloy_sol_types::Error::unknown_selector(
@@ -11981,6 +12623,19 @@ pub mod IGatewayConfig {
                 &[u8],
             )
                 -> alloy_sol_types::Result<IGatewayConfigErrors>] = &[
+                {
+                    fn CoprocessorSignerAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::CoprocessorSignerAlreadyRegistered,
+                            )
+                    }
+                    CoprocessorSignerAlreadyRegistered
+                },
                 {
                     fn EmptyKmsNodes(data: &[u8]) -> alloy_sol_types::Result<IGatewayConfigErrors> {
                         <EmptyKmsNodes as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
@@ -12018,6 +12673,17 @@ pub mod IGatewayConfig {
                     InvalidNullChainId
                 },
                 {
+                    fn CustodianSignerAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CustodianSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::CustodianSignerAlreadyRegistered)
+                    }
+                    CustodianSignerAlreadyRegistered
+                },
+                {
                     fn InvalidNullKmsGenThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -12038,6 +12704,19 @@ pub mod IGatewayConfig {
                         .map(IGatewayConfigErrors::ChainIdNotUint64)
                     }
                     ChainIdNotUint64
+                },
+                {
+                    fn CustodianTxSenderAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::CustodianTxSenderAlreadyRegistered,
+                            )
+                    }
+                    CustodianTxSenderAlreadyRegistered
                 },
                 {
                     fn InvalidHighPublicDecryptionThreshold(
@@ -12121,6 +12800,19 @@ pub mod IGatewayConfig {
                     InvalidNullCoprocessorThreshold
                 },
                 {
+                    fn CoprocessorTxSenderAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IGatewayConfigErrors::CoprocessorTxSenderAlreadyRegistered,
+                            )
+                    }
+                    CoprocessorTxSenderAlreadyRegistered
+                },
+                {
                     fn EmptyCustodians(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -12130,6 +12822,17 @@ pub mod IGatewayConfig {
                         .map(IGatewayConfigErrors::EmptyCustodians)
                     }
                     EmptyCustodians
+                },
+                {
+                    fn KmsTxSenderAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::KmsTxSenderAlreadyRegistered)
+                    }
+                    KmsTxSenderAlreadyRegistered
                 },
                 {
                     fn InvalidHighUserDecryptionThreshold(
@@ -12157,6 +12860,17 @@ pub mod IGatewayConfig {
                     }
                     InvalidNullUserDecryptionThreshold
                 },
+                {
+                    fn KmsSignerAlreadyRegistered(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <KmsSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::KmsSignerAlreadyRegistered)
+                    }
+                    KmsSignerAlreadyRegistered
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(alloy_sol_types::Error::unknown_selector(
@@ -12171,6 +12885,26 @@ pub mod IGatewayConfig {
             match self {
                 Self::ChainIdNotUint64(inner) => {
                     <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::CoprocessorSignerAlreadyRegistered(inner) => {
+                    <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::CoprocessorTxSenderAlreadyRegistered(inner) => {
+                    <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::CustodianSignerAlreadyRegistered(inner) => {
+                    <CustodianSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::CustodianTxSenderAlreadyRegistered(inner) => {
+                    <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -12242,6 +12976,16 @@ pub mod IGatewayConfig {
                         inner,
                     )
                 }
+                Self::KmsSignerAlreadyRegistered(inner) => {
+                    <KmsSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::KmsTxSenderAlreadyRegistered(inner) => {
+                    <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::NotPauser(inner) => {
                     <NotPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
@@ -12252,6 +12996,30 @@ pub mod IGatewayConfig {
             match self {
                 Self::ChainIdNotUint64(inner) => {
                     <ChainIdNotUint64 as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::CoprocessorSignerAlreadyRegistered(inner) => {
+                    <CoprocessorSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::CoprocessorTxSenderAlreadyRegistered(inner) => {
+                    <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::CustodianSignerAlreadyRegistered(inner) => {
+                    <CustodianSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::CustodianTxSenderAlreadyRegistered(inner) => {
+                    <CustodianTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -12336,6 +13104,18 @@ pub mod IGatewayConfig {
                 }
                 Self::InvalidNullUserDecryptionThreshold(inner) => {
                     <InvalidNullUserDecryptionThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::KmsSignerAlreadyRegistered(inner) => {
+                    <KmsSignerAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::KmsTxSenderAlreadyRegistered(inner) => {
+                    <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
