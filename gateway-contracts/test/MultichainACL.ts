@@ -1,7 +1,7 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
-import { Wallet } from "ethers";
+import { Wallet, ethers } from "ethers";
 import hre from "hardhat";
 
 import { GatewayConfig, MultichainACL, MultichainACL__factory } from "../typechain-types";

@@ -124,6 +124,15 @@ interface IDecryption {
     error EmptyCtHandleContractPairs();
 
     /**
+     * @notice Error indicating that the chain ID of the ciphertext handle differs from the contract
+     * chain ID found in the user decryption request.
+     * @param ctHandle The ciphertext handle.
+     * @param chainId The chain ID of the ciphertext handle.
+     * @param contractChainId The chain ID of the contract.
+     */
+    error CtHandleChainIdDiffersFromContractChainId(bytes32 ctHandle, uint256 chainId, uint256 contractChainId);
+
+    /**
      * @notice Error indicating that the total bit size of the decryption request exceeds
      * the maximum allowed.
      * @param maxBitSize The maximum allowed bit size.
