@@ -1,4 +1,4 @@
-use crate::{check_db_empty, insert_rand_request};
+use crate::common::{check_no_request_in_db, insert_rand_request};
 use alloy::primitives::U256;
 use connector_utils::tests::setup::TestInstanceBuilder;
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
@@ -60,9 +60,9 @@ async fn test_parallel_request_picking(request_str: &str) -> anyhow::Result<()> 
     let mut event_picker = init_event_picker(test_instance.db().clone()).await?;
 
     let insert_request0 =
-        insert_rand_request(test_instance.db(), request_str, Some(U256::ZERO)).await?;
+        insert_rand_request(test_instance.db(), request_str, Some(U256::ZERO), false).await?;
     let insert_request1 =
-        insert_rand_request(test_instance.db(), request_str, Some(U256::ONE)).await?;
+        insert_rand_request(test_instance.db(), request_str, Some(U256::ONE), false).await?;
 
     info!("Picking two {request_str}...");
     let events0 = event_picker.pick_events().await?;
@@ -101,7 +101,7 @@ async fn test_parallel_request_picking(request_str: &str) -> anyhow::Result<()> 
         event.delete_from_db(test_instance.db()).await;
     }
     info!("Done! Checking DB is empty...");
-    check_db_empty(test_instance.db(), request_str).await?;
+    check_no_request_in_db(test_instance.db(), request_str).await?;
     info!("Done!");
     Ok(())
 }

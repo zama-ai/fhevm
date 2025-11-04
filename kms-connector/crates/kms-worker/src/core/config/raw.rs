@@ -36,12 +36,6 @@ pub struct RawConfig {
     pub events_batch_size: u8,
     #[serde(default = "default_grpc_request_retries")]
     pub grpc_request_retries: u8,
-    #[serde(default = "default_public_decryption_timeout")]
-    pub public_decryption_timeout_secs: u64,
-    #[serde(default = "default_user_decryption_timeout")]
-    pub user_decryption_timeout_secs: u64,
-    #[serde(default = "default_grpc_poll_interval")]
-    pub grpc_poll_interval_secs: u64,
     #[serde(default = "default_s3_ciphertext_retrieval_retries")]
     pub s3_ciphertext_retrieval_retries: u8,
     #[serde(default = "default_s3_connect_timeout")]
@@ -72,18 +66,6 @@ fn default_events_batch_size() -> u8 {
 
 fn default_grpc_request_retries() -> u8 {
     3
-}
-
-fn default_public_decryption_timeout() -> u64 {
-    300 // 5 minutes
-}
-
-fn default_user_decryption_timeout() -> u64 {
-    300 // 5 minutes
-}
-
-fn default_grpc_poll_interval() -> u64 {
-    1 // 1 seconds
 }
 
 fn default_s3_ciphertext_retrieval_retries() -> u8 {
@@ -155,9 +137,6 @@ impl Default for RawConfig {
             service_name: "kms-connector".to_string(),
             events_batch_size: 10,
             grpc_request_retries: 3,
-            public_decryption_timeout_secs: 300,
-            user_decryption_timeout_secs: 300,
-            grpc_poll_interval_secs: 5,
             s3_ciphertext_retrieval_retries: 3,
             s3_connect_timeout: 2,
             task_limit: default_task_limit(),

@@ -19,7 +19,7 @@ pub trait EventProcessor: Send {
 
     fn process(
         &mut self,
-        event: &Self::Event,
+        event: &mut Self::Event,
     ) -> impl Future<Output = Option<KmsResponseKind>> + Send;
 }
 
@@ -43,7 +43,7 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
-    async fn process(&mut self, event: &Self::Event) -> Option<KmsResponseKind> {
+    async fn process(&mut self, event: &mut Self::Event) -> Option<KmsResponseKind> {
         info!("Starting to process {:?}...", event.kind);
         match (self.inner_process(event).await, &event.kind) {
             (Ok(response), _) => {
@@ -95,15 +95,15 @@ impl<P: Provider> DbEventProcessor<P> {
     #[tracing::instrument(skip_all)]
     async fn prepare_request(
         &self,
-        event: GatewayEvent,
+        event: &GatewayEvent,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
-        match event.kind {
+        match &event.kind {
             GatewayEventKind::PublicDecryption(req) => {
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
-                        req.snsCtMaterials,
-                        req.extraData.into(),
+                        &req.snsCtMaterials,
+                        &req.extraData,
                         None,
                     )
                     .await
@@ -112,9 +112,12 @@ impl<P: Provider> DbEventProcessor<P> {
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
-                        req.snsCtMaterials,
-                        req.extraData.into(),
-                        Some(UserDecryptionExtraData::new(req.userAddress, req.publicKey)),
+                        &req.snsCtMaterials,
+                        &req.extraData,
+                        Some(UserDecryptionExtraData::new(
+                            req.userAddress,
+                            req.publicKey.clone(),
+                        )),
                     )
                     .await
             }
@@ -128,7 +131,7 @@ impl<P: Provider> DbEventProcessor<P> {
                 self.kms_generation_processor.prepare_crsgen_request(req)
             }
             GatewayEventKind::PrssInit(id) => {
-                Ok(self.kms_generation_processor.prepare_prss_init_request(id))
+                Ok(self.kms_generation_processor.prepare_prss_init_request(*id))
             }
             GatewayEventKind::KeyReshareSameSet(req) => self
                 .kms_generation_processor
@@ -140,10 +143,15 @@ impl<P: Provider> DbEventProcessor<P> {
     /// Core event processing logic function.
     async fn inner_process(
         &mut self,
-        event: &GatewayEvent,
+        event: &mut GatewayEvent,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
-        let request = self.prepare_request(event.clone()).await?;
-        let grpc_response = self.kms_client.send_request(request).await?;
+        let request = self.prepare_request(event).await?;
+
+        if !event.already_sent {
+            self.kms_client.send_request(&request).await?;
+            event.already_sent = true;
+        }
+        let grpc_response = self.kms_client.poll_result(request).await?;
 
         if let KmsGrpcResponse::NoResponseExpected = &grpc_response {
             event.delete_from_db(&self.db_pool).await;

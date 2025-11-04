@@ -1,4 +1,4 @@
-use crate::insert_rand_request;
+use crate::common::insert_rand_request;
 use connector_utils::tests::setup::TestInstanceBuilder;
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
 use rstest::rstest;
@@ -59,7 +59,8 @@ async fn test_pick_request_with_polling_backup(request_str: &str) -> anyhow::Res
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
     info!("Inserting {request_str} before starting the event picker...");
-    let inserted_request = insert_rand_request(test_instance.db(), request_str, None).await?;
+    let inserted_request =
+        insert_rand_request(test_instance.db(), request_str, None, false).await?;
 
     let mut event_picker = init_event_picker(test_instance.db().clone()).await?;
     info!("Picking {request_str}...");
