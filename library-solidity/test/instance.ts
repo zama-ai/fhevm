@@ -223,10 +223,11 @@ export const decryptAddress = async (handle: string): Promise<string> => {
   }
 };
 
-export function getTotalBits(input: RelayerEncryptedInput) {
+export function getTotalBits(input: RelayerEncryptedInput): number {
   let bits = input.getBits();
   let total = 0;
   for (let i = 0; i < bits.length; ++i) {
     total += bits[i];
   }
+  return total;
 }
