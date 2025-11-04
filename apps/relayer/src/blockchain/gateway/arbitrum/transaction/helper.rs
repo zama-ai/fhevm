@@ -114,7 +114,7 @@ impl TransactionHelper {
 
         let receipt = self
             .tx_engine
-            .send_raw_transaction_sync(target, calldata, None, true)
+            .send_raw_transaction_sync(target, calldata, None)
             .await
             .map_err(|error| {
                 metrics::transaction::transaction_failure(tx_metric_type);

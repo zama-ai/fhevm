@@ -1,8 +1,7 @@
 use crate::blockchain::fhevm::ethereum::transaction::fhevm::FhevmError;
-use crate::blockchain::gateway::arbitrum::transaction::engine::TransactionError;
+use crate::blockchain::gateway::arbitrum::transaction::engine::GatewayTxnError;
 use crate::{
     blockchain::fhevm::ethereum::transaction::TransactionServiceError as FhevmTransactionServiceError,
-    blockchain::gateway::arbitrum::transaction::TransactionServiceError as GatewayTransactionServiceError,
     config::settings::AppConfigError,
 };
 use alloy::primitives::Address;
@@ -91,37 +90,8 @@ impl From<FhevmTransactionServiceError> for EventProcessingError {
     }
 }
 
-impl From<GatewayTransactionServiceError> for EventProcessingError {
-    fn from(e: GatewayTransactionServiceError) -> Self {
-        match e {
-            GatewayTransactionServiceError::Failed(msg) => {
-                Self::TransactionError(format!("Transaction failed: {msg}"))
-            }
-            GatewayTransactionServiceError::Timeout(secs) => {
-                Self::TransactionError(format!("Transaction timed out after {secs} seconds"))
-            }
-            GatewayTransactionServiceError::GasEstimation(msg) => {
-                Self::TransactionError(format!("Gas estimation failed: {msg}"))
-            }
-            GatewayTransactionServiceError::NonceError(msg) => {
-                Self::TransactionError(format!("Nonce error: {msg}"))
-            }
-            GatewayTransactionServiceError::Network(msg) => {
-                Self::TransactionError(format!("Network error: {msg}"))
-            }
-            GatewayTransactionServiceError::Config(msg) => {
-                Self::HandlerError(format!("Config error: {msg}"))
-            }
-            GatewayTransactionServiceError::Provider(msg) => {
-                Self::TransactionError(format!("Provider error: {msg}"))
-            }
-            GatewayTransactionServiceError::Other(err) => Self::TransactionError(err.to_string()),
-        }
-    }
-}
-
-impl From<TransactionError> for EventProcessingError {
-    fn from(e: TransactionError) -> Self {
+impl From<GatewayTxnError> for EventProcessingError {
+    fn from(e: GatewayTxnError) -> Self {
         EventProcessingError::TransactionError(e.to_string())
     }
 }

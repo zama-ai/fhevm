@@ -35,11 +35,11 @@ impl fmt::Display for AccountState {
 
 /// A robust, in-memory nonce manager for a scalable transaction engine.
 #[derive(Debug, Default, Clone)]
-pub struct ZamaNonceManager {
+pub struct NonceManagerNonOptimistic {
     accounts: DashMap<Address, Arc<Mutex<AccountState>>>,
 }
 
-impl ZamaNonceManager {
+impl NonceManagerNonOptimistic {
     pub fn new() -> Self {
         Self::default()
     }
@@ -161,7 +161,7 @@ impl ZamaNonceManager {
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl NonceManager for ZamaNonceManager {
+impl NonceManager for NonceManagerNonOptimistic {
     /// Implements the `NonceManager` trait for seamless integration with Alloy's provider stack.
     /// This method directly calls our core `get_increase_and_lock_nonce` logic.
     async fn get_next_nonce<P, N>(&self, provider: &P, address: Address) -> TransportResult<u64>
@@ -209,7 +209,7 @@ mod tests {
     #[tokio::test]
     async fn test_initialization_matches_live_chain_nonce() {
         let provider = get_live_provider().await;
-        let manager = ZamaNonceManager::new();
+        let manager = NonceManagerNonOptimistic::new();
         let address = get_test_address();
 
         let on_chain_nonce = provider.get_transaction_count(address).await.unwrap();
@@ -234,7 +234,7 @@ mod tests {
     #[tokio::test]
     async fn test_sequential_nonces_are_dispensed_correctly() {
         let provider = get_live_provider().await;
-        let manager = ZamaNonceManager::new();
+        let manager = NonceManagerNonOptimistic::new();
         // let address = get_test_address();
 
         // This test requires a clean state, so we use a fresh, unfunded address.
@@ -269,7 +269,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_next_nonce_prioritizes_available_gaps_over_sequential() {
         let provider = get_live_provider().await;
-        let manager = ZamaNonceManager::new();
+        let manager = NonceManagerNonOptimistic::new();
         let address = get_test_address();
 
         // Manually set up a state with a high `next_nonce` and some available gaps.
@@ -309,7 +309,7 @@ mod tests {
 
         // 1. Arrange
         let provider = get_live_provider().await;
-        let manager = ZamaNonceManager::new();
+        let manager = NonceManagerNonOptimistic::new();
         // Use a fresh address to guarantee the nonce starts from 0.
         let address = Address::from_str("0x1111111111111111111111111111111111111111").unwrap();
 
@@ -368,7 +368,7 @@ mod tests {
 
         // 1. Arrange: Dispatch 3 nonces (0, 1, 2)
         let provider = get_live_provider().await;
-        let manager = ZamaNonceManager::new();
+        let manager = NonceManagerNonOptimistic::new();
         let address = Address::from_str("0x2222222222222222222222222222222222222222").unwrap();
         manager.get_next_nonce(&provider, address).await.unwrap(); // Nonce 0
         manager.get_next_nonce(&provider, address).await.unwrap(); // Nonce 1
@@ -421,7 +421,7 @@ mod tests {
 
         // 1. Arrange
         let provider = Arc::new(get_live_provider().await);
-        let manager = Arc::new(ZamaNonceManager::new());
+        let manager = Arc::new(NonceManagerNonOptimistic::new());
         let address = Address::from_str("0x3333333333333333333333333333333333333333").unwrap();
 
         let initial_nonce = provider.get_transaction_count(address).await.unwrap();
@@ -478,7 +478,7 @@ mod tests {
 
         // 1. Arrange: Get 5 nonces (0-4)
         let provider = get_live_provider().await;
-        let manager = ZamaNonceManager::new();
+        let manager = NonceManagerNonOptimistic::new();
         let address = Address::from_str("0x4444444444444444444444444444444444444444").unwrap();
         for i in 0..5 {
             assert_eq!(manager.get_next_nonce(&provider, address).await.unwrap(), i);
@@ -546,7 +546,7 @@ mod tests {
 
         // 1. Arrange
         let provider = Arc::new(get_live_provider().await);
-        let manager = Arc::new(ZamaNonceManager::new());
+        let manager = Arc::new(NonceManagerNonOptimistic::new());
         // Use a fresh address for a predictable state.
         let address = Address::from_str("0x5555555555555555555555555555555555555555").unwrap();
 

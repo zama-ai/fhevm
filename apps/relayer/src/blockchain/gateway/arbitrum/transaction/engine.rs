@@ -20,7 +20,7 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 use crate::blockchain::gateway::arbitrum::transaction::{
-    nonce_manager::ZamaNonceManager, provider::NonceManagedProvider,
+    nonce_manager::NonceManagerNonOptimistic, provider::NonceManagedProvider,
 };
 
 pub trait SignerCombined: TxSigner<Signature> + Signer + Send + Sync + Debug {}
@@ -29,12 +29,9 @@ pub trait SignerCombined: TxSigner<Signature> + Signer + Send + Sync + Debug {}
 // as long as `T` now also implements `Debug`.
 impl<T: TxSigner<Signature> + Signer + Send + Sync + Debug> SignerCombined for T {}
 
-// TODO: Rework a proper trsnsaction error manager.
+// TODO: Rework this, with a clean triage.
 #[derive(Error, Debug)]
-pub enum TransactionError {
-    #[error("Invalid private key: {0}")]
-    InvalidPrivateKey(String),
-
+pub enum GatewayTxnError {
     #[error("Invalid contract address: {0}")]
     InvalidAddress(String),
 
@@ -44,35 +41,23 @@ pub enum TransactionError {
     #[error("Transaction failed: {0}")]
     TransactionFailed(String),
 
+    // Will be useful when adding timeout.
     #[error("Transaction timeout after {0} seconds")]
     TransactionTimeout(u64),
 
-    #[error("Gas estimation failed: {0}")]
-    GasEstimationFailed(String),
+    // TODO: Review this error.
+    #[error("Transaction simulation failed: {0}")]
+    SimulationFailed(String),
 
-    #[error(
-        "Transaction monitoring timed out after {0} seconds, but transaction may still succeed"
-    )]
-    MonitoringTimeout(u64),
-
-    #[error("Receipt not found after {0} attempts")]
-    ReceiptNotFound(u32),
-
-    #[error("Insufficient confirmations: required {required}, got {actual}")]
-    InsufficientConfirmations { required: u64, actual: u64 },
-
-    #[error("Network connectivity error: {0}")]
-    NetworkError(String),
-
+    // TODO: After max retries, we report the service unhealthy, and expect human intervention.
+    // Special status retry later, and all tx sender (in-flight and pending should not be send)
     #[error("Transport error: {0}")]
     TransportError(#[from] alloy::transports::TransportError),
-    #[error("Invalid chain-id: {0}")]
-    InvalidChainId(String),
 }
 
-impl From<eyre::Report> for TransactionError {
+impl From<eyre::Report> for GatewayTxnError {
     fn from(err: eyre::Report) -> Self {
-        TransactionError::RpcError(err.to_string())
+        GatewayTxnError::RpcError(err.to_string())
     }
 }
 
@@ -106,7 +91,7 @@ where
 {
     pub provider: Arc<NonceManagedProvider<F, P, N>>,
     pub signer: Arc<dyn SignerCombined>,
-    pub nonce_manager: Arc<ZamaNonceManager>,
+    pub nonce_manager: Arc<NonceManagerNonOptimistic>,
     // No need for Arc in this case, since the tx manager is shared by arc at the top level application.
     limit_concurrent_requests: bool,
     pub rpc_semaphore: Arc<Semaphore>,
@@ -129,7 +114,7 @@ impl
         let wallet = EthereumWallet::from(signer.clone());
 
         let rpc_url = Url::parse(http_rpc_url)
-            .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {e}")))
+            .map_err(|e| GatewayTxnError::InvalidAddress(format!("Invalid URL: {e}")))
             .unwrap();
 
         let provider = ProviderBuilder::new()
@@ -139,7 +124,7 @@ impl
             .filler(WalletFiller::new(wallet))
             .connect_http(rpc_url.clone());
 
-        let nonce_manager = Arc::new(ZamaNonceManager::new());
+        let nonce_manager = Arc::new(NonceManagerNonOptimistic::new());
         let managed_provider =
             NonceManagedProvider::new(provider, signer_address, nonce_manager.clone());
 
@@ -160,20 +145,19 @@ impl
         &self,
         target: Address,
         calldata: Bytes,
+        // TODO: Remove value with None value.
         value: Option<U256>,
-        contract_call: bool,
-    ) -> Result<AnyTransactionReceipt, TransactionError> {
-        if contract_call {
-            let code = self.provider.inner.get_code_at(target).await.map_err(|e| {
-                TransactionError::TransactionFailed(format!("Failed to check contract code: {e}"))
-            })?;
+    ) -> Result<AnyTransactionReceipt, GatewayTxnError> {
+        // TODO: Check for allowance (this account or other accounts) for fees.
+        let code = self.provider.inner.get_code_at(target).await.map_err(|e| {
+            GatewayTxnError::TransactionFailed(format!("Failed to check contract code: {e}"))
+        })?;
 
-            if code.is_empty() {
-                error!("No code at target address: {:?} !", target);
-                return Err(TransactionError::InvalidAddress(format!(
-                    "No code at target address: {target:#x}"
-                )));
-            }
+        if code.is_empty() {
+            error!("No code at target address: {:?} !", target);
+            return Err(GatewayTxnError::InvalidAddress(format!(
+                "No code at target address: {target:#x}"
+            )));
         }
 
         let mut request = TransactionRequest::default()
@@ -190,11 +174,12 @@ impl
                     "Gas estimation failed, transaction will not be sent: {:?}",
                     e
                 );
-                return Err(TransactionError::GasEstimationFailed(
+                return Err(GatewayTxnError::RpcError(
                     "Could not estimate gas".to_string(),
                 ));
             }
         };
+        // TODO: Balance (of signer) before sending a transaction for gas with a buffer as we used in estimateGas
         request = request.with_gas_limit(gas_limit_estimate);
 
         let receipt = self.send_raw_transaction_sync_with_retries(request).await?;
@@ -207,7 +192,7 @@ impl
         target: Address,
         calldata: Bytes,
         value: Option<U256>,
-    ) -> Result<u64, TransactionError> {
+    ) -> Result<u64, GatewayTxnError> {
         let request = TransactionRequest::default()
             .with_from(self.sender_address())
             .with_to(target)
@@ -258,17 +243,17 @@ impl
                         RpcError::ErrorResp(ErrorPayload { message, .. }) => {
                             let response_error_string = message.to_lowercase();
                             if response_error_string.contains("execution reverted") {
-                                error!(error = %err_msg, "Gas estimation failed due to revert: Likely unrecoverable");
-                                return Err(TransactionError::GasEstimationFailed(format!(
+                                error!(error = %err_msg, "Simulation failed due to revert: Likely unrecoverable");
+                                return Err(GatewayTxnError::SimulationFailed(format!(
                                     "Execution reverted: {}",
                                     message
                                 )));
                             }
                             // For other RPC errors, we will treat them as potentially transient for now and retry.
                             // You can add more specific checks here for other fatal errors.
-                            error!(error = %err_msg, "Gas estimation failed with RPC error");
+                            warn!(error = %err_msg, "Gas estimation failed with RPC error");
                             // For now since we don't know what is going on we revert !
-                            return Err(TransactionError::GasEstimationFailed(err_msg));
+                            return Err(GatewayTxnError::RpcError(err_msg));
                         }
                         // This is a network/transport error. It's recoverable, and should be retried.
                         RpcError::Transport(transport_err) => {
@@ -276,7 +261,7 @@ impl
                         }
                         _ => {
                             error!(error = %err_msg, "Unknown error during gas estimation");
-                            return Err(TransactionError::GasEstimationFailed(err_msg));
+                            return Err(GatewayTxnError::RpcError(err_msg));
                         }
                     }
                 }
@@ -292,7 +277,7 @@ impl
     async fn send_raw_transaction_sync_with_retries(
         &self,
         mut tx: TransactionRequest,
-    ) -> Result<AnyTransactionReceipt, TransactionError> {
+    ) -> Result<AnyTransactionReceipt, GatewayTxnError> {
         let pending_receipt: AnyTransactionReceipt;
         let start_time = Instant::now();
         let mut retries = 0;
@@ -400,7 +385,7 @@ impl
                                     .release_nonce(self.sender_address(), nonce)
                                     .await;
                                 // For unexpected blockchain errors, we might want to fail fast.
-                                return Err(TransactionError::TransactionFailed(err_msg));
+                                return Err(GatewayTxnError::TransactionFailed(err_msg));
                             }
                         }
                         RpcError::Transport(transport_err) => {
@@ -416,7 +401,7 @@ impl
                                 .release_nonce(self.sender_address(), nonce)
                                 .await;
                             // Fail on truly unknown errors.
-                            return Err(TransactionError::RpcError(err_msg));
+                            return Err(GatewayTxnError::RpcError(err_msg));
                         }
                     }
 

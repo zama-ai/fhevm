@@ -12,7 +12,7 @@ use alloy::{
     transports::{TransportError, TransportResult},
 };
 
-use crate::blockchain::gateway::arbitrum::transaction::nonce_manager::ZamaNonceManager;
+use crate::blockchain::gateway::arbitrum::transaction::nonce_manager::NonceManagerNonOptimistic;
 
 pub type FillersWithoutNonceManagement = JoinFill<GasFiller, BlobGasFiller>;
 
@@ -25,7 +25,7 @@ where
 {
     pub inner: FillProvider<F, P, N>,
     signer_address: Address,
-    pub nonce_manager: Arc<ZamaNonceManager>,
+    pub nonce_manager: Arc<NonceManagerNonOptimistic>,
 }
 
 impl<F, P> NonceManagedProvider<F, P>
@@ -36,7 +36,7 @@ where
     pub fn new(
         provider: FillProvider<F, P, Ethereum>,
         signer_address: Address,
-        nonce_manager: Arc<ZamaNonceManager>,
+        nonce_manager: Arc<NonceManagerNonOptimistic>,
     ) -> Self {
         Self {
             inner: provider,
@@ -50,6 +50,7 @@ where
         tx: TransactionRequest,
     ) -> TransportResult<AnyTransactionReceipt> {
         let mut tx_bytes = Vec::new();
+        // TODO: Catch this error.
         self.inner
             .fill(tx)
             .await?
