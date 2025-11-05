@@ -316,15 +316,7 @@ impl HandleItem {
         Ok(())
     }
 
-    fn status(&self) -> &TaskStatus {
-        &self.status
-    }
-
-    fn set_status(&mut self, status: TaskStatus) {
-        self.status = status;
-    }
-
-    fn completed(&self) -> bool {
+    fn is_completed(&self) -> bool {
         matches!(self.status, TaskStatus::Completed)
     }
 }
