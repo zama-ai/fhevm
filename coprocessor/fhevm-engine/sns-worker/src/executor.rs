@@ -452,7 +452,7 @@ async fn enqueue_upload_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
-    for task in tasks.iter().filter(|t| t.completed()) {
+    for task in tasks.iter().filter(|t| t.is_completed()) {
         task.enqueue_upload_task(db_txn).await?;
     }
 
@@ -559,7 +559,6 @@ fn compute_task(
     match squash_noise_with_guard(&ct, enable_compression) {
         Ok(bytes) => {
             telemetry::end_span(span);
-            task.status = TaskStatus::Completed;
 
             info!(
                 handle = handle,
@@ -578,7 +577,7 @@ fn compute_task(
             };
 
             task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
-            task.set_status(TaskStatus::Completed);
+            task.status = TaskStatus::Completed;
 
             // Start uploading the ciphertexts as soon as the ct128 is computed
             //
@@ -609,7 +608,7 @@ fn compute_task(
         }
         Err(err) => {
             telemetry::end_span_with_err(span, err.to_string());
-            task.set_status(TaskStatus::UnrecoverableErr(err.to_string()));
+            task.status = TaskStatus::UnrecoverableErr(err.to_string());
             error!({ handle = handle, error = %err }, "Failed to convert ct");
         }
     };
@@ -682,7 +681,7 @@ async fn update_ciphertext128(
                 // Worst-case scenario, the SnS-computation will be retried later.
                 // However, if both DB insertion and S3 upload fail, this guarantees that the computation
                 // will be retried and the ct128 uploaded.
-                task.set_status(TaskStatus::TransientErr(err.to_string()));
+                task.status = TaskStatus::TransientErr(err.to_string());
             }
         }
 
@@ -697,7 +696,7 @@ async fn update_computations_status(
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks {
-        match task.status() {
+        match &task.status {
             TaskStatus::Completed => {
                 // Mark the computation as completed and clear transient error
                 sqlx::query!(
