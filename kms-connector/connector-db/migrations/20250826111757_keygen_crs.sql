@@ -13,17 +13,8 @@ DROP TABLE IF EXISTS preprocess_kskgen_requests;
 --    Updating/creating PrepKeygen tables/triggers    --
 --------------------------------------------------------
 -- Create new ParamsType and KeyType enums
-DO $$ BEGIN
-    CREATE TYPE params_type AS ENUM ('Default', 'Test');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-    CREATE TYPE key_type AS ENUM ('Server', 'Public');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
+CREATE TYPE params_type AS ENUM ('Default', 'Test');
+CREATE TYPE key_type AS ENUM ('Server', 'Public');
 
 CREATE TABLE IF NOT EXISTS prep_keygen_requests (
     prep_keygen_id BYTEA NOT NULL,
