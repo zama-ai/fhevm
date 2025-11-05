@@ -50,5 +50,5 @@ jobs:
 
     - name: Run fmt
       run: |
-        cargo fmt --all --check
+        cargo fmt --check
       working-directory: coprocessor/fhevm-engine

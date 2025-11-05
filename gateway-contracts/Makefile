@@ -47,16 +47,11 @@ docker-compose-up: docker-compose-down
 docker-compose-down:
 	docker compose -vvv down -v --remove-orphans
 
-check-bindings: ensure-addresses update-bindings
-	git diff --exit-code || { \
-		echo "Rust bindings are not up-to-date."; \
-		echo "Please run 'make update-bindings' to update them."; \
-		exit 1; \
-	}
+check-bindings: ensure-addresses
+	python3 scripts/bindings_update.py check
 
 update-bindings: ensure-addresses
 	python3 scripts/bindings_update.py update
-	cd rust_bindings; cargo fmt --all
 
 lint-bindings:
 	cd rust_bindings && cargo clippy -- -D warnings && cd ..
