@@ -7,6 +7,7 @@ use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list}
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
+use fhevm_engine_common::with_panic_guard;
 use hex::encode;
 use lru::LruCache;
 use sha3::Digest;
@@ -353,7 +354,7 @@ pub(crate) fn verify_proof(
     set_server_key(keys.server_key.clone());
 
     let mut s = span.child_span("verify_and_expand");
-    let mut cts = match try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data) {
+    let mut cts = match verify_and_expand_with_guard(request_id, raw_ct, keys, aux_data) {
         Ok(cts) => {
             telemetry::attribute(&mut s, "count", cts.len().to_string());
             telemetry::end_span(s);
@@ -380,6 +381,24 @@ pub(crate) fn verify_proof(
         .collect::<Result<Vec<Ciphertext>, ExecutionError>>()?;
 
     Ok((cts, blob_hash))
+}
+
+fn verify_and_expand_with_guard(
+    request_id: i64,
+    raw_ct: &[u8],
+    keys: &FetchTenantKeyResult,
+    aux_data: &auxiliary::ZkData,
+) -> Result<Vec<SupportedFheCiphertexts>, ExecutionError> {
+    with_panic_guard!(try_verify_and_expand_ciphertext_list(
+        request_id, raw_ct, keys, aux_data
+    ))
+    .map_err(|err| {
+        // Map panic to VerifyExpandPanic
+        ExecutionError::VerifyExpandPanic(format!(
+            "Panic occurred while verifying and expanding: {}",
+            err
+        ))
+    })?
 }
 
 fn try_verify_and_expand_ciphertext_list(
