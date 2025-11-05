@@ -484,12 +484,9 @@ async fn upload_transaction_graph_results<'a>(
             }
             Err(mut err) => {
                 let cerr: Box<dyn std::error::Error + Send + Sync> =
-                    if err.downcast_ref::<FhevmError>().is_some() {
+                    if let Some(fhevm_error) = err.downcast_mut::<FhevmError>() {
                         let mut swap_val = FhevmError::BadInputs;
-                        std::mem::swap(
-                            &mut *err.downcast_mut::<FhevmError>().unwrap(),
-                            &mut swap_val,
-                        );
+                        std::mem::swap(fhevm_error, &mut swap_val);
                         CoprocessorError::FhevmError(swap_val).into()
                     } else {
                         CoprocessorError::SchedulerError(
