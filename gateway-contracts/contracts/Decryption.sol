@@ -749,9 +749,9 @@ contract Decryption is
             return false;
         }
 
-        // For each handle, check that the delegate address has been granted access to the contract addresses
-        // by the delegator, the delegator and contract addresses have access to it, and that the ciphertext material
-        // represented by it has been added.
+        // For each ctHandleContractPair, check that the delegator has delegated decryption to the delegate
+        // for the given contract address, that both the delegator and the contract are allowed on the
+        // ciphertext handle, and that the ciphertext material for the handle has been added.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             if (
                 !MULTICHAIN_ACL.isUserDecryptionDelegated(
