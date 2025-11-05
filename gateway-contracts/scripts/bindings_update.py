@@ -31,7 +31,7 @@ def init_cli() -> ArgumentParser:
 
     subparsers.add_parser(
         "check",
-        help=("Check if the crate version need to be updated."),
+        help=("Check if the binding files or the crate version need to be updated."),
     )
     subparsers.add_parser(
         "update", help="Update the binding files and the crate version."
@@ -51,6 +51,7 @@ def main():
 
     if args.command == "check":
         bindings_updater.check_version()
+        bindings_updater.check_bindings_up_to_date()
     elif args.command == "update":
         bindings_updater.update_crate_version()
         bindings_updater.update_bindings()
@@ -111,6 +112,27 @@ class BindingsUpdater:
             )
             sys.exit(ExitStatus.WRONG_FORGE_VERSION.value)
 
+    def check_bindings_up_to_date(self):
+        """Checks that the Gateway contracts' bindings are up-to-date."""
+        log_info("Checking that the Gateway contracts' bindings are up-to-date...")
+
+        # We need to include the --no-metadata flag to avoid updating many of the contracts' bytecode
+        # when only updating one of them (since interfaces are included in many contracts)
+        return_code = subprocess.call(
+            f"forge bind --root {GW_ROOT_DIR} --module --skip-cargo-toml "
+            f"--hh -b {GW_CRATE_DIR}/src  -o {self.tempdir} --skip Example --skip {GW_MOCKS_DIR}/* "
+            f"--no-metadata",
+            shell=True,
+            stdout=subprocess.DEVNULL,
+        )
+
+        if return_code != 0:
+            log_error("ERROR: Some binding files are outdated.")
+            log_info("Run `make update-bindings` to update the bindings.")
+            sys.exit(ExitStatus.BINDINGS_NOT_UP_TO_DATE.value)
+
+        log_success("All binding files are up-to-date!")
+
     def update_bindings(self):
         """Updates the Gateway contracts' bindings."""
         log_info("Updating Gateway contracts' bindings...")
@@ -119,9 +141,8 @@ class BindingsUpdater:
         # when only updating one of them (since interfaces are included in many contracts)
         subprocess.run(
             f"forge bind --root {GW_ROOT_DIR} --hh -b {GW_CRATE_DIR}/src "
-            f" --module -o {self.tempdir} --skip Example --skip {GW_MOCKS_DIR}/* "
-            f" --no-metadata"
-            f" --overwrite",
+            f"--module --overwrite -o {self.tempdir} --skip Example --skip {GW_MOCKS_DIR}/* "
+            "--no-metadata",
             shell=True,
             check=True,
             stdout=subprocess.DEVNULL,
