@@ -340,13 +340,11 @@ interface IDecryption {
 
     /**
      * @notice Indicates if the handles are ready to be decrypted by the delegate address in delegation accounts.
-     * @param contractsChainId The host chain ID where the contracts are deployed.
      * @param delegationAccounts The delegator and delegate addresses.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function isDelegatedUserDecryptionReady(
-        uint256 contractsChainId,
         DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata extraData

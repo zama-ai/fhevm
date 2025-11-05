@@ -55,7 +55,7 @@ interface IDecryption {
     function getDecryptionConsensusTxSenders(uint256 decryptionId) external view returns (address[] memory);
     function getVersion() external pure returns (string memory);
     function isDecryptionDone(uint256 decryptionId) external view returns (bool);
-    function isDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory extraData) external view returns (bool);
+    function isDelegatedUserDecryptionReady(DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory extraData) external view returns (bool);
     function isPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory extraData) external view returns (bool);
     function isUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory extraData) external view returns (bool);
     function publicDecryptionRequest(bytes32[] memory ctHandles, bytes memory extraData) external;
@@ -214,11 +214,6 @@ interface IDecryption {
     "type": "function",
     "name": "isDelegatedUserDecryptionReady",
     "inputs": [
-      {
-        "name": "contractsChainId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
       {
         "name": "delegationAccounts",
         "type": "tuple",
@@ -4847,15 +4842,13 @@ pub mod IDecryption {
         }
     };
     #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `isDelegatedUserDecryptionReady(uint256,(address,address),(bytes32,address)[],bytes)` and selector `0xfe90f613`.
+    /**Function with signature `isDelegatedUserDecryptionReady((address,address),(bytes32,address)[],bytes)` and selector `0x999800e5`.
     ```solidity
-    function isDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory extraData) external view returns (bool);
+    function isDelegatedUserDecryptionReady(DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory extraData) external view returns (bool);
     ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isDelegatedUserDecryptionReadyCall {
-        #[allow(missing_docs)]
-        pub contractsChainId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub delegationAccounts: <DelegationAccounts as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
@@ -4866,7 +4859,7 @@ pub mod IDecryption {
         pub extraData: alloy::sol_types::private::Bytes,
     }
     #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`isDelegatedUserDecryptionReady(uint256,(address,address),(bytes32,address)[],bytes)`](isDelegatedUserDecryptionReadyCall) function.
+    ///Container type for the return parameters of the [`isDelegatedUserDecryptionReady((address,address),(bytes32,address)[],bytes)`](isDelegatedUserDecryptionReadyCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isDelegatedUserDecryptionReadyReturn {
@@ -4884,14 +4877,12 @@ pub mod IDecryption {
         {
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
                 DelegationAccounts,
                 alloy::sol_types::sol_data::Array<CtHandleContractPair>,
                 alloy::sol_types::sol_data::Bytes,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
                 <DelegationAccounts as alloy::sol_types::SolType>::RustType,
                 alloy::sol_types::private::Vec<
                     <CtHandleContractPair as alloy::sol_types::SolType>::RustType,
@@ -4912,7 +4903,6 @@ pub mod IDecryption {
             impl ::core::convert::From<isDelegatedUserDecryptionReadyCall> for UnderlyingRustTuple<'_> {
                 fn from(value: isDelegatedUserDecryptionReadyCall) -> Self {
                     (
-                        value.contractsChainId,
                         value.delegationAccounts,
                         value.ctHandleContractPairs,
                         value.extraData,
@@ -4924,10 +4914,9 @@ pub mod IDecryption {
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for isDelegatedUserDecryptionReadyCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        contractsChainId: tuple.0,
-                        delegationAccounts: tuple.1,
-                        ctHandleContractPairs: tuple.2,
-                        extraData: tuple.3,
+                        delegationAccounts: tuple.0,
+                        ctHandleContractPairs: tuple.1,
+                        extraData: tuple.2,
                     }
                 }
             }
@@ -4964,7 +4953,6 @@ pub mod IDecryption {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for isDelegatedUserDecryptionReadyCall {
             type Parameters<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
                 DelegationAccounts,
                 alloy::sol_types::sol_data::Array<CtHandleContractPair>,
                 alloy::sol_types::sol_data::Bytes,
@@ -4973,8 +4961,9 @@ pub mod IDecryption {
             type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "isDelegatedUserDecryptionReady(uint256,(address,address),(bytes32,address)[],bytes)";
-            const SELECTOR: [u8; 4] = [254u8, 144u8, 246u8, 19u8];
+            const SIGNATURE: &'static str =
+                "isDelegatedUserDecryptionReady((address,address),(bytes32,address)[],bytes)";
+            const SELECTOR: [u8; 4] = [153u8, 152u8, 0u8, 229u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4984,9 +4973,6 @@ pub mod IDecryption {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.contractsChainId),
                     <DelegationAccounts as alloy_sol_types::SolType>::tokenize(
                         &self.delegationAccounts,
                     ),
@@ -6079,11 +6065,11 @@ pub mod IDecryption {
             [64u8, 20u8, 196u8, 205u8],
             [88u8, 245u8, 184u8, 171u8],
             [111u8, 137u8, 19u8, 188u8],
+            [153u8, 152u8, 0u8, 229u8],
             [159u8, 173u8, 90u8, 47u8],
             [216u8, 153u8, 143u8, 69u8],
             [241u8, 181u8, 122u8, 219u8],
             [251u8, 184u8, 50u8, 89u8],
-            [254u8, 144u8, 246u8, 19u8],
         ];
     }
     #[automatically_derived]
@@ -6198,6 +6184,17 @@ pub mod IDecryption {
                     publicDecryptionResponse
                 },
                 {
+                    fn isDelegatedUserDecryptionReady(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <isDelegatedUserDecryptionReadyCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionCalls::isDelegatedUserDecryptionReady)
+                    }
+                    isDelegatedUserDecryptionReady
+                },
+                {
                     fn delegatedUserDecryptionRequest(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
@@ -6240,17 +6237,6 @@ pub mod IDecryption {
                         .map(IDecryptionCalls::isUserDecryptionReady)
                     }
                     isUserDecryptionReady
-                },
-                {
-                    fn isDelegatedUserDecryptionReady(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <isDelegatedUserDecryptionReadyCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IDecryptionCalls::isDelegatedUserDecryptionReady)
-                    }
-                    isDelegatedUserDecryptionReady
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -6332,6 +6318,17 @@ pub mod IDecryption {
                     publicDecryptionResponse
                 },
                 {
+                    fn isDelegatedUserDecryptionReady(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <isDelegatedUserDecryptionReadyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionCalls::isDelegatedUserDecryptionReady)
+                    }
+                    isDelegatedUserDecryptionReady
+                },
+                {
                     fn delegatedUserDecryptionRequest(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
@@ -6374,17 +6371,6 @@ pub mod IDecryption {
                             .map(IDecryptionCalls::isUserDecryptionReady)
                     }
                     isUserDecryptionReady
-                },
-                {
-                    fn isDelegatedUserDecryptionReady(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <isDelegatedUserDecryptionReadyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IDecryptionCalls::isDelegatedUserDecryptionReady)
-                    }
-                    isDelegatedUserDecryptionReady
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -7623,7 +7609,6 @@ pub mod IDecryption {
         ///Creates a new call builder for the [`isDelegatedUserDecryptionReady`] function.
         pub fn isDelegatedUserDecryptionReady(
             &self,
-            contractsChainId: alloy::sol_types::private::primitives::aliases::U256,
             delegationAccounts: <DelegationAccounts as alloy::sol_types::SolType>::RustType,
             ctHandleContractPairs: alloy::sol_types::private::Vec<
                 <CtHandleContractPair as alloy::sol_types::SolType>::RustType,
@@ -7631,7 +7616,6 @@ pub mod IDecryption {
             extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, isDelegatedUserDecryptionReadyCall, N> {
             self.call_builder(&isDelegatedUserDecryptionReadyCall {
-                contractsChainId,
                 delegationAccounts,
                 ctHandleContractPairs,
                 extraData,

@@ -740,7 +740,6 @@ contract Decryption is
      * @dev See {IDecryption-isDelegatedUserDecryptionReady}.
      */
     function isDelegatedUserDecryptionReady(
-        uint256 contractsChainId,
         DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata /* extraData */
@@ -753,9 +752,12 @@ contract Decryption is
         // for the given contract address, that both the delegator and the contract are allowed on the
         // ciphertext handle, and that the ciphertext material for the handle has been added.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            // Extract the chain ID from the ciphertext handle
+            uint256 chainId = HandleOps.extractChainId(ctHandleContractPairs[i].ctHandle);
+
             if (
                 !MULTICHAIN_ACL.isUserDecryptionDelegated(
-                    contractsChainId,
+                    chainId,
                     delegationAccounts.delegatorAddress,
                     delegationAccounts.delegateAddress,
                     ctHandleContractPairs[i].contractAddress

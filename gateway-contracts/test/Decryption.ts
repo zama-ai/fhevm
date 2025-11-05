@@ -2424,20 +2424,13 @@ describe("Decryption", function () {
 
     describe("Checks", function () {
       it("Should be true because delegated user decryption is ready", async function () {
-        expect(
-          await decryption.isDelegatedUserDecryptionReady(
-            hostChainId,
-            delegationAccounts,
-            ctHandleContractPairs,
-            extraDataV0,
-          ),
-        ).to.be.true;
+        expect(await decryption.isDelegatedUserDecryptionReady(delegationAccounts, ctHandleContractPairs, extraDataV0))
+          .to.be.true;
       });
 
       it("Should be false because the delegator is not allowed for user decryption on a ctHandle", async function () {
         expect(
           await decryption.isDelegatedUserDecryptionReady(
-            hostChainId,
             fakeDelegatorDelegationAccounts,
             ctHandleContractPairs,
             extraDataV0,
@@ -2448,7 +2441,6 @@ describe("Decryption", function () {
       it("Should be false because a contract is not allowed for user decryption on a ctHandle", async function () {
         expect(
           await decryption.isDelegatedUserDecryptionReady(
-            hostChainId,
             delegationAccounts,
             fakeContractAddressCtHandleContractPairs,
             extraDataV0,
@@ -2456,20 +2448,30 @@ describe("Decryption", function () {
         ).to.be.false;
       });
 
-      it("Should be false because ciphertext material has not been added", async function () {
+      it("Should be false because the user decryption is not delegated for the chainId in ctHandleContractPairs", async function () {
+        const fakeChainIdCtHandleContractPairs: CtHandleContractPairStruct[] = [
+          {
+            contractAddress,
+            ctHandle: fakeChainIdCtHandle,
+          },
+        ];
         expect(
           await decryption.isDelegatedUserDecryptionReady(
-            hostChainId,
             delegationAccounts,
-            [newCtHandleContractPair],
+            fakeChainIdCtHandleContractPairs,
             extraDataV0,
           ),
         ).to.be.false;
       });
 
+      it("Should be false because ciphertext material has not been added", async function () {
+        expect(
+          await decryption.isDelegatedUserDecryptionReady(delegationAccounts, [newCtHandleContractPair], extraDataV0),
+        ).to.be.false;
+      });
+
       it("Should be false because the ctHandleContractPairs list is empty", async function () {
-        expect(await decryption.isDelegatedUserDecryptionReady(hostChainId, delegationAccounts, [], extraDataV0)).to.be
-          .false;
+        expect(await decryption.isDelegatedUserDecryptionReady(delegationAccounts, [], extraDataV0)).to.be.false;
       });
     });
 
