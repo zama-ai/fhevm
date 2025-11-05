@@ -9,4 +9,4 @@ cargo install sqlx-cli
 
 # Foundry.
 curl --proto '=https' --tlsv1.2 -sSfL https://foundry.paradigm.xyz | bash
-$HOME/.foundry/bin/foundryup -i 1.3.2-stable
+$HOME/.foundry/bin/foundryup -i v1.3.2
