@@ -617,7 +617,7 @@ pub fn to_key_prefix(val: KeyType) -> &'static str {
 }
 
 pub fn key_id_to_aws_key(key_id: KeyId) -> String {
-    format!("{:064x}", key_id).to_owned()
+    format!("{:064x}", key_id)
 }
 
 mod test {

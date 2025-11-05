@@ -149,7 +149,6 @@ fn split_url(s3_bucket_url: &String) -> anyhow::Result<(String, String)> {
         warn!(s3_bucket_url, "Using localhost for minio access");
         s3_bucket_url
             .replace("minio:9000", "172.17.0.1:9000")
-            .to_owned()
     } else {
         s3_bucket_url.to_owned()
     };

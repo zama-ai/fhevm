@@ -116,7 +116,7 @@ pub fn tracer_with_handle(
     // Add handle and transaction_id to the context
     // so that they can be retrieved in the application code, e.g. for logging
     let mut ctx = Context::default().with_span(span);
-    ctx = ctx.with_value(Handle(handle.clone()));
+    ctx = ctx.with_value(Handle(handle));
     ctx = ctx.with_value(Transaction(transaction_id.clone().unwrap_or_default()));
 
     OtelTracer {

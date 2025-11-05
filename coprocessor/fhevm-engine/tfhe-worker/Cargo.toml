@@ -36,13 +36,9 @@ opentelemetry_sdk = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
 
 # crates.io dependencies
-actix-web = "4.9.0"
 itertools = "0.13.0"
 lazy_static = "1.5.0"
 regex = "1.10.6"
-tonic-health = "0.12.3"
-tonic-types = "0.12.3"
-tonic-web = "0.12.3"
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }

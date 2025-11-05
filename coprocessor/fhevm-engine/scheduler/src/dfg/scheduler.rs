@@ -68,8 +68,8 @@ impl<'a> Scheduler<'a> {
         Self {
             graph,
             edges,
-            sks: sks.clone(),
-            cpk: cpk.clone(),
+            sks,
+            cpk,
             #[cfg(feature = "gpu")]
             csks: csks.clone(),
             activity_heartbeat,

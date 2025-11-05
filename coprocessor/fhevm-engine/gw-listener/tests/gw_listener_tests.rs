@@ -155,7 +155,7 @@ impl TestEnvironment {
 
         let anvil = Anvil::new().block_time(1).chain_id(12345).try_spawn()?;
         let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
-        let wallet = signer.clone().into();
+        let wallet = signer.into();
         Ok(Self {
             wallet,
             conf,

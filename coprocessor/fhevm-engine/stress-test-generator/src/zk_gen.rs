@@ -225,7 +225,7 @@ pub async fn get_inputs_vector(
         .cloned();
 
     if let Some(contract_inputs) = contract_inputs {
-        Ok(contract_inputs.to_owned())
+        Ok(contract_inputs)
     } else {
         let count = CACHED_INPUTS_COUNT;
         info!(count, "No cached inputs found, generating new ones");
