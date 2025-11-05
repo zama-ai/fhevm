@@ -19,7 +19,6 @@ else
 fi
 
 echo "-------------- Start database initialization --------------"
-sqlx database drop -y -f || true
 
 echo "Creating database..."
 sqlx database create || { echo "Failed to create database."; exit 1; }
