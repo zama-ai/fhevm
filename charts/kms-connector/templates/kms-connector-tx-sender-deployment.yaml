@@ -68,11 +68,19 @@ spec:
               value: {{ .Values.commonConfig.gatewayContractAddresses.gatewayConfig | quote }}
             - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
               value: {{ .Values.commonConfig.gatewayContractAddresses.kmsGeneration | quote }}
+            {{- if .Values.kmsConnectorTxSender.wallet.awsKms.enabled }}
+            - name: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.kmsConnectorTxSender.wallet.awsKms.configmap.name | quote }}
+                  key: {{ .Values.kmsConnectorTxSender.wallet.awsKms.configmap.key | quote }}
+            {{- else }}
             - name: KMS_CONNECTOR_PRIVATE_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.kmsConnectorTxSender.wallet.secret.name | quote }}
                   key: {{ .Values.kmsConnectorTxSender.wallet.secret.key | quote }}
+            {{- end }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorTxSender.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint }}
