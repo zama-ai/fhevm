@@ -12,6 +12,7 @@ use crate::UploadJob;
 use crate::SNS_LATENCY_OP_HISTOGRAM;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
+use core::panic;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
@@ -53,6 +54,26 @@ impl fmt::Display for Order {
             Order::Desc => write!(f, "DESC"),
         }
     }
+}
+
+#[macro_export]
+macro_rules! with_panic_guard {
+    ($body:expr) => {{
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+        match catch_unwind(AssertUnwindSafe(|| $body)) {
+            Ok(v) => Ok(v),
+            Err(payload) => {
+                let msg = if let Some(s) = (&*payload).downcast_ref::<&'static str>() {
+                    s.to_string()
+                } else if let Some(s) = (&*payload).downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "panic payload: non-string".to_string()
+                };
+                Err(msg)
+            }
+        }
+    }};
 }
 
 pub struct SwitchNSquashService {
@@ -539,9 +560,10 @@ fn compute_task(
             ct
         }
         Err(err) => {
-            let err_msg = format!("Failed to decompress ct64, handle {}: err: {}", handle, err);
-            telemetry::end_span_with_err(s, err_msg.clone());
-            task.status = TaskStatus::UnrecoverableErr(err_msg.clone());
+            error!( { handle, error = %err }, "Failed to decompress ct64");
+            telemetry::end_span_with_err(s, "failed to decompress".to_string());
+
+            task.status = TaskStatus::UnrecoverableErr(err.to_string());
             return;
         }
     };
@@ -552,7 +574,7 @@ fn compute_task(
     let mut span = task.otel.child_span("squash_noise");
     telemetry::attribute(&mut span, "ct_type", ct_type);
 
-    match ct.squash_noise_and_serialize(enable_compression) {
+    match squash_noise_with_guard(&ct, enable_compression) {
         Ok(bytes) => {
             telemetry::end_span(span);
             task.status = TaskStatus::Completed;
@@ -611,6 +633,19 @@ fn compute_task(
     };
 }
 
+fn squash_noise_with_guard(
+    ct: &SupportedFheCiphertexts,
+    enable_compression: bool,
+) -> Result<Vec<u8>, ExecutionError> {
+    with_panic_guard!(ct.squash_noise_and_serialize(enable_compression)).map_err(|e| {
+        // Map panic to SquashNoisePanic
+        ExecutionError::SquashNoisePanic(format!(
+            "Panic occurred while squashing noise and serializing: {}",
+            e
+        ))
+    })?
+}
+
 /// Updates the database with the computed large ciphertexts.
 ///
 /// The ct128 is temporarily stored in PostgresDB to ensure reliability.
@@ -626,7 +661,10 @@ async fn update_ciphertext128(
 ) -> Result<(), ExecutionError> {
     for task in tasks {
         if task.ct128.is_empty() {
-            error!( handle = ?task.handle, "ct128 not computed for task");
+            error!(
+                handle = compact_hex(&task.handle),
+                "ct128 not computed for task"
+            );
             continue;
         }
 
@@ -744,7 +782,17 @@ fn decompress_ct(
 ) -> Result<SupportedFheCiphertexts, ExecutionError> {
     let ct_type = get_ct_type(handle)?;
 
-    let result = SupportedFheCiphertexts::decompress_no_memcheck(ct_type, compressed_ct)?;
+    let result = with_panic_guard!(SupportedFheCiphertexts::decompress_no_memcheck(
+        ct_type,
+        compressed_ct
+    ))
+    .map_err(|e| {
+        // Map panic to DecompressionError
+        ExecutionError::DecompressionPanic(format!(
+            "Panic occurred while decompressing ct of type {}: {}",
+            ct_type, e
+        ))
+    })??;
     Ok(result)
 }
 #[cfg(feature = "test_decrypt_128")]

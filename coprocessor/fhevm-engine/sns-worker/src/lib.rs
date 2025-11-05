@@ -392,6 +392,12 @@ pub enum ExecutionError {
 
     #[error("Internal send error: {0}")]
     InternalSendError(String),
+
+    #[error("Panic on decompression: {0}")]
+    DecompressionPanic(String),
+
+    #[error("Panic on squash noise: {0}")]
+    SquashNoisePanic(String),
 }
 
 #[derive(Clone)]
