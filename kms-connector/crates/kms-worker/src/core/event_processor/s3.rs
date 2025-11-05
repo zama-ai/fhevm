@@ -52,7 +52,7 @@ where
     /// Helper method to retrieve ciphertext materials from S3.
     pub async fn retrieve_sns_ciphertext_materials(
         &self,
-        sns_materials: Vec<SnsCiphertextMaterial>,
+        sns_materials: &[SnsCiphertextMaterial],
     ) -> anyhow::Result<Vec<TypedCiphertext>> {
         let mut sns_ciphertext_materials = Vec::new();
         for sns_material in sns_materials {
@@ -65,7 +65,7 @@ where
     /// Retrieves a ciphertext from S3 with `self.s3_ct_retrieval_retries` retries.
     pub async fn retrieve_s3_ciphertext_with_retry(
         &self,
-        sns_material: SnsCiphertextMaterial,
+        sns_material: &SnsCiphertextMaterial,
     ) -> anyhow::Result<TypedCiphertext> {
         let s3_urls = self
             .get_all_coprocessors_s3_urls(&sns_material.coprocessorTxSenderAddresses)
@@ -82,7 +82,7 @@ where
 
             for s3_url in s3_urls.iter() {
                 match self
-                    .retrieve_s3_ciphertext(s3_url, &sns_material, &digest_hex)
+                    .retrieve_s3_ciphertext(s3_url, sns_material, &digest_hex)
                     .await
                 {
                     Ok(ciphertext) => {
