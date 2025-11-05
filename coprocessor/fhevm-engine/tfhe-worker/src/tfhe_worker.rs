@@ -436,7 +436,22 @@ async fn build_transaction_graph_and_execute<'a>(
     let mut s_compute = tracer.start_with_context("compute_fhe_ops", loop_ctx);
     {
         let mut rk = tenant_key_cache.write().await;
-        let keys = rk.get(tenant_id).expect("Can't get tenant key from cache");
+        let keys = match rk.get(tenant_id) {
+            Some(k) => k,
+            None => {
+                // If the keys can't be located in the cache, skip
+                // executing for this tenant, retry next iteration
+                error!(target: "tfhe_worker",
+                          { tenant_id = tenant_id },
+                       "no keys found for tenant"
+                );
+                return Err(CoprocessorError::MissingKeys {
+                    tenant_id: *tenant_id,
+                }
+                .into());
+            }
+        };
+
         // Schedule computations in parallel as dependences allow
         tfhe::set_server_key(keys.sks.clone());
         let mut sched = Scheduler::new(
