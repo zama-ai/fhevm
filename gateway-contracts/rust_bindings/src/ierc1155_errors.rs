@@ -150,11 +150,12 @@ pub mod IERC1155Errors {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1155InsufficientBalance(address,uint256,uint256,uint256)` and selector `0x03dee4c5`.
-    ```solidity
-    error ERC1155InsufficientBalance(address sender, uint256 balance, uint256 needed, uint256 tokenId);
-    ```*/
+```solidity
+error ERC1155InsufficientBalance(address sender, uint256 balance, uint256 needed, uint256 tokenId);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC1155InsufficientBalance {
@@ -191,7 +192,9 @@ pub mod IERC1155Errors {
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -200,14 +203,16 @@ pub mod IERC1155Errors {
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<ERC1155InsufficientBalance> for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<ERC1155InsufficientBalance>
+        for UnderlyingRustTuple<'_> {
             fn from(value: ERC1155InsufficientBalance) -> Self {
                 (value.sender, value.balance, value.needed, value.tokenId)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ERC1155InsufficientBalance {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for ERC1155InsufficientBalance {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     sender: tuple.0,
@@ -220,9 +225,10 @@ pub mod IERC1155Errors {
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC1155InsufficientBalance {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str =
-                "ERC1155InsufficientBalance(address,uint256,uint256,uint256)";
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "ERC1155InsufficientBalance(address,uint256,uint256,uint256)";
             const SELECTOR: [u8; 4] = [3u8, 222u8, 228u8, 197u8];
             #[inline]
             fn new<'a>(
@@ -236,31 +242,32 @@ pub mod IERC1155Errors {
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.sender,
                     ),
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.balance,
-                    ),
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.needed,
-                    ),
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.tokenId,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.balance),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.needed),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.tokenId),
                 )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1155InvalidApprover(address)` and selector `0x3e31884e`.
-    ```solidity
-    error ERC1155InvalidApprover(address approver);
-    ```*/
+```solidity
+error ERC1155InvalidApprover(address approver);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC1155InvalidApprover {
@@ -281,7 +288,9 @@ pub mod IERC1155Errors {
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -305,7 +314,9 @@ pub mod IERC1155Errors {
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC1155InvalidApprover {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC1155InvalidApprover(address)";
             const SELECTOR: [u8; 4] = [62u8, 49u8, 136u8, 78u8];
             #[inline]
@@ -324,18 +335,19 @@ pub mod IERC1155Errors {
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1155InvalidArrayLength(uint256,uint256)` and selector `0x5b059991`.
-    ```solidity
-    error ERC1155InvalidArrayLength(uint256 idsLength, uint256 valuesLength);
-    ```*/
+```solidity
+error ERC1155InvalidArrayLength(uint256 idsLength, uint256 valuesLength);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC1155InvalidArrayLength {
@@ -364,7 +376,9 @@ pub mod IERC1155Errors {
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -373,14 +387,16 @@ pub mod IERC1155Errors {
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<ERC1155InvalidArrayLength> for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<ERC1155InvalidArrayLength>
+        for UnderlyingRustTuple<'_> {
             fn from(value: ERC1155InvalidArrayLength) -> Self {
                 (value.idsLength, value.valuesLength)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ERC1155InvalidArrayLength {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for ERC1155InvalidArrayLength {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     idsLength: tuple.0,
@@ -391,7 +407,9 @@ pub mod IERC1155Errors {
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC1155InvalidArrayLength {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC1155InvalidArrayLength(uint256,uint256)";
             const SELECTOR: [u8; 4] = [91u8, 5u8, 153u8, 145u8];
             #[inline]
@@ -403,28 +421,29 @@ pub mod IERC1155Errors {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.idsLength,
-                    ),
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.valuesLength,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.idsLength),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.valuesLength),
                 )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1155InvalidOperator(address)` and selector `0xced3e100`.
-    ```solidity
-    error ERC1155InvalidOperator(address operator);
-    ```*/
+```solidity
+error ERC1155InvalidOperator(address operator);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC1155InvalidOperator {
@@ -445,7 +464,9 @@ pub mod IERC1155Errors {
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -469,7 +490,9 @@ pub mod IERC1155Errors {
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC1155InvalidOperator {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC1155InvalidOperator(address)";
             const SELECTOR: [u8; 4] = [206u8, 211u8, 225u8, 0u8];
             #[inline]
@@ -488,18 +511,19 @@ pub mod IERC1155Errors {
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1155InvalidReceiver(address)` and selector `0x57f447ce`.
-    ```solidity
-    error ERC1155InvalidReceiver(address receiver);
-    ```*/
+```solidity
+error ERC1155InvalidReceiver(address receiver);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC1155InvalidReceiver {
@@ -520,7 +544,9 @@ pub mod IERC1155Errors {
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -544,7 +570,9 @@ pub mod IERC1155Errors {
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC1155InvalidReceiver {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC1155InvalidReceiver(address)";
             const SELECTOR: [u8; 4] = [87u8, 244u8, 71u8, 206u8];
             #[inline]
@@ -563,18 +591,19 @@ pub mod IERC1155Errors {
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1155InvalidSender(address)` and selector `0x01a83514`.
-    ```solidity
-    error ERC1155InvalidSender(address sender);
-    ```*/
+```solidity
+error ERC1155InvalidSender(address sender);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC1155InvalidSender {
@@ -595,7 +624,9 @@ pub mod IERC1155Errors {
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -619,7 +650,9 @@ pub mod IERC1155Errors {
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC1155InvalidSender {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC1155InvalidSender(address)";
             const SELECTOR: [u8; 4] = [1u8, 168u8, 53u8, 20u8];
             #[inline]
@@ -638,18 +671,19 @@ pub mod IERC1155Errors {
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1155MissingApprovalForAll(address,address)` and selector `0xe237d922`.
-    ```solidity
-    error ERC1155MissingApprovalForAll(address operator, address owner);
-    ```*/
+```solidity
+error ERC1155MissingApprovalForAll(address operator, address owner);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC1155MissingApprovalForAll {
@@ -678,7 +712,9 @@ pub mod IERC1155Errors {
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -687,14 +723,16 @@ pub mod IERC1155Errors {
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<ERC1155MissingApprovalForAll> for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<ERC1155MissingApprovalForAll>
+        for UnderlyingRustTuple<'_> {
             fn from(value: ERC1155MissingApprovalForAll) -> Self {
                 (value.operator, value.owner)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ERC1155MissingApprovalForAll {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for ERC1155MissingApprovalForAll {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     operator: tuple.0,
@@ -705,7 +743,9 @@ pub mod IERC1155Errors {
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC1155MissingApprovalForAll {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC1155MissingApprovalForAll(address,address)";
             const SELECTOR: [u8; 4] = [226u8, 55u8, 217u8, 34u8];
             #[inline]
@@ -727,15 +767,16 @@ pub mod IERC1155Errors {
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     ///Container for all the [`IERC1155Errors`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IERC1155ErrorsErrors {
         #[allow(missing_docs)]
         ERC1155InsufficientBalance(ERC1155InsufficientBalance),
@@ -811,13 +852,20 @@ pub mod IERC1155Errors {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<IERC1155ErrorsErrors>] = &[
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<IERC1155ErrorsErrors>] = &[
                 {
                     fn ERC1155InvalidSender(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidSender as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <ERC1155InvalidSender as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(IERC1155ErrorsErrors::ERC1155InvalidSender)
                     }
                     ERC1155InvalidSender
@@ -827,9 +875,9 @@ pub mod IERC1155Errors {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
                         <ERC1155InsufficientBalance as alloy_sol_types::SolError>::abi_decode_raw(
-                            data,
-                        )
-                        .map(IERC1155ErrorsErrors::ERC1155InsufficientBalance)
+                                data,
+                            )
+                            .map(IERC1155ErrorsErrors::ERC1155InsufficientBalance)
                     }
                     ERC1155InsufficientBalance
                 },
@@ -837,7 +885,9 @@ pub mod IERC1155Errors {
                     fn ERC1155InvalidApprover(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <ERC1155InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(IERC1155ErrorsErrors::ERC1155InvalidApprover)
                     }
                     ERC1155InvalidApprover
@@ -846,7 +896,9 @@ pub mod IERC1155Errors {
                     fn ERC1155InvalidReceiver(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <ERC1155InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(IERC1155ErrorsErrors::ERC1155InvalidReceiver)
                     }
                     ERC1155InvalidReceiver
@@ -856,9 +908,9 @@ pub mod IERC1155Errors {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
                         <ERC1155InvalidArrayLength as alloy_sol_types::SolError>::abi_decode_raw(
-                            data,
-                        )
-                        .map(IERC1155ErrorsErrors::ERC1155InvalidArrayLength)
+                                data,
+                            )
+                            .map(IERC1155ErrorsErrors::ERC1155InvalidArrayLength)
                     }
                     ERC1155InvalidArrayLength
                 },
@@ -866,7 +918,9 @@ pub mod IERC1155Errors {
                     fn ERC1155InvalidOperator(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
-                        <ERC1155InvalidOperator as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <ERC1155InvalidOperator as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(IERC1155ErrorsErrors::ERC1155InvalidOperator)
                     }
                     ERC1155InvalidOperator
@@ -876,18 +930,20 @@ pub mod IERC1155Errors {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC1155ErrorsErrors> {
                         <ERC1155MissingApprovalForAll as alloy_sol_types::SolError>::abi_decode_raw(
-                            data,
-                        )
-                        .map(IERC1155ErrorsErrors::ERC1155MissingApprovalForAll)
+                                data,
+                            )
+                            .map(IERC1155ErrorsErrors::ERC1155MissingApprovalForAll)
                     }
                     ERC1155MissingApprovalForAll
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -899,8 +955,7 @@ pub mod IERC1155Errors {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<IERC1155ErrorsErrors>] = &[
+            ) -> alloy_sol_types::Result<IERC1155ErrorsErrors>] = &[
                 {
                     fn ERC1155InvalidSender(
                         data: &[u8],
@@ -980,10 +1035,12 @@ pub mod IERC1155Errors {
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -996,7 +1053,9 @@ pub mod IERC1155Errors {
                     )
                 }
                 Self::ERC1155InvalidApprover(inner) => {
-                    <ERC1155InvalidApprover as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <ERC1155InvalidApprover as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::ERC1155InvalidArrayLength(inner) => {
                     <ERC1155InvalidArrayLength as alloy_sol_types::SolError>::abi_encoded_size(
@@ -1004,13 +1063,19 @@ pub mod IERC1155Errors {
                     )
                 }
                 Self::ERC1155InvalidOperator(inner) => {
-                    <ERC1155InvalidOperator as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <ERC1155InvalidOperator as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::ERC1155InvalidReceiver(inner) => {
-                    <ERC1155InvalidReceiver as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <ERC1155InvalidReceiver as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::ERC1155InvalidSender(inner) => {
-                    <ERC1155InvalidSender as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <ERC1155InvalidSender as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
                 Self::ERC1155MissingApprovalForAll(inner) => {
                     <ERC1155MissingApprovalForAll as alloy_sol_types::SolError>::abi_encoded_size(
@@ -1024,35 +1089,44 @@ pub mod IERC1155Errors {
             match self {
                 Self::ERC1155InsufficientBalance(inner) => {
                     <ERC1155InsufficientBalance as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::ERC1155InvalidApprover(inner) => {
                     <ERC1155InvalidApprover as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::ERC1155InvalidArrayLength(inner) => {
                     <ERC1155InvalidArrayLength as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::ERC1155InvalidOperator(inner) => {
                     <ERC1155InvalidOperator as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::ERC1155InvalidReceiver(inner) => {
                     <ERC1155InvalidReceiver as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::ERC1155InvalidSender(inner) => {
-                    <ERC1155InvalidSender as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <ERC1155InvalidSender as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
                 Self::ERC1155MissingApprovalForAll(inner) => {
                     <ERC1155MissingApprovalForAll as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
             }
@@ -1061,7 +1135,7 @@ pub mod IERC1155Errors {
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IERC1155Errors`](self) contract instance.
 
-    See the [wrapper's documentation](`IERC1155ErrorsInstance`) for more details.*/
+See the [wrapper's documentation](`IERC1155ErrorsInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1074,41 +1148,43 @@ pub mod IERC1155Errors {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
-        provider: P,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<IERC1155ErrorsInstance<P, N>>>
-    {
-        IERC1155ErrorsInstance::<P, N>::deploy(provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
-
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
+    pub fn deploy<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<IERC1155ErrorsInstance<P, N>>,
+    > {
+        IERC1155ErrorsInstance::<P, N>::deploy(provider)
+    }
+    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+and constructor arguments, if any.
+
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    #[inline]
+    pub fn deploy_builder<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
         IERC1155ErrorsInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IERC1155Errors`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`IERC1155Errors`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`IERC1155Errors`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct IERC1155ErrorsInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1119,21 +1195,23 @@ pub mod IERC1155Errors {
     impl<P, N> ::core::fmt::Debug for IERC1155ErrorsInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("IERC1155ErrorsInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("IERC1155ErrorsInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IERC1155ErrorsInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IERC1155ErrorsInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`IERC1155Errors`](self) contract instance.
 
-        See the [wrapper's documentation](`IERC1155ErrorsInstance`) for more details.*/
+See the [wrapper's documentation](`IERC1155ErrorsInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider,
@@ -1142,20 +1220,22 @@ pub mod IERC1155Errors {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(provider: P) -> alloy_contract::Result<IERC1155ErrorsInstance<P, N>> {
+        pub async fn deploy(
+            provider: P,
+        ) -> alloy_contract::Result<IERC1155ErrorsInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -1197,9 +1277,10 @@ pub mod IERC1155Errors {
     }
     /// Function calls.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IERC1155ErrorsInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IERC1155ErrorsInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -1213,9 +1294,10 @@ pub mod IERC1155Errors {
     }
     /// Event filters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IERC1155ErrorsInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IERC1155ErrorsInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
