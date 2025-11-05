@@ -38,7 +38,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
      */
     string private constant CONTRACT_NAME = "CiphertextCommits";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -47,7 +47,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -109,12 +109,11 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Re-initializes the contract from V1.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {ICiphertextCommits-addCiphertextMaterial}.
@@ -203,7 +202,13 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function getCiphertextMaterials(
         bytes32[] calldata ctHandles
     ) external view virtual returns (CiphertextMaterial[] memory ctMaterials) {
+        // Check that the list of handles is not empty
+        if (ctHandles.length == 0) {
+            revert EmptyCtHandles();
+        }
+
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
+
         ctMaterials = new CiphertextMaterial[](ctHandles.length);
 
         for (uint256 i = 0; i < ctHandles.length; i++) {
@@ -234,6 +239,11 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function getSnsCiphertextMaterials(
         bytes32[] calldata ctHandles
     ) external view virtual returns (SnsCiphertextMaterial[] memory snsCtMaterials) {
+        // Check that the list of handles is not empty
+        if (ctHandles.length == 0) {
+            revert EmptyCtHandles();
+        }
+
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
         snsCtMaterials = new SnsCiphertextMaterial[](ctHandles.length);
 

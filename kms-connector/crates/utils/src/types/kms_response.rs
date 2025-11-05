@@ -32,16 +32,20 @@ impl KmsResponse {
     pub async fn mark_associated_event_as_pending(&self, db: &Pool<Postgres>) {
         match &self.kind {
             KmsResponseKind::PublicDecryption(r) => {
-                gw_event::mark_public_decryption_as_pending(db, r.decryption_id).await
+                gw_event::mark_public_decryption_as_pending(db, r.decryption_id, true).await
             }
             KmsResponseKind::UserDecryption(r) => {
-                gw_event::mark_user_decryption_as_pending(db, r.decryption_id).await
+                gw_event::mark_user_decryption_as_pending(db, r.decryption_id, true).await
             }
             KmsResponseKind::PrepKeygen(r) => {
-                gw_event::mark_prep_keygen_as_pending(db, r.prep_keygen_id).await
+                gw_event::mark_prep_keygen_as_pending(db, r.prep_keygen_id, true).await
             }
-            KmsResponseKind::Keygen(r) => gw_event::mark_keygen_as_pending(db, r.key_id).await,
-            KmsResponseKind::Crsgen(r) => gw_event::mark_crsgen_as_pending(db, r.crs_id).await,
+            KmsResponseKind::Keygen(r) => {
+                gw_event::mark_keygen_as_pending(db, r.key_id, true).await
+            }
+            KmsResponseKind::Crsgen(r) => {
+                gw_event::mark_crsgen_as_pending(db, r.crs_id, true).await
+            }
         }
     }
 }

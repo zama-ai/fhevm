@@ -688,6 +688,11 @@ contract Decryption is
         bytes32[] calldata ctHandles,
         bytes calldata /* extraData */
     ) external view virtual returns (bool) {
+        // Return false if the list of handles is empty
+        if (ctHandles.length == 0) {
+            return false;
+        }
+
         // For each handle, check that it is allowed for public decryption and that the ciphertext
         // material represented by it has been added.
         for (uint256 i = 0; i < ctHandles.length; i++) {
@@ -709,6 +714,11 @@ contract Decryption is
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata /* extraData */
     ) external view virtual returns (bool) {
+        // Return false if the list of handles is empty
+        if (ctHandleContractPairs.length == 0) {
+            return false;
+        }
+
         // For each handle, check that the user and contracts accounts have access to it and that the
         // ciphertext material represented by it has been added.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {

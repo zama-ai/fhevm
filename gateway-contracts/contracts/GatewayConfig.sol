@@ -35,7 +35,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -44,7 +44,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 5;
 
     /**
      * @notice The address of the all gateway contracts
@@ -191,22 +191,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract from V3.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3(KmsNode[] calldata newKmsNodes) public virtual reinitializer(REINITIALIZER_VERSION) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        updateKmsNodes(
-            newKmsNodes,
-            $.mpcThreshold,
-            $.publicDecryptionThreshold,
-            $.userDecryptionThreshold,
-            $.kmsGenThreshold
-        );
-        emit ReinitializeGatewayConfigV3(newKmsNodes);
-    }
+    function reinitializeV4(KmsNode[] calldata newKmsNodes) public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IGatewayConfig-isPauser}.
@@ -620,11 +610,27 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         // Register the new KMS nodes
         for (uint256 i = 0; i < newKmsNodes.length; i++) {
-            $.isKmsTxSender[newKmsNodes[i].txSenderAddress] = true;
-            $.kmsNodes[newKmsNodes[i].txSenderAddress] = newKmsNodes[i];
-            $.kmsTxSenderAddresses.push(newKmsNodes[i].txSenderAddress);
-            $.isKmsSigner[newKmsNodes[i].signerAddress] = true;
-            $.kmsSignerAddresses.push(newKmsNodes[i].signerAddress);
+            address newKmsTxSenderAddress = newKmsNodes[i].txSenderAddress;
+            address newKmsSignerAddress = newKmsNodes[i].signerAddress;
+
+            // Check for KMS transaction sender and signer duplicates
+            if ($.isKmsTxSender[newKmsTxSenderAddress]) {
+                revert KmsTxSenderAlreadyRegistered(newKmsTxSenderAddress);
+            }
+            if ($.isKmsSigner[newKmsSignerAddress]) {
+                revert KmsSignerAlreadyRegistered(newKmsSignerAddress);
+            }
+
+            // Register transaction sender
+            $.isKmsTxSender[newKmsTxSenderAddress] = true;
+            $.kmsTxSenderAddresses.push(newKmsTxSenderAddress);
+
+            // Register KMS node
+            $.kmsNodes[newKmsTxSenderAddress] = newKmsNodes[i];
+
+            // Register signer
+            $.isKmsSigner[newKmsSignerAddress] = true;
+            $.kmsSignerAddresses.push(newKmsSignerAddress);
         }
 
         // Setting the thresholds should be done after the KMS nodes have been registered as the functions
@@ -652,11 +658,27 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         // Register the new coprocessors
         for (uint256 i = 0; i < newCoprocessors.length; i++) {
-            $.isCoprocessorTxSender[newCoprocessors[i].txSenderAddress] = true;
-            $.coprocessors[newCoprocessors[i].txSenderAddress] = newCoprocessors[i];
-            $.coprocessorTxSenderAddresses.push(newCoprocessors[i].txSenderAddress);
-            $.isCoprocessorSigner[newCoprocessors[i].signerAddress] = true;
-            $.coprocessorSignerAddresses.push(newCoprocessors[i].signerAddress);
+            address newCoprocessorTxSenderAddress = newCoprocessors[i].txSenderAddress;
+            address newCoprocessorSignerAddress = newCoprocessors[i].signerAddress;
+
+            // Check for coprocessor transaction sender and signer duplicates
+            if ($.isCoprocessorTxSender[newCoprocessorTxSenderAddress]) {
+                revert CoprocessorTxSenderAlreadyRegistered(newCoprocessorTxSenderAddress);
+            }
+            if ($.isCoprocessorSigner[newCoprocessorSignerAddress]) {
+                revert CoprocessorSignerAlreadyRegistered(newCoprocessorSignerAddress);
+            }
+
+            // Register coprocessor transaction sender
+            $.isCoprocessorTxSender[newCoprocessorTxSenderAddress] = true;
+            $.coprocessorTxSenderAddresses.push(newCoprocessorTxSenderAddress);
+
+            // Register coprocessor
+            $.coprocessors[newCoprocessorTxSenderAddress] = newCoprocessors[i];
+
+            // Register coprocessor signer
+            $.isCoprocessorSigner[newCoprocessorSignerAddress] = true;
+            $.coprocessorSignerAddresses.push(newCoprocessorSignerAddress);
         }
 
         // Setting the coprocessor threshold should be done after the coprocessors have been
@@ -677,11 +699,27 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         // Register the new custodians
         for (uint256 i = 0; i < newCustodians.length; i++) {
-            $.custodians[newCustodians[i].txSenderAddress] = newCustodians[i];
-            $.custodianTxSenderAddresses.push(newCustodians[i].txSenderAddress);
-            $.isCustodianTxSender[newCustodians[i].txSenderAddress] = true;
-            $.custodianSignerAddresses.push(newCustodians[i].signerAddress);
-            $.isCustodianSigner[newCustodians[i].signerAddress] = true;
+            address newCustodianTxSenderAddress = newCustodians[i].txSenderAddress;
+            address newCustodianSignerAddress = newCustodians[i].signerAddress;
+
+            // Check for custodian transaction sender and signer duplicates
+            if ($.isCustodianTxSender[newCustodianTxSenderAddress]) {
+                revert CustodianTxSenderAlreadyRegistered(newCustodianTxSenderAddress);
+            }
+            if ($.isCustodianSigner[newCustodianSignerAddress]) {
+                revert CustodianSignerAlreadyRegistered(newCustodianSignerAddress);
+            }
+
+            // Register custodian transaction sender
+            $.isCustodianTxSender[newCustodianTxSenderAddress] = true;
+            $.custodianTxSenderAddresses.push(newCustodianTxSenderAddress);
+
+            // Register custodian
+            $.custodians[newCustodianTxSenderAddress] = newCustodians[i];
+
+            // Register custodian signer
+            $.isCustodianSigner[newCustodianSignerAddress] = true;
+            $.custodianSignerAddresses.push(newCustodianSignerAddress);
         }
     }
 
@@ -713,7 +751,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         // Check that the public decryption threshold `t` is valid. It must verify:
         // - `t >= 1` : the public decryption consensus should require at least one vote
-        // - `t <= n` : it should be less than the number of registered KMS nodes
+        // - `t <= n` : it should be less than or equal to the number of registered KMS nodes
         if (newPublicDecryptionThreshold == 0) {
             revert InvalidNullPublicDecryptionThreshold();
         }
@@ -734,7 +772,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         // Check that the user decryption threshold `t` is valid. It must verify:
         // - `t >= 1` : the user decryption consensus should require at least one vote
-        // - `t <= n` : it should be less than the number of registered KMS nodes
+        // - `t <= n` : it should be less than or equal to the number of registered KMS nodes
         if (newUserDecryptionThreshold == 0) {
             revert InvalidNullUserDecryptionThreshold();
         }
@@ -755,7 +793,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         // Check that the coprocessor threshold `t` is valid. It must verify:
         // - `t >= 1` : the coprocessor consensus should require at least one vote
-        // - `t <= n` : it should be less than the number of registered coprocessors
+        // - `t <= n` : it should be less than or equal to the number of registered coprocessors
         if (newCoprocessorThreshold == 0) {
             revert InvalidNullCoprocessorThreshold();
         }
@@ -776,7 +814,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         // Check that the key and CRS generation threshold `t` is valid. It must verify:
         // - `t >= 1` : the key and CRS generation consensus should require at least one vote
-        // - `t <= n` : it should be less than the number of registered KMS nodes
+        // - `t <= n` : it should be less than or equal to the number of registered KMS nodes
         if (newKmsGenThreshold == 0) {
             revert InvalidNullKmsGenThreshold();
         }

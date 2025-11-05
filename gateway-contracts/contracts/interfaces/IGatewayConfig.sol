@@ -52,12 +52,6 @@ interface IGatewayConfig {
     );
 
     /**
-     * @notice Emitted when the GatewayConfig is re-initialized from V3.
-     * @param newKmsNodes The new KMS nodes.
-     */
-    event ReinitializeGatewayConfigV3(KmsNode[] newKmsNodes);
-
-    /**
      * @notice Emitted when the KMS nodes have been updated.
      * @param newKmsNodes The new KMS nodes.
      * @param newMpcThreshold The new MPC threshold.
@@ -134,14 +128,50 @@ interface IGatewayConfig {
     error EmptyKmsNodes();
 
     /**
+     * @notice Error emitted when the KMS transaction sender is already registered.
+     * @param kmsTxSenderAddress The KMS transaction sender address.
+     */
+    error KmsTxSenderAlreadyRegistered(address kmsTxSenderAddress);
+
+    /**
+     * @notice Error emitted when the KMS signer is already registered.
+     * @param kmsSignerAddress The KMS signer address.
+     */
+    error KmsSignerAlreadyRegistered(address kmsSignerAddress);
+
+    /**
      * @notice Error emitted when the coprocessors list is empty.
      */
     error EmptyCoprocessors();
 
     /**
+     * @notice Error emitted when the coprocessor transaction sender is already registered.
+     * @param coprocessorTxSenderAddress The coprocessor transaction sender address.
+     */
+    error CoprocessorTxSenderAlreadyRegistered(address coprocessorTxSenderAddress);
+
+    /**
+     * @notice Error emitted when the coprocessor signer is already registered.
+     * @param coprocessorSignerAddress The coprocessor signer address.
+     */
+    error CoprocessorSignerAlreadyRegistered(address coprocessorSignerAddress);
+
+    /**
      * @notice Error emitted when the custodians list is empty.
      */
     error EmptyCustodians();
+
+    /**
+     * @notice Error emitted when the custodian transaction sender is already registered.
+     * @param custodianTxSenderAddress The custodian transaction sender address.
+     */
+    error CustodianTxSenderAlreadyRegistered(address custodianTxSenderAddress);
+
+    /**
+     * @notice Error emitted when the custodian signer is already registered.
+     * @param custodianSignerAddress The custodian signer address.
+     */
+    error CustodianSignerAlreadyRegistered(address custodianSignerAddress);
 
     /**
      * @notice Error emitted when the MPC threshold is greater or equal to the number of KMS nodes.

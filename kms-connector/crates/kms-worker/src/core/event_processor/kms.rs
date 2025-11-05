@@ -37,7 +37,7 @@ impl KMSGenerationProcessor {
 
     pub fn prepare_prep_keygen_request(
         &self,
-        prep_keygen_request: PrepKeygenRequest,
+        prep_keygen_request: &PrepKeygenRequest,
     ) -> anyhow::Result<KmsGrpcRequest> {
         let domain_msg = alloy_to_protobuf_domain(&self.domain)?;
         info!("Eip712Domain constructed: {domain_msg:?}",);
@@ -59,7 +59,7 @@ impl KMSGenerationProcessor {
 
     pub fn prepare_keygen_request(
         &self,
-        keygen_request: KeygenRequest,
+        keygen_request: &KeygenRequest,
     ) -> anyhow::Result<KmsGrpcRequest> {
         let domain_msg = alloy_to_protobuf_domain(&self.domain)?;
         info!("Eip712Domain constructed: {domain_msg:?}",);
@@ -86,7 +86,7 @@ impl KMSGenerationProcessor {
 
     pub fn prepare_crsgen_request(
         &self,
-        crsgen_request: CrsgenRequest,
+        crsgen_request: &CrsgenRequest,
     ) -> anyhow::Result<KmsGrpcRequest> {
         let domain_msg = alloy_to_protobuf_domain(&self.domain)?;
         info!("Eip712Domain constructed: {domain_msg:?}",);
@@ -123,7 +123,7 @@ impl KMSGenerationProcessor {
 
     pub fn prepare_initiate_resharing_request(
         &self,
-        req: KeyReshareSameSet,
+        req: &KeyReshareSameSet,
     ) -> anyhow::Result<KmsGrpcRequest> {
         let request_id = Some(RequestId {
             request_id: hex::encode(req.keyReshareId.to_be_bytes::<32>()),

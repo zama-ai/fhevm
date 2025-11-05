@@ -206,6 +206,9 @@ contract InputVerification is
      * @dev See {IInputVerification-verifyProofResponse}.
      * We restrict this call to coprocessor transaction senders because, in case of reorgs, we need to
      * prevent anyone else from copying the signature and sending it to trigger a consensus.
+     * Also, a user is currently allowed to send an empty list of packed ciphertexts for the input
+     * proof request, meaning the coprocessors will respond with an empty list of handles. We thus
+     * don't revert if the `ctHandles` list is empty on purpose.
      */
     function verifyProofResponse(
         uint256 zkProofId,
