@@ -2,7 +2,7 @@ DB_URL ?= DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coprocessor
 
 .PHONY: build
 build:
-	cargo build --release
+	cargo build --locked --release
 
 .PHONY: prepare
 prepare:

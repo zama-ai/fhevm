@@ -30,8 +30,8 @@ WORKDIR /app/coprocessor/fhevm-engine
 
 # Build host_listener binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --release -p host-listener
+    cargo fetch --locked && \
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --locked --release -p host-listener
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod

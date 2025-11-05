@@ -13,8 +13,8 @@ WORKDIR /app/coprocessor/fhevm-engine
 
 # Build zkproof_worker binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    cargo fetch && \
-    SQLX_OFFLINE=true cargo build --release -p zkproof-worker
+    cargo fetch --locked && \
+    SQLX_OFFLINE=true cargo build --locked --release -p zkproof-worker
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
