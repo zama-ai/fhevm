@@ -369,10 +369,23 @@ FOR UPDATE SKIP LOCKED            ",
         for (transaction_id, txwork) in work_by_transaction.iter() {
             let mut ops = vec![];
             for w in txwork {
-                let fhe_op: SupportedFheOperations = w
-                    .fhe_operation
-                    .try_into()
-                    .expect("only valid fhe ops must have been put in db");
+                let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
+                    Ok(op) => op,
+                    Err(e) => {
+                        error!(target: "tfhe_worker", { output_handle = ?w.output_handle, transaction_id = ?hex::encode(transaction_id), error = %e, }, "invalid FHE operation ");
+                        set_computation_error(
+                            &w.output_handle,
+                            transaction_id,
+                            tenant_id,
+                            &e,
+                            trx,
+                            tracer,
+                            loop_ctx,
+                        )
+                        .await?;
+                        continue;
+                    }
+                };
                 let mut inputs: Vec<DFGTaskInput> = Vec::with_capacity(w.dependencies.len());
                 let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
                 let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
@@ -441,10 +454,7 @@ async fn build_transaction_graph_and_execute<'a>(
             None => {
                 // If the keys can't be located in the cache, skip
                 // executing for this tenant, retry next iteration
-                error!(target: "tfhe_worker",
-                          { tenant_id = tenant_id },
-                       "no keys found for tenant"
-                );
+                error!(target: "tfhe_worker", { tenant_id = tenant_id }, "no keys found for tenant");
                 return Err(CoprocessorError::MissingKeys {
                     tenant_id: *tenant_id,
                 }
@@ -535,39 +545,16 @@ async fn upload_transaction_graph_results<'a>(
                         uncomputable.push((result.handle.clone(), result.transaction_id.clone()));
                     }
                 }
-                WORKER_ERRORS_COUNTER.inc();
-                error!(target: "tfhe_worker",
-                              { tenant_id = tenant_id, error = cerr,
-                output_handle = format!("0x{}", hex::encode(&result.handle)) },
-                           "error while processing work item"
-                       );
-                let mut s = tracer.start_with_context("set_computation_error_in_db", loop_ctx);
-                s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
-                s.set_attribute(KeyValue::new(
-                    "handle",
-                    format!("0x{}", hex::encode(&result.handle)),
-                ));
-                let err_string = err.to_string();
-                s.set_status(opentelemetry::trace::Status::Error {
-                    description: err_string.clone().into(),
-                });
-
-                let _ = query!(
-                    "
-                                UPDATE computations
-                                SET is_error = true, error_message = $1
-                                WHERE tenant_id = $2
-                                AND output_handle = $3
-                                AND transaction_id = $4
-                            ",
-                    err_string,
-                    *tenant_id,
-                    result.handle,
-                    result.transaction_id
+                set_computation_error(
+                    &result.handle,
+                    &result.transaction_id,
+                    tenant_id,
+                    &*cerr,
+                    trx,
+                    tracer,
+                    loop_ctx,
                 )
-                .execute(trx.as_mut())
                 .await?;
-                s.end();
             }
         }
     }
@@ -639,5 +626,46 @@ async fn upload_transaction_graph_results<'a>(
     s.end();
 
     update_uncomputable_handles(uncomputable, *tenant_id, trx, tracer, loop_ctx).await?;
+    Ok(())
+}
+
+async fn set_computation_error<'a>(
+    output_handle: &[u8],
+    transaction_id: &[u8],
+    tenant_id: &i32,
+    cerr: &(dyn std::error::Error + Send + Sync),
+    trx: &mut sqlx::Transaction<'a, Postgres>,
+    tracer: &opentelemetry::global::BoxedTracer,
+    loop_ctx: &opentelemetry::Context,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    WORKER_ERRORS_COUNTER.inc();
+    error!(target: "tfhe_worker", { tenant_id = tenant_id, error = cerr.to_string(), output_handle = format!("0x{}", hex::encode(output_handle)) }, "error while processing work item");
+    let mut s = tracer.start_with_context("set_computation_error_in_db", loop_ctx);
+    s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+    s.set_attribute(KeyValue::new(
+        "handle",
+        format!("0x{}", hex::encode(output_handle)),
+    ));
+    let err_string = cerr.to_string();
+    s.set_status(opentelemetry::trace::Status::Error {
+        description: err_string.clone().into(),
+    });
+
+    let _ = query!(
+        "
+           UPDATE computations
+           SET is_error = true, error_message = $1
+           WHERE tenant_id = $2
+           AND output_handle = $3
+           AND transaction_id = $4
+        ",
+        err_string,
+        *tenant_id,
+        output_handle,
+        transaction_id
+    )
+    .execute(trx.as_mut())
+    .await?;
+    s.end();
     Ok(())
 }
