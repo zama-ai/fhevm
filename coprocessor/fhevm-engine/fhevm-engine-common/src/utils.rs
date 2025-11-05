@@ -110,3 +110,23 @@ impl Default for HeartBeat {
         Self::new()
     }
 }
+
+#[macro_export]
+macro_rules! with_panic_guard {
+    ($body:expr) => {{
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+        match catch_unwind(AssertUnwindSafe(|| $body)) {
+            Ok(v) => Ok(v),
+            Err(payload) => {
+                let msg = if let Some(s) = (&*payload).downcast_ref::<&'static str>() {
+                    s.to_string()
+                } else if let Some(s) = (&*payload).downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "panic payload: non-string".to_string()
+                };
+                Err(msg)
+            }
+        }
+    }};
+}
