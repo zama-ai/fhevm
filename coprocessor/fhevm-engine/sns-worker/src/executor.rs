@@ -19,6 +19,7 @@ use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::with_panic_guard;
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
 use sqlx::Pool;
@@ -54,26 +55,6 @@ impl fmt::Display for Order {
             Order::Desc => write!(f, "DESC"),
         }
     }
-}
-
-#[macro_export]
-macro_rules! with_panic_guard {
-    ($body:expr) => {{
-        use std::panic::{catch_unwind, AssertUnwindSafe};
-        match catch_unwind(AssertUnwindSafe(|| $body)) {
-            Ok(v) => Ok(v),
-            Err(payload) => {
-                let msg = if let Some(s) = (&*payload).downcast_ref::<&'static str>() {
-                    s.to_string()
-                } else if let Some(s) = (&*payload).downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "panic payload: non-string".to_string()
-                };
-                Err(msg)
-            }
-        }
-    }};
 }
 
 pub struct SwitchNSquashService {
@@ -554,7 +535,8 @@ fn compute_task(
 
     let s = task.otel.child_span("decompress_ct64");
 
-    let ct: SupportedFheCiphertexts = match decompress_ct(&task.handle, ct64_compressed) {
+    let ct: SupportedFheCiphertexts = match decompress_ct_with_guard(&task.handle, ct64_compressed)
+    {
         Ok(ct) => {
             telemetry::end_span(s);
             ct
@@ -776,7 +758,7 @@ async fn notify_ciphertext128_ready(
 }
 
 /// Decompresses a ciphertext based on its type.
-fn decompress_ct(
+fn decompress_ct_with_guard(
     handle: &[u8],
     compressed_ct: &[u8],
 ) -> Result<SupportedFheCiphertexts, ExecutionError> {
