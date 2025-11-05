@@ -2,7 +2,7 @@
 
 # Package manager dependencies.
 sudo apt update
-sudo apt install -y protobuf-compiler
+sudo apt install -y protobuf-compiler openssl
 
 # Cargo dependencies.
 cargo install sqlx-cli
