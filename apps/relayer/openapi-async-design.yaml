@@ -1,0 +1,1483 @@
+openapi: 3.0.3
+info:
+  title: FHEVM Relayer Async API
+  description: |
+    ## Overview
+
+    Asynchronous API for FHEVM Relayer operations using POST + GET pattern.
+
+    1. Submit request via POST to get a UUID
+    2. Poll GET /{endpoint}/{uuid} for status and results
+    3. Status can be: `queued`, `completed`, or `failed`
+    4. Server controls retry timing - client respects `retry_after`
+  version: 2.0.0
+
+servers:
+  - url: /v1
+    description: FHEVM Relayer API v1
+
+paths:
+  /public-decrypt:
+    post:
+      summary: Public decryption request
+      description: Submit a request to decrypt ciphertext handles to plain text value. Returns immediately with a request ID.
+      operationId: submitPublicDecrypt
+      tags:
+        - Public Decrypt
+      security: [] # No authentication required - publicly accessible
+      parameters:
+        - name: X-Request-ID
+          in: header
+          required: false
+          description: Optional request identifier for tracing. Server generates UUID if not provided.
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicDecryptRequestJson"
+            examples:
+              basic:
+                summary: Basic public decrypt request
+                value:
+                  ciphertextHandles:
+                    [
+                      "bf9b45c007d626278570aa9622a9c8646f1bfd4e25a5401bd576d15e05320000",
+                    ]
+                  extraData: "0x00"
+      responses:
+        "202":
+          description: Request accepted and queued for processing
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "123e4567-e89b-12d3-a456-426614174000"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncResponse"
+              examples:
+                accepted:
+                  summary: Request accepted
+                  value:
+                    id: "550e8400-e29b-41d4-a716-446655440000"
+        "400":
+          description: Invalid API version or malformed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestError"
+              examples:
+                invalid_version:
+                  summary: Unsupported API version
+                  value:
+                    message: "Unsupported API version"
+                    code: "MALFORMED_VALUE"
+                missing_handles:
+                  summary: Missing ciphertext handles
+                  value:
+                    message: "Missing required field: ciphertextHandles"
+                    code: "MISSING_FIELD"
+                missing_extra_data:
+                  summary: Missing extraData field
+                  value:
+                    message: "Missing required field: extraData"
+                    code: "MISSING_FIELD"
+                invalid_extra_data:
+                  summary: Malformed extraData format
+                  value:
+                    message: "Invalid extraData format: must be hex string"
+                    code: "MALFORMED_VALUE"
+                malformed_handle:
+                  summary: Malformed ciphertext handle format
+                  value:
+                    message: "Invalid ciphertext handle format: must be valid hex string"
+                    code: "MALFORMED_VALUE"
+        "403":
+          description: User not authorized to decrypt these ciphertexts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+              examples:
+                unauthorized:
+                  summary: Unauthorized decryption
+                  value:
+                    message: "User not authorized to decrypt specified ciphertext handles"
+                    code: "PERMISSION_DENIED"
+        "422":
+          description: Invalid ciphertext handles or cryptographic data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnprocessableEntityError"
+              examples:
+                invalid_handle:
+                  summary: Invalid ciphertext handle
+                  value:
+                    message: "Ciphertext handle not found on Gateway"
+                    code: "INVALID_VALUE"
+        "429":
+          description: Rate limit exceeded (errors don't count toward limit)
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+                example: 15
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitErrorResponse"
+              examples:
+                rate_limit:
+                  summary: Rate limit exceeded
+                  value:
+                    message: "Rate limit exceeded for decryption operations"
+                    retry_after: 15
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalServerError"
+              examples:
+                gateway_failure:
+                  summary: FHEVM gateway unavailable
+                  value:
+                    message: "Internal server error"
+                    code: "SERVER_ERROR"
+
+  /public-decrypt/{id}:
+    get:
+      summary: Get public decryption result
+      description: Retrieve the status and result of a public decryption request
+      operationId: getPublicDecryptResult
+      tags:
+        - Public Decrypt
+      security: [] # No authentication required - publicly accessible
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Request UUID returned from POST request
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: X-Request-ID
+          in: header
+          required: false
+          description: Optional request identifier for tracing. Server generates UUID if not provided.
+          schema:
+            type: string
+            format: uuid
+          example: "987fcdeb-51d2-43a1-b789-123456789abc"
+      responses:
+        "200":
+          description: Request completed successfully
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/AsyncResult"
+                  - type: object
+                    properties:
+                      result:
+                        $ref: "#/components/schemas/PublicDecryptResponseJson"
+              examples:
+                completed:
+                  summary: Successful completion
+                  value:
+                    status: "completed"
+                    result:
+                      response:
+                        - decrypted_value: "01020304"
+                          signatures: ["05060708", "090a0b0c"]
+        "202":
+          description: Request still in queue
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncResult"
+              examples:
+                queued:
+                  summary: Request queued
+                  value:
+                    status: "queued"
+                    retry_after: 15
+        "400":
+          description: Malformed UUID format
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestError"
+              examples:
+                malformed_uuid:
+                  summary: Malformed UUID
+                  value:
+                    message: "Invalid UUID format"
+                    code: "MALFORMED_VALUE"
+        "422":
+          description: Request failed
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncResult"
+              examples:
+                gateway_decryption_failed:
+                  summary: Gateway decryption failed
+                  value:
+                    status: "failed"
+                    error:
+                      message: "Gateway returned empty decryption value"
+                      code: "INVALID_VALUE_FROM_GATEWAY"
+                kms_signature_failed:
+                  summary: KMS signature verification failed
+                  value:
+                    status: "failed"
+                    error:
+                      message: "KMS signature verification failed"
+                      code: "KMS_SIGNATURE_VERIFICATION_FAILED"
+                gateway_timeout:
+                  summary: Gateway processing timeout
+                  value:
+                    status: "failed"
+                    error:
+                      message: "Gateway processing timed out"
+                      code: "INVALID_VALUE_FROM_GATEWAY"
+        "404":
+          description: Request ID not found
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+              examples:
+                not_found:
+                  summary: Request ID not found
+                  value:
+                    message: "Request ID not found"
+                    code: "MALFORMED_VALUE"
+        "500":
+          description: Internal server error
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalServerError"
+              examples:
+                server_error:
+                  summary: Internal server error
+                  value:
+                    message: "Internal server error"
+                    code: "SERVER_ERROR"
+
+  /user-decrypt:
+    post:
+      summary: Submit user decryption request
+      description: Submit a request to decrypt ciphertexts for encrypted with FHE Private Keys to ciphertexts encrypted with user provided public key.  Returns immediately with a request ID.
+      operationId: submitUserDecrypt
+      tags:
+        - User Decrypt
+      security: [] # No authentication required - publicly accessible
+      parameters:
+        - name: X-Request-ID
+          in: header
+          required: false
+          description: Optional request identifier for tracing. Server generates UUID if not provided.
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserDecryptRequestJson"
+            examples:
+              basic:
+                summary: Basic user decrypt request
+                value:
+                  handleContractPairs:
+                    - handle: "0x123abc456"
+                      contractAddress: "0xContract123"
+                  requestValidity:
+                    startTimestamp: "1703123456"
+                    durationDays: "7"
+                  contractsChainId: "8008"
+                  contractAddresses: ["0xContract123"]
+                  userAddress: "0xUser456"
+                  signature: "0xSignature789"
+                  publicKey: "0xPubKey012"
+                  extraData: "0x00"
+      responses:
+        "202":
+          description: Request accepted and queued for processing
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncResponse"
+        "400":
+          description: Invalid API version or malformed request
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestError"
+              examples:
+                invalid_version:
+                  summary: Unsupported API version
+                  value:
+                    message: "Unsupported API version"
+                    code: "MALFORMED_VALUE"
+                missing_signature:
+                  summary: Missing user signature
+                  value:
+                    message: "Missing required field: signature"
+                    code: "MISSING_FIELD"
+                missing_handle_pairs:
+                  summary: Missing handle-contract pairs
+                  value:
+                    message: "Missing required field: handleContractPairs"
+                    code: "MISSING_FIELD"
+                missing_user_address:
+                  summary: Missing user address
+                  value:
+                    message: "Missing required field: userAddress"
+                    code: "MISSING_FIELD"
+                missing_public_key:
+                  summary: Missing public key
+                  value:
+                    message: "Missing required field: publicKey"
+                    code: "MISSING_FIELD"
+                missing_extra_data:
+                  summary: Missing extraData field
+                  value:
+                    message: "Missing required field: extraData"
+                    code: "MISSING_FIELD"
+                invalid_extra_data:
+                  summary: Malformed extraData format
+                  value:
+                    message: "Invalid extraData format: must be hex string"
+                    code: "MALFORMED_VALUE"
+                invalid_signature_format:
+                  summary: Malformed signature format
+                  value:
+                    message: "Invalid signature format: must be hex string"
+                    code: "MALFORMED_VALUE"
+                invalid_public_key_format:
+                  summary: Malformed public key format
+                  value:
+                    message: "Invalid publicKey format: must be hex string"
+                    code: "MALFORMED_VALUE"
+                malformed_handle:
+                  summary: Malformed ciphertext handle format
+                  value:
+                    message: "Invalid ciphertext handle format: must be valid hex string"
+                    code: "MALFORMED_VALUE"
+        "403":
+          description: User not authorized to decrypt these ciphertexts
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForbiddenError"
+              examples:
+                unauthorized_access:
+                  summary: Unauthorized ciphertext access
+                  value:
+                    message: "User not authorized to access specified ciphertext handles"
+                    code: "PERMISSION_DENIED"
+        "422":
+          description: Invalid signature or cryptographic data
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnprocessableEntityError"
+              examples:
+                invalid_signature:
+                  summary: Invalid user signature
+                  value:
+                    message: "Invalid user signature for decryption request"
+                    code: "INVALID_VALUE"
+                invalid_handle:
+                  summary: Invalid ciphertext handle
+                  value:
+                    message: "Ciphertext handle not found on Gateway"
+                    code: "INVALID_VALUE"
+                invalid_contract:
+                  summary: Invalid contract address
+                  value:
+                    message: "Contract address not found on specified chain"
+                    code: "INVALID_VALUE"
+                expired_request_validity:
+                  summary: Request validity expired
+                  value:
+                    message: "Request validity window has expired"
+                    code: "INVALID_VALUE"
+                contract_not_authorized:
+                  summary: Contract not authorized for ciphertext
+                  value:
+                    message: "Contract not authorized to access specified ciphertext handles"
+                    code: "INVALID_VALUE"
+                unsupported_chain_id:
+                  summary: Unsupported chain ID
+                  value:
+                    message: "Contract chain ID not supported"
+                    code: "INVALID_VALUE"
+        "429":
+          description: Rate limit exceeded (errors don't count toward limit)
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+                example: 20
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitErrorResponse"
+              examples:
+                rate_limit:
+                  summary: Rate limit exceeded
+                  value:
+                    message: "Rate limit exceeded for user decryption operations"
+                    retry_after: 20
+        "500":
+          description: Internal server error
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalServerError"
+              examples:
+                service_failure:
+                  summary: Crypto service failure
+                  value:
+                    message: "Internal server error"
+                    code: "SERVER_ERROR"
+
+  /user-decrypt/{id}:
+    get:
+      summary: Get user decryption result
+      description: Retrieve the status and result of a user decryption request
+      operationId: getUserDecryptResult
+      tags:
+        - User Decrypt
+      security: [] # No authentication required - publicly accessible
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Request UUID returned from POST request
+          schema:
+            type: string
+            format: uuid
+        - name: X-Request-ID
+          in: header
+          required: false
+          description: Optional request identifier for tracing. Server generates UUID if not provided.
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        "200":
+          description: Request completed successfully
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/AsyncResult"
+                  - type: object
+                    properties:
+                      result:
+                        $ref: "#/components/schemas/UserDecryptResponseJson"
+              examples:
+                completed:
+                  summary: Successful completion
+                  value:
+                    status: "completed"
+                    result:
+                      response:
+                        - payload: "decrypted123456"
+                          signature: "signature789012"
+        "202":
+          description: Request still in queue
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncResult"
+              examples:
+                queued:
+                  summary: Request queued
+                  value:
+                    status: "queued"
+                    retry_after: 15
+        "400":
+          description: Malformed UUID format
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestError"
+              examples:
+                malformed_uuid:
+                  summary: Malformed UUID
+                  value:
+                    message: "Invalid UUID format"
+                    code: "MALFORMED_VALUE"
+        "422":
+          description: Request failed
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncResult"
+              examples:
+                gateway_decryption_failed:
+                  summary: Gateway decryption failed
+                  value:
+                    status: "failed"
+                    error:
+                      message: "Gateway returned empty decryption value"
+                      code: "INVALID_VALUE_FROM_GATEWAY"
+                kms_signature_failed:
+                  summary: KMS signature verification failed
+                  value:
+                    status: "failed"
+                    error:
+                      message: "KMS signature verification failed"
+                      code: "KMS_SIGNATURE_VERIFICATION_FAILED"
+                gateway_timeout:
+                  summary: Gateway processing timeout
+                  value:
+                    status: "failed"
+                    error:
+                      message: "Gateway processing timed out"
+                      code: "INVALID_VALUE_FROM_GATEWAY"
+        "404":
+          description: Request ID not found
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+              examples:
+                not_found:
+                  summary: Request ID not found
+                  value:
+                    message: "Request ID not found"
+                    code: "MALFORMED_VALUE"
+        "500":
+          description: Internal server error
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalServerError"
+              examples:
+                server_error:
+                  summary: Internal server error
+                  value:
+                    message: "Internal server error"
+                    code: "SERVER_ERROR"
+
+  /input-proof:
+    post:
+      summary: Submit input proof verification request
+      description: Submit a request to verify input proof for ciphertext
+      operationId: submitInputProof
+      tags:
+        - Input Proof
+      security: [] # No authentication required - publicly accessible
+      parameters:
+        - name: X-Request-ID
+          in: header
+          required: false
+          description: Optional request identifier for tracing. Server generates UUID if not provided.
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InputProofRequestJson"
+            examples:
+              basic:
+                summary: Basic input proof request
+                value:
+                  contractChainId: "8008"
+                  contractAddress: "0xContract789"
+                  userAddress: "0xUser456"
+                  ciphertextWithInputVerification: "abcdef123456789"
+                  extraData: "0x00"
+      responses:
+        "202":
+          description: Request accepted and queued for processing
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncResponse"
+        "400":
+          description: Invalid API version or malformed request
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestError"
+              examples:
+                invalid_version:
+                  summary: Unsupported API version
+                  value:
+                    message: "Unsupported API version"
+                    code: "MALFORMED_VALUE"
+                missing_chain_id:
+                  summary: Missing contract chain ID
+                  value:
+                    message: "Missing required field: contractChainId"
+                    code: "MISSING_FIELD"
+                missing_contract_address:
+                  summary: Missing contract address
+                  value:
+                    message: "Missing required field: contractAddress"
+                    code: "MISSING_FIELD"
+                missing_user_address:
+                  summary: Missing user address
+                  value:
+                    message: "Missing required field: userAddress"
+                    code: "MISSING_FIELD"
+                missing_verification:
+                  summary: Missing input verification data
+                  value:
+                    message: "Missing required field: ciphertextWithInputVerification"
+                    code: "MISSING_FIELD"
+                missing_extra_data:
+                  summary: Missing extraData field
+                  value:
+                    message: "Missing required field: extraData"
+                    code: "MISSING_FIELD"
+                invalid_extra_data:
+                  summary: Malformed extraData format
+                  value:
+                    message: "Invalid extraData format: must be hex string"
+                    code: "MALFORMED_VALUE"
+                invalid_contract_address_format:
+                  summary: Malformed contract address format
+                  value:
+                    message: "Invalid contractAddress format: must be hex string"
+                    code: "MALFORMED_VALUE"
+                invalid_user_address_format:
+                  summary: Malformed user address format
+                  value:
+                    message: "Invalid userAddress format: must be hex string"
+                    code: "MALFORMED_VALUE"
+        "422":
+          description: Invalid proof data or contract information
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnprocessableEntityError"
+              examples:
+                invalid_proof:
+                  summary: Invalid input proof
+                  value:
+                    message: "Input proof verification failed - malformed proof data"
+                    code: "INVALID_VALUE"
+                invalid_chain:
+                  summary: Invalid chain ID
+                  value:
+                    message: "Contract chain ID not supported"
+                    code: "INVALID_VALUE"
+                invalid_contract_address:
+                  summary: Invalid contract address
+                  value:
+                    message: "Contract address not found on specified chain"
+                    code: "INVALID_VALUE"
+        "429":
+          description: Rate limit exceeded (errors don't count toward limit)
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+                example: 12
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitErrorResponse"
+              examples:
+                rate_limit:
+                  summary: Rate limit exceeded
+                  value:
+                    message: "Rate limit exceeded for proof verification operations"
+                    retry_after: 12
+        "500":
+          description: Internal server error
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalServerError"
+              examples:
+                verification_service_failure:
+                  summary: Proof verification service failure
+                  value:
+                    message: "Internal server error"
+                    code: "SERVER_ERROR"
+
+  /input-proof/{id}:
+    get:
+      summary: Get input proof verification result
+      description: Retrieve the status and result of an input proof verification request
+      operationId: getInputProofResult
+      tags:
+        - Input Proof
+      security: [] # No authentication required - publicly accessible
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Request UUID returned from POST request
+          schema:
+            type: string
+            format: uuid
+        - name: X-Request-ID
+          in: header
+          required: false
+          description: Optional request identifier for tracing. Server generates UUID if not provided.
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        "200":
+          description: Request completed successfully
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/AsyncResult"
+                  - type: object
+                    properties:
+                      result:
+                        $ref: "#/components/schemas/InputProofResponseJson"
+              examples:
+                completed:
+                  summary: Successful completion
+                  value:
+                    status: "completed"
+                    result:
+                      response:
+                        handles: ["0xhandle123", "0xhandle456"]
+                        signatures: ["0xsig123", "0xsig456"]
+        "202":
+          description: Request still in queue
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncResult"
+              examples:
+                queued:
+                  summary: Request queued
+                  value:
+                    status: "queued"
+                    retry_after: 15
+        "400":
+          description: Malformed UUID format
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestError"
+              examples:
+                malformed_uuid:
+                  summary: Malformed UUID
+                  value:
+                    message: "Invalid UUID format"
+                    code: "MALFORMED_VALUE"
+        "422":
+          description: Request failed
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncResult"
+              examples:
+                proof_verification_failed:
+                  summary: Proof verification failed
+                  value:
+                    status: "failed"
+                    error:
+                      message: "Input proof verification failed"
+                      code: "INVALID_VALUE_FROM_GATEWAY"
+                coprocessor_signature_failed:
+                  summary: Coprocessor signature verification failed
+                  value:
+                    status: "failed"
+                    error:
+                      message: "Coprocessor signature verification failed"
+                      code: "COPROCESSOR_SIGNATURE_VERIFICATION_FAILED"
+                gateway_timeout:
+                  summary: Gateway processing timeout
+                  value:
+                    status: "failed"
+                    error:
+                      message: "Gateway processing timed out"
+                      code: "INVALID_VALUE_FROM_GATEWAY"
+        "404":
+          description: Request ID not found
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotFoundError"
+              examples:
+                not_found:
+                  summary: Request ID not found
+                  value:
+                    message: "Request ID not found"
+                    code: "MALFORMED_VALUE"
+        "500":
+          description: Internal server error
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalServerError"
+              examples:
+                server_error:
+                  summary: Internal server error
+                  value:
+                    message: "Internal server error"
+                    code: "SERVER_ERROR"
+
+  /keyurl:
+    get:
+      summary: Get key URLs
+      description: Returns the URLs to retrieve the FHEVM public keys and evaluation keys
+      operationId: getKeyUrl
+      tags:
+        - Key URL
+      parameters:
+        - name: X-Request-ID
+          in: header
+          required: false
+          description: Optional request identifier for tracing. Server generates UUID if not provided.
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      security: [] # No authentication required - publicly accessible
+      responses:
+        "200":
+          description: Key URLs retrieved successfully
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyUrlResponseJson"
+              examples:
+                success:
+                  summary: Successful key URL retrieval
+                  value:
+                    fhe_public_key_url: "https://gateway.fhevm.com/keys/public"
+                    evaluation_key_url: "https://gateway.fhevm.com/keys/evaluation"
+        "400":
+          description: Invalid version or malformed request
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BadRequestError"
+              examples:
+                invalid_version:
+                  summary: Invalid API version
+                  value:
+                    message: "Unsupported API version"
+                    code: "MALFORMED_VALUE"
+        "500":
+          description: Internal server error
+          headers:
+            X-Request-ID:
+              description: Request identifier echoed back from request header
+              schema:
+                type: string
+                format: uuid
+              example: "987fcdeb-51d2-43a1-b789-123456789abc"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalServerError"
+              examples:
+                service_unavailable:
+                  summary: Key service unavailable
+                  value:
+                    message: "Internal server error"
+                    code: "SERVER_ERROR"
+
+components:
+  schemas:
+    AsyncResponse:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Request identifier for status checking
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+    AsyncResult:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [queued, completed, failed]
+          description: Current status of the request
+        result:
+          type: object
+          description: Present when status is 'completed' - contains the actual response data
+        error:
+          type: object
+          required:
+            - message
+            - code
+          properties:
+            message:
+              type: string
+              description: Human-readable error message
+            code:
+              type: string
+              enum: [INVALID_VALUE_FROM_GATEWAY, KMS_SIGNATURE_VERIFICATION_FAILED, COPROCESSOR_SIGNATURE_VERIFICATION_FAILED]
+              description: Machine-readable error code for async operation failures
+          description: Present when status is 'failed' - contains structured error information
+        retry_after:
+          type: integer
+          description: Present when status is 'queued' - server-controlled retry interval in seconds
+          example: 15
+
+    BadRequestError:
+      type: object
+      required:
+        - message
+        - code
+      properties:
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid request payload"
+        code:
+          type: string
+          enum: [MISSING_FIELD, MALFORMED_VALUE]
+          description: Machine-readable error code for 400 Bad Request responses
+          example: "MISSING_FIELD"
+
+    ForbiddenError:
+      type: object
+      required:
+        - message
+        - code
+      properties:
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Access denied"
+        code:
+          type: string
+          enum: [PERMISSION_DENIED]
+          description: Machine-readable error code for 403 Forbidden responses
+          example: "PERMISSION_DENIED"
+
+    UnprocessableEntityError:
+      type: object
+      required:
+        - message
+        - code
+      properties:
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid data provided"
+        code:
+          type: string
+          enum: [INVALID_VALUE]
+          description: Machine-readable error code for 422 Unprocessable Entity responses
+          example: "INVALID_VALUE"
+
+    InternalServerError:
+      type: object
+      required:
+        - message
+        - code
+      properties:
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Internal server error"
+        code:
+          type: string
+          enum: [SERVER_ERROR]
+          description: Machine-readable error code for 500 Internal Server Error responses
+          example: "SERVER_ERROR"
+
+    NotFoundError:
+      type: object
+      required:
+        - message
+        - code
+      properties:
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Resource not found"
+        code:
+          type: string
+          enum: [MALFORMED_VALUE]
+          description: Machine-readable error code for 404 Not Found responses (invalid ID format)
+          example: "MALFORMED_VALUE"
+
+    RateLimitErrorResponse:
+      type: object
+      required:
+        - message
+        - retry_after
+      properties:
+        message:
+          type: string
+          description: Rate limit error message
+          example: "Rate limit exceeded"
+        retry_after:
+          type: integer
+          description: Seconds to wait before retrying (matches Retry-After header)
+          example: 15
+
+    PublicDecryptRequestJson:
+      type: object
+      required:
+        - ciphertextHandles
+        - extraData
+      properties:
+        ciphertextHandles:
+          type: array
+          items:
+            type: string
+          description: Array of ciphertext handles to decrypt
+          example: ["0x123abc456", "0x789def012"]
+        extraData:
+          type: string
+          description: Extra data field, always set to 0x00
+          example: "0x00"
+
+    PublicDecryptResponseJson:
+      type: object
+      required:
+        - response
+      properties:
+        response:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicDecryptPayload"
+
+    PublicDecryptPayload:
+      type: object
+      required:
+        - decrypted_value
+        - signatures
+      properties:
+        decrypted_value:
+          type: string
+          description: Hex-encoded decrypted value
+          example: "01020304"
+        signatures:
+          type: array
+          items:
+            type: string
+          description: Array of hex-encoded signatures
+          example: ["05060708", "090a0b0c"]
+
+    UserDecryptRequestJson:
+      type: object
+      required:
+        - handleContractPairs
+        - requestValidity
+        - contractsChainId
+        - contractAddresses
+        - userAddress
+        - signature
+        - publicKey
+        - extraData
+      properties:
+        handleContractPairs:
+          type: array
+          items:
+            $ref: "#/components/schemas/HandleContractPair"
+          description: Array of handle-contract pairs for decryption
+        requestValidity:
+          $ref: "#/components/schemas/RequestValidity"
+        contractsChainId:
+          type: string
+          description: Chain ID where contracts are deployed
+          example: "8008"
+        contractAddresses:
+          type: array
+          items:
+            type: string
+          description: Array of contract addresses
+          example: ["0xContract123"]
+        userAddress:
+          type: string
+          description: User's wallet address
+          example: "0xUser456"
+        signature:
+          type: string
+          description: User's signature for authentication
+          example: "0xSignature789"
+        publicKey:
+          type: string
+          description: User's public key
+          example: "0xPubKey012"
+        extraData:
+          type: string
+          description: Extra data field, always set to 0x00
+          example: "0x00"
+
+    HandleContractPair:
+      type: object
+      required:
+        - handle
+        - contractAddress
+      properties:
+        handle:
+          type: string
+          description: Ciphertext handle
+          example: "0x123abc456"
+        contractAddress:
+          type: string
+          description: Contract address
+          example: "0xContract123"
+
+    RequestValidity:
+      type: object
+      required:
+        - startTimestamp
+        - durationDays
+      properties:
+        startTimestamp:
+          type: string
+          description: Start timestamp for request validity
+          example: "1703123456"
+        durationDays:
+          type: string
+          description: Duration in days for request validity
+          example: "7"
+
+    UserDecryptResponseJson:
+      type: object
+      required:
+        - response
+      properties:
+        response:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserDecryptPayload"
+
+    UserDecryptPayload:
+      type: object
+      required:
+        - payload
+        - signature
+      properties:
+        payload:
+          type: string
+          description: Hex-encoded decrypted payload
+          example: "decrypted123456"
+        signature:
+          type: string
+          description: Hex-encoded signature
+          example: "signature789012"
+
+    InputProofRequestJson:
+      type: object
+      required:
+        - contractChainId
+        - contractAddress
+        - userAddress
+        - ciphertextWithInputVerification
+        - extraData
+      properties:
+        contractChainId:
+          type: string
+          description: Chain ID where contract is deployed
+          example: "8008"
+        contractAddress:
+          type: string
+          description: Contract address
+          example: "0xContract789"
+        userAddress:
+          type: string
+          description: User's wallet address
+          example: "0xUser456"
+        ciphertextWithInputVerification:
+          type: string
+          description: Ciphertext with input verification data
+          example: "abcdef123456789"
+        extraData:
+          type: string
+          description: Extra data field, always set to 0x00
+          example: "0x00"
+
+    InputProofResponseJson:
+      type: object
+      required:
+        - response
+      properties:
+        response:
+          $ref: "#/components/schemas/InputProofPayload"
+
+    InputProofPayload:
+      type: object
+      required:
+        - handles
+        - signatures
+      properties:
+        handles:
+          type: array
+          items:
+            type: string
+          description: Ordered list of hex-encoded handles
+          example: ["0xhandle123", "0xhandle456"]
+        signatures:
+          type: array
+          items:
+            type: string
+          description: Attestation signatures for input verification
+          example: ["0xsig123", "0xsig456"]
+
+    KeyUrlResponseJson:
+      type: object
+      description: Response containing URLs to FHEVM public keys and evaluation keys
+      properties:
+        fhe_public_key_url:
+          type: string
+          format: uri
+          description: URL to retrieve the FHE public key
+          example: "https://gateway.fhevm.com/keys/public"
+        evaluation_key_url:
+          type: string
+          format: uri
+          description: URL to retrieve the FHE evaluation key
+          example: "https://gateway.fhevm.com/keys/evaluation"
