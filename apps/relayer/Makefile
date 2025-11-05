@@ -30,6 +30,9 @@ fmt: ## Check code formatting
 fmt-fix: ## Fix code formatting
 	@cargo fmt --all
 
+api-lint: ## Validate OpenAPI specification
+	@npx @redocly/cli lint openapi-async-design.yaml
+
 
 ##@ Help
 help: ## Display this help message

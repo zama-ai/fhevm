@@ -1,0 +1,5 @@
+apis:
+  main:
+    root: openapi-async-design.yaml
+rules:
+  info-license: off  # Skip license field requirement
