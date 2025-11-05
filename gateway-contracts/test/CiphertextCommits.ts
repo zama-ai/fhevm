@@ -302,6 +302,13 @@ describe("CiphertextCommits", function () {
         .withArgs(newCtHandle);
     });
 
+    it("Should revert with EmptyCtHandles (regular)", async function () {
+      await expect(ciphertextCommits.getCiphertextMaterials([])).revertedWithCustomError(
+        ciphertextCommits,
+        "EmptyCtHandles",
+      );
+    });
+
     it("Should get SNS ciphertext materials", async function () {
       const result = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
 
@@ -339,6 +346,12 @@ describe("CiphertextCommits", function () {
       await expect(ciphertextCommits.getSnsCiphertextMaterials([newCtHandle]))
         .revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
         .withArgs(newCtHandle);
+    });
+    it("Should revert with EmptyCtHandles (SNS)", async function () {
+      await expect(ciphertextCommits.getSnsCiphertextMaterials([])).revertedWithCustomError(
+        ciphertextCommits,
+        "EmptyCtHandles",
+      );
     });
   });
 

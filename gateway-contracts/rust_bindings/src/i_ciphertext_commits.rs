@@ -18,6 +18,7 @@ interface ICiphertextCommits {
 
     error CiphertextMaterialNotFound(bytes32 ctHandle);
     error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
+    error EmptyCtHandles();
 
     event AddCiphertextMaterial(bytes32 indexed ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address coprocessorTxSender);
     event AddCiphertextMaterialConsensus(bytes32 indexed ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenders);
@@ -295,6 +296,11 @@ interface ICiphertextCommits {
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "EmptyCtHandles",
+    "inputs": []
   }
 ]
 ```*/
@@ -998,6 +1004,74 @@ pub mod ICiphertextCommits {
                         &self.txSender,
                     ),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `EmptyCtHandles()` and selector `0x2de75438`.
+    ```solidity
+    error EmptyCtHandles();
+    ```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EmptyCtHandles;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EmptyCtHandles> for UnderlyingRustTuple<'_> {
+            fn from(value: EmptyCtHandles) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptyCtHandles {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EmptyCtHandles {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EmptyCtHandles()";
+            const SELECTOR: [u8; 4] = [45u8, 231u8, 84u8, 56u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -2465,6 +2539,8 @@ pub mod ICiphertextCommits {
         CiphertextMaterialNotFound(CiphertextMaterialNotFound),
         #[allow(missing_docs)]
         CoprocessorAlreadyAdded(CoprocessorAlreadyAdded),
+        #[allow(missing_docs)]
+        EmptyCtHandles(EmptyCtHandles),
     }
     #[automatically_derived]
     impl ICiphertextCommitsErrors {
@@ -2474,14 +2550,17 @@ pub mod ICiphertextCommits {
         /// No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
-        pub const SELECTORS: &'static [[u8; 4usize]] =
-            &[[6u8, 102u8, 203u8, 223u8], [29u8, 215u8, 37u8, 12u8]];
+        pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [6u8, 102u8, 203u8, 223u8],
+            [29u8, 215u8, 37u8, 12u8],
+            [45u8, 231u8, 84u8, 56u8],
+        ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for ICiphertextCommitsErrors {
         const NAME: &'static str = "ICiphertextCommitsErrors";
-        const MIN_DATA_LENGTH: usize = 32usize;
-        const COUNT: usize = 2usize;
+        const MIN_DATA_LENGTH: usize = 0usize;
+        const COUNT: usize = 3usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -2491,6 +2570,7 @@ pub mod ICiphertextCommits {
                 Self::CoprocessorAlreadyAdded(_) => {
                     <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::EmptyCtHandles(_) => <EmptyCtHandles as alloy_sol_types::SolError>::SELECTOR,
             }
         }
         #[inline]
@@ -2527,6 +2607,15 @@ pub mod ICiphertextCommits {
                             .map(ICiphertextCommitsErrors::CoprocessorAlreadyAdded)
                     }
                     CoprocessorAlreadyAdded
+                },
+                {
+                    fn EmptyCtHandles(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
+                        <EmptyCtHandles as alloy_sol_types::SolError>::abi_decode_raw(data)
+                            .map(ICiphertextCommitsErrors::EmptyCtHandles)
+                    }
+                    EmptyCtHandles
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -2570,6 +2659,15 @@ pub mod ICiphertextCommits {
                     }
                     CoprocessorAlreadyAdded
                 },
+                {
+                    fn EmptyCtHandles(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
+                        <EmptyCtHandles as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
+                            .map(ICiphertextCommitsErrors::EmptyCtHandles)
+                    }
+                    EmptyCtHandles
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(alloy_sol_types::Error::unknown_selector(
@@ -2590,6 +2688,9 @@ pub mod ICiphertextCommits {
                 Self::CoprocessorAlreadyAdded(inner) => {
                     <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
+                Self::EmptyCtHandles(inner) => {
+                    <EmptyCtHandles as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                }
             }
         }
         #[inline]
@@ -2604,6 +2705,9 @@ pub mod ICiphertextCommits {
                     <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::abi_encode_raw(
                         inner, out,
                     )
+                }
+                Self::EmptyCtHandles(inner) => {
+                    <EmptyCtHandles as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
             }
         }
