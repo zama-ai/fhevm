@@ -733,31 +733,23 @@ contract Decryption is
         uint256 contractsChainId,
         DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
-        address[] calldata contractAddresses,
         bytes calldata /* extraData */
     ) external view virtual returns (bool) {
-        if (ctHandleContractPairs.length == 0 || contractAddresses.length == 0) {
+        if (ctHandleContractPairs.length == 0) {
             return false;
         }
 
-        // Check that the delegate address has been granted access to the contract addresses by the delegator.
-        for (uint256 i = 0; i < contractAddresses.length; i++) {
+        // For each handle, check that the delegate address has been granted access to the contract addresses
+        // by the delegator, the delegator and contract addresses have access to it, and that the ciphertext material
+        // represented by it has been added.
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
             if (
                 !MULTICHAIN_ACL.isUserDecryptionDelegated(
                     contractsChainId,
                     delegationAccounts.delegatorAddress,
                     delegationAccounts.delegateAddress,
-                    contractAddresses[i]
-                )
-            ) {
-                return false;
-            }
-        }
-
-        // For each handle, check that the delegator and contract addresses have access to it and that the
-        // ciphertext material represented by it has been added.
-        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            if (
+                    ctHandleContractPairs[i].contractAddress
+                ) ||
                 !MULTICHAIN_ACL.isAccountAllowed(
                     ctHandleContractPairs[i].ctHandle,
                     delegationAccounts.delegatorAddress

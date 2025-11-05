@@ -2429,7 +2429,6 @@ describe("Decryption", function () {
             hostChainId,
             delegationAccounts,
             ctHandleContractPairs,
-            contractsInfo.addresses,
             extraDataV0,
           ),
         ).to.be.true;
@@ -2441,7 +2440,6 @@ describe("Decryption", function () {
             hostChainId,
             fakeDelegatorDelegationAccounts,
             ctHandleContractPairs,
-            contractsInfo.addresses,
             extraDataV0,
           ),
         ).to.be.false;
@@ -2453,20 +2451,6 @@ describe("Decryption", function () {
             hostChainId,
             delegationAccounts,
             fakeContractAddressCtHandleContractPairs,
-            contractsInfo.addresses,
-            extraDataV0,
-          ),
-        ).to.be.false;
-      });
-
-      it("Should be false because the user decryption has not been delegated for a contract", async function () {
-        const fakeContractAddresses = [fakeContractAddress];
-        expect(
-          await decryption.isDelegatedUserDecryptionReady(
-            hostChainId,
-            delegationAccounts,
-            ctHandleContractPairs,
-            fakeContractAddresses,
             extraDataV0,
           ),
         ).to.be.false;
@@ -2478,34 +2462,14 @@ describe("Decryption", function () {
             hostChainId,
             delegationAccounts,
             [newCtHandleContractPair],
-            contractsInfo.addresses,
             extraDataV0,
           ),
         ).to.be.false;
       });
 
       it("Should be false because the ctHandleContractPairs list is empty", async function () {
-        expect(
-          await decryption.isDelegatedUserDecryptionReady(
-            hostChainId,
-            delegationAccounts,
-            [],
-            contractsInfo.addresses,
-            extraDataV0,
-          ),
-        ).to.be.false;
-      });
-
-      it("Should be false because the contractsInfo addresses list is empty", async function () {
-        expect(
-          await decryption.isDelegatedUserDecryptionReady(
-            hostChainId,
-            delegationAccounts,
-            ctHandleContractPairs,
-            [],
-            extraDataV0,
-          ),
-        ).to.be.false;
+        expect(await decryption.isDelegatedUserDecryptionReady(hostChainId, delegationAccounts, [], extraDataV0)).to.be
+          .false;
       });
     });
 
