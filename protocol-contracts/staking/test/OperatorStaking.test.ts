@@ -143,6 +143,14 @@ describe('OperatorStaking', function () {
         .withArgs(this.mock, controller, ethers.parseEther('1'));
     });
 
+    it('should fail if controller is zero address', async function () {
+      await this.mock.connect(this.staker1).deposit(ethers.parseEther('1'), this.staker1);
+
+      await expect(
+        this.mock.connect(this.staker1).requestRedeem(ethers.parseEther('1'), ethers.ZeroAddress, this.staker1),
+      ).to.be.revertedWithCustomError(this.mock, 'InvalidController');
+    });
+
     it('via approved contract', async function () {
       const approvedActor = this.accounts[0];
 

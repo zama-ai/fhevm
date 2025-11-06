@@ -57,6 +57,9 @@ contract OperatorStaking is ERC20, Ownable {
     /// @dev Thrown when the sender does not have authorization to perform an action.
     error Unauthorized();
 
+    /// @dev Thrown when the controller address is not valid (e.g., zero address).
+    error InvalidController();
+
     /**
      * @notice Initializes the OperatorStaking contract.
      * @param name The name of the ERC20 token.
@@ -105,6 +108,7 @@ contract OperatorStaking is ERC20, Ownable {
      * @param owner The owner of the shares.
      */
     function requestRedeem(uint208 shares, address controller, address owner) public virtual {
+        require(controller != address(0), InvalidController());
         if (msg.sender != owner) {
             _spendAllowance(owner, msg.sender, shares);
         }
