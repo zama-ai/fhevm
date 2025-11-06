@@ -48,7 +48,7 @@ export class Step10HostOwnership extends BaseStep {
             );
         }
 
-        const deployerPk = ctx.env.resolveWalletPrivateKey("deployer");
+        const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
         ctx.logger.info(
             `Starting ownership transfer of ACL ${aclAddress} to DAO ${daoAddress}`,
         );

@@ -10,7 +10,7 @@ export class Step09GatewayOwnership extends BaseStep {
     public readonly id = "step-09";
     public readonly name = "Transfer Gateway Ownership to Safe";
     public readonly description =
-        "Transfers GatewayConfig ownership from deployer to the Safe using the two-step ownership pattern.";
+        "Transfers GatewayConfig ownership from protocol_deployer to the Safe using the two-step ownership pattern.";
     public readonly dependencies = ["step-06"] as const;
     public readonly pkgName = "gateway-contracts" as const;
 
@@ -50,7 +50,7 @@ export class Step09GatewayOwnership extends BaseStep {
             };
         }
 
-        const deployerPk = ctx.env.resolveWalletPrivateKey("deployer");
+        const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
         ctx.logger.info(
             `Starting ownership transfer of GatewayConfig ${gatewayConfig} to Safe ${safeAddress}`,
         );
@@ -77,90 +77,7 @@ export class Step09GatewayOwnership extends BaseStep {
             env: offerEnv,
         });
 
-        // Step 2: Check Safe balance
-        const safeBalance = parseFloat(
-            await this.checkSafeBalance(gateway.rpcUrl, safeAddress),
-        );
-        ctx.logger.info(
-            `Safe Balance Check - Address: ${safeAddress}, Balance: ${safeBalance} ETH`,
-        );
-
-        if (safeBalance === 0) {
-            ctx.logger.warn(
-                `Safe is not funded yet! Attempting to fund it with 0.005 ETH from deployer wallet.`,
-            );
-
-            // Check deployer balance
-            const provider = new ethers.JsonRpcProvider(gateway.rpcUrl);
-            const deployerWallet = new ethers.Wallet(deployerPk, provider);
-            const deployerBalance = await provider.getBalance(
-                deployerWallet.address,
-            );
-            const deployerBalanceEth = parseFloat(
-                ethers.formatEther(deployerBalance),
-            );
-            const fundingAmount = 0.005;
-
-            ctx.logger.info(
-                `Deployer Balance: ${deployerBalanceEth.toFixed(4)} ETH`,
-            );
-
-            if (deployerBalanceEth >= fundingAmount) {
-                ctx.logger.info(
-                    `Transferring ${fundingAmount} ETH from deployer to Safe...`,
-                );
-                try {
-                    const tx = await deployerWallet.sendTransaction({
-                        to: safeAddress,
-                        value: ethers.parseEther(fundingAmount.toString()),
-                    });
-                    await tx.wait();
-                    ctx.logger.success(
-                        `Successfully funded Safe with ${fundingAmount} ETH`,
-                    );
-
-                    // Re-check balance after funding
-                    const updatedBalance = await this.checkSafeBalance(
-                        gateway.rpcUrl,
-                        safeAddress,
-                    );
-                    ctx.logger.info(
-                        `Updated Safe Balance: ${updatedBalance} ETH`,
-                    );
-                } catch (error) {
-                    ctx.logger.error(
-                        `Failed to fund Safe: ${error instanceof Error ? error.message : String(error)}`,
-                    );
-                    throw new ValidationError(
-                        `Failed to transfer funds to Safe: ${error instanceof Error ? error.message : String(error)}`,
-                    );
-                }
-            } else {
-                ctx.logger.warn(
-                    `Deployer wallet has insufficient funds (${deployerBalanceEth.toFixed(4)} ETH < ${fundingAmount} ETH). Please fund the Safe manually.`,
-                );
-                const proceed = await ctx.prompt.confirm(
-                    "Safe has no balance. Please fund it first on the Gateway network. Continue when funded? (y/n)",
-                );
-                if (!proceed) {
-                    return {
-                        status: "pending",
-                        notes: [
-                            "Waiting for Safe to be funded before accepting ownership.",
-                        ],
-                    };
-                }
-
-                // Re-check balance after user confirms funding
-                const updatedBalance = await this.checkSafeBalance(
-                    gateway.rpcUrl,
-                    safeAddress,
-                );
-                ctx.logger.info(`Updated Safe Balance: ${updatedBalance} ETH`);
-            }
-        }
-
-        // Step 3: Accept ownership. At this point, the Safe is still owned by the deployer private key.
+        // Step 2: Accept ownership. At this point, the Safe is still owned by the protocol_deployer private key.
         await ctx.hardhat.runTask({
             pkg: this.pkgName,
             task: "task:acceptGatewayOwnershipFromSafeSmartAccount",

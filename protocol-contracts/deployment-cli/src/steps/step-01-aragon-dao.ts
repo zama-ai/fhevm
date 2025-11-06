@@ -20,7 +20,7 @@ export class Step01AragonDao extends BaseStep {
     ): Promise<StepExecutionResult> {
         const infoLines = [
             "Manual action required using the Aragon App:",
-            "1. Navigate to https://app.aragon.org/ with the protocol deployer wallet.",
+            "1. Navigate to https://app.aragon.org/ with the governance deployer wallet.",
             "2. Create a new DAO and install the native multisig plugin.",
             "3. Add governance members and set threshold as needed.",
             "4. Copy the DAO address once deployment is confirmed.",
