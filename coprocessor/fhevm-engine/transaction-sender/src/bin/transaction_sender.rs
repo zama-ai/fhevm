@@ -320,7 +320,7 @@ async fn main() -> anyhow::Result<()> {
     info!(
         health_check_port = conf.health_check_port,
         conf = ?config,
-        "Transaction sender and HTTP health check server starting"
+        "Transaction sender and HTTP health check server starting TRIGGER TEST "
     );
 
     // Run both services in parallel. Here we assume that if transaction sender stops without an error, HTTP server should also stop.
