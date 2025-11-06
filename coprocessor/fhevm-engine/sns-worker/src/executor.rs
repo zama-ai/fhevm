@@ -634,6 +634,9 @@ async fn update_ciphertext128(
                 Err(err) => {
                     error!( handle = ?task.handle, error = %err, "Failed to insert ct128 in DB");
                     telemetry::end_span_with_err(s, err.to_string());
+                    // Although this is a single error, we drop the entire batch to be on the safe side
+                    // This will ensure we will not mark a task as completed falsely
+                    return Err(err.into());
                 }
             }
 
