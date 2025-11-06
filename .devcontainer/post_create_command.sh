@@ -10,7 +10,7 @@ sudo apt install -y protobuf-compiler build-essential libssl-dev pkg-config open
 cargo install sqlx-cli
 
 # Install the correct Rust toolchain version.
-rustup toolchain install ${cat toolchain.txt}
+rustup toolchain install $(cat toolchain.txt)
 
 # Foundry.
 curl --proto '=https' --tlsv1.2 -sSfL https://foundry.paradigm.xyz | bash
