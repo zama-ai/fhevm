@@ -923,7 +923,7 @@ describe('ZamaERC20 - Unit Test', () => {
                         expect(await ERC721Mock.ownerOf(TOKEN_ID)).to.eq(alice.address)
                     })
 
-                    it('should not send recovered ERC712 to null address', async () => {
+                    it('should not send recovered ERC721 to null address', async () => {
                         await expect(
                             zamaERC20
                                 .connect(admin)
