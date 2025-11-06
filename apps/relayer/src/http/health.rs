@@ -32,12 +32,12 @@ pub trait HealthCheck: Send + Sync {
     async fn check(&self) -> anyhow::Result<()>;
 }
 
-pub struct BlockchainHealthCheck {
+pub struct GatewayChainHealthCheck {
     rpc_url: String,
 }
 
 #[async_trait::async_trait]
-impl HealthCheck for BlockchainHealthCheck {
+impl HealthCheck for GatewayChainHealthCheck {
     async fn check(&self) -> anyhow::Result<()> {
         let provider = ProviderBuilder::new()
             .connect(self.rpc_url.as_str())
@@ -58,7 +58,7 @@ impl HealthChecker {
 
         checks.insert(
             "gateway".to_string(),
-            Arc::new(BlockchainHealthCheck {
+            Arc::new(GatewayChainHealthCheck {
                 rpc_url: gateway_rpc_url,
             }),
         );
