@@ -454,11 +454,15 @@ async fn build_transaction_graph_and_execute<'a>(
             None => {
                 // If the keys can't be located in the cache, skip
                 // executing for this tenant, retry next iteration
-                error!(target: "tfhe_worker", { tenant_id = tenant_id }, "no keys found for tenant");
-                return Err(CoprocessorError::MissingKeys {
+                let err = CoprocessorError::MissingKeys {
                     tenant_id: *tenant_id,
-                }
-                .into());
+                };
+                error!(target: "tfhe_worker", { error = %err }, "no keys found for tenant");
+                s_compute.set_status(opentelemetry::trace::Status::Error {
+                    description: err.to_string().clone().into(),
+                });
+                WORKER_ERRORS_COUNTER.inc();
+                return Err(err.into());
             }
         };
 
