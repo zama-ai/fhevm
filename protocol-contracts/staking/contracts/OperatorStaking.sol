@@ -96,7 +96,7 @@ contract OperatorStaking is ERC20, Ownable {
         require(assets <= maxAssets, ERC4626.ERC4626ExceededMaxDeposit(receiver, assets, maxAssets));
 
         uint256 shares = previewDeposit(assets);
-        _deposit(_msgSender(), receiver, assets, shares);
+        _deposit(msg.sender, receiver, assets, shares);
 
         return shares;
     }
