@@ -62,6 +62,9 @@ pub enum ExecutionError {
 
     #[error("Too many inputs: {0}")]
     TooManyInputs(usize),
+
+    #[error("Panic occurred during verify and expand: {0}")]
+    VerifyExpandPanic(String),
 }
 
 impl From<ExecutionError> for ServiceError {
