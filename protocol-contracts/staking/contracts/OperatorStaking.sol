@@ -9,6 +9,7 @@ import {ERC4626, IERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {Checkpoints} from "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
 import {Time} from "@openzeppelin/contracts/utils/types/Time.sol";
 import {OperatorRewarder} from "./OperatorRewarder.sol";
@@ -24,7 +25,7 @@ import {ProtocolStaking} from "./ProtocolStaking.sol";
  * `OperatorStaking` level. Slashing must first decrease the `ProtocolStaking` balance of this contract before affecting
  * pending withdrawals.
  */
-contract OperatorStaking is ERC20, Ownable {
+contract OperatorStaking is ERC20, Ownable, ReentrancyGuardTransient {
     using Math for uint256;
     using Checkpoints for Checkpoints.Trace208;
 
@@ -134,7 +135,11 @@ contract OperatorStaking is ERC20, Ownable {
      * @param controller The controller address for the redeem.
      * @return assets Amount of assets received.
      */
-    function redeem(uint256 shares, address receiver, address controller) public virtual returns (uint256) {
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address controller
+    ) public virtual nonReentrant returns (uint256) {
         require(msg.sender == controller || isOperator(controller, msg.sender), Unauthorized());
 
         uint256 maxShares = maxRedeem(controller);
