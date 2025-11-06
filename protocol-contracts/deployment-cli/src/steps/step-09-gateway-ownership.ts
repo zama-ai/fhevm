@@ -166,7 +166,7 @@ export class Step09GatewayOwnership extends BaseStep {
             task: "task:acceptGatewayOwnershipFromSafeSmartAccount",
             args: [
                 "--owner-private-keys",
-                JSON.stringify([deployerPk]),
+                JSON.stringify([ctx.env.resolveWalletPrivateKey("protocol_deployer")]),
                 "--network",
                 fixedGatewayNetwork,
             ],
