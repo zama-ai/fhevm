@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tfhe::{safe_serialization::safe_serialize, zk::ZkComputeLoad};
 
 const RAW_CT_HASH_DOMAIN_SEPARATOR: &'static str = "ZK-w_rct";
-const HANDLE_HASH_DOMAIN_SEPARATOR: &'static str= "ZK-w_hdl";
+const HANDLE_HASH_DOMAIN_SEPARATOR: &'static str = "ZK-w_hdl";
 
 /// Struct for building encrypted inputs with verification data
 /// Only constants are used for the builder factory
