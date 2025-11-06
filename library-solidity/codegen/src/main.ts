@@ -337,7 +337,7 @@ function computeOperationsTestsGroupImports(operationsTestGroup: TestGroup): Typ
       if (importModuleNamesSet.has(k)) {
         imports[k] = imp[1];
       } else {
-        throw new Error(`Unkown operations import module name ${k}`);
+        throw new Error(`Unknown operations import module name ${k}`);
       }
     }
   } else {

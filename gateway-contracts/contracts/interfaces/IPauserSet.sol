@@ -58,7 +58,7 @@ interface IPauserSet {
     function removePauser(address account) external;
 
     /**
-     * @notice Returns wether specified account is in the set of pausers.
+     * @notice Returns whether specified account is in the set of pausers.
      * @param account The address of the account.
      */
     function isPauser(address account) external view returns (bool);

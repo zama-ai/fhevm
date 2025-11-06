@@ -229,7 +229,7 @@ library FHE {
      * @dev Internal low-level function used to verify the KMS signatures.
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
      * @notice Warning: this function never reverts, its boolean return value must be checked.
-     * @dev clearTexts is the abi-encoding of the list of all decrypted values assiociated to handlesList, in same order.
+     * @dev clearTexts is the abi-encoding of the list of all decrypted values associated to handlesList, in same order.
      * @dev Only static native solidity types for clear values are supported, so clearTexts is the concatenation of all clear values appended to 32 bytes.
      * @dev decryptionProof contains KMS signatures corresponding to clearTexts and associated handlesList, and needed metadata for KMS context.
      **/

@@ -206,7 +206,7 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param amount The amount to transfer
     /// @param isTransferable Boolean indicating if the transfer is allowed
     function _transfer(address from, address to, euint64 amount, ebool isTransferable) internal virtual {
-        /// @dev Add to the balance of `to` and subract from the balance of `from`.
+        /// @dev Add to the balance of `to` and subtract from the balance of `from`.
         euint64 transferValue = FHE.select(isTransferable, amount, FHE.asEuint64(0));
         euint64 newBalanceTo = FHE.add(balances[to], transferValue);
         balances[to] = newBalanceTo;

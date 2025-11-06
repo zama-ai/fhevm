@@ -147,7 +147,7 @@ interface IACL {
     function allowForDecryption(bytes32[] memory handlesList) external;
 
     /**
-     * @notice                  Returns wether a handle is allowed to be publicly decrypted.
+     * @notice                  Returns whether a handle is allowed to be publicly decrypted.
      * @param handle            Handle.
      * @return isDecryptable    Whether the handle can be publicly decrypted.
      */
