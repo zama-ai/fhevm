@@ -21,6 +21,22 @@ export class Step10HostOwnership extends BaseStep {
         const daoAddress = ctx.env.getAddress("DAO_ADDRESS");
         const aclAddress = ctx.env.getAddress("ACL_ADDRESS");
 
+        const isOwnedByDao = await this.isACLOwnedBy(
+            ethereum.rpcUrl,
+            aclAddress,
+            daoAddress,
+        );
+        if (isOwnedByDao) {
+            ctx.logger.success(
+                "ACL is already owned by the DAO. Skipping ownership transfer.",
+            );
+            return {
+                notes: [
+                    "Ownership transfer already completed; ACL is owned by the DAO.",
+                ],
+            };
+        }
+
         if (!daoAddress) {
             throw new ValidationError(
                 "DAO address missing. Complete Step 1 first.",

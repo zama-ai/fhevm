@@ -87,26 +87,77 @@ export class Step09GatewayOwnership extends BaseStep {
 
         if (safeBalance === 0) {
             ctx.logger.warn(
-                `Safe is not funded yet! Please fund it on the Gateway network.`,
+                `Safe is not funded yet! Attempting to fund it with 0.005 ETH from deployer wallet.`,
             );
-            const proceed = await ctx.prompt.confirm(
-                "Safe has no balance. Please fund it first on the Gateway network. Continue when funded? (y/n)",
-            );
-            if (!proceed) {
-                return {
-                    status: "pending",
-                    notes: [
-                        "Waiting for Safe to be funded before accepting ownership.",
-                    ],
-                };
-            }
 
-            // Re-check balance after user confirms funding
-            const updatedBalance = await this.checkSafeBalance(
-                gateway.rpcUrl,
-                safeAddress,
+            // Check deployer balance
+            const provider = new ethers.JsonRpcProvider(gateway.rpcUrl);
+            const deployerWallet = new ethers.Wallet(deployerPk, provider);
+            const deployerBalance = await provider.getBalance(
+                deployerWallet.address,
             );
-            ctx.logger.info(`Updated Safe Balance: ${updatedBalance} ETH`);
+            const deployerBalanceEth = parseFloat(
+                ethers.formatEther(deployerBalance),
+            );
+            const fundingAmount = 0.005;
+
+            ctx.logger.info(
+                `Deployer Balance: ${deployerBalanceEth.toFixed(4)} ETH`,
+            );
+
+            if (deployerBalanceEth >= fundingAmount) {
+                ctx.logger.info(
+                    `Transferring ${fundingAmount} ETH from deployer to Safe...`,
+                );
+                try {
+                    const tx = await deployerWallet.sendTransaction({
+                        to: safeAddress,
+                        value: ethers.parseEther(fundingAmount.toString()),
+                    });
+                    await tx.wait();
+                    ctx.logger.success(
+                        `Successfully funded Safe with ${fundingAmount} ETH`,
+                    );
+
+                    // Re-check balance after funding
+                    const updatedBalance = await this.checkSafeBalance(
+                        gateway.rpcUrl,
+                        safeAddress,
+                    );
+                    ctx.logger.info(
+                        `Updated Safe Balance: ${updatedBalance} ETH`,
+                    );
+                } catch (error) {
+                    ctx.logger.error(
+                        `Failed to fund Safe: ${error instanceof Error ? error.message : String(error)}`,
+                    );
+                    throw new ValidationError(
+                        `Failed to transfer funds to Safe: ${error instanceof Error ? error.message : String(error)}`,
+                    );
+                }
+            } else {
+                ctx.logger.warn(
+                    `Deployer wallet has insufficient funds (${deployerBalanceEth.toFixed(4)} ETH < ${fundingAmount} ETH). Please fund the Safe manually.`,
+                );
+                const proceed = await ctx.prompt.confirm(
+                    "Safe has no balance. Please fund it first on the Gateway network. Continue when funded? (y/n)",
+                );
+                if (!proceed) {
+                    return {
+                        status: "pending",
+                        notes: [
+                            "Waiting for Safe to be funded before accepting ownership.",
+                        ],
+                    };
+                }
+
+                // Re-check balance after user confirms funding
+                const updatedBalance = await this.checkSafeBalance(
+                    gateway.rpcUrl,
+                    safeAddress,
+                );
+                ctx.logger.info(`Updated Safe Balance: ${updatedBalance} ETH`);
+            }
         }
 
         // Step 3: Accept ownership. At this point, the Safe is still owned by the deployer private key.
