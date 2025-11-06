@@ -4,7 +4,7 @@ set -euo pipefail
 
 # Package manager dependencies.
 sudo apt update
-sudo apt install -y protobuf-compiler build-essential libssl-dev pkg-config openssl
+sudo apt install -y protobuf-compiler build-essential libssl-dev pkg-config openssl vim
 
 # Cargo dependencies.
 cargo install sqlx-cli
