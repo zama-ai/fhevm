@@ -54,6 +54,9 @@ pub enum CoprocessorError {
         uncomputable_output_handle: String,
         uncomputable_handle_dependency: String,
     },
+    MissingKeys {
+        tenant_id: i32,
+    },
 }
 
 impl std::fmt::Display for CoprocessorError {
@@ -161,6 +164,9 @@ impl std::fmt::Display for CoprocessorError {
             }
             Self::FhevmError(e) => {
                 write!(f, "fhevm error: {:?}", e)
+            }
+            Self::MissingKeys { tenant_id } => {
+                write!(f, "no keys found in DB for tenant: {tenant_id}")
             }
         }
     }
