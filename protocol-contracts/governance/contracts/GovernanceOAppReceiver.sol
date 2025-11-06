@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { OAppReceiver, OAppCore, Origin, MessagingFee } from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
-import { OAppOptionsType3 } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OAppOptionsType3.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Operation } from "./shared/Structs.sol";
 
@@ -16,7 +15,7 @@ interface IAdminModule {
     ) external;
 }
 
-contract GovernanceOAppReceiver is OAppReceiver, OAppOptionsType3 {
+contract GovernanceOAppReceiver is OAppReceiver {
     /// @notice The address of the privileged AdminModule of the Safe owning GatewayConfig contract.
     IAdminModule public adminSafeModule;
 
