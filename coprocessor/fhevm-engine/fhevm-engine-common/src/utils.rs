@@ -122,14 +122,14 @@ pub struct DatabaseURL(String);
 impl From<&str> for DatabaseURL {
     fn from(s: &str) -> Self {
         let url: Self = Self(s.to_owned());
-        url.parse().expect("DatabaseURL is valid");
+        url.parse().expect("DatabaseURL should be valid");
         url
     }
 }
 impl From<String> for DatabaseURL {
     fn from(s: String) -> Self {
         let url: Self = Self(s);
-        url.parse().expect("DatabaseURL is valid");
+        url.parse().expect("DatabaseURL should be valid");
         url
     }
 }
@@ -160,7 +160,7 @@ impl DatabaseURL {
             }
         }
         let url: Self = Self(url);
-        let _ = url.parse().expect("DatabaseURL is valid");
+        let _ = url.parse().expect("DatabaseURL should be valid");
         url
     }
 

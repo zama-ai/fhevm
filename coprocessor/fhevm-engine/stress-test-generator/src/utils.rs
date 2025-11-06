@@ -346,7 +346,7 @@ impl EnvConfig {
         };
         let acl_contract_address: String = match env::var("ACL_CONTRACT_ADDRESS") {
             Ok(val) => val,
-            Err(_) => "0x617E46088ffe8d0f27A123574119b9C3F3b81073".to_string(),
+            Err(_) => "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c".to_string(),
         };
         let chain_id: i64 = match env::var("CHAIN_ID") {
             Ok(val) => val.parse::<i64>().unwrap(),
