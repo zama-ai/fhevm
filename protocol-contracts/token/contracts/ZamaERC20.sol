@@ -21,8 +21,9 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
     event ERC20Recovered(address indexed token, address indexed recipient, uint256 amount);
     event ERC721Recovered(address indexed token, uint256 tokenId, address indexed recipient);
 
-    error FailedToSendEther();
     error AmountsReceiversLengthMismatch();
+    error FailedToSendEther();
+    error InvalidNullRecipient();
 
     /**
      * @param name Name of the token.
@@ -79,10 +80,11 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
     /**
      * @dev Allows the sender to recover Ether held by the contract.
      * @param amount Amount of recovered ETH.
-     * @param recipient Receiver of the recovered ETH.
+     * @param recipient Receiver of the recovered ETH, should be non-null.
      * @dev Emits an EtherRecovered event upon success.
      */
     function recoverEther(uint256 amount, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (recipient == address(0)) revert InvalidNullRecipient();
         (bool success, ) = recipient.call{ value: amount }("");
         if (!success) {
             revert FailedToSendEther();
@@ -94,10 +96,11 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
      * @dev Allows the sender to recover ERC20 tokens held by the contract.
      * @param token The address of the ERC20 token to recover.
      * @param amount The amount of the ERC20 token to recover.
-     * @param recipient Receiver of the recovered tokens.
+     * @param recipient Receiver of the recovered tokens, should be non-null.
      * @dev Emits an ERC20Recovered event upon success.
      */
     function recoverERC20(address token, uint256 amount, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (recipient == address(0)) revert InvalidNullRecipient();
         IERC20(token).safeTransfer(recipient, amount);
         emit ERC20Recovered(token, recipient, amount);
     }
@@ -106,10 +109,11 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
      * @dev Allows the sender to recover ERC721 tokens held by the contract.
      * @param token The address of the ERC721 token to recover.
      * @param tokenId The token ID of the ERC721 token to recover.
-     * @param recipient Receiver of the recovered ERC721 token.
+     * @param recipient Receiver of the recovered ERC721 token, should be non-null.
      * @dev Emits an ERC721Recovered event upon success.
      */
     function recoverERC721(address token, uint256 tokenId, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (recipient == address(0)) revert InvalidNullRecipient();
         IERC721(token).safeTransferFrom(address(this), recipient, tokenId);
         emit ERC721Recovered(token, tokenId, recipient);
     }
