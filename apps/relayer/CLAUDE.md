@@ -37,7 +37,6 @@ cargo test --test '*'
 
 # Run specific Hardhat tests with grep filter
 ./run-tests.sh "test user input uint64"
-./run-tests.sh "decryptionOracle test"
 
 # Run API tests
 make run-test-api
@@ -52,15 +51,6 @@ npm run coverage
 npm run prettier:check
 npm run prettier:write
 npm run lint:sol
-```
-
-### Oracle Smart Contracts
-```bash
-# In oracle/ directory
-npm run compile
-npm run lint
-npm run prettier:check
-npm run prettier
 ```
 
 ### Development Setup
@@ -144,7 +134,6 @@ src/
 
 ### Smart Contracts
 - **contracts/gateway-l2/**: Gateway L2 smart contracts (Hardhat/TypeScript)
-- **oracle/**: Oracle smart contracts for public decryption
 - **hardhat/**: Additional Hardhat contracts and testing infrastructure
 
 ## Configuration

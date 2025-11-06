@@ -12,7 +12,6 @@ show_help() {
   echo -e ""
   echo -e "${YELLOW}Examples:${RESET}"
   echo -e "  ./run-tests.sh                         (uses default grep: \"test user input uint64\")"
-  echo -e "  ./run-tests.sh \"decryptionOracle test\"  (runs tests matching that text)"
   echo -e ""
   echo -e "${YELLOW}Options:${RESET}"
   echo -e "  -h, --help     Show this help message"
@@ -33,5 +32,4 @@ cd "$SCRIPT_DIR/hardhat/contracts" || exit 1
 
 echo -e "${GREEN}Running input proof tests with grep: \"$GREP_TEXT\"...${RESET}"
 npx hardhat compile
-npx hardhat compile:specific --contract decryptionOracle
 RUST_RELAYER=true npx hardhat test --grep "$GREP_TEXT" --network "$NETWORK"

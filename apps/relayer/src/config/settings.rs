@@ -44,20 +44,17 @@ impl NetworkConfig {
 #[derive(Debug, Deserialize)]
 pub struct NetworksConfig {
     // TODO: should be a list of networks unless we assume 1:1 between relayer and fhevm
-    pub fhevm: NetworkConfig,
     pub gateway: NetworkConfig,
 }
 
 impl NetworksConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
-        self.fhevm.validate()?;
         self.gateway.validate()?;
         Ok(())
     }
 
     pub fn get_network(&self, network_name: &str) -> Result<&NetworkConfig, AppConfigError> {
         match network_name {
-            "fhevm" => Ok(&self.fhevm),
             "gateway" => Ok(&self.gateway),
             _ => Err(AppConfigError::InvalidNetworkConfig(format!(
                 "Unknown network: {network_name}"
@@ -70,34 +67,10 @@ impl NetworksConfig {
 // TODO: setup proper callback gas-limit here
 #[derive(Debug, Deserialize, Clone)]
 pub struct TransactionConfig {
-    /// Containing the private key for fhevm
-    pub private_key_fhevm: String,
     /// Containing the private key for gateway
     pub private_key_gateway: String,
-    /// Optional gas limit for transactions
-    pub gas_limit: Option<u64>,
-    /// Maximum priority fee for transactions
-    pub max_priority_fee: Option<String>,
-    /// Transaction timeout in seconds
-    pub timeout_secs: Option<u64>,
-    /// Required number of confirmations
-    pub confirmations: Option<u64>,
-    /// Retry configuration
-    #[serde(default)]
     pub retry: RetrySettings,
     pub ciphertext_check_retry: RetrySettings,
-}
-
-impl TransactionConfig {
-    pub fn get_max_priority_fee(&self) -> Result<Option<u128>, AppConfigError> {
-        match &self.max_priority_fee {
-            Some(fee_str) => fee_str
-                .parse::<u128>()
-                .map(Some)
-                .map_err(|e| AppConfigError::Config(e.to_string())),
-            None => Ok(None),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -137,7 +110,6 @@ impl Default for RetrySettings {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ContractConfig {
-    pub decryption_oracle_address: String,
     pub decryption_address: String,
     pub input_verification_address: String,
     /// Number of shares required for user decryption threshold consensus
@@ -232,23 +204,12 @@ impl Settings {
             panic!("HTTP metrics histogram buckets must be set in the configuration file.");
         }
 
-        // Log the network configurations for debugging
-        tracing::info!(
-            fhevm_ws = %settings.networks.fhevm.ws_url,
-            fhevm_chain_id = %settings.networks.fhevm.chain_id,
-            "Loaded network configurations"
-        );
-
         Ok(settings)
     }
 
     pub fn validate_addresses(&self) -> Result<(), AppConfigError> {
         // Create a vector of (name, address) pairs to validate
         let addresses = vec![
-            (
-                "decryption_oracle",
-                &self.contracts.decryption_oracle_address,
-            ),
             ("decryption", &self.contracts.decryption_address),
             (
                 "input_verification",
@@ -318,12 +279,6 @@ mod tests {
         let config_content = r#"
 environment: "test"
 networks:
-  fhevm:
-    ws_url: "wss://test-fhevm.example.com"
-    http_url: "https://test-fhevm.example.com"
-    chain_id: 9000
-    retry_delay: 1000
-    max_reconnection_attempts: 3
   gateway:
     ws_url: "wss://test-gateway.example.com"
     http_url: "https://test-gateway.example.com"
@@ -331,14 +286,12 @@ networks:
     retry_delay: 1000
     max_reconnection_attempts: 3
 transaction:
-  private_key_fhevm: "0x1234567890123456789012345678901234567890123456789012345678901234"
   private_key_gateway: "0x1234567890123456789012345678901234567890123456789012345678901234"
   ciphertext_check_retry:
     max_attempts: 3
     base_delay_secs: 2
     max_delay_secs: 60
 contracts:
-  decryption_oracle_address: "0x1234567890123456789012345678901234567890"
   decryption_address: "0x1234567890123456789012345678901234567890"
   input_verification_address: "0x1234567890123456789012345678901234567890"
   # Note: user_decrypt_shares_threshold is missing here
@@ -395,12 +348,6 @@ db_path_rocksdb: "/tmp/test_db"
         let config_content = r#"
 environment: "test"
 networks:
-  fhevm:
-    ws_url: "wss://test-fhevm.example.com"
-    http_url: "https://test-fhevm.example.com"
-    chain_id: 9000
-    retry_delay: 1000
-    max_reconnection_attempts: 3
   gateway:
     ws_url: "wss://test-gateway.example.com"
     http_url: "https://test-gateway.example.com"
@@ -408,14 +355,16 @@ networks:
     retry_delay: 1000
     max_reconnection_attempts: 3
 transaction:
-  private_key_fhevm: "0x1234567890123456789012345678901234567890123456789012345678901234"
+  retry:
+    max_attempts: 3
+    base_delay_secs: 2
+    max_delay_secs: 60
   private_key_gateway: "0x1234567890123456789012345678901234567890123456789012345678901234"
   ciphertext_check_retry:
     max_attempts: 3
     base_delay_secs: 2
     max_delay_secs: 60
 contracts:
-  decryption_oracle_address: "0x1234567890123456789012345678901234567890"
   decryption_address: "0x1234567890123456789012345678901234567890"
   input_verification_address: "0x1234567890123456789012345678901234567890"
   user_decrypt_shares_threshold: 9

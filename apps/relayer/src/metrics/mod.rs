@@ -4,7 +4,7 @@ pub mod http;
 pub mod server;
 pub mod transaction;
 
-pub use blockchain::{fhevm, gateway, init_blockchain_metrics};
+pub use blockchain::{gateway, init_blockchain_metrics};
 pub use cache::*;
 pub use http::*;
 pub use transaction::*;

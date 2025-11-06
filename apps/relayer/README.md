@@ -103,7 +103,6 @@ networks:
     http_url: "http://localhost:8546"
     chain_id: 54321
 contracts:
-  decryption_oracle_address: "0x1234..."
   tfhe_executor_address: "0xabcd..."
   decryption_manager_address: "0x9876..."
   zkpok_manager_address: "0xef01..."

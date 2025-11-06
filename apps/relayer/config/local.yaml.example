@@ -6,15 +6,6 @@
 environment: development
 
 networks:
-  fhevm:
-    ws_url: "ws://localhost:8756"
-    http_url: "http://localhost:8756"
-    chain_id: 123456
-    retry_delay: 1000
-    max_reconnection_attempts: 3
-    # Optional: set the starting block number for event subscriptions
-    # last_block_number: 0
-
   gateway:
     ws_url: "ws://localhost:8757"
     http_url: "http://localhost:8757"
@@ -39,7 +30,6 @@ keyurl:
       url: "http://0.0.0.0:3001/crs2048.bin"
 
 transaction:
-  private_key_fhevm: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
   private_key_gateway: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
   gas_limit: 150000
   max_priority_fee: 2000000000
@@ -58,7 +48,6 @@ transaction:
 
 contracts:
   # Example local contract addresses - Update these after deployment
-  decryption_oracle_address: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
   decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
   input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
   # Number of shares required for user decryption threshold consensus

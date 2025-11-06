@@ -48,11 +48,9 @@ impl From<GatewayChainEventId> for u8 {
 #[derive(Debug)]
 /// Event Ids corresponding the events of PublicDecryptEvent type.
 pub enum PublicDecryptEventId {
-    // ReqRcvdFromFhevm = 10,
     ReqRcvdFromUser = 10,
     ReqSentToGw = 11,
     RespRcvdFromGw = 12,
-    // RespSentToFhevm = 14,
     Failed = 13,
     RespSentToUser = 14,
 }

@@ -225,7 +225,6 @@ pub async fn run_fhevm_relayer(
             Arc::clone(&orchestrator),
             settings.keyurl,
             gateway_settings.ws_url,
-            settings.networks.fhevm.ws_url,
         ));
     };
 

@@ -67,7 +67,7 @@ pub struct HealthChecker {
 }
 
 impl HealthChecker {
-    pub fn new(gateway_rpc_url: String, host_rpc_url: String) -> Self {
+    pub fn new(gateway_rpc_url: String) -> Self {
         let mut checks: HashMap<String, Arc<dyn HealthCheck>> = HashMap::new();
 
         // checks.insert(
@@ -79,12 +79,6 @@ impl HealthChecker {
             "gateway".to_string(),
             Arc::new(BlockchainHealthCheck {
                 rpc_url: gateway_rpc_url,
-            }),
-        );
-        checks.insert(
-            "host".to_string(),
-            Arc::new(BlockchainHealthCheck {
-                rpc_url: host_rpc_url,
             }),
         );
         Self { checks }

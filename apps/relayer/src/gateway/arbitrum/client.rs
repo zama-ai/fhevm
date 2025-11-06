@@ -12,7 +12,6 @@ use tracing::{info, instrument};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChainName {
-    Fhevm,
     Gateway,
 }
 

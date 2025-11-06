@@ -26,11 +26,6 @@ impl TxStatus {
 /// Global metrics registry and handles
 #[derive(Debug)]
 struct BlockchainMetrics {
-    // FHEVM
-    fhevm_events_total: CounterVec,
-    fhevm_tx_total: CounterVec,
-    fhevm_pending_tx: Gauge,
-    fhevm_tx_confirmation_seconds: HistogramVec,
     // Gateway
     gateway_events_total: CounterVec,
     gateway_tx_total: CounterVec,
@@ -52,39 +47,6 @@ pub fn init_blockchain_metrics(registry: &Registry) {
     //     .unwrap();
 
     METRICS.get_or_init(|| BlockchainMetrics {
-        fhevm_events_total: register_counter_vec_with_registry!(
-            Opts::new(
-                "relayer_fhevm_events_total",
-                "Count of events from fhevm blockchain, by type"
-            ),
-            &["event_type"],
-            registry
-        )
-        .unwrap(),
-        fhevm_tx_total: register_counter_vec_with_registry!(
-            Opts::new(
-                "relayer_fhevm_tx_total",
-                "Count of transactions sent to fhevm blockchain"
-            ),
-            &["status", "sender"],
-            registry
-        )
-        .unwrap(),
-        fhevm_pending_tx: register_gauge_with_registry!(
-            "relayer_fhevm_pending_tx",
-            "Dynamic count of pending txs to fhevm",
-            registry
-        )
-        .unwrap(),
-        fhevm_tx_confirmation_seconds: register_histogram_vec_with_registry!(
-            HistogramOpts::new(
-                fhevm::MetricName::TxConfirmationSeconds.as_str(),
-                "Histogram of tx confirmation times (seconds) on fhevm"
-            ),
-            &["status", "sender"],
-            registry
-        )
-        .unwrap(),
         gateway_events_total: register_counter_vec_with_registry!(
             Opts::new(
                 "relayer_gateway_events_total",
@@ -119,131 +81,6 @@ pub fn init_blockchain_metrics(registry: &Registry) {
         )
         .unwrap(),
     });
-}
-
-pub mod fhevm {
-    use super::METRICS;
-    pub type TxStatus = super::TxStatus;
-
-    pub const LABEL_EVENT_TYPE: &str = "event_type";
-    pub const LABEL_STATUS: &str = "status";
-    pub const LABEL_SENDER: &str = "sender";
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub enum MetricName {
-        EventsTotal,
-        TxTotal,
-        PendingTx,
-        TxConfirmationSeconds,
-    }
-
-    impl MetricName {
-        pub fn as_str(&self) -> &'static str {
-            match self {
-                MetricName::EventsTotal => "relayer_fhevm_events_total",
-                MetricName::TxTotal => "relayer_fhevm_tx_total",
-                MetricName::PendingTx => "relayer_fhevm_pending_tx",
-                MetricName::TxConfirmationSeconds => "relayer_fhevm_tx_confirmation_seconds",
-            }
-        }
-    }
-
-    /// FHEVM event types.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub enum EventType {
-        PublicDecryptRequest,
-    }
-
-    impl EventType {
-        pub fn as_str(&self) -> &'static str {
-            match self {
-                EventType::PublicDecryptRequest => "public_decrypt_request",
-            }
-        }
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub enum LabelKey {
-        EventType,
-        Status,
-        Sender,
-    }
-
-    impl LabelKey {
-        pub fn as_str(&self) -> &'static str {
-            match self {
-                LabelKey::EventType => "event_type",
-                LabelKey::Status => "status",
-                LabelKey::Sender => "sender",
-            }
-        }
-    }
-
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    pub enum LabelValue {
-        EventType(EventType),
-        Status(TxStatus),
-        Sender(String),
-    }
-
-    impl LabelValue {
-        pub fn as_str(&self) -> String {
-            match self {
-                LabelValue::EventType(e) => e.as_str().to_string(),
-                LabelValue::Status(s) => s.as_str().to_string(),
-                LabelValue::Sender(addr) => addr.clone(),
-            }
-        }
-    }
-
-    /// Ergonomic metric increment/observe functions
-    pub fn events_total(event_type: EventType) {
-        let metrics = METRICS.get().expect("metrics not initialized");
-        metrics
-            .fhevm_events_total
-            .with_label_values(&[event_type.as_str()])
-            .inc();
-    }
-
-    pub fn tx_total(status: TxStatus, sender: &str) {
-        let metrics = METRICS.get().expect("metrics not initialized");
-        metrics
-            .fhevm_tx_total
-            .with_label_values(&[status.as_str(), sender])
-            .inc();
-    }
-
-    pub fn pending_tx_inc() {
-        let metrics = METRICS.get().expect("metrics not initialized");
-        metrics.fhevm_pending_tx.inc();
-    }
-
-    pub fn pending_tx_dec() {
-        let metrics = METRICS.get().expect("metrics not initialized");
-        metrics.fhevm_pending_tx.dec();
-    }
-
-    pub fn tx_confirmation_seconds_observe(status: TxStatus, sender: &str, seconds: f64) {
-        let metrics = METRICS.get().expect("metrics not initialized");
-        metrics
-            .fhevm_tx_confirmation_seconds
-            .with_label_values(&[status.as_str(), sender])
-            .observe(seconds);
-    }
-}
-
-/// FHEVM event types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FhevmEventType {
-    PublicDecryptRequest,
-}
-
-impl FhevmEventType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            FhevmEventType::PublicDecryptRequest => "public_decrypt_request",
-        }
-    }
 }
 
 pub mod gateway {

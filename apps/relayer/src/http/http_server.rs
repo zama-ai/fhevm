@@ -59,14 +59,13 @@ pub async fn run_http_server<D>(
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     key_url: KeyUrl,
     gateway_rpc_url: String,
-    host_rpc_url: String,
 ) where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
     let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
 
     // Initialize health checker
-    let health_checker = Arc::new(HealthChecker::new(gateway_rpc_url, host_rpc_url));
+    let health_checker = Arc::new(HealthChecker::new(gateway_rpc_url));
 
     // Build our application with the POST endpoint '/input-proof'
     let input_proof_handler = Arc::new(InputProofHandler::new(orchestrator.clone(), api_version));
