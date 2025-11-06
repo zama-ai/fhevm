@@ -119,20 +119,18 @@ contract OperatorRewarder is Ownable {
         if (oldTotalSupply == 0) return;
 
         int256 virtualAmount = SafeCast.toInt256(_allocation(shares, oldTotalSupply));
-        int256 totalVirtualRewardsPaid = _totalVirtualRewardsPaid;
 
         if (from != address(0)) {
             _rewardsPaid[from] -= virtualAmount;
         } else {
-            totalVirtualRewardsPaid += virtualAmount;
+            _totalVirtualRewardsPaid += virtualAmount;
         }
 
         if (to != address(0)) {
             _rewardsPaid[to] += virtualAmount;
         } else {
-            totalVirtualRewardsPaid -= virtualAmount;
+            _totalVirtualRewardsPaid -= virtualAmount;
         }
-        _totalVirtualRewardsPaid = totalVirtualRewardsPaid;
     }
 
     /**
