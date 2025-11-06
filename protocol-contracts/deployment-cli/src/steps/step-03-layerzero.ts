@@ -1,4 +1,5 @@
 import path from "node:path";
+import { Contract, ethers } from "ethers";
 import { execa } from "execa";
 import type { PackageName } from "../tasks/hardhat-runner.js";
 import { ValidationError } from "../utils/errors.js";
@@ -115,7 +116,77 @@ export class Step03LayerzeroLink extends BaseStep {
             `Deployed GovernanceOAppReceiver at ${receiverAddress}`,
         );
 
-        // Step 3: Wire OApps together (configure LayerZero messaging between chains)
+        // Step 3a: Deploy AdminModule on Gateway with adminAccount = RECEIVER, and enable it in the Safe
+        ctx.logger.info(
+            "Deploying AdminModule on Gateway with admin=GovernanceOAppReceiver...",
+        );
+        const adminEnv = ctx.env.buildTaskEnv({
+            PRIVATE_KEY: protocolPk,
+            RPC_URL_ZAMA_GATEWAY_TESTNET: gatewayNetwork.rpcUrl,
+            ADMIN_ADDRESS: receiverAddress,
+            SAFE_ADDRESS: safeAddress,
+        });
+        await ctx.hardhat.runTask({
+            pkg: "protocol-contracts/safe",
+            task: "task:deployAdminModule",
+            args: ["--network", gatewayNetwork.name],
+            env: adminEnv,
+        });
+        const adminModuleAddress = reader.readHardhatDeployment(
+            "protocol-contracts/safe",
+            gatewayNetwork.name,
+            "AdminModule",
+        );
+        ctx.env.recordAddress(
+            "ADMIN_MODULE_ADDRESS",
+            adminModuleAddress,
+            this.id,
+        );
+        ctx.logger.success(`Deployed AdminModule at ${adminModuleAddress}`);
+
+        ctx.logger.info("Enabling AdminModule in the Safe...");
+        await ctx.hardhat.runTask({
+            pkg: "protocol-contracts/safe",
+            task: "task:enableAdminModule",
+            args: ["--network", gatewayNetwork.name],
+            env: adminEnv,
+        });
+        ctx.logger.success("AdminModule enabled in Safe");
+
+        // Step 3b: Set adminSafeModule in GovernanceOAppReceiver (must be called by current owner)
+        // We set it before ownership transfers to ensure we can call as the deployer if needed
+        ctx.logger.info("Setting adminSafeModule on GovernanceOAppReceiver...");
+        {
+            const provider = new ethers.JsonRpcProvider(gatewayNetwork.rpcUrl);
+            const signer = new ethers.Wallet(protocolPk, provider);
+            const receiverArtifactPath = path.join(
+                resolveProjectRoot(),
+                this.pkgName,
+                "artifacts",
+                "contracts",
+                "GovernanceOAppReceiver.sol",
+                "GovernanceOAppReceiver.json",
+            );
+            const receiverAbi = (
+                (await import(receiverArtifactPath, {
+                    with: { type: "json" },
+                })) as any
+            ).default.abi;
+            const receiver = new Contract(receiverAddress, receiverAbi, signer);
+            const currentModule: string = await receiver.adminSafeModule();
+            if (
+                currentModule.toLowerCase() !== adminModuleAddress.toLowerCase()
+            ) {
+                const tx =
+                    await receiver.setAdminSafeModule(adminModuleAddress);
+                await tx.wait();
+            }
+        }
+        ctx.logger.success(
+            "adminSafeModule configured on GovernanceOAppReceiver",
+        );
+
+        // Step 4: Wire OApps together (configure LayerZero messaging between chains)
         // This also sets the delegate according to the layerzero config file.
         const layerzeroConfig = ctx.networks.getLayerzeroConfig();
         ctx.logger.info("Wiring OApps together via LayerZero...");
@@ -129,7 +200,7 @@ export class Step03LayerzeroLink extends BaseStep {
             "Wired GovernanceOAppSender and GovernanceOAppReceiver",
         );
 
-        // Step 4: Transfer ownership of GovernanceOAppSender and GovernanceOAppReceiver to DAO and Safe
+        // Step 5: Transfer ownership of GovernanceOAppSender and GovernanceOAppReceiver to DAO and Safe
         ctx.logger.info(
             `Transferring GovernanceOAppSender ownership to DAO (${daoAddress}) and...`,
         );
@@ -148,9 +219,12 @@ export class Step03LayerzeroLink extends BaseStep {
             addresses: {
                 GOVERNANCE_OAPP_SENDER: senderAddress,
                 GOVERNANCE_OAPP_RECEIVER: receiverAddress,
+                ADMIN_MODULE_ADDRESS: adminModuleAddress,
             },
             notes: [
-                "Safe module integration and delegation transfers handled in governance contract deployment",
+                "Deployed AdminModule with admin=Receiver and enabled it in the Safe",
+                "Configured GovernanceOAppReceiver.adminSafeModule to the AdminModule",
+                "Wired peers and transferred ownership (Sender->DAO, Receiver->Safe)",
                 `Run E2E tests manually: cd ${this.pkgName} && npx hardhat test`,
             ],
         };

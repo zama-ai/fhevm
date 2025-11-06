@@ -10,7 +10,7 @@ export class Step02Safe extends BaseStep {
     public readonly id = "step-02";
     public readonly name = "Deploy Governance Safe on Gateway";
     public readonly description =
-        "Deploys Safe multisig wallet (SafeL2Proxy) and AdminModule on the Gateway network.";
+        "Deploys Safe multisig wallet (SafeL2Proxy) on the Gateway network. AdminModule is deployed and wired in Step 03 once the Receiver exists.";
     public readonly dependencies = [] as const;
     public readonly pkgName = "protocol-contracts/safe" as const;
 
@@ -18,7 +18,6 @@ export class Step02Safe extends BaseStep {
         ctx: DeploymentContext,
     ): Promise<StepExecutionResult> {
         const gateway = ctx.networks.getGateway();
-        const deployerAddress = ctx.config.wallets.protocol_deployer.address;
         const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
         const projectRoot = resolveProjectRoot();
         const reader = new TaskOutputReader(projectRoot);
@@ -73,60 +72,13 @@ export class Step02Safe extends BaseStep {
             ctx.logger.success(`Deployed Safe proxy at ${safeAddress}`);
         }
 
-        // Check if AdminModule is already deployed
-        let adminModuleAddress: string | undefined;
-        try {
-            adminModuleAddress = taskOutput.readHardhatDeployment(
-                this.pkgName,
-                gateway.name,
-                "AdminModule",
-            );
-        } catch (_error) {
-            adminModuleAddress = undefined;
-        }
-
-        if (adminModuleAddress) {
-            ctx.logger.info(
-                "AdminModule artifact found, reading existing deployment...",
-            );
-            ctx.logger.success(
-                `Using existing AdminModule at ${adminModuleAddress}`,
-            );
-        } else {
-            // Step 2: Deploy AdminModule (allows governance to execute Safe transactions)
-            ctx.logger.info(
-                "Deploying AdminModule to enable governance control...",
-            );
-            const adminEnv = ctx.env.buildTaskEnv({
-                ...baseEnv,
-                ADMIN_ADDRESS: deployerAddress,
-                SAFE_ADDRESS: safeAddress,
-            });
-
-            await ctx.hardhat.runTask({
-                pkg: this.pkgName,
-                task: "task:deployAdminModule",
-                args: ["--network", gateway.name],
-                env: adminEnv,
-            });
-
-            adminModuleAddress = reader.readHardhatDeployment(
-                this.pkgName,
-                gateway.name,
-                "AdminModule",
-            );
-            ctx.logger.success(`Deployed AdminModule at ${adminModuleAddress}`);
-        }
-
         return {
             addresses: {
                 SAFE_ADDRESS: safeAddress,
-                ADMIN_MODULE_ADDRESS: adminModuleAddress,
             },
             notes: [
                 "Safe proxy deployed as the governance multisig wallet",
-                "AdminModule deployed to enable cross-chain proposal execution",
-                "Next: EnableAdminModule in Safe (handled in subsequent governance setup)",
+                "AdminModule will be deployed and enabled in Step 03 after the GovernanceOAppReceiver is deployed (it must use the receiver as ADMIN_ACCOUNT)",
             ],
         };
     }
@@ -136,7 +88,6 @@ export class Step02Safe extends BaseStep {
         result: StepExecutionResult,
     ): Promise<void> {
         const gateway = ctx.networks.getGateway();
-        const deployerAddress = ctx.config.wallets.protocol_deployer.address;
         const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
         const safeAddress = result.addresses?.SAFE_ADDRESS;
 
@@ -160,24 +111,6 @@ export class Step02Safe extends BaseStep {
             );
         }
 
-        ctx.logger.info("Verifying AdminModule...");
-        try {
-            const verifyEnv = ctx.env.buildTaskEnv({
-                ...baseEnv,
-                ADMIN_ADDRESS: deployerAddress,
-                SAFE_ADDRESS: safeAddress,
-            });
-            await ctx.hardhat.runTask({
-                pkg: this.pkgName,
-                task: "task:verifyAdminModule",
-                args: ["--network", gateway.name],
-                env: verifyEnv,
-            });
-            ctx.logger.success("AdminModule verified successfully");
-        } catch (_error) {
-            ctx.logger.warn(
-                "AdminModule verification failed (this may be acceptable if already verified)",
-            );
-        }
+        // AdminModule verification is performed in Step 03 after it is deployed with the correct ADMIN_ACCOUNT (receiver)
     }
 }
