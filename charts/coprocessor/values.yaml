@@ -757,6 +757,7 @@ txSender:
     - --service-name=txn-sender
     - --metric-host-txn-latency=0.1:60.0:0.1
     - --metric-zkproof-txn-latency=0.1:60.0:0.1
+    - --gauge-update-interval-secs=10
 
   # Service ports configuration
   ports:

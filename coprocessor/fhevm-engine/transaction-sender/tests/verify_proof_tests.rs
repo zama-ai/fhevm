@@ -60,6 +60,7 @@ async fn verify_proof_response_success(#[case] signer_type: SignerType) -> anyho
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -176,6 +177,7 @@ async fn verify_proof_response_empty_handles_success(
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -295,6 +297,7 @@ async fn verify_proof_response_concurrent_success(
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -412,6 +415,7 @@ async fn reject_proof_response_success(#[case] signer_type: SignerType) -> anyho
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -522,6 +526,7 @@ async fn verify_proof_response_reversal_already_verified(
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -624,6 +629,7 @@ async fn reject_proof_response_reversal_already_rejected(
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -726,6 +732,7 @@ async fn verify_proof_response_other_reversal(
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -825,6 +832,7 @@ async fn reject_proof_response_other_reversal(
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     // Create the sender with a gas limit such that no gas estimation is done, forcing failure at receipt (after the txn has been sent).
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -919,6 +927,7 @@ async fn verify_proof_response_other_reversal_gas_estimation(
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -1017,6 +1026,7 @@ async fn reject_proof_response_other_reversal_gas_estimation(
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -1117,6 +1127,7 @@ async fn verify_proof_max_retries_remove_entry(
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -1207,6 +1218,7 @@ async fn verify_proof_max_retries_do_not_remove_entry(
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),

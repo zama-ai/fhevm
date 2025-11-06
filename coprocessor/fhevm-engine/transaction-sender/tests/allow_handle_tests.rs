@@ -110,6 +110,7 @@ async fn allow_call(
     let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
 
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
         *multichain_acl.address(),
@@ -230,6 +231,7 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
     let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
 
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
         *multichain_acl.address(),
@@ -329,6 +331,7 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
     let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
 
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
         *multichain_acl.address(),

@@ -11,6 +11,7 @@ use alloy::{
     sol,
     transports::http::reqwest::Url,
 };
+use fhevm_engine_common::utils::DatabaseURL;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use test_harness::localstack::{
     create_aws_aws_kms_client, create_localstack_kms_signing_key, start_localstack,
@@ -78,11 +79,10 @@ impl TestEnvironment {
             .with_max_level(Level::DEBUG)
             .with_test_writer()
             .try_init();
-        let database_url = conf.database_url.to_owned().unwrap_or_default();
 
         let db_pool = PgPoolOptions::new()
-            .max_connections(1)
-            .connect(database_url.as_str())
+            .max_connections(10)
+            .connect(DatabaseURL::default().as_str())
             .await?;
 
         Self::truncate_tables(
