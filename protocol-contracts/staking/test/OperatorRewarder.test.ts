@@ -112,7 +112,7 @@ describe('OperatorRewarder', function () {
         .withArgs(this.mock, this.staker1, ethers.parseEther('4.5'));
       await expect(this.mock.earned(this.staker1)).to.eventually.eq(0);
 
-      await expect(this.mock.claimOwnerFee())
+      await expect(this.mock.connect(this.admin).claimOwnerFee())
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.admin, ethers.parseEther('0.5'));
       await expect(this.mock.unpaidOwnerFee()).to.eventually.eq(0);
@@ -191,7 +191,7 @@ describe('OperatorRewarder', function () {
       await expect(this.mock.earned(this.staker1)).to.eventually.eq(ethers.parseEther('9'));
 
       // 1 more second goes by
-      await expect(this.mock.claimOwnerFee())
+      await expect(this.mock.connect(this.admin).claimOwnerFee())
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.admin, ethers.parseEther('1.05'));
       await expect(this.mock.unpaidOwnerFee()).to.eventually.eq(0);
@@ -199,28 +199,34 @@ describe('OperatorRewarder', function () {
 
     it('should reset pending owner fee', async function () {
       await timeIncreaseNoMine(10);
-      await this.mock.claimOwnerFee();
+      await this.mock.connect(this.admin).claimOwnerFee();
 
       await expect(this.mock.unpaidOwnerFee()).to.eventually.eq(0);
     });
 
     it('should not effect staker earned amount', async function () {
       await timeIncreaseNoMine(10);
-      await this.mock.claimOwnerFee();
+      await this.mock.connect(this.admin).claimOwnerFee();
 
       await expect(this.mock.earned(this.staker1)).to.eventually.eq(ethers.parseEther('4.5'));
     });
 
     it('should process second claim accurately', async function () {
       await timeIncreaseNoMine(10);
-      await expect(this.mock.claimOwnerFee())
+      await expect(this.mock.connect(this.admin).claimOwnerFee())
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.admin, ethers.parseEther('0.5'));
 
       await timeIncreaseNoMine(5);
-      await expect(this.mock.claimOwnerFee())
+      await expect(this.mock.connect(this.admin).claimOwnerFee())
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.admin, ethers.parseEther('0.25'));
+    });
+
+    it('should not claim owner fee if not owner', async function () {
+      await expect(this.mock.connect(this.anyone).claimOwnerFee())
+        .to.be.revertedWithCustomError(this.mock, 'OwnableUnauthorizedAccount')
+        .withArgs(this.anyone);
     });
   });
 

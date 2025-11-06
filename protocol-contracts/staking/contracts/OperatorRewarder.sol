@@ -75,7 +75,7 @@ contract OperatorRewarder is Ownable {
     /**
      * @notice Claims owner fee.
      */
-    function claimOwnerFee() public virtual {
+    function claimOwnerFee() public virtual onlyOwner {
         uint256 totalAssetsPlusPaidRewards = _totalAssetsPlusPaidRewards();
         uint256 unpaidOwnerFee_ = _unpaidOwnerFee(totalAssetsPlusPaidRewards);
         _lastClaimTotalAssetsPlusPaidRewards = totalAssetsPlusPaidRewards - unpaidOwnerFee_;
