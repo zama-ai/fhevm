@@ -3,7 +3,9 @@ use anyhow::anyhow;
 use fhevm_gateway_bindings::{
     decryption::Decryption::SnsCiphertextMaterial, kms_generation::IKMSGeneration::KeyDigest,
 };
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
+
+use crate::types::GatewayEventKind;
 
 /// Struct representing how `SnsCiphertextMaterial` are stored in the database.
 #[derive(sqlx::Type, Clone, Debug, Default, PartialEq)]
@@ -45,9 +47,9 @@ impl From<&SnsCiphertextMaterialDbItem> for SnsCiphertextMaterial {
     }
 }
 
+/// Struct representing the `ParamsType` enum in the database.
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
 #[sqlx(type_name = "params_type")]
-/// Struct representing the `ParamsType` enum in the database.
 pub enum ParamsTypeDb {
     Default,
     Test,
@@ -67,9 +69,9 @@ impl TryFrom<u8> for ParamsTypeDb {
     }
 }
 
+/// Struct representing the `KeyType` enum in the database.
 #[derive(sqlx::Type, Copy, Clone, Debug, Default, PartialEq)]
 #[sqlx(type_name = "key_type")]
-/// Struct representing the `KeyType` enum in the database.
 pub enum KeyType {
     Server,
     #[default]
@@ -115,6 +117,47 @@ impl From<KeyDigestDbItem> for KeyDigest {
         Self {
             keyType: value.key_type as u8,
             digest: value.digest.into(),
+        }
+    }
+}
+
+/// Struct representing the `ParamsType` enum in the database.
+#[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
+#[sqlx(type_name = "event_type")]
+pub enum EventType {
+    PublicDecryptionRequest,
+    UserDecryptionRequest,
+    PrepKeygenRequest,
+    KeygenRequest,
+    CrsgenRequest,
+    PrssInit,
+    KeyReshareSameSet,
+}
+
+impl Display for EventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EventType::PublicDecryptionRequest => write!(f, "PublicDecryptionRequest"),
+            EventType::UserDecryptionRequest => write!(f, "UserDecryptionRequest"),
+            EventType::PrepKeygenRequest => write!(f, "PrepKeygenRequest"),
+            EventType::KeygenRequest => write!(f, "KeygenRequest"),
+            EventType::CrsgenRequest => write!(f, "CrsgenRequest"),
+            EventType::PrssInit => write!(f, "PrssInit"),
+            EventType::KeyReshareSameSet => write!(f, "KeyReshareSameSet"),
+        }
+    }
+}
+
+impl From<&GatewayEventKind> for EventType {
+    fn from(value: &GatewayEventKind) -> Self {
+        match value {
+            GatewayEventKind::PublicDecryption(_) => Self::PublicDecryptionRequest,
+            GatewayEventKind::UserDecryption(_) => Self::UserDecryptionRequest,
+            GatewayEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
+            GatewayEventKind::Keygen(_) => Self::KeygenRequest,
+            GatewayEventKind::Crsgen(_) => Self::CrsgenRequest,
+            GatewayEventKind::PrssInit(_) => Self::PrssInit,
+            GatewayEventKind::KeyReshareSameSet(_) => Self::KeyReshareSameSet,
         }
     }
 }

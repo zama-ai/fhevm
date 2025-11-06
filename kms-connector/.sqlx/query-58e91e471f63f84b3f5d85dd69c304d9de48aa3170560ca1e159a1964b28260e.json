@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE last_block_polled SET block_number = $2 WHERE event_type = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "event_type",
+            "kind": {
+              "Enum": [
+                "PublicDecryptionRequest",
+                "UserDecryptionRequest",
+                "PrepKeygenRequest",
+                "KeygenRequest",
+                "CrsgenRequest",
+                "PrssInit",
+                "KeyReshareSameSet"
+              ]
+            }
+          }
+        },
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "58e91e471f63f84b3f5d85dd69c304d9de48aa3170560ca1e159a1964b28260e"
+}
