@@ -19,7 +19,7 @@ use thiserror::Error;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
-use crate::blockchain::gateway::arbitrum::transaction::{
+use crate::gateway::arbitrum::transaction::{
     nonce_manager::NonceManagerNonOptimistic, provider::NonceManagedProvider,
 };
 

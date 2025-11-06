@@ -1,8 +1,8 @@
-use crate::blockchain::gateway::arbitrum::bindings::Decryption::CtHandleContractPair;
-use crate::blockchain::gateway::arbitrum::bindings::IDecryption::{ContractsInfo, RequestValidity};
-use crate::blockchain::gateway::arbitrum::bindings::{Decryption, InputVerification};
 use crate::core::errors::EventProcessingError;
 use crate::core::event::UserDecryptRequest;
+use crate::gateway::arbitrum::bindings::Decryption::CtHandleContractPair;
+use crate::gateway::arbitrum::bindings::IDecryption::{ContractsInfo, RequestValidity};
+use crate::gateway::arbitrum::bindings::{Decryption, InputVerification};
 use alloy::hex;
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::sol_types::SolCall;

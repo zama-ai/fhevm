@@ -1,4 +1,4 @@
-use crate::blockchain::gateway::arbitrum::bindings::{
+use crate::gateway::arbitrum::bindings::{
     CiphertextCommits::{self, CiphertextCommitsErrors},
     Decryption::{self, DecryptionErrors},
     InputVerification::{self, InputVerificationErrors},

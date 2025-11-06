@@ -1,6 +1,7 @@
-use crate::blockchain::gateway::arbitrum::transaction::engine::GatewayTxnError;
-use crate::blockchain::gateway::arbitrum::transaction::fhevm::FhevmError;
-use crate::config::settings::AppConfigError;
+use crate::{
+    config::settings::AppConfigError,
+    gateway::arbitrum::transaction::{engine::GatewayTxnError, fhevm::FhevmError},
+};
 use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

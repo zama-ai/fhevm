@@ -23,8 +23,8 @@
 //!
 //! See [`Settings`] for detailed configuration options.
 
-use crate::blockchain::gateway::arbitrum::{
-    parse_private_key, ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
+use crate::gateway::{
+    InputProofGatewayHandler, PublicDecryptGatewayHandler, UserDecryptGatewayHandler,
 };
 use crate::store::{
     BlockNumberStore, PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore,
@@ -39,19 +39,18 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, span, Level};
 
 use crate::{
-    blockchain::{
-        gateway::arbitrum::{
-            listener::ethereum_listener as gateway_ethereum_listener,
-            transaction::{
-                helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
-            },
-        },
-        InputProofGatewayHandler, PublicDecryptGatewayHandler, UserDecryptGatewayHandler,
-    },
     config::settings::Settings,
     core::event::{
         GatewayChainEventId, InputProofEventId, PublicDecryptEventId, RelayerEvent,
         UserDecryptEventId,
+    },
+    gateway::arbitrum::{
+        listener::ethereum_listener as gateway_ethereum_listener,
+        parse_private_key,
+        transaction::{
+            helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
+        },
+        ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
     },
     http::http_server::run_http_server,
     metrics,
@@ -313,11 +312,10 @@ fn setup_public_decrypt_gateway_handler(
     let public_decrypt_responses_cache =
         Arc::new(PublicDecryptResponseCacheStore::new(kv_store.clone()));
     let public_decrypt_requests_cache = Arc::new(PublicDecryptRequestCacheStore::new(kv_store));
-    let public_decrypt_caches =
-        crate::blockchain::gateway::public_decrypt_handler::PublicDecryptCaches {
-            responses: public_decrypt_responses_cache,
-            requests: public_decrypt_requests_cache,
-        };
+    let public_decrypt_caches = crate::gateway::public_decrypt_handler::PublicDecryptCaches {
+        responses: public_decrypt_responses_cache,
+        requests: public_decrypt_requests_cache,
+    };
 
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(PublicDecryptGatewayHandler::new(
         Arc::clone(orchestrator),

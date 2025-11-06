@@ -1,8 +1,4 @@
 use crate::{
-    blockchain::gateway::arbitrum::transaction::{
-        helper::TransactionType, ReceiptProcessor, TransactionHelper,
-    },
-    blockchain::gateway::arbitrum::{bindings::Decryption, ComputeCalldata},
     config::settings::{ContractConfig, RetrySettings},
     core::{
         errors::EventProcessingError,
@@ -11,6 +7,10 @@ use crate::{
             PublicDecryptResponse, RelayerEvent, RelayerEventData,
         },
     },
+    gateway::arbitrum::transaction::{
+        helper::TransactionType, ReceiptProcessor, TransactionHelper,
+    },
+    gateway::arbitrum::{bindings::Decryption, ComputeCalldata},
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,

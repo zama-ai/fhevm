@@ -1,4 +1,4 @@
-use crate::blockchain::gateway::arbitrum::transaction::engine::{CustomFillers, TransactionEngine};
+use crate::gateway::arbitrum::transaction::engine::{CustomFillers, TransactionEngine};
 use crate::{core::errors::EventProcessingError, metrics};
 use alloy::network::{AnyTransactionReceipt, Ethereum};
 use alloy::primitives::{Address, Bytes};

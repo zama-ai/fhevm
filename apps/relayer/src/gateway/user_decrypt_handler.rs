@@ -1,11 +1,4 @@
 use crate::{
-    blockchain::gateway::arbitrum::transaction::{
-        helper::TransactionType, ReceiptProcessor, TransactionHelper,
-    },
-    blockchain::gateway::arbitrum::{
-        bindings::Decryption::{self, UserDecryptionRequest},
-        ComputeCalldata,
-    },
     config::settings::{ContractConfig, RetrySettings},
     core::{
         errors::EventProcessingError,
@@ -13,6 +6,13 @@ use crate::{
             ApiVersion, GatewayChainEventData, HandleContractPair, RelayerEvent, RelayerEventData,
             UserDecryptEventData, UserDecryptRequest, UserDecryptResponse,
         },
+    },
+    gateway::arbitrum::transaction::{
+        helper::TransactionType, ReceiptProcessor, TransactionHelper,
+    },
+    gateway::arbitrum::{
+        bindings::Decryption::{self, UserDecryptionRequest},
+        ComputeCalldata,
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},

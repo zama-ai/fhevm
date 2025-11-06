@@ -12,7 +12,7 @@ use alloy::{
     transports::{TransportError, TransportResult},
 };
 
-use crate::blockchain::gateway::arbitrum::transaction::nonce_manager::NonceManagerNonOptimistic;
+use crate::gateway::arbitrum::transaction::nonce_manager::NonceManagerNonOptimistic;
 
 pub type FillersWithoutNonceManagement = JoinFill<GasFiller, BlobGasFiller>;
 

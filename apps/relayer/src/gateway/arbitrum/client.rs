@@ -1,5 +1,5 @@
-use crate::blockchain::gateway::arbitrum::ContractAndTopicsFilter;
 use crate::core::errors::Error;
+use crate::gateway::arbitrum::ContractAndTopicsFilter;
 use alloy::{
     network::AnyNetwork,
     providers::{Provider, ProviderBuilder, WsConnect},

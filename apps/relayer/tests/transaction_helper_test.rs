@@ -3,7 +3,7 @@ mod common;
 use alloy::primitives::{Bytes, FixedBytes, U256};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::Signer;
-use fhevm_relayer::blockchain::gateway::arbitrum::transaction::helper::GatewayTransactionEngine;
+use fhevm_relayer::gateway::arbitrum::transaction::helper::GatewayTransactionEngine;
 use std::sync::Arc;
 
 #[tokio::test]

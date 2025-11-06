@@ -1,8 +1,8 @@
 // Re-export public modules
-pub mod blockchain;
 pub mod config;
 pub mod core;
 pub mod fhevm_relayer;
+pub mod gateway;
 pub mod http;
 pub mod metrics;
 pub mod orchestrator;
