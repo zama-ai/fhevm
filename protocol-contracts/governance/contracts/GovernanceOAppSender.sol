@@ -5,19 +5,12 @@ import { OAppSender, OAppCore, Origin, MessagingFee, MessagingReceipt } from "@l
 import { OAppOptionsType3 } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OAppOptionsType3.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { MessagingParams } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import { Operation } from "./shared/Structs.sol";
 
 contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     /// @notice Msg type for sending data, for use in OAppOptionsType3 as an enforced option.
     uint16 public constant SEND = 1;
     uint32 public immutable DESTINATION_EID; /// @dev 40424 for Zama testnet, and ??? for mainnet.
-
-    /// @notice A Safe transaction operation.
-    /// @custom:variant Call The Safe transaction is executed with the `CALL` opcode.
-    /// @custom:variant Delegatecall The Safe transaction is executed with the `DELEGATECALL` opcode.
-    enum Operation {
-        Call,
-        DelegateCall
-    }
 
     /// @notice This struct is used to avoid stack too deep errors
     struct MessagingReceiptOptions {
