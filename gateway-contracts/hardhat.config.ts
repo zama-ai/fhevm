@@ -21,7 +21,6 @@ import "./tasks/mockedZamaFund";
 import "./tasks/ownership";
 import "./tasks/pauseContracts";
 import "./tasks/reshareKeys";
-import "./tasks/safeSmartAccounts";
 import "./tasks/upgradeContracts";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
@@ -195,13 +194,6 @@ const config: HardhatUserConfig = {
       evmVersion: "cancun",
       viaIR: false,
     },
-  },
-  // This is necessary to have the SafeProxyFactory and Safe artifacts available during tasks execution.
-  dependencyCompiler: {
-    paths: [
-      "@safe-global/safe-contracts/contracts/proxies/SafeProxyFactory.sol",
-      "@safe-global/safe-contracts/contracts/Safe.sol",
-    ],
   },
   warnings: {
     // Turn off all warnings for mocked contracts
