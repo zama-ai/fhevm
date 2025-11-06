@@ -75,7 +75,7 @@ describe("FeesBurner", () => {
     await zamaOFTAdapter.connect(deployer).setPeer(eidB, ethers.zeroPadValue(zamaOFTAddress, 32));
     await zamaOFT.connect(deployer).setPeer(eidA, ethers.zeroPadValue(zamaOFTAdapterAddress, 32));
     
-    //  Set enforced executor options for OFT sends to Chain A
+    //  Set enforced executor options
     const enforcedOptionsOFT = [
       {
         eid: eidA,
