@@ -22,6 +22,8 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     error FailedToWithdrawETH();
     /// @notice Thrown when trying to send cross-chain tx if contract holds unsufficient ETH to pay the LZ fees.
     error InsufficientBalanceForFee();
+    /// @notice Thrown when recipient is the null address.
+    error InvalidNullRecipient();
     /// @notice Thrown when trying to deploy this contract on an unsupported blockchain.
     error UnsupportedChainID();
 
@@ -167,8 +169,10 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
 
     /// @dev Allows the owner to withdraw ETH held by the contract.
     /// @param amount Amount of withdrawn ETH.
-    /// @param recipient Receiver of the withdrawn ETH.
+    /// @param recipient Receiver of the withdrawn ETH, should be non-null.
     function withdrawETH(uint256 amount, address recipient) external onlyOwner {
+        if (recipient == address(0)) revert InvalidNullRecipient();
+
         (bool success, ) = recipient.call{ value: amount }("");
         if (!success) {
             revert FailedToWithdrawETH();
