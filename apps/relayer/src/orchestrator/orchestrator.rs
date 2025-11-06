@@ -89,11 +89,11 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HandlerRegistry<E>
 mod tests {
 
     use crate::core::event::{
-        ApiCategory, ApiVersion, HostChainEventData, RelayerEvent, RelayerEventData,
+        ApiCategory, ApiVersion, PublicDecryptEventData, RelayerEvent, RelayerEventData,
     };
     use crate::orchestrator::traits::{Event, EventDispatcher, EventHandler, HandlerRegistry};
     use crate::orchestrator::{Orchestrator, TokioEventDispatcher};
-    use alloy::rpc::types::Log;
+    use alloy::primitives::U256;
     use std::sync::Arc;
 
     #[test]
@@ -129,8 +129,8 @@ mod tests {
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },
-            RelayerEventData::HostChain(HostChainEventData::EventLogRcvd {
-                log: Log::default(),
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqSentToGw {
+                gw_req_reference_id: U256::default(),
             }),
         );
 

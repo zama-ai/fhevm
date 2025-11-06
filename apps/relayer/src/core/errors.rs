@@ -1,9 +1,6 @@
-use crate::blockchain::fhevm::ethereum::transaction::fhevm::FhevmError;
 use crate::blockchain::gateway::arbitrum::transaction::engine::GatewayTxnError;
-use crate::{
-    blockchain::fhevm::ethereum::transaction::TransactionServiceError as FhevmTransactionServiceError,
-    config::settings::AppConfigError,
-};
+use crate::blockchain::gateway::arbitrum::transaction::fhevm::FhevmError;
+use crate::config::settings::AppConfigError;
 use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -59,35 +56,6 @@ pub enum EventProcessingError {
 
     #[error("Hex conversion error: {0}")]
     HexError(String),
-}
-
-impl From<FhevmTransactionServiceError> for EventProcessingError {
-    fn from(e: FhevmTransactionServiceError) -> Self {
-        match e {
-            FhevmTransactionServiceError::Failed(msg) => {
-                Self::TransactionError(format!("Transaction failed: {msg}"))
-            }
-            FhevmTransactionServiceError::Timeout(secs) => {
-                Self::TransactionError(format!("Transaction timed out after {secs} seconds"))
-            }
-            FhevmTransactionServiceError::GasEstimation(msg) => {
-                Self::TransactionError(format!("Gas estimation failed: {msg}"))
-            }
-            FhevmTransactionServiceError::NonceError(msg) => {
-                Self::TransactionError(format!("Nonce error: {msg}"))
-            }
-            FhevmTransactionServiceError::Network(msg) => {
-                Self::TransactionError(format!("Network error: {msg}"))
-            }
-            FhevmTransactionServiceError::Config(msg) => {
-                Self::HandlerError(format!("Config error: {msg}"))
-            }
-            FhevmTransactionServiceError::Provider(msg) => {
-                Self::TransactionError(format!("Provider error: {msg}"))
-            }
-            FhevmTransactionServiceError::Other(err) => Self::TransactionError(err.to_string()),
-        }
-    }
 }
 
 impl From<GatewayTxnError> for EventProcessingError {

@@ -11,7 +11,6 @@
 //!
 //! The system consists of several key components:
 //! - [`Orchestrator`]: Manages event flow and dispatch
-//! - [`FhevmHandler`]: Processes fhevm blockchain events and responses
 //! - [`GatewayHandler`]: Manages gateway interactions
 //! - [`TransactionService`]: Handles blockchain transactions (for both fhevm and gateway)
 //!
@@ -23,15 +22,10 @@
 //! - Command-line arguments
 //!
 //! See [`Settings`] for detailed configuration options.
-//!
-//! # Event Flow
-//!
-//! ```text
-//! [fhevm] → [fhevm listener] → [Orchestrator] → [gateway Handler]
-//!                                       ↓
-//! [fhevm] ← [fhevm Handler] ← [Orchestrator] ← [gateway Listener]
-//! ```
 
+use crate::blockchain::gateway::arbitrum::{
+    parse_private_key, ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
+};
 use crate::store::{
     BlockNumberStore, PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore,
     UserDecryptRequestCacheStore, UserDecryptResponseCacheStore, UserDecryptResponseStore,
@@ -45,27 +39,19 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, span, Level};
 
 use crate::{
-    blockchain::fhevm::ethereum::transaction::{
-        TransactionService as FhevmTransactionService, TxConfig as FhevmTxConfig,
-    },
     blockchain::{
-        fhevm::ethereum::listener::ethereum_listener as fhevm_ethereum_listener,
-        fhevm::ethereum::{
-            parse_private_key, ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
-        },
         gateway::arbitrum::{
             listener::ethereum_listener as gateway_ethereum_listener,
             transaction::{
                 helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
             },
         },
-        InputProofGatewayHandler, PublicDecryptFhevmHandler, PublicDecryptGatewayHandler,
-        UserDecryptGatewayHandler,
+        InputProofGatewayHandler, PublicDecryptGatewayHandler, UserDecryptGatewayHandler,
     },
     config::settings::Settings,
     core::event::{
-        GatewayChainEventId, HostChainEventId, InputProofEventId, PublicDecryptEventId,
-        RelayerEvent, UserDecryptEventId,
+        GatewayChainEventId, InputProofEventId, PublicDecryptEventId, RelayerEvent,
+        UserDecryptEventId,
     },
     http::http_server::run_http_server,
     metrics,
@@ -122,28 +108,6 @@ pub async fn run_fhevm_relayer(
     //
     let mut task_set = tokio::task::JoinSet::new();
 
-    // 4.1 Transaction servicve for fhevm
-    //
-    // TODO: change this to accomodate generic signers
-    // as it should already be supported in the lib
-    let mut fhevm_signer = parse_private_key(&settings.transaction.private_key_fhevm)?;
-    fhevm_signer.set_chain_id(Some(settings.networks.fhevm.chain_id));
-
-    // Prepare tx service for fhevm
-    let tx_service_host =
-        FhevmTransactionService::new(&settings.networks.fhevm.ws_url, Arc::new(fhevm_signer))
-            .await
-            .map_err(|e| eyre::eyre!("Failed to create transaction service: {}", e))?;
-
-    Arc::clone(&tx_service_host).spawn_maintenance_tasks(
-        tokio::time::Duration::from_secs(5),
-        tokio::time::Duration::from_secs(10),
-    );
-
-    let decryption_oracle_address =
-        Address::from_str(&settings.contracts.decryption_oracle_address)
-            .map_err(|_| eyre::eyre!("Invalid decryption oracle address"))?;
-
     // 4.2 Gateway settings
     let gateway_settings = settings
         .get_network("gateway")
@@ -186,15 +150,6 @@ pub async fn run_fhevm_relayer(
         event_store.clone(),
     ));
 
-    // === Register the event handlers
-    let fhevm_tx_config = FhevmTxConfig::from(settings.transaction.clone());
-    setup_public_decrypt_fhevm_handler(
-        &orchestrator,
-        tx_service_host.clone(),
-        fhevm_tx_config,
-        settings.networks.fhevm.chain_id,
-    )?;
-
     // let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
     let gateway_tx_helper = Arc::new(GatewayTransactionHelper::new(
         tx_engine_gateway.clone().into(),
@@ -223,39 +178,6 @@ pub async fn run_fhevm_relayer(
         gateway_settings.http_url.clone(),
         settings.transaction.clone().ciphertext_check_retry.clone(),
     )?;
-
-    // === Initialize fhevm listener
-    let fhevm = EthereumJsonRPCWsClient::new(ChainName::Fhevm, &settings.networks.fhevm.ws_url)
-        .await
-        .map_err(|e| eyre::eyre!("Failed to create event handler: {}", e))?;
-    let fhevm = Arc::new(fhevm);
-
-    // === Create a subscription for events and spawn a listener to listen for events from the subcription.
-    // TODO: Pass the event_dispatcher to the event_listener
-    let filter_fhevm = ContractAndTopicsFilter::new(vec![decryption_oracle_address], vec![]);
-    let fhevm_block_store = Arc::new(BlockNumberStore::new(kv_store.clone(), "fhevm".to_string()));
-    let latest_block_fhevm = match settings.networks.fhevm.last_block_number {
-        Some(block_number) => Some(block_number),
-        None => fhevm_block_store
-            .get_last_block_number()
-            .await
-            .map_err(|e| eyre::eyre!("Error getting last block number: {}", e))?,
-    };
-    info!(
-        "start listening from block \"{}\" on host chain",
-        latest_block_fhevm
-            .map(|b| b.to_string())
-            .unwrap_or("latest".to_string())
-    );
-    let subscription_fhevm = fhevm
-        .new_subscription(filter_fhevm, latest_block_fhevm)
-        .await?;
-    info!("Starting Relayer fhevm Listener");
-    task_set.spawn(fhevm_ethereum_listener(
-        subscription_fhevm,
-        Arc::clone(&orchestrator),
-        Arc::clone(&fhevm_block_store),
-    ));
 
     // === Initialize gateway listener
     let gateway = EthereumJsonRPCWsClient::new(ChainName::Gateway, &gateway_settings.ws_url)
@@ -354,30 +276,6 @@ fn ensure_global_init(settings: &Settings) -> eyre::Result<&'static Registry> {
     Ok(registry)
 }
 
-/// Setup PublicDecryptFhevmHandler and register its events
-fn setup_public_decrypt_fhevm_handler(
-    orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    tx_service: Arc<FhevmTransactionService>,
-    tx_config: FhevmTxConfig,
-    chain_id: u64,
-) -> eyre::Result<()> {
-    let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(PublicDecryptFhevmHandler::new(
-        Arc::clone(orchestrator),
-        tx_service,
-        tx_config,
-        chain_id,
-    ));
-
-    let event_ids = [
-        HostChainEventId::EventLogRcvd.into(),
-        PublicDecryptEventId::RespRcvdFromGw.into(),
-        PublicDecryptEventId::RespSentToFhevm.into(),
-    ];
-
-    register_handler_for_events(orchestrator, handler, &event_ids);
-    Ok(())
-}
-
 /// Setup InputProofGatewayHandler and register its events
 fn setup_input_proof_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
@@ -432,7 +330,6 @@ fn setup_public_decrypt_gateway_handler(
 
     let event_ids = [
         PublicDecryptEventId::ReqRcvdFromUser.into(),
-        PublicDecryptEventId::ReqRcvdFromFhevm.into(),
         PublicDecryptEventId::ReqSentToGw.into(),
         GatewayChainEventId::EventLogRcvd.into(),
     ];

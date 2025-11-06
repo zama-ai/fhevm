@@ -33,19 +33,6 @@ use uuid::Uuid;
 
 #[repr(u8)]
 #[derive(Debug)]
-/// Event Ids corresponding the events of HostChainEvent type.
-pub enum HostChainEventId {
-    EventLogRcvd = 40,
-}
-
-impl From<HostChainEventId> for u8 {
-    fn from(e: HostChainEventId) -> u8 {
-        e as u8
-    }
-}
-
-#[repr(u8)]
-#[derive(Debug)]
 /// Event Ids corresponding the events of GatewayChainEvent type.
 pub enum GatewayChainEventId {
     EventLogRcvd = 50,
@@ -61,13 +48,13 @@ impl From<GatewayChainEventId> for u8 {
 #[derive(Debug)]
 /// Event Ids corresponding the events of PublicDecryptEvent type.
 pub enum PublicDecryptEventId {
-    ReqRcvdFromFhevm = 10,
-    ReqRcvdFromUser = 11,
-    ReqSentToGw = 12,
-    RespRcvdFromGw = 13,
-    RespSentToFhevm = 14,
-    Failed = 15,
-    RespSentToUser = 16,
+    // ReqRcvdFromFhevm = 10,
+    ReqRcvdFromUser = 10,
+    ReqSentToGw = 11,
+    RespRcvdFromGw = 12,
+    // RespSentToFhevm = 14,
+    Failed = 13,
+    RespSentToUser = 14,
 }
 
 impl From<PublicDecryptEventId> for u8 {
@@ -167,7 +154,7 @@ const BAD_CONVERSION_STATUS_CODE: StatusCode = StatusCode::INTERNAL_SERVER_ERROR
 impl IntoResponse for RelayerEvent {
     fn into_response(self) -> Response {
         match &self.data {
-            RelayerEventData::HostChain(_) | RelayerEventData::GatewayChain(_) => {
+            RelayerEventData::GatewayChain(_) => {
                 (BAD_CONVERSION_STATUS_CODE, BAD_CONVERSION_BODY).into_response()
             }
             RelayerEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
@@ -263,18 +250,12 @@ impl Event for RelayerEvent {
 
     fn event_id(&self) -> u8 {
         match &self.data {
-            RelayerEventData::HostChain(host_event) => match host_event {
-                HostChainEventData::EventLogRcvd { .. } => HostChainEventId::EventLogRcvd.into(),
-            },
             RelayerEventData::GatewayChain(gateway_event) => match gateway_event {
                 GatewayChainEventData::EventLogRcvd { .. } => {
                     GatewayChainEventId::EventLogRcvd.into()
                 }
             },
             RelayerEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
-                PublicDecryptEventData::ReqRcvdFromFhevm { .. } => {
-                    PublicDecryptEventId::ReqRcvdFromFhevm.into()
-                }
                 PublicDecryptEventData::ReqRcvdFromUser { .. } => {
                     PublicDecryptEventId::ReqRcvdFromUser.into()
                 }
@@ -283,9 +264,6 @@ impl Event for RelayerEvent {
                 }
                 PublicDecryptEventData::RespRcvdFromGw { .. } => {
                     PublicDecryptEventId::RespRcvdFromGw.into()
-                }
-                PublicDecryptEventData::RespSentToFhevm => {
-                    PublicDecryptEventId::RespSentToFhevm.into()
                 }
                 PublicDecryptEventData::Failed { .. } => PublicDecryptEventId::Failed.into(),
                 PublicDecryptEventData::RespSentToUser => {
@@ -361,7 +339,6 @@ pub enum ApiCategory {
 /// representing a specific flow.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RelayerEventData {
-    HostChain(HostChainEventData),
     GatewayChain(GatewayChainEventData),
     PublicDecrypt(PublicDecryptEventData),
     UserDecrypt(UserDecryptEventData),
@@ -371,25 +348,10 @@ pub enum RelayerEventData {
 impl AsRef<str> for RelayerEventData {
     fn as_ref(&self) -> &str {
         match self {
-            RelayerEventData::HostChain(host_event) => host_event.event_name(),
             RelayerEventData::GatewayChain(gateway_event) => gateway_event.event_name(),
             RelayerEventData::PublicDecrypt(decrypt_event) => decrypt_event.event_name(),
             RelayerEventData::UserDecrypt(decrypt_event) => decrypt_event.event_name(),
             RelayerEventData::InputProof(input_event) => input_event.event_name(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum HostChainEventData {
-    /// Event representing a raw blockchain event log received from host chain (FHEVM).
-    EventLogRcvd { log: Log },
-}
-
-impl HostChainEventData {
-    pub fn event_name(&self) -> &'static str {
-        match self {
-            HostChainEventData::EventLogRcvd { .. } => "HostChain::EventLogRcvd",
         }
     }
 }
@@ -415,11 +377,6 @@ pub enum PublicDecryptEventData {
         decrypt_request: PublicDecryptRequest,
     },
 
-    /// Event representing a public decryption request for ciphertexts on fhevm.
-    ReqRcvdFromFhevm {
-        decrypt_request: PublicDecryptRequest,
-    },
-
     /// Event representing the result of sending a public decryption request to
     /// gateway. Id will be used to map the response that will be received later
     /// to the request.
@@ -430,9 +387,6 @@ pub enum PublicDecryptEventData {
     RespRcvdFromGw {
         decrypt_response: PublicDecryptResponse,
     },
-
-    /// Event representing the public decryption response sent to fhevm.
-    RespSentToFhevm,
 
     /// Event representing the user decryption response sent to the user.
     RespSentToUser,
@@ -445,10 +399,8 @@ impl PublicDecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
             PublicDecryptEventData::ReqRcvdFromUser { .. } => "PublicDecrypt::ReqRcvdFromUser",
-            PublicDecryptEventData::ReqRcvdFromFhevm { .. } => "PublicDecrypt::ReqRcvdFromFhevm",
             PublicDecryptEventData::ReqSentToGw { .. } => "PublicDecrypt::ReqSentToGw",
             PublicDecryptEventData::RespRcvdFromGw { .. } => "PublicDecrypt::RespRcvdFromGw",
-            PublicDecryptEventData::RespSentToFhevm => "PublicDecrypt::RespSentToFhevm",
             PublicDecryptEventData::RespSentToUser => "PublicDecrypt::RespSentToUser",
             PublicDecryptEventData::Failed { .. } => "PublicDecrypt::Failed",
         }

@@ -9,15 +9,6 @@ pub use fhevm_gateway_bindings::{
     multichain_acl::MultichainACL,
 };
 
-// New version of DecryptionOracle
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    DecryptionOracle,
-    "./artifacts/contract-abis/DecryptionOracle.json"
-);
-
 // Define the Transfer event structure using alloy_sol_types
 sol! {
     #[derive(Debug)]

@@ -610,11 +610,7 @@ impl GatewayHandler {
 impl EventHandler<RelayerEvent> for GatewayHandler {
     async fn handle_event(&self, event: RelayerEvent) {
         match event.data {
-            RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromFhevm {
-                ref decrypt_request,
-                ..
-            })
-            | RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromUser {
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromUser {
                 ref decrypt_request,
                 ..
             }) => {
