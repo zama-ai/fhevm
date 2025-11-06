@@ -31,6 +31,10 @@ pub const TFHE_COMPACT_PK_PARAMS: DedicatedCompactPublicKeyParameters = cpu_meta
 pub const TFHE_NOISE_SQUASHING_PARAMS: MetaNoiseSquashingParameters = cpu_meta_parameters
     .noise_squashing_parameters
     .expect("Missing noise squashing parameters");
+pub const TFHE_PKS_RERANDOMIZATION_PARAMS: ShortintKeySwitchingParameters =
+    TFHE_COMPACT_PK_PARAMS
+        .re_randomization_parameters
+        .expect("Missing rerandomisation parameters");
 
 #[cfg(feature = "gpu")]
 pub const TFHE_PARAMS: AtomicPatternParameters = gpu_meta_parameters.compute_parameters;
@@ -138,6 +142,7 @@ impl FhevmKeys {
                 TFHE_COMPACT_PK_PARAMS.pke_params,
                 TFHE_COMPACT_PK_PARAMS.ksk_params,
             ))
+            .enable_ciphertext_re_randomization(TFHE_PKS_RERANDOMIZATION_PARAMS)
             .build()
     }
 
