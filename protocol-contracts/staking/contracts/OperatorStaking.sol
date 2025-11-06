@@ -21,9 +21,9 @@ import {ProtocolStaking} from "./ProtocolStaking.sol";
  * @notice Allows users to stake assets and receive shares, with support for reward distribution.
  * @dev Integrates with ProtocolStaking and OperatorRewarder contracts. Inspired by ERC7540 but not fully compliant.
  *
- * NOTE: This contract supports slashing on the `ProtocolStaking` level and symmetrically passes losses to restakers on the
- * `OperatorStaking` level. Slashing must first decrease the `ProtocolStaking` balance of this contract before affecting
- * pending withdrawals.
+ * NOTE: This contract supports slashing on the `ProtocolStaking` level, meaning that the overall stake of this contract
+ * may decrease due to slashing. These losses are symmetrically passed to restakers on the `OperatorStaking` level.
+ * Slashing must first decrease the `ProtocolStaking` balance of this contract before affecting pending withdrawals.
  */
 contract OperatorStaking is ERC20, Ownable, ReentrancyGuardTransient {
     using Math for uint256;
