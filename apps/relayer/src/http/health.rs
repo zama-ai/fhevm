@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use utoipa::ToSchema;
 
-// Response structures for reliability endpoints
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct LivenessResponse {
     status: String,
@@ -33,19 +32,6 @@ pub trait HealthCheck: Send + Sync {
     async fn check(&self) -> anyhow::Result<()>;
 }
 
-// FIXME: https://github.com/zama-ai/console/issues/555
-// struct CacheHealthCheck {
-//     cache: Arc<dyn KVStore>,
-// }
-//
-// #[async_trait::async_trait]
-// impl HealthCheck for CacheHealthCheck {
-//     async fn check(&self) -> anyhow::Result<()> {
-//         // TODO: add health-check method to KVSTore trait
-//         Ok(())
-//     }
-// }
-
 pub struct BlockchainHealthCheck {
     rpc_url: String,
 }
@@ -69,11 +55,6 @@ pub struct HealthChecker {
 impl HealthChecker {
     pub fn new(gateway_rpc_url: String) -> Self {
         let mut checks: HashMap<String, Arc<dyn HealthCheck>> = HashMap::new();
-
-        // checks.insert(
-        //     "cache".to_string(),
-        //     Arc::new(CacheHealthCheck { /* ... */ }),
-        // );
 
         checks.insert(
             "gateway".to_string(),
@@ -104,8 +85,6 @@ impl HealthChecker {
     }
 }
 
-// Handler functions
-// Liveness
 #[utoipa::path(
     get,
     path = "/liveness",
@@ -124,7 +103,6 @@ pub async fn liveness_handler() -> impl IntoResponse {
         .into_response()
 }
 
-// Health
 #[utoipa::path(
     get,
     path = "/healthz",
@@ -162,7 +140,6 @@ pub mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
-// Health
 #[utoipa::path(
     get,
     path = "/version",
