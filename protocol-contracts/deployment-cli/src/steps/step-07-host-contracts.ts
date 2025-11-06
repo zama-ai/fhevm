@@ -80,7 +80,7 @@ export class Step07HostContracts extends BaseStep {
             env: baseEnv,
         });
 
-        // Extract addresses from .env.host and .env.decryptionoracle files (written by deployment tasks)
+        // Extract addresses from .env.host file (written by deployment tasks)
         const projectRoot = resolveProjectRoot();
         const reader = new TaskOutputReader(projectRoot);
         const hostEnvPath = path.join(
@@ -88,12 +88,6 @@ export class Step07HostContracts extends BaseStep {
             this.pkgName,
             "addresses",
             ".env.host",
-        );
-        const decryptionOracleEnvPath = path.join(
-            projectRoot,
-            this.pkgName,
-            "addresses",
-            ".env.decryptionoracle",
         );
 
         const hostAddresses = reader.readEnvFile(hostEnvPath, {
@@ -105,14 +99,7 @@ export class Step07HostContracts extends BaseStep {
             PAUSER_SET_CONTRACT_ADDRESS: "PAUSER_SET_HOST",
         });
 
-        const decryptionOracleAddresses = reader.readEnvFile(
-            decryptionOracleEnvPath,
-            {
-                DECRYPTION_ORACLE_ADDRESS: "DECRYPTION_ORACLE_ADDRESS",
-            },
-        );
-
-        const addressMap = { ...hostAddresses, ...decryptionOracleAddresses };
+        const addressMap = { ...hostAddresses };
 
         const pauserEnv: Record<string, string> = {
             NUM_PAUSERS: pauserAddresses.length.toString(),
