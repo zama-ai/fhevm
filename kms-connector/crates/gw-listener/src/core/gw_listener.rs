@@ -1,24 +1,31 @@
-use super::{Config, EventPublisher};
+use super::Config;
 use crate::{
-    core::DbEventPublisher,
+    core::{publish::update_last_block_polled, publish_event},
     monitoring::{
         health::State,
         metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS, EVENT_STORAGE_ERRORS},
     },
 };
-use alloy::{contract::Event, network::Ethereum, providers::Provider, sol_types::SolEvent};
+use alloy::{
+    contract::{Event, EventPoller},
+    network::Ethereum,
+    providers::Provider,
+    sol_types::SolEvent,
+};
+use anyhow::anyhow;
 use connector_utils::{
     conn::{GatewayProvider, connect_to_db, connect_to_gateway},
     monitoring::otlp::PropagationContext,
     tasks::spawn_with_limit,
-    types::{GatewayEvent, GatewayEventKind},
+    types::{GatewayEvent, GatewayEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     kms_generation::KMSGeneration::{self, KMSGenerationInstance},
 };
+use sqlx::{Pool, Postgres, Row};
 use std::time::Duration;
-use tokio::task::JoinSet;
+use tokio::{select, task::JoinSet, time::timeout};
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -26,223 +33,284 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct monitoring and storing Gateway's events.
 #[derive(Clone)]
-pub struct GatewayListener<Prov, Publ>
+pub struct GatewayListener<P>
 where
-    Prov: Provider,
+    P: Provider,
 {
+    /// The database pool for storing Gateway's events.
+    db_pool: Pool<Postgres>,
+
     /// The Gateway's `Decryption` contract instance which is monitored.
-    decryption_contract: DecryptionInstance<Prov>,
+    decryption_contract: DecryptionInstance<P>,
 
     /// The Gateway's `KMSGeneration` contract instance which is monitored.
-    kms_generation_contract: KMSGenerationInstance<Prov>,
-
-    /// The entity responsible of events publication to some external storage.
-    publisher: Publ,
+    kms_generation_contract: KMSGenerationInstance<P>,
 
     /// The configuration of the `GatewayListener`.
     config: Config,
+
+    /// The cancellation token to handle the graceful shutdown of the listener.
+    cancel_token: CancellationToken,
 }
 
-impl<Prov, Publ> GatewayListener<Prov, Publ>
+impl<P> GatewayListener<P>
 where
-    Prov: Provider<Ethereum> + Clone + 'static,
-    Publ: EventPublisher + 'static,
+    P: Provider<Ethereum> + Clone + 'static,
 {
     /// Creates a new `GatewayListener` instance.
-    pub fn new(config: &Config, provider: Prov, publisher: Publ) -> Self {
+    pub fn new(
+        db_pool: Pool<Postgres>,
+        provider: P,
+        config: &Config,
+        cancel_token: CancellationToken,
+    ) -> Self {
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
         let kms_generation_contract =
             KMSGeneration::new(config.kms_generation_contract.address, provider);
 
         Self {
+            db_pool,
             decryption_contract,
             kms_generation_contract,
-            publisher,
             config: config.clone(),
+            cancel_token,
         }
     }
 
     /// Starts the `GatewayListener`.
-    pub async fn start(self, cancel_token: CancellationToken) {
-        tokio::select! {
-            _ = cancel_token.cancelled() => info!("GatewayListener cancelled..."),
-            _ = self.run() => (),
+    ///
+    /// Spawns and joins the `GatewayListener` event monitoring tasks.
+    pub async fn start(self) {
+        let mut tasks = JoinSet::new();
+
+        tasks.spawn(self.clone().subscribe(EventType::PublicDecryptionRequest));
+        tasks.spawn(self.clone().subscribe(EventType::UserDecryptionRequest));
+        tasks.spawn(self.clone().subscribe(EventType::PrepKeygenRequest));
+        tasks.spawn(self.clone().subscribe(EventType::KeygenRequest));
+        tasks.spawn(self.clone().subscribe(EventType::CrsgenRequest));
+        tasks.spawn(self.clone().subscribe(EventType::PrssInit));
+        tasks.spawn(self.subscribe(EventType::KeyReshareSameSet));
+
+        while let Some(res) = tasks.join_next().await {
+            if let Err(e) = res {
+                error!("{e}");
+            }
         }
         info!("GatewayListener stopped successfully!");
     }
 
-    /// Spawns and joins the `GatewayListener` event monitoring tasks.
-    async fn run(self) {
-        let mut tasks = JoinSet::new();
-
-        tasks.spawn(self.clone().subscribe_to_public_decryption_requests());
-        tasks.spawn(self.clone().subscribe_to_user_decryption_requests());
-        tasks.spawn(self.clone().subscribe_to_prep_keygen_requests());
-        tasks.spawn(self.clone().subscribe_to_keygen_requests());
-        tasks.spawn(self.clone().subscribe_to_crsgen_requests());
-        tasks.spawn(self.clone().subscribe_to_prss_init());
-        tasks.spawn(self.subscribe_to_key_reshare_same_set());
-
-        // If any of the subscription tasks are finished, this means the `GatewayListener` is
-        // "broken" and should be exited. Thus, we only join the first task of the `JoinSet`.
-        tasks.join_next().await;
-    }
-
     /// Subscribes to a particular set of events.
     ///
-    /// Each event received from the `event_filer` is then published using the `EventPublisher` of
-    /// the `GatewayListener`.
-    async fn subscribe_to_events<'a, E>(
-        &'a self,
-        event_name: &'static str,
-        mut event_filter: Event<&'a Prov, E>,
+    /// Each event received from the `event_filer` is then published in the DB.
+    pub async fn subscribe(self, event_type: EventType) {
+        let polling = match &event_type {
+            EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
+                self.config.decryption_polling
+            }
+            _ => self.config.key_management_polling,
+        };
+
+        let result = match &event_type {
+            EventType::PublicDecryptionRequest => {
+                let filter = self.decryption_contract.PublicDecryptionRequest_filter();
+                self.subscribe_inner(event_type, filter, polling).await
+            }
+            EventType::UserDecryptionRequest => {
+                let filter = self.decryption_contract.UserDecryptionRequest_filter();
+                self.subscribe_inner(event_type, filter, polling).await
+            }
+            EventType::PrepKeygenRequest => {
+                let filter = self.kms_generation_contract.PrepKeygenRequest_filter();
+                self.subscribe_inner(event_type, filter, polling).await
+            }
+            EventType::KeygenRequest => {
+                let filter = self.kms_generation_contract.KeygenRequest_filter();
+                self.subscribe_inner(event_type, filter, polling).await
+            }
+            EventType::CrsgenRequest => {
+                let filter = self.kms_generation_contract.CrsgenRequest_filter();
+                self.subscribe_inner(event_type, filter, polling).await
+            }
+            EventType::PrssInit => {
+                let filter = self.kms_generation_contract.PRSSInit_filter();
+                self.subscribe_inner(event_type, filter, polling).await
+            }
+            EventType::KeyReshareSameSet => {
+                let filter = self.kms_generation_contract.KeyReshareSameSet_filter();
+                self.subscribe_inner(event_type, filter, polling).await
+            }
+        };
+        self.cancel_token.cancel(); // Cancel other event subscription tasks
+
+        if let Err(e) = result {
+            error!("{e}");
+        }
+    }
+
+    async fn subscribe_inner<E>(
+        &self,
+        event_type: EventType,
+        mut event_filter: Event<&'_ P, E>,
         poll_interval: Duration,
+    ) -> anyhow::Result<()>
+    where
+        E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
+    {
+        let mut last_block_polled = self.get_last_block_polled(event_type).await?;
+        if let Some(from_block) = last_block_polled {
+            event_filter = event_filter.from_block(from_block);
+        }
+        let mut event_poller = event_filter
+            .watch()
+            .await
+            .map_err(|e| anyhow!("Failed to subscribe to {event_type} events: {e}"))?;
+        event_poller.poller = event_poller.poller.with_poll_interval(poll_interval);
+        info!("✓ Subscribed to {event_type} events");
+
+        select! {
+            _ = self.process_events(event_type, event_poller, &mut last_block_polled) => (),
+            _ = self.cancel_token.cancelled() => info!("{event_type} subscription cancelled..."),
+        }
+
+        // Use a timeout to ensure we are not preventing the `GatewayListener` from being shutdown
+        // if the `last_block_polled` update get stuck for some reason.
+        timeout(
+            LAST_BLOCK_POLLED_UPDATE_TIMEOUT,
+            update_last_block_polled(&self.db_pool, event_type, last_block_polled),
+        )
+        .await??;
+        Ok(())
+    }
+
+    /// Event processing loop.
+    async fn process_events<E>(
+        &self,
+        event_type: EventType,
+        event_poller: EventPoller<E>,
+        last_block: &mut Option<u64>,
     ) where
         E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
     {
-        info!(
-            "Starting {} event subscriptions from block {}...",
-            event_name,
-            self.config
-                .from_block_number
-                .map(|b| b.to_string())
-                .unwrap_or_else(|| "latest".into())
-        );
-        if let Some(from_block_number) = self.config.from_block_number {
-            event_filter = event_filter.from_block(from_block_number);
-        }
-        let mut events = match event_filter.watch().await {
-            Ok(mut filter) => {
-                filter.poller = filter.poller.with_poll_interval(poll_interval);
-                filter.into_stream()
-            }
-            Err(err) => {
-                return error!("Failed to subscribe to {event_name} events: {err}");
-            }
-        };
-        info!("✓ Subscribed to {event_name} events");
-
+        let mut events = event_poller.into_stream();
         loop {
-            info!("Waiting for next {event_name}...");
-            let event = match events.next().await {
-                Some(Ok((event, _log))) => event,
+            info!("Waiting for next {event_type}...");
+            match events.next().await {
+                Some(Ok((event, log))) => {
+                    *last_block = log.block_number;
+                    EVENT_RECEIVED_COUNTER.inc();
+                    let db = self.db_pool.clone();
+                    spawn_with_limit(handle_gateway_event(db, event.into(), log.block_number))
+                        .await;
+                }
                 Some(Err(err)) => {
-                    error!("Error while listening for {event_name} events: {err}");
+                    error!("Error while listening for {event_type} events: {err}");
                     EVENT_RECEIVED_ERRORS.inc();
                     continue;
                 }
-                None => break error!("Alloy Provider was dropped for {event_name}"),
-            };
-            EVENT_RECEIVED_COUNTER.inc();
-
-            let publisher = self.publisher.clone();
-            spawn_with_limit(Self::handle_gateway_event(publisher, event.into())).await;
+                None => break error!("Alloy Provider was dropped for {event_type}"),
+            }
         }
     }
 
-    /// Main function used to trace a single event handling across all Connector's services.
-    #[tracing::instrument(skip(publisher), fields(event = %event_kind))]
-    async fn handle_gateway_event(publisher: Publ, event_kind: GatewayEventKind) {
-        let event = GatewayEvent::new(
-            event_kind,
-            PropagationContext::inject(&tracing::Span::current().context()),
+    /// Get the last block polled from config or DB.
+    async fn get_last_block_polled(&self, event_type: EventType) -> anyhow::Result<Option<u64>> {
+        let last_block_polled = match self.config.from_block_number {
+            // Start polling event from `from_block_number` if configured
+            Some(from_block) => {
+                info!(
+                    "Found configured `from_block_number` ({from_block}) for {event_type} subscriptions!"
+                );
+                Some(from_block)
+            }
+            // Start from `last_block_polled` stored in DB + 1 if not configured
+            None => self
+                .get_last_block_polled_from_db(event_type)
+                .await?
+                .map(|n| n + 1),
+        };
+
+        info!(
+            "Starting {} subscriptions from block {}...",
+            event_type,
+            last_block_polled
+                .map(|b| b.to_string())
+                .unwrap_or_else(|| "latest".into())
         );
-        if let Err(err) = publisher.publish(event).await {
-            error!("Failed to publish event: {err}");
-            EVENT_STORAGE_ERRORS.inc();
-        }
+
+        Ok(last_block_polled)
     }
 
-    async fn subscribe_to_public_decryption_requests(self) {
-        let public_decryption_filter = self.decryption_contract.PublicDecryptionRequest_filter();
-        self.subscribe_to_events(
-            "PublicDecryptionRequest",
-            public_decryption_filter,
-            self.config.decryption_polling,
-        )
-        .await;
-    }
+    async fn get_last_block_polled_from_db(
+        &self,
+        event_type: EventType,
+    ) -> anyhow::Result<Option<u64>> {
+        info!("Fetching last block polled from DB for {event_type}...");
+        let query_result =
+            sqlx::query("SELECT block_number FROM last_block_polled WHERE event_type = $1")
+                .bind(event_type)
+                .fetch_one(&self.db_pool)
+                .await?
+                .try_get::<Option<Vec<u8>>, _>("block_number")?;
 
-    async fn subscribe_to_user_decryption_requests(self) {
-        let user_decryption_filter = self.decryption_contract.UserDecryptionRequest_filter();
-        self.subscribe_to_events(
-            "UserDecryptionRequest",
-            user_decryption_filter,
-            self.config.decryption_polling,
-        )
-        .await;
-    }
+        let Some(block_number_bytes) = query_result else {
+            info!("No block number stored in DB yet for {event_type}");
+            return Ok(None);
+        };
 
-    async fn subscribe_to_prep_keygen_requests(self) {
-        let prep_keygen_filter = self.kms_generation_contract.PrepKeygenRequest_filter();
-        self.subscribe_to_events(
-            "PrepKeygenRequest",
-            prep_keygen_filter,
-            self.config.key_management_polling,
-        )
-        .await;
-    }
-
-    async fn subscribe_to_keygen_requests(self) {
-        let keygen_filter = self.kms_generation_contract.KeygenRequest_filter();
-        self.subscribe_to_events(
-            "KeygenRequest",
-            keygen_filter,
-            self.config.key_management_polling,
-        )
-        .await;
-    }
-
-    async fn subscribe_to_crsgen_requests(self) {
-        let crsgen_filter = self.kms_generation_contract.CrsgenRequest_filter();
-        self.subscribe_to_events(
-            "CrsgenRequest",
-            crsgen_filter,
-            self.config.key_management_polling,
-        )
-        .await;
-    }
-
-    async fn subscribe_to_prss_init(self) {
-        let prss_init_filter = self.kms_generation_contract.PRSSInit_filter();
-        self.subscribe_to_events(
-            "PrssInit",
-            prss_init_filter,
-            self.config.key_management_polling,
-        )
-        .await;
-    }
-
-    async fn subscribe_to_key_reshare_same_set(self) {
-        let key_reshare_same_set_filter = self.kms_generation_contract.KeyReshareSameSet_filter();
-        self.subscribe_to_events(
-            "KeyReshareSameSet",
-            key_reshare_same_set_filter,
-            self.config.key_management_polling,
-        )
-        .await;
+        let block_number = block_number_bytes
+            .try_into()
+            .map(u64::from_le_bytes)
+            .map_err(|b| anyhow!("Couldn't convert {b:?} into u64"))?;
+        Ok(Some(block_number))
     }
 }
 
-impl GatewayListener<GatewayProvider, DbEventPublisher> {
-    /// Creates a new `GatewayListener` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
-        let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let publisher = DbEventPublisher::new(db_pool.clone());
+/// Main function used to trace a single event handling across all Connector's services.
+#[tracing::instrument(skip_all, fields(event = %event_kind))]
+async fn handle_gateway_event(
+    db_pool: Pool<Postgres>,
+    event_kind: GatewayEventKind,
+    block_number: Option<u64>,
+) {
+    let event = GatewayEvent::new(
+        event_kind,
+        PropagationContext::inject(&tracing::Span::current().context()),
+    );
+    if let Err(err) = publish_event(&db_pool, event, block_number).await {
+        error!("Failed to publish event: {err}");
+        EVENT_STORAGE_ERRORS.inc();
+    }
+}
 
+impl GatewayListener<GatewayProvider> {
+    /// Creates a new `GatewayListener` instance from a valid `Config`.
+    pub async fn from_config(
+        config: Config,
+        cancel_token: CancellationToken,
+    ) -> anyhow::Result<(Self, State<GatewayProvider>)> {
+        let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
-        let state = State::new(db_pool, provider.clone(), config.healthcheck_timeout);
-        let gw_listener = GatewayListener::new(&config, provider, publisher);
+
+        let state = State::new(
+            db_pool.clone(),
+            provider.clone(),
+            config.healthcheck_timeout,
+        );
+
+        let gw_listener = GatewayListener::new(db_pool, provider, &config, cancel_token);
         Ok((gw_listener, state))
     }
 }
+
+/// The timeout we allow for the listener to store the last block polled in DB.
+const LAST_BLOCK_POLLED_UPDATE_TIMEOUT: Duration = Duration::from_mins(5);
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use alloy::{
-        primitives::{Address, IntoLogData},
+        primitives::Address,
         providers::{
             Identity, ProviderBuilder, RootProvider,
             fillers::{
@@ -252,126 +320,10 @@ mod tests {
         },
         rpc::json_rpc::ErrorPayload,
     };
-    use anyhow::Result;
-    use connector_utils::{
-        tests::setup::TestInstance,
-        types::{GatewayEvent, GatewayEventKind},
-    };
-    use fhevm_gateway_bindings::{
-        decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-        kms_generation::KMSGeneration::{
-            CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
-        },
-    };
+    use connector_utils::tests::setup::{TestInstance, TestInstanceBuilder};
 
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(5))]
-    #[tokio::test]
-    async fn test_public_decryption_requests_subscription() {
-        let (mut test_instance, asserter, gw_listener) = test_setup().await;
-
-        // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(PublicDecryptionRequest::default());
-        asserter.push_success(&[rpc_event_log]);
-
-        tokio::spawn(gw_listener.subscribe_to_public_decryption_requests());
-        test_instance
-            .wait_for_log("PublicDecryptionRequest published!")
-            .await;
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(5))]
-    #[tokio::test]
-    async fn test_user_decryption_requests_subscription() {
-        let (mut test_instance, asserter, gw_listener) = test_setup().await;
-
-        // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(UserDecryptionRequest::default());
-        asserter.push_success(&[rpc_event_log]);
-
-        tokio::spawn(gw_listener.subscribe_to_user_decryption_requests());
-        test_instance
-            .wait_for_log("UserDecryptionRequest published!")
-            .await;
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(5))]
-    #[tokio::test]
-    async fn test_prep_keygen_requests_subscription() {
-        let (mut test_instance, asserter, gw_listener) = test_setup().await;
-
-        // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(PrepKeygenRequest::default());
-        asserter.push_success(&[rpc_event_log]);
-
-        tokio::spawn(gw_listener.subscribe_to_prep_keygen_requests());
-        test_instance
-            .wait_for_log("PrepKeygenRequest published!")
-            .await;
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(5))]
-    #[tokio::test]
-    async fn test_keygen_requests_subscription() {
-        let (mut test_instance, asserter, gw_listener) = test_setup().await;
-
-        // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(KeygenRequest::default());
-        asserter.push_success(&[rpc_event_log]);
-
-        tokio::spawn(gw_listener.subscribe_to_keygen_requests());
-        test_instance.wait_for_log("KeygenRequest published!").await;
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(5))]
-    #[tokio::test]
-    async fn test_crsgen_requests_subscription() {
-        let (mut test_instance, asserter, gw_listener) = test_setup().await;
-
-        // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(CrsgenRequest::default());
-        asserter.push_success(&[rpc_event_log]);
-
-        tokio::spawn(gw_listener.subscribe_to_crsgen_requests());
-        test_instance.wait_for_log("CrsgenRequest published!").await;
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(5))]
-    #[tokio::test]
-    async fn test_prss_init_subscription() {
-        let (mut test_instance, asserter, gw_listener) = test_setup().await;
-
-        // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(PRSSInit);
-        asserter.push_success(&[rpc_event_log]);
-
-        tokio::spawn(gw_listener.subscribe_to_prss_init());
-        test_instance.wait_for_log("PrssInit published!").await;
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(5))]
-    #[tokio::test]
-    async fn test_key_reshare_same_set_subscription() {
-        let (mut test_instance, asserter, gw_listener) = test_setup().await;
-
-        // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(KeyReshareSameSet::default());
-        asserter.push_success(&[rpc_event_log]);
-
-        tokio::spawn(gw_listener.subscribe_to_key_reshare_same_set());
-        test_instance
-            .wait_for_log("KeyReshareSameSet published!")
-            .await;
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(5))]
+    #[timeout(Duration::from_secs(90))]
     #[tokio::test]
     async fn test_reset_filter_stops_listener() {
         let (_test_instance, asserter, gw_listener) = test_setup().await;
@@ -382,32 +334,19 @@ mod tests {
             data: None,
         });
 
-        gw_listener.subscribe_to_crsgen_requests().await;
+        gw_listener.subscribe(EventType::KeygenRequest).await;
     }
 
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(5))]
+    #[timeout(Duration::from_secs(90))]
     #[tokio::test]
     async fn test_listener_ended_by_end_of_any_task() {
         let (mut test_instance, _asserter, gw_listener) = test_setup().await;
 
         // Will stop because some subcription tasks will not be able to init their event filter
-        gw_listener.run().await;
+        gw_listener.start().await;
 
         test_instance.wait_for_log("Failed to subscribe to").await;
-    }
-
-    /// Mock the log generated by the publication of a Gateway event.
-    fn mock_rpc_event_log(event: impl IntoLogData) -> alloy::rpc::types::Log {
-        let event_log = alloy::primitives::Log {
-            address: Address::default(),
-            data: event.to_log_data(),
-        };
-        alloy::rpc::types::Log {
-            inner: event_log,
-            block_number: Some(0),
-            ..Default::default()
-        }
     }
 
     type MockProvider = FillProvider<
@@ -418,12 +357,8 @@ mod tests {
         RootProvider,
     >;
 
-    async fn test_setup() -> (
-        TestInstance,
-        Asserter,
-        GatewayListener<MockProvider, MockPublisher>,
-    ) {
-        let test_instance = TestInstance::builder().build();
+    async fn test_setup() -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
+        let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
 
         // Create a mocked `alloy::Provider`
         let asserter = Asserter::new();
@@ -433,41 +368,17 @@ mod tests {
         let mocked_eth_get_filter_changes_result = Address::default();
         asserter.push_success(&mocked_eth_get_filter_changes_result);
 
-        let mock_publisher = MockPublisher::new();
         let config = Config {
             decryption_polling: Duration::from_millis(500),
             key_management_polling: Duration::from_millis(500),
             ..Default::default()
         };
-        let listener = GatewayListener::new(&config, mock_provider, mock_publisher);
+        let listener = GatewayListener::new(
+            test_instance.db().clone(),
+            mock_provider,
+            &config,
+            CancellationToken::new(),
+        );
         (test_instance, asserter, listener)
-    }
-
-    #[derive(Clone)]
-    struct MockPublisher;
-
-    impl MockPublisher {
-        pub fn new() -> Self {
-            MockPublisher {}
-        }
-    }
-
-    impl EventPublisher for MockPublisher {
-        async fn publish(&self, event: GatewayEvent) -> Result<()> {
-            match event.kind {
-                GatewayEventKind::PublicDecryption(_) => {
-                    info!("PublicDecryptionRequest published!")
-                }
-                GatewayEventKind::UserDecryption(_) => info!("UserDecryptionRequest published!"),
-                GatewayEventKind::PrepKeygen(_) => info!("PrepKeygenRequest published!"),
-                GatewayEventKind::Keygen(_) => info!("KeygenRequest published!"),
-                GatewayEventKind::Crsgen(_) => info!("CrsgenRequest published!"),
-                GatewayEventKind::PrssInit(_) => info!("PrssInit published!"),
-                GatewayEventKind::KeyReshareSameSet(_) => {
-                    info!("KeyReshareSameSet published!")
-                }
-            }
-            Ok(())
-        }
     }
 }

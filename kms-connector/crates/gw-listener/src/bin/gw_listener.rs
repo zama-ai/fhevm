@@ -44,9 +44,10 @@ async fn run() -> anyhow::Result<()> {
             let monitoring_endpoint = config.monitoring_endpoint;
 
             info!("Starting GatewayListener");
-            let (gw_listener, state) = GatewayListener::from_config(config).await?;
-            start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
-            gw_listener.start(cancel_token).await
+            let (gw_listener, state) =
+                GatewayListener::from_config(config, cancel_token.clone()).await?;
+            start_monitoring_server(monitoring_endpoint, state, cancel_token);
+            gw_listener.start().await
         }
     }
     Ok(())
