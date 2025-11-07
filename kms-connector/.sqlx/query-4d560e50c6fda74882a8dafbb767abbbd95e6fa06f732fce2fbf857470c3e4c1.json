@@ -21,7 +21,7 @@
             }
           }
         },
-        "Bytea"
+        "Int8"
       ]
     },
     "nullable": []

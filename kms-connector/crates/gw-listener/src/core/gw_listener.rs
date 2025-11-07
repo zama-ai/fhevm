@@ -251,18 +251,13 @@ where
                 .bind(event_type)
                 .fetch_one(&self.db_pool)
                 .await?
-                .try_get::<Option<Vec<u8>>, _>("block_number")?;
+                .try_get::<Option<i64>, _>("block_number")?;
 
-        let Some(block_number_bytes) = query_result else {
+        let Some(block_number) = query_result else {
             info!("No block number stored in DB yet for {event_type}");
             return Ok(None);
         };
-
-        let block_number = block_number_bytes
-            .try_into()
-            .map(u64::from_le_bytes)
-            .map_err(|b| anyhow!("Couldn't convert {b:?} into u64"))?;
-        Ok(Some(block_number))
+        Ok(Some(block_number as u64))
     }
 }
 
