@@ -38,7 +38,7 @@ describe("Deploy Tasks", function () {
 
     // Get the expected addresses
     const expectedAdminAddress = getRequiredEnvVar("ADMIN_ADDRESS");
-    const expectedSafeProxyAddress = getRequiredEnvVar("SAFE_ADDRESS");
+    const expectedSafeProxyAddress = getRequiredEnvVar("SAFE_PROXY_ADDRESS");
 
     // Check that the admin address and safe proxy address are correct
     const adminAddress = await adminModule.ADMIN_ACCOUNT();

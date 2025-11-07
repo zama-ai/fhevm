@@ -47,7 +47,7 @@ export default async function () {
     // Generate the connections config based on the pathways
     const connections = await generateConnectionsConfig(pathways)
     return {
-        contracts: [{ contract: zamaTestnetContract, config: { owner: process.env.SAFE_ADDRESS, delegate: process.env.SAFE_ADDRESS } }, { contract: sepoliaContract, config: { owner: process.env.DAO_ADDRESS, delegate : process.env.DAO_ADDRESS }  }],
+        contracts: [{ contract: zamaTestnetContract, config: { owner: process.env.SAFE_PROXY_ADDRESS, delegate: process.env.SAFE_PROXY_ADDRESS } }, { contract: sepoliaContract, config: { owner: process.env.DAO_ADDRESS, delegate : process.env.DAO_ADDRESS }  }],
         connections,
     }
 }

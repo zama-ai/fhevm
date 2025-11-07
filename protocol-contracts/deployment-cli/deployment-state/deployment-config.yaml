@@ -27,12 +27,12 @@ networks:
       layerzero_config: "layerzero.config.testnet.ts"  # LayerZero config file for this environment
 
 wallets:
-  governance_deployer:
-    description: "Governance deployer (deploys Aragon DAO, only exists during Phase 1)"
-    private_key_env: "GOVERNANCE_DEPLOYER_PRIVATE_KEY"
   protocol_deployer:
     description: "Protocol deployer (owns governance until DAO takes over)"
     private_key_env: "PROTOCOL_DEPLOYER_PRIVATE_KEY"
+  deployer:
+    description: "Deployer for gateway and host contracts"
+    private_key_env: "DEPLOYER_PRIVATE_KEY"
 
 operators:
   - name: "Operator 1"

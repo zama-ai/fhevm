@@ -29,8 +29,8 @@ export class Step04TokenDeployment extends BaseStep {
         if (!receiver) {
             throw new ValidationError("DAO address is required before Step 4.");
         }
-        const safeAddress = ctx.env.getAddress("SAFE_ADDRESS");
-        if (!safeAddress) {
+        const safeProxyAddress = ctx.env.getAddress("SAFE_PROXY_ADDRESS");
+        if (!safeProxyAddress) {
             throw new ValidationError(
                 "Safe address is required before Step 4.",
             );
@@ -44,9 +44,9 @@ export class Step04TokenDeployment extends BaseStep {
         const gateway = ctx.networks.getGateway();
         const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
         const daoAddress = ctx.env.getAddress("DAO_ADDRESS");
-        const safeAddress = ctx.env.getAddress("SAFE_ADDRESS");
+        const safeProxyAddress = ctx.env.getAddress("SAFE_PROXY_ADDRESS");
 
-        if (!daoAddress || !safeAddress) {
+        if (!daoAddress || !safeProxyAddress) {
             throw new ValidationError(
                 "Required prerequisite addresses missing before token deployment.",
             );
@@ -59,7 +59,7 @@ export class Step04TokenDeployment extends BaseStep {
             SEPOLIA_RPC_URL: ethereum.rpcUrl,
             RPC_URL_ZAMA_GATEWAY_TESTNET: gateway.rpcUrl,
             DAO_ADDRESS: daoAddress,
-            SAFE_ADDRESS: safeAddress,
+            SAFE_PROXY_ADDRESS: safeProxyAddress,
             NUM_INITIAL_RECEIVERS: recipients.length.toString(),
         };
 
@@ -132,7 +132,7 @@ export class Step04TokenDeployment extends BaseStep {
                 task: "zama:oft:setDelegate",
                 args: [
                     "--address",
-                    safeAddress,
+                    safeProxyAddress,
                     "--from-deployment",
                     "true",
                     "--network",
@@ -143,7 +143,7 @@ export class Step04TokenDeployment extends BaseStep {
                 task: "zama:oft:transferOwnership",
                 args: [
                     "--address",
-                    safeAddress,
+                    safeProxyAddress,
                     "--from-deployment",
                     "true",
                     "--network",
@@ -175,7 +175,6 @@ export class Step04TokenDeployment extends BaseStep {
         const gateway = ctx.networks.getGateway();
         const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
         const daoAddress = ctx.env.getAddress("DAO_ADDRESS");
-        const safeAddress = ctx.env.getAddress("SAFE_ADDRESS");
 
         const baseEnv = ctx.env.buildTaskEnv({
             PRIVATE_KEY: protocolPk,
@@ -183,7 +182,6 @@ export class Step04TokenDeployment extends BaseStep {
             SEPOLIA_RPC_URL: ethereum.rpcUrl,
             RPC_URL_ZAMA_GATEWAY_TESTNET: gateway.rpcUrl,
             DAO_ADDRESS: daoAddress,
-            SAFE_ADDRESS: safeAddress,
             ETHERSCAN_API: ethereum.explorerApiKey,
             BLOCKSCOUT_API: gateway.blockscoutApiUrl,
         });

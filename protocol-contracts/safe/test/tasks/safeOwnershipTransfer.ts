@@ -15,7 +15,7 @@ describe("Ownership transfers", function () {
   // Define variables
   let deployer: string;
   let safeProxy: SafeL2;
-  let safeAddress: string;
+  let safeProxyAddress: string;
   let owners: string[];
   let threshold: bigint;
   let initialOwners: string[];
@@ -36,8 +36,8 @@ describe("Ownership transfers", function () {
     // - SafeL2Proxy is the name of the proxy contract
     // - SafeL2 is the name of the implementation contract
     const safeProxyDeployment = await hre.deployments.get("SafeL2Proxy");
-    safeAddress = safeProxyDeployment.address;
-    safeProxy = await hre.ethers.getContractAt("SafeL2", safeAddress);
+    safeProxyAddress = safeProxyDeployment.address;
+    safeProxy = await hre.ethers.getContractAt("SafeL2", safeProxyAddress);
   });
 
   it("Should add new owners to the Safe", async function () {

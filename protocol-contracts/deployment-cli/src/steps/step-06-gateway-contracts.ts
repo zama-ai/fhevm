@@ -34,7 +34,7 @@ export class Step06GatewayContracts extends BaseStep {
         ctx: DeploymentContext,
     ): Promise<StepExecutionResult> {
         const gateway = ctx.networks.getGateway();
-        const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const deployerPk = ctx.env.resolveWalletPrivateKey("deployer");
 
         // Build environment variables from config
         const baseEnvVars: Record<string, string> = {
@@ -187,7 +187,7 @@ export class Step06GatewayContracts extends BaseStep {
 
     protected async verifyDeployments(ctx: DeploymentContext): Promise<void> {
         const gateway = ctx.networks.getGateway();
-        const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const deployerPk = ctx.env.resolveWalletPrivateKey("deployer");
 
         const baseEnvVars: Record<string, string> = {
             DEPLOYER_PRIVATE_KEY: deployerPk,

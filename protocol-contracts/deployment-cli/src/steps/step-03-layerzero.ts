@@ -22,7 +22,7 @@ export class Step03LayerzeroLink extends BaseStep {
 
     protected async validate(ctx: DeploymentContext): Promise<void> {
         const dao = ctx.env.getAddress("DAO_ADDRESS");
-        const safe = ctx.env.getAddress("SAFE_ADDRESS");
+        const safe = ctx.env.getAddress("SAFE_PROXY_ADDRESS");
 
         if (!dao) {
             throw new ValidationError(
@@ -43,9 +43,9 @@ export class Step03LayerzeroLink extends BaseStep {
         const gatewayNetwork = ctx.networks.getGateway();
         const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
         const daoAddress = ctx.env.getAddress("DAO_ADDRESS");
-        const safeAddress = ctx.env.getAddress("SAFE_ADDRESS");
+        const safeProxyAddress = ctx.env.getAddress("SAFE_PROXY_ADDRESS");
 
-        if (!daoAddress || !safeAddress) {
+        if (!daoAddress || !safeProxyAddress) {
             throw new ValidationError(
                 "DAO and Safe addresses are required before executing Step 3.",
             );
@@ -56,7 +56,7 @@ export class Step03LayerzeroLink extends BaseStep {
             SEPOLIA_RPC_URL: ethereumNetwork.rpcUrl,
             RPC_URL_ZAMA_GATEWAY_TESTNET: gatewayNetwork.rpcUrl,
             DAO_ADDRESS: daoAddress,
-            SAFE_ADDRESS: safeAddress,
+            SAFE_PROXY_ADDRESS: safeProxyAddress,
             ETHERSCAN_API: ethereumNetwork.explorerApiKey,
             BLOCKSCOUT_API: gatewayNetwork.blockscoutApiUrl,
         });
@@ -124,7 +124,7 @@ export class Step03LayerzeroLink extends BaseStep {
             PRIVATE_KEY: protocolPk,
             RPC_URL_ZAMA_GATEWAY_TESTNET: gatewayNetwork.rpcUrl,
             ADMIN_ADDRESS: receiverAddress,
-            SAFE_ADDRESS: safeAddress,
+            SAFE_PROXY_ADDRESS: safeProxyAddress,
         });
         await ctx.hardhat.runTask({
             pkg: "protocol-contracts/safe",
@@ -205,7 +205,7 @@ export class Step03LayerzeroLink extends BaseStep {
             `Transferring GovernanceOAppSender ownership to DAO (${daoAddress}) and...`,
         );
         ctx.logger.info(
-            `Transferring GovernanceOAppReceiver ownership to Safe (${safeAddress})...`,
+            `Transferring GovernanceOAppReceiver ownership to Safe (${safeProxyAddress})...`,
         );
         await ctx.hardhat.runTask({
             pkg: this.pkgName,
@@ -236,14 +236,14 @@ export class Step03LayerzeroLink extends BaseStep {
         const networkEnvironment = ctx.networks.getSelectedEnvironment();
         const protocolPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
         const daoAddress = ctx.env.getAddress("DAO_ADDRESS");
-        const safeAddress = ctx.env.getAddress("SAFE_ADDRESS");
+        const safeProxyAddress = ctx.env.getAddress("SAFE_PROXY_ADDRESS");
 
         const baseEnv = ctx.env.buildTaskEnv({
             PRIVATE_KEY: protocolPk,
             SEPOLIA_RPC_URL: ethereumNetwork.rpcUrl,
             RPC_URL_ZAMA_GATEWAY_TESTNET: gatewayNetwork.rpcUrl,
             DAO_ADDRESS: daoAddress,
-            SAFE_ADDRESS: safeAddress,
+            SAFE_PROXY_ADDRESS: safeProxyAddress,
             ETHERSCAN_API: ethereumNetwork.explorerApiKey,
             BLOCKSCOUT_API: gatewayNetwork.blockscoutApiUrl,
         });

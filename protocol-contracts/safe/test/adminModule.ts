@@ -11,7 +11,7 @@ describe("AdminModule Tests", function () {
   let deployer: Signer;
   let safeSingleton: any;
   let safeProxy: any;
-  let safeAddress: string;
+  let safeProxyAddress: string;
   let gatewayConfigMock: GatewayConfigMock;
 
   before(async () => {
@@ -23,14 +23,14 @@ describe("AdminModule Tests", function () {
     // - SafeL2Proxy is the name of the proxy contract
     // - SafeL2 is the name of the implementation contract
     const safeProxyDeployment = await hre.deployments.get("SafeL2Proxy");
-    safeAddress = safeProxyDeployment.address;
-    safeProxy = await hre.ethers.getContractAt("SafeL2", safeAddress);
-    safeSingleton = await hre.ethers.getContractAt("SafeL2", safeAddress);
+    safeProxyAddress = safeProxyDeployment.address;
+    safeProxy = await hre.ethers.getContractAt("SafeL2", safeProxyAddress);
+    safeSingleton = await hre.ethers.getContractAt("SafeL2", safeProxyAddress);
 
     // Deploy the GatewayConfigMock contract
     gatewayConfigMock = await (
       await ethers.getContractFactory("GatewayConfigMock", deployer)
-    ).deploy(safeAddress);
+    ).deploy(safeProxyAddress);
   });
 
   // A Safe Module is a smart contract that is allowed to execute transactions on behalf of a Safe
