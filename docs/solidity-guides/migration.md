@@ -7,10 +7,10 @@ The FHEVM v0.9 release introduces significant architectural changes, primarily b
 Here is a brief, ordered list of the steps required to successfully migrate your project to FHEVM v0.9:
 
 1.  **Update Dependencies:** Upgrade all key Zama FHE packages to their **FHEVM v0.9 versions**.
-2.  **Update Solidity Config:** Replace the deprecated `SepoliaConfig` with the unified **`EthereumConfig`**.
-3.  **Update Solidity Code:** Remove all calls to the deprecated Oracle-based FHE library functions.
+2.  **Update Solidity Config:** Replace the removed `SepoliaConfig` with the unified **`EthereumConfig`**.
+3.  **Update Solidity Code:** Remove all calls to the discontinued Oracle-based FHE library functions.
 4.  **Re-compile & Re-deploy:** Due to new FHEVM addresses, all affected contracts must be re-compiled and re-deployed on Sepolia.
-5.  **Rewrite Public Decryption Logic:** Eliminate reliance on the Zama Oracle and implement the **self-relaying** workflow using the `@zama-fhe/relayer-sdk` and `FHE.verifySignatures()`.
+5.  **Rewrite Public Decryption Logic:** Eliminate reliance on the discontinued Zama Oracle and implement the **self-relaying** workflow using the `@zama-fhe/relayer-sdk` and `FHE.verifySignatures()`.
 
 Follow these steps for a smooth transition to FHEVM v0.9:
 
@@ -28,7 +28,7 @@ Ensure your project uses the latest versions of the FHEVM development tools.
 
 The Solidity contracts now use a unified configuration contract defined in `@fhevm/solidity/config/ZamaConfig.sol`.
 
-- **⚠️ Deprecation:** The `SepoliaConfig` contract is now **deprecated**.
+- **⚠️ Removal:** The `SepoliaConfig` contract is now **removed**.
 - **✅ New Standard:** Update your imports and usages to use the new standard **`EthereumConfig`** contract. This change simplifies future cross-chain compatibility.
 
 The new `EthereumConfig` abstract contract now dynamically resolves the FHEVM host addresses according to the `block.chainid`.
@@ -49,7 +49,7 @@ You can read more about [Configuration on the dedicated page](configure.md).
 
 ## Step 3: Update Solidity Code
 
-The Zama public decryption Oracle is deprecated. The following functions are no more available in the FHE Solidity library:
+The Zama public decryption Oracle is discontinued. The following functions are no more available in the FHE Solidity library:
 
 - `FHE.loadRequestedHandles`
 - `FHE.requestDecryptionWithoutSavingHandles`
@@ -65,7 +65,7 @@ Due to fundamental changes in the FHEVM implementation and underlying infrastruc
 
 ## Step 5: Adjust Public Decryption Logic (Crucial Architectural Change)
 
-The most significant change is the deprecation of the Zama Oracle. This requires substantial adjustments to how your dApp handles decryption on-chain.
+The most significant change is the discontinuation of the Zama Oracle. This requires substantial adjustments to how your dApp handles decryption on-chain.
 
 | Aspect                 | FHEVM v0.8 (Old Logic)                                                | FHEVM v0.9 (New Logic)                                                               |
 | :--------------------- | :-------------------------------------------------------------------- | :----------------------------------------------------------------------------------- |
