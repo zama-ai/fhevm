@@ -36,6 +36,7 @@ Commands:
 ```
 
 Once the deployment configuration is complete, you can run the deployment with the following command:
+
 ```bash
 bun run start deploy --network testnet
 ```
