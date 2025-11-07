@@ -23,7 +23,7 @@ use fhevm_engine_common::{
     telemetry::{self, OtelTracer},
     telemetry::{register_histogram, MetricsConfig},
     types::FhevmError,
-    utils::compact_hex,
+    utils::{compact_hex, DatabaseURL},
 };
 use futures::join;
 use serde::{Deserialize, Serialize};
@@ -60,7 +60,7 @@ pub struct KeySet {
 
 #[derive(Clone)]
 pub struct DBConfig {
-    pub url: String,
+    pub url: DatabaseURL,
     pub listen_channels: Vec<String>,
     pub notify_channel: String,
     pub batch_limit: u32,
@@ -73,17 +73,6 @@ pub struct DBConfig {
     /// Enable LIFO (Last In, First Out) for processing tasks
     /// This is useful for prioritizing the most recent tasks
     pub lifo: bool,
-}
-
-impl std::fmt::Debug for DBConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Custom debug impl to avoid printing sensitive information
-        write!(
-            f,
-            "db_listen_channel: {:?}, db_notify_channel: {}, db_batch_limit: {}, db_gc_batch_limit: {}, db_polling_interval: {}, db_cleanup_interval: {:?}, db_max_connections: {}, db_timeout: {:?}, lifo: {}",
-            self.listen_channels, self.notify_channel, self.batch_limit, self.gc_batch_limit, self.polling_interval, self.cleanup_interval, self.max_connections, self.timeout, self.lifo
-        )
-    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -109,7 +98,7 @@ pub struct HealthCheckConfig {
     pub port: u16,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Config {
     pub tenant_api_key: String,
     pub service_name: String,
@@ -510,7 +499,7 @@ pub async fn run_all(
         mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
 
     let rayon_threads = rayon::current_num_threads();
-    info!(config = ?config, rayon_threads, "Starting SNS worker");
+    info!(config = %config, rayon_threads, "Starting SNS worker");
 
     if !config.service_name.is_empty() {
         if let Err(err) = telemetry::setup_otlp(&config.service_name) {

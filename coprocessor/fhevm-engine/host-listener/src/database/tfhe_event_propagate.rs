@@ -5,6 +5,7 @@ use anyhow::Result;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
+use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{compact_hex, HeartBeat};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
@@ -70,7 +71,7 @@ pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
 
 // A pool of connection with some cached information and automatic reconnection
 pub struct Database {
-    url: String,
+    url: DatabaseURL,
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
     pub tenant_id: TenantId,
     pub chain_id: ChainId,
@@ -90,7 +91,7 @@ pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
 
 impl Database {
     pub async fn new(
-        url: &str,
+        url: &DatabaseURL,
         coprocessor_api_key: &CoprocessorApiKey,
         bucket_cache_size: u16,
     ) -> Result<Self> {
@@ -105,7 +106,7 @@ impl Database {
             .into(),
         ));
         Ok(Database {
-            url: url.into(),
+            url: url.clone(),
             tenant_id,
             chain_id,
             pool: Arc::new(RwLock::new(pool)),
@@ -114,7 +115,7 @@ impl Database {
         })
     }
 
-    async fn new_pool(url: &str) -> PgPool {
+    async fn new_pool(url: &DatabaseURL) -> PgPool {
         let options: PgConnectOptions = url.parse().expect("bad url");
         let options = options.options([
             ("statement_timeout", "10000"), // 5 seconds

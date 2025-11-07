@@ -35,9 +35,11 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
         conf: ConfigSettings,
         gas: Option<u64>,
     ) -> anyhow::Result<Self> {
+        let database_url = conf.database_url.to_owned().unwrap_or_default();
+
         let db_pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(conf.database_pool_size)
-            .connect(&conf.database_url)
+            .connect(database_url.as_str())
             .await?;
 
         let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![
@@ -81,7 +83,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
 
     pub async fn run(&self) -> anyhow::Result<()> {
         info!(
-            conf = ?self.conf,
             input_verification_address = %self.input_verification_address,
             ciphertext_commits_address = %self.ciphertext_commits_address,
             multichain_acl_address = %self.multichain_acl_address,

@@ -105,17 +105,17 @@ pub async fn run_server_iteration(
         .server_addr
         .parse()
         .expect("Can't parse server address");
-    let db_url = crate::utils::db_url(&args);
 
     let coprocessor_key_file = tokio::fs::read_to_string(&args.coprocessor_private_key).await?;
 
     let signer = PrivateKeySigner::from_str(coprocessor_key_file.trim())?;
     info!(target: "grpc_server", { address = signer.address().to_string() }, "Coprocessor signer initiated");
+    let database_url = args.database_url.clone().unwrap_or_default();
 
     info!("Coprocessor listening on {}", addr);
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(args.pg_pool_max_connections)
-        .connect(&db_url)
+        .connect(database_url.as_str())
         .await?;
 
     let tenant_key_cache: std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>> =

@@ -217,7 +217,7 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         initial_block_time: 1,
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
-        database_url: test_instance.db_url().to_string(),
+        database_url: test_instance.db_url.clone(),
         coprocessor_api_key: Some(coprocessor_api_key),
         start_at_block: None,
         end_at_block: None,
