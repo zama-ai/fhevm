@@ -121,16 +121,16 @@ pub struct DatabaseURL(String);
 
 impl From<&str> for DatabaseURL {
     fn from(s: &str) -> Self {
-        let url: Self = Self(s.to_owned());
-        url.parse().expect("DatabaseURL should be valid");
-        url
+        let url = s.to_owned();
+        let app_name = Self::default_app_name();
+        Self::new_with_app_name(&url, &app_name)
     }
 }
 impl From<String> for DatabaseURL {
     fn from(s: String) -> Self {
-        let url: Self = Self(s);
-        url.parse().expect("DatabaseURL should be valid");
-        url
+        let url = s.to_owned();
+        let app_name = Self::default_app_name();
+        Self::new_with_app_name(&url, &app_name)
     }
 }
 
@@ -150,6 +150,11 @@ impl DatabaseURL {
     ///
     /// application_name is useful for identifying the source of DB conns
     pub fn new_with_app_name(base: &str, app_name: &str) -> Self {
+        let app_name = app_name.trim();
+        if app_name.is_empty() {
+            return Self(base.to_owned());
+        }
+
         // Append application_name if not present
         let mut url = base.to_owned();
         if !url.contains("application_name=") {
@@ -173,7 +178,7 @@ impl DatabaseURL {
                     .file_name()
                     .map(|s| s.to_string_lossy().into_owned())
             })
-            .unwrap_or_else(|| "unknown".to_string())
+            .unwrap_or_default()
     }
 
     pub fn as_str(&self) -> &str {

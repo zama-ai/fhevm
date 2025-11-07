@@ -30,4 +30,9 @@ async fn mask_database_url() {
     );
 
     println!("DatabaseURL: {}", db_url);
+
+    let db_url: DatabaseURL =
+        DatabaseURL::new_with_app_name("postgres://user:secret@dbhost:5432/mydb", " ");
+
+    assert_eq!(db_url.as_str(), "postgres://user:secret@dbhost:5432/mydb");
 }
