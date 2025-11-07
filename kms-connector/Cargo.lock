@@ -2388,7 +2388,7 @@ dependencies = [
 
 [[package]]
 name = "connector-utils"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "actix-web",
  "alloy",
@@ -3313,7 +3313,7 @@ dependencies = [
 
 [[package]]
 name = "gw-listener"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "actix-web",
  "alloy",
@@ -4035,7 +4035,7 @@ dependencies = [
 
 [[package]]
 name = "kms-worker"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "actix-web",
  "alloy",
@@ -7215,7 +7215,7 @@ dependencies = [
 
 [[package]]
 name = "tx-sender"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "actix-web",
  "alloy",
