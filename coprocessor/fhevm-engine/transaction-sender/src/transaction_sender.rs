@@ -26,6 +26,7 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
 impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
     #[expect(clippy::too_many_arguments)]
     pub async fn new(
+        db_pool: Pool<Postgres>,
         input_verification_address: Address,
         ciphertext_commits_address: Address,
         multichain_acl_address: Address,
@@ -35,13 +36,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
         conf: ConfigSettings,
         gas: Option<u64>,
     ) -> anyhow::Result<Self> {
-        let database_url = conf.database_url.to_owned().unwrap_or_default();
-
-        let db_pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(conf.database_pool_size)
-            .connect(database_url.as_str())
-            .await?;
-
         let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![
             Arc::new(
                 ops::verify_proof::VerifyProofOperation::new(
