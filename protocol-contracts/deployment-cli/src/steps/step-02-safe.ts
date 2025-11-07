@@ -29,22 +29,24 @@ export class Step02Safe extends BaseStep {
 
         // Check if Safe is already deployed
         const taskOutput = new TaskOutputReader(projectRoot);
-        let safeAddress: string | undefined;
+        let safeProxyAddress: string | undefined;
         try {
-            safeAddress = taskOutput.readHardhatDeployment(
+            safeProxyAddress = taskOutput.readHardhatDeployment(
                 this.pkgName,
                 gateway.name,
                 "SafeL2Proxy",
             );
         } catch (_error) {
-            safeAddress = undefined;
+            safeProxyAddress = undefined;
         }
 
-        if (safeAddress) {
+        if (safeProxyAddress) {
             ctx.logger.info(
                 "Safe artifact found, reading existing deployment...",
             );
-            ctx.logger.success(`Using existing Safe proxy at ${safeAddress}`);
+            ctx.logger.success(
+                `Using existing Safe proxy at ${safeProxyAddress}`,
+            );
         } else {
             // Compile before deploying
             ctx.logger.info("Compiling Safe contracts...");
@@ -64,16 +66,22 @@ export class Step02Safe extends BaseStep {
                 env: baseEnv,
             });
 
-            safeAddress = reader.readHardhatDeployment(
+            safeProxyAddress = reader.readHardhatDeployment(
                 this.pkgName,
                 gateway.name,
                 "SafeL2Proxy",
             );
-            ctx.logger.success(`Deployed Safe proxy at ${safeAddress}`);
+            ctx.logger.success(`Deployed Safe proxy at ${safeProxyAddress}`);
         }
-
+        const safeAddress = reader.readHardhatDeployment(
+            this.pkgName,
+            gateway.name,
+            "SafeL2",
+        );
+        ctx.env.recordAddress("SAFE_ADDRESS", safeAddress, this.id);
         return {
             addresses: {
+                SAFE_PROXY_ADDRESS: safeProxyAddress,
                 SAFE_ADDRESS: safeAddress,
             },
             notes: [
@@ -85,12 +93,10 @@ export class Step02Safe extends BaseStep {
 
     protected async verifyDeployments(
         ctx: DeploymentContext,
-        result: StepExecutionResult,
+        _result: StepExecutionResult,
     ): Promise<void> {
         const gateway = ctx.networks.getGateway();
         const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
-        const safeAddress = result.addresses?.SAFE_ADDRESS;
-
         const baseEnv = ctx.env.buildTaskEnv({
             PRIVATE_KEY: deployerPk,
             RPC_URL_ZAMA_GATEWAY_TESTNET: gateway.rpcUrl,
@@ -108,6 +114,9 @@ export class Step02Safe extends BaseStep {
         } catch (_error) {
             ctx.logger.warn(
                 "Safe verification failed (this may be acceptable if already verified)",
+            );
+            ctx.logger.error(
+                _error instanceof Error ? _error.message : String(_error),
             );
         }
 

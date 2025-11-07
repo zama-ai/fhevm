@@ -13,6 +13,7 @@ import "./tasks/deploy";
 import "./tasks/safeOwnershipTransfer";
 import "./tasks/verify";
 import "./tasks/enableModule";
+import "./tasks/acceptOwnership";
 
 // Get the environment configuration from .env file
 //
