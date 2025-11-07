@@ -121,7 +121,7 @@ impl From<KeyDigestDbItem> for KeyDigest {
     }
 }
 
-/// Struct representing the `ParamsType` enum in the database.
+/// Struct representing the `EventType` enum in the database.
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
 #[sqlx(type_name = "event_type")]
 pub enum EventType {

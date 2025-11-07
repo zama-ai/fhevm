@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE last_block_polled SET block_number = $2 WHERE event_type = $1",
+  "query": "UPDATE last_block_polled SET block_number = $2 WHERE event_type = $1 AND (block_number IS NULL OR block_number < $2)",
   "describe": {
     "columns": [],
     "parameters": {
@@ -26,5 +26,5 @@
     },
     "nullable": []
   },
-  "hash": "58e91e471f63f84b3f5d85dd69c304d9de48aa3170560ca1e159a1964b28260e"
+  "hash": "4d560e50c6fda74882a8dafbb767abbbd95e6fa06f732fce2fbf857470c3e4c1"
 }

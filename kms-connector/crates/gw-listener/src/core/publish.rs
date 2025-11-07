@@ -15,7 +15,7 @@ use fhevm_gateway_bindings::{
     },
 };
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 #[tracing::instrument(skip_all)]
 pub async fn publish_event(
@@ -196,6 +196,7 @@ async fn publish_key_reshare_same_set(
 }
 
 /// Updates the registered last block polled in DB.
+#[tracing::instrument(skip_all)]
 pub async fn update_last_block_polled(
     db_pool: &Pool<Postgres>,
     event_type: EventType,
@@ -203,10 +204,11 @@ pub async fn update_last_block_polled(
 ) -> anyhow::Result<()> {
     info!(
         last_block_polled,
-        "Updating last block polled in DB for {event_type}..."
+        "Updating last block polled in DB for {event_type}"
     );
     let query_result = sqlx::query!(
-        "UPDATE last_block_polled SET block_number = $2 WHERE event_type = $1",
+        "UPDATE last_block_polled SET block_number = $2 \
+        WHERE event_type = $1 AND (block_number IS NULL OR block_number < $2)",
         event_type as EventType,
         last_block_polled.map(|n| n.to_le_bytes().to_vec()),
     )
@@ -214,10 +216,14 @@ pub async fn update_last_block_polled(
     .await?;
 
     if query_result.rows_affected() == 1 {
-        info!("Last block polled for {event_type} was successfully updated!");
+        info!(
+            last_block_polled,
+            "Last block polled for {event_type} was successfully updated!"
+        );
     } else {
-        warn!(
-            "Unexpected query result while updating last block for {event_type}: {query_result:?}"
+        debug!(
+            last_block_polled,
+            "Last block polled for {event_type} was not updated: {query_result:?}"
         );
     }
 
