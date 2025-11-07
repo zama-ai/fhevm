@@ -75,13 +75,6 @@ pub type CustomFillers = JoinFill<
     WalletFiller<EthereumWallet>,
 >;
 
-// TODO: Add all this in constructor.
-const RETRY_DELAY: u64 = 500;
-// TODO: Add max retries if necessary.
-// const MAX_GAS_ESTIMATION_RETRIES: i32 = 50;
-// TODO: Check if necessary inside send_raw_transaction_sync_with_retries function.
-// const MAX_TX_RETRIES: u32 = 100;
-
 #[derive(Debug, Clone)]
 pub struct TransactionEngine<F, P, N = AnyNetwork>
 where
@@ -95,6 +88,11 @@ where
     // No need for Arc in this case, since the tx manager is shared by arc at the top level application.
     limit_concurrent_requests: bool,
     pub rpc_semaphore: Arc<Semaphore>,
+    // NOTE: values of 100 for both are handling 1000 parallel transaction on gw.
+    // 3 render 0 of success
+    ms_retry_delay: u64,
+    tx_max_retries: u32,
+    gas_estimation_max_retries: u32,
 }
 
 impl
@@ -109,6 +107,9 @@ impl
         signer: Arc<dyn SignerCombined>,
         limit_concurrent_requests: bool,
         max_concurrent_rpc_requests: usize,
+        ms_retry_delay: u64,
+        tx_max_retries: u32,
+        gas_estimation_max_retries: u32,
     ) -> Self {
         let signer_address = <dyn SignerCombined as alloy::signers::Signer>::address(&*signer);
         let wallet = EthereumWallet::from(signer.clone());
@@ -134,6 +135,9 @@ impl
             nonce_manager,
             limit_concurrent_requests,
             rpc_semaphore: Arc::new(Semaphore::new(max_concurrent_rpc_requests)),
+            ms_retry_delay,
+            tx_max_retries,
+            gas_estimation_max_retries,
         }
     }
 
@@ -202,12 +206,12 @@ impl
         let mut retries = 0;
         loop {
             debug!("Number of retries for gas estimation: {}", retries);
-            // if retries >= MAX_GAS_ESTIMATION_RETRIES {
-            //     return Err(TransactionError::GasEstimationFailed(format!(
-            //         "Gas estimation failed after {} retries",
-            //         MAX_GAS_ESTIMATION_RETRIES
-            //     )));
-            // }
+            if retries >= self.gas_estimation_max_retries {
+                return Err(GatewayTxnError::TransactionFailed(format!(
+                    "Gas estimation failed after {} retries",
+                    self.gas_estimation_max_retries
+                )));
+            }
 
             if self.limit_concurrent_requests {
                 let _permit = match self.rpc_semaphore.acquire().await {
@@ -268,7 +272,7 @@ impl
             }
             // If we've reached here, it means we are retrying.
             retries += 1;
-            tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(self.ms_retry_delay)).await;
         }
     }
 
@@ -284,12 +288,12 @@ impl
 
         loop {
             // We could add a max number of retries here.
-            // if retries >= MAX_TX_RETRIES {
-            // return Err(TransactionError::TransactionFailed(format!(
-            // "Transaction failed after {} retries.",
-            // MAX_TX_RETRIES
-            // )));
-            // }
+            if retries >= self.tx_max_retries {
+                return Err(GatewayTxnError::TransactionFailed(format!(
+                    "Transaction failed after {} retries.",
+                    self.tx_max_retries
+                )));
+            }
             // TODO: timeout retry delay
             // TODO: have a mutable variable that reference the previous error scenario here, so when we go to the next iteration
 
@@ -310,7 +314,7 @@ impl
                     error!(error = %e, "Couldn't aquire next nonce: Retrying");
                     retries += 1;
                     // Wait a bit before the next attempt to avoid hammering the nonce manager again.
-                    tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(self.ms_retry_delay)).await;
                     continue; // Jump to the next loop iteration.
                 }
             };
@@ -407,7 +411,7 @@ impl
 
                     // If we haven't returned, we are retrying.
                     retries += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(self.ms_retry_delay)).await;
                     continue;
                 }
             }

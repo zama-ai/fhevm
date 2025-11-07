@@ -19,8 +19,15 @@ async fn test_tx_helper() {
     let mut local_signer: PrivateKeySigner = private_key.parse().unwrap();
     local_signer.set_chain_id(Some(123456));
 
-    let tx_service =
-        GatewayTransactionEngine::new(node_rpc_url, Arc::new(local_signer.clone()), true, 100);
+    let tx_service = GatewayTransactionEngine::new(
+        node_rpc_url,
+        Arc::new(local_signer.clone()),
+        true,
+        100,
+        500,
+        100,
+        100,
+    );
 
     // let tx_config = TxConfig::default();
     // let tx_helper = TransactionHelper::new(tx_service, tx_config);

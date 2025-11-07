@@ -124,6 +124,9 @@ pub async fn run_fhevm_relayer(
         gateway_signer_arc.clone(),
         true,
         100,
+        500,
+        100,
+        100,
     );
 
     let decryption_address = Address::from_str(&settings.contracts.decryption_address)
