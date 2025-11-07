@@ -1,0 +1,104 @@
+#####################################################
+# Zama Protocol Deployment Configuration Template
+# Copy this file to deployment-state/deployment-config.yaml
+#####################################################
+
+metadata:
+  deployment_name: "zama-protocol-testnet-v0-9"
+
+# RPC URLs are loaded from environment variables for security (avoids exposing API keys)
+networks:
+  testnet:
+    ethereum:
+      name: "ethereum-testnet"
+      host_pkg_name: "sepolia"  # Hardhat network name expected by host-contracts tasks
+      rpc_url_env: "TESTNET_ETHEREUM_RPC_URL"
+      chain_id: 11155111
+      explorer_url: "https://sepolia.etherscan.io"
+      etherscan_api_key: "ETHERSCAN_API_KEY"
+    gateway:
+      name: "gateway-testnet"
+      gateway_pkg_name: "testnet"  # Hardhat network name expected by gateway-contracts tasks
+      rpc_url_env: "TESTNET_GATEWAY_RPC_URL"
+      blockscout_api_url: "https://explorer-zama-testnet-0.t.conduit.xyz/api"
+      chain_id: 10901
+      explorer_url: "https://explorer-zama-testnet-0.t.conduit.xyz/"
+      etherscan_api_key: "ETHERSCAN_API_KEY"
+      layerzero_config: "layerzero.config.testnet.ts"  # LayerZero config file for this environment
+
+wallets:
+  governance_deployer:
+    description: "Governance deployer (deploys Aragon DAO, only exists during Phase 1)"
+    private_key_env: "GOVERNANCE_DEPLOYER_PRIVATE_KEY"
+  protocol_deployer:
+    description: "Protocol deployer (owns governance until DAO takes over)"
+    private_key_env: "PROTOCOL_DEPLOYER_PRIVATE_KEY"
+
+operators:
+  - name: "Operator 1"
+    pauser:
+      address: "0x3333333333333333333333333333333333333333"
+
+  - name: "Operator 2"
+    pauser:
+      address: "0x9999999999999999999999999999999999999999"
+
+protocol:
+  name: "Zama Protocol"
+  website: "https://www.zama.ai"
+  governance:
+    dao_multisig_threshold: "2/3"
+  token:
+    recipients:
+      - address: "0xd2097BFD29BE52D57Ed56eabfa960d1Bb42D6bF0"
+        amount: "1000000000000000000000000000"
+  thresholds:
+    mpc: 1
+    public_decryption: 3
+    user_decryption: 3
+    kms_generation: 3
+    coprocessor: 2
+  pricing:
+    input_verification: "10000000000000000000"
+    public_decryption: "10000000000000000000"
+    user_decryption: "1000000000000000000"
+  kms_nodes:
+    - tx_sender_address: "0xc1d91b49A1B3D1324E93F86778C44a03f1063f1b"
+      signer_address: "0x305F1F471e9baCFF2b3549F9601f9A4BEafc94e1"
+      ip_address: "127.0.0.1"
+      storage_url: "s3://kms-bucket-1"
+    - tx_sender_address: "0x8B8f5091f8b9817EF69cFC1E8B2f721BafF60DF4"
+      signer_address: "0x03734276e8f8ab253ff4295e66228DAC936FF5b8"
+      ip_address: "127.0.0.2"
+      storage_url: "s3://kms-bucket-2"
+    - tx_sender_address: "0x9FE8958A2920985AC7ab8d320fDFaB310135a05B"
+      signer_address: "0x466f26442DD182C9A1b018Cd06671F9791DdE8Ef"
+      ip_address: "127.0.0.3"
+      storage_url: "s3://kms-bucket-3"
+    - tx_sender_address: "0xc45994e4098271c3140117ebD5c74C70dd56D9cd"
+      signer_address: "0xDb216ECeC4cEd51CdfD9609b6Ce7653aB04f6cAd"
+      ip_address: "127.0.0.4"
+      storage_url: "s3://kms-bucket-4"
+  coprocessors:
+    - tx_sender_address: "0x6518D50aDc9036Df37119eA465a8159E34417E2E"
+      signer_address: "0xa5eE8292dA52d8234248709F3E217ffEBA5E8312"
+      s3_bucket_url: "s3://coprocessor-bucket-1"
+    - tx_sender_address: "0xCFbF539CB91c92ace0343c5B0487149Ad0b82078"
+      signer_address: "0xA951F315d5FD35Cac111dFB5250DF231FB8eF905"
+      s3_bucket_url: "s3://coprocessor-bucket-2"
+    - tx_sender_address: "0x3C0033584da3A0f61AA5C7bde50eAF3642875a21"
+      signer_address: "0x420AF5A5BBfAd922aE5a501d9a8Bf70a55F52E03"
+      s3_bucket_url: "s3://coprocessor-bucket-3"
+  custodians:
+    - tx_sender_address: "0x30D7Fe34c8fD3417C8aa5F63cDb1f81e012c2042"
+      signer_address: "0xdE4c747d9922EBF05EBb8937847F9C6097E847DD"
+      encryption_key: "0xea8b8b710d770493a41b588808ea8e09d986561f73d523227718233f3b4742de793f18a9885136a9e7054b00ba0050a17f0c7d1bf180aaff5ece0fa3343afb1b"
+    - tx_sender_address: "0x635d0008543dEAE72Be18Bb2e18a524Cef1bDff2"
+      signer_address: "0x6E7684b608EbB5eB8bCF43edb67102997b35C340"
+      encryption_key: "0x753c623ada1ad141eb01f99196ad7b69cce63c7fd3e0fbbc2b6c46ea007103cbb71c8b018bd372fe4de2429d614aeaaaf2409736ad0d7c01de26cbe82c9d9195"
+    - tx_sender_address: "0xf56Fc4561eD4B3b7079288Bafa15151b53fEA5b5"
+      signer_address: "0x551c9C35e25B52FbCbA81C42248de2c9E171ADB5"
+      encryption_key: "0xcb7d351548eadf0041c683e97e46f70f1a269062a94e8c5c69c6b07e6ce0369970f431024d9868537ffe502c1d8d9c740b75597014305070e86fcfaa56333f8e"
+
+options:
+  auto_verify_contracts: true
