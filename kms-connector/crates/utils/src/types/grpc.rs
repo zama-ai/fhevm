@@ -33,7 +33,7 @@ impl From<UserDecryptionRequest> for KmsGrpcRequest {
 }
 
 /// The different KMS Core GRPC responses used by the KMS Connector.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum KmsGrpcResponse {
     PublicDecryption {
         decryption_id: U256,

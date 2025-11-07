@@ -1,9 +1,6 @@
 use crate::core::{
     config::Config,
-    event_processor::{
-        eip712::{alloy_to_protobuf_domain, verify_user_decryption_eip712},
-        s3::S3Service,
-    },
+    event_processor::{eip712::alloy_to_protobuf_domain, s3::S3Service},
 };
 use alloy::{
     hex,
@@ -51,8 +48,8 @@ where
     pub async fn prepare_decryption_request(
         &self,
         decryption_id: U256,
-        sns_materials: Vec<SnsCiphertextMaterial>,
-        extra_data: Vec<u8>,
+        sns_materials: &[SnsCiphertextMaterial],
+        extra_data: &Bytes,
         user_decrypt_data: Option<UserDecryptionExtraData>,
     ) -> anyhow::Result<KmsGrpcRequest> {
         // Extract keyId from the first SNS ciphertext material if available
@@ -72,6 +69,7 @@ where
         let request_id = Some(RequestId {
             request_id: hex::encode(decryption_id.to_be_bytes::<32>()),
         });
+        let extra_data = extra_data.to_vec();
 
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.user_address.to_checksum(None);
@@ -88,7 +86,6 @@ where
                 context_id: None,
             };
 
-            verify_user_decryption_eip712(&user_decryption_request)?;
             Ok(user_decryption_request.into())
         } else {
             let public_decryption_request = PublicDecryptionRequest {
@@ -107,7 +104,7 @@ where
     async fn prepare_ciphertexts(
         &self,
         key_id: &str,
-        sns_materials: Vec<SnsCiphertextMaterial>,
+        sns_materials: &[SnsCiphertextMaterial],
     ) -> anyhow::Result<Vec<TypedCiphertext>> {
         let sns_ciphertext_materials = self
             .s3_service

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     conn::WalletGatewayProvider,
     tests::setup::{CustomTestWriter, DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
@@ -11,6 +9,7 @@ use fhevm_gateway_bindings::{
     kms_generation::KMSGeneration::KMSGenerationInstance,
 };
 use sqlx::{Pool, Postgres};
+use std::time::Duration;
 use testcontainers::{ContainerAsync, GenericImage};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tracing_subscriber::EnvFilter;

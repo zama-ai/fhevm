@@ -93,7 +93,7 @@ where
                     self.spawn_response_forwarding_tasks(responses, cancel_token)
                         .await
                 }
-                Err(e) => warn!("Error while picking responses: {e}"),
+                Err(e) => break error!("Response picker is broken: {e}"),
             };
         }
     }
@@ -180,9 +180,6 @@ impl
         Ok((tx_sender, state))
     }
 }
-
-/// The expected length of an EIP712 signature.
-pub const EIP712_SIGNATURE_LENGTH: usize = 65;
 
 /// The internal struct used to send transaction to the Gateway.
 pub struct TransactionSenderInner<F, P>
