@@ -22,19 +22,17 @@ Once done, populate the [configuration file](./deployment-state/deployment-confi
 ### Commands
 
 ```bash
-Usage: bun run start [options] [command]
+Usage: fhevm-deploy [options] [command]
 
 Automated deployment CLI for the Zama FHEVM protocol
 
 Options:
-  -h, --help          display help for command
+  -h, --help        display help for command
 
 Commands:
-  init                Initialize deployment configuration template
-  validate [options]  Validate deployment configuration
-  deploy [options]    Execute deployment steps
-  status [options]    Show deployment step status from state file
-  help [command]      display help for command
+  deploy [options]  Execute deployment steps
+  status [options]  Show deployment step status from state file
+  help [command]    display help for command
 ```
 
 Once the deployment configuration is complete, you can run the deployment with the following command:
