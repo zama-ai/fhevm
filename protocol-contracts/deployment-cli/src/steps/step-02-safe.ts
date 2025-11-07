@@ -18,12 +18,13 @@ export class Step02Safe extends BaseStep {
         ctx: DeploymentContext,
     ): Promise<StepExecutionResult> {
         const gateway = ctx.networks.getGateway();
-        const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const protocolDeployerPk =
+            ctx.env.resolveWalletPrivateKey("protocol_deployer");
         const projectRoot = resolveProjectRoot();
         const reader = new TaskOutputReader(projectRoot);
 
         const baseEnv = ctx.env.buildTaskEnv({
-            PRIVATE_KEY: deployerPk,
+            PRIVATE_KEY: protocolDeployerPk,
             RPC_URL_ZAMA_GATEWAY_TESTNET: gateway.rpcUrl,
         });
 
@@ -96,9 +97,10 @@ export class Step02Safe extends BaseStep {
         _result: StepExecutionResult,
     ): Promise<void> {
         const gateway = ctx.networks.getGateway();
-        const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const protocolDeployerPk =
+            ctx.env.resolveWalletPrivateKey("protocol_deployer");
         const baseEnv = ctx.env.buildTaskEnv({
-            PRIVATE_KEY: deployerPk,
+            PRIVATE_KEY: protocolDeployerPk,
             RPC_URL_ZAMA_GATEWAY_TESTNET: gateway.rpcUrl,
         });
 

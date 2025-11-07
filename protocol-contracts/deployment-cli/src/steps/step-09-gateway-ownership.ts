@@ -55,10 +55,6 @@ export class Step09GatewayOwnership extends BaseStep {
             `Starting ownership transfer of GatewayConfig ${gatewayConfig} to Safe ${safeProxyAddress}`,
         );
 
-        const safeOwnerPrivateKeysEnv = JSON.stringify([
-            ctx.env.resolveWalletPrivateKey("protocol_deployer"),
-        ]);
-
         const offerEnv = ctx.env.buildTaskEnv({
             DEPLOYER_PRIVATE_KEY: deployerPk,
             GATEWAY_CONFIG_ADDRESS: gatewayConfig,
@@ -79,13 +75,16 @@ export class Step09GatewayOwnership extends BaseStep {
         });
 
         // Step 2: Accept ownership. At this point, the Safe is still owned by the deployer private key.
+        const protocolDeployerPk =
+            ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const safeOwnerPrivateKeysEnv = JSON.stringify([protocolDeployerPk]);
         await ctx.hardhat.runTask({
             pkg: "protocol-contracts/safe",
             task: "task:acceptOwnership",
             args: ["--address", gatewayConfig, "--network", gateway.name],
             env: {
                 ...offerEnv,
-                PRIVATE_KEY: deployerPk,
+                PRIVATE_KEY: protocolDeployerPk,
                 SAFE_OWNER_PRIVATE_KEYS: safeOwnerPrivateKeysEnv,
                 SAFE_PROXY_ADDRESS: safeProxyAddress,
                 SAFE_ADDRESS: safeAddress,
