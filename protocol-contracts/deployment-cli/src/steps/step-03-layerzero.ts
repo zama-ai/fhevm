@@ -1,5 +1,4 @@
 import path from "node:path";
-import { Contract, ethers } from "ethers";
 import { execa } from "execa";
 import type { PackageName } from "../tasks/hardhat-runner.js";
 import { ValidationError } from "../utils/errors.js";
@@ -156,32 +155,19 @@ export class Step03LayerzeroLink extends BaseStep {
         // Step 3b: Set adminSafeModule in GovernanceOAppReceiver (must be called by current owner)
         // We set it before ownership transfers to ensure we can call as the deployer if needed
         ctx.logger.info("Setting adminSafeModule on GovernanceOAppReceiver...");
-        {
-            const provider = new ethers.JsonRpcProvider(gatewayNetwork.rpcUrl);
-            const signer = new ethers.Wallet(protocolPk, provider);
-            const receiverArtifactPath = path.join(
-                resolveProjectRoot(),
-                this.pkgName,
-                "artifacts",
-                "contracts",
-                "GovernanceOAppReceiver.sol",
-                "GovernanceOAppReceiver.json",
-            );
-            const receiverAbi = (
-                (await import(receiverArtifactPath, {
-                    with: { type: "json" },
-                })) as any
-            ).default.abi;
-            const receiver = new Contract(receiverAddress, receiverAbi, signer);
-            const currentModule: string = await receiver.adminSafeModule();
-            if (
-                currentModule.toLowerCase() !== adminModuleAddress.toLowerCase()
-            ) {
-                const tx =
-                    await receiver.setAdminSafeModule(adminModuleAddress);
-                await tx.wait();
-            }
-        }
+        await ctx.hardhat.runTask({
+            pkg: this.pkgName,
+            task: "task:setAdminSafeModule",
+            args: [
+                "--network",
+                gatewayNetwork.name,
+                "--module",
+                adminModuleAddress,
+                "--receiver",
+                receiverAddress,
+            ],
+            env: baseEnv,
+        });
         ctx.logger.success(
             "adminSafeModule configured on GovernanceOAppReceiver",
         );
