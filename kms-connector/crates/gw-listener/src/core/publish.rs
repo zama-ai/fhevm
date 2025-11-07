@@ -210,7 +210,7 @@ pub async fn update_last_block_polled(
         "UPDATE last_block_polled SET block_number = $2 \
         WHERE event_type = $1 AND (block_number IS NULL OR block_number < $2)",
         event_type as EventType,
-        last_block_polled.map(|n| n.to_le_bytes().to_vec()),
+        last_block_polled.map(|n| n as i64),
     )
     .execute(db_pool)
     .await?;
