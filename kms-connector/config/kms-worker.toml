@@ -24,6 +24,14 @@ gateway_url = "ws://localhost:8545"
 # ENV: KMS_CONNECTOR_DATABASE_URL
 database_url = "postgres://postgres:postgres@localhost/kms-connector"
 
+# Timeout to poll the database for fast events, such as decryption (optional, defaults to 3 seconds)
+# ENV: KMS_CONNECTOR_DB_FAST_EVENT_POLLING_SECS
+# db_fast_event_polling_secs = 3
+
+# Timeout to poll the database for long events, such as keygen (optional, defaults to 60 seconds)
+# ENV: KMS_CONNECTOR_DB_LONG_EVENT_POLLING_SECS
+# db_long_event_polling_secs = 60
+
 # Configuration of the Decryption contract (required)
 [decryption_contract]
 # Address of the Decryption contract (required)

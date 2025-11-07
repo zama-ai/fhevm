@@ -19,7 +19,7 @@ use connector_utils::{
     types::{GatewayEvent, KmsResponse},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct processing stored Gateway's events.
@@ -63,7 +63,7 @@ where
         loop {
             match self.event_picker.pick_events().await {
                 Ok(events) => self.spawn_event_processing_tasks(events).await,
-                Err(e) => warn!("Error while picking events: {e}"),
+                Err(e) => break error!("Event picker is broken: {e}"),
             };
         }
     }
@@ -86,12 +86,12 @@ where
     async fn process_event(
         mut event_processor: Proc,
         response_publisher: Publ,
-        event: GatewayEvent,
+        mut event: GatewayEvent,
     ) {
         let otlp_context = event.otlp_context.clone();
         tracing::Span::current().set_parent(otlp_context.extract());
 
-        let Some(response_kind) = event_processor.process(&event).await else {
+        let Some(response_kind) = event_processor.process(&mut event).await else {
             return;
         };
 
@@ -198,7 +198,7 @@ mod tests {
 
     impl EventProcessor for MockEventProcessor {
         type Event = GatewayEvent;
-        async fn process(&mut self, _event: &Self::Event) -> Option<KmsResponseKind> {
+        async fn process(&mut self, _event: &mut Self::Event) -> Option<KmsResponseKind> {
             Some(KmsResponseKind::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
