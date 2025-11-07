@@ -15,7 +15,7 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS last_block_polled (
     event_type event_type NOT NULL,
-    block_number BYTEA,
+    block_number BIGINT,
     update_at TIMESTAMP NOT NULL DEFAULT NOW(),
     PRIMARY KEY (event_type)
 );
