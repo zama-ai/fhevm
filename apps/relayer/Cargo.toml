@@ -29,7 +29,7 @@ thiserror = "2.0.11"
 config = "0.15.6"
 anyhow = "1.0.44"
 strum_macros = "0.21.0"
-uuid = { version = "1", features = ["serde", "v4"] }
+uuid = { version = "1", features = ["serde", "v4", "v7", "std"] }
 reqwest = "0.12.12"
 axum = "0.8.4"
 http = "0.2"

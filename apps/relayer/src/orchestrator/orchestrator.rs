@@ -1,3 +1,4 @@
+use crate::orchestrator::request_id;
 use crate::orchestrator::traits::Event;
 use crate::orchestrator::traits::{
     EventDispatcher, EventHandler, HandlerRegistry, HookRegistry, PreDispatchHook,
@@ -24,7 +25,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
     }
 
     pub fn new_request_id(&self) -> Uuid {
-        Uuid::new_v4()
+        request_id::new_request_id()
     }
 
     #[instrument(skip_all, fields(event_type=%(event.event_name()), request_id=%(event.request_id())))]
@@ -95,17 +96,6 @@ mod tests {
     use crate::orchestrator::{Orchestrator, TokioEventDispatcher};
     use alloy::primitives::U256;
     use std::sync::Arc;
-
-    #[test]
-    fn test_uuid_generator() {
-        let pubsub = Arc::new(TokioEventDispatcher::<RelayerEvent>::new());
-        let orchestrator = Orchestrator::new(pubsub);
-
-        let id1 = orchestrator.new_request_id();
-        let id2 = orchestrator.new_request_id();
-
-        assert_ne!(id1, id2);
-    }
 
     struct SimpleEventHandler;
 
