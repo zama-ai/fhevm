@@ -214,7 +214,6 @@ export const DeploymentConfigSchema = z.object({
             "At least one network environment must be defined",
         ),
     wallets: z.object({
-        governance_deployer: WalletSchema,
         protocol_deployer: WalletSchema,
         deployer: WalletSchema,
     }),
