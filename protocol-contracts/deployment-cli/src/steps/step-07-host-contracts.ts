@@ -22,7 +22,7 @@ export class Step07HostContracts extends BaseStep {
     ): Promise<StepExecutionResult> {
         const ethereum = ctx.networks.getEthereum();
         const gateway = ctx.networks.getGateway();
-        const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const deployerPk = ctx.env.resolveWalletPrivateKey("deployer");
 
         const gatewayProvider = new ethers.JsonRpcProvider(gateway.rpcUrl);
         const gatewayNetwork = await gatewayProvider.getNetwork();
@@ -133,7 +133,7 @@ export class Step07HostContracts extends BaseStep {
     protected async verifyDeployments(ctx: DeploymentContext): Promise<void> {
         const ethereum = ctx.networks.getEthereum();
         const gateway = ctx.networks.getGateway();
-        const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const deployerPk = ctx.env.resolveWalletPrivateKey("deployer");
 
         const gatewayProvider = new ethers.JsonRpcProvider(gateway.rpcUrl);
         const gatewayNetwork = await gatewayProvider.getNetwork();

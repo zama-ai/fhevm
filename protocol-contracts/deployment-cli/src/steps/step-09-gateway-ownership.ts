@@ -10,7 +10,7 @@ export class Step09GatewayOwnership extends BaseStep {
     public readonly id = "step-09";
     public readonly name = "Transfer Gateway Ownership to Safe";
     public readonly description =
-        "Transfers GatewayConfig ownership from protocol_deployer to the Safe using the two-step ownership pattern.";
+        "Transfers GatewayConfig ownership from deployer to the Safe using the two-step ownership pattern.";
     public readonly dependencies = ["step-06"] as const;
     public readonly pkgName = "gateway-contracts" as const;
 
@@ -50,7 +50,7 @@ export class Step09GatewayOwnership extends BaseStep {
             };
         }
 
-        const deployerPk = ctx.env.resolveWalletPrivateKey("protocol_deployer");
+        const deployerPk = ctx.env.resolveWalletPrivateKey("deployer");
         ctx.logger.info(
             `Starting ownership transfer of GatewayConfig ${gatewayConfig} to Safe ${safeProxyAddress}`,
         );
@@ -78,7 +78,7 @@ export class Step09GatewayOwnership extends BaseStep {
             env: offerEnv,
         });
 
-        // Step 2: Accept ownership. At this point, the Safe is still owned by the protocol_deployer private key.
+        // Step 2: Accept ownership. At this point, the Safe is still owned by the deployer private key.
         await ctx.hardhat.runTask({
             pkg: "protocol-contracts/safe",
             task: "task:acceptOwnership",
