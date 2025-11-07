@@ -1,0 +1,130 @@
+# =============================================================================
+# FHEVM Smart Contracts Configuration
+# =============================================================================
+# This chart handles adding pausers to gateway and host contracts
+# =============================================================================
+
+# NOTE: These values are for reference only
+# The chart is for gateway and host contracts
+
+# -----------------------------------------------------------------------------
+# Add pausers to gateway contracts
+# -----------------------------------------------------------------------------
+# Adds pausers to the gateway contracts
+addGatewayPausers:
+  enabled: true
+
+  # Prevent redeployment if already done for current version
+  # preventRedeployment: false
+
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/gateway-contracts
+    tag: v0.10.0
+
+  # ConfigMap to store deployed contract addresses
+  configmap:
+    name: "addresses"
+    annotations:
+
+  # Environment variables
+  env:
+    # Deployer's private key
+    - name: DEPLOYER_PRIVATE_KEY
+      value: ""
+
+    # Pauser set contract address
+    - name: PAUSER_SET_ADDRESS
+      value: ""
+
+    # Number of pausers
+    # Should be set to the number of registered operators, ie `n_kms + n_copro` with `n_kms` the
+    # number of KMS nodes and `n_copro` the number of coprocessors
+    - name: NUM_PAUSERS
+      value: 18
+
+    # Pauser addresses (replace x with sequential number starting from 0 up to NUM_PAUSERS - 1)
+    # Each operator has its own hot wallet address used as pauser
+    - name: PAUSER_ADDRESS_x
+      value: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Security context for container execution
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10001
+
+  # Commands to run in sequence
+  commands:
+    # Add pausers to the gateway contracts
+    - npx hardhat task:addGatewayPausers
+
+# -----------------------------------------------------------------------------
+# Add pausers to the host contracts
+# -----------------------------------------------------------------------------
+# Adds pausers to the host contracts
+addHostPausers:
+  enabled: true
+
+  # Prevent redeployment if already done for current version
+  # preventRedeployment: false
+
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/host-contracts
+    tag: v0.10.0
+
+  # ConfigMap to store deployed contract addresses
+  configmap:
+    name: "addresses"
+    annotations:
+
+  # Environment variables
+  env:
+    # Deployer's private key
+    - name: DEPLOYER_PRIVATE_KEY
+      value: ""
+
+    # Pauser set contract address
+    - name: PAUSER_SET_CONTRACT_ADDRESS
+      value: ""
+
+    # Number of pausers
+    # Should be set to the number of registered operators, ie `n_kms + n_copro` with `n_kms` the
+    # number of KMS nodes and `n_copro` the number of coprocessors
+    - name: NUM_PAUSERS
+      value: 18
+
+    # Pauser addresses (replace x with sequential number starting from 0 up to NUM_PAUSERS - 1)
+    # Each operator has its own hot wallet address used as pauser
+    - name: PAUSER_ADDRESS_x
+      value: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Security context for container execution
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10001
+
+  # Commands to run in sequence
+  commands:
+    # Add pausers to the host contracts
+    - npx hardhat task:addHostPausers

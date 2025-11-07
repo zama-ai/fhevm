@@ -39,10 +39,6 @@ scDeploy:
     # ==========================  GATEWAY =====================================
     # =========================================================================
 
-    # =========================================================================
-    # NEW ENVIRONMENT VARIABLES
-    # =========================================================================
-
     # KMS generation threshold
     - name: KMS_GENERATION_THRESHOLD
       value: 7
@@ -50,50 +46,6 @@ scDeploy:
     # S3 URL for KMS core storage (replace x with sequential number starting from 0)
     - name: KMS_NODE_STORAGE_URL_x
       value: ""
-
-    # Number of pausers
-    # Should be set to the number of registered operators, ie `n_kms + n_copro` with `n_kms` the
-    # number of KMS nodes and `n_copro` the number of coprocessors
-    - name: NUM_PAUSERS
-      value: 14
-
-    # Pauser addresses (replace x with sequential number starting from 0)
-    # Each operator has its own hot wallet address used as pauser
-    - name: PAUSER_ADDRESS_x
-      value: ""
-
-    # =========================================================================
-    # DEPRECATED ENVIRONMENT VARIABLES
-    # =========================================================================
-    # The following environment variables are no longer used:
-    # - PAUSER_ADDRESS
-    # - FHE_PARAMS_NAME
-    # - FHE_PARAMS_DIGEST
-
-    # =========================================================================
-    # ==========================  HOST    =====================================
-    # =========================================================================
-
-    # =========================================================================
-    # NEW ENVIRONMENT VARIABLES
-    # =========================================================================
-
-    # Number of pausers
-    # Should be set to the number of registered operators, ie `n_kms + n_copro` with `n_kms` the
-    # number of KMS nodes and `n_copro` the number of coprocessors
-    - name: NUM_PAUSERS
-      value: 14
-
-    # Pauser addresses (replace x with sequential number starting from 0)
-    # Each operator has its own hot wallet address used as pauser
-    - name: PAUSER_ADDRESS_x
-      value: ""
-
-    # =========================================================================
-    # DEPRECATED ENVIRONMENT VARIABLES
-    # =========================================================================
-    # The following environment variables are no longer used:
-    # - PAUSER_ADDRESS
 
   resources:
     requests:
@@ -115,40 +67,16 @@ scDeploy:
     # ==========================  GATEWAY =====================================
     # =========================================================================
     # Deploy all gateway contracts
-    - "npx --no-install hardhat task:deployAllGatewayContracts"
+    - "npx hardhat task:deployAllGatewayContracts"
 
     # Register host chains in the gateway
-    - "npx --no-install hardhat task:addHostChainsToGatewayConfig"
-
-    # =========================================================================
-    # NEW Commands
-    # =========================================================================
-    # Add gateway pausers for emergency stops
-    - npx hardhat task:addGatewayPausers
-
-    # Trigger key generation for cryptographic operations
-    # Params type:
-    # - 0: Default parameters
-    # - 1: Test parameters
-    - npx hardhat task:triggerKeygen --params-type 1
-
-    # Trigger CRS (Common Reference String) generation
-    # Params type:
-    # - 0: Default parameters
-    # - 1: Test parameters
-    - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048
+    - "npx hardhat task:addHostChainsToGatewayConfig"
 
     # =========================================================================
     # ==========================  HOST    =====================================
     # =========================================================================
     # Deploy all host contracts
-    - "npx --no-install hardhat task:deployAllHostContracts"
-
-    # =========================================================================
-    # NEW Commands
-    # =========================================================================
-    # Add host pausers for emergency stops
-    - npx hardhat task:addHostPausers
+    - "npx hardhat task:deployAllHostContracts"
 
   # Contract verification on block explorers
   verifyContracts: false
