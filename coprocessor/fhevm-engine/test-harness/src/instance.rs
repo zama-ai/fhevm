@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::db_utils::setup_test_user;
+use fhevm_engine_common::utils::DatabaseURL;
 use sqlx::postgres::types::Oid;
 use sqlx::Row;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
@@ -10,7 +11,7 @@ use tracing::info;
 #[derive(Clone)]
 pub struct DBInstance {
     _container: Option<Arc<testcontainers::ContainerAsync<testcontainers::GenericImage>>>,
-    db_url: String,
+    pub db_url: DatabaseURL,
     pub parent_token: CancellationToken,
 }
 
@@ -58,22 +59,21 @@ async fn setup_test_app_existing_localhost(
     with_reset: bool,
     mode: ImportMode,
 ) -> Result<DBInstance, Box<dyn std::error::Error>> {
-    let db_url = "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor";
-    let db_url = std::env::var("DATABASE_URL").unwrap_or(db_url.to_string());
+    let db_url = DatabaseURL::default();
 
     if with_reset {
         info!("Resetting local database at {db_url}");
-        let admin_db_url = db_url.replace("coprocessor", "postgres");
-        create_database(&admin_db_url, &db_url, mode).await?;
+        let admin_db_url = db_url.to_string().replace("coprocessor", "postgres");
+        create_database(&admin_db_url, db_url.as_str(), mode).await?;
     }
 
     info!("Using existing local database at {db_url}");
 
-    let _ = get_sns_pk_size(&sqlx::PgPool::connect(&db_url).await?, 12345).await;
+    let _ = get_sns_pk_size(&sqlx::PgPool::connect(db_url.as_str()).await?, 12345).await;
 
     Ok(DBInstance {
         _container: None,
-        db_url: db_url.to_string(),
+        db_url,
         parent_token: CancellationToken::new(),
     })
 }
@@ -102,7 +102,7 @@ async fn setup_test_app_custom_docker(
 
     Ok(DBInstance {
         _container: Some(Arc::new(container)),
-        db_url,
+        db_url: db_url.into(),
         parent_token: CancellationToken::new(),
     })
 }

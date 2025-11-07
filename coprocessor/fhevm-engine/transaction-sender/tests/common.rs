@@ -78,10 +78,11 @@ impl TestEnvironment {
             .with_max_level(Level::DEBUG)
             .with_test_writer()
             .try_init();
+        let database_url = conf.database_url.to_owned().unwrap_or_default();
 
         let db_pool = PgPoolOptions::new()
             .max_connections(1)
-            .connect(&conf.database_url)
+            .connect(database_url.as_str())
             .await?;
 
         Self::truncate_tables(

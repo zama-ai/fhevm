@@ -81,7 +81,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         );
         let db_pool = PgPoolOptions::new()
             .max_connections(self.conf.database_pool_size)
-            .connect(&self.conf.database_url)
+            .connect(self.conf.database_url.as_str())
             .await?;
 
         let input_verification_handle = {
@@ -549,7 +549,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         // Check database connection
         let db_pool_result = PgPoolOptions::new()
             .max_connections(self.conf.database_pool_size)
-            .connect(&self.conf.database_url)
+            .connect(self.conf.database_url.as_str())
             .await;
 
         match db_pool_result {
