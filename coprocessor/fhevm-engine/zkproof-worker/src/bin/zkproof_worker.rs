@@ -1,11 +1,14 @@
 use clap::{command, Parser};
-use fhevm_engine_common::healthz_server::HttpServer;
-use fhevm_engine_common::telemetry;
-use std::sync::Arc;
+use fhevm_engine_common::telemetry::{self, MetricsConfig};
+use fhevm_engine_common::{healthz_server::HttpServer, metrics_server, utils::DatabaseURL};
+use humantime::parse_duration;
+use std::{sync::Arc, time::Duration};
 use tokio::{join, task};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
 use zkproof_worker::verifier::ZkProofService;
+
+use zkproof_worker::ZKVERIFY_OP_LATENCY_HISTOGRAM_CONF;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -26,10 +29,19 @@ pub struct Args {
     #[arg(long, default_value_t = 5)]
     pub pg_pool_connections: u32,
 
+    /// Postgres acquire timeout
+    /// A longer timeout could affect the healthz/liveness updates
+    #[arg(long, default_value = "15s", value_parser = parse_duration)]
+    pub pg_timeout: Duration,
+
+    /// Postgres diagnostics: enable auto_explain extension
+    #[arg(long, value_parser = parse_duration)]
+    pub pg_auto_explain_with_min_duration: Option<Duration>,
+
     /// Postgres database url. If unspecified DATABASE_URL environment variable
     /// is used
     #[arg(long)]
-    pub database_url: Option<String>,
+    pub database_url: Option<DatabaseURL>,
 
     /// Number of zkproof workers to process proofs in parallel
     #[arg(long, default_value_t = 8)]
@@ -49,25 +61,36 @@ pub struct Args {
     /// HTTP server port for health checks
     #[arg(long, default_value_t = 8080)]
     health_check_port: u16,
+
+    /// Prometheus metrics server address
+    #[arg(long, default_value = "0.0.0.0:9100")]
+    pub metrics_addr: Option<String>,
+
+    /// Prometheus metrics: "coprocessor_zkverify_op_latency_seconds",
+    #[arg(long, default_value = "0.01:2.0:0.01", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_zkverify_op_latency: MetricsConfig,
 }
 
 pub fn parse_args() -> Args {
-    Args::parse()
+    let args = Args::parse();
+    // Set global configs from args
+    let _ = ZKVERIFY_OP_LATENCY_HISTOGRAM_CONF.set(args.metric_zkverify_op_latency);
+    args
 }
 
 #[tokio::main]
 async fn main() {
     let args = parse_args();
+
     tracing_subscriber::fmt()
         .json()
+        .with_current_span(true)
+        .with_span_list(false)
         .with_level(true)
         .with_max_level(args.log_level)
         .init();
 
-    let database_url = args
-        .database_url
-        .clone()
-        .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
+    let database_url = args.database_url.clone().unwrap_or_default();
 
     let conf = zkproof_worker::Config {
         database_url,
@@ -76,15 +99,22 @@ async fn main() {
         pg_pool_connections: args.pg_pool_connections,
         pg_polling_interval: args.pg_polling_interval,
         worker_thread_count: args.worker_thread_count,
+        pg_timeout: args.pg_timeout,
+        pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
     };
 
-    if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-        error!(error = %err, "Error while initializing tracing");
-        std::process::exit(1);
+    if !args.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
     }
 
     let cancel_token = CancellationToken::new();
-    let service = ZkProofService::create(conf, cancel_token.child_token()).await;
+    let Some(service) = ZkProofService::create(conf, cancel_token.child_token()).await else {
+        error!("Failed to create zkproof service");
+        std::process::exit(1);
+    };
+
     let service = Arc::new(service);
 
     let http_server = HttpServer::new(
@@ -103,6 +133,9 @@ async fn main() {
         }
         anyhow::Ok(())
     });
+
+    // Start metrics server
+    metrics_server::spawn(args.metrics_addr.clone(), cancel_token.child_token());
 
     let service_task = async {
         info!("Starting worker...");

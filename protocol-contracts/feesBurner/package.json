@@ -1,0 +1,35 @@
+{
+  "name": "feesBurner",
+  "version": "1.0.0",
+  "license": "BSD-3-Clause-Clear",
+  "overrides": {
+    "hardhat-deploy": "^1.0.4",
+    "@eth-optimism/contracts@0.6.0": {
+      "ethers": "^6.15.0"
+    }
+  },
+  "devDependencies": {
+    "@layerzerolabs/lz-definitions": "^3.0.143",
+    "@layerzerolabs/lz-evm-protocol-v2": "^3.0.142",
+    "@layerzerolabs/lz-v2-utilities": "^3.0.143",
+    "@layerzerolabs/oapp-evm": "^0.3.2",
+    "@layerzerolabs/oft-evm": "^3.2.1",
+    "@layerzerolabs/test-devtools-evm-hardhat": "^0.5.2",
+    "@nomicfoundation/hardhat-ethers": "^3.1.2",
+    "@nomicfoundation/hardhat-toolbox": "^6.1.1",
+    "@openzeppelin/contracts": "^5.4.0",
+    "@typechain/ethers-v6": "^0.5.1",
+    "@typechain/hardhat": "^9.1.0",
+    "@types/chai": "^4.3.20",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^24.9.1",
+    "chai": "^4.5.0",
+    "dotenv": "^17.2.3",
+    "ethers": "^6.15.0",
+    "hardhat": "^2.26.3",
+    "hardhat-deploy": "^1.0.4",
+    "ts-node": "^10.9.2",
+    "typechain": "^8.3.2",
+    "typescript": "^5.9.3"
+  }
+}

@@ -5,18 +5,21 @@ USER root
 
 WORKDIR /app
 
+COPY package.json package-lock.json ./
 COPY host-contracts ./host-contracts
+
+# Install dependencies
+RUN npm ci --include=dev
 
 # Compiled host-contracts for listeners
 WORKDIR /app/host-contracts
-RUN cp .env.example .env
-RUN npm ci --include=dev \
+RUN cp .env.example .env \
     && npm rebuild @nomicfoundation/slang --unsafe-perm \
     && HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies \
     && npx hardhat compile
 
 # Stage 1: Build Stress-Tool
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.89.0 AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
 USER root
 
@@ -24,13 +27,15 @@ WORKDIR /app
 
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY host-contracts/contracts/ ./host-contracts/contracts/
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
 
 WORKDIR /app/coprocessor/fhevm-engine
 
 # Build stress_generator binary
-RUN cargo fetch && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo fetch && \
     SQLX_OFFLINE=true cargo build --release -p stress-test-generator
 
 # Stage 2: Runtime image

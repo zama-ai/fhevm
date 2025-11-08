@@ -4,7 +4,7 @@ import {
   createInstance as createFhevmInstance,
   generateKeypair,
   getCiphertextCallParams,
-} from '@fhevm/sdk';
+} from '@zama-fhe/relayer-sdk/node';
 import dotenv from 'dotenv';
 import { readFileSync } from 'fs';
 import * as fs from 'fs';
@@ -51,7 +51,7 @@ const createInstanceMocked = async () => {
     createEncryptedInput: createEncryptedInputMocked,
     getPublicKey: () => '0xFFAA44433',
     generateKeypair: generateKeypair,
-    createEIP712: createEIP712(gatewayChainID, verifyingContract, network.config.chainId),
+    createEIP712: createEIP712(verifyingContract, network.config.chainId),
   };
   return instance;
 };
@@ -109,7 +109,6 @@ const getDecryptor = () => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bool}
@@ -127,7 +126,6 @@ export const decryptBool = async (handle: string): Promise<boolean> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -145,7 +143,6 @@ export const decrypt8 = async (handle: string): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -163,7 +160,6 @@ export const decrypt16 = async (handle: string): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -181,7 +177,6 @@ export const decrypt32 = async (handle: string): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -199,7 +194,6 @@ export const decrypt64 = async (handle: string): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -217,7 +211,6 @@ export const decrypt128 = async (handle: string): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -235,7 +228,6 @@ export const decrypt256 = async (handle: string): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {string}
@@ -255,7 +247,6 @@ export const decryptAddress = async (handle: string): Promise<string> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -273,7 +264,6 @@ export const decryptEbytes64 = async (handle: string): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}
@@ -291,7 +281,6 @@ export const decryptEbytes128 = async (handle: string): Promise<bigint> => {
  * @debug
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
- * In production, decryption is only possible via an asyncronous on-chain call to the Decryption Oracle.
  *
  * @param {bigint} a handle to decrypt
  * @returns {bigint}

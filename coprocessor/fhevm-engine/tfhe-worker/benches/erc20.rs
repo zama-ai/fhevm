@@ -1,9 +1,8 @@
 #[path = "./utils.rs"]
 mod utils;
 use crate::utils::{
-    allow_handle, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
-    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, EnvConfig,
-    OperatorType,
+    default_api_key, default_tenant_id, query_tenant_keys, random_handle, setup_test_app,
+    wait_until_all_allowed_handles_computed, write_to_json, EnvConfig, OperatorType,
 };
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
@@ -17,7 +16,7 @@ use tfhe_worker::server::tfhe_worker::{
     fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputeRequest,
     InputToUpload, InputUploadBatch,
 };
-#[cfg(feature = "bench")]
+
 use tfhe_worker::tfhe_worker::TIMING;
 use tokio::runtime::Runtime;
 use tonic::metadata::MetadataValue;
@@ -34,7 +33,10 @@ fn test_random_contract_address() -> String {
 
 fn main() {
     let ecfg = EnvConfig::new();
-    let mut c = Criterion::default().sample_size(10).configure_from_args();
+    let mut c = Criterion::default()
+        .sample_size(10)
+        .measurement_time(std::time::Duration::from_secs(1000))
+        .configure_from_args();
     let bench_name = "erc20::transfer";
     let bench_optimization_target = if cfg!(feature = "latency") {
         "opt_latency"
@@ -215,12 +217,14 @@ async fn schedule_erc20_whitepaper(
             transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
             transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_target_handle.clone(),
             inputs: vec![bald.clone(), trxa.clone()],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -235,12 +239,14 @@ async fn schedule_erc20_whitepaper(
                 },
                 bald.clone(),
             ],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
             transaction_id: transaction_id.clone(),
             output_handle: new_from_amount_target_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -255,10 +261,8 @@ async fn schedule_erc20_whitepaper(
                 },
                 bals.clone(),
             ],
+            is_allowed: true,
         });
-
-        allow_handle(&new_to_amount_handle, &pool).await?;
-        allow_handle(&new_from_amount_handle, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -289,7 +293,7 @@ async fn schedule_erc20_whitepaper(
             })
             .await;
             std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
             )
         });
 
@@ -401,6 +405,7 @@ async fn schedule_erc20_no_cmux(
             transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
@@ -414,6 +419,7 @@ async fn schedule_erc20_no_cmux(
                     input: Some(Input::Scalar(vec![5u8])),
                 },
             ],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
@@ -425,6 +431,7 @@ async fn schedule_erc20_no_cmux(
                     input: Some(Input::InputHandle(cast_has_enough_funds_handle.clone())),
                 },
             ],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
@@ -436,6 +443,7 @@ async fn schedule_erc20_no_cmux(
                     input: Some(Input::InputHandle(select_amount_handle.clone())),
                 },
             ],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
@@ -447,10 +455,8 @@ async fn schedule_erc20_no_cmux(
                     input: Some(Input::InputHandle(select_amount_handle.clone())),
                 },
             ],
+            is_allowed: true,
         });
-
-        allow_handle(&new_to_amount_handle, &pool).await?;
-        allow_handle(&new_from_amount_handle, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -481,7 +487,7 @@ async fn schedule_erc20_no_cmux(
             })
             .await;
             std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
             )
         });
 
@@ -615,12 +621,14 @@ async fn schedule_dependent_erc20_whitepaper(
             transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
             transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_target_handle.clone(),
             inputs: vec![bald.clone(), trxa.clone()],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -635,12 +643,14 @@ async fn schedule_dependent_erc20_whitepaper(
                 },
                 bald.clone(),
             ],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
             transaction_id: transaction_id.clone(),
             output_handle: new_from_amount_target_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -655,10 +665,8 @@ async fn schedule_dependent_erc20_whitepaper(
                 },
                 bals.clone(),
             ],
+            is_allowed: true,
         });
-
-        allow_handle(&new_to_amount_handle, &pool).await?;
-        allow_handle(&new_from_amount_handle, &pool).await?;
 
         bald = AsyncComputationInput {
             input: Some(Input::InputHandle(new_to_amount_handle.clone())),
@@ -693,7 +701,7 @@ async fn schedule_dependent_erc20_whitepaper(
             })
             .await;
             std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
             )
         });
 
@@ -828,6 +836,7 @@ async fn schedule_dependent_erc20_no_cmux(
             transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
@@ -841,6 +850,7 @@ async fn schedule_dependent_erc20_no_cmux(
                     input: Some(Input::Scalar(vec![5u8])),
                 },
             ],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
@@ -852,6 +862,7 @@ async fn schedule_dependent_erc20_no_cmux(
                     input: Some(Input::InputHandle(cast_has_enough_funds_handle.clone())),
                 },
             ],
+            is_allowed: false,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
@@ -863,6 +874,7 @@ async fn schedule_dependent_erc20_no_cmux(
                     input: Some(Input::InputHandle(select_amount_handle.clone())),
                 },
             ],
+            is_allowed: true,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
@@ -874,10 +886,8 @@ async fn schedule_dependent_erc20_no_cmux(
                     input: Some(Input::InputHandle(select_amount_handle.clone())),
                 },
             ],
+            is_allowed: true,
         });
-
-        allow_handle(&new_to_amount_handle, &pool).await?;
-        allow_handle(&new_from_amount_handle, &pool).await?;
 
         bald = AsyncComputationInput {
             input: Some(Input::InputHandle(new_to_amount_handle.clone())),
@@ -912,7 +922,7 @@ async fn schedule_dependent_erc20_no_cmux(
             })
             .await;
             std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
             )
         });
 

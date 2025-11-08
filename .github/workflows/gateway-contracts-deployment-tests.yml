@@ -95,6 +95,34 @@ jobs:
             echo "Host chain registration completed successfully with expected completion message"
           fi
 
+          ## Check key generation triggering
+          timeout 300s bash -c 'while docker ps --filter "name=trigger-keygen" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
+          docker compose logs trigger-keygen > keygen_logs.txt
+          EXIT_CODE_KEYGEN=$(docker inspect --format='{{.State.ExitCode}}' trigger-keygen)
+          if [ "$EXIT_CODE_KEYGEN" -ne 0 ]; then
+            echo "Key generation triggering failed with exit code $EXIT_CODE_KEYGEN"
+            exit 1
+          elif ! grep -q "Keygen triggering done!" keygen_logs.txt; then
+            echo "Key generation triggering did not complete successfully - 'Keygen triggering done!' message not found in logs"
+            exit 1
+          else
+            echo "Key generation triggering completed successfully with expected completion message"
+          fi
+
+          ## Check CRS generation triggering
+          timeout 300s bash -c 'while docker ps --filter "name=trigger-crsgen" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
+          docker compose logs trigger-crsgen > crsgen_logs.txt
+          EXIT_CODE_CRSGEN=$(docker inspect --format='{{.State.ExitCode}}' trigger-crsgen)
+          if [ "$EXIT_CODE_CRSGEN" -ne 0 ]; then
+            echo "CRS generation triggering failed with exit code $EXIT_CODE_CRSGEN"
+            exit 1
+          elif ! grep -q "Crsgen triggering done!" crsgen_logs.txt; then
+            echo "CRS generation triggering did not complete successfully - 'Crsgen triggering done!' message not found in logs"
+            exit 1
+          else
+            echo "CRS generation triggering completed successfully with expected completion message"
+          fi
+
       - name: Clean up
         working-directory: gateway-contracts
         if: always()

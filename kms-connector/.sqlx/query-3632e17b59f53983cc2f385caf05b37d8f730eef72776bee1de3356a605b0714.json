@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO keygen_responses(key_id, key_digests, signature, otlp_context) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        {
+          "Custom": {
+            "name": "key_digest[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "key_digest",
+                  "kind": {
+                    "Composite": [
+                      [
+                        "key_type",
+                        {
+                          "Custom": {
+                            "name": "key_type",
+                            "kind": {
+                              "Enum": [
+                                "Server",
+                                "Public"
+                              ]
+                            }
+                          }
+                        }
+                      ],
+                      [
+                        "digest",
+                        "Bytea"
+                      ]
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3632e17b59f53983cc2f385caf05b37d8f730eef72776bee1de3356a605b0714"
+}

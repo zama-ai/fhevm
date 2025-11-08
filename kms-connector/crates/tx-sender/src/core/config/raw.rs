@@ -20,7 +20,7 @@ pub struct RawConfig {
     pub gateway_url: String,
     pub chain_id: u64,
     pub decryption_contract: RawContractConfig,
-    pub kms_management_contract: RawContractConfig,
+    pub kms_generation_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
     pub private_key: Option<String>,
@@ -52,7 +52,7 @@ fn default_database_polling_timeout_secs() -> u64 {
 }
 
 fn default_tx_retries() -> u8 {
-    3
+    4
 }
 
 fn default_tx_retry_interval_ms() -> u64 {
@@ -64,11 +64,11 @@ fn default_trace_reverted_tx() -> bool {
 }
 
 fn default_responses_batch_size() -> u8 {
-    10
+    50
 }
 
 fn default_gas_multiplier_percent() -> usize {
-    300 // 300% gas increase by default
+    115 // 115% gas increase by default
 }
 
 impl DeserializeRawConfig for RawConfig {}
@@ -87,9 +87,9 @@ impl Default for RawConfig {
                 domain_name: Some("Decryption".to_string()),
                 domain_version: Some("1".to_string()),
             },
-            kms_management_contract: RawContractConfig {
+            kms_generation_contract: RawContractConfig {
                 address: "0x0000000000000000000000000000000000000000".to_string(),
-                domain_name: Some("KmsManagement".to_string()),
+                domain_name: Some("KMSGeneration".to_string()),
                 domain_version: Some("1".to_string()),
             },
             service_name: "kms-connector".to_string(),

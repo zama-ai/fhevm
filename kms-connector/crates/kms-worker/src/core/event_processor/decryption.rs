@@ -1,9 +1,6 @@
 use crate::core::{
     config::Config,
-    event_processor::{
-        eip712::{alloy_to_protobuf_domain, verify_user_decryption_eip712},
-        s3::S3Service,
-    },
+    event_processor::{eip712::alloy_to_protobuf_domain, s3::S3Service},
 };
 use alloy::{
     hex,
@@ -35,7 +32,6 @@ where
     P: Provider,
 {
     pub fn new(config: &Config, s3_service: S3Service<P>) -> Self {
-        // Create EIP-712 domain using alloy primitives
         let domain = Eip712Domain {
             name: Some(Cow::Owned(config.decryption_contract.domain_name.clone())),
             version: Some(Cow::Owned(
@@ -52,8 +48,8 @@ where
     pub async fn prepare_decryption_request(
         &self,
         decryption_id: U256,
-        sns_materials: Vec<SnsCiphertextMaterial>,
-        extra_data: Vec<u8>,
+        sns_materials: &[SnsCiphertextMaterial],
+        extra_data: &Bytes,
         user_decrypt_data: Option<UserDecryptionExtraData>,
     ) -> anyhow::Result<KmsGrpcRequest> {
         // Extract keyId from the first SNS ciphertext material if available
@@ -65,29 +61,18 @@ where
             })?;
         info!("Extracted key_id {key_id} from snsCtMaterials[0]");
 
-        let ciphertexts = self
-            .prepare_ciphertexts(decryption_id, &key_id, sns_materials)
-            .await?;
+        let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
 
-        // Convert alloy domain to protobuf domain
         let domain_msg = alloy_to_protobuf_domain(&self.domain)?;
-
-        info!(
-            "Eip712Domain constructed: name={} version={} chain_id={} verifying_contract={} salt=None",
-            domain_msg.name,
-            domain_msg.version,
-            U256::from_be_slice(&domain_msg.chain_id).to_string(),
-            domain_msg.verifying_contract,
-        );
+        info!("Eip712Domain constructed: {domain_msg:?}",);
 
         let request_id = Some(RequestId {
             request_id: hex::encode(decryption_id.to_be_bytes::<32>()),
         });
+        let extra_data = extra_data.to_vec();
 
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.user_address.to_checksum(None);
-            info!("Proceeding with Client address: {client_address}");
-
             let enc_key = user_decrypt_data.public_key.to_vec();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
@@ -97,9 +82,10 @@ where
                 enc_key,
                 typed_ciphertexts: ciphertexts,
                 extra_data,
+                epoch_id: None,
+                context_id: None,
             };
 
-            verify_user_decryption_eip712(&user_decryption_request)?;
             Ok(user_decryption_request.into())
         } else {
             let public_decryption_request = PublicDecryptionRequest {
@@ -108,6 +94,8 @@ where
                 key_id: Some(RequestId { request_id: key_id }),
                 domain: Some(domain_msg),
                 extra_data,
+                epoch_id: None,
+                context_id: None,
             };
             Ok(public_decryption_request.into())
         }
@@ -115,17 +103,14 @@ where
 
     async fn prepare_ciphertexts(
         &self,
-        decryption_id: U256,
         key_id: &str,
-        sns_materials: Vec<SnsCiphertextMaterial>,
+        sns_materials: &[SnsCiphertextMaterial],
     ) -> anyhow::Result<Vec<TypedCiphertext>> {
-        // Retrieve ciphertext materials from S3
         let sns_ciphertext_materials = self
             .s3_service
             .retrieve_sns_ciphertext_materials(sns_materials)
-            .await;
+            .await?;
 
-        // If we couldn't retrieve any materials, fail the request
         if sns_ciphertext_materials.is_empty() {
             return Err(anyhow!("Failed to retrieve any ciphertext materials"));
         }
@@ -137,8 +122,7 @@ where
             .collect();
 
         info!(
-            "Processing {} with {} ciphertexts, key_id: {}, FHE types: {:?}",
-            decryption_id,
+            "Processing {} ciphertexts, key_id: {}, FHE types: {:?}",
             sns_ciphertext_materials.len(),
             key_id,
             fhe_types,

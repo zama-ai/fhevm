@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # RUST_IMAGE_VERSION arg can be used to override the default version
-ARG RUST_IMAGE_VERSION=1.89.0
+ARG RUST_IMAGE_VERSION=1.91.0
 
 # Stage 1: Build gateway-stress tool
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
@@ -16,7 +16,7 @@ COPY test-suite/gateway-stress test-suite/gateway-stress
 
 # Build with improved caching
 WORKDIR /app/test-suite/gateway-stress
-RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo build --profile=${LTO_RELEASE}
 
 # Stage 2: Runtime image

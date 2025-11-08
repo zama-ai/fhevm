@@ -140,11 +140,7 @@ task('task:upgradeACL')
     }
     const proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
 
-    const pauserAddress = getRequiredEnvVar('PAUSER_ADDRESS');
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
-      pauserAddress,
-    ]);
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
 
 task('task:upgradeFHEVMExecutor')
@@ -255,7 +251,19 @@ task('task:upgradeInputVerifier')
     }
     const proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
 
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+    let initialSigners: string[] = [];
+    const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
+    for (let idx = 0; idx < +numSigners; idx++) {
+      const inputSignerAddress = getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`);
+      initialSigners.push(inputSignerAddress);
+    }
+
+    const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
+
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+      initialSigners,
+      coprocessorThreshold,
+    ]);
   });
 
 task('task:upgradeHCULimit')

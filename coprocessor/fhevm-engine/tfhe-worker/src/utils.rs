@@ -168,13 +168,6 @@ pub fn sort_computations_by_dependencies(
     Ok((res, handles_to_check_in_db))
 }
 
-pub fn db_url(args: &crate::daemon_cli::Args) -> String {
-    if let Some(db_url) = &args.database_url {
-        return db_url.clone();
-    }
-    std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined")
-}
-
 #[test]
 fn test_invalid_handle_too_short() {
     let comp = vec![AsyncComputation {
@@ -189,6 +182,7 @@ fn test_invalid_handle_too_short() {
                 input: Some(Input::InputHandle(vec![2])),
             },
         ],
+        is_allowed: true,
     }];
 
     match sort_computations_by_dependencies(&comp) {
@@ -215,6 +209,7 @@ fn test_invalid_handle_too_long() {
                 input: Some(Input::InputHandle(vec![2])),
             },
         ],
+        is_allowed: true,
     }];
 
     match sort_computations_by_dependencies(&comp) {
@@ -240,6 +235,7 @@ fn test_simple_circular_dependency_detection() {
                     input: Some(Input::InputHandle(vec![2])),
                 },
             ],
+            is_allowed: true,
         },
         AsyncComputation {
             operation: 1,
@@ -253,6 +249,7 @@ fn test_simple_circular_dependency_detection() {
                     input: Some(Input::InputHandle(vec![2])),
                 },
             ],
+            is_allowed: true,
         },
     ];
 
@@ -286,6 +283,7 @@ fn test_multi_level_circular_dependency_detection() {
                     input: Some(Input::InputHandle(vec![3])),
                 },
             ],
+            is_allowed: true,
         },
         AsyncComputation {
             operation: 1,
@@ -299,6 +297,7 @@ fn test_multi_level_circular_dependency_detection() {
                     input: Some(Input::InputHandle(vec![4])),
                 },
             ],
+            is_allowed: true,
         },
         AsyncComputation {
             operation: 1,
@@ -312,6 +311,7 @@ fn test_multi_level_circular_dependency_detection() {
                     input: Some(Input::InputHandle(vec![2])),
                 },
             ],
+            is_allowed: true,
         },
     ];
 

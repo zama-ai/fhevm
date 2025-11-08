@@ -1,7 +1,17 @@
 # Zama codeowners rules
 
-# All pull request should be reviewed by at least one of the members of httpz-devs
-*    @zama-ai/httpz-devs
+# All pull request should be reviewed by at least one of the members of fhevm-devs
+*    @zama-ai/fhevm-devs
 
-# All CI pull request should be reviewed by at least one of the members of httpz-devops
-.github/workflows/common-docker.yml	@zama-ai/httpz-devops
+# All CI pull request should be reviewed by at least one of the members of fhevm-devops
+/.github/workflows/*release.yml	@zama-ai/fhevm-devops
+
+# Gateway Team ownership
+/gateway-contracts/ @zama-ai/fhevm-gateway
+/host-contracts/ @zama-ai/fhevm-gateway
+/protocol-contracts/ @zama-ai/fhevm-gateway
+/library-solidity/ @zama-ai/fhevm-gateway
+/kms-connector/ @zama-ai/fhevm-gateway
+
+# Coprocessor Team ownership
+/coprocessor/ @zama-ai/fhevm-coprocessor

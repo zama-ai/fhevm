@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE key_reshare_same_set SET under_process = FALSE WHERE key_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "206a41e2c3ef34b4820cb4e7d271be51316580b3b2f2de67e15d2e6bcab12946"
+}

@@ -13,9 +13,57 @@ contract DecryptionMock {
         uint256 durationDays;
     }
 
+    struct DelegationAccounts {
+        address delegatorAddress;
+        address delegateAddress;
+    }
+
+    struct PublicDecryptVerification {
+        bytes32[] ctHandles;
+        bytes decryptedResult;
+        bytes extraData;
+    }
+
+    struct UserDecryptRequestVerification {
+        bytes publicKey;
+        address[] contractAddresses;
+        uint256 startTimestamp;
+        uint256 durationDays;
+        bytes extraData;
+    }
+
+    struct DelegatedUserDecryptRequestVerification {
+        bytes publicKey;
+        address[] contractAddresses;
+        address delegatorAddress;
+        uint256 startTimestamp;
+        uint256 durationDays;
+        bytes extraData;
+    }
+
+    struct UserDecryptResponseVerification {
+        bytes publicKey;
+        bytes32[] ctHandles;
+        bytes userDecryptedShare;
+        bytes extraData;
+    }
+
+    struct UserDecryptionPayload {
+        bytes publicKey;
+        bytes32[] ctHandles;
+    }
+
     event PublicDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
+        bytes extraData
+    );
+
+    event PublicDecryptionResponseCall(
+        uint256 indexed decryptionId,
+        bytes decryptedResult,
+        bytes signature,
+        address kmsTxSender,
         bytes extraData
     );
 
@@ -36,16 +84,20 @@ contract DecryptionMock {
 
     event UserDecryptionResponse(
         uint256 indexed decryptionId,
-        bytes[] userDecryptedShares,
-        bytes[] signatures,
+        uint256 indexShare,
+        bytes userDecryptedShare,
+        bytes signature,
         bytes extraData
     );
 
-    uint256 _decryptionRequestCounter;
+    event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
+
+    uint256 publicDecryptionCounter = 1 << 248;
+    uint256 userDecryptionCounter = 2 << 248;
 
     function publicDecryptionRequest(bytes32[] calldata ctHandles, bytes calldata extraData) external {
-        _decryptionRequestCounter++;
-        uint256 decryptionId = _decryptionRequestCounter;
+        publicDecryptionCounter++;
+        uint256 decryptionId = publicDecryptionCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
 
         emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraData);
@@ -57,7 +109,10 @@ contract DecryptionMock {
         bytes calldata signature,
         bytes calldata extraData
     ) external {
+        address kmsTxSender;
         bytes[] memory signatures = new bytes[](1);
+
+        emit PublicDecryptionResponseCall(decryptionId, decryptedResult, signature, kmsTxSender, extraData);
 
         emit PublicDecryptionResponse(decryptionId, decryptedResult, signatures, extraData);
     }
@@ -71,8 +126,8 @@ contract DecryptionMock {
         bytes calldata signature,
         bytes calldata extraData
     ) external {
-        _decryptionRequestCounter++;
-        uint256 decryptionId = _decryptionRequestCounter;
+        userDecryptionCounter++;
+        uint256 decryptionId = userDecryptionCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
 
         emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
@@ -87,8 +142,8 @@ contract DecryptionMock {
         bytes calldata signature,
         bytes calldata extraData
     ) external {
-        _decryptionRequestCounter++;
-        uint256 decryptionId = _decryptionRequestCounter;
+        userDecryptionCounter++;
+        uint256 decryptionId = userDecryptionCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
         address userAddress;
 
@@ -101,9 +156,10 @@ contract DecryptionMock {
         bytes calldata signature,
         bytes calldata extraData
     ) external {
-        bytes[] memory userDecryptedShares = new bytes[](1);
-        bytes[] memory signatures = new bytes[](1);
+        uint256 indexShare;
 
-        emit UserDecryptionResponse(decryptionId, userDecryptedShares, signatures, extraData);
+        emit UserDecryptionResponse(decryptionId, indexShare, userDecryptedShare, signature, extraData);
+
+        emit UserDecryptionResponseThresholdReached(decryptionId);
     }
 }

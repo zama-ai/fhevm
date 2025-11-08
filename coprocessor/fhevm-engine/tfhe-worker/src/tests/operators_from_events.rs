@@ -35,10 +35,13 @@ async fn insert_tfhe_event(
     db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
     log: alloy::rpc::types::Log<TfheContractEvents>,
+    is_allowed: bool,
 ) -> Result<(), sqlx::Error> {
     let event = LogTfhe {
         event: log.inner,
         transaction_hash: log.transaction_hash,
+        is_allowed,
+        block_number: log.block_number,
     };
     db.insert_tfhe_event(tx, &event).await
 }
@@ -50,7 +53,7 @@ pub async fn allow_handle(
 ) -> Result<(), sqlx::Error> {
     let account_address = String::new();
     let event_type = AllowEvents::AllowedForDecryption;
-    db.insert_allowed_handle(tx, handle.to_owned(), account_address, event_type)
+    db.insert_allowed_handle(tx, handle.to_owned(), account_address, event_type, None)
         .await
 }
 
@@ -255,10 +258,14 @@ fn next_handle() -> Handle {
 
 async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
     let coprocessor_api_key = sqlx::types::Uuid::parse_str(default_api_key()).unwrap();
-    let url = app.db_url().to_string();
-    ListenerDatabase::new(&url, &coprocessor_api_key, default_dependence_cache_size())
-        .await
-        .unwrap()
+
+    ListenerDatabase::new(
+        &app.db_url().into(),
+        &coprocessor_api_key,
+        default_dependence_cache_size(),
+    )
+    .await
+    .unwrap()
 }
 
 #[tokio::test]
@@ -313,7 +320,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         };
 
         let mut tx = listener_event_to_db.new_transaction().await?;
-        insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+        insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
         if !op.is_scalar {
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::TrivialEncrypt(
@@ -332,7 +339,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
                 log_index: None,
                 removed: false,
             };
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
         }
         let op_event = binary_op_to_event(&op, &lhs_handle, &rhs_handle, &op.rhs, &output_handle);
         eprintln!("op_event: {:?}", &op_event);
@@ -346,7 +353,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
             log_index: None,
             removed: false,
         };
-        insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+        insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
         allow_handle(&listener_event_to_db, &mut tx, output_handle.as_ref()).await?;
         tx.commit().await?;
 
@@ -457,7 +464,7 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
         };
 
         let mut tx = listener_event_to_db.new_transaction().await?;
-        insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+        insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
 
         let op_event = unary_op_to_event(op, &input_handle, &output_handle);
         eprintln!("op_event: {:?}", &op_event);
@@ -471,7 +478,7 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
             log_index: None,
             removed: false,
         };
-        insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+        insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
         allow_handle(&listener_event_to_db, &mut tx, output_handle.as_ref()).await?;
         tx.commit().await?;
         wait_until_all_allowed_handles_computed(&app).await?;
@@ -536,8 +543,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
         removed: false,
     };
     let mut tx = listener_event_to_db.new_transaction().await?;
+    insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
     allow_handle(&listener_event_to_db, &mut tx, false_handle.as_ref()).await?;
-    insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
 
     let log = alloy::rpc::types::Log {
         inner: tfhe_event(TfheContractEvents::TrivialEncrypt(
@@ -556,8 +563,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
         log_index: None,
         removed: false,
     };
+    insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
     allow_handle(&listener_event_to_db, &mut tx, true_handle.as_ref()).await?;
-    insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
     tx.commit().await?;
 
     for input_types in supported_types() {
@@ -590,7 +597,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                 removed: false,
             };
             let mut tx = listener_event_to_db.new_transaction().await?;
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
 
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::TrivialEncrypt(
@@ -609,7 +616,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                 log_index: None,
                 removed: false,
             };
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
 
             let output_handle = next_handle();
             let (expected_result, input_handle) = if test_value {
@@ -641,8 +648,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                 log_index: None,
                 removed: false,
             };
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
             allow_handle(&listener_event_to_db, &mut tx, output_handle.as_ref()).await?;
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
             tx.commit().await?;
             wait_until_all_allowed_handles_computed(&app).await?;
             let decrypt_request = vec![output_handle.to_vec()];
@@ -718,7 +725,7 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let mut tx = listener_event_to_db.new_transaction().await?;
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, false).await?;
 
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
@@ -735,7 +742,7 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
                 log_index: None,
                 removed: false,
             };
-            insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+            insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
             allow_handle(&listener_event_to_db, &mut tx, output_handle.as_ref()).await?;
             tx.commit().await?;
 
@@ -803,7 +810,7 @@ async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let mut tx = listener_event_to_db.new_transaction().await?;
-        insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+        insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
         allow_handle(&listener_event_to_db, &mut tx, output1_handle.as_ref()).await?;
 
         let log = alloy::rpc::types::Log {
@@ -823,7 +830,7 @@ async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
             log_index: None,
             removed: false,
         };
-        insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+        insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
         allow_handle(&listener_event_to_db, &mut tx, output2_handle.as_ref()).await?;
 
         let log = alloy::rpc::types::Log {
@@ -847,7 +854,7 @@ async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
             log_index: None,
             removed: false,
         };
-        insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+        insert_tfhe_event(&listener_event_to_db, &mut tx, log, true).await?;
         allow_handle(&listener_event_to_db, &mut tx, output3_handle.as_ref()).await?;
         tx.commit().await?;
 

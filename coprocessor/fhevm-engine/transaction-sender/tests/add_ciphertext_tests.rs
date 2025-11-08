@@ -43,6 +43,7 @@ async fn add_ciphertext_digests(#[case] signer_type: SignerType) -> anyhow::Resu
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -145,6 +146,7 @@ async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> any
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -234,6 +236,7 @@ async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -346,6 +349,7 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -445,6 +449,7 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
     );
 
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
@@ -498,7 +503,7 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
             panic!("Expected txn_is_sent to be false");
         } else {
             println!("txn_retry_count: {}", rows.txn_limited_retries_count);
-            if rows.txn_limited_retries_count == env.conf.add_ciphertexts_max_retries as i32 - 1 {
+            if rows.txn_limited_retries_count == env.conf.add_ciphertexts_max_retries - 1 {
                 valid_retries_count = true;
                 break;
             }
@@ -556,6 +561,7 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
@@ -606,7 +612,7 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
         .await?;
         if !rows.txn_is_sent
             && rows.txn_limited_retries_count == 0
-            && rows.txn_unlimited_retries_count > conf.add_ciphertexts_max_retries as i32
+            && rows.txn_unlimited_retries_count > conf.add_ciphertexts_max_retries
         {
             break;
         }

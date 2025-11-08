@@ -16,7 +16,7 @@ This ensures Hardhat can compile and test your contracts as expected.
 {% tab title="counter.sol" %}
 
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 /// @title A simple counter contract
@@ -35,7 +35,7 @@ contract Counter {
 
   /// @notice Decrements the counter by a specific value
   function decrement(uint32 value) external {
-    require(_count > value, "Counter: cannot decrement below zero");
+    require(_count >= value, "Counter: cannot decrement below zero");
     _count -= value;
   }
 }
@@ -95,7 +95,7 @@ describe("Counter", function () {
 
   it("decrement the counter by 1", async function () {
     // First increment, count becomes 1
-    let tx = await counterContract.connect(signers.alice).increment();
+    let tx = await counterContract.connect(signers.alice).increment(1);
     await tx.wait();
     // Then decrement, count goes back to 0
     tx = await counterContract.connect(signers.alice).decrement(1);
@@ -117,14 +117,14 @@ describe("Counter", function () {
 {% tab title="FHECounter.sol" %}
 
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 import { FHE, euint32, externalEuint32 } from "@fhevm/solidity/lib/FHE.sol";
-import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import { EthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /// @title A simple FHE counter contract
-contract FHECounter is SepoliaConfig {
+contract FHECounter is EthereumConfig {
   euint32 private _count;
 
   /// @notice Returns the current count

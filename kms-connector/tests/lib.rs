@@ -9,7 +9,7 @@ use connector_utils::{
     conn::{GatewayProvider, WalletGatewayProvider},
     tests::setup::{
         CHAIN_ID, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY, DbInstance,
-        GATEWAY_CONFIG_MOCK_ADDRESS, GatewayInstance, KMS_MANAGEMENT_MOCK_ADDRESS, KmsInstance,
+        GATEWAY_CONFIG_MOCK_ADDRESS, GatewayInstance, KMS_GENERATION_MOCK_ADDRESS, KmsInstance,
         S3_CT, S3Instance, TestInstance,
     },
 };
@@ -102,7 +102,7 @@ impl KmsConnector {
             ..Default::default()
         };
         gw_listener_conf.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
-        gw_listener_conf.kms_management_contract.address = KMS_MANAGEMENT_MOCK_ADDRESS;
+        gw_listener_conf.kms_generation_contract.address = KMS_GENERATION_MOCK_ADDRESS;
         let (gw_listener, _) = GatewayListener::from_config(gw_listener_conf).await?;
 
         let mut kms_worker_conf = kms_worker::core::Config {
@@ -121,7 +121,7 @@ impl KmsConnector {
         tx_sender_conf.gateway_url = test_instance.anvil_ws_endpoint();
         tx_sender_conf.chain_id = *CHAIN_ID as u64;
         tx_sender_conf.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
-        tx_sender_conf.kms_management_contract.address = KMS_MANAGEMENT_MOCK_ADDRESS;
+        tx_sender_conf.kms_generation_contract.address = KMS_GENERATION_MOCK_ADDRESS;
         tx_sender_conf.wallet =
             KmsWallet::from_private_key_str(DEPLOYER_PRIVATE_KEY, Some(*CHAIN_ID as u64))?;
         let (tx_sender, _) = TransactionSender::from_config(tx_sender_conf).await?;

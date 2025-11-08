@@ -14,23 +14,31 @@ RESET='\033[0m'
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT="fhevm"
 
-# Default versions for the fhevm stack
-export CONNECTOR_DB_MIGRATION_VERSION=${CONNECTOR_DB_MIGRATION_VERSION:-"v0.8.0"}
-export CONNECTOR_GW_LISTENER_VERSION=${CONNECTOR_GW_LISTENER_VERSION:-"v0.8.0"}
-export CONNECTOR_KMS_WORKER_VERSION=${CONNECTOR_KMS_WORKER_VERSION:-"v0.8.0"}
-export CONNECTOR_TX_SENDER_VERSION=${CONNECTOR_TX_SENDER_VERSION:-"v0.8.0"}
-export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.8.0"}
-export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.8.0"}
-export HOST_VERSION=${HOST_VERSION:-"v0.8.0"}
-export GW_LISTENER_VERSION=${GW_LISTENER_VERSION:-"v0.8.0"}
-export HOST_LISTENER_VERSION=${HOST_LISTENER_VERSION:-"v0.8.0"}
-export TX_SENDER_VERSION=${TX_SENDER_VERSION:-"v0.8.0"}
-export TFHE_WORKER_VERSION=${TFHE_WORKER_VERSION:-"v0.8.0"}
-export SNS_WORKER_VERSION=${SNS_WORKER_VERSION:-"v0.8.0"}
-export ZKPROOF_WORKER_VERSION=${ZKPROOF_WORKER_VERSION:-"v0.8.0"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"v0.8.0"}
-export CORE_VERSION=${CORE_VERSION:-"v0.11.0-26"}
-export RELAYER_VERSION=${RELAYER_VERSION:-"v0.3.1"}
+# Default versions for the fhevm stack.
+
+# KMS connector services.
+export CONNECTOR_DB_MIGRATION_VERSION=${CONNECTOR_DB_MIGRATION_VERSION:-"b815aff"}
+export CONNECTOR_GW_LISTENER_VERSION=${CONNECTOR_GW_LISTENER_VERSION:-"b815aff"}
+export CONNECTOR_KMS_WORKER_VERSION=${CONNECTOR_KMS_WORKER_VERSION:-"b815aff"}
+export CONNECTOR_TX_SENDER_VERSION=${CONNECTOR_TX_SENDER_VERSION:-"b815aff"}
+
+# Coprocessor services.
+export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.9.5"}
+export GW_LISTENER_VERSION=${GW_LISTENER_VERSION:-"v0.9.5"}
+export HOST_LISTENER_VERSION=${HOST_LISTENER_VERSION:-"v0.9.5"}
+export TX_SENDER_VERSION=${TX_SENDER_VERSION:-"v0.9.5"}
+export TFHE_WORKER_VERSION=${TFHE_WORKER_VERSION:-"v0.9.5"}
+export SNS_WORKER_VERSION=${SNS_WORKER_VERSION:-"v0.9.5"}
+export ZKPROOF_WORKER_VERSION=${ZKPROOF_WORKER_VERSION:-"v0.9.5"}
+
+# Gateway and Host contracts.
+export GATEWAY_VERSION=${GATEWAY_VERSION:-"b815aff"}
+export HOST_VERSION=${HOST_VERSION:-"5d96886"}
+
+# Other services.
+export CORE_VERSION=${CORE_VERSION:-"v0.12.4"}
+export RELAYER_VERSION=${RELAYER_VERSION:-"v0.5.0-2"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"v0.9.5"}
 
 
 function print_logo() {
@@ -217,7 +225,7 @@ case $COMMAND in
   upgrade)
     print_logo
     SERVICE=$1
-    if [[ ! $SERVICE =~ ^(minio|core|gateway|host|connector|coprocessor|relayer|test-suite)$ ]]; then
+    if [[ ! $SERVICE =~ ^(minio|core|gateway-node|gateway-sc|gateway-mocked-payment|host-node|host-sc|kms-connector|coprocessor|relayer|test-suite)$ ]]; then
       echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $SERVICE${RESET}"
       usage
       exit 1
@@ -243,7 +251,7 @@ case $COMMAND in
     fi
 
     echo -e "${LIGHT_BLUE}[LOGS]${RESET} ${BOLD}Showing logs for $SERVICE...${RESET}"
-    docker logs "${PROJECT}-${SERVICE}"
+    docker logs "${SERVICE}"
     ;;
 
   *)

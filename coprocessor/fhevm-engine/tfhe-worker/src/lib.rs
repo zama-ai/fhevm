@@ -1,7 +1,6 @@
 use ::tracing::{error, info};
-use fhevm_engine_common::healthz_server;
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::{healthz_server, metrics_server, telemetry};
 use tokio_util::sync::CancellationToken;
 
 use std::sync::Once;
@@ -10,7 +9,6 @@ use tokio::task::JoinSet;
 pub mod daemon_cli;
 mod db_queries;
 pub mod health_check;
-pub mod metrics;
 pub mod server;
 
 #[cfg(test)]
@@ -63,17 +61,17 @@ pub async fn async_main(
             .init();
     });
 
+    let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");
 
-    if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-        panic!("Error while initializing tracing: {:?}", err);
+    if !args.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
     }
 
-    let health_check = health_check::HealthCheck::new(
-        args.database_url
-            .clone()
-            .unwrap_or("no_database_url".to_string()),
-    );
+    let database_url = args.database_url.clone().unwrap_or_default();
+    let health_check = health_check::HealthCheck::new(database_url);
 
     let mut set = JoinSet::new();
     if args.run_server {
@@ -89,9 +87,12 @@ pub async fn async_main(
         ));
     }
 
-    if !args.metrics_addr.is_empty() {
-        info!(target: "async_main", "Initializing metrics server");
-        set.spawn(metrics::run_metrics_server(args.clone()));
+    let metrics_addr = args.metrics_addr.clone();
+    if let Some(fut) = metrics_server::metrics_future(metrics_addr, cancel_token.child_token()) {
+        set.spawn(async {
+            fut.await;
+            Ok(())
+        });
     }
 
     if set.is_empty() {

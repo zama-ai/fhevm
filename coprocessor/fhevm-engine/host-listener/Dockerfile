@@ -12,8 +12,8 @@ WORKDIR /app/host-contracts
 RUN cp .env.example .env
 RUN npm install && HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && npx hardhat compile
 
-# Stage 1: Build Transaction Sender
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.89.0 AS builder
+# Stage 1: Build Host Listener
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
 USER root
 
@@ -23,12 +23,14 @@ COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY host-contracts/contracts/ ./host-contracts/contracts/
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 
 WORKDIR /app/coprocessor/fhevm-engine
 
 # Build host_listener binary
-RUN cargo fetch && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo fetch && \
     SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --release -p host-listener
 
 # Stage 2: Runtime image

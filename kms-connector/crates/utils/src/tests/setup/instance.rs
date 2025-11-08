@@ -1,15 +1,15 @@
-use std::time::Duration;
-
 use crate::{
     conn::WalletGatewayProvider,
     tests::setup::{CustomTestWriter, DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
 };
+use alloy::transports::http::reqwest::Url;
 use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
     gateway_config::GatewayConfig::GatewayConfigInstance,
-    kms_management::KmsManagement::KmsManagementInstance,
+    kms_generation::KMSGeneration::KMSGenerationInstance,
 };
 use sqlx::{Pool, Postgres};
+use std::time::Duration;
 use testcontainers::{ContainerAsync, GenericImage};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tracing_subscriber::EnvFilter;
@@ -91,8 +91,8 @@ impl TestInstance {
         &self.gateway().gateway_config_contract
     }
 
-    pub fn kms_management_contract(&self) -> &KmsManagementInstance<WalletGatewayProvider> {
-        &self.gateway().kms_management_contract
+    pub fn kms_generation_contract(&self) -> &KMSGenerationInstance<WalletGatewayProvider> {
+        &self.gateway().kms_generation_contract
     }
 
     fn gateway(&self) -> &GatewayInstance {
@@ -109,8 +109,8 @@ impl TestInstance {
         self.gateway().anvil_block_time()
     }
 
-    pub fn anvil_ws_endpoint(&self) -> String {
-        self.gateway().anvil_ws_endpoint()
+    pub fn anvil_http_endpoint(&self) -> Url {
+        self.gateway().anvil_http_endpoint()
     }
 
     pub fn kms_container(&self) -> &ContainerAsync<GenericImage> {

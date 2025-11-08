@@ -1,5 +1,5 @@
 use alloy::primitives::U256;
-use connector_utils::types::KmsResponse;
+use connector_utils::types::KmsResponseKind;
 use sqlx::{
     Pool, Postgres,
     postgres::{PgArguments, PgQueryResult},
@@ -11,10 +11,13 @@ use tracing::{info, warn};
 pub trait KmsResponseRemover: Send {
     fn remove_response(
         &self,
-        response: &KmsResponse,
+        response: &KmsResponseKind,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
-    fn mark_response_as_pending(&self, response: KmsResponse) -> impl Future<Output = ()> + Send;
+    fn mark_response_as_pending(
+        &self,
+        response: KmsResponseKind,
+    ) -> impl Future<Output = ()> + Send;
 }
 
 /// Struct that removes KMS Core's responses from a `Postgres` database.
@@ -25,14 +28,19 @@ pub struct DbKmsResponseRemover {
 
 impl KmsResponseRemover for DbKmsResponseRemover {
     #[tracing::instrument(skip_all)]
-    async fn remove_response(&self, response: &KmsResponse) -> anyhow::Result<()> {
+    async fn remove_response(&self, response: &KmsResponseKind) -> anyhow::Result<()> {
         info!("Removing response from DB...");
 
         let query_result = match response {
-            KmsResponse::PublicDecryption(r) => {
+            KmsResponseKind::PublicDecryption(r) => {
                 self.remove_public_decryption(r.decryption_id).await?
             }
-            KmsResponse::UserDecryption(r) => self.remove_user_decryption(r.decryption_id).await?,
+            KmsResponseKind::UserDecryption(r) => {
+                self.remove_user_decryption(r.decryption_id).await?
+            }
+            KmsResponseKind::PrepKeygen(r) => self.remove_prep_keygen(r.prep_keygen_id).await?,
+            KmsResponseKind::Keygen(r) => self.remove_keygen(r.key_id).await?,
+            KmsResponseKind::Crsgen(r) => self.remove_crsgen(r.crs_id).await?,
         };
 
         if query_result.rows_affected() == 1 {
@@ -45,15 +53,20 @@ impl KmsResponseRemover for DbKmsResponseRemover {
 
     /// Sets the `under_process` field of the response as `FALSE` in the database.
     #[tracing::instrument(skip_all)]
-    async fn mark_response_as_pending(&self, response: KmsResponse) {
+    async fn mark_response_as_pending(&self, response: KmsResponseKind) {
         match response {
-            KmsResponse::PublicDecryption(r) => {
+            KmsResponseKind::PublicDecryption(r) => {
                 self.mark_public_decryption_as_pending(r.decryption_id)
                     .await
             }
-            KmsResponse::UserDecryption(r) => {
+            KmsResponseKind::UserDecryption(r) => {
                 self.mark_user_decryption_as_pending(r.decryption_id).await
             }
+            KmsResponseKind::PrepKeygen(r) => {
+                self.mark_prep_keygen_as_pending(r.prep_keygen_id).await
+            }
+            KmsResponseKind::Keygen(r) => self.mark_keygen_as_pending(r.key_id).await,
+            KmsResponseKind::Crsgen(r) => self.mark_crsgen_as_pending(r.crs_id).await,
         };
     }
 }
@@ -81,6 +94,33 @@ impl DbKmsResponseRemover {
         .await
     }
 
+    async fn remove_prep_keygen(&self, prep_keygen_id: U256) -> sqlx::Result<PgQueryResult> {
+        sqlx::query!(
+            "DELETE FROM prep_keygen_responses WHERE prep_keygen_id = $1",
+            prep_keygen_id.as_le_slice()
+        )
+        .execute(&self.db_pool)
+        .await
+    }
+
+    async fn remove_keygen(&self, key_id: U256) -> sqlx::Result<PgQueryResult> {
+        sqlx::query!(
+            "DELETE FROM keygen_responses WHERE key_id = $1",
+            key_id.as_le_slice()
+        )
+        .execute(&self.db_pool)
+        .await
+    }
+
+    async fn remove_crsgen(&self, crs_id: U256) -> sqlx::Result<PgQueryResult> {
+        sqlx::query!(
+            "DELETE FROM crsgen_responses WHERE crs_id = $1",
+            crs_id.as_le_slice()
+        )
+        .execute(&self.db_pool)
+        .await
+    }
+
     /// Sets the `under_process` field of the `PublicDecryptionResponse` as `FALSE` in the database.
     pub async fn mark_public_decryption_as_pending(&self, id: U256) {
         let query = sqlx::query!(
@@ -94,6 +134,33 @@ impl DbKmsResponseRemover {
     pub async fn mark_user_decryption_as_pending(&self, id: U256) {
         let query = sqlx::query!(
             "UPDATE user_decryption_responses SET under_process = FALSE WHERE decryption_id = $1",
+            id.as_le_slice()
+        );
+        self.execute_free_response_query(query).await;
+    }
+
+    /// Sets the `under_process` field of the `PrepKeygenResponse` as `FALSE` in the database.
+    pub async fn mark_prep_keygen_as_pending(&self, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE prep_keygen_responses SET under_process = FALSE WHERE prep_keygen_id = $1",
+            id.as_le_slice()
+        );
+        self.execute_free_response_query(query).await;
+    }
+
+    /// Sets the `under_process` field of the `KeygenResponse` as `FALSE` in the database.
+    pub async fn mark_keygen_as_pending(&self, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE keygen_responses SET under_process = FALSE WHERE key_id = $1",
+            id.as_le_slice()
+        );
+        self.execute_free_response_query(query).await;
+    }
+
+    /// Sets the `under_process` field of the `CrsgenResponse` as `FALSE` in the database.
+    pub async fn mark_crsgen_as_pending(&self, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE crsgen_responses SET under_process = FALSE WHERE crs_id = $1",
             id.as_le_slice()
         );
         self.execute_free_response_query(query).await;

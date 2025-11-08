@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{env, path::Path};
 
 use foundry_compilers::{
     multi::MultiCompiler,
@@ -17,7 +17,9 @@ fn main() {
         .unwrap();
 
     let output = project.compile().unwrap();
-    assert!(!output.has_compiler_errors());
+    if output.has_compiler_errors() {
+        panic!("Solidity compilation error: {}", output);
+    }
 
     project.rerun_if_sources_changed();
 }

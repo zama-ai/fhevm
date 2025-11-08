@@ -2,8 +2,9 @@ use crate::types::decode_request_id;
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
-    PublicDecryptionRequest, PublicDecryptionResponse, RequestId, UserDecryptionRequest,
-    UserDecryptionResponse,
+    CrsGenRequest, CrsGenResult, InitRequest, InitiateResharingRequest, KeyGenPreprocRequest,
+    KeyGenPreprocResult, KeyGenRequest, KeyGenResult, PublicDecryptionRequest,
+    PublicDecryptionResponse, RequestId, UserDecryptionRequest, UserDecryptionResponse,
 };
 use tonic::Response;
 
@@ -12,6 +13,11 @@ use tonic::Response;
 pub enum KmsGrpcRequest {
     PublicDecryption(PublicDecryptionRequest),
     UserDecryption(UserDecryptionRequest),
+    PrepKeygen(KeyGenPreprocRequest),
+    Keygen(KeyGenRequest),
+    Crsgen(CrsGenRequest),
+    PrssInit(InitRequest),
+    KeyReshareSameSet(InitiateResharingRequest),
 }
 
 impl From<PublicDecryptionRequest> for KmsGrpcRequest {
@@ -27,7 +33,7 @@ impl From<UserDecryptionRequest> for KmsGrpcRequest {
 }
 
 /// The different KMS Core GRPC responses used by the KMS Connector.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum KmsGrpcResponse {
     PublicDecryption {
         decryption_id: U256,
@@ -37,6 +43,10 @@ pub enum KmsGrpcResponse {
         decryption_id: U256,
         grpc_response: UserDecryptionResponse,
     },
+    PrepKeygen(KeyGenPreprocResult),
+    Keygen(KeyGenResult),
+    Crsgen(CrsGenResult),
+    NoResponseExpected,
 }
 
 impl TryFrom<(RequestId, Response<PublicDecryptionResponse>)> for KmsGrpcResponse {

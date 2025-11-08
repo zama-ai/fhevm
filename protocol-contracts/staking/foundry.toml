@@ -1,0 +1,5 @@
+[profile.default]
+src = 'contracts'
+libs = ['node_modules']
+solc = '0.8.27'
+optimizer_runs = 200

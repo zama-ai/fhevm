@@ -41,7 +41,7 @@ describe("CiphertextCommits", function () {
   let ciphertextCommits: CiphertextCommits;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
-  let pauser: HardhatEthersSigner;
+  let pauser: Wallet;
 
   async function prepareFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -101,8 +101,18 @@ describe("CiphertextCommits", function () {
           .connect(coprocessorTxSenders[0])
           .addCiphertextMaterial(ctHandleFakeChainId, keyId, ciphertextDigest, snsCiphertextDigest),
       )
-        .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
+        .revertedWithCustomError(ciphertextCommits, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
+    });
+
+    it("Should emit an event when calling a single addCiphertextMaterial", async function () {
+      await expect(
+        ciphertextCommits
+          .connect(coprocessorTxSenders[0])
+          .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
+      )
+        .to.emit(ciphertextCommits, "AddCiphertextMaterial")
+        .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, coprocessorTxSenders[0].address);
     });
 
     it("Should add a ciphertext material with 2 valid calls", async function () {
@@ -118,8 +128,8 @@ describe("CiphertextCommits", function () {
       // Consensus should be reached at the second call
       // Check 2nd call event: it should only contain the 2 coprocessor transaction sender addresses
       await expect(resultTx2)
-        .to.emit(ciphertextCommits, "AddCiphertextMaterial")
-        .withArgs(ctHandle, ciphertextDigest, snsCiphertextDigest, [
+        .to.emit(ciphertextCommits, "AddCiphertextMaterialConsensus")
+        .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, [
           coprocessorTxSenders[0].address,
           coprocessorTxSenders[1].address,
         ]);
@@ -142,8 +152,8 @@ describe("CiphertextCommits", function () {
       // Check that the 1st and 3rd calls do not emit an event:
       // - 1st call is ignored because consensus is not reached yet
       // - 3rd call is ignored (not reverted) even though it is late
-      await expect(resultTx1).to.not.emit(ciphertextCommits, "AddCiphertextMaterial");
-      await expect(resultTx3).to.not.emit(ciphertextCommits, "AddCiphertextMaterial");
+      await expect(resultTx1).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
+      await expect(resultTx3).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
     });
 
     it("Should add a ciphertext material with 2 valid and 1 malicious calls ", async function () {
@@ -160,7 +170,7 @@ describe("CiphertextCommits", function () {
         .addCiphertextMaterial(ctHandle, keyId, fakeCiphertextDigest, snsCiphertextDigest);
 
       // Make sure that the consensus has not been reached yet
-      await expect(fakeResultTx2).to.not.emit(ciphertextCommits, "AddCiphertextMaterial");
+      await expect(fakeResultTx2).to.not.emit(ciphertextCommits, "AddCiphertextMaterialConsensus");
 
       // Trigger a 2nd valid add ciphertext material call: consensus should then be reached for this
       // handle and the associated infos
@@ -171,8 +181,8 @@ describe("CiphertextCommits", function () {
       // Check 2nd call event: it should only contain 2 coprocessor transaction sender addresses, the
       // 1st and 3rd one
       await expect(resultTx3)
-        .to.emit(ciphertextCommits, "AddCiphertextMaterial")
-        .withArgs(ctHandle, ciphertextDigest, snsCiphertextDigest, [
+        .to.emit(ciphertextCommits, "AddCiphertextMaterialConsensus")
+        .withArgs(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest, [
           coprocessorTxSenders[0].address,
           coprocessorTxSenders[2].address,
         ]);
@@ -222,7 +232,7 @@ describe("CiphertextCommits", function () {
           .connect(fakeTxSender)
           .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
       )
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+        .revertedWithCustomError(ciphertextCommits, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
 
@@ -241,8 +251,6 @@ describe("CiphertextCommits", function () {
         .revertedWithCustomError(ciphertextCommits, "CoprocessorAlreadyAdded")
         .withArgs(ctHandle, coprocessorTxSenders[0]);
     });
-
-    // TODO: Add test checking `checkCurrentKeyId` once keys are generated through the Gateway
   });
 
   describe("Get ciphertext materials", async function () {
@@ -294,6 +302,13 @@ describe("CiphertextCommits", function () {
         .withArgs(newCtHandle);
     });
 
+    it("Should revert with EmptyCtHandles (regular)", async function () {
+      await expect(ciphertextCommits.getCiphertextMaterials([])).revertedWithCustomError(
+        ciphertextCommits,
+        "EmptyCtHandles",
+      );
+    });
+
     it("Should get SNS ciphertext materials", async function () {
       const result = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
 
@@ -332,6 +347,12 @@ describe("CiphertextCommits", function () {
         .revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
         .withArgs(newCtHandle);
     });
+    it("Should revert with EmptyCtHandles (SNS)", async function () {
+      await expect(ciphertextCommits.getSnsCiphertextMaterials([])).revertedWithCustomError(
+        ciphertextCommits,
+        "EmptyCtHandles",
+      );
+    });
   });
 
   describe("Check ciphertext material", async function () {
@@ -339,48 +360,12 @@ describe("CiphertextCommits", function () {
       await loadFixture(prepareViewTestFixture);
     });
 
-    it("Should not revert as the ciphertext material have been added", async function () {
-      await expect(ciphertextCommits.checkCiphertextMaterial(ctHandle)).not.to.be.reverted;
+    it("Should be true as the ciphertext material have been added", async function () {
+      expect(await ciphertextCommits.isCiphertextMaterialAdded(ctHandle)).to.be.true;
     });
 
-    it("Should revert as the ciphertext material has not been added", async function () {
-      await expect(ciphertextCommits.checkCiphertextMaterial(newCtHandle))
-        .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
-        .withArgs(newCtHandle);
-    });
-  });
-
-  describe("Pause", async function () {
-    it("Should pause the contract with the pauser and unpause with the owner", async function () {
-      // Check that the contract is not paused
-      expect(await ciphertextCommits.paused()).to.be.false;
-
-      // Pause the contract with the pauser address
-      await expect(ciphertextCommits.connect(pauser).pause()).to.emit(ciphertextCommits, "Paused").withArgs(pauser);
-      expect(await ciphertextCommits.paused()).to.be.true;
-
-      // Unpause the contract with the owner address
-      await expect(ciphertextCommits.connect(owner).unpause()).to.emit(ciphertextCommits, "Unpaused").withArgs(owner);
-      expect(await ciphertextCommits.paused()).to.be.false;
-    });
-
-    it("Should revert on pause because sender is not the pauser", async function () {
-      const fakePauser = createRandomWallet();
-
-      await expect(ciphertextCommits.connect(fakePauser).pause())
-        .to.be.revertedWithCustomError(ciphertextCommits, "NotPauserOrGatewayConfig")
-        .withArgs(fakePauser.address);
-    });
-
-    it("Should revert on unpause because sender is not the owner", async function () {
-      // Pause the contract with the pauser address
-      await ciphertextCommits.connect(pauser).pause();
-
-      const fakeOwner = createRandomWallet();
-
-      await expect(ciphertextCommits.connect(fakeOwner).unpause())
-        .to.be.revertedWithCustomError(ciphertextCommits, "NotOwnerOrGatewayConfig")
-        .withArgs(fakeOwner.address);
+    it("Should be false as the ciphertext material has not been added", async function () {
+      expect(await ciphertextCommits.isCiphertextMaterialAdded(newCtHandle)).to.be.false;
     });
   });
 });

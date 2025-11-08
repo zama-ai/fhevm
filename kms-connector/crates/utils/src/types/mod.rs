@@ -1,19 +1,22 @@
 pub mod db;
 pub mod fhe;
 mod grpc;
-mod gw_event;
-mod kms_response;
+pub mod gw_event;
+pub mod kms_response;
 
-use anyhow::anyhow;
 pub use grpc::{KmsGrpcRequest, KmsGrpcResponse};
-pub use gw_event::GatewayEvent;
-use kms_grpc::kms::v1::RequestId;
-pub use kms_response::{KmsResponse, PublicDecryptionResponse, UserDecryptionResponse};
+pub use gw_event::{GatewayEvent, GatewayEventKind};
+pub use kms_response::{
+    CrsgenResponse, KeygenResponse, KmsResponse, KmsResponseKind, PrepKeygenResponse,
+    PublicDecryptionResponse, UserDecryptionResponse,
+};
 
 use alloy::{
     hex::{self, FromHexError},
     primitives::U256,
 };
+use anyhow::anyhow;
+use kms_grpc::kms::v1::RequestId;
 
 pub fn u256_to_u32(integer: U256) -> anyhow::Result<u32> {
     // Get integer's least significant bits

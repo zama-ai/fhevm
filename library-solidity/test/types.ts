@@ -1,6 +1,6 @@
-import type { FhevmInstance } from '@fhevm/sdk';
+import type { FhevmInstance } from '@zama-fhe/relayer-sdk/node';
 
-import { EncryptedERC20, Rand } from '../types';
+import { EncryptedERC20, Rand } from '../typechain-types';
 import type { Signers } from './signers';
 
 declare module 'mocha' {

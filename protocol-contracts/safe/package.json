@@ -1,0 +1,34 @@
+{
+  "name": "safe-admin-module",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "npx hardhat test",
+    "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
+    "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
+    "lint:sol": "solhint --max-warnings 10 \"contracts/**/*.sol\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "BSD-3-Clause-Clear",
+  "type": "commonjs",
+  "overrides": {
+    "@safe-global/safe-contracts": {
+      "ethers": "^6.13.5"
+    }
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "@openzeppelin/contracts": "^5.4.0",
+    "@safe-global/protocol-kit": "^6.1.1",
+    "@safe-global/safe-contracts": "^1.4.1-2",
+    "hardhat": "^2.26.3",
+    "hardhat-dependency-compiler": "^1.2.1",
+    "hardhat-deploy": "^0.12.1",
+    "prettier": "^3.6.2",
+    "prettier-plugin-solidity": "^2.1.0",
+    "solhint": "^6.0.1",
+    "dotenv": "^17.2.3"
+  }
+}

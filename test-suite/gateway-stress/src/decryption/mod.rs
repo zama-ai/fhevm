@@ -1,8 +1,8 @@
-mod public;
+pub mod public;
+pub mod types;
 pub mod user;
 
 pub use public::{init_public_decryption_response_listener, public_decryption_burst};
-use std::time::Duration;
 pub use user::{init_user_decryption_response_listener, user_decryption_burst};
 
 use alloy::{
@@ -11,8 +11,11 @@ use alloy::{
     rpc::types::{TransactionReceipt, TransactionRequest},
 };
 use anyhow::anyhow;
+use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, trace, warn};
+
+use crate::blockchain::manager::AppProvider;
 
 pub const EVENT_LISTENER_POLLING: Duration = Duration::from_millis(500);
 
@@ -33,6 +36,7 @@ where
             let decryption_id = decode_fn(log.data())?;
             debug!(
                 ?receipt.transaction_hash,
+                ?receipt.block_number,
                 "Decryption #{decryption_id} has been accepted on the Gateway!"
             );
             return Ok(decryption_id);
@@ -45,29 +49,25 @@ where
 const TX_RETRIES: usize = 50;
 const TX_GAS_INCREASE_PERCENT: u128 = 105;
 
-async fn send_tx_with_retries<F, P>(
-    provider: &P,
+async fn send_tx_with_retries<F>(
+    provider: &AppProvider,
     mut decryption_call: TransactionRequest,
     id_sender: UnboundedSender<U256>,
     extract_id_fn: F,
 ) -> Result<(), anyhow::Error>
 where
     F: Fn(&TransactionReceipt) -> anyhow::Result<U256>,
-    P: Provider,
 {
     let mut last_error = String::new();
     for i in 1..=TX_RETRIES {
         overprovision_gas(provider, &mut decryption_call).await;
 
         trace!("Sending transaction to the Gateway");
-        match provider.send_transaction(decryption_call.clone()).await {
-            Ok(decryption_tx) => {
-                debug!("Transaction has been sent to the Gateway");
-                let receipt = decryption_tx
-                    .get_receipt()
-                    .await
-                    .map_err(|e| anyhow!("Failed to get receipt: {e}"))?;
-
+        match provider
+            .send_transaction_sync(decryption_call.clone())
+            .await
+        {
+            Ok(receipt) => {
                 let id = extract_id_fn(&receipt)?;
                 id_sender.send(id)?;
                 return Ok(());
@@ -94,4 +94,9 @@ async fn overprovision_gas<P: Provider>(provider: &P, call: &mut TransactionRequ
     let new_gas = (current_gas as u128 * TX_GAS_INCREASE_PERCENT / 100) as u64;
     call.gas = Some(new_gas);
     trace!("Initial gas estimation for the tx: {current_gas}. Increased to {new_gas}");
+}
+
+pub struct BurstResult {
+    pub latency: f64,
+    pub throughput: f64,
 }

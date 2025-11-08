@@ -5,10 +5,11 @@ use alloy::pubsub::SubscriptionStream;
 use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
 use alloy::sol_types::SolEventInterface;
 use anyhow::{anyhow, Result};
+use fhevm_engine_common::telemetry;
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,11 +23,13 @@ use rustls;
 use tokio_util::sync::CancellationToken;
 
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
-use fhevm_engine_common::types::BlockchainProvider;
-use fhevm_engine_common::utils::HeartBeat;
+use fhevm_engine_common::types::{BlockchainProvider, Handle};
+use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
 use crate::contracts::{AclContract, TfheContract};
-use crate::database::tfhe_event_propagate::{ChainId, Database, LogTfhe};
+use crate::database::tfhe_event_propagate::{
+    acl_result_handles, tfhe_result_handle, ChainId, Database, LogTfhe,
+};
 use crate::health_check::HealthCheck;
 
 pub mod block_history;
@@ -55,7 +58,7 @@ pub struct Args {
         long,
         default_value = "postgresql://postgres:postgres@localhost:5432/coprocessor"
     )]
-    pub database_url: String,
+    pub database_url: DatabaseURL,
 
     #[arg(long, default_value = None, help = "Can be negative from last block", allow_hyphen_values = true)]
     pub start_at_block: Option<i64>,
@@ -109,6 +112,17 @@ pub struct Args {
         help = "Maximum duration in blocks to detect reorgs"
     )]
     pub reorg_maximum_duration_in_blocks: u64,
+
+    /// service name in OTLP traces
+    #[arg(long, default_value = "host-listener")]
+    pub service_name: String,
+
+    #[arg(
+        long,
+        default_value_t = 20,
+        help = "Maximum number of blocks to wait before a block is finalized"
+    )]
+    pub catchup_finalization_in_blocks: u64,
 }
 
 // TODO: to merge with Levent works
@@ -131,6 +145,7 @@ struct InfiniteLogIter {
     pub tick_block: HeartBeat,
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
+    catchup_finalization_in_blocks: u64,
 }
 
 struct BlockLogs<T> {
@@ -143,6 +158,24 @@ enum BlockOrTimeoutOrNone {
     Block(BlockLogs<Log>),
     Timeout,
     None,
+}
+
+mod eth_rpc_err {
+    use alloy::transports::{RpcError, TransportErrorKind};
+    pub fn too_much_blocks_or_events(
+        err: &RpcError<TransportErrorKind>,
+    ) -> bool {
+        // quicknode message about asking too much blocks can vary
+        // e.g. doc: -32602	eth_getLogs and eth_newFilter are limited to a 10,000 blocks range
+        // e.g. testnet: ErrorResp(ErrorPayload { code: -32614, message: "eth_getLogs is limited to a 10,000 range", data: None })
+        // doc: -32005	Limit Exceeded
+        // also some limitation are from alloy
+        // {"message":"WS connection error","err":"Space limit exceeded: Message too long: 67112162 > 67108864"}
+        let msg = err.to_string();
+        (msg.contains("limited to a") && msg.contains("range"))
+            || msg.contains("Limit Exceeded")
+            || msg.contains("Space limit exceeded: Message too long")
+    }
 }
 
 impl InfiniteLogIter {
@@ -167,7 +200,7 @@ impl InfiniteLogIter {
             last_valid_block: None,
             start_at_block: args.start_at_block,
             end_at_block: args.end_at_block,
-            catchup_paging: args.catchup_paging,
+            catchup_paging: args.catchup_paging.max(1),
             catchup_margin: args.catchup_margin,
             tick_timeout: HeartBeat::default(),
             tick_block: HeartBeat::default(),
@@ -176,6 +209,7 @@ impl InfiniteLogIter {
             block_history: BlockHistory::new(
                 args.reorg_maximum_duration_in_blocks as usize,
             ),
+            catchup_finalization_in_blocks: args.catchup_finalization_in_blocks,
         }
     }
 
@@ -210,6 +244,31 @@ impl InfiniteLogIter {
             self.catchup_margin
         };
         BlockNumberOrTag::Number(last_block - catch_size.min(last_block))
+    }
+
+    async fn get_blocks_logs_range_no_retry(
+        &mut self,
+        from_block: u64,
+        to_block: u64,
+    ) -> Result<Vec<Log>> {
+        let mut filter =
+            Filter::new().from_block(from_block).to_block(to_block);
+        if !self.contract_addresses.is_empty() {
+            filter = filter.address(self.contract_addresses.clone())
+        }
+        // we use a specific provider to not disturb the real-time one (no buffer shared)
+        let ws = WsConnect::new(&self.url).with_max_retries(0); // disabled, alloy skips events
+        let provider = match ProviderBuilder::new().connect_ws(ws).await {
+            Ok(provider) => provider,
+            Err(_) => anyhow::bail!("Cannot get a provider"),
+        };
+        provider.get_logs(&filter).await.map_err(|err| {
+            if eth_rpc_err::too_much_blocks_or_events(&err) {
+                anyhow::anyhow!("Too much blocks or events: {err}")
+            } else {
+                anyhow::anyhow!("Cannot get logs for {filter:?} due to {err}")
+            }
+        })
     }
 
     async fn deduce_block_summary(
@@ -306,55 +365,64 @@ impl InfiniteLogIter {
     }
 
     async fn consume_catchup_blocks(&mut self) {
-        let Some((_, to_block)) = self.catchup_blocks else {
+        let Some((from_block, to_block)) = self.catchup_blocks else {
             // nothing to consume
             return;
         };
-        let mut paging_size = self.catchup_paging;
-        let (logs, from_block, paging_to_block) = loop {
-            let Some((from_block, to_block)) = self.catchup_blocks else {
-                return;
-            };
-            let paging_to_block = if let Some(to_block) = to_block {
-                to_block.min(from_block + paging_size)
+        let to_block_or_max = to_block.unwrap_or(u64::MAX);
+        if from_block > to_block_or_max {
+            self.catchup_blocks = None;
+            info!("Catchup no next get_logs step");
+            return;
+        }
+        let finalized_block =
+            if let Some(current_block) = self.block_history.tip() {
+                // non finalized block will be post-poned until they are finalized
+                current_block
+                    .number
+                    .saturating_sub(self.catchup_finalization_in_blocks)
             } else {
-                from_block + paging_size
+                // happen at service start, assuming everything is finalized
+                info!("Unknown top block, assuming full finalized catchup");
+                from_block + self.catchup_paging
             };
-            let mut filter = Filter::new()
-                .from_block(from_block)
-                .to_block(paging_to_block);
-            if !self.contract_addresses.is_empty() {
-                filter = filter.address(self.contract_addresses.clone())
-            }
-            // TODO: function
-            let logs = {
-                let Some(provider) = &*self.provider.read().await else {
-                    error!("No provider, inconsistent state");
-                    return;
-                };
-                provider.get_logs(&filter).await
-            };
+        if from_block >= finalized_block {
+            // non finalized blocks are post-poned
+            info!("Post-pone catchup");
+            return;
+        }
+        let mut paging_size = self.catchup_paging;
+        let mut remain_retry = 3;
+        let (logs, paging_to_block) = loop {
+            let paging_to_block = from_block + paging_size - 1;
+            // non finalized blocks are post-poned
+            let paging_to_block =
+                paging_to_block.min(finalized_block).min(to_block_or_max);
+            let logs = self
+                .get_blocks_logs_range_no_retry(from_block, paging_to_block)
+                .await;
             match logs {
-                Ok(logs) => break (logs, from_block, paging_to_block),
-                Err(err) => {
-                    if err.to_string().contains("limited") {
-                        // too much blocks or logs
-                        if paging_size == 1 {
-                            error!(block=from_block, "Cannot catchup block {filter:?} due to {err}, aborting this block");
-                            self.catchup_blocks =
-                                Some((from_block + 1, to_block));
-                            continue;
-                        } else {
-                            // retry with paging size 1
-                            info!("Retrying catchup with smaller paging size");
-                            paging_size = (paging_size / 2).max(1);
-                            continue;
-                        }
+                Ok(logs) => break (logs, paging_to_block),
+                Err(err) if from_block == paging_to_block => {
+                    // we asked only one block and it still fails
+                    // continue with a limited number of retry
+                    if remain_retry > 0 {
+                        warn!(block=from_block, error=?err, remain_retry=remain_retry, "Catchup of block failed, retrying");
+                        remain_retry -= 1;
+                        continue;
                     }
-                    warn!("Cannot get logs for {filter:?} due to {err}");
+                    error!(block=from_block, error=?err, "Catchup of block impossible. Will be retried later after handling a real-time message.");
                     return;
                 }
-            };
+                Err(err) => {
+                    // too big paging size detection cannot be done reliably for all provider
+                    // so it assumes the error is due to too big paging size
+                    // and it retries with reduced paging, this also serves as normal retry for transient error
+                    warn!(error = ?err, "Retrying catchup with smaller paging size.");
+                    paging_size = (paging_size / 2).max(1);
+                    continue;
+                }
+            }
         };
         info!(
             nb_events = logs.len(),
@@ -365,33 +433,7 @@ impl InfiniteLogIter {
         );
         let by_blocks = self.split_by_block(logs).await;
         self.next_blocklogs.extend(by_blocks);
-        self.catchup_blocks = Some((paging_to_block + 1, to_block)); // default
-
-        let nb_logs = self.next_blocklogs.len();
-        if Some(paging_to_block) == to_block {
-            self.catchup_blocks = None;
-        } else if let Some(to_block) = to_block {
-            if paging_to_block + 1 > to_block {
-                self.catchup_blocks = None;
-            }
-        } else if nb_logs == 0 {
-            // either empty or future block
-            let current_block = {
-                let Some(provider) = &*self.provider.read().await else {
-                    error!("No provider, inconsistent state");
-                    return;
-                };
-                provider.get_block_number().await
-            };
-            if let Ok(current_block) = current_block {
-                if current_block < paging_to_block + 1 {
-                    self.catchup_blocks = None;
-                }
-            }
-        };
-        if self.catchup_blocks.is_none() {
-            info!("Catchup no next get_logs step");
-        }
+        self.catchup_blocks = Some((paging_to_block + 1, to_block)); // end is detected at function start
     }
 
     async fn get_block_by_number(&self, number: u64) -> Result<Block> {
@@ -819,35 +861,42 @@ async fn db_insert_block_no_retry(
     tfhe_contract_address: &Option<Address>,
 ) -> std::result::Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
+    let mut is_allowed = HashSet::<Handle>::new();
+    let mut tfhe_event_log = vec![];
     for log in &block_logs.logs {
-        info!(
-            block = ?log.block_number,
-            tx = ?log.transaction_hash,
-            log_index = ?log.log_index,
-            "Log",
-        );
         let current_address = Some(log.inner.address);
-        let is_tfhe_address = &current_address == tfhe_contract_address;
-        if tfhe_contract_address.is_none() || is_tfhe_address {
-            if let Ok(event) =
-                TfheContract::TfheContractEvents::decode_log(&log.inner)
-            {
-                info!(tfhe_event = ?event, "TFHE event");
-                let log = LogTfhe {
-                    event,
-                    transaction_hash: log.transaction_hash,
-                };
-                db.insert_tfhe_event(&mut tx, &log).await?;
-                continue;
-            }
-        }
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
                 info!(acl_event = ?event, "ACL event");
-                db.handle_acl_event(&mut tx, &event).await?;
+                let handles = acl_result_handles(&event);
+                for handle in handles {
+                    is_allowed.insert(handle.to_vec());
+                }
+                db.handle_acl_event(
+                    &mut tx,
+                    &event,
+                    &log.transaction_hash,
+                    &log.block_number,
+                )
+                .await?;
+                continue;
+            }
+        }
+        let is_tfhe_address = &current_address == tfhe_contract_address;
+        if tfhe_contract_address.is_none() || is_tfhe_address {
+            if let Ok(event) =
+                TfheContract::TfheContractEvents::decode_log(&log.inner)
+            {
+                let log = LogTfhe {
+                    event,
+                    transaction_hash: log.transaction_hash,
+                    is_allowed: false, // updated in the next loop
+                    block_number: log.block_number,
+                };
+                tfhe_event_log.push(log);
                 continue;
             }
         }
@@ -856,9 +905,24 @@ async fn db_insert_block_no_retry(
                 event_address = ?log.inner.address,
                 acl_contract_address = ?acl_contract_address,
                 tfhe_contract_address = ?tfhe_contract_address,
+                log = ?log,
                 "Cannot decode event",
             );
         }
+    }
+    for tfhe_log in tfhe_event_log {
+        info!(tfhe_log = ?tfhe_log, "TFHE event");
+        let is_allowed =
+            if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
+                is_allowed.contains(&result_handle.to_vec())
+            } else {
+                false
+            };
+        let tfhe_log = LogTfhe {
+            is_allowed,
+            ..tfhe_log
+        };
+        db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
     }
     db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
     tx.commit().await
@@ -897,10 +961,16 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         )
     };
 
+    if !args.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
+    }
+
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;
     info!(chain_id = chain_id, "Chain ID");
-    if args.database_url.is_empty() {
+    if args.database_url.as_str().is_empty() {
         error!("Database URL is required");
         panic!("Database URL is required");
     };

@@ -1,5 +1,6 @@
 use alloy_primitives::Address;
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
+use fhevm_engine_common::telemetry::{self};
 use fhevm_engine_common::tenant_keys::TfheTenantKeys;
 use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
@@ -10,7 +11,6 @@ use hex::encode;
 use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
-use sqlx::postgres::PgPoolOptions;
 use sqlx::{postgres::PgListener, PgPool, Row};
 use sqlx::{Postgres, Transaction};
 use std::num::NonZero;
@@ -19,7 +19,7 @@ use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformancePara
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 
-use crate::{auxiliary, Config, ExecutionError, MAX_INPUT_INDEX};
+use crate::{auxiliary, Config, ExecutionError, MAX_INPUT_INDEX, ZKVERIFY_OP_LATENCY_HISTOGRAM};
 use anyhow::Result;
 
 use std::sync::Arc;
@@ -35,6 +35,9 @@ use tracing::{debug, error, info};
 const MAX_CACHED_TENANT_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
+const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
+const HANDLE_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_hdl";
+
 pub(crate) struct Ciphertext {
     handle: Vec<u8>,
     compressed: Vec<u8>,
@@ -43,9 +46,8 @@ pub(crate) struct Ciphertext {
 }
 
 pub struct ZkProofService {
-    pool: PgPool,
+    pool_mngr: PostgresPoolManager,
     conf: Config,
-    _cancel_token: CancellationToken,
 
     // Timestamp of the last moment the service was active
     last_active_at: Arc<RwLock<SystemTime>>,
@@ -53,7 +55,7 @@ pub struct ZkProofService {
 impl HealthCheckService for ZkProofService {
     async fn health_check(&self) -> HealthStatus {
         let mut status = HealthStatus::default();
-        status.set_db_connected(&self.pool).await;
+        status.set_db_connected(&self.pool_mngr.pool()).await;
         status
     }
 
@@ -79,31 +81,37 @@ impl HealthCheckService for ZkProofService {
 }
 
 impl ZkProofService {
-    pub async fn create(conf: Config, cancel_token: CancellationToken) -> ZkProofService {
+    pub async fn create(conf: Config, token: CancellationToken) -> Option<ZkProofService> {
         // Each worker needs at least 3 pg connections
-        let pool_connections =
+        let max_pool_connections =
             std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
-        let t = telemetry::tracer("init_service");
+        let t = telemetry::tracer("init_service", &None);
         let _s = t.child_span("pg_connect");
 
-        // DB Connection pool is shared amongst all workers
-        let pool = PgPoolOptions::new()
-            .max_connections(pool_connections)
-            .connect(&conf.database_url)
-            .await
-            .expect("valid db pool");
+        let Some(pool_mngr) = PostgresPoolManager::connect_pool(
+            token.child_token(),
+            conf.database_url.as_str(),
+            conf.pg_timeout,
+            max_pool_connections,
+            Duration::from_secs(2),
+            conf.pg_auto_explain_with_min_duration,
+        )
+        .await
+        else {
+            error!("Service was cancelled during Postgres pool initialization");
+            return None;
+        };
 
-        ZkProofService {
-            pool,
+        Some(ZkProofService {
+            pool_mngr,
             conf,
-            _cancel_token: cancel_token,
             last_active_at: Arc::new(RwLock::new(SystemTime::UNIX_EPOCH)),
-        }
+        })
     }
 
     pub async fn run(&self) -> Result<(), ExecutionError> {
         execute_verify_proofs_loop(
-            self.pool.clone(),
+            self.pool_mngr.clone(),
             self.conf.clone(),
             self.last_active_at.clone(),
         )
@@ -113,36 +121,43 @@ impl ZkProofService {
 /// Executes the main loop for handling verify_proofs requests inserted in the
 /// database
 pub async fn execute_verify_proofs_loop(
-    pool: PgPool,
+    pool_mngr: PostgresPoolManager,
     conf: Config,
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
-    info!(conf = ?conf, "Starting with config");
+    info!(conf = %conf, "Starting with config");
 
     // Tenants key cache is shared amongst all workers
     let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(
         NonZero::new(MAX_CACHED_TENANT_KEYS).unwrap(),
     )));
 
-    let t = telemetry::tracer("init_workers");
+    let t = telemetry::tracer("init_workers", &None);
     let mut s = t.child_span("start_workers");
     telemetry::attribute(&mut s, "count", conf.worker_thread_count.to_string());
     let mut task_set = JoinSet::new();
 
-    for _ in 0..conf.worker_thread_count {
+    for index in 0..conf.worker_thread_count {
         let conf = conf.clone();
         let tenant_key_cache = tenant_key_cache.clone();
-        let pool = pool.clone();
         let last_active_at = last_active_at.clone();
 
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
-        task_set.spawn(async move {
-            if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache, last_active_at).await
-            {
-                error!(error = %err, "executor failed with");
+        let op = move |pool: PgPool, ct: CancellationToken| {
+            let tenant_key_cache = tenant_key_cache.clone();
+            let last_active_at = last_active_at.clone();
+            let conf = conf.clone();
+            async move {
+                execute_worker(conf, pool, ct, tenant_key_cache, last_active_at)
+                    .await
+                    .map_err(ServiceError::from)
             }
-        });
+        };
+
+        pool_mngr
+            .spawn_join_set_with_db_retry(op, &mut task_set, format!("worker_{}", index).as_str())
+            .await;
     }
 
     telemetry::end_span(s);
@@ -158,47 +173,46 @@ pub async fn execute_verify_proofs_loop(
 }
 
 async fn execute_worker(
-    conf: &Config,
-    pool: &sqlx::Pool<sqlx::Postgres>,
-    tenant_key_cache: &Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
+    conf: Config,
+    pool: sqlx::Pool<sqlx::Postgres>,
+    token: CancellationToken,
+    tenant_key_cache: Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
-    let mut listener = PgListener::connect_with(pool).await?;
+    update_last_active(last_active_at.clone()).await;
+
+    let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
 
     let mut idle_event = interval(Duration::from_secs(conf.pg_polling_interval as u64));
 
     loop {
-        if let Ok(mut value) = last_active_at.try_write() {
-            *value = SystemTime::now();
-        }
+        update_last_active(last_active_at.clone()).await;
 
-        if let Err(e) = execute_verify_proof_routine(pool, tenant_key_cache, conf).await {
-            error!(target: "zkpok", error = %e, "Execution error");
-        } else {
-            let count = get_remaining_tasks(pool).await?;
-            if get_remaining_tasks(pool).await? > 0 {
-                info!(target: "zkpok", {count}, "ZkPok tasks available");
-                continue;
-            }
+        execute_verify_proof_routine(&pool, &tenant_key_cache, &conf).await?;
+        let count = get_remaining_tasks(&pool).await?;
+        if count > 0 {
+            info!({ count }, "zkproof requests available");
+            continue;
         }
 
         select! {
             res = listener.try_recv() => {
+                let res = res?;
                 match res {
-                    Ok(None) => {
-                        error!(target: "zkpok", "DB connection err");
-                        return Err(ExecutionError::LostDbConnection)
-                    },
-                    Ok(_) => info!(target: "zkpok", "Received notification"),
-                    Err(err) => {
-                        error!(target: "zkpok", error = %err, "DB connection error");
-                        return Err(ExecutionError::LostDbConnection)
+                    Some(notification) => info!( src = %notification.process_id(), "Received notification"),
+                    None => {
+                        error!("Connection lost");
+                        continue;
                     },
                 };
             },
             _ = idle_event.tick() => {
-                debug!(target: "zkpok", "Polling timeout, rechecking for tasks");
+                debug!("Polling timeout, rechecking for requests");
+            },
+            _ = token.cancelled() => {
+                info!("Cancellation requested, stopping worker");
+                return Ok(());
             }
         }
     }
@@ -212,7 +226,7 @@ async fn execute_verify_proof_routine(
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
             FROM verify_proofs
             WHERE verified IS NULL
             ORDER BY zk_proof_id ASC
@@ -221,11 +235,13 @@ async fn execute_verify_proof_routine(
     .fetch_one(&mut *txn)
     .await
     {
+        let started_at = SystemTime::now();
         let request_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
         let chain_id: i64 = row.get("chain_id");
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
+        let transaction_id: Option<Vec<u8>> = row.get("transaction_id");
 
         info!(
             message = "Process zk-verify request",
@@ -236,7 +252,7 @@ async fn execute_verify_proof_routine(
             input_len = format!("{}", input.len()),
         );
 
-        let t = telemetry::tracer("verify_task");
+        let t: telemetry::OtelTracer = telemetry::tracer("verify_task", &transaction_id);
         t.set_attribute("request_id", request_id.to_string());
 
         let s = t.child_span("fetch_keys");
@@ -260,12 +276,12 @@ async fn execute_verify_proof_routine(
         })
         .await?;
 
-        let t = telemetry::tracer("db_insert");
+        let t = telemetry::tracer("db_insert", &transaction_id);
         t.set_attribute("request_id", request_id.to_string());
 
         let mut verified = false;
         let mut handles_bytes = vec![];
-        match res {
+        match res.as_ref() {
             Ok((cts, blob_hash)) => {
                 info!(
                     message = "Proof verification successful",
@@ -314,6 +330,13 @@ async fn execute_verify_proof_routine(
 
         txn.commit().await?;
 
+        if res.is_ok() {
+            let elapsed = started_at.elapsed().unwrap_or_default().as_secs_f64();
+            if elapsed > 0.0 {
+                ZKVERIFY_OP_LATENCY_HISTOGRAM.observe(elapsed);
+            }
+        }
+
         info!(message = "Completed", request_id);
     }
 
@@ -325,12 +348,12 @@ pub(crate) fn verify_proof(
     keys: &FetchTenantKeyResult,
     aux_data: &auxiliary::ZkData,
     raw_ct: &[u8],
-    t: telemetry::OtelTracer,
+    span: telemetry::OtelTracer,
 ) -> Result<(Vec<Ciphertext>, Vec<u8>), ExecutionError> {
     set_server_key(keys.server_key.clone());
 
-    let mut s = t.child_span("verify_and_expand");
-    let cts = match try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data) {
+    let mut s = span.child_span("verify_and_expand");
+    let mut cts = match try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data) {
         Ok(cts) => {
             telemetry::attribute(&mut s, "count", cts.len().to_string());
             telemetry::end_span(s);
@@ -343,16 +366,17 @@ pub(crate) fn verify_proof(
         }
     };
 
-    let _s = t.child_span("create_ciphertext");
+    let _s = span.child_span("create_ciphertext");
 
     let mut h = Keccak256::new();
+    h.update(RAW_CT_HASH_DOMAIN_SEPARATOR);
     h.update(raw_ct);
     let blob_hash = h.finalize().to_vec();
 
     let cts = cts
-        .iter()
+        .iter_mut()
         .enumerate()
-        .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data))
+        .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data, &span))
         .collect::<Result<Vec<Ciphertext>, ExecutionError>>()?;
 
     Ok((cts, blob_hash))
@@ -401,15 +425,19 @@ fn create_ciphertext(
     request_id: i64,
     blob_hash: &[u8],
     ct_idx: usize,
-    the_ct: &SupportedFheCiphertexts,
+    the_ct: &mut SupportedFheCiphertexts,
     aux_data: &auxiliary::ZkData,
+    span: &telemetry::OtelTracer,
 ) -> Result<Ciphertext, ExecutionError> {
-    let (serialized_type, compressed) = the_ct.compress();
+    if ct_idx > MAX_INPUT_INDEX as usize {
+        return Err(ExecutionError::TooManyInputs(ct_idx));
+    }
+
     let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(aux_data.chain_id)
         .to_owned()
         .to_be_bytes();
-
     let mut handle_hash = Keccak256::new();
+    handle_hash.update(HANDLE_HASH_DOMAIN_SEPARATOR);
     handle_hash.update(blob_hash);
     handle_hash.update([ct_idx as u8]);
     handle_hash.update(
@@ -419,12 +447,13 @@ fn create_ciphertext(
     );
     handle_hash.update(chain_id_bytes);
     let mut handle = handle_hash.finalize().to_vec();
-
     assert_eq!(handle.len(), 32);
 
-    if ct_idx > MAX_INPUT_INDEX as usize {
-        return Err(ExecutionError::TooManyInputs(ct_idx));
-    }
+    // Add the full 256bit hash as re-randomization metadata, NOT the
+    // truncated hash of the handle
+    the_ct.add_re_randomization_metadata(&handle);
+    let (serialized_type, compressed) = the_ct.compress();
+
     // idx cast to u8 must succeed because we don't allow
     // more handles than u8 size
     handle[21] = ct_idx as u8;
@@ -433,16 +462,17 @@ fn create_ciphertext(
     handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
 
-    let t = telemetry::tracer("new_handle");
-    t.set_attribute("request_id", request_id.to_string());
-    t.set_attribute("handle", hex::encode(handle.clone()));
-    t.set_attribute("chain_id", aux_data.chain_id.to_string());
-    t.set_attribute("ct_idx", ct_idx.to_string());
-    t.set_attribute("user_address", aux_data.user_address.clone());
-    t.set_attribute("contract_address", aux_data.user_address.clone());
-    t.set_attribute("version", current_ciphertext_version().to_string());
-    t.set_attribute("type", serialized_type.to_string());
-    t.set_attribute(
+    let t = &mut span.child_span("create_handle");
+    telemetry::attribute(t, "request_id", request_id.to_string());
+    telemetry::attribute(t, "handle", hex::encode(handle.clone()));
+    telemetry::attribute(t, "chain_id", aux_data.chain_id.to_string());
+    telemetry::attribute(t, "ct_idx", ct_idx.to_string());
+    telemetry::attribute(t, "user_address", aux_data.user_address.clone());
+    telemetry::attribute(t, "contract_address", aux_data.user_address.clone());
+    telemetry::attribute(t, "version", current_ciphertext_version().to_string());
+    telemetry::attribute(t, "type", serialized_type.to_string());
+    telemetry::attribute(
+        t,
         "acl_contract_address",
         aux_data.acl_contract_address.clone(),
     );
@@ -482,8 +512,8 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
 pub(crate) async fn insert_ciphertexts(
     db_txn: &mut Transaction<'_, Postgres>,
     tenant_id: i32,
-    cts: Vec<Ciphertext>,
-    blob_hash: Vec<u8>,
+    cts: &[Ciphertext],
+    blob_hash: &Vec<u8>,
 ) -> Result<(), ExecutionError> {
     for (i, ct) in cts.iter().enumerate() {
         sqlx::query!(
@@ -515,4 +545,9 @@ pub(crate) async fn insert_ciphertexts(
     .execute(db_txn.as_mut())
     .await?;
     Ok(())
+}
+
+async fn update_last_active(last_active_at: Arc<RwLock<SystemTime>>) {
+    let mut value = last_active_at.write().await;
+    *value = SystemTime::now();
 }

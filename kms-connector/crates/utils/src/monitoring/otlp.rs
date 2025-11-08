@@ -1,8 +1,14 @@
 use actix_web::{HttpResponse, http::StatusCode};
 use anyhow::anyhow;
-use opentelemetry::{global, trace::TracerProvider};
+use opentelemetry::{
+    global,
+    propagation::{Extractor, Injector},
+    trace::TracerProvider,
+};
 use opentelemetry_otlp::SpanExporter;
 use opentelemetry_sdk::{Resource, propagation::TraceContextPropagator, trace::SdkTracerProvider};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracing::Dispatch;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -52,5 +58,62 @@ pub async fn metrics_responder() -> impl actix_web::Responder {
     match encoder.encode_to_string(&metric_families) {
         Ok(encoded_metrics) => HttpResponse::with_body(StatusCode::OK, encoded_metrics),
         Err(e) => HttpResponse::with_body(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PropagationContext(HashMap<String, String>);
+
+impl Default for PropagationContext {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl PropagationContext {
+    pub fn empty() -> Self {
+        Self(HashMap::new())
+    }
+
+    pub fn inject(context: &opentelemetry::Context) -> Self {
+        global::get_text_map_propagator(|propagator| {
+            let mut propagation_context = PropagationContext::empty();
+            propagator.inject_context(context, &mut propagation_context);
+            propagation_context
+        })
+    }
+
+    pub fn extract(&self) -> opentelemetry::Context {
+        global::get_text_map_propagator(|propagator| propagator.extract(self))
+    }
+}
+
+impl Injector for PropagationContext {
+    fn set(&mut self, key: &str, value: String) {
+        self.0.insert(key.to_string(), value);
+    }
+}
+
+impl Extractor for PropagationContext {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).map(|v| v.as_ref())
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        self.0.keys().map(|k| k.as_ref()).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    // Test that the default value for otlp_context inserted in database corresponds to an empty
+    // `PropagationContext`.
+    fn test_propagation_context() {
+        let context: PropagationContext =
+            bc2wrap::deserialize(&alloy::hex::decode("0000000000000000").unwrap()).unwrap();
+        assert_eq!(context, PropagationContext::empty());
     }
 }

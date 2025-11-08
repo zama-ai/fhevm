@@ -2,7 +2,7 @@
 //!
 //! The `raw` module is first used to deserialize the configuration.
 
-use crate::core::config::raw::{RawConfig, S3Config};
+use crate::core::config::raw::RawConfig;
 use connector_utils::{
     config::{ContractConfig, DeserializeRawConfig, Error, Result},
     monitoring::otlp::default_dispatcher,
@@ -17,8 +17,10 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
-    /// The timeout for polling the database for events.
-    pub database_polling_timeout: Duration,
+    /// The timeout for polling the database for fast events (decryption for ex).
+    pub db_fast_event_polling: Duration,
+    /// The timeout for polling the database for long events (prep keygen for ex).
+    pub db_long_event_polling: Duration,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
     /// The KMS Core endpoints.
@@ -29,6 +31,8 @@ pub struct Config {
     pub decryption_contract: ContractConfig,
     /// The `GatewayConfig` contract configuration.
     pub gateway_config_contract: ContractConfig,
+    /// The `KMSGeneration` contract configuration.
+    pub kms_generation_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,
 
@@ -36,15 +40,7 @@ pub struct Config {
     pub events_batch_size: u8,
     /// Number of retries for GRPC requests sent to the KMS Core.
     pub grpc_request_retries: u8,
-    /// Timeout to get public decryption responses from KMS Core.
-    pub public_decryption_timeout: Duration,
-    /// Timeout to get user decryption responses from KMS Core.
-    pub user_decryption_timeout: Duration,
-    /// Retry interval to poll GRPC responses from KMS Core.
-    pub grpc_poll_interval: Duration,
 
-    /// S3 configuration for ciphertext storage (optional).
-    pub s3_config: Option<S3Config>,
     /// Number of retries for S3 ciphertext retrieval.
     pub s3_ciphertext_retrieval_retries: u8,
     /// Timeout to connect to a S3 bucket.
@@ -86,6 +82,8 @@ impl Config {
             ContractConfig::parse("Decryption", raw_config.decryption_contract)?;
         let gateway_config_contract =
             ContractConfig::parse("GatewayConfig", raw_config.gateway_config_contract)?;
+        let kms_generation_contract =
+            ContractConfig::parse("KMSGeneration", raw_config.kms_generation_contract)?;
 
         // Validate critical configuration parts
         if raw_config.gateway_url.is_empty() {
@@ -104,31 +102,25 @@ impl Config {
             kms_core_endpoints = raw_config.kms_core_endpoints;
         }
 
-        let database_polling_timeout =
-            Duration::from_secs(raw_config.database_polling_timeout_secs);
-        let public_decryption_timeout =
-            Duration::from_secs(raw_config.public_decryption_timeout_secs);
-        let user_decryption_timeout = Duration::from_secs(raw_config.user_decryption_timeout_secs);
-        let grpc_poll_interval = Duration::from_secs(raw_config.grpc_poll_interval_secs);
+        let db_fast_event_polling = Duration::from_secs(raw_config.db_fast_event_polling_secs);
+        let db_long_event_polling = Duration::from_secs(raw_config.db_long_event_polling_secs);
         let s3_ciphertext_retrieval_timeout = Duration::from_secs(raw_config.s3_connect_timeout);
         let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
 
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
-            database_polling_timeout,
+            db_fast_event_polling,
+            db_long_event_polling,
             gateway_url: raw_config.gateway_url,
             kms_core_endpoints,
             chain_id: raw_config.chain_id,
             decryption_contract,
             gateway_config_contract,
+            kms_generation_contract,
             service_name: raw_config.service_name,
             events_batch_size: raw_config.events_batch_size,
             grpc_request_retries: raw_config.grpc_request_retries,
-            public_decryption_timeout,
-            user_decryption_timeout,
-            grpc_poll_interval,
-            s3_config: raw_config.s3_config,
             s3_ciphertext_retrieval_retries: raw_config.s3_ciphertext_retrieval_retries,
             s3_connect_timeout: s3_ciphertext_retrieval_timeout,
             task_limit: raw_config.task_limit,
@@ -162,14 +154,10 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
+            env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
-            env::remove_var("KMS_CONNECTOR_S3_CONFIG__REGION");
-            env::remove_var("KMS_CONNECTOR_S3_CONFIG__BUCKET");
             env::remove_var("KMS_CONNECTOR_EVENTS_BATCH_SIZE");
             env::remove_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES");
-            env::remove_var("KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS");
-            env::remove_var("KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS");
-            env::remove_var("KMS_CONNECTOR_GRPC_POLL_INTERVAL_SECS");
             env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
         }
@@ -200,18 +188,6 @@ mod tests {
         assert_eq!(raw_config.kms_core_endpoints, config.kms_core_endpoints);
         assert_eq!(raw_config.service_name, config.service_name);
         assert_eq!(
-            raw_config.public_decryption_timeout_secs,
-            config.public_decryption_timeout.as_secs()
-        );
-        assert_eq!(
-            raw_config.user_decryption_timeout_secs,
-            config.user_decryption_timeout.as_secs()
-        );
-        assert_eq!(
-            raw_config.grpc_poll_interval_secs,
-            config.grpc_poll_interval.as_secs()
-        );
-        assert_eq!(
             raw_config.decryption_contract.domain_name.unwrap(),
             config.decryption_contract.domain_name,
         );
@@ -227,7 +203,6 @@ mod tests {
             raw_config.gateway_config_contract.domain_version.unwrap(),
             config.gateway_config_contract.domain_version,
         );
-        assert_eq!(raw_config.s3_config, config.s3_config);
     }
 
     #[test]
@@ -253,14 +228,15 @@ mod tests {
             );
             env::set_var(
                 "KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS",
-                "0x0000000000000000000000000000000000000001",
+                "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+            );
+            env::set_var(
+                "KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS",
+                "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
             env::set_var("KMS_CONNECTOR_EVENTS_BATCH_SIZE", "15");
             env::set_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES", "5");
-            env::set_var("KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS", "600");
-            env::set_var("KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS", "600");
-            env::set_var("KMS_CONNECTOR_GRPC_POLL_INTERVAL_SECS", "10");
             env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4");
         }
@@ -281,14 +257,15 @@ mod tests {
         );
         assert_eq!(
             config.gateway_config_contract.address,
-            Address::from_str("0x0000000000000000000000000000000000000001").unwrap()
+            Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
+        );
+        assert_eq!(
+            config.kms_generation_contract.address,
+            Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
         );
         assert_eq!(config.service_name, "kms-connector-test");
         assert_eq!(config.events_batch_size, 15);
         assert_eq!(config.grpc_request_retries, 5);
-        assert_eq!(config.public_decryption_timeout.as_secs(), 600);
-        assert_eq!(config.user_decryption_timeout.as_secs(), 600);
-        assert_eq!(config.grpc_poll_interval.as_secs(), 10);
         assert_eq!(config.s3_ciphertext_retrieval_retries, 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
 
@@ -310,8 +287,6 @@ mod tests {
         unsafe {
             env::set_var("KMS_CONNECTOR_CHAIN_ID", "77737");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-override");
-            env::set_var("KMS_CONNECTOR_S3_CONFIG__REGION", "test-region");
-            env::set_var("KMS_CONNECTOR_S3_CONFIG__BUCKET", "test-bucket");
         }
 
         // Load config from both sources
@@ -320,8 +295,6 @@ mod tests {
         // Verify that environment variables take precedence
         assert_eq!(config.chain_id, 77737);
         assert_eq!(config.service_name, "kms-connector-override");
-        assert_eq!(config.s3_config.as_ref().unwrap().region, "test-region");
-        assert_eq!(config.s3_config.as_ref().unwrap().bucket, "test-bucket");
 
         // File values should be used for non-overridden fields
         assert_eq!(config.gateway_url, "ws://localhost:8545");

@@ -1,0 +1,27 @@
+{
+  "__comment": "All relative paths except imports are always relative to baseDir",
+  "baseDir": ".",
+  "noHostContracts": true,
+  "lib": {
+    "outDir": "./lib",
+    "fheTypeDir": "./lib"
+  },
+  "tests": {
+    "numberOfTestSplits": 12,
+    "overloads": "./codegen/overloads/library-solidity.json",
+    "solidity": {
+      "__comment": "All imports paths are relative to outDir",
+      "outDir": "./examples/tests",
+      "imports": [["CoprocessorSetup", "../CoprocessorSetup.sol"]]
+    },
+    "typescript": {
+      "__comment": "All imports paths are relative to outDir",
+      "outDir": "./test/fhevmOperations",
+      "imports": [
+        ["instance", "../instance"],
+        ["signers", "../signers"],
+        ["typechain", "../../typechain-types/examples/tests"]
+      ]
+    }
+  }
+}

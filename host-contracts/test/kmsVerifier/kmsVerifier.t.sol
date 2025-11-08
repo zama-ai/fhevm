@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
@@ -10,7 +10,7 @@ import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
-import {ACLChecks} from "../../contracts/shared/ACLChecks.sol";
+import {ACLOwnable} from "../../contracts/shared/ACLOwnable.sol";
 import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract KMSVerifierTest is Test {
@@ -108,7 +108,7 @@ contract KMSVerifierTest is Test {
     function _deployProxy() internal {
         proxy = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, owner)
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
         );
     }
 
@@ -218,7 +218,7 @@ contract KMSVerifierTest is Test {
     function test_PostProxyUpgradeCheck() public {
         uint256 numberSigners = 3;
         _upgradeProxyWithSigners(numberSigners);
-        assertEq(kmsVerifier.getVersion(), string(abi.encodePacked("KMSVerifier v0.2.0")));
+        assertEq(kmsVerifier.getVersion(), string(abi.encodePacked("KMSVerifier v0.1.0")));
         assertEq(kmsVerifier.getThreshold(), initialThreshold);
     }
 
@@ -245,7 +245,7 @@ contract KMSVerifierTest is Test {
         vm.assume(randomAccount != owner);
         _upgradeProxyWithSigners(3);
         address randomSigner = address(42);
-        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         vm.prank(randomAccount);
         address[] memory newSigners = new address[](1);
         newSigners[0] = randomSigner;
@@ -340,7 +340,7 @@ contract KMSVerifierTest is Test {
         vm.assume(randomAccount != owner);
         _upgradeProxyWithSigners(3);
         vm.prank(randomAccount);
-        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         kmsVerifier.setThreshold(2);
     }
 
@@ -377,7 +377,7 @@ contract KMSVerifierTest is Test {
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
-        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         this.upgrade(randomAccount);
     }
 
@@ -574,5 +574,29 @@ contract KMSVerifierTest is Test {
 
         vm.expectRevert(KMSVerifier.DeserializingDecryptionProofFail.selector);
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
+    }
+
+    /// @dev This function exists for the test below to call it externally.
+    function emptyUpgrade() public {
+        address[] memory emptySigners = new address[](0);
+        implementation = address(new KMSVerifier());
+
+        UnsafeUpgrades.upgradeProxy(
+            proxy,
+            implementation,
+            abi.encodeCall(
+                KMSVerifier.initializeFromEmptyProxy,
+                (verifyingContractSource, uint64(block.chainid), emptySigners, initialThreshold)
+            ),
+            owner
+        );
+    }
+
+    /**
+     * @dev Tests that the contract cannot be reinitialized if the initial signers set is empty.
+     */
+    function test_CannotReinitializeIfInitialSignersSetIsEmpty() public {
+        vm.expectPartialRevert(KMSVerifier.SignersSetIsEmpty.selector);
+        this.emptyUpgrade();
     }
 }

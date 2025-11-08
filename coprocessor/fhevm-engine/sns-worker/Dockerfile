@@ -1,5 +1,5 @@
 # Stage 1: Build SNS Worker
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.89.0 AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
 USER root
 
@@ -7,11 +7,13 @@ WORKDIR /app
 
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 
 WORKDIR /app/coprocessor/fhevm-engine
 
 # Build sns_executor binary
-RUN cargo fetch && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo fetch && \
     SQLX_OFFLINE=true cargo build --release -p sns-worker
 
 # Stage 2: Runtime image

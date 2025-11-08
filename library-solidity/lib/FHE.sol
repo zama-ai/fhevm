@@ -19,34 +19,13 @@ interface IKMSVerifier {
 }
 
 /**
- * @title IDecryptionOracle
- * @notice This interface contains the only function required from DecryptionOracle.
- */
-interface IDecryptionOracle {
-    function requestDecryption(
-        uint256 requestID,
-        bytes32[] calldata ctsHandles,
-        bytes4 callbackSelector
-    ) external payable;
-}
-
-/**
  * @title   FHE
  * @notice  This library is the interaction point for all smart contract developers
  *          that interact with the FHEVM protocol.
  */
 library FHE {
-    /// @notice Returned if some handles were already saved for corresponding ID.
-    error HandlesAlreadySavedForRequestID();
-
-    /// @notice Returned if there was not handle found for the requested ID.
-    error NoHandleFoundForRequestID();
-
     /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
-
-    /// @notice This event is emitted when requested decryption has been fulfilled.
-    event DecryptionFulfilled(uint256 indexed requestID);
 
     /**
      * @notice                  Sets the coprocessor addresses.
@@ -7770,57 +7749,137 @@ library FHE {
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, ebool a, ebool b) internal returns (ebool) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEbool(false);
+        }
+        if (!isInitialized(b)) {
+            b = asEbool(false);
+        }
         return ebool.wrap(Impl.select(ebool.unwrap(control), ebool.unwrap(a), ebool.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint8 a, euint8 b) internal returns (euint8) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
         return euint8.wrap(Impl.select(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint16 a, euint16 b) internal returns (euint16) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
         return euint16.wrap(Impl.select(ebool.unwrap(control), euint16.unwrap(a), euint16.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint32 a, euint32 b) internal returns (euint32) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
         return euint32.wrap(Impl.select(ebool.unwrap(control), euint32.unwrap(a), euint32.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint64 a, euint64 b) internal returns (euint64) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
         return euint64.wrap(Impl.select(ebool.unwrap(control), euint64.unwrap(a), euint64.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint128 a, euint128 b) internal returns (euint128) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
         return euint128.wrap(Impl.select(ebool.unwrap(control), euint128.unwrap(a), euint128.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEaddress(address(0));
+        }
+        if (!isInitialized(b)) {
+            b = asEaddress(address(0));
+        }
         return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint256 a, euint256 b) internal returns (euint256) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
         return euint256.wrap(Impl.select(ebool.unwrap(control), euint256.unwrap(a), euint256.unwrap(b)));
     }
+
     /**
      * @dev Casts an encrypted integer from 'euint16' to 'euint8'.
      */
@@ -8857,128 +8916,180 @@ library FHE {
     }
 
     /**
-     * @dev Recovers the stored array of handles corresponding to requestID.
+     * @dev Returns whether the account is on the deny list.
      */
-    function loadRequestedHandles(uint256 requestID) internal view returns (bytes32[] memory) {
-        DecryptionRequests storage $ = Impl.getDecryptionRequests();
-        if ($.requestedHandles[requestID].length == 0) {
-            revert NoHandleFoundForRequestID();
+    function isAccountDenied(address account) internal view returns (bool) {
+        return Impl.isAccountDenied(account);
+    }
+
+    /// @notice Checks if the `handle` can be decrypted in the given context (`user`, `contractAddress`).
+    /// @param handle The handle as a bytes32.
+    /// @param user The account address that is part of the user decryption context.
+    /// @param contractAddress The address of the contract that is part of the user decryption context.
+    /// @return False if `user` has not (user, contractAddress) context.
+    function isUserDecryptable(bytes32 handle, address user, address contractAddress) internal view returns (bool) {
+        if (user == contractAddress) {
+            return false;
         }
-        return $.requestedHandles[requestID];
+        return Impl.persistAllowed(handle, user) && Impl.persistAllowed(handle, contractAddress);
+    }
+
+    /// @notice Checks if the user decryption rights have been delegated by `delegator` to `delegate`
+    ///         in the context of the given `contractAddress`.
+    /// @param delegator The delegator address
+    /// @param delegate The account authorized to request user decryptions on behalf of `delegator`
+    /// @param contractAddress The address of the contract that is part of the user decryption context
+    /// @param handle The handle as a bytes32
+    /// @return False if no active delegation exists for the (delegate, contractAddress) context, or if it has expired.
+    function isDelegatedForUserDecryption(
+        address delegator,
+        address delegate,
+        address contractAddress,
+        bytes32 handle
+    ) internal view returns (bool) {
+        return Impl.isDelegatedForUserDecryption(delegator, delegate, contractAddress, handle);
+    }
+
+    /// @notice Delegates the user decryption rights that caller contract (`address(this)`) holds in the context
+    ///         of the given `contractAddress` to a new `delegate` account for a limited amount of time.
+    /// @dev The ACL grants user decryption permission based on a (User, Contract) pair. If the pair
+    ///      (`address(this)`, `contractAddress`) has permission to decrypt a handle, calling this function grants
+    ///      the temporary permission to the new pair (`delegate`, `contractAddress`) to decrypt the same handle.
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`address(this)`).
+    /// @param contractAddress The address of the contract that is part of the user decryption context.
+    /// @param expirationDate UNIX timestamp when the delegation expires.
+    ///
+    /// @dev Requirements:
+    ///      - the ACL contract must not be paused.
+    ///        Reverts via an {PausableUpgradeable-EnforcedPause} error otherwise.
+    ///
+    ///      - `expirationDate` must be at least 1 hour in the future.
+    ///        i.e. `expirationDate >= block.timestamp + 1 hours`
+    ///        Reverts with an {IACL-ExpirationDateBeforeOneHour} error otherwise.
+    ///
+    ///      - `expirationDate` must differ from the current value.
+    ///        Reverts with an {IACL-ExpirationDateAlreadySetToSameValue} error otherwise.
+    ///
+    ///      - at most one delegate OR revoke per block for this
+    ///        (address(this), delegate, contractAddress) tuple to avoid racey
+    ///        state updates.
+    ///        Reverts with an {IACL-AlreadyDelegatedOrRevokedInSameBlock} error
+    ///        if a delegate OR revoke operation already occurred in the current
+    ///        block. See {canDelegateOrRevokeNow}
+    ///
+    ///      - The `contractAddress` cannot be the caller contract (`address(this)`).
+    ///        Reverts with an {IACL-SenderCannotBeContractAddress} error if
+    ///        `contractAddress == address(this)`.
+    ///
+    ///      - The `delegate` address cannot be the caller contract (`address(this)`).
+    ///        Reverts with an {IACL-SenderCannotBeDelegate} error if
+    ///        `delegate == address(this)`.
+    ///
+    ///      - The `delegate` address cannot be the `contractAddress`.
+    ///        Reverts with an {IACL-DelegateCannotBeContractAddress} error if
+    ///        `delegate == contractAddress`.
+    function delegateUserDecryption(address delegate, address contractAddress, uint64 expirationDate) internal {
+        Impl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+    }
+
+    /// @notice Permanently delegates the user decryption rights that the caller contract (`address(this)`) holds in the
+    ///         context of the given `contractAddress` to a new `delegate` account.
+    /// @dev This is the version without expiration of {delegateUserDecryption}. The permission remains active until explicitly
+    ///      revoked by the delegator using {revokeUserDecryptionDelegation}.
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`address(this)`).
+    /// @param contractAddress The address of the contract that is part of the user decryption context.
+    function delegateUserDecryptionWithoutExpiration(address delegate, address contractAddress) internal {
+        Impl.delegateForUserDecryption(delegate, contractAddress, type(uint64).max);
+    }
+
+    /// @notice Batch delegates the user decryption rights that the caller contract (`address(this)`) holds in the context of the
+    ///         given `contractAddresses[i]` to a new `delegate` account for a limited amount of time.
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`address(this)`)..
+    /// @param contractAddresses The array of contract addresses that form the user decryption context tuples
+    ///                          (`address(this)`, `contractAddresses[i]`).
+    /// @param expirationDate UNIX timestamp when the delegation expires.
+    function delegateUserDecryptions(
+        address delegate,
+        address[] memory contractAddresses,
+        uint64 expirationDate
+    ) internal {
+        Impl.delegateForUserDecryptions(delegate, contractAddresses, expirationDate);
+    }
+
+    /// @notice Batch delegates user decryption rights without expiration that the caller contract (`address(this)`) holds in the context of
+    ///         the given `contractAddresses[i]` to a new `delegate` account.
+    /// @param delegate The account that will request a user decryption on behalf of delegator (`address(this)`)..
+    /// @param contractAddresses The array of contract addresses that form the user decryption context tuples
+    ///                          (`address(this)`, `contractAddresses[i]`).
+    function delegateUserDecryptionsWithoutExpiration(address delegate, address[] memory contractAddresses) internal {
+        Impl.delegateForUserDecryptions(delegate, contractAddresses, type(uint64).max);
+    }
+
+    /// @notice Revoke an existing delegation from delegator `address(this)` to a (delegate, contractAddress) user
+    ///         decryption context.
+    /// @param delegate The account that was authorized to request user decryptions on behalf of the caller contract `address(this)`
+    /// @param contractAddress The address of the contract that is part of the user decryption context
+    /// @dev Requirements:
+    ///      - the ACL contract must not be paused.
+    ///        Reverts with an {PausableUpgradeable-EnforcedPause} error otherwise.
+    ///
+    ///      - at most one delegate OR revoke per block for this
+    ///        (address(this), delegate, contractAddress) tuple to avoid racey
+    ///        state updates.
+    ///        Reverts with an {IACL-AlreadyDelegatedOrRevokedInSameBlock} error
+    ///        if a delegate OR revoke operation already occurred in the current
+    ///        block.
+    ///
+    ///     -  An active delegation must exist for the (delegate, contractAddress)
+    ///        context.
+    ///        Reverts with an {IACL-NotDelegatedYet} error otherwise.
+    function revokeUserDecryptionDelegation(address delegate, address contractAddress) internal {
+        Impl.revokeDelegationForUserDecryption(delegate, contractAddress);
+    }
+
+    /// @notice Batch revoke existing delegations from delegator `address(this)` to the given
+    ///         (delegate, contractAddresses[i]) pairs.
+    /// @param delegate The account that was authorized to request user decryptions on behalf of the caller contract `address(this)`
+    /// @param contractAddresses The array of contract addresses that form the user decryption context tuples
+    ///                          (`address(this)`, `contractAddresses[i]`).
+    function revokeUserDecryptionDelegations(address delegate, address[] memory contractAddresses) internal {
+        Impl.revokeDelegationsForUserDecryption(delegate, contractAddresses);
+    }
+
+    /// @notice Get the expiry date of the delegation from delegator to a (delegate, contractAddress) pair.
+    /// @param delegator The delegator address
+    /// @param delegate The account authorized to request user decryptions on behalf of delegator
+    /// @param contractAddress The address of the contract that is part of the user decryption context
+    /// @return expirationDate The delegation's expiration limit, which can be one of:
+    ///         - 0 :  If no delegation is currently active for the (delegate, contractAddress) context.
+    ///         - type(uint64).max : If the delegation is permanent (no expiry).
+    ///         - A strictly positive UNIX timestamp when this delegation expires.
+    function getDelegatedUserDecryptionExpirationDate(
+        address delegator,
+        address delegate,
+        address contractAddress
+    ) internal view returns (uint64 expirationDate) {
+        expirationDate = Impl.getUserDecryptionDelegationExpirationDate(delegator, delegate, contractAddress);
     }
 
     /**
-     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles.
-     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
-     */
-    function requestDecryption(
-        bytes32[] memory ctsHandles,
-        bytes4 callbackSelector
-    ) internal returns (uint256 requestID) {
-        requestID = requestDecryption(ctsHandles, callbackSelector, 0);
-    }
-
-    /**
-     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles, with a custom msgValue.
-     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
-     */
-    function requestDecryption(
-        bytes32[] memory ctsHandles,
-        bytes4 callbackSelector,
-        uint256 msgValue
-    ) internal returns (uint256 requestID) {
-        DecryptionRequests storage $ = Impl.getDecryptionRequests();
-        requestID = $.counterRequest;
-        CoprocessorConfig storage $$ = Impl.getCoprocessorConfig();
-        IACL($$.ACLAddress).allowForDecryption(ctsHandles);
-        IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption{value: msgValue}(
-            requestID,
-            ctsHandles,
-            callbackSelector
-        );
-        saveRequestedHandles(requestID, ctsHandles);
-        $.counterRequest++;
-    }
-
-    /**
-     * @dev     MUST be called inside the callback function the dApp contract to verify the signatures,
-     * @dev     otherwise fake decryption results could be submitted.
+     * @dev Internal low-level function used to verify the KMS signatures.
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
-     */
-    function checkSignatures(uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) internal {
-        bytes32[] memory handlesList = loadRequestedHandles(requestID);
-        bool isVerified = verifySignatures(handlesList, cleartexts, decryptionProof);
-        if (!isVerified) {
-            revert InvalidKMSSignatures();
-        }
-        emit DecryptionFulfilled(requestID);
-    }
-
-    /**
-     * @dev Private low-level function used to link in storage an array of handles to its associated requestID.
-     */
-    function saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
-        DecryptionRequests storage $ = Impl.getDecryptionRequests();
-        if ($.requestedHandles[requestID].length != 0) {
-            revert HandlesAlreadySavedForRequestID();
-        }
-        $.requestedHandles[requestID] = handlesList;
-    }
-
-    /**
-     * @dev Private low-level function used to extract the decryptedResult bytes array and verify the KMS signatures.
-     * @notice  Warning: MUST be called directly in the callback function called by the relayer.
-     * @dev The callback function has the following signature:
-     * - requestID (static uint256)
-     * - cleartexts (dynamic bytes)
-     * - decryptionProof (dynamic bytes)
-     *
-     * This means that the calldata is encoded in the following way:
-     * - 4 bytes: selector
-     * - 32 bytes: requestID
-     * - 32 bytes: offset of the cleartexts
-     * - 32 bytes: offset of the decryptionProof
-     * - 32 bytes: length of the cleartexts (total number of bytes)
-     * - n*32 bytes: the "n" cleartext values, with "n" the number of handles
-     * - 32 bytes: length of the decryptionProof (total number of bytes)
-     * - ... the data of the decryptionProof (signatures, extra data)
-     */
+     * @notice Warning: this function never reverts, its boolean return value must be checked.
+     * @dev clearTexts is the abi-encoding of the list of all decrypted values assiociated to handlesList, in same order.
+     * @dev Only static native solidity types for clear values are supported, so clearTexts is the concatenation of all clear values appended to 32 bytes.
+     * @dev decryptionProof contains KMS signatures corresponding to clearTexts and associated handlesList, and needed metadata for KMS context.
+     **/
     function verifySignatures(
         bytes32[] memory handlesList,
         bytes memory cleartexts,
         bytes memory decryptionProof
-    ) private returns (bool) {
-        // Compute the signature offset
-        // This offset is computed by considering the format encoded by the KMS when creating the
-        // "decryptedResult" bytes array (see comment below), which is the following:
-        // - requestID: 32 bytes
-        // - all "n" decrypted values (which is "cleartexts" itself): n*32 bytes ("cleartexts.length" bytes)
-        // - offset of the signatures: 32 bytes
-        // - the rest of signature values (lengths, offsets, values)
-        // This means the expected offset to concatenate to the "decryptedResult" bytes array has
-        // the following value: 32 + n*32 + 32
-        // See https://docs.soliditylang.org/en/latest/abi-spec.html#use-of-dynamic-types for more details.
-        // The signature offset will most likely be removed in the future,
-        // see https://github.com/zama-ai/fhevm-internal/issues/345
-        uint256 signaturesOffset = 32 + cleartexts.length + 32;
-
-        // Built the "decryptedResult" bytes array
-        // Currently, the "decryptedResult" is encoded (by the KMS) in the following format:
-        // - n*32 bytes: the "n" decrypted values, "cleartexts" itself
-        // - 32 bytes: offset of the signatures, as explained above
-        // This is equivalent to concatenating the cleartexts and the signatures offset, which can
-        // be done using abi.encoded in a gas efficient way.
-        // The signature offset will most likely be removed in the future,
-        // see https://github.com/zama-ai/fhevm-internal/issues/345
-        // Here we can use "encodePacked" instead of "abi.encode" to save gas, as the cleartexts
-        // and the signaturesOffset are already 32 bytes aligned (ie, no padding needed).
-        bytes memory decryptedResult = abi.encodePacked(cleartexts, signaturesOffset);
-
+    ) internal returns (bool) {
         CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
                 handlesList,
-                decryptedResult,
+                cleartexts,
                 decryptionProof
             );
     }

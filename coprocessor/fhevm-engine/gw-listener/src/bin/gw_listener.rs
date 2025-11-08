@@ -3,6 +3,9 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
+use fhevm_engine_common::{metrics_server, telemetry, utils::DatabaseURL};
+use gw_listener::aws_s3::AwsS3Client;
+use gw_listener::chain_id_from_env;
 use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
 use gw_listener::ConfigSettings;
@@ -15,12 +18,12 @@ use tracing::{error, info, Level};
 #[command(version, about, long_about = None)]
 struct Conf {
     #[arg(long)]
-    database_url: Option<String>,
+    database_url: Option<DatabaseURL>,
 
-    #[arg(long, default_value = "16")]
+    #[arg(long, default_value_t = 16)]
     database_pool_size: u32,
 
-    #[arg(long, default_value = "verify_proof_requests")]
+    #[arg(long, default_value = "event_zkpok_new_work")]
     verify_proof_req_database_channel: String,
 
     #[arg(long)]
@@ -29,20 +32,26 @@ struct Conf {
     #[arg(short, long)]
     input_verification_address: Address,
 
-    #[arg(long, default_value = "1")]
+    #[arg(long)]
+    kms_generation_address: Address,
+
+    #[arg(long, default_value_t = 1)]
     error_sleep_initial_secs: u16,
 
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value_t = 10)]
     error_sleep_max_secs: u16,
 
-    /// HTTP server port for health checks
     #[arg(long, default_value_t = 8080)]
     health_check_port: u16,
+
+    /// Prometheus metrics server address
+    #[arg(long, default_value = "0.0.0.0:9100")]
+    metrics_addr: Option<String>,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     health_check_timeout: Duration,
 
-    #[arg(long, default_value = "1000000")]
+    #[arg(long, default_value_t = u32::MAX)]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
@@ -53,6 +62,22 @@ struct Conf {
         value_parser = clap::value_parser!(Level),
         default_value_t = Level::INFO)]
     log_level: Level,
+
+    #[arg(long)]
+    host_chain_id: Option<u64>,
+
+    #[arg(long, default_value = "1s", value_parser = parse_duration)]
+    get_logs_poll_interval: Duration,
+
+    #[arg(long, default_value_t = 100)]
+    get_logs_block_batch_size: u64,
+
+    /// gw-listener service name in OTLP traces
+    #[arg(long, default_value = "gw-listener")]
+    pub service_name: String,
+
+    #[arg(long, default_value = None, help = "Can be negative from last processed block", allow_hyphen_values = true)]
+    pub catchup_kms_generation_from_block: Option<i64>,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -80,12 +105,14 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(conf.log_level)
         .init();
 
-    info!(conf = ?conf, "Starting gw_listener");
+    if !conf.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
+    }
 
-    let database_url = conf
-        .database_url
-        .clone()
-        .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
+    info!(gateway_url = %conf.gw_url, max_retries = %conf.provider_max_retries,
+         retry_interval = ?conf.provider_retry_interval, "Connecting to Gateway");
 
     let provider = loop {
         match ProviderBuilder::new()
@@ -112,10 +139,16 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let aws_s3_client = AwsS3Client {};
+
     let cancel_token = CancellationToken::new();
 
+    let Some(host_chain_id) = conf.host_chain_id.or_else(chain_id_from_env) else {
+        anyhow::bail!("--host-chain-id or CHAIN_ID env var is missing.")
+    };
     let config = ConfigSettings {
-        database_url,
+        host_chain_id,
+        database_url: conf.database_url.clone().unwrap_or_default(),
         database_pool_size: conf.database_pool_size,
         verify_proof_req_db_channel: conf.verify_proof_req_database_channel,
         gw_url: conf.gw_url,
@@ -123,26 +156,29 @@ async fn main() -> anyhow::Result<()> {
         error_sleep_max_secs: conf.error_sleep_max_secs,
         health_check_port: conf.health_check_port,
         health_check_timeout: conf.health_check_timeout,
+        get_logs_poll_interval: conf.get_logs_poll_interval,
+        get_logs_block_batch_size: conf.get_logs_block_batch_size,
+        catchup_kms_generation_from_block: conf.catchup_kms_generation_from_block,
     };
 
     let gw_listener = GatewayListener::new(
         conf.input_verification_address,
+        conf.kms_generation_address,
         config.clone(),
         cancel_token.clone(),
         provider.clone(),
+        aws_s3_client.clone(),
     );
 
     // Wrap the GatewayListener in an Arc
     let gw_listener = std::sync::Arc::new(gw_listener);
 
-    // Create HTTP server with the Arc-wrapped listener
     let http_server = HttpServer::new(
         gw_listener.clone(),
         conf.health_check_port,
         cancel_token.clone(),
     );
 
-    // Install signal handlers
     install_signal_handlers(cancel_token.clone())?;
 
     info!(
@@ -150,20 +186,26 @@ async fn main() -> anyhow::Result<()> {
         "Starting HTTP health check server"
     );
 
-    // Run both services concurrently - note we now have to deref the Arc for run()
-    let (listener_result, http_result) = tokio::join!(gw_listener.run(), http_server.start());
+    // Run both services in parallel. Here we assume that if gw listener stops without an error, HTTP server should also stop.
+    let gw_listener_fut = tokio::spawn(async move { gw_listener.run().await });
+    let http_server_fut = tokio::spawn(async move { http_server.start().await });
 
-    // Check results
-    if let Err(e) = listener_result {
-        error!(error = %e, "Gateway listener error");
-        return Err(e);
-    }
+    // Start the metrics server.
+    metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
 
-    if let Err(e) = http_result {
-        error!(error = %e, "HTTP server error");
-        return Err(e);
-    }
+    let gw_listener_res = gw_listener_fut.await;
+    let http_server_res = http_server_fut.await;
 
-    info!("Gateway listener and HTTP server stopped gracefully");
+    info!(
+        gw_listener_res = ?gw_listener_res,
+        http_server_res = ?http_server_res,
+        "Gateway listener and HTTP health check server tasks have stopped"
+    );
+
+    gw_listener_res??;
+    http_server_res??;
+
+    info!("Gateway listener and HTTP health check server stopped gracefully");
+
     Ok(())
 }

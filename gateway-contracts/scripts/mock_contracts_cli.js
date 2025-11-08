@@ -11,6 +11,26 @@ const INTERFACES_DIR = path.join(CONTRACTS_DIR, "/interfaces");
 const MOCKS_DIR = path.join(CONTRACTS_DIR, "/mocks");
 const SHARED_STRUCTS_FILE = "shared/Structs.sol";
 
+const RequestIdCounters = {
+  decryptionId: {
+    publicDecryptionId: "publicDecryptionCounter",
+    userDecryptionId: "userDecryptionCounter",
+  },
+};
+
+// Define the mapping of request types to their corresponding IDs
+// The names should match the start of their associated counter state variables in the contracts
+const KMS_REQUEST_TYPES_MAPPING = {
+  publicDecryption: 1,
+  userDecryption: 2,
+  prepKeygen: 3,
+  key: 4,
+  crs: 5,
+  keyReshare: 6,
+};
+
+const KMS_REQUEST_TYPES_SHIFT = 248;
+
 // Logging functions
 const logInfo = (msg) => console.log(`\x1b[34m[*]\x1b[0m ${msg}`);
 const logSuccess = (msg) => console.log(`\x1b[32m[+]\x1b[0m ${msg}`);
@@ -176,7 +196,20 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
   const eventDefinitions = interfaceDefinition.subNodes.filter((node) => node.type === "EventDefinition");
 
   // Extract StructDefinitions from the interface definition
-  const structDefinitions = interfaceDefinition.subNodes.filter((node) => node.type === "StructDefinition");
+  const structDefinitionsInterface = interfaceDefinition.subNodes.filter((node) => node.type === "StructDefinition");
+
+  // Extract StructDefinitions from the contract definition
+  // Exclude the specific storage structs (ex: `GatewayConfigStorage`) as they are not meant to be used
+  // as a function parameter
+  const structDefinitionsContract = contractDefinition.subNodes.filter(
+    (node) => node.type === "StructDefinition" && !node.name.endsWith("Storage"),
+  );
+
+  // Gather all struct definitions used in functions
+  const structDefinitions = structDefinitionsInterface.concat(structDefinitionsContract);
+
+  // Extract EnumDefinitions from the interface definition
+  const enumDefinitions = interfaceDefinition.subNodes.filter((node) => node.type === "EnumDefinition");
 
   // Extract FunctionDefinitions from the contract definition
   const functionDefinitions = contractDefinition.subNodes.filter((node) => node.type === "FunctionDefinition");
@@ -187,10 +220,16 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
   // Generate mock struct definitions
   const mockStruct = generateMockStructs(structDefinitions);
 
+  // Generate mock enum definitions
+  const mockEnums = generateMockEnums(enumDefinitions);
+
   // Generate mock counters
   const mockCounters = generateMockCounters(functionDefinitions);
 
   // Generate mock function definitions
+  // Enums do not need to be passed here because they do not need specific handling as a function parameter
+  // like structs do
+  // `sharedStructsDefinitions` needs to be considered as they are used in the struct definitions
   const mockFunctions = generateMockFunctions(
     functionDefinitions,
     eventDefinitions,
@@ -216,6 +255,8 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
 
   // Append struct lines
   mockContract += mockStruct + "\n\n";
+  // Append enum lines
+  mockContract += mockEnums + "\n\n";
   // Append event lines
   mockContract += mockEvents + "\n\n";
   // Append counter lines
@@ -241,7 +282,12 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
  */
 function generateMockCounters(functionDefinitions) {
   const counterOperators = findCounterOperators(functionDefinitions);
-  return counterOperators.map((counter) => `uint256 ${counter};`).join("\n");
+  return counterOperators
+    .map((counter) => {
+      const initialValue = getCounterInitialValue(counter);
+      return `uint256 ${counter} = ${initialValue};`;
+    })
+    .join("\n");
 }
 
 /**
@@ -260,6 +306,21 @@ function generateMockStructs(structDefinitions) {
         .join("\n");
 
       return `struct ${structName} {\n${members}\n}`;
+    })
+    .join("\n\n");
+}
+
+/**
+ * @description Generates mock enum definitions based on the provided enum definitions.
+ * @param {BaseASTNode[]} enumDefinitions - Array of enums to generate
+ * @returns string - Generated mock enum definitions
+ */
+function generateMockEnums(enumDefinitions) {
+  return enumDefinitions
+    .map((enumDef) => {
+      const enumName = enumDef.name;
+      const members = enumDef.members.map((m) => m.name).join(",\n");
+      return `enum ${enumName} {\n${members}\n}`;
     })
     .join("\n\n");
 }
@@ -294,6 +355,14 @@ function generateMockEvents(eventDefinitions) {
  * @returns string - Generated mock functions
  */
 function generateMockFunctions(functionDefinitions, eventDefinitions, structDefinitions) {
+  // Get the ID assignments from all the function definitions.
+  const counterOperators = functionDefinitions.flatMap((functionDef) =>
+    findCounterOperators(functionDef.body.statements),
+  );
+  const idCounterAssignments = functionDefinitions.flatMap((functionDef) =>
+    findCounterIdAssignments(functionDef.body.statements, counterOperators),
+  );
+
   return functionDefinitions
     .filter(
       (functionDef) =>
@@ -322,10 +391,6 @@ function generateMockFunctions(functionDefinitions, eventDefinitions, structDefi
         })
         .join(", ");
 
-      // Get the function ID assignments based on counters
-      const counterOperators = findCounterOperators(functionDef.body.statements);
-      const idCounterAssignments = findCounterIdAssignments(functionDef.body.statements, counterOperators);
-
       // Initialize the mock function's header
       let mockFunction = `function ${functionDef.name}(${functionParameters}) ${functionDef.visibility} {\n`;
 
@@ -352,7 +417,17 @@ function generateMockFunctions(functionDefinitions, eventDefinitions, structDefi
             const parameterType = getParameterType(parameter.typeName);
 
             let declaration;
-            const idCounterAssignment = idCounterAssignments.find((assignment) => assignment.idVar === parameterName);
+            const idCounterAssignment = idCounterAssignments.find((assignment) => {
+              // Check first if the parameter is part of a defined request ID counter mapping, e.g. decryptionId
+              // which same event parameter name is used from either PublicDecryptionRequest or UserDecryptionRequest.
+              const requestIdCounter = RequestIdCounters[parameterName];
+              if (requestIdCounter) {
+                const functionIdCounters = findCounterOperators(functionDef.body.statements);
+                return functionIdCounters.some((counter) => requestIdCounter[assignment.idVar] === counter);
+              } else {
+                return parameterName == assignment.idVar;
+              }
+            });
 
             // Check if the parameter is a counter ID assignation variable and declare it
             if (idCounterAssignment) {
@@ -463,12 +538,7 @@ function findCounterOperators(nodes) {
   const counterOperators = [];
 
   for (const node of nodes) {
-    if (
-      node.type === "UnaryOperation" &&
-      node.operator === "++" &&
-      node.subExpression &&
-      node.subExpression.type === "MemberAccess"
-    ) {
+    if (node?.type === "UnaryOperation" && node.operator === "++" && node.subExpression?.type === "MemberAccess") {
       counterOperators.push(node.subExpression.memberName);
     } else {
       // Recursively check all object properties and array elements
@@ -497,10 +567,9 @@ function findCounterIdAssignments(nodes, counterNames) {
   for (const node of nodes) {
     // Check for VariableDeclarationStatement with initialValue from a counter
     if (
-      node.type === "VariableDeclarationStatement" &&
+      node?.type === "VariableDeclarationStatement" &&
       node.variables &&
-      node.initialValue &&
-      node.initialValue.type === "MemberAccess" &&
+      node.initialValue?.type === "MemberAccess" &&
       counterNames.includes(node.initialValue.memberName)
     ) {
       // Get the variable name being assigned
@@ -520,4 +589,22 @@ function findCounterIdAssignments(nodes, counterNames) {
   }
 
   return counterIdAssignments;
+}
+
+/**
+ * @description Gets the initial counter value for a given request type
+ * @param {string} requestType - The request type (e.g., "PublicDecrypt", "UserDecrypt")
+ * @returns {string} - The initial counter value as a string
+ */
+function getCounterInitialValue(requestType) {
+  // Extract the request type from counter name if it's in format "requestTypeCounter"
+  const cleanRequestType = requestType.replace(/Counter$/, "");
+
+  if (KMS_REQUEST_TYPES_MAPPING[cleanRequestType]) {
+    const typeValue = KMS_REQUEST_TYPES_MAPPING[cleanRequestType];
+    return `${typeValue} << ${KMS_REQUEST_TYPES_SHIFT}`;
+  }
+
+  // Return 0 for non-KMS request types
+  return "0";
 }
