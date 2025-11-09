@@ -122,7 +122,6 @@ pub async fn run_fhevm_relayer(
     let tx_engine_gateway = GatewayTransactionEngine::new(
         &gateway_settings.http_url,
         gateway_signer_arc.clone(),
-        true,
         100,
         500,
         100,

@@ -86,7 +86,6 @@ where
     pub signer: Arc<dyn SignerCombined>,
     pub nonce_manager: Arc<NonceManagerNonOptimistic>,
     // No need for Arc in this case, since the tx manager is shared by arc at the top level application.
-    limit_concurrent_requests: bool,
     pub rpc_semaphore: Arc<Semaphore>,
     // NOTE: values of 100 for both are handling 1000 parallel transaction on gw.
     // 3 render 0 of success
@@ -105,7 +104,6 @@ impl
     pub fn new(
         http_rpc_url: &str,
         signer: Arc<dyn SignerCombined>,
-        limit_concurrent_requests: bool,
         max_concurrent_rpc_requests: usize,
         ms_retry_delay: u64,
         tx_max_retries: u32,
@@ -133,7 +131,6 @@ impl
             provider: Arc::new(managed_provider),
             signer,
             nonce_manager,
-            limit_concurrent_requests,
             rpc_semaphore: Arc::new(Semaphore::new(max_concurrent_rpc_requests)),
             ms_retry_delay,
             tx_max_retries,
@@ -213,20 +210,18 @@ impl
                 )));
             }
 
-            if self.limit_concurrent_requests {
-                let _permit = match self.rpc_semaphore.acquire().await {
-                    Ok(p) => p,
-                    Err(_) => {
-                        // This error is fatal. It means the semaphore was closed,
-                        // which should not happen during normal operation.
-                        warn!(
+            let _permit = match self.rpc_semaphore.acquire().await {
+                Ok(p) => p,
+                Err(_) => {
+                    // This error is fatal. It means the semaphore was closed,
+                    // which should not happen during normal operation.
+                    warn!(
                             "RPC semaphore has been closed on estimate gas. This is a critical error: Retrying"
                         );
-                        retries += 1;
-                        continue;
-                    }
-                };
-            }
+                    retries += 1;
+                    continue;
+                }
+            };
 
             let res = self.provider.inner.estimate_gas(request.clone()).await;
             // TODO, find a way to drop semaphore right after the call.
@@ -327,20 +322,18 @@ impl
                 "Launching transaction with nonce assigned"
             );
 
-            if self.limit_concurrent_requests {
-                let _permit = match self.rpc_semaphore.acquire().await {
-                    Ok(p) => p,
-                    Err(_) => {
-                        // This error is fatal. It means the semaphore was closed,
-                        // which should not happen during normal operation.
-                        warn!(
+            let _permit = match self.rpc_semaphore.acquire().await {
+                Ok(p) => p,
+                Err(_) => {
+                    // This error is fatal. It means the semaphore was closed,
+                    // which should not happen during normal operation.
+                    warn!(
                             "RPC semaphore has been closed on estimate gas. This is a critical error: Retrying"
                         );
-                        retries += 1;
-                        continue;
-                    }
-                };
-            }
+                    retries += 1;
+                    continue;
+                }
+            };
 
             let result = self.provider.send_raw_transaction_sync(tx.clone()).await;
             // TODO: find a way to drop the permit right after the rpc call, even with the condition.

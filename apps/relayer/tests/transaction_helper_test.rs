@@ -22,7 +22,6 @@ async fn test_tx_helper() {
     let tx_service = GatewayTransactionEngine::new(
         node_rpc_url,
         Arc::new(local_signer.clone()),
-        true,
         100,
         500,
         100,
