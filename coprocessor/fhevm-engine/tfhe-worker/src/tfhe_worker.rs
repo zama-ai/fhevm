@@ -78,10 +78,11 @@ async fn tfhe_worker_cycle(
         std::sync::Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
             NonZeroUsize::new(args.tenant_key_cache_size as usize).unwrap(),
         )));
-    let db_url = crate::utils::db_url(args);
+    let db_url = args.database_url.clone().unwrap_or_default();
+
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(args.pg_pool_max_connections)
-        .connect(&db_url)
+        .connect(db_url.as_str())
         .await?;
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;

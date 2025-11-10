@@ -16,10 +16,7 @@ fn handle_sigint(token: CancellationToken) {
 fn construct_config() -> Config {
     let args: utils::daemon_cli::Args = utils::daemon_cli::parse_args();
 
-    let db_url = args
-        .database_url
-        .clone()
-        .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
+    let db_url = args.database_url.clone().unwrap_or_default();
 
     Config {
         tenant_api_key: args.tenant_api_key,

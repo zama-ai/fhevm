@@ -21,6 +21,7 @@ use transaction_sender::{
 use fhevm_engine_common::{
     metrics_server,
     telemetry::{self, MetricsConfig},
+    utils::DatabaseURL,
 };
 use humantime::parse_duration;
 
@@ -52,7 +53,7 @@ struct Conf {
     private_key: Option<String>,
 
     #[arg(short, long)]
-    database_url: Option<String>,
+    database_url: Option<DatabaseURL>,
 
     #[arg(long, default_value = "10")]
     database_pool_size: u32,
@@ -227,10 +228,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     let wallet = EthereumWallet::new(abstract_signer.clone());
-    let database_url = match conf.database_url.clone() {
-        Some(url) => url,
-        None => std::env::var("DATABASE_URL").context("DATABASE_URL is undefined")?,
-    };
+    let database_url = conf.database_url.clone();
 
     let provider = loop {
         if cancel_token.is_cancelled() {

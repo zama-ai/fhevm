@@ -5,6 +5,7 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Utc};
+use fhevm_engine_common::utils::DatabaseURL;
 use host_listener::database::tfhe_event_propagate::{Database as ListenerDatabase, Handle};
 
 use sqlx::Postgres;
@@ -416,16 +417,17 @@ async fn generate_transactions_at_rate(
     scenario: &Scenario,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
+    let database_url: DatabaseURL = ecfg.evgen_db_url.into();
     let coprocessor_api_key = sqlx::types::Uuid::parse_str(&ecfg.api_key).unwrap();
     let mut listener_event_to_db = ListenerDatabase::new(
-        &ecfg.evgen_db_url,
+        &database_url,
         &coprocessor_api_key,
         default_dependence_cache_size(),
     )
     .await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
-        .connect(&ecfg.evgen_db_url)
+        .connect(database_url.as_str())
         .await
         .unwrap();
     let mut dependence_handle1: Option<Handle> = None;
@@ -497,16 +499,17 @@ async fn generate_transactions_count(
     scenario: &Scenario,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ecfg = ctx.ecfg.clone();
+    let database_url: DatabaseURL = ecfg.evgen_db_url.into();
     let coprocessor_api_key = sqlx::types::Uuid::parse_str(&ecfg.api_key).unwrap();
     let mut listener_event_to_db = ListenerDatabase::new(
-        &ecfg.evgen_db_url,
+        &database_url,
         &coprocessor_api_key,
         default_dependence_cache_size(),
     )
     .await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
-        .connect(&ecfg.evgen_db_url)
+        .connect(database_url.as_str())
         .await
         .unwrap();
 

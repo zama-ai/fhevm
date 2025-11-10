@@ -24,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::{BlockchainProvider, Handle};
-use fhevm_engine_common::utils::HeartBeat;
+use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::tfhe_event_propagate::{
@@ -58,7 +58,7 @@ pub struct Args {
         long,
         default_value = "postgresql://postgres:postgres@localhost:5432/coprocessor"
     )]
-    pub database_url: String,
+    pub database_url: DatabaseURL,
 
     #[arg(long, default_value = None, help = "Can be negative from last block", allow_hyphen_values = true)]
     pub start_at_block: Option<i64>,
@@ -970,7 +970,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;
     info!(chain_id = chain_id, "Chain ID");
-    if args.database_url.is_empty() {
+    if args.database_url.as_str().is_empty() {
         error!("Database URL is required");
         panic!("Database URL is required");
     };
