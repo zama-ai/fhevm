@@ -102,8 +102,8 @@ impl TestSetup {
         // Configure with isolated ports and database
         settings.db_path_rocksdb = temp_db_path;
         settings.http_endpoint = Some(format!("0.0.0.0:{}", http_port));
-        settings.networks.gateway.http_url = format!("http://localhost:{}", gateway_port);
-        settings.networks.gateway.ws_url = format!("ws://localhost:{}", gateway_port);
+        settings.gateway.blockchain_rpc.http_url = format!("http://localhost:{}", gateway_port);
+        settings.gateway.blockchain_rpc.ws_url = format!("ws://localhost:{}", gateway_port);
 
         // Start relayer service with isolated settings
         let cancellation_token = CancellationToken::new();
@@ -115,8 +115,10 @@ impl TestSetup {
                 .expect("Failed to load default configuration");
         relayer_settings.db_path_rocksdb = settings.db_path_rocksdb.clone();
         relayer_settings.http_endpoint = settings.http_endpoint.clone();
-        relayer_settings.networks.gateway.http_url = settings.networks.gateway.http_url.clone();
-        relayer_settings.networks.gateway.ws_url = settings.networks.gateway.ws_url.clone();
+        relayer_settings.gateway.blockchain_rpc.http_url =
+            settings.gateway.blockchain_rpc.http_url.clone();
+        relayer_settings.gateway.blockchain_rpc.ws_url =
+            settings.gateway.blockchain_rpc.ws_url.clone();
 
         tokio::spawn(async move {
             tracing::debug!("Starting isolated relayer service...");

@@ -12,7 +12,7 @@ async fn test_tx_helper() {
         .await
         .expect("Failed to create test setup");
 
-    let node_rpc_url = &setup.settings.networks.gateway.http_url;
+    let node_rpc_url = &setup.settings.gateway.blockchain_rpc.http_url;
     let private_key = std::env::var("TEST_PRIVATE_KEY").unwrap_or_else(|_| {
         "34aacca926bab195601bcf5702786d35cab968159b718ae671b226de11b9afee".to_string()
     });

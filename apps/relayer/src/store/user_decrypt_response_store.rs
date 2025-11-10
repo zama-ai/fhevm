@@ -18,12 +18,12 @@ pub struct UserDecryptionResponseShare {
 #[derive(Debug, Clone)]
 struct DecryptionResponseCollection {
     pub shares: DashMap<U256, UserDecryptionResponseShare>, // index_share -> share
-    pub expected_count: usize,
+    pub expected_count: u16,
     pub consensus_reached: bool,
 }
 
 impl DecryptionResponseCollection {
-    fn new(expected_count: usize) -> Self {
+    fn new(expected_count: u16) -> Self {
         Self {
             shares: DashMap::new(),
             expected_count,
@@ -32,7 +32,7 @@ impl DecryptionResponseCollection {
     }
 
     fn is_complete(&self) -> bool {
-        self.shares.len() >= self.expected_count && self.consensus_reached
+        (self.shares.len() as u16) >= self.expected_count && self.consensus_reached
     }
 
     fn assemble_final_response(&self) -> Option<UserDecryptResponse> {
@@ -90,11 +90,11 @@ pub struct UserDecryptResponseStore {
     /// Per-decryption collections for assembling individual shares
     collections: DashMap<U256, DecryptionResponseCollection>,
     /// Expected number of shares per decryption request
-    expected_share_count: usize,
+    expected_share_count: u16,
 }
 
 impl UserDecryptResponseStore {
-    pub fn new(expected_share_count: usize) -> Self {
+    pub fn new(expected_share_count: u16) -> Self {
         Self {
             collections: DashMap::new(),
             expected_share_count,
@@ -188,7 +188,7 @@ impl UserDecryptResponseStore {
         );
 
         // Check for missing shares at consensus time
-        if collection.shares.len() < collection.expected_count {
+        if (collection.shares.len() as u16) < collection.expected_count {
             warn!(
                 decryption_id = %decryption_id,
                 current_shares = collection.shares.len(),
@@ -223,10 +223,10 @@ impl UserDecryptResponseStore {
     }
 
     /// Get current status for debugging purposes
-    pub fn get_status(&self, decryption_id: U256) -> Option<(usize, usize, bool)> {
+    pub fn get_status(&self, decryption_id: U256) -> Option<(u16, u16, bool)> {
         self.collections.get(&decryption_id).map(|collection| {
             (
-                collection.shares.len(),
+                collection.shares.len() as u16,
                 collection.expected_count,
                 collection.consensus_reached,
             )
@@ -234,8 +234,8 @@ impl UserDecryptResponseStore {
     }
 
     /// Get count of active collections (for monitoring purposes)
-    pub fn active_collections_count(&self) -> usize {
-        self.collections.len()
+    pub fn active_collections_count(&self) -> u16 {
+        self.collections.len() as u16
     }
 }
 

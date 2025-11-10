@@ -3,26 +3,39 @@ use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
 use std::env;
 
-/// Network configuration for blockchain connections.
-///
-/// This struct holds connection details for both fhevm and gateway networks.
 #[derive(Debug, Deserialize, Clone)]
-pub struct NetworkConfig {
-    /// WebSocket endpoint URL
-    pub ws_url: String,
-    /// HTTP endpoint URL
-    pub http_url: String,
-    /// Network chain ID
-    pub chain_id: u64,
-    /// Delay between retry attempts
-    pub retry_delay: u64,
-    /// Maximum number of reconnection attempts
-    pub max_reconnection_attempts: u32,
-    /// Optional starting block number for event subscriptions
-    pub last_block_number: Option<u64>,
+pub struct GatewayConfig {
+    pub blockchain_rpc: BlockchainRpcConfig,
+    pub listener: ListenerConfig,
+    pub tx_engine: TxEngineConfig,
+    pub readiness_checker: ReadinessCheckConfig,
+    pub contracts: ContractConfig,
 }
 
-impl NetworkConfig {
+impl GatewayConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        self.blockchain_rpc.validate()?;
+        Ok(())
+    }
+
+    pub fn get_network(&self, network_name: &str) -> Result<&BlockchainRpcConfig, AppConfigError> {
+        match network_name {
+            "gateway" => Ok(&self.blockchain_rpc),
+            _ => Err(AppConfigError::InvalidNetworkConfig(format!(
+                "Unknown network: {network_name}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct BlockchainRpcConfig {
+    pub ws_url: String,
+    pub http_url: String,
+    pub chain_id: u64,
+}
+
+impl BlockchainRpcConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         // Validate URLs
         if !self.ws_url.starts_with("ws://") && !self.ws_url.starts_with("wss://") {
@@ -41,36 +54,23 @@ impl NetworkConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct NetworksConfig {
-    // TODO: should be a list of networks unless we assume 1:1 between relayer and fhevm
-    pub gateway: NetworkConfig,
-}
-
-impl NetworksConfig {
-    pub fn validate(&self) -> Result<(), AppConfigError> {
-        self.gateway.validate()?;
-        Ok(())
-    }
-
-    pub fn get_network(&self, network_name: &str) -> Result<&NetworkConfig, AppConfigError> {
-        match network_name {
-            "gateway" => Ok(&self.gateway),
-            _ => Err(AppConfigError::InvalidNetworkConfig(format!(
-                "Unknown network: {network_name}"
-            ))),
-        }
-    }
-}
-
-// TODO: setup aws-kms signer configuration here
-// TODO: setup proper callback gas-limit here
 #[derive(Debug, Deserialize, Clone)]
-pub struct TransactionConfig {
-    /// Containing the private key for gateway
-    pub private_key_gateway: String,
+pub struct ListenerConfig {
+    /// Optional starting block number for event subscriptions
+    pub last_block_number: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct TxEngineConfig {
+    pub private_key: String,
+    pub max_concurrency: u16,
     pub retry: RetrySettings,
-    pub ciphertext_check_retry: RetrySettings,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ReadinessCheckConfig {
+    pub max_concurrency: u16,
+    pub retry: RetrySettings,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -82,28 +82,22 @@ pub struct HttpMetricsConfig {
 pub struct RetrySettings {
     #[serde(default = "default_max_attempts")]
     pub max_attempts: u32,
-    #[serde(default = "default_base_delay")]
-    pub base_delay_secs: u64,
-    #[serde(default = "default_max_delay")]
-    pub max_delay_secs: u64,
+    #[serde(default = "default_retry_interval_ms")]
+    pub retry_interval_ms: u64,
 }
 
 fn default_max_attempts() -> u32 {
     3
 }
-fn default_base_delay() -> u64 {
-    2
-}
-fn default_max_delay() -> u64 {
-    60
+fn default_retry_interval_ms() -> u64 {
+    2000
 }
 
 impl Default for RetrySettings {
     fn default() -> Self {
         Self {
             max_attempts: default_max_attempts(),
-            base_delay_secs: default_base_delay(),
-            max_delay_secs: default_max_delay(),
+            retry_interval_ms: default_retry_interval_ms(),
         }
     }
 }
@@ -113,7 +107,7 @@ pub struct ContractConfig {
     pub decryption_address: String,
     pub input_verification_address: String,
     /// Number of shares required for user decryption threshold consensus
-    pub user_decrypt_shares_threshold: usize,
+    pub user_decrypt_shares_threshold: u16,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -136,11 +130,7 @@ pub struct Settings {
     /// Current environment (development, production, etc.)
     pub environment: String,
     /// Network configurations
-    pub networks: NetworksConfig,
-    /// Transaction-related settings
-    pub transaction: TransactionConfig,
-    /// Contract addresses
-    pub contracts: ContractConfig,
+    pub gateway: GatewayConfig,
     /// Logging configuration
     pub log: LogConfig,
     /// HTTP endpoint address
@@ -197,7 +187,7 @@ impl Settings {
             .map_err(|err| AppConfigError::Config(err.to_string()))?;
 
         // Validate network configurations
-        settings.networks.validate()?;
+        settings.gateway.validate()?;
 
         // Ensure HTTP metrics configuration is provided
         if settings.http_metrics.histogram_buckets.is_empty() {
@@ -210,10 +200,10 @@ impl Settings {
     pub fn validate_addresses(&self) -> Result<(), AppConfigError> {
         // Create a vector of (name, address) pairs to validate
         let addresses = vec![
-            ("decryption", &self.contracts.decryption_address),
+            ("decryption", &self.gateway.contracts.decryption_address),
             (
                 "input_verification",
-                &self.contracts.input_verification_address,
+                &self.gateway.contracts.input_verification_address,
             ),
         ];
 
@@ -229,8 +219,8 @@ impl Settings {
         Ok(())
     }
 
-    pub fn get_network(&self, network_name: &str) -> Result<&NetworkConfig, AppConfigError> {
-        self.networks.get_network(network_name)
+    pub fn get_network(&self, network_name: &str) -> Result<&BlockchainRpcConfig, AppConfigError> {
+        self.gateway.get_network(network_name)
     }
 }
 
@@ -278,23 +268,24 @@ mod tests {
     fn test_user_decrypt_shares_threshold_is_required() {
         let config_content = r#"
 environment: "test"
-networks:
-  gateway:
+gateway:
+  blockchain_rpc:
     ws_url: "wss://test-gateway.example.com"
     http_url: "https://test-gateway.example.com"
     chain_id: 8009
-    retry_delay: 1000
-    max_reconnection_attempts: 3
-transaction:
-  private_key_gateway: "0x1234567890123456789012345678901234567890123456789012345678901234"
-  ciphertext_check_retry:
-    max_attempts: 3
-    base_delay_secs: 2
-    max_delay_secs: 60
-contracts:
-  decryption_address: "0x1234567890123456789012345678901234567890"
-  input_verification_address: "0x1234567890123456789012345678901234567890"
-  # Note: user_decrypt_shares_threshold is missing here
+  listener: {}
+  tx_engine:
+    private_key: "0x1234567890123456789012345678901234567890123456789012345678901234"
+    max_concurrency: 100
+  readiness_checker:
+    max_concurrency: 100
+    retry:
+      max_attempts: 3
+      retry_interval_ms: 2000
+  contracts:
+    decryption_address: "0x1234567890123456789012345678901234567890"
+    input_verification_address: "0x1234567890123456789012345678901234567890"
+    # Note: user_decrypt_shares_threshold is missing here
 log:
   format: "compact"
   show_file_line: false
@@ -347,27 +338,27 @@ db_path_rocksdb: "/tmp/test_db"
     fn test_user_decrypt_shares_threshold_works_when_present() {
         let config_content = r#"
 environment: "test"
-networks:
-  gateway:
+gateway:
+  blockchain_rpc:
     ws_url: "wss://test-gateway.example.com"
     http_url: "https://test-gateway.example.com"
     chain_id: 8009
-    retry_delay: 1000
-    max_reconnection_attempts: 3
-transaction:
-  retry:
-    max_attempts: 3
-    base_delay_secs: 2
-    max_delay_secs: 60
-  private_key_gateway: "0x1234567890123456789012345678901234567890123456789012345678901234"
-  ciphertext_check_retry:
-    max_attempts: 3
-    base_delay_secs: 2
-    max_delay_secs: 60
-contracts:
-  decryption_address: "0x1234567890123456789012345678901234567890"
-  input_verification_address: "0x1234567890123456789012345678901234567890"
-  user_decrypt_shares_threshold: 9
+  listener: {}
+  tx_engine:
+    retry:
+      max_attempts: 100
+      retry_interval_ms: 500
+    private_key: "0x1234567890123456789012345678901234567890123456789012345678901234"
+    max_concurrency: 100
+  readiness_checker:
+    max_concurrency: 100
+    retry:
+      max_attempts: 3
+      retry_interval_ms: 2000
+  contracts:
+    decryption_address: "0x1234567890123456789012345678901234567890"
+    input_verification_address: "0x1234567890123456789012345678901234567890"
+    user_decrypt_shares_threshold: 9
 log:
   format: "compact"
   show_file_line: false
@@ -403,6 +394,6 @@ db_path_rocksdb: "/tmp/test_db"
             .expect("Configuration parsing should succeed when expected_share_count is present");
 
         // Verify the value was parsed correctly
-        assert_eq!(settings.contracts.user_decrypt_shares_threshold, 9);
+        assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 9);
     }
 }

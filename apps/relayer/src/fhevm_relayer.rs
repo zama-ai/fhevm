@@ -113,7 +113,7 @@ pub async fn run_fhevm_relayer(
         .cloned()
         .map_err(|e| eyre::eyre!("Failed to get gateway settings: {}", e))?;
 
-    let mut gateway_signer = parse_private_key(&settings.transaction.private_key_gateway)?;
+    let mut gateway_signer = parse_private_key(&settings.gateway.tx_engine.private_key)?;
     gateway_signer.set_chain_id(Some(gateway_settings.chain_id));
 
     // Clone the signer for multiple consumers
@@ -122,17 +122,17 @@ pub async fn run_fhevm_relayer(
     let tx_engine_gateway = GatewayTransactionEngine::new(
         &gateway_settings.http_url,
         gateway_signer_arc.clone(),
-        100,
-        500,
-        100,
-        100,
+        settings.gateway.tx_engine.max_concurrency,
+        settings.gateway.tx_engine.retry.retry_interval_ms,
+        settings.gateway.tx_engine.retry.max_attempts,
+        settings.gateway.tx_engine.retry.max_attempts,
     );
 
-    let decryption_address = Address::from_str(&settings.contracts.decryption_address)
+    let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
         .map_err(|_| eyre::eyre!("Invalid decryption contract address"))?;
 
     let input_verification_address =
-        Address::from_str(&settings.contracts.input_verification_address)
+        Address::from_str(&settings.gateway.contracts.input_verification_address)
             .map_err(|_| eyre::eyre!("Invalid InputVerification address"))?;
 
     // === Intialize the orchestrator.
@@ -154,30 +154,30 @@ pub async fn run_fhevm_relayer(
     // let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
     let gateway_tx_helper = Arc::new(GatewayTransactionHelper::new(
         tx_engine_gateway.clone().into(),
-        settings.networks.gateway.chain_id,
+        settings.gateway.blockchain_rpc.chain_id,
     ));
     setup_input_proof_gateway_handler(
         &orchestrator,
         gateway_tx_helper.clone(),
-        settings.contracts.clone(),
+        settings.gateway.contracts.clone(),
     )?;
 
     setup_public_decrypt_gateway_handler(
         &orchestrator,
         kv_store.clone(),
         gateway_tx_helper.clone(),
-        settings.contracts.clone(),
+        settings.gateway.contracts.clone(),
         gateway_settings.http_url.clone(),
-        settings.transaction.clone().ciphertext_check_retry.clone(),
+        settings.gateway.readiness_checker.clone().retry.clone(),
     )?;
 
     setup_user_decrypt_gateway_handler(
         &orchestrator,
         kv_store.clone(),
         gateway_tx_helper.clone(),
-        settings.contracts,
+        settings.gateway.contracts,
         gateway_settings.http_url.clone(),
-        settings.transaction.clone().ciphertext_check_retry.clone(),
+        settings.gateway.readiness_checker.clone().retry.clone(),
     )?;
 
     // === Initialize gateway listener
@@ -195,7 +195,7 @@ pub async fn run_fhevm_relayer(
         kv_store.clone(),
         "gateway".to_string(),
     ));
-    let latest_block_gateway = match settings.networks.gateway.last_block_number {
+    let latest_block_gateway = match settings.gateway.listener.last_block_number {
         Some(block_number) => Some(block_number),
         None => gateway_block_store
             .get_last_block_number()

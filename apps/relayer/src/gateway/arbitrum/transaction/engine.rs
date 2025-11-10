@@ -104,7 +104,7 @@ impl
     pub fn new(
         http_rpc_url: &str,
         signer: Arc<dyn SignerCombined>,
-        max_concurrent_rpc_requests: usize,
+        max_concurrent_rpc_requests: u16,
         ms_retry_delay: u64,
         tx_max_retries: u32,
         gas_estimation_max_retries: u32,
@@ -131,7 +131,7 @@ impl
             provider: Arc::new(managed_provider),
             signer,
             nonce_manager,
-            rpc_semaphore: Arc::new(Semaphore::new(max_concurrent_rpc_requests)),
+            rpc_semaphore: Arc::new(Semaphore::new(max_concurrent_rpc_requests as usize)),
             ms_retry_delay,
             tx_max_retries,
             gas_estimation_max_retries,

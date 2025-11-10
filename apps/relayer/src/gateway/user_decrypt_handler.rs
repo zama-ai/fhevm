@@ -578,7 +578,7 @@ impl GatewayHandler {
 
         // Perform readiness check with retry logic
         let max_retries = self.retry_config.max_attempts;
-        let retry_interval = Duration::from_secs(self.retry_config.base_delay_secs);
+        let retry_interval = Duration::from_secs(self.retry_config.retry_interval_ms);
 
         let mut retries = 0;
         let mut should_retry = true;
