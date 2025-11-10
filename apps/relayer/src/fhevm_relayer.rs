@@ -47,7 +47,7 @@ use crate::{
         transaction::{
             helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
         },
-        ChainName, ContractAndTopicsFilter, EthereumJsonRPCWsClient,
+        ContractAndTopicsFilter, EthereumJsonRPCWsClient,
     },
     http::http_server::run_http_server,
     metrics,
@@ -104,23 +104,10 @@ pub async fn run_fhevm_relayer(
     //
     let mut task_set = tokio::task::JoinSet::new();
 
-    // 4.2 Gateway settings
-    let gateway_settings = settings
-        .get_network("gateway")
-        .cloned()
-        .map_err(|e| eyre::eyre!("Failed to get gateway settings: {}", e))?;
-
     let tx_engine_gateway = GatewayTransactionEngine::new(
         settings.gateway.blockchain_rpc.clone(),
         settings.gateway.tx_engine.clone(),
     );
-
-    let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
-        .map_err(|_| eyre::eyre!("Invalid decryption contract address"))?;
-
-    let input_verification_address =
-        Address::from_str(&settings.gateway.contracts.input_verification_address)
-            .map_err(|_| eyre::eyre!("Invalid InputVerification address"))?;
 
     // === Intialize the orchestrator.
     let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::<RelayerEvent>::new()));
@@ -164,10 +151,17 @@ pub async fn run_fhevm_relayer(
     )?;
 
     // === Initialize gateway listener
-    let gateway = EthereumJsonRPCWsClient::new(ChainName::Gateway, &gateway_settings.ws_url)
+    let listener_client_ws = EthereumJsonRPCWsClient::new(&settings.gateway.blockchain_rpc.ws_url)
         .await
         .map_err(|e| eyre::eyre!("Failed to create event handler for gateway: {}", e))?;
-    let gateway = Arc::new(gateway);
+    let listener_client_ws = Arc::new(listener_client_ws);
+
+    let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
+        .map_err(|_| eyre::eyre!("Invalid decryption contract address"))?;
+
+    let input_verification_address =
+        Address::from_str(&settings.gateway.contracts.input_verification_address)
+            .map_err(|_| eyre::eyre!("Invalid InputVerification address"))?;
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
     // TODO: Pass the event_dispatcher to the event_listener
@@ -191,7 +185,7 @@ pub async fn run_fhevm_relayer(
             .map(|b| b.to_string())
             .unwrap_or("latest".to_string())
     );
-    let subscription_gateway = gateway
+    let subscription_gateway = listener_client_ws
         .new_subscription(filter_gateway, latest_block_gateway)
         .await?;
     info!("Starting Relayer Gateway Listener");
@@ -209,7 +203,7 @@ pub async fn run_fhevm_relayer(
             addr,
             Arc::clone(&orchestrator),
             settings.keyurl,
-            gateway_settings.ws_url,
+            settings.gateway.blockchain_rpc.http_url,
         ));
     };
 

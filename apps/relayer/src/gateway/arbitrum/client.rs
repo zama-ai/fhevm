@@ -16,7 +16,6 @@ pub enum ChainName {
 }
 
 pub struct EthereumJsonRPCWsClient {
-    chain_name: ChainName,
     provider: Arc<dyn Provider<AnyNetwork> + Send + Sync>,
 }
 
@@ -25,7 +24,7 @@ unsafe impl Sync for EthereumJsonRPCWsClient {}
 
 impl EthereumJsonRPCWsClient {
     #[instrument(skip_all)]
-    pub async fn new(chain_name: ChainName, ws_url: &str) -> Result<Self, Error> {
+    pub async fn new(ws_url: &str) -> Result<Self, Error> {
         let ws = WsConnect::new(ws_url);
         let provider = ProviderBuilder::new()
             .network::<alloy::network::AnyNetwork>()
@@ -35,10 +34,7 @@ impl EthereumJsonRPCWsClient {
 
         let provider = Arc::new(provider);
 
-        Ok(EthereumJsonRPCWsClient {
-            chain_name,
-            provider,
-        })
+        Ok(EthereumJsonRPCWsClient { provider })
     }
 
     pub async fn new_subscription(
@@ -57,10 +53,7 @@ impl EthereumJsonRPCWsClient {
             .await
             .map_err(Error::Transport)?;
 
-        info!(
-            "Subscription to {:?} is successful. Listening for logs...",
-            self.chain_name
-        );
+        info!("Subscription to gateway chain is successful. Listening for logs...",);
         let stream = sub.into_stream();
         Ok(stream)
     }

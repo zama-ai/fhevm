@@ -17,15 +17,6 @@ impl GatewayConfig {
         self.blockchain_rpc.validate()?;
         Ok(())
     }
-
-    pub fn get_network(&self, network_name: &str) -> Result<&BlockchainRpcConfig, AppConfigError> {
-        match network_name {
-            "gateway" => Ok(&self.blockchain_rpc),
-            _ => Err(AppConfigError::InvalidNetworkConfig(format!(
-                "Unknown network: {network_name}"
-            ))),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -217,10 +208,6 @@ impl Settings {
         }
 
         Ok(())
-    }
-
-    pub fn get_network(&self, network_name: &str) -> Result<&BlockchainRpcConfig, AppConfigError> {
-        self.gateway.get_network(network_name)
     }
 }
 
