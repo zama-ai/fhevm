@@ -93,7 +93,7 @@ In FHEVM v0.8, the decryption process relies on a trusted **Oracle** to relay th
 | **2.** | **Oracle**                   | Listens for the on-chain decryption request event.                                                               |
 | **3.** | **Oracle (Off-chain)**       | Performs the `publicDecryption` with the Zama KMS, retrieving the **clear values** and the **decryption proof**. |
 | **4.** | **Oracle**                   | Calls the user-specified dApp **callback Solidity function** with the clear values and the associated proof.     |
-| **5.** | **dApp (Solidity Callback)** | Calls `FHE.checkSignatures()` to verify the authenticity of the clear values using the provided proof.           |
+| **5.** | **dApp (Solidity Callback)** | Calls `FHE.verifySignatures()` to verify the authenticity of the clear values using the provided proof.          |
 
 > **Key takeaway for v8:** The Oracle is the trusted intermediary responsible for performing the off-chain decryption and submitting the result back to the dApp contract.
 
@@ -113,7 +113,7 @@ Consider a **Game contract** where Alice's final score is stored encrypted on-ch
 | **2.** | **Alice (Client/Off-chain)** | Alice fetches the publicly decryptable encrypted score from the Game contract.                                                                                                          |
 | **3.** | **Alice (Client/Off-chain)** | Alice or any third-party service uses the **`@zama-fhe/relayer-sdk`** to call the off-chain `publicDecrypt` function. This returns the clear score value and a **proof of decryption**. |
 | **4.** | **Alice (Client/On-chain)**  | Alice calls a function on the **Game contract** with the decrypted clear score and the proof.                                                                                           |
-| **5.** | **Game Contract (Solidity)** | The contract calls `FHE.checkSignatures()` to **verify the score's validity** using the provided proof.                                                                                 |
+| **5.** | **Game Contract (Solidity)** | The contract calls `FHE.verifySignatures()` to **verify the score's validity** using the provided proof.                                                                                |
 | **6.** | **Game Contract (Solidity)** | If the score is valid, the contract executes the game logic (e.g., distributing Alice's prize).                                                                                         |
 
 > **Key takeaway for FHEVM v0.9:** Decryption is a **user-driven, off-chain process**. The dApp client is responsible for off-chain decryption, fetching the proof, and relaying the result back on-chain for verification.
