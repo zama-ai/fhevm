@@ -80,7 +80,7 @@ pub struct Args {
     pub coprocessor_private_key: String,
 
     /// tfhe-worker service name in OTLP traces
-    #[arg(long, default_value = "tfhe-worker")]
+    #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "tfhe-worker")]
     pub service_name: String,
 
     /// Log level for the application
