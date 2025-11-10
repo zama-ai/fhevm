@@ -115,32 +115,37 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
             options
         );
         if (address(this).balance < quotedFee) revert InsufficientBalanceForFee();
-
         {
             // local scope to avoid stack too deep error
             uint256 targetLen = targets.length;
-            uint256 valueLen = values.length;
-            uint256 dataLen = datas.length;
-            uint256 operationLen = operations.length;
-            uint256 functionSignatureLen = functionSignatures.length;
             if (targetLen == 0) revert TargetsIsEmpty();
-            if (targetLen != valueLen) revert TargetsNotSameLengthAsValues();
-            if (targetLen != dataLen) revert TargetsNotSameLengthAsDatas();
-            if (targetLen != operationLen) revert TargetsNotSameLengthAsOperations();
-            if (targetLen != functionSignatureLen) revert TargetsNotSameLengthAsFunctionSignatures();
+            if (targetLen != values.length) revert TargetsNotSameLengthAsValues();
+            if (targetLen != datas.length) revert TargetsNotSameLengthAsDatas();
+            if (targetLen != operations.length) revert TargetsNotSameLengthAsOperations();
+            if (targetLen != functionSignatures.length) revert TargetsNotSameLengthAsFunctionSignatures();
         }
 
+        bytes memory message = abi.encode(targets, values, functionSignatures, datas, operations);
+        MessagingReceiptOptions memory receiptOptions = _sendWithOptions(message, options, quotedFee);
+
+        emit RemoteProposalSent(targets, values, functionSignatures, datas, operations, receiptOptions);
+    }
+
+    /// @dev Combines options, sends the message, and returns the receipt bundled with the used options.
+    function _sendWithOptions(
+        bytes memory message,
+        bytes calldata options,
+        uint256 quotedFee
+    ) private returns (MessagingReceiptOptions memory) {
+        bytes memory combinedOptions = combineOptions(DESTINATION_EID, SEND, options);
         MessagingReceipt memory receipt = _lzSend(
             DESTINATION_EID,
-            abi.encode(targets, values, functionSignatures, datas, operations),
-            combineOptions(DESTINATION_EID, SEND, options),
+            message,
+            combinedOptions,
             MessagingFee(quotedFee, 0),
             address(this)
         );
-
-        MessagingReceiptOptions memory receiptOptions = MessagingReceiptOptions({ receipt: receipt, options: options });
-
-        emit RemoteProposalSent(targets, values, functionSignatures, datas, operations, receiptOptions);
+        return MessagingReceiptOptions({ receipt: receipt, options: combinedOptions });
     }
 
     /// @dev We override the default LZ internal _lzSend function, to make the contract able to pay LZ fees.
