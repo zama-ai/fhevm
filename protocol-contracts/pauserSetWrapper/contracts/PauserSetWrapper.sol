@@ -57,6 +57,12 @@ contract PauserSetWrapper {
     error SenderNotPauser();
 
     /**
+     * @notice Event indicating that the target contract has been successfully called with corresponding calldata.
+     * @param payload the calldata used when calling the target contract.
+     */
+    event TargetCalled(bytes payload);
+
+    /**
      * @notice Constructor.
      * @param _target The address of the target contract.
      * @param _functionSignature The signature of the contract's pause function. In practice, this
@@ -90,5 +96,6 @@ contract PauserSetWrapper {
         if (!success) {
             revert ExecutionFailed(errorData);
         }
+        emit TargetCalled(data);
     }
 }

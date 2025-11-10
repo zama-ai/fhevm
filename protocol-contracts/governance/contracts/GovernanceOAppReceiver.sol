@@ -19,11 +19,15 @@ contract GovernanceOAppReceiver is OAppReceiver {
     /// @notice The address of the privileged AdminModule of the Safe owning GatewayConfig contract.
     IAdminModule public adminSafeModule;
 
+    /// @notice Thrown when trying to set the adminSafeModule to same value than the already set one.
+    error AdminSafeModuleAlreadySet(address adminModule);
     /// @notice Thrown when trying to receive cross-chain tx while adminSafeModule is not set yet.
     error AdminSafeModuleNotSet();
     /// @notice Thrown when trying to set the adminSafeModule to the null address.
     error AdminSafeModuleIsNull();
 
+    /// @notice Emitted when a new Safe AdminModule has been setup.
+    event AdminSafeModuleUpdated(address indexed oldModule, address indexed newModule);
     /// @notice Emitted when a proposal has been successfully received and executed by the Safe through the AdminModule.
     event ProposalExecuted(
         Origin origin,
@@ -44,7 +48,10 @@ contract GovernanceOAppReceiver is OAppReceiver {
     /// @param adminModule  The address of the privileged AdminModule of the Safe owning GatewayConfig contract.
     function setAdminSafeModule(address adminModule) external onlyOwner {
         if (adminModule == address(0)) revert AdminSafeModuleIsNull();
+        address oldAdminSafeModule = adminSafeModule;
+        if (oldAdminSafeModule == adminModule) revert AdminSafeModuleAlreadySet(adminModule);
         adminSafeModule = IAdminModule(adminModule);
+        emit AdminSafeModuleUpdated(oldAdminSafeModule, adminModule);
     }
 
     /// @notice Invoked by GovernanceOAppReceiver when EndpointV2.lzReceive is called.
