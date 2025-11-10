@@ -129,7 +129,7 @@ You could then also send back the tokens from Gateway Testnet to Ethereum Sepoli
 
 After the contracts are deployed and wired you can manage permissions and ownership without writing custom scripts. The project exposes dedicated Hardhat tasks grouped by contract:
 
-- **Role lifecycle on `ZamaERC20`:** Every supported role has its own grant/revoke command (`zama:erc20:grant:minter_role`, `zama:erc20:revoke:pausing_minter_role`, etc.) plus a `zama:erc20:renounce:*` variant that lets the currently connected signer drop its role. Use these to add minters, pause controllers, or new admins safely from the CLI.
+- **Role lifecycle on `ZamaERC20`:** Every supported role has its own grant/revoke command (`zama:erc20:grant:minter_role`, `zama:erc20:revoke:minting_pauser_role`, etc.) plus a `zama:erc20:renounce:*` variant that lets the currently connected signer drop its role. Use these to add minters, pause controllers, or new admins safely from the CLI.
 - **`ZamaOFTAdapter` administration:** Set a new delegate on `ZamaOFTAdapter` with `zama:oftadapter:setDelegate --address <new_delegate>` and hand off overall control with `zama:oftadapter:transferOwnership --address <new_owner>`.
 - **`ZamaOFT` administration:** Mirror the same actions on the `ZamaOFT` contract using `zama:oft:setDelegate --address <new_delegate>` and `zama:oft:transferOwnership --address <new_owner>`.
 
