@@ -92,6 +92,8 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     }
 
     /// @notice Send a cross-chain proposal to Zama Gateway chain. Only the owner, i.e the Aragaon DAO, should be able to send proposals.
+    /// @notice The default LayerZero executor caps payload size at 10000 bytes. Proposals with many batched calls or large calldata can
+    /// exceed this limit and cause `_lzSend` to revert on the source chain.
     /// @param targets The target contracts to be called.
     /// @param values The values to be sent.
     /// @param datas The calldatas to be used (with function selector, if functionSignatures[i] is an empty string).
