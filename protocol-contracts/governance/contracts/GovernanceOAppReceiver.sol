@@ -25,6 +25,10 @@ contract GovernanceOAppReceiver is OAppReceiver {
     error AdminSafeModuleNotSet();
     /// @notice Thrown when trying to set the adminSafeModule to the null address.
     error AdminSafeModuleIsNull();
+    /// @notice Thrown when failing to withdraw ETH from the contract.
+    error FailedToWithdrawETH();
+    /// @notice Thrown when recipient is the null address.
+    error InvalidNullRecipient();
 
     /// @notice Emitted when a new Safe AdminModule has been setup.
     event AdminSafeModuleUpdated(address indexed oldModule, address indexed newModule);
@@ -38,6 +42,8 @@ contract GovernanceOAppReceiver is OAppReceiver {
         bytes[] datas,
         Operation[] operations
     );
+    /// @notice Emitted when ETH has been successfully withdrawn from the contract.
+    event WithdrawnETH(address indexed recipient, uint256 amount);
 
     /// @notice Initialize with Endpoint V2 and owner address.
     /// @param endpoint The local chain's LayerZero Endpoint V2 address.
@@ -89,5 +95,18 @@ contract GovernanceOAppReceiver is OAppReceiver {
         adminSafeModule.executeSafeTransactions(targets, values, datas, operations);
 
         emit ProposalExecuted(origin, guid, targets, values, functionSignatures, datas, operations);
+    }
+
+    /// @dev Allows the owner to withdraw ETH held by the contract.
+    /// @param amount Amount of withdrawn ETH.
+    /// @param recipient Receiver of the withdrawn ETH, should be non-null.
+    function withdrawETH(uint256 amount, address recipient) external onlyOwner {
+        if (recipient == address(0)) revert InvalidNullRecipient();
+
+        (bool success, ) = recipient.call{ value: amount }("");
+        if (!success) {
+            revert FailedToWithdrawETH();
+        }
+        emit WithdrawnETH(recipient, amount);
     }
 }
