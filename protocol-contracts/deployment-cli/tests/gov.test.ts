@@ -15,8 +15,8 @@ import {
     http,
     parseEther,
 } from "viem";
+import { FORKS_CONFIG } from "../src/config/forks-config.js";
 import { resolveProjectRoot } from "../src/utils/project-paths.js";
-import { TEST_CONFIG } from "./test-config.js";
 import type { ExtendedTestClient } from "./types.js";
 import {
     type AnvilProcess,
@@ -106,15 +106,15 @@ describe("Post-Deployment Governance Integration", () => {
         // Start anvil forks from L1 and Gateway
         anvilProcessL1 = await startAnvilFork({
             forkUrl: process.env.TESTNET_ETHEREUM_RPC_URL,
-            chainId: TEST_CONFIG.SEPOLIA_CHAIN_ID,
-            port: TEST_CONFIG.ANVIL_L1_PORT,
+            chainId: FORKS_CONFIG.SEPOLIA_CHAIN_ID,
+            port: FORKS_CONFIG.ANVIL_L1_PORT,
         });
         await waitForRpcReady(anvilProcessL1.client);
 
         anvilProcessGateway = await startAnvilFork({
             forkUrl: process.env.TESTNET_GATEWAY_RPC_URL,
-            chainId: TEST_CONFIG.GATEWAY_CHAIN_ID,
-            port: TEST_CONFIG.ANVIL_GATEWAY_PORT,
+            chainId: FORKS_CONFIG.GATEWAY_CHAIN_ID,
+            port: FORKS_CONFIG.ANVIL_GATEWAY_PORT,
         });
         await waitForRpcReady(anvilProcessGateway.client);
 
@@ -122,7 +122,7 @@ describe("Post-Deployment Governance Integration", () => {
         const addressesPath = path.resolve(
             resolveProjectRoot(),
             "protocol-contracts/deployment-cli/deployment-state",
-            TEST_CONFIG.DEPLOYMENT_STATE_FILE,
+            FORKS_CONFIG.DEPLOYMENT_STATE_FILE,
         );
         if (!existsSync(addressesPath)) {
             throw new Error(

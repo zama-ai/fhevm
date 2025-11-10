@@ -1,5 +1,5 @@
 import type { Options } from "@layerzerolabs/lz-v2-utilities";
-import type { Abi, Address } from "viem";
+import type { Abi, Address, TransactionReceipt } from "viem";
 import {
     createWalletClient,
     encodeAbiParameters,
@@ -47,7 +47,7 @@ export async function deliverToReceiver(
     senderAddress: string,
     message: `0x${string}`,
     options: Options,
-): Promise<void> {
+): Promise<TransactionReceipt> {
     const receiver = getContract({
         address: receiverAddress,
         abi: receiverAbi,
@@ -101,7 +101,11 @@ export async function deliverToReceiver(
             ],
             txOptions,
         );
-        await client.waitForTransactionReceipt({ hash });
+        const receipt = await client.waitForTransactionReceipt({ hash });
+        if (receipt.status === "reverted") {
+            throw new Error(`Transaction reverted: ${receipt.transactionHash}`);
+        }
+        return receipt;
     } finally {
         await client.stopImpersonatingAccount({ address: endpointAddress });
     }

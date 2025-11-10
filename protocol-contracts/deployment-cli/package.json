@@ -7,6 +7,7 @@
     "scripts": {
         "build": "tsc --project tsconfig.json",
         "start": "bun run src/index.ts",
+        "gas-search": "bun run scripts/gas-search-proposal.ts",
         "lint": "biome check .",
         "lint:fix": "biome check --write .",
         "format": "biome format --write .",

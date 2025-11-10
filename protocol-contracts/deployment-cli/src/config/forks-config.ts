@@ -1,9 +1,7 @@
+import { EndpointId } from "@layerzerolabs/lz-definitions";
 import { parseEther } from "viem";
 
-/**
- * Centralized test configuration constants
- */
-export const TEST_CONFIG = {
+export const FORKS_CONFIG = {
     // L1 (Sepolia) fork
     ANVIL_L1_HOST: "127.0.0.1",
     ANVIL_L1_PORT: 8545,
@@ -16,7 +14,12 @@ export const TEST_CONFIG = {
     ANVIL_GATEWAY_URL: "http://127.0.0.1:8546",
     GATEWAY_CHAIN_ID: 10901,
 
+    // Default origin endpoint id for tests/CLI (Sepolia)
+    ORIGIN_EID: EndpointId.SEPOLIA_V2_TESTNET,
+
     // Other
     ADMIN_EXECUTOR_BALANCE: parseEther("10").toString(),
     DEPLOYMENT_STATE_FILE: "zama-protocol-testnet-v0-9.addresses.json",
 } as const;
+
+export type ForksConfig = typeof FORKS_CONFIG;

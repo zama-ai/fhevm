@@ -1,6 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
 import { AdminABI } from "@aragon/admin-plugin-artifacts";
 import { DAOABI } from "@aragon/osx-artifacts";
 import dotenv from "dotenv";
@@ -15,19 +13,17 @@ import {
     parseEther,
     type WalletClient,
 } from "viem";
-import { resolveProjectRoot } from "../src/utils/project-paths.js";
-import { TEST_CONFIG } from "./test-config.js";
+import {
+    type DeploymentAddresses,
+    loadContractABIs,
+    loadDeploymentAddresses,
+    validateDeployment,
+} from "../scripts/utils/deployment-loader.js";
+import { FORKS_CONFIG } from "../src/config/forks-config.js";
 import type { ExtendedTestClient } from "./types.js";
 import { type AnvilProcess, startAnvilFork, stopAnvil } from "./utils/anvil.js";
 
 dotenv.config();
-
-interface DeploymentAddresses {
-    readonly [key: string]: string;
-    DAO_ADDRESS: string;
-    PAUSER_SET_HOST: string;
-    PAUSER_SET_WRAPPER: string;
-}
 
 let addresses: DeploymentAddresses;
 let anvilProcess: { proc: AnvilProcess; client: ExtendedTestClient };
@@ -53,33 +49,16 @@ async function executeViaAdminPlugin(
 }
 
 beforeAll(async () => {
-    // Load deployment addresses
-    const addressesPath = path.resolve(
-        resolveProjectRoot(),
-        "protocol-contracts/deployment-cli/deployment-state",
-        TEST_CONFIG.DEPLOYMENT_STATE_FILE,
-    );
-    if (!existsSync(addressesPath)) {
-        throw new Error(
-            `Deployment addresses file not found at ${addressesPath}`,
-        );
-    }
-    addresses = JSON.parse(
-        readFileSync(addressesPath, "utf-8"),
-    ) as DeploymentAddresses;
+    addresses = loadDeploymentAddresses(FORKS_CONFIG.DEPLOYMENT_STATE_FILE);
+    validateDeployment(addresses);
 
-    // Fork Sepolia using Anvil
     anvilProcess = await startAnvilFork({
         forkUrl: process.env.TESTNET_ETHEREUM_RPC_URL || "",
-        chainId: TEST_CONFIG.SEPOLIA_CHAIN_ID,
-        port: TEST_CONFIG.ANVIL_L1_PORT,
+        chainId: FORKS_CONFIG.SEPOLIA_CHAIN_ID,
+        port: FORKS_CONFIG.ANVIL_L1_PORT,
     });
 
-    const pauserSetArtifactPath = path.resolve(
-        resolveProjectRoot(),
-        "host-contracts/artifacts/contracts/immutable/PauserSet.sol/PauserSet.json",
-    );
-    pauserSetAbi = JSON.parse(readFileSync(pauserSetArtifactPath, "utf-8")).abi;
+    pauserSetAbi = (await loadContractABIs()).pauserSetAbi;
 
     // Impersonate the admin executor address to have permission to execute via Admin plugin
     const checksummed = getAddress(ADMIN_EXECUTOR_ADDRESS) as Address;

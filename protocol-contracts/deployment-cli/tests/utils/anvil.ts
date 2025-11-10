@@ -2,8 +2,7 @@ import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Chain } from "viem";
 import { createTestClient, http, publicActions } from "viem";
-import { TEST_CONFIG } from "../test-config.js";
-
+import { FORKS_CONFIG } from "../../src/config/forks-config.js";
 /**
  * Shared type definitions for test suite
  */
@@ -25,10 +24,6 @@ export type ExtendedTestClient = ReturnType<
 > &
     ReturnType<typeof import("viem").publicActions>;
 
-/**
- * Anvil process management for forked chain testing
- */
-
 export async function waitForRpcReady(
     client: ExtendedTestClient,
     attempts = 100,
@@ -36,12 +31,10 @@ export async function waitForRpcReady(
 ): Promise<void> {
     for (let i = 0; i < attempts; i += 1) {
         try {
-            // eslint-disable-next-line no-await-in-loop
             await client.getBlockNumber();
             return;
         } catch (_) {
             if (i === attempts - 1) throw _;
-            // eslint-disable-next-line no-await-in-loop
             await delay(intervalMs);
         }
     }
@@ -78,7 +71,7 @@ export async function startAnvilFork(
     const customChain: Chain = {
         id: chainId,
         name:
-            chainId === TEST_CONFIG.SEPOLIA_CHAIN_ID
+            chainId === FORKS_CONFIG.SEPOLIA_CHAIN_ID
                 ? "Sepolia Fork"
                 : "Gateway Fork",
         nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },

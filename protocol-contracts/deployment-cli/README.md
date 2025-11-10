@@ -41,6 +41,41 @@ Once the deployment configuration is complete, you can run the deployment with t
 bun run start deploy --network testnet
 ```
 
+## Gas Search Tool
+
+The gas search tool helps you find the minimum gas limit required for successful governance proposal execution using binary search. This is useful for optimizing cross-chain proposals and not waste too much on gas.
+
+### Prerequisites
+
+The gas search tool requires the protocol to be deployed; and the addresses to be set from the `deployment-state/zama-protocol-testnet-v0-9.addresses.json` file.
+
+### Usage
+
+#### Pre-built Targets
+
+For common governance operations like adding a pauser, the target is pre-built in the tool and can be invoked with the `--target` option.
+
+```bash
+bun run gas-search \
+  --min-gas 50000 \
+  --max-gas 500000 \
+  --target "addPauser"
+```
+
+#### Custom Proposals
+
+For other layer zero operations, we can provide the full proposal data with the `--targets`, `--values`, `--function-signatures`, `--datas`, and `--operations` options.
+
+```bash
+bun run gas-search \
+  --min-gas 100000 \
+  --max-gas 1000000 \
+  --targets '["0xbd9b335a7d927338623b80f102e9b8734895a029"]' \
+  --values '[0]' \
+  --function-signatures '[""]' \
+  --datas '["0x82dc1ec40000000000000000000000000000000000000000000000000000000000000001"]' \
+  --operations '[0]'
+```
 
 ## Tests
 
