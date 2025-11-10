@@ -19,8 +19,12 @@ use thiserror::Error;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
-use crate::gateway::arbitrum::transaction::{
-    nonce_manager::NonceManagerNonOptimistic, provider::NonceManagedProvider,
+use crate::{
+    config::settings::{BlockchainRpcConfig, TxEngineConfig},
+    gateway::arbitrum::{
+        parse_private_key,
+        transaction::{nonce_manager::NonceManagerNonOptimistic, provider::NonceManagedProvider},
+    },
 };
 
 pub trait SignerCombined: TxSigner<Signature> + Signer + Send + Sync + Debug {}
@@ -102,24 +106,26 @@ impl
     >
 {
     pub fn new(
-        http_rpc_url: &str,
-        signer: Arc<dyn SignerCombined>,
-        max_concurrent_rpc_requests: u16,
-        ms_retry_delay: u64,
-        tx_max_retries: u32,
-        gas_estimation_max_retries: u32,
+        blockchain_rpc_config: BlockchainRpcConfig,
+        tx_engine_config: TxEngineConfig,
     ) -> Self {
+        let mut signer = parse_private_key(&tx_engine_config.private_key).unwrap();
+        signer.set_chain_id(Some(blockchain_rpc_config.chain_id));
+
+        // Clone the signer for multiple consumers
+        let signer = Arc::new(signer);
+
         let signer_address = <dyn SignerCombined as alloy::signers::Signer>::address(&*signer);
         let wallet = EthereumWallet::from(signer.clone());
 
-        let rpc_url = Url::parse(http_rpc_url)
+        let rpc_url = Url::parse(&blockchain_rpc_config.http_url)
             .map_err(|e| GatewayTxnError::InvalidAddress(format!("Invalid URL: {e}")))
             .unwrap();
 
         let provider = ProviderBuilder::new()
             .network::<Ethereum>() // Use the concrete network type
             .filler(GasFiller)
-            .filler(ChainIdFiller::new(signer.chain_id()))
+            .filler(ChainIdFiller::new(Some(blockchain_rpc_config.chain_id)))
             .filler(WalletFiller::new(wallet))
             .connect_http(rpc_url.clone());
 
@@ -131,10 +137,10 @@ impl
             provider: Arc::new(managed_provider),
             signer,
             nonce_manager,
-            rpc_semaphore: Arc::new(Semaphore::new(max_concurrent_rpc_requests as usize)),
-            ms_retry_delay,
-            tx_max_retries,
-            gas_estimation_max_retries,
+            rpc_semaphore: Arc::new(Semaphore::new(tx_engine_config.max_concurrency as usize)),
+            ms_retry_delay: tx_engine_config.retry.retry_interval_ms,
+            tx_max_retries: tx_engine_config.retry.max_attempts,
+            gas_estimation_max_retries: tx_engine_config.retry.max_attempts,
         }
     }
 

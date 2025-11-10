@@ -31,7 +31,6 @@ use crate::store::{
     UserDecryptRequestCacheStore, UserDecryptResponseCacheStore, UserDecryptResponseStore,
 };
 use alloy::primitives::Address;
-use alloy::signers::Signer;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::{str::FromStr, sync::Arc};
@@ -46,7 +45,6 @@ use crate::{
     },
     gateway::arbitrum::{
         listener::ethereum_listener as gateway_ethereum_listener,
-        parse_private_key,
         transaction::{
             helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
         },
@@ -113,19 +111,9 @@ pub async fn run_fhevm_relayer(
         .cloned()
         .map_err(|e| eyre::eyre!("Failed to get gateway settings: {}", e))?;
 
-    let mut gateway_signer = parse_private_key(&settings.gateway.tx_engine.private_key)?;
-    gateway_signer.set_chain_id(Some(gateway_settings.chain_id));
-
-    // Clone the signer for multiple consumers
-    let gateway_signer_arc = Arc::new(gateway_signer);
-
     let tx_engine_gateway = GatewayTransactionEngine::new(
-        &gateway_settings.http_url,
-        gateway_signer_arc.clone(),
-        settings.gateway.tx_engine.max_concurrency,
-        settings.gateway.tx_engine.retry.retry_interval_ms,
-        settings.gateway.tx_engine.retry.max_attempts,
-        settings.gateway.tx_engine.retry.max_attempts,
+        settings.gateway.blockchain_rpc.clone(),
+        settings.gateway.tx_engine,
     );
 
     let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
@@ -154,7 +142,7 @@ pub async fn run_fhevm_relayer(
     // let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
     let gateway_tx_helper = Arc::new(GatewayTransactionHelper::new(
         tx_engine_gateway.clone().into(),
-        settings.gateway.blockchain_rpc.chain_id,
+        settings.gateway.blockchain_rpc.chain_id.clone(),
     ));
     setup_input_proof_gateway_handler(
         &orchestrator,
