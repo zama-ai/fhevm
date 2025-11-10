@@ -12,6 +12,8 @@ import { ERC20Burnable } from "@openzeppelin/contracts/token/ERC20/extensions/ER
 contract ProtocolFeesBurner {
     ERC20Burnable public immutable ZAMA_ERC20;
 
+    event FeesBurned(uint256 amount);
+
     constructor(address _token) {
         ZAMA_ERC20 = ERC20Burnable(_token);
     }
@@ -20,6 +22,8 @@ contract ProtocolFeesBurner {
      * @notice burn all the ZAMA tokens currently owned by the contract.
      **/
     function burnFees() external {
-        ZAMA_ERC20.burn(ZAMA_ERC20.balanceOf(address(this)));
+        uint256 feesToBurn = ZAMA_ERC20.balanceOf(address(this));
+        ZAMA_ERC20.burn(feesToBurn);
+        emit FeesBurned(feesToBurn);
     }
 }
