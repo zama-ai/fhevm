@@ -47,7 +47,11 @@ where
                 );
             }
             Err(e) => {
-                error!("Failed to persist event: {}", e);
+                error!(
+                    request_id = %event.request_id(),
+                    event_name = %event.event_name(),
+                    "Failed to persist event: {}", e
+                );
             }
         }
     }
