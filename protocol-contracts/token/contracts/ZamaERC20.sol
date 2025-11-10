@@ -55,7 +55,7 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
      * @param to Receiver of the newly minted tokens.
      * @param amount Number of tokens to mint.
      */
-    function mint(address to, uint256 amount) public onlyRole(MINTER_ROLE) whenNotPaused {
+    function mint(address to, uint256 amount) external onlyRole(MINTER_ROLE) whenNotPaused {
         _mint(to, amount);
     }
 
