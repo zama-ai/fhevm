@@ -5,7 +5,7 @@ import { logExplorerLink } from '../utils/lz'
 
 import { ROLE_TASK_SUFFIX, RoleKey, resolveRoleValue } from './helpers'
 
-const ROLE_KEYS: RoleKey[] = ['MINTER_ROLE', 'PAUSING_MINTER_ROLE', 'DEFAULT_ADMIN_ROLE']
+const ROLE_KEYS: RoleKey[] = ['MINTER_ROLE', 'MINTING_PAUSER_ROLE', 'DEFAULT_ADMIN_ROLE']
 
 for (const role of ROLE_KEYS) {
     const suffix = ROLE_TASK_SUFFIX[role]
