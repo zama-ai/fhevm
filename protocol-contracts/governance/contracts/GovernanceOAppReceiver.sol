@@ -48,7 +48,7 @@ contract GovernanceOAppReceiver is OAppReceiver {
     /// @param adminModule  The address of the privileged AdminModule of the Safe owning GatewayConfig contract.
     function setAdminSafeModule(address adminModule) external onlyOwner {
         if (adminModule == address(0)) revert AdminSafeModuleIsNull();
-        address oldAdminSafeModule = adminSafeModule;
+        address oldAdminSafeModule = address(adminSafeModule);
         if (oldAdminSafeModule == adminModule) revert AdminSafeModuleAlreadySet(adminModule);
         adminSafeModule = IAdminModule(adminModule);
         emit AdminSafeModuleUpdated(oldAdminSafeModule, adminModule);
