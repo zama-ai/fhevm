@@ -109,14 +109,14 @@ Metrics for zkproof-worker are to be added in future releases.
 
 ### sns-worker
 
-Metrics for zkproof-worker are to be added in future releases.
+Metrics for sns-worker are to be added in future releases.
 
 ### tfhe-worker
 
 #### Metric Name: `coprocessor_worker_errors`
  - **Type**: Counter
- - **Description**: Counts the number of successful proof generations in TFHE worker.
- - **Alarm**: If the counter is a flat line over a period of time.
+ - **Description**: Counts TFHE worker errors.
+ - **Alarm**: If the counter increases over a period of time.
 
 #### Metric Name: `coprocessor_work_items_polls`
  - **Type**: Counter
