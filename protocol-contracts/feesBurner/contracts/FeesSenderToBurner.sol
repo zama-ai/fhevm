@@ -64,7 +64,7 @@ contract FeesSenderToBurner {
 
         IOFT(ZAMA_OFT).send{ value: msg.value }(sendParam, msgFee, msg.sender);
 
-        emit FeesForwarded(amount, DESTINATION_EID, PROTOCOL_FEES_BURNER, options, msg.value);
+        emit FeesForwarded(amountNormalized, DESTINATION_EID, PROTOCOL_FEES_BURNER, options, msgFee.nativeFee);
     }
 
     function quote() external view returns (uint256) {
