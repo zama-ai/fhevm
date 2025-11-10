@@ -30,170 +30,25 @@ use std::sync::Arc;
 use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
-struct InputRequestProcessor {
-    handler: Arc<GatewayHandler>,
-}
+struct InputVerificationReceiptProcessor {}
 
-impl ReceiptProcessor for InputRequestProcessor {
+impl ReceiptProcessor for InputVerificationReceiptProcessor {
     type Output = U256;
 
     fn process(
         &self,
         receipt: &AnyTransactionReceipt,
     ) -> Result<Self::Output, EventProcessingError> {
-        self.handler
-            .extract_input_verification_id_from_receipt(receipt)
-    }
-}
-
-#[derive(Clone)]
-pub struct GatewayHandler {
-    dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    input_verification_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
-    tx_helper: Arc<TransactionHelper>,
-    contracts: ContractConfig,
-}
-
-impl GatewayHandler {
-    pub fn new(
-        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        tx_helper: Arc<TransactionHelper>,
-        contracts: ContractConfig,
-    ) -> Self {
-        Self {
-            dispatcher,
-            tx_helper,
-            input_verification_id_to_request_id: Arc::new(dashmap::DashMap::new()),
-            contracts,
-        }
-    }
-
-    /// Sends an input request transaction to the gateway with ZK proof of knowledge.
-    ///
-    /// # Arguments
-    /// * `event` - The [`RelayerEvent`] containing the request context
-    /// * `req_data` - The [`InputEventData`] containing the request parameters:
-    ///   - contract_chain_id: Chain ID of the target contract
-    ///   - contract_address: Address of the target contract
-    ///   - user_address: Address of the user making the request
-    ///   - input_verification: Vector of bytes containing the ZK proof
-    ///
-    /// # State Changes
-    /// On success, stores mapping between input_verification_id and request_id in input_verification_id_to_request_id
-    async fn send_input_request_to_gateway(
-        &self,
-        event: RelayerEvent,
-        req_data: InputProofEventData,
-    ) {
-        if let InputProofEventData::ReqRcvdFromUser {
-            input_proof_request,
-        } = req_data
-        {
-            info!(
-                "Input request received. Making tx to gateway: chain_id : {:?},request_id: {:?}, contract: {:?}, user: {:?}",
-                input_proof_request.contract_chain_id, event.request_id, input_proof_request. contract_address, input_proof_request.user_address
-            );
-
-            let self_clone = self.clone();
-            let event_clone = event.clone();
-
-            tokio::spawn(async move {
-                match self_clone
-                    .process_input_request(
-                        input_proof_request.contract_chain_id,
-                        input_proof_request.contract_address,
-                        input_proof_request.user_address,
-                        input_proof_request.ciphetext_with_zk_proof,
-                        input_proof_request.extra_data,
-                    )
-                    .await
-                {
-                    Ok(input_verification_id) => {
-                        self_clone
-                            .handle_successful_request(event_clone, input_verification_id)
-                            .await;
-                    }
-                    Err(e) => {
-                        self_clone.handle_failed_request(event_clone, e).await;
-                    }
-                }
-            });
-        }
-    }
-
-    /// Processes a successful input request by storing state and dispatching event.
-    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
-    async fn handle_successful_request(&self, event: RelayerEvent, zkproof_id: U256) {
-        let mut zk_id_to_req_id = self
-            .input_verification_id_to_request_id
-            .entry(zkproof_id)
-            .or_default();
-        zk_id_to_req_id.value_mut().push(event.request_id());
-
-        info!(
-            ?event.request_id,
-            ?zkproof_id,
-            "Stored mapping between input_verification ID and request ID"
-        );
-
-        let next_event = event.derive_next_event(RelayerEventData::InputProof(
-            InputProofEventData::ReqSentToGw {
-                gw_req_reference_id: zkproof_id,
-            },
-        ));
-
-        if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
-            error!(?e, "Failed to dispatch RequestSentToGw event");
-        }
-    }
-
-    /// Handles a failed input request by dispatching error event.
-    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
-    async fn handle_failed_request(&self, event: RelayerEvent, error: EventProcessingError) {
-        error!(
-            error = ?error,
-            "Failed to process input request"
-        );
-
-        let error_event =
-            event.derive_next_event(RelayerEventData::InputProof(InputProofEventData::Failed {
-                error: EventProcessingError::TransactionError(format!(
-                    "Input request failed: {error}"
-                )),
-            }));
-
-        if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
-            error!(?e, "Failed to dispatch error event");
-        }
-    }
-
-    /// Extracts input_verification ID from transaction receipt logs.
-    ///
-    /// Searches for the [`VerifyProofRequest`] event in the logs and decodes it to extract
-    /// the zkProofId.
-    ///
-    /// # Arguments
-    /// * `receipt` - The [`TransactionReceipt`] to process
-    ///
-    /// # Returns
-    /// * `Ok(`[`U256`]`)` - The extracted input_verification ID
-    /// * `Err(`[`EventProcessingError`]`)` - If event is not found or decoding fails
-    fn extract_input_verification_id_from_receipt(
-        &self,
-        receipt: &AnyTransactionReceipt,
-    ) -> Result<U256, EventProcessingError> {
         let receipt: TransactionReceipt<AnyReceiptEnvelope<Log>> = receipt.inner.clone();
 
         debug!(
             "Receipt details:\n\
-             Hash: {:?}\n\
-             Status: {}\n\
-             Gas used: {:?}\n\
-             Number of logs: {}\n\
-             Block number: {:?}",
+                 Hash: {:?}\n\
+                 Status: {}\n\
+                 Number of logs: {}\n\
+                 Block number: {:?}",
             receipt.transaction_hash,
             receipt.status(),
-            receipt.gas_used,
             receipt.inner.logs().len(),
             receipt.block_number
         );
@@ -238,19 +93,110 @@ impl GatewayHandler {
             "VerifyProofRequest event not found in receipt logs".into(),
         ))
     }
+}
 
-    /// Processes input request by sending transaction to gateway.
-    ///
-    /// # Arguments
-    /// * `contract_chain_id` - [`U256`] Chain ID of the target contract
-    /// * `contract_address` - [`Address`] Address of the target contract
-    /// * `user_address` - [`Address`] Address of the user making the request
-    /// * `input_verification` - [`Vec<u8>`] ZK proof data
-    ///
-    /// # Returns
-    /// * `Ok(`[`U256`]`)` - The input_verification ID from the transaction
-    /// * `Err(`[`EventProcessingError`]`)` - If the transaction fails
-    async fn process_input_request(
+#[derive(Clone)]
+pub struct GatewayHandler {
+    dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    input_verification_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
+    tx_helper: Arc<TransactionHelper>,
+    contracts: ContractConfig,
+}
+
+impl GatewayHandler {
+    pub fn new(
+        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        tx_helper: Arc<TransactionHelper>,
+        contracts: ContractConfig,
+    ) -> Self {
+        Self {
+            dispatcher,
+            tx_helper,
+            input_verification_id_to_request_id: Arc::new(dashmap::DashMap::new()),
+            contracts,
+        }
+    }
+
+    async fn submit_input_proof_to_gateway(
+        &self,
+        event: RelayerEvent,
+        req_data: InputProofEventData,
+    ) {
+        if let InputProofEventData::ReqRcvdFromUser {
+            input_proof_request,
+        } = req_data
+        {
+            info!(
+                "Input request received. Making tx to gateway: chain_id : {:?},request_id: {:?}, contract: {:?}, user: {:?}",
+                input_proof_request.contract_chain_id, event.request_id, input_proof_request.contract_address, input_proof_request.user_address
+            );
+
+            match self
+                .send_input_verification_transaction(
+                    input_proof_request.contract_chain_id,
+                    input_proof_request.contract_address,
+                    input_proof_request.user_address,
+                    input_proof_request.ciphetext_with_zk_proof,
+                    input_proof_request.extra_data,
+                )
+                .await
+            {
+                Ok(input_verification_id) => {
+                    self.store_mapping_and_dispatch_success(event, input_verification_id)
+                        .await;
+                }
+                Err(e) => {
+                    self.dispatch_input_proof_error(event, e).await;
+                }
+            }
+        }
+    }
+
+    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
+    async fn store_mapping_and_dispatch_success(&self, event: RelayerEvent, zkproof_id: U256) {
+        let mut zk_id_to_req_id = self
+            .input_verification_id_to_request_id
+            .entry(zkproof_id)
+            .or_default();
+        zk_id_to_req_id.value_mut().push(event.request_id());
+
+        info!(
+            ?event.request_id,
+            ?zkproof_id,
+            "Stored mapping between input_verification ID and request ID"
+        );
+
+        let next_event = event.derive_next_event(RelayerEventData::InputProof(
+            InputProofEventData::ReqSentToGw {
+                gw_req_reference_id: zkproof_id,
+            },
+        ));
+
+        if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+            error!(?e, "Failed to dispatch RequestSentToGw event");
+        }
+    }
+
+    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
+    async fn dispatch_input_proof_error(&self, event: RelayerEvent, error: EventProcessingError) {
+        error!(
+            error = ?error,
+            "Failed to process input request"
+        );
+
+        let error_event =
+            event.derive_next_event(RelayerEventData::InputProof(InputProofEventData::Failed {
+                error: EventProcessingError::TransactionError(format!(
+                    "Input request failed: {error}"
+                )),
+            }));
+
+        if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
+            error!(?e, "Failed to dispatch error event");
+        }
+    }
+
+    async fn send_input_verification_transaction(
         &self,
         contract_chain_id: u64,
         contract_address: Address,
@@ -258,9 +204,7 @@ impl GatewayHandler {
         input_verification: Bytes,
         extra_data: Bytes,
     ) -> Result<U256, EventProcessingError> {
-        let processor = InputRequestProcessor {
-            handler: Arc::new(self.clone()),
-        };
+        let processor = InputVerificationReceiptProcessor {};
 
         let input_verification_address =
             Address::from_str(&self.contracts.input_verification_address).map_err(|_| {
@@ -293,26 +237,8 @@ impl GatewayHandler {
             )
             .await
     }
-
-    /// Processes input response events from gateway.
-    ///
-    /// This function:
-    /// 1. Extracts `input_verification_id` from the event
-    /// 2. Retrieves original request ID using the `input_verification_id`
-    /// 3. Creates and dispatches response event with mock handles and signatures
-    ///
-    /// # Arguments
-    /// * `event` - The [`RelayerEvent`] containing the response data
-    ///
-    /// # State Access
-    /// Reads from `input_verification_id_to_request_id` mapping
-    ///
-    /// # Events
-    /// Dispatches [`RelayerEventData::Input`] with [`InputEventData::RespFromGw`]
-    /// containing handles and signatures
-
     #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
-    async fn handle_input_reponse_event_log(&self, event: RelayerEvent) {
+    async fn handle_gateway_response_log(&self, event: RelayerEvent) {
         info!(
             "Input response received. Return result to user {:?}",
             event.request_id,
@@ -321,7 +247,6 @@ impl GatewayHandler {
         if let RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { log }) =
             &event.data
         {
-            // Log the raw data for debugging
             debug!(
                 topics = ?log.topics().iter().map(hex::encode).collect::<Vec<_>>(),
                 "Processing log data for input response"
@@ -351,15 +276,11 @@ impl GatewayHandler {
                                     info!("Please REMOVE this SLEEP when using websocket instead");
                                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-                                    // TODO: we make the assumption that any request will result in a
-                                    // unique on-chain-request-id
-
-                                    // Use get_key_value to get both key and value, or use remove if you want to clean up
                                     if let Some(entry) = self
                                         .input_verification_id_to_request_id
                                         .get(&request_event.zkProofId)
                                     {
-                                        let original_request_ids = entry.value(); // Dereference the Ref<Uuid>
+                                        let original_request_ids = entry.value();
 
                                         info!(
                                             ?original_request_ids,
@@ -377,7 +298,6 @@ impl GatewayHandler {
                                                 },
                                             );
 
-                                        // Now we can use original_request_id directly
                                         let mut dispatch_set = tokio::task::JoinSet::new();
                                         for original_request_id in original_request_ids {
                                             let next_event = next_event_data.clone();
@@ -402,7 +322,6 @@ impl GatewayHandler {
                                 }
                                 Err(err) => {
                                     error!(?err, "Failed to decode InputRequest event");
-                                    // Err(EventProcessingError::DecodingError(e))
                                 }
                             }
                         }
@@ -411,7 +330,6 @@ impl GatewayHandler {
                                 log.data(),
                             ) {
                                 Ok(reject_proof_response) => {
-                                    // Use get_key_value to get both key and value, or use remove if you want to clean up
                                     if let Some(entry) = self
                                         .input_verification_id_to_request_id
                                         .get(&reject_proof_response.zkProofId)
@@ -433,7 +351,6 @@ impl GatewayHandler {
                                                 },
                                             );
 
-                                        // Now we can use original_request_id directly
                                         let mut dispatch_set = tokio::task::JoinSet::new();
                                         for original_request_id in original_request_ids {
                                             let next_event = next_event_data.clone();
@@ -469,13 +386,8 @@ impl GatewayHandler {
             }
         } else {
             error!("Invalid event type received");
-            // Err(EventProcessingError::HandlerError(
-            //     "Invalid event type received".into(),
-            // ))
         }
     }
-
-    async fn noop_handle_input_reponse_event_log(&self, _event: &RelayerEvent) {}
 }
 
 #[async_trait]
@@ -483,63 +395,58 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
     #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
     async fn handle_event(&self, event: RelayerEvent) {
         match &event.data {
-            // Borrow event.data instead of moving it
-            RelayerEventData::InputProof(input_event) => {
-                match input_event {
-                    InputProofEventData::ReqRcvdFromUser {
-                        input_proof_request,
-                    } => {
-                        // Create a new InputEventData with cloned values
-                        let req_data = InputProofEventData::ReqRcvdFromUser {
-                            input_proof_request: input_proof_request.clone(),
-                        };
-                        self.send_input_request_to_gateway(event, req_data).await;
-                    }
-                    InputProofEventData::ReqSentToGw {
-                        gw_req_reference_id,
-                    } => {
-                        info!(
-                            ?gw_req_reference_id,
-                            "Input request sent to gateway successfully"
-                        );
-                    }
-                    InputProofEventData::RespRcvdFromGw {
-                        input_proof_response,
-                    } => {
-                        info!(
-                            handles_count = input_proof_response.handles.len(),
-                            signatures_count = input_proof_response.signatures.len(),
-                            "Received gateway response, ready for HTTP handler"
-                        );
-                    }
-                    InputProofEventData::Failed { error } => {
-                        error!(?error, "Input request failed");
-                    }
+            RelayerEventData::InputProof(input_event) => match input_event {
+                InputProofEventData::ReqRcvdFromUser {
+                    input_proof_request,
+                } => {
+                    info!("Processing input proof request {}", event.request_id);
+                    let req_data = InputProofEventData::ReqRcvdFromUser {
+                        input_proof_request: input_proof_request.clone(),
+                    };
+                    self.submit_input_proof_to_gateway(event, req_data).await;
                 }
-            }
+                InputProofEventData::ReqSentToGw {
+                    gw_req_reference_id,
+                } => {
+                    info!(
+                        ?gw_req_reference_id,
+                        "Input request sent to gateway successfully"
+                    );
+                }
+                InputProofEventData::RespRcvdFromGw {
+                    input_proof_response,
+                } => {
+                    info!(
+                        handles_count = input_proof_response.handles.len(),
+                        signatures_count = input_proof_response.signatures.len(),
+                        "Received gateway response, ready for HTTP handler"
+                    );
+                }
+                InputProofEventData::Failed { error } => {
+                    error!(?error, "Input request failed");
+                }
+            },
 
             RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { ref log }) => {
                 if let Some(topic0) = log.topic0() {
-                    let sig = FixedBytes::<32>::from_slice(topic0.as_slice());
-                    if (sig != InputVerification::VerifyProofResponse::SIGNATURE_HASH)
-                        & (sig != InputVerification::RejectProofResponse::SIGNATURE_HASH)
+                    let topic0_fixed = FixedBytes::<32>::from_slice(topic0.as_slice());
+                    let verify_proof_response_topic =
+                        InputVerification::VerifyProofResponse::SIGNATURE_HASH;
+                    let reject_proof_response_topic =
+                        InputVerification::RejectProofResponse::SIGNATURE_HASH;
+
+                    if topic0_fixed == verify_proof_response_topic
+                        || topic0_fixed == reject_proof_response_topic
                     {
-                        debug!(
-                            "Ignore this event: expected event: {:?} or {:?}, received {} ",
-                            InputVerification::VerifyProofResponse::SIGNATURE_HASH,
-                            InputVerification::RejectProofResponse::SIGNATURE_HASH,
-                            sig,
+                        info!(
+                            "Processing gateway response for request {}",
+                            event.request_id
                         );
-                        self.noop_handle_input_reponse_event_log(&event).await;
-                    } else {
-                        self.handle_input_reponse_event_log(event).await;
+                        self.handle_gateway_response_log(event).await;
                     }
                 };
             }
-            _ => {
-                // Ignore other event types
-                self.noop_handle_input_reponse_event_log(&event).await;
-            }
+            _ => {}
         }
     }
 }
