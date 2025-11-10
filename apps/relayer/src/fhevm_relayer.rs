@@ -23,8 +23,8 @@
 //!
 //! See [`Settings`] for detailed configuration options.
 
-use crate::config::settings::GatewayConfig;
 use crate::gateway::{
+    readiness_checker::ReadinessChecker,
     InputProofGatewayHandler, PublicDecryptGatewayHandler, UserDecryptGatewayHandler,
 };
 use crate::store::key_value_db::KVStore;
@@ -130,6 +130,14 @@ pub async fn run_fhevm_relayer(
         tx_engine_gateway.clone().into(),
         settings.gateway.blockchain_rpc.chain_id.clone(),
     ));
+    
+    // Create ReadinessChecker once to be shared by both decrypt handlers
+    let readiness_checker = Arc::new(ReadinessChecker::new(&settings.gateway)?);
+    
+    // Parse decryption address once
+    let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
+        .map_err(|_| eyre::eyre!("Invalid decryption address"))?;
+    
     setup_input_proof_gateway_handler(
         &orchestrator,
         gateway_tx_helper.clone(),
@@ -140,14 +148,17 @@ pub async fn run_fhevm_relayer(
         &orchestrator,
         kv_store.clone(),
         gateway_tx_helper.clone(),
-        settings.gateway.clone(),
+        readiness_checker.clone(),
+        decryption_address,
     )?;
 
     setup_user_decrypt_gateway_handler(
         &orchestrator,
         kv_store.clone(),
         gateway_tx_helper.clone(),
-        settings.gateway.clone(),
+        readiness_checker.clone(),
+        decryption_address,
+        settings.gateway.contracts.user_decrypt_shares_threshold as usize,
     )?;
 
     // === Initialize gateway listener
@@ -283,13 +294,15 @@ fn setup_public_decrypt_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     kv_store: Arc<dyn KVStore>,
     tx_helper: Arc<GatewayTransactionHelper>,
-    gateway_config: GatewayConfig,
+    readiness_checker: Arc<ReadinessChecker>,
+    decryption_address: Address,
 ) -> eyre::Result<()> {
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(PublicDecryptGatewayHandler::new(
         Arc::clone(orchestrator),
         kv_store,
         tx_helper,
-        gateway_config,
+        readiness_checker,
+        decryption_address,
     ));
 
     let event_ids = [
@@ -307,13 +320,17 @@ fn setup_user_decrypt_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     kv_store: Arc<dyn KVStore>,
     tx_helper: Arc<GatewayTransactionHelper>,
-    gateway_config: GatewayConfig,
+    readiness_checker: Arc<ReadinessChecker>,
+    decryption_address: Address,
+    user_decrypt_shares_threshold: usize,
 ) -> eyre::Result<()> {
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(UserDecryptGatewayHandler::new(
         Arc::clone(orchestrator),
         kv_store,
         tx_helper,
-        gateway_config,
+        readiness_checker,
+        decryption_address,
+        user_decrypt_shares_threshold,
     ));
 
     let event_ids = [

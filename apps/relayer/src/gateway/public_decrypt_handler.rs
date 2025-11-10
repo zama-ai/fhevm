@@ -1,5 +1,4 @@
 use crate::{
-    config::settings::GatewayConfig,
     core::{
         errors::EventProcessingError,
         event::{
@@ -7,10 +6,13 @@ use crate::{
             PublicDecryptResponse, RelayerEvent, RelayerEventData,
         },
     },
-    gateway::arbitrum::{
-        bindings::Decryption,
-        transaction::{helper::TransactionType, ReceiptProcessor, TransactionHelper},
-        ComputeCalldata,
+    gateway::{
+        arbitrum::{
+            bindings::Decryption,
+            transaction::{helper::TransactionType, ReceiptProcessor, TransactionHelper},
+            ComputeCalldata,
+        },
+        readiness_checker::ReadinessChecker,
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
@@ -20,18 +22,14 @@ use crate::{
         key_value_db::KVStore, PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore,
     },
 };
-use std::{str::FromStr, time::Duration};
-
 use alloy::{
     network::{AnyReceiptEnvelope, AnyTransactionReceipt, ReceiptResponse},
     primitives::{Address, Bytes, FixedBytes, U256},
-    providers::ProviderBuilder,
     rpc::types::{Log, TransactionReceipt},
 };
 
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
-use reqwest::Url;
 use std::sync::Arc;
 use tokio::task;
 use tracing::{debug, error, info, warn};
@@ -65,7 +63,8 @@ pub struct GatewayHandler {
     caches: PublicDecryptCaches,
     public_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
     tx_helper: Arc<TransactionHelper>,
-    gateway_config: GatewayConfig,
+    readiness_checker: Arc<ReadinessChecker>,
+    decryption_address: Address,
 }
 
 impl GatewayHandler {
@@ -74,7 +73,8 @@ impl GatewayHandler {
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         kv_store: Arc<dyn KVStore>,
         tx_helper: Arc<TransactionHelper>,
-        gateway_config: GatewayConfig,
+        readiness_checker: Arc<ReadinessChecker>,
+        decryption_address: Address,
     ) -> Self {
         let public_decrypt_responses_cache =
             Arc::new(PublicDecryptResponseCacheStore::new(kv_store.clone()));
@@ -89,7 +89,8 @@ impl GatewayHandler {
             caches,
             tx_helper,
             public_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
-            gateway_config,
+            readiness_checker,
+            decryption_address,
         }
     }
 
@@ -196,100 +197,16 @@ impl GatewayHandler {
             handles_fixed_bytes
         );
 
-        let url = match Url::parse(&self.gateway_config.blockchain_rpc.http_url) {
-            Ok(url) => url,
-            Err(e) => {
-                let error = EventProcessingError::HandlerError(format!("Invalid URL: {e}"));
-                self.handle_failed_request(event.clone(), error).await;
-                return;
-            }
-        };
-
-        let provider = ProviderBuilder::new()
-            .network::<alloy::network::AnyNetwork>()
-            .connect_http(url);
-
-        let decryption_address =
-            match Address::from_str(&self.gateway_config.contracts.decryption_address) {
-                Ok(addr) => addr,
-                Err(_) => {
-                    let error = EventProcessingError::ConfigError(
-                        crate::config::settings::AppConfigError::InvalidAddress(
-                            "contracts.decryption_address".to_owned(),
-                        ),
-                    );
-                    self.handle_failed_request(event.clone(), error).await;
-                    return;
-                }
-            };
-
-        let decryption = Decryption::new(decryption_address, provider.clone());
-
-        let max_retries = self.gateway_config.readiness_checker.retry.max_attempts;
-        let retry_interval = Duration::from_secs(
-            self.gateway_config
-                .readiness_checker
-                .retry
-                .retry_interval_ms,
-        );
-
-        let mut retries = 0;
-        let mut should_retry = true;
-
-        while should_retry && retries < max_retries {
-            should_retry = false;
-
-            match decryption
-                .clone()
-                .isPublicDecryptionReady(
-                    handles_fixed_bytes.clone(),
-                    public_decryption_request.extra_data.clone(),
-                )
-                .call()
-                .await
-            {
-                Ok(is_ready) => {
-                    if is_ready {
-                        info!(
-                            "Function call succeeded for handles: {:?}",
-                            handles_fixed_bytes
-                        );
-                    } else {
-                        info!(
-                            "Gateway not ready for handles: {:?}, retrying... ",
-                            handles_fixed_bytes
-                        );
-                        should_retry = true;
-                    }
-                }
-                Err(err) => {
-                    error!(
-                        "Check should not revert and render boolean value: {:?}, still retrying... error: {} ",
-                        handles_fixed_bytes, err
-                    );
-                    should_retry = true;
-                }
-            }
-
-            if should_retry {
-                retries += 1;
-                if retries < max_retries {
-                    info!(
-                        "Retrying public decryption readiness check (attempt {}/{})",
-                        retries, max_retries
-                    );
-                    tokio::time::sleep(retry_interval).await;
-                } else {
-                    warn!("Max retries reached for public decryption readiness check");
-
-                    // Return an error instead of proceeding with the transaction
-                    let error = EventProcessingError::HandlerError(format!(
-                        "Gateway not ready after {max_retries} retries"
-                    ));
-                    self.handle_failed_request(event.clone(), error).await;
-                    return;
-                }
-            }
+        if let Err(error) = self
+            .readiness_checker
+            .check_public_decryption_readiness(
+                handles_fixed_bytes.clone(),
+                public_decryption_request.extra_data.clone(),
+            )
+            .await
+        {
+            self.handle_failed_request(event.clone(), error).await;
+            return;
         }
 
         let public_decryption_request_clone = public_decryption_request.clone();
@@ -598,14 +515,9 @@ impl GatewayHandler {
             handler: Arc::new(self.clone()),
         };
 
-        let decryption_address =
-            Address::from_str(&self.gateway_config.contracts.decryption_address).map_err(|_| {
-                EventProcessingError::ConfigError(
-                    crate::config::settings::AppConfigError::InvalidAddress(
-                        "contracts.decryption_address".to_owned(),
-                    ),
-                )
-            })?;
+        // Use the stored decryption address
+        let decryption_address = self.decryption_address;
+
         self.tx_helper
             .send_raw_transaction_sync(
                 TransactionType::PublicDecryptRequest,

@@ -1,5 +1,4 @@
 use crate::{
-    config::settings::GatewayConfig,
     core::{
         errors::EventProcessingError,
         event::{
@@ -7,10 +6,13 @@ use crate::{
             UserDecryptEventData, UserDecryptRequest, UserDecryptResponse,
         },
     },
-    gateway::arbitrum::{
-        bindings::Decryption::{self, UserDecryptionRequest},
-        transaction::{helper::TransactionType, ReceiptProcessor, TransactionHelper},
-        ComputeCalldata,
+    gateway::{
+        arbitrum::{
+            bindings::Decryption::{self, UserDecryptionRequest},
+            transaction::{helper::TransactionType, ReceiptProcessor, TransactionHelper},
+            ComputeCalldata,
+        },
+        readiness_checker::ReadinessChecker,
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
@@ -30,14 +32,10 @@ impl From<&HandleContractPair> for Decryption::CtHandleContractPair {
         }
     }
 }
-use reqwest::Url;
-use std::str::FromStr;
-use std::time::Duration;
 
 use alloy::{
     network::{AnyReceiptEnvelope, AnyTransactionReceipt, ReceiptResponse},
     primitives::{Address, FixedBytes, U256},
-    providers::ProviderBuilder,
     rpc::types::{Log, TransactionReceipt},
 };
 use hex;
@@ -76,7 +74,9 @@ pub struct GatewayHandler {
     user_decrypt_response_store: Arc<UserDecryptResponseStore>,
     user_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
     tx_helper: Arc<TransactionHelper>,
-    gateway_config: GatewayConfig,
+    readiness_checker: Arc<ReadinessChecker>,
+    decryption_address: Address,
+    user_decrypt_shares_threshold: usize,
 }
 
 impl GatewayHandler {
@@ -85,15 +85,17 @@ impl GatewayHandler {
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         kv_store: Arc<dyn KVStore>,
         tx_helper: Arc<TransactionHelper>,
-        gateway_config: GatewayConfig,
+        readiness_checker: Arc<ReadinessChecker>,
+        decryption_address: Address,
+        user_decrypt_shares_threshold: usize,
     ) -> Self {
         let user_decrypt_responses_cache =
             Arc::new(UserDecryptResponseCacheStore::new(kv_store.clone()));
         let user_decrypt_requests_cache = Arc::new(UserDecryptRequestCacheStore::new(kv_store));
 
-        let user_decrypt_shares_threshold = gateway_config.contracts.user_decrypt_shares_threshold;
-        let user_decrypt_response_store =
-            Arc::new(UserDecryptResponseStore::new(user_decrypt_shares_threshold));
+        let user_decrypt_response_store = Arc::new(UserDecryptResponseStore::new(
+            user_decrypt_shares_threshold as u16,
+        ));
 
         Self {
             dispatcher,
@@ -102,7 +104,9 @@ impl GatewayHandler {
             user_decrypt_response_store,
             user_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             tx_helper,
-            gateway_config,
+            readiness_checker,
+            decryption_address,
+            user_decrypt_shares_threshold,
         }
     }
 
@@ -551,22 +555,6 @@ impl GatewayHandler {
             handler: Arc::new(self.clone()),
         };
 
-        let url = Url::parse(&self.gateway_config.blockchain_rpc.http_url).unwrap();
-
-        let provider = ProviderBuilder::new()
-            .network::<alloy::network::AnyNetwork>()
-            .connect_http(url);
-
-        let decryption_address =
-            Address::from_str(&self.gateway_config.contracts.decryption_address).map_err(|_| {
-                EventProcessingError::ConfigError(
-                    crate::config::settings::AppConfigError::InvalidAddress(
-                        "contracts.decryption_address".to_owned(),
-                    ),
-                )
-            })?;
-        let decryption = Decryption::new(decryption_address, provider.clone());
-
         // Convert to contract related pairs
         let contract_pairs: Vec<_> = user_decrypt_request
             .ct_handle_contract_pairs
@@ -574,75 +562,16 @@ impl GatewayHandler {
             .map(Decryption::CtHandleContractPair::from)
             .collect();
 
-        // Perform readiness check with retry logic
-        let max_retries = self.gateway_config.readiness_checker.retry.max_attempts;
-        let retry_interval = Duration::from_secs(
-            self.gateway_config
-                .readiness_checker
-                .retry
-                .retry_interval_ms,
-        );
+        self.readiness_checker
+            .check_user_decryption_readiness(
+                user_decrypt_request.user_address,
+                contract_pairs,
+                user_decrypt_request.extra_data.clone(),
+            )
+            .await?;
 
-        let mut retries = 0;
-        let mut should_retry = true;
-
-        info!(
-            "Checking if the decryption manager is ready for user address: {:?} and contract pairs: {:?}",
-            user_decrypt_request.user_address, contract_pairs
-        );
-
-        while should_retry && retries < max_retries {
-            should_retry = false;
-
-            match decryption
-                .clone()
-                .isUserDecryptionReady(
-                    user_decrypt_request.user_address,
-                    contract_pairs.clone(),
-                    user_decrypt_request.extra_data.clone(),
-                )
-                .call()
-                .await
-            {
-                Ok(is_ready) => {
-                    if is_ready {
-                        info!(
-                            "Function call succeeded for user address: {:?}",
-                            user_decrypt_request.user_address
-                        );
-                    } else {
-                        info!(
-                            "Gateway not ready for handles: {:?}, retrying... ",
-                            user_decrypt_request.user_address
-                        );
-                        should_retry = true;
-                    }
-                }
-                Err(err) => {
-                    error!(
-                        "Check should not revert and render boolean value: {:?}, still retrying... error: {} ",
-                        user_decrypt_request.user_address, err
-                    );
-                    should_retry = true;
-                }
-            }
-
-            if should_retry {
-                retries += 1;
-                if retries < max_retries {
-                    info!(
-                        "Retrying user decryption readiness check (attempt {}/{})",
-                        retries, max_retries
-                    );
-                    tokio::time::sleep(retry_interval).await;
-                } else {
-                    warn!("Max retries reached for user decryption readiness check");
-                    return Err(EventProcessingError::HandlerError(format!(
-                        "Gateway not ready after {max_retries} retries"
-                    )));
-                }
-            }
-        }
+        // Use the stored decryption address
+        let decryption_address = self.decryption_address;
 
         self.tx_helper
             .send_raw_transaction_sync(

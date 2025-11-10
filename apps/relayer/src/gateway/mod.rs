@@ -1,6 +1,7 @@
 pub mod arbitrum;
 pub mod input_handlers;
 pub mod public_decrypt_handler;
+pub mod readiness_checker;
 pub mod user_decrypt_handler;
 
 pub use input_handlers::GatewayHandler as InputProofGatewayHandler;
