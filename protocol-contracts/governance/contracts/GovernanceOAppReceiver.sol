@@ -56,8 +56,8 @@ contract GovernanceOAppReceiver is OAppReceiver {
 
     /// @notice Invoked by GovernanceOAppReceiver when EndpointV2.lzReceive is called.
     /// @notice Reverts if adminSafeModule was not set.
-    /// @dev   origin    Metadata (source chain, sender address, nonce).
-    /// @dev   guid      Global unique ID for tracking this message.
+    /// @param   origin    Metadata (source chain, sender address, nonce).
+    /// @param   guid      Global unique ID for tracking this message.
     /// @param message   ABI-encoded bytes (the string we sent earlier).
     /// @dev   executor  Executor address that delivered the message.
     /// @dev   extraData Additional data from the Executor (unused here).
