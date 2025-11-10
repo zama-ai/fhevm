@@ -69,6 +69,7 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     /// @notice Quotes the gas needed to pay for the full cross-chain transaction in native gas.
     /// @param targets The target contracts to be called.
     /// @param values The values to be sent.
+    /// @param functionSignatures Function signatures - optional: if empty string, datas[i] is already starting with the function selector.
     /// @param datas The calldatas to be used.
     /// @param operations The Safe operations.
     /// @param options Message execution options (e.g., for sending gas to destination).
@@ -91,7 +92,7 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
         fee = mfee.nativeFee;
     }
 
-    /// @notice Send a cross-chain proposal to Zama Gateway chain. Only the owner, i.e the Aragaon DAO, should be able to send proposals.
+    /// @notice Send a cross-chain proposal to Zama Gateway chain. Only the owner, i.e the Aragon DAO, should be able to send proposals.
     /// @notice The default LayerZero executor caps payload size at 10000 bytes. Proposals with many batched calls or large calldata can
     /// exceed this limit and cause `_lzSend` to revert on the source chain.
     /// @param targets The target contracts to be called.
