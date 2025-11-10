@@ -1,4 +1,3 @@
-use alloy::primitives::map::HashMap;
 use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -224,9 +223,6 @@ pub struct LogConfig {
     /// Whether to show timestamps (optional)
     #[serde(default)]
     pub show_timestamp: bool,
-    /// Custom filters for specific modules (optional)
-    #[serde(default)]
-    pub module_filters: Option<HashMap<String, String>>,
 }
 
 impl Default for LogConfig {
@@ -236,7 +232,6 @@ impl Default for LogConfig {
             show_file_line: false,
             show_thread_ids: false,
             show_timestamp: true,
-            module_filters: None,
         }
     }
 }

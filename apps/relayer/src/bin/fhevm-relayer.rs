@@ -86,17 +86,70 @@ async fn main() -> eyre::Result<()> {
 /// - File and line number display
 /// - Thread ID display
 fn init_tracing(log_config: &LogConfig) -> eyre::Result<Option<FlushGuard>> {
-    // Env filter allows for more control on per-crate log-level
-    let env_filter = EnvFilter::from_default_env();
+    // Default: WARN for dependencies, INFO for fhevm_relayer. Override with RUST_LOG env var.
+    // Examples: RUST_LOG=debug | RUST_LOG=warn,fhevm_relayer=debug | RUST_LOG=warn,reqwest=debug
+    let env_filter = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("warn,fhevm_relayer=info,ethereum_rpc_mock=info"))
+        .unwrap();
 
     // TODO: hide this behing a tracing-chrome feature
     // Build subscriber with common settings
 
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .with_file(log_config.show_file_line)
-        .with_line_number(log_config.show_file_line)
-        .with_thread_ids(log_config.show_thread_ids)
-        .with_target(false);
+    // Apply format configuration and box the layer
+    let fmt_layer = match log_config.format.as_str() {
+        "json" => {
+            let layer = tracing_subscriber::fmt::layer()
+                .with_file(log_config.show_file_line)
+                .with_line_number(log_config.show_file_line)
+                .with_thread_ids(log_config.show_thread_ids)
+                .with_target(true)
+                .json();
+            if !log_config.show_timestamp {
+                layer.without_time().boxed()
+            } else {
+                layer.boxed()
+            }
+        },
+        "pretty" => {
+            let layer = tracing_subscriber::fmt::layer()
+                .with_file(log_config.show_file_line)
+                .with_line_number(log_config.show_file_line)
+                .with_thread_ids(log_config.show_thread_ids)
+                .with_target(true)
+                .pretty();
+            if !log_config.show_timestamp {
+                layer.without_time().boxed()
+            } else {
+                layer.boxed()
+            }
+        },
+        "compact" => {
+            let layer = tracing_subscriber::fmt::layer()
+                .with_file(log_config.show_file_line)
+                .with_line_number(log_config.show_file_line)
+                .with_thread_ids(log_config.show_thread_ids)
+                .with_target(true)
+                .compact();
+            if !log_config.show_timestamp {
+                layer.without_time().boxed()
+            } else {
+                layer.boxed()
+            }
+        },
+        _ => {
+            let layer = tracing_subscriber::fmt::layer()
+                .with_file(log_config.show_file_line)
+                .with_line_number(log_config.show_file_line)
+                .with_thread_ids(log_config.show_thread_ids)
+                .with_target(true)
+                .compact();
+            if !log_config.show_timestamp {
+                layer.without_time().boxed()
+            } else {
+                layer.boxed()
+            }
+        },
+    };
 
     let tracing_subscriber_builder = tracing_subscriber::registry()
         .with(env_filter)

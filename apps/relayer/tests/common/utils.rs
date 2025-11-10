@@ -181,12 +181,12 @@ fn init_tracing_once() {
         let subscriber = tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| "info,eth_json_rpc_mock=info,fhevm_relayer=info".into()),
+                    .unwrap_or_else(|_| "warn,fhevm_relayer=info,ethereum_rpc_mock=info".into()),
             )
             .with_target(true)
-            .with_thread_ids(true)
-            .with_file(true)
-            .with_line_number(true);
+            .with_thread_ids(false)
+            .with_file(false)
+            .with_line_number(false);
 
         let _ = subscriber.try_init();
     });
