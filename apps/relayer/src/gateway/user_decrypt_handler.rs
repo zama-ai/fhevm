@@ -93,7 +93,6 @@ pub struct GatewayHandler {
     tx_helper: Arc<TransactionHelper>,
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
-    user_decrypt_shares_threshold: usize,
 }
 
 impl GatewayHandler {
@@ -119,7 +118,6 @@ impl GatewayHandler {
             tx_helper,
             readiness_checker,
             decryption_address,
-            user_decrypt_shares_threshold,
         }
     }
 
@@ -161,8 +159,8 @@ impl GatewayHandler {
                             .store_request_mapping(decrypt_request, user_decryption_id)
                             .await
                         {
-                            if let Err(_) = self.cache.unlock_request(decrypt_request).await {
-                                // Cache unlock failed, but continue with error dispatch
+                            if (self.cache.unlock_request(decrypt_request).await).is_err() {
+                                warn!("Cache unlock failed, continuing with error dispatch");
                             }
                             self.dispatch_error_event(event, e.into()).await;
                             return;

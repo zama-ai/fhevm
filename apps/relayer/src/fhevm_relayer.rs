@@ -24,8 +24,8 @@
 //! See [`Settings`] for detailed configuration options.
 
 use crate::gateway::{
-    readiness_checker::ReadinessChecker,
-    InputProofGatewayHandler, PublicDecryptGatewayHandler, UserDecryptGatewayHandler,
+    readiness_checker::ReadinessChecker, InputProofGatewayHandler, PublicDecryptGatewayHandler,
+    UserDecryptGatewayHandler,
 };
 use crate::store::key_value_db::KVStore;
 use crate::store::BlockNumberStore;
@@ -128,16 +128,16 @@ pub async fn run_fhevm_relayer(
     // let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
     let gateway_tx_helper = Arc::new(GatewayTransactionHelper::new(
         tx_engine_gateway.clone().into(),
-        settings.gateway.blockchain_rpc.chain_id.clone(),
+        settings.gateway.blockchain_rpc.chain_id,
     ));
-    
+
     // Create ReadinessChecker once to be shared by both decrypt handlers
     let readiness_checker = Arc::new(ReadinessChecker::new(&settings.gateway)?);
-    
+
     // Parse decryption address once
     let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
         .map_err(|_| eyre::eyre!("Invalid decryption address"))?;
-    
+
     setup_input_proof_gateway_handler(
         &orchestrator,
         gateway_tx_helper.clone(),

@@ -5,7 +5,7 @@ use crate::{
 };
 use alloy::{
     primitives::{Address, Bytes, FixedBytes},
-    providers::{ProviderBuilder, fillers::FillProvider, RootProvider},
+    providers::{fillers::FillProvider, ProviderBuilder, RootProvider},
 };
 use reqwest::Url;
 use std::str::FromStr;
@@ -32,7 +32,7 @@ type Provider = FillProvider<
 >;
 
 /// A generic readiness checker for gateway operations.
-/// 
+///
 /// This struct handles the common pattern of checking if the gateway is ready
 /// for a specific operation, with configurable retry logic.
 pub struct ReadinessChecker {
@@ -45,24 +45,24 @@ impl ReadinessChecker {
     /// Creates a new ReadinessChecker with the given gateway configuration.
     pub fn new(gateway_config: &GatewayConfig) -> Result<Self, EventProcessingError> {
         // Get decryption address
-        let decryption_address = 
-            Address::from_str(&gateway_config.contracts.decryption_address).map_err(|_| {
+        let decryption_address = Address::from_str(&gateway_config.contracts.decryption_address)
+            .map_err(|_| {
                 EventProcessingError::ConfigError(AppConfigError::InvalidAddress(
                     "contracts.decryption_address".to_owned(),
                 ))
             })?;
-        
+
         // Create provider once
         let url = Url::parse(&gateway_config.blockchain_rpc.http_url)
             .map_err(|e| EventProcessingError::HandlerError(format!("Invalid URL: {}", e)))?;
-        
+
         let provider = Arc::new(
             ProviderBuilder::new()
                 .network::<alloy::network::AnyNetwork>()
-                .connect_http(url)
+                .connect_http(url),
         );
-        
-        Ok(Self { 
+
+        Ok(Self {
             retry_config: gateway_config.readiness_checker.retry.clone(),
             decryption_address,
             provider,
@@ -85,9 +85,9 @@ impl ReadinessChecker {
     ) -> Result<(), EventProcessingError> {
         // Use the stored provider
         let decryption = Decryption::new(self.decryption_address, self.provider.clone());
-        
+
         let operation_desc = format!("public decryption for handles: {:?}", handles);
-        
+
         self.check_readiness_internal(
             || {
                 let decryption = decryption.clone();
@@ -124,9 +124,9 @@ impl ReadinessChecker {
     ) -> Result<(), EventProcessingError> {
         // Use the stored provider
         let decryption = Decryption::new(self.decryption_address, self.provider.clone());
-        
+
         let operation_desc = format!("user decryption for address: {:?}", user_address);
-        
+
         info!(
             "Checking if the decryption manager is ready for user address: {:?} and contract pairs: {:?}",
             user_address, contract_pairs
@@ -169,16 +169,10 @@ impl ReadinessChecker {
             match check_fn().await {
                 Ok(is_ready) => {
                     if is_ready {
-                        info!(
-                            "Gateway is ready for operation: {}",
-                            operation_desc
-                        );
+                        info!("Gateway is ready for operation: {}", operation_desc);
                         return Ok(());
                     } else {
-                        info!(
-                            "Gateway not ready for {}, retrying...",
-                            operation_desc
-                        );
+                        info!("Gateway not ready for {}, retrying...", operation_desc);
                     }
                 }
                 Err(err) => {
@@ -205,5 +199,4 @@ impl ReadinessChecker {
             tokio::time::sleep(retry_interval).await;
         }
     }
-
 }

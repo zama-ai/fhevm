@@ -142,8 +142,8 @@ impl GatewayHandler {
                             .store_request_mapping(decrypt_request, decryption_id)
                             .await
                         {
-                            if let Err(_) = self.cache.unlock_request(decrypt_request).await {
-                                // Cache unlock failed, but continue with error dispatch
+                            if (self.cache.unlock_request(decrypt_request).await).is_err() {
+                                warn!("Cache unlock failed, continuing with error dispatch");
                             }
                             self.dispatch_error_event(event, e.into()).await;
                             return;
