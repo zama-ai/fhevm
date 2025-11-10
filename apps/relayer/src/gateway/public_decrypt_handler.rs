@@ -1,5 +1,5 @@
 use crate::{
-    config::settings::{ContractConfig, RetrySettings},
+    config::settings::GatewayConfig,
     core::{
         errors::EventProcessingError,
         event::{
@@ -7,15 +7,18 @@ use crate::{
             PublicDecryptResponse, RelayerEvent, RelayerEventData,
         },
     },
-    gateway::arbitrum::transaction::{
-        helper::TransactionType, ReceiptProcessor, TransactionHelper,
+    gateway::arbitrum::{
+        bindings::Decryption,
+        transaction::{helper::TransactionType, ReceiptProcessor, TransactionHelper},
+        ComputeCalldata,
     },
-    gateway::arbitrum::{bindings::Decryption, ComputeCalldata},
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
     },
-    store::{PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore},
+    store::{
+        key_value_db::KVStore, PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore,
+    },
 };
 use std::{str::FromStr, time::Duration};
 
@@ -62,29 +65,31 @@ pub struct GatewayHandler {
     caches: PublicDecryptCaches,
     public_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
     tx_helper: Arc<TransactionHelper>,
-    contracts: ContractConfig,
-    gateway_http_url: String,
-    retry_config: RetrySettings,
+    gateway_config: GatewayConfig,
 }
 
 impl GatewayHandler {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        caches: PublicDecryptCaches,
+        kv_store: Arc<dyn KVStore>,
         tx_helper: Arc<TransactionHelper>,
-        contracts: ContractConfig,
-        gateway_http_url: String,
-        retry_config: RetrySettings,
+        gateway_config: GatewayConfig,
     ) -> Self {
+        let public_decrypt_responses_cache =
+            Arc::new(PublicDecryptResponseCacheStore::new(kv_store.clone()));
+        let public_decrypt_requests_cache = Arc::new(PublicDecryptRequestCacheStore::new(kv_store));
+        let caches = crate::gateway::public_decrypt_handler::PublicDecryptCaches {
+            responses: public_decrypt_responses_cache,
+            requests: public_decrypt_requests_cache,
+        };
+
         Self {
             dispatcher,
             caches,
             tx_helper,
             public_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
-            contracts,
-            gateway_http_url,
-            retry_config,
+            gateway_config,
         }
     }
 
@@ -191,7 +196,7 @@ impl GatewayHandler {
             handles_fixed_bytes
         );
 
-        let url = match Url::parse(&self.gateway_http_url) {
+        let url = match Url::parse(&self.gateway_config.blockchain_rpc.http_url) {
             Ok(url) => url,
             Err(e) => {
                 let error = EventProcessingError::HandlerError(format!("Invalid URL: {e}"));
@@ -204,23 +209,29 @@ impl GatewayHandler {
             .network::<alloy::network::AnyNetwork>()
             .connect_http(url);
 
-        let decryption_address = match Address::from_str(&self.contracts.decryption_address) {
-            Ok(addr) => addr,
-            Err(_) => {
-                let error = EventProcessingError::ConfigError(
-                    crate::config::settings::AppConfigError::InvalidAddress(
-                        "contracts.decryption_address".to_owned(),
-                    ),
-                );
-                self.handle_failed_request(event.clone(), error).await;
-                return;
-            }
-        };
+        let decryption_address =
+            match Address::from_str(&self.gateway_config.contracts.decryption_address) {
+                Ok(addr) => addr,
+                Err(_) => {
+                    let error = EventProcessingError::ConfigError(
+                        crate::config::settings::AppConfigError::InvalidAddress(
+                            "contracts.decryption_address".to_owned(),
+                        ),
+                    );
+                    self.handle_failed_request(event.clone(), error).await;
+                    return;
+                }
+            };
 
         let decryption = Decryption::new(decryption_address, provider.clone());
 
-        let max_retries = self.retry_config.max_attempts;
-        let retry_interval = Duration::from_secs(self.retry_config.retry_interval_ms);
+        let max_retries = self.gateway_config.readiness_checker.retry.max_attempts;
+        let retry_interval = Duration::from_secs(
+            self.gateway_config
+                .readiness_checker
+                .retry
+                .retry_interval_ms,
+        );
 
         let mut retries = 0;
         let mut should_retry = true;
@@ -588,7 +599,7 @@ impl GatewayHandler {
         };
 
         let decryption_address =
-            Address::from_str(&self.contracts.decryption_address).map_err(|_| {
+            Address::from_str(&self.gateway_config.contracts.decryption_address).map_err(|_| {
                 EventProcessingError::ConfigError(
                     crate::config::settings::AppConfigError::InvalidAddress(
                         "contracts.decryption_address".to_owned(),

@@ -23,13 +23,12 @@
 //!
 //! See [`Settings`] for detailed configuration options.
 
+use crate::config::settings::GatewayConfig;
 use crate::gateway::{
     InputProofGatewayHandler, PublicDecryptGatewayHandler, UserDecryptGatewayHandler,
 };
-use crate::store::{
-    BlockNumberStore, PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore,
-    UserDecryptRequestCacheStore, UserDecryptResponseCacheStore, UserDecryptResponseStore,
-};
+use crate::store::key_value_db::KVStore;
+use crate::store::BlockNumberStore;
 use alloy::primitives::Address;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -113,7 +112,7 @@ pub async fn run_fhevm_relayer(
 
     let tx_engine_gateway = GatewayTransactionEngine::new(
         settings.gateway.blockchain_rpc.clone(),
-        settings.gateway.tx_engine,
+        settings.gateway.tx_engine.clone(),
     );
 
     let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
@@ -154,18 +153,14 @@ pub async fn run_fhevm_relayer(
         &orchestrator,
         kv_store.clone(),
         gateway_tx_helper.clone(),
-        settings.gateway.contracts.clone(),
-        gateway_settings.http_url.clone(),
-        settings.gateway.readiness_checker.clone().retry.clone(),
+        settings.gateway.clone(),
     )?;
 
     setup_user_decrypt_gateway_handler(
         &orchestrator,
         kv_store.clone(),
         gateway_tx_helper.clone(),
-        settings.gateway.contracts,
-        gateway_settings.http_url.clone(),
-        settings.gateway.readiness_checker.clone().retry.clone(),
+        settings.gateway.clone(),
     )?;
 
     // === Initialize gateway listener
@@ -292,27 +287,15 @@ fn setup_input_proof_gateway_handler(
 /// Setup PublicDecryptGatewayHandler and register its events
 fn setup_public_decrypt_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    kv_store: Arc<RocksDBKVStore>,
+    kv_store: Arc<dyn KVStore>,
     tx_helper: Arc<GatewayTransactionHelper>,
-    contracts: crate::config::settings::ContractConfig,
-    http_url: String,
-    retry_config: crate::config::settings::RetrySettings,
+    gateway_config: GatewayConfig,
 ) -> eyre::Result<()> {
-    let public_decrypt_responses_cache =
-        Arc::new(PublicDecryptResponseCacheStore::new(kv_store.clone()));
-    let public_decrypt_requests_cache = Arc::new(PublicDecryptRequestCacheStore::new(kv_store));
-    let public_decrypt_caches = crate::gateway::public_decrypt_handler::PublicDecryptCaches {
-        responses: public_decrypt_responses_cache,
-        requests: public_decrypt_requests_cache,
-    };
-
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(PublicDecryptGatewayHandler::new(
         Arc::clone(orchestrator),
-        public_decrypt_caches,
+        kv_store,
         tx_helper,
-        contracts,
-        http_url,
-        retry_config,
+        gateway_config,
     ));
 
     let event_ids = [
@@ -328,29 +311,15 @@ fn setup_public_decrypt_gateway_handler(
 /// Setup UserDecryptGatewayHandler and register its events
 fn setup_user_decrypt_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    kv_store: Arc<RocksDBKVStore>,
+    kv_store: Arc<dyn KVStore>,
     tx_helper: Arc<GatewayTransactionHelper>,
-    contracts: crate::config::settings::ContractConfig,
-    http_url: String,
-    retry_config: crate::config::settings::RetrySettings,
+    gateway_config: GatewayConfig,
 ) -> eyre::Result<()> {
-    let user_decrypt_responses_cache =
-        Arc::new(UserDecryptResponseCacheStore::new(kv_store.clone()));
-    let user_decrypt_requests_cache = Arc::new(UserDecryptRequestCacheStore::new(kv_store));
-
-    let user_decrypt_shares_threshold = contracts.user_decrypt_shares_threshold;
-    let user_decrypt_response_store =
-        Arc::new(UserDecryptResponseStore::new(user_decrypt_shares_threshold));
-
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(UserDecryptGatewayHandler::new(
         Arc::clone(orchestrator),
-        user_decrypt_responses_cache,
-        user_decrypt_requests_cache,
-        user_decrypt_response_store,
+        kv_store,
         tx_helper,
-        contracts,
-        http_url,
-        retry_config,
+        gateway_config,
     ));
 
     let event_ids = [

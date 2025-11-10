@@ -1,5 +1,5 @@
 use crate::{
-    config::settings::{ContractConfig, RetrySettings},
+    config::settings::GatewayConfig,
     core::{
         errors::EventProcessingError,
         event::{
@@ -7,11 +7,9 @@ use crate::{
             UserDecryptEventData, UserDecryptRequest, UserDecryptResponse,
         },
     },
-    gateway::arbitrum::transaction::{
-        helper::TransactionType, ReceiptProcessor, TransactionHelper,
-    },
     gateway::arbitrum::{
         bindings::Decryption::{self, UserDecryptionRequest},
+        transaction::{helper::TransactionType, ReceiptProcessor, TransactionHelper},
         ComputeCalldata,
     },
     orchestrator::{
@@ -19,8 +17,8 @@ use crate::{
         Orchestrator, TokioEventDispatcher,
     },
     store::{
-        UserDecryptRequestCacheStore, UserDecryptResponseCacheStore, UserDecryptResponseStore,
-        UserDecryptionResponseShare,
+        key_value_db::KVStore, UserDecryptRequestCacheStore, UserDecryptResponseCacheStore,
+        UserDecryptResponseStore, UserDecryptionResponseShare,
     },
 };
 
@@ -73,38 +71,38 @@ impl ReceiptProcessor for UserDecryptionRequestProcessor {
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    user_decryption_responses_cache: Arc<UserDecryptResponseCacheStore>,
-    user_decryption_requests_cache: Arc<UserDecryptRequestCacheStore>,
+    user_decrypt_responses_cache: Arc<UserDecryptResponseCacheStore>,
+    user_decrypt_requests_cache: Arc<UserDecryptRequestCacheStore>,
     user_decrypt_response_store: Arc<UserDecryptResponseStore>,
     user_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
     tx_helper: Arc<TransactionHelper>,
-    contracts: ContractConfig,
-    gateway_http_url: String,
-    retry_config: RetrySettings,
+    gateway_config: GatewayConfig,
 }
 
 impl GatewayHandler {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        user_decryption_responses_cache: Arc<UserDecryptResponseCacheStore>,
-        user_decryption_requests_cache: Arc<UserDecryptRequestCacheStore>,
-        user_decrypt_response_store: Arc<UserDecryptResponseStore>,
+        kv_store: Arc<dyn KVStore>,
         tx_helper: Arc<TransactionHelper>,
-        contracts: ContractConfig,
-        gateway_http_url: String,
-        retry_config: RetrySettings,
+        gateway_config: GatewayConfig,
     ) -> Self {
+        let user_decrypt_responses_cache =
+            Arc::new(UserDecryptResponseCacheStore::new(kv_store.clone()));
+        let user_decrypt_requests_cache = Arc::new(UserDecryptRequestCacheStore::new(kv_store));
+
+        let user_decrypt_shares_threshold = gateway_config.contracts.user_decrypt_shares_threshold;
+        let user_decrypt_response_store =
+            Arc::new(UserDecryptResponseStore::new(user_decrypt_shares_threshold));
+
         Self {
             dispatcher,
-            user_decryption_responses_cache,
-            user_decryption_requests_cache,
+            user_decrypt_responses_cache,
+            user_decrypt_requests_cache,
             user_decrypt_response_store,
             user_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             tx_helper,
-            contracts,
-            gateway_http_url,
-            retry_config,
+            gateway_config,
         }
     }
 
@@ -149,7 +147,7 @@ impl GatewayHandler {
             {
                 Ok(user_decryption_id) => {
                     if let Err(err) = self_clone
-                        .user_decryption_requests_cache
+                        .user_decrypt_requests_cache
                         .persist_value(&user_decrypt_request, user_decryption_id)
                         .await
                     {
@@ -158,7 +156,7 @@ impl GatewayHandler {
                             event.request_id
                         );
                         self_clone
-                            .user_decryption_requests_cache
+                            .user_decrypt_requests_cache
                             .unlock(&user_decrypt_request)
                             .await;
                     }
@@ -169,7 +167,7 @@ impl GatewayHandler {
                 }
                 Err(e) => {
                     self_clone
-                        .user_decryption_requests_cache
+                        .user_decrypt_requests_cache
                         .unlock(&user_decrypt_request)
                         .await;
                     self_clone.handle_failed_request(event_clone, e).await;
@@ -420,7 +418,7 @@ impl GatewayHandler {
 
         // Store in cache (maintain existing cache behavior)
         if let Err(err) = self
-            .user_decryption_responses_cache
+            .user_decrypt_responses_cache
             .persist_value(user_decryption_id, final_response.clone())
             .await
         {
@@ -553,14 +551,14 @@ impl GatewayHandler {
             handler: Arc::new(self.clone()),
         };
 
-        let url = Url::parse(&self.gateway_http_url).unwrap();
+        let url = Url::parse(&self.gateway_config.blockchain_rpc.http_url).unwrap();
 
         let provider = ProviderBuilder::new()
             .network::<alloy::network::AnyNetwork>()
             .connect_http(url);
 
         let decryption_address =
-            Address::from_str(&self.contracts.decryption_address).map_err(|_| {
+            Address::from_str(&self.gateway_config.contracts.decryption_address).map_err(|_| {
                 EventProcessingError::ConfigError(
                     crate::config::settings::AppConfigError::InvalidAddress(
                         "contracts.decryption_address".to_owned(),
@@ -577,8 +575,13 @@ impl GatewayHandler {
             .collect();
 
         // Perform readiness check with retry logic
-        let max_retries = self.retry_config.max_attempts;
-        let retry_interval = Duration::from_secs(self.retry_config.retry_interval_ms);
+        let max_retries = self.gateway_config.readiness_checker.retry.max_attempts;
+        let retry_interval = Duration::from_secs(
+            self.gateway_config
+                .readiness_checker
+                .retry
+                .retry_interval_ms,
+        );
 
         let mut retries = 0;
         let mut should_retry = true;
@@ -662,7 +665,7 @@ impl GatewayHandler {
         // Check user-decrypt request cache
         // hash(request) -> decryption-id
         match self
-            .user_decryption_requests_cache
+            .user_decrypt_requests_cache
             .get_value(decrypt_request)
             .await
         {
@@ -671,7 +674,7 @@ impl GatewayHandler {
                     // Check response cache
                     // decryption-id -> response
                     match self
-                        .user_decryption_responses_cache
+                        .user_decrypt_responses_cache
                         .get_value(decryption_id)
                         .await
                     {
