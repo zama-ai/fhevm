@@ -1,304 +1,323 @@
 mod common;
 
-#[cfg(test)]
-mod tests {
-    use crate::common::utils::TestSetup;
-    use serde_json::json;
-    use std::str::FromStr;
+use crate::common::utils::TestSetup;
+use alloy::primitives::{Address, Bytes};
+use rand::{rng, Rng};
+use serde_json::json;
 
-    use alloy::primitives::{Address, Bytes};
-    use ethereum_rpc_mock::fhevm::FhevmMockWrapper;
+mod constants {
+    pub const TIMEOUT_SECS: u64 = 10;
+    pub const EXTRA_DATA: &str = "0x00";
+}
 
-    #[tokio::test]
-    async fn test_input_url_endpoint_on_chain_rejection() {
-        // Create isolated test setup with own ports and database
-        let setup = TestSetup::new().await.expect("Failed to create test setup");
+mod helpers {
+    use super::*;
+    use crate::common::utils;
 
-        let user_address = Address::from_str("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80").unwrap();
-        let ciphertext_data = alloy::primitives::Bytes::from_str("0xaaaaaaaaaaaa").unwrap();
-
-        // Configure FHEVM mock for this specific test
-        setup
-            .fhevm_mock
-            .setup_for_input_proof_reject_response(user_address, ciphertext_data);
-
-        let client = reqwest::Client::new();
-        let res = client
-            .post(format!(
-                "http://localhost:{}/v1/input-proof",
-                setup.http_port
-            ))
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(5))
-            .json(&json!({
-                "contractChainId": "123456",
-                "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
-                "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": "aaaaaaaaaaaa",
-                "extraData": "0x00"
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("Input proof that was supposed to be rejected failed.: {e}"))
-            .unwrap();
-
-        let status_code = res.status();
-        let res_text = res.text().await;
-        assert_eq!(status_code, 400);
-        if let Ok(ok_text) = res_text {
-            assert!(
-                ok_text.contains("Transaction rejected") && ok_text.contains("Rejected"),
-                "Expected rejection error, got: {}",
-                ok_text
-            );
-        }
+    pub fn v1_input_proof_url(setup: &TestSetup) -> String {
+        format!("http://localhost:{}/v1/input-proof", setup.http_port)
     }
 
-    #[tokio::test]
-    async fn test_input_url_http_endpoint() {
-        let setup = TestSetup::new().await.expect("Failed to create test setup");
-        let user_address = Address::from_str("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80").unwrap();
-        let ciphertext_data = Bytes::from_str("0xabcdef").unwrap();
-
-        setup
-            .fhevm_mock
-            .setup_for_input_proof_success_response(user_address, ciphertext_data);
-
-        let before_time = tokio::time::Instant::now();
-        let client = reqwest::Client::new();
-        let res = client
-            .post(format!(
-                "http://localhost:{}/v1/input-proof",
-                setup.http_port
-            ))
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(5))
-            .json(&json!({
-                "contractChainId": "123456",
-                "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
-                "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": "abcdef",
-                "extraData": "0x00"
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("Input proof that was supposed to be accepted failed.: {e}"))
-            .unwrap();
-        assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
-        let after_time = tokio::time::Instant::now();
-        let single_query_duration = after_time - before_time;
-        println!(
-            "Took {}s to process 1 input flow.",
-            single_query_duration.as_secs()
-        );
-
-        // Multiple requests test
-        let before_time = tokio::time::Instant::now();
-        let mut set = tokio::task::JoinSet::new();
-        let number_of_queries = 10;
-        let base_url = format!("http://localhost:{}", setup.http_port);
-
-        for i in 1..(number_of_queries + 1) {
-            let url = base_url.clone();
-            set.spawn(async move {
-                let client = reqwest::Client::new();
-                (
-                    client
-                        .post(format!("{}/v1/input-proof", url))
-                        .header("Content-Type", "application/json")
-                        .timeout(std::time::Duration::from_secs(5))
-                        .json(&json!({
-                                    "contractChainId": "123456",
-                                    "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
-                                    "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                                    "ciphertextWithInputVerification": "abcdef",
-                        "extraData": "0x00"
-                                }))
-                        .send()
-                        .await,
-                    i,
-                )
-            });
-        }
-
-        let send_time = tokio::time::Instant::now();
-        println!(
-            "Took {}s to send {} input flow requests.",
-            number_of_queries,
-            (after_time - send_time).as_secs()
-        );
-
-        while let Some(res) = set.join_next().await {
-            let (result, index) = res
-                .map_err(|e| {
-                    format!("Error in one of {number_of_queries} input-proof requests: {e}")
-                })
-                .unwrap();
-            let result = result.unwrap();
-            assert_eq!(result.status(), 200, "{}", result.text().await.unwrap());
-            println!("{index} request is ok");
-        }
-
-        let after_time = tokio::time::Instant::now();
-        let multi_query_duration = after_time - before_time;
-        println!(
-            "Took {}s to process {} input flow.",
-            number_of_queries,
-            multi_query_duration.as_secs()
-        );
-
-        // Test cases for various error conditions
-        test_input_error_cases(&setup).await;
+    pub fn random_address() -> Address {
+        utils::random_address()
     }
 
-    async fn test_input_error_cases(setup: &TestSetup) {
-        let base_url = format!("http://localhost:{}", setup.http_port);
-
-        // Empty ct-proof
-        let client = reqwest::Client::new();
-        let res = client
-            .post(format!("{}/v1/input-proof", base_url))
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(5))
-            .json(&json!({
-                "contractChainId": "123456",
-                "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
-                "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": "",
-                "extraData": "0x00"
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("Error submitting request with empty proof: {e}"))
-            .unwrap();
-
-        let status_code = res.status();
-        let res_text = res.text().await;
-        assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
-        if let Ok(ok_text) = res_text {
-            assert_eq!(
-                ok_text,
-                "{\"message\":\"Input Verification cannot be empty.\"}"
-            )
-        }
-
-        // Incorrect contract address
-        let client = reqwest::Client::new();
-        let res = client
-            .post(format!("{}/v1/input-proof", base_url))
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(5))
-            .json(&json!({
-                "contractChainId": "123456",
-                "contractAddress": "0xfds",
-                "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": "abcdef",
-                "extraData": "0x00"
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("Error submitting request with incorrect contract address: {e}"))
-            .unwrap();
-
-        let status_code = res.status();
-        let res_text = res.text().await;
-        assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
-        if let Ok(ok_text) = res_text {
-            assert_eq!(
-                ok_text,
-                "{\"message\":\"Error parsing contractAddress: OddLength\"}"
-            )
-        }
-
-        // Incorrect user address
-        let client = reqwest::Client::new();
-        let res = client
-            .post(format!("{}/v1/input-proof", base_url))
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(5))
-            .json(&json!({
-                "contractChainId": "123456",
-                "contractAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "userAddress": "0xfds",
-                "ciphertextWithInputVerification": "abcdef",
-                "extraData": "0x00"
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("Error submitting request with incorrect user address: {e}"))
-            .unwrap();
-
-        let status_code = res.status();
-        let res_text = res.text().await;
-        assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
-        if let Ok(ok_text) = res_text {
-            assert_eq!(
-                ok_text,
-                "{\"message\":\"Error parsing userAddress: OddLength\"}"
-            )
-        }
-
-        // Incorrect ct-proof
-        let client = reqwest::Client::new();
-        let res = client
-            .post(format!("{}/v1/input-proof", base_url))
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(5))
-            .json(&json!({
-                "contractChainId": "123456",
-                "contractAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": "abcdefabcdefs",
-                "extraData": "0x00"
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("Error submitting request with incorrect proof: {e}"))
-            .unwrap();
-
-        let status_code = res.status();
-        let res_text = res.text().await;
-        assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
-        if let Ok(ok_text) = res_text {
-            assert_eq!(
-                ok_text,
-                "{\"message\":\"Error decoding ciphertextWithInputVerification: Odd number of digits\"}"
-            )
-        }
+    pub fn random_bytes() -> Bytes {
+        let mut rng = rng();
+        let len = rng.random_range(4..32);
+        let bytes: Vec<u8> = (0..len).map(|_| rng.random()).collect();
+        Bytes::from(bytes)
     }
 
-    /// FHEVM mock setup extensions for isolated testing
-    pub trait FhevmMockSetup {
-        /// Setup FHEVM mock for successful input proof verification
-        fn setup_for_input_proof_success_response(
-            &self,
-            user_address: Address,
-            ciphertext_data: Bytes,
+    pub fn create_input_proof_payload(
+        chain_id: &str,
+        contract_address: Address,
+        user_address: Address,
+        ciphertext_hex: &str,
+    ) -> serde_json::Value {
+        json!({
+            "contractChainId": chain_id,
+            "contractAddress": format!("{:?}", contract_address),
+            "userAddress": format!("{:?}", user_address),
+            "ciphertextWithInputVerification": ciphertext_hex,
+            "extraData": constants::EXTRA_DATA
+        })
+    }
+}
+
+#[tokio::test]
+async fn test_input_proof_reject_by_gateway_error() {
+    // Setup test environment
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Prepare test data
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let ciphertext_data = helpers::random_bytes();
+    let ciphertext_hex = hex::encode(&ciphertext_data);
+
+    // Configure mock to reject this request
+    setup
+        .fhevm_mock
+        .on_input_proof_error(user_address, ciphertext_data);
+
+    // Create payload
+    let payload = helpers::create_input_proof_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+        &ciphertext_hex,
+    );
+
+    // Make HTTP request
+    let client = reqwest::Client::new();
+    let res = client
+        .post(helpers::v1_input_proof_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request should complete");
+
+    // Verify rejection
+    assert_eq!(res.status(), 400);
+    let response_text = res.text().await.unwrap();
+    assert!(response_text.contains("Transaction rejected") && response_text.contains("Rejected"));
+}
+
+#[tokio::test]
+async fn test_input_proof_success() {
+    // Setup test environment
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Prepare test data
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let ciphertext_data = helpers::random_bytes();
+    let ciphertext_hex = hex::encode(&ciphertext_data);
+
+    // Configure mock for successful response
+    setup
+        .fhevm_mock
+        .on_input_proof_success(user_address, ciphertext_data);
+
+    // Create payload
+    let payload = helpers::create_input_proof_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+        &ciphertext_hex,
+    );
+
+    // Make HTTP request
+    let client = reqwest::Client::new();
+    let res = client
+        .post(helpers::v1_input_proof_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request should succeed");
+
+    // Verify success
+    assert_eq!(res.status(), 200, "Response: {}", res.text().await.unwrap());
+}
+
+#[tokio::test]
+async fn test_input_proof_concurrent_requests() {
+    // Setup test environment
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Prepare test data
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let ciphertext_data = helpers::random_bytes();
+    let ciphertext_hex = hex::encode(&ciphertext_data);
+
+    // Configure mock for successful responses
+    setup
+        .fhevm_mock
+        .on_input_proof_success(user_address, ciphertext_data);
+
+    // Create payload
+    let payload = helpers::create_input_proof_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+        &ciphertext_hex,
+    );
+
+    // Send multiple concurrent requests
+    let mut tasks = tokio::task::JoinSet::new();
+    let number_of_requests = 10;
+    let url = helpers::v1_input_proof_url(&setup);
+
+    for i in 1..=number_of_requests {
+        let url_clone = url.clone();
+        let payload_clone = payload.clone();
+        tasks.spawn(async move {
+            let client = reqwest::Client::new();
+            let res = client
+                .post(url_clone)
+                .header("Content-Type", "application/json")
+                .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+                .json(&payload_clone)
+                .send()
+                .await;
+            (res, i)
+        });
+    }
+
+    // Verify all requests succeed
+    while let Some(result) = tasks.join_next().await {
+        let (res, index) = result.expect("Task should complete");
+        let res = res.expect("HTTP request should succeed");
+        assert_eq!(
+            res.status(),
+            200,
+            "Request {}: {}",
+            index,
+            res.text().await.unwrap()
         );
-
-        /// Setup FHEVM mock for input proof rejection
-        fn setup_for_input_proof_reject_response(
-            &self,
-            user_address: Address,
-            ciphertext_data: Bytes,
-        );
     }
+}
 
-    impl FhevmMockSetup for FhevmMockWrapper {
-        fn setup_for_input_proof_success_response(
-            &self,
-            user_address: Address,
-            ciphertext_data: Bytes,
-        ) {
-            self.on_input_proof_success(user_address, ciphertext_data);
-        }
+#[tokio::test]
+async fn test_input_proof_empty_ciphertext_error() {
+    // Setup test environment
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-        fn setup_for_input_proof_reject_response(
-            &self,
-            user_address: Address,
-            ciphertext_data: Bytes,
-        ) {
-            self.on_input_proof_error(user_address, ciphertext_data);
-        }
-    }
+    // Create payload with empty ciphertext
+    let payload = helpers::create_input_proof_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        helpers::random_address(),
+        helpers::random_address(),
+        "", // Empty ciphertext
+    );
+
+    // Make request with empty ciphertext
+    let client = reqwest::Client::new();
+    let res = client
+        .post(helpers::v1_input_proof_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request should complete");
+
+    // Verify error response
+    assert_eq!(res.status(), 400);
+    let response_text = res.text().await.unwrap();
+    assert_eq!(
+        response_text,
+        "{\"message\":\"Input Verification cannot be empty.\"}"
+    );
+}
+
+#[tokio::test]
+async fn test_input_proof_invalid_contract_address_error() {
+    // Setup test environment
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Create payload with invalid contract address
+    let payload = helpers::create_input_proof_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        helpers::random_address(),
+        helpers::random_address(),
+        &hex::encode(helpers::random_bytes()),
+    );
+    // Override with invalid contract address for this test
+    let mut payload = payload;
+    payload["contractAddress"] = json!("0xfds");
+
+    // Make request with invalid contract address
+    let client = reqwest::Client::new();
+    let res = client
+        .post(helpers::v1_input_proof_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request should complete");
+
+    // Verify error response
+    assert_eq!(res.status(), 400);
+    let response_text = res.text().await.unwrap();
+    assert_eq!(
+        response_text,
+        "{\"message\":\"Error parsing contractAddress: OddLength\"}"
+    );
+}
+
+#[tokio::test]
+async fn test_input_proof_invalid_user_address_error() {
+    // Setup test environment
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Create payload with invalid user address
+    let payload = helpers::create_input_proof_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        helpers::random_address(),
+        helpers::random_address(),
+        &hex::encode(helpers::random_bytes()),
+    );
+    // Override with invalid user address for this test
+    let mut payload = payload;
+    payload["userAddress"] = json!("0xfds");
+
+    // Make request with invalid user address
+    let client = reqwest::Client::new();
+    let res = client
+        .post(helpers::v1_input_proof_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request should complete");
+
+    // Verify error response
+    assert_eq!(res.status(), 400);
+    let response_text = res.text().await.unwrap();
+    assert_eq!(
+        response_text,
+        "{\"message\":\"Error parsing userAddress: OddLength\"}"
+    );
+}
+
+#[tokio::test]
+async fn test_input_proof_invalid_hex_error() {
+    // Setup test environment
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Create payload with invalid hex data (odd length)
+    let payload = helpers::create_input_proof_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        helpers::random_address(),
+        helpers::random_address(),
+        "abcdefabcdefs", // Invalid hex (odd length)
+    );
+
+    // Make request with invalid hex data
+    let client = reqwest::Client::new();
+    let res = client
+        .post(helpers::v1_input_proof_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request should complete");
+
+    // Verify error response
+    assert_eq!(res.status(), 400);
+    let response_text = res.text().await.unwrap();
+    assert_eq!(
+        response_text,
+        "{\"message\":\"Error decoding ciphertextWithInputVerification: Odd number of digits\"}"
+    );
 }

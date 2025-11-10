@@ -5,6 +5,8 @@ use ethereum_rpc_mock::{fhevm::FhevmMockWrapper, MockConfig, MockServer, MockSer
 use fhevm_relayer::config::settings::Settings;
 use fhevm_relayer::run_fhevm_relayer;
 
+use alloy::primitives::Address;
+use rand::{rng, Rng};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
@@ -188,4 +190,22 @@ fn init_tracing_once() {
 
         let _ = subscriber.try_init();
     });
+}
+
+/// Generate a random Ethereum address for testing
+#[allow(dead_code)]
+pub fn random_address() -> Address {
+    let mut rng = rng();
+    let bytes: [u8; 20] = rng.random();
+    Address::from(bytes)
+}
+
+/// Generate a random handle (64 hex characters) for testing
+#[allow(dead_code)]
+pub fn random_handle() -> String {
+    let mut rng = rng();
+    (0..64)
+        .map(|_| rng.random_range(0..16))
+        .map(|digit| format!("{:x}", digit))
+        .collect()
 }

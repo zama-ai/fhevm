@@ -1,135 +1,41 @@
 mod common;
 
-#[cfg(test)]
-mod tests {
-    use crate::common::utils::TestSetup;
-    use serde_json::json;
-    use std::str::FromStr;
+use crate::common::utils::TestSetup;
+use alloy::primitives::B256;
+use rand::{rng, Rng};
+use serde_json::json;
+use std::str::FromStr;
 
-    use alloy::primitives::B256;
-    use ethereum_rpc_mock::fhevm::FhevmMockWrapper;
-    use rand::{rng, Rng};
+mod constants {
+    pub const TIMEOUT_SECS: u64 = 10;
+    pub const EXTRA_DATA: &str = "0x00";
+}
 
-    #[tokio::test]
-    async fn test_public_decrypt_url_endpoint() {
-        let setup = TestSetup::new().await.expect("Failed to create test setup");
-        let payload_1 = random_payload_for_public_decrypt();
-        let payload_2 = random_payload_for_public_decrypt();
-        let payload_3 = random_payload_for_public_decrypt();
+mod helpers {
+    use super::*;
+    use crate::common::utils;
 
-        tokio::join!(
-            test_single_request(&setup, payload_1),
-            test_sequential_requests(&setup, payload_2),
-            test_parallel_requests(&setup, payload_3),
-        );
+    pub fn v1_public_decrypt_url(setup: &TestSetup) -> String {
+        format!("http://localhost:{}/v1/public-decrypt", setup.http_port)
     }
 
-    async fn test_single_request(setup: &TestSetup, payload: serde_json::Value) {
-        let handles = extract_ciphertext_handles_from_public_payload(&payload);
-        setup
-            .fhevm_mock
-            .setup_for_public_decrypt_success_response(handles);
-
-        let client = reqwest::Client::new();
-        let base_url = format!("http://localhost:{}", setup.http_port);
-        let (res, response_time) = post_public_decrypt(&client, &base_url, &payload, 10).await;
-        assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
-        println!("Simple public decrypt request took: {:?}", response_time);
+    pub fn random_handle() -> String {
+        utils::random_handle()
     }
 
-    async fn test_sequential_requests(setup: &TestSetup, payload: serde_json::Value) {
-        let handles = extract_ciphertext_handles_from_public_payload(&payload);
-        setup
-            .fhevm_mock
-            .setup_for_public_decrypt_success_response(handles.clone());
-
-        let client = reqwest::Client::new();
-        let base_url = format!("http://localhost:{}", setup.http_port);
-        let (res, response_time) = post_public_decrypt(&client, &base_url, &payload, 10).await;
-        assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
-        println!("First public decrypt request took: {:?}", response_time);
-
-        let mut response_times_micros = Vec::new();
-        for i in 0..3 {
-            setup
-                .fhevm_mock
-                .setup_for_public_decrypt_success_response(handles.clone());
-            let (res, elapsed) = post_public_decrypt(&client, &base_url, &payload, 1).await;
-            response_times_micros.push(elapsed.as_micros());
-            assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
-            println!(
-                "Sequential public decrypt request {} took: {:?}",
-                i + 1,
-                elapsed
-            );
-        }
+    pub fn create_public_decrypt_payload() -> serde_json::Value {
+        let handle = random_handle();
+        json!({
+            "ciphertextHandles": [handle],
+            "extraData": constants::EXTRA_DATA
+        })
     }
 
-    async fn test_parallel_requests(setup: &TestSetup, payload: serde_json::Value) {
-        let number_of_queries = 5;
-        let mut response_times_micros = Vec::new();
-        let base_url = format!("http://localhost:{}", setup.http_port);
-
-        // Send the first request and wait for it to complete
-        let first_request = {
-            let payload_clone = payload.clone();
-            let url_clone = base_url.clone();
-            let handles_clone = extract_ciphertext_handles_from_public_payload(&payload);
-            let fhevm_mock_clone = setup.fhevm_mock.clone();
-            tokio::spawn(async move {
-                fhevm_mock_clone.setup_for_public_decrypt_success_response(handles_clone);
-                let client = reqwest::Client::new();
-                let (res, response_time) =
-                    post_public_decrypt(&client, &url_clone, &payload_clone, 10).await;
-                assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
-                println!(
-                    "Parallel public decrypt request 1 (payload) took: {:?}",
-                    response_time
-                );
-                response_time
-            })
-        };
-
-        // Send the remaining requests in parallel
-        let mut remaining_set = tokio::task::JoinSet::new();
-        for i in 1..number_of_queries {
-            let payload_clone = payload.clone();
-            let url_clone = base_url.clone();
-            let handles_clone = extract_ciphertext_handles_from_public_payload(&payload);
-            let fhevm_mock_clone = setup.fhevm_mock.clone();
-            remaining_set.spawn(async move {
-                fhevm_mock_clone.setup_for_public_decrypt_success_response(handles_clone);
-                let client = reqwest::Client::new();
-                let (res, response_time) =
-                    post_public_decrypt(&client, &url_clone, &payload_clone, 10).await;
-                assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
-                println!(
-                    "Parallel public decrypt request {} (payload) took: {:?}",
-                    i + 1,
-                    response_time
-                );
-                response_time
-            });
-        }
-
-        // Collect the first request result
-        let first_elapsed = first_request.await.unwrap();
-        let first_elapsed = first_elapsed.as_micros();
-
-        // Collect the remaining request results
-        while let Some(res) = remaining_set.join_next().await {
-            let elapsed = res.unwrap();
-            response_times_micros.push(elapsed.as_micros());
-        }
-
-        response_times_micros.sort();
-
-        // Print for debug
-        println!("First timing: {}μs", first_elapsed);
-        println!("Following timings (+mock): {:?}μs", response_times_micros);
+    pub fn random_plaintext_values(count: usize) -> Vec<u64> {
+        let mut rng = rng();
+        (0..count).map(|_| rng.random()).collect()
     }
 
-    /// Extract ciphertext handles from public decrypt payload
     pub fn extract_ciphertext_handles_from_public_payload(
         payload: &serde_json::Value,
     ) -> Vec<B256> {
@@ -145,71 +51,168 @@ mod tests {
             })
             .collect()
     }
+}
 
-    /// Generate a random ciphertext handle
-    pub fn random_handle() -> String {
-        let mut rng = rng();
-        (0..64)
-            .map(|_| rng.random_range(0..16))
-            .map(|digit| format!("{:x}", digit))
-            .collect()
-    }
+#[tokio::test]
+async fn test_public_decrypt_success() {
+    // Setup test environment
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-    /// Generate a random payload for public decryption
-    pub fn random_payload_for_public_decrypt() -> serde_json::Value {
-        let random_handle = random_handle();
-        json!({"ciphertextHandles": [random_handle], "extraData": "0x00"})
-    }
+    // Prepare test data
+    let payload = helpers::create_public_decrypt_payload();
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
 
-    /// Make HTTP POST request to public decrypt endpoint
-    pub async fn post_public_decrypt(
-        client: &reqwest::Client,
-        base_url: &str,
-        payload: &serde_json::Value,
-        timeout_secs: u64,
-    ) -> (reqwest::Response, std::time::Duration) {
-        let start = tokio::time::Instant::now();
+    // Configure mock for successful response
+    setup
+        .fhevm_mock
+        .on_public_decrypt_success(handles, plaintext_values);
+
+    // Make HTTP request
+    let client = reqwest::Client::new();
+    let start = std::time::Instant::now();
+    let res = client
+        .post(helpers::v1_public_decrypt_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request should succeed");
+    let duration = start.elapsed();
+
+    // Verify success
+    assert_eq!(res.status(), 200, "Response: {}", res.text().await.unwrap());
+    println!("Public decrypt request completed in {:?}", duration);
+}
+
+#[tokio::test]
+async fn test_public_decrypt_sequential_requests() {
+    // Setup test environment
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Prepare test data
+    let payload = helpers::create_public_decrypt_payload();
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
+
+    let client = reqwest::Client::new();
+
+    // Make first request
+    setup
+        .fhevm_mock
+        .on_public_decrypt_success(handles.clone(), plaintext_values.clone());
+    let start = std::time::Instant::now();
+    let res = client
+        .post(helpers::v1_public_decrypt_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request should succeed");
+    let duration = start.elapsed();
+    assert_eq!(
+        res.status(),
+        200,
+        "First request: {}",
+        res.text().await.unwrap()
+    );
+    println!("First public decrypt request took: {:?}", duration);
+
+    // Make sequential requests
+    for i in 0..3 {
+        setup
+            .fhevm_mock
+            .on_public_decrypt_success(handles.clone(), plaintext_values.clone());
+        let start = std::time::Instant::now();
         let res = client
-            .post(format!("{}/v1/public-decrypt", base_url))
+            .post(helpers::v1_public_decrypt_url(&setup))
             .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(timeout_secs))
-            .json(payload)
+            .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+            .json(&payload)
             .send()
             .await
-            .unwrap();
-        let elapsed = start.elapsed();
+            .expect("Request should succeed");
+        let duration = start.elapsed();
+        assert_eq!(
+            res.status(),
+            200,
+            "Sequential request {}: {}",
+            i + 1,
+            res.text().await.unwrap()
+        );
+        println!(
+            "Sequential public decrypt request {} took: {:?}",
+            i + 1,
+            duration
+        );
+    }
+}
 
-        // Print error message if status is not 200 OK
-        let status = res.status();
-        if status != 200 {
-            let error_text = res
-                .text()
+#[tokio::test]
+async fn test_public_decrypt_concurrent_requests() {
+    // Setup test environment
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Prepare test data
+    let payload = helpers::create_public_decrypt_payload();
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
+
+    let number_of_requests = 5;
+
+    // Send concurrent requests
+    let mut tasks = tokio::task::JoinSet::new();
+    let url = helpers::v1_public_decrypt_url(&setup);
+
+    for i in 0..number_of_requests {
+        let payload_clone = payload.clone();
+        let url_clone = url.clone();
+        let handles_clone = handles.clone();
+        let plaintext_values_clone = plaintext_values.clone();
+        let fhevm_mock_clone = setup.fhevm_mock.clone();
+
+        tasks.spawn(async move {
+            // Configure mock for this request
+            fhevm_mock_clone.on_public_decrypt_success(handles_clone, plaintext_values_clone);
+
+            // Make HTTP request
+            let client = reqwest::Client::new();
+            let start = std::time::Instant::now();
+            let res = client
+                .post(url_clone)
+                .header("Content-Type", "application/json")
+                .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+                .json(&payload_clone)
+                .send()
                 .await
-                .unwrap_or_else(|_| "Unable to read error response".to_string());
-            tracing::info!(
-                "POST /v1/public-decrypt failed with status {}: {}",
-                status,
-                error_text
+                .expect("Request should succeed");
+            let duration = start.elapsed();
+
+            assert_eq!(
+                res.status(),
+                200,
+                "Concurrent request {}: {}",
+                i + 1,
+                res.text().await.unwrap()
             );
-            panic!(
-                "POST /v1/public-decrypt failed with status {}: {}",
-                status, error_text
+            println!(
+                "Concurrent public decrypt request {} took: {:?}",
+                i + 1,
+                duration
             );
-        }
-
-        (res, elapsed)
+            duration
+        });
     }
 
-    /// FHEVM mock setup extensions for isolated testing
-    pub trait FhevmMockSetup {
-        /// Setup FHEVM mock for successful public decryption
-        fn setup_for_public_decrypt_success_response(&self, ciphertext_handles: Vec<B256>);
+    // Wait for all requests to complete
+    let mut durations = Vec::new();
+    while let Some(result) = tasks.join_next().await {
+        let duration = result.expect("Task should complete successfully");
+        durations.push(duration.as_micros());
     }
 
-    impl FhevmMockSetup for FhevmMockWrapper {
-        fn setup_for_public_decrypt_success_response(&self, ciphertext_handles: Vec<B256>) {
-            let plaintext_values = vec![42u64; ciphertext_handles.len()];
-            self.on_public_decrypt_success(ciphertext_handles, plaintext_values);
-        }
-    }
+    durations.sort();
+    println!("All concurrent request timings: {:?}μs", durations);
 }
