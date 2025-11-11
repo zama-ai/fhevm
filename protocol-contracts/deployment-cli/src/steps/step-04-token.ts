@@ -55,7 +55,7 @@ export class Step04TokenDeployment extends BaseStep {
         const recipients = ctx.config.protocol.token.recipients;
         const envVars: Record<string, string> = {
             PRIVATE_KEY: protocolPk,
-            INITIAL_ADMIN: ctx.config.wallets.protocol_deployer.address,
+            INITIAL_ADMIN: daoAddress,
             SEPOLIA_RPC_URL: ethereum.rpcUrl,
             RPC_URL_ZAMA_GATEWAY_TESTNET: gateway.rpcUrl,
             DAO_ADDRESS: daoAddress,
@@ -178,7 +178,7 @@ export class Step04TokenDeployment extends BaseStep {
 
         const baseEnv = ctx.env.buildTaskEnv({
             PRIVATE_KEY: protocolPk,
-            INITIAL_ADMIN: ctx.config.wallets.protocol_deployer.address,
+            INITIAL_ADMIN: daoAddress,
             SEPOLIA_RPC_URL: ethereum.rpcUrl,
             RPC_URL_ZAMA_GATEWAY_TESTNET: gateway.rpcUrl,
             DAO_ADDRESS: daoAddress,
