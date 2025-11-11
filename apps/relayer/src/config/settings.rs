@@ -49,7 +49,6 @@ pub struct ListenerConfig {
     /// Optional starting block number for event subscriptions
     pub last_block_number: Option<u64>,
     /// WebSocket reconnection configuration
-    #[serde(default)]
     pub ws_reconnect_config: RetrySettings,
 }
 
@@ -74,10 +73,8 @@ pub struct HttpMetricsConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct RateLimitConfig {
     /// Requests per second allowed (token refill rate)
-    #[serde(default = "default_requests_per_second")]
     pub requests_per_second: u32,
     /// Maximum burst size allowed (bucket capacity)
-    #[serde(default = "default_burst_size")]
     pub burst_size: u32,
 }
 
@@ -103,45 +100,10 @@ pub struct StorageConfig {
     pub db_path_rocksdb: String,
 }
 
-fn default_requests_per_second() -> u32 {
-    30
-}
-
-fn default_burst_size() -> u32 {
-    30
-}
-
-impl Default for RateLimitConfig {
-    fn default() -> Self {
-        Self {
-            requests_per_second: default_requests_per_second(),
-            burst_size: default_burst_size(),
-        }
-    }
-}
-
 #[derive(Debug, Deserialize, Clone)]
 pub struct RetrySettings {
-    #[serde(default = "default_max_attempts")]
     pub max_attempts: u32,
-    #[serde(default = "default_retry_interval_ms")]
     pub retry_interval_ms: u64,
-}
-
-fn default_max_attempts() -> u32 {
-    3
-}
-fn default_retry_interval_ms() -> u64 {
-    2000
-}
-
-impl Default for RetrySettings {
-    fn default() -> Self {
-        Self {
-            max_attempts: default_max_attempts(),
-            retry_interval_ms: default_retry_interval_ms(),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -269,23 +231,9 @@ pub struct LogConfig {
     /// Whether to show thread IDs
     pub show_thread_ids: bool,
     /// Whether to show timestamps (optional)
-    #[serde(default)]
     pub show_timestamp: bool,
     /// Whether to show target module paths
-    #[serde(default)]
     pub show_target: bool,
-}
-
-impl Default for LogConfig {
-    fn default() -> Self {
-        Self {
-            format: "compact".to_string(),
-            show_file_line: false,
-            show_thread_ids: false,
-            show_timestamp: true,
-            show_target: true,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -321,6 +269,7 @@ log:
   show_file_line: false
   show_thread_ids: false
   show_timestamp: true
+  show_target: true
 keyurl:
   fhe_public_key:
     data_id: "test-key"
@@ -329,6 +278,9 @@ keyurl:
     data_id: "test-crs"
     url: "https://test.example.com/crs"
 http:
+  rate_limit_on_post_endpoints:
+    requests_per_second: 30
+    burst_size: 30
   metrics:
     histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
 metrics:
@@ -399,6 +351,7 @@ log:
   show_file_line: false
   show_thread_ids: false
   show_timestamp: true
+  show_target: true
 keyurl:
   fhe_public_key:
     data_id: "test-key"
@@ -407,6 +360,9 @@ keyurl:
     data_id: "test-crs"
     url: "https://test.example.com/crs"
 http:
+  rate_limit_on_post_endpoints:
+    requests_per_second: 30
+    burst_size: 30
   metrics:
     histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
 metrics:
