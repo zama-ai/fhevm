@@ -103,8 +103,8 @@ impl TestSetup {
         init_tracing_once(&settings.log);
 
         // Configure with isolated ports and database
-        settings.db_path_rocksdb = temp_db_path;
-        settings.http_endpoint = Some(format!("0.0.0.0:{}", http_port));
+        settings.storage.db_path_rocksdb = temp_db_path;
+        settings.http.endpoint = Some(format!("0.0.0.0:{}", http_port));
         settings.gateway.blockchain_rpc.http_url = format!("http://localhost:{}", gateway_port);
         settings.gateway.blockchain_rpc.ws_url = format!("ws://localhost:{}", gateway_port);
 
@@ -116,8 +116,8 @@ impl TestSetup {
         let mut relayer_settings =
             Settings::new(Some(temp_config_path.to_string_lossy().to_string()))
                 .expect("Failed to load default configuration");
-        relayer_settings.db_path_rocksdb = settings.db_path_rocksdb.clone();
-        relayer_settings.http_endpoint = settings.http_endpoint.clone();
+        relayer_settings.storage.db_path_rocksdb = settings.storage.db_path_rocksdb.clone();
+        relayer_settings.http.endpoint = settings.http.endpoint.clone();
         relayer_settings.gateway.blockchain_rpc.http_url =
             settings.gateway.blockchain_rpc.http_url.clone();
         relayer_settings.gateway.blockchain_rpc.ws_url =

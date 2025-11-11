@@ -119,8 +119,8 @@ struct TestScenario {
 struct BatchExpectation {
     min_successful: u32,
     max_successful: u32,
-    min_rate_limit_on_post_endpointsed: u32,
-    max_rate_limit_on_post_endpointsed: u32,
+    min_rate_limit_on_post_endpoints: u32,
+    max_rate_limit_on_post_endpoints: u32,
     max_errors: u32,
 }
 
@@ -256,10 +256,12 @@ fn create_batch_expectation(
 ) -> BatchExpectation {
     let burst_size = rate_limit_config
         .settings
+        .http
         .rate_limit_on_post_endpoints
         .burst_size;
     let requests_per_second = rate_limit_config
         .settings
+        .http
         .rate_limit_on_post_endpoints
         .requests_per_second;
 
@@ -271,8 +273,8 @@ fn create_batch_expectation(
             min_successful: (requests as f32 * (1.0 - tolerance_percent / 100.0))
                 .max(requests.saturating_sub(tolerance) as f32) as u32,
             max_successful: requests,
-            min_rate_limit_on_post_endpointsed: 0,
-            max_rate_limit_on_post_endpointsed: tolerance,
+            min_rate_limit_on_post_endpoints: 0,
+            max_rate_limit_on_post_endpoints: tolerance,
             max_errors: 2,
         }
     } else {
@@ -281,9 +283,9 @@ fn create_batch_expectation(
         BatchExpectation {
             min_successful: expected_successful.saturating_sub(tolerance),
             max_successful: expected_successful + tolerance,
-            min_rate_limit_on_post_endpointsed: requests
+            min_rate_limit_on_post_endpoints: requests
                 .saturating_sub(expected_successful + tolerance),
-            max_rate_limit_on_post_endpointsed: requests
+            max_rate_limit_on_post_endpoints: requests
                 .saturating_sub(expected_successful.saturating_sub(tolerance)),
             max_errors: 2,
         }
@@ -298,6 +300,7 @@ fn create_controlled_rate_expectation(
 ) -> BatchExpectation {
     let requests_per_second = rate_limit_config
         .settings
+        .http
         .rate_limit_on_post_endpoints
         .requests_per_second;
     let actual_rps = if delay_ms > 0 {
@@ -311,8 +314,8 @@ fn create_controlled_rate_expectation(
         BatchExpectation {
             min_successful: requests.saturating_sub(2), // Small tolerance for timing
             max_successful: requests,
-            min_rate_limit_on_post_endpointsed: 0,
-            max_rate_limit_on_post_endpointsed: 2,
+            min_rate_limit_on_post_endpoints: 0,
+            max_rate_limit_on_post_endpoints: 2,
             max_errors: 2,
         }
     } else {
@@ -322,8 +325,8 @@ fn create_controlled_rate_expectation(
         BatchExpectation {
             min_successful: expected_successful.saturating_sub(2),
             max_successful: expected_successful + 2,
-            min_rate_limit_on_post_endpointsed: requests.saturating_sub(expected_successful + 2),
-            max_rate_limit_on_post_endpointsed: requests
+            min_rate_limit_on_post_endpoints: requests.saturating_sub(expected_successful + 2),
+            max_rate_limit_on_post_endpoints: requests
                 .saturating_sub(expected_successful.saturating_sub(2)),
             max_errors: 2,
         }
@@ -356,14 +359,14 @@ fn validate_scenario_results(scenario: &TestScenario, results: &[BatchResult]) {
 
         assert!(
             result.rate_limit_on_post_endpointsed_requests
-                >= expectation.min_rate_limit_on_post_endpointsed
+                >= expectation.min_rate_limit_on_post_endpoints
                 && result.rate_limit_on_post_endpointsed_requests
-                    <= expectation.max_rate_limit_on_post_endpointsed,
+                    <= expectation.max_rate_limit_on_post_endpoints,
             "Scenario '{}', Batch {}: Expected {}-{} rate limited requests, got {}",
             scenario.name,
             batch_idx + 1,
-            expectation.min_rate_limit_on_post_endpointsed,
-            expectation.max_rate_limit_on_post_endpointsed,
+            expectation.min_rate_limit_on_post_endpoints,
+            expectation.max_rate_limit_on_post_endpoints,
             result.rate_limit_on_post_endpointsed_requests
         );
 
@@ -404,7 +407,7 @@ async fn test_user_decrypt_rate_limit_on_post_endpointsing_scenarios() {
     }
 
     // Log the rate limiter configuration being used for testing
-    let rate_config = &setup.settings.rate_limit_on_post_endpoints;
+    let rate_config = &setup.settings.http.rate_limit_on_post_endpoints;
     println!(
         "Rate limiter config: {} requests/sec, {} burst size",
         rate_config.requests_per_second, rate_config.burst_size

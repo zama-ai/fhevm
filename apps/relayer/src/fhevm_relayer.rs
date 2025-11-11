@@ -91,7 +91,7 @@ pub async fn run_fhevm_relayer(
     let metrics_registry = ensure_global_init(&settings)?;
 
     // === Use the singleton registry for metrics endpoint
-    let metrics_endpoint = settings.metrics_endpoint.clone();
+    let metrics_endpoint = settings.metrics.endpoint.clone();
     let registry_clone = metrics_registry.clone();
 
     // 3. Validate settings
@@ -113,7 +113,7 @@ pub async fn run_fhevm_relayer(
     let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::<RelayerEvent>::new()));
 
     // Create root storage
-    let path_rocks_db = PathBuf::from(settings.db_path_rocksdb);
+    let path_rocks_db = PathBuf::from(settings.storage.db_path_rocksdb);
     let kv_store = RocksDBKVStore::open(path_rocks_db.clone())
         .map_err(|e| eyre::eyre!("Failed to open RocksDB: {}", e))?;
     info!("using rocks db databse at: {}", path_rocks_db.display());
@@ -214,15 +214,17 @@ pub async fn run_fhevm_relayer(
     ));
 
     // HTTP endpoint
-    if let Some(http_config) = settings.http_endpoint {
+    if let Some(http_endpoint) = settings.http.endpoint {
         info!("Starting Relayer HTTP server");
-        let addr: SocketAddr = http_config.parse().expect("Invalid http-endpoint address");
+        let addr: SocketAddr = http_endpoint
+            .parse()
+            .expect("Invalid http-endpoint address");
         task_set.spawn(run_http_server(
             addr,
             Arc::clone(&orchestrator),
             settings.keyurl,
             settings.gateway.blockchain_rpc.http_url,
-            settings.rate_limit_on_post_endpoints,
+            settings.http.rate_limit_on_post_endpoints,
         ));
     };
 
@@ -262,7 +264,7 @@ fn ensure_global_init(settings: &Settings) -> eyre::Result<&'static Registry> {
 
         let registry = Registry::new();
         metrics::init_blockchain_metrics(&registry);
-        metrics::init_http_metrics(&registry, &settings.http_metrics);
+        metrics::init_http_metrics(&registry, &settings.http.metrics);
         metrics::init_cache_metrics(&registry);
         metrics::init_transaction_metrics(&registry);
 

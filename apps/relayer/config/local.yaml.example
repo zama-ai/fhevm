@@ -1,6 +1,11 @@
 # config/local.yaml.example
 # Example local configuration - Copy this file to local.yaml and adjust values as needed
-# Command to copy: cp config/local.yaml.example config/local.yaml
+
+# Instructions:
+# 1. Copy this file to local.yaml: cp config/local.yaml.example config/local.yaml
+# 2. Update the contract addresses after deploying your contracts
+# 3. Adjust the http_url and ws_url to match your local Ethereum node
+# 4. Modify log settings based on your debugging needs
 
 gateway:
   blockchain_rpc:
@@ -11,8 +16,8 @@ gateway:
     # Optional: set the starting block number for event subscriptions
     # last_block_number: null
     ws_reconnect_config:
-      max_retries: 20        # Maximum number of reconnection attempts (default: 20)
-      retry_interval_ms: 500 # Milliseconds to wait between reconnection attempts (default: 500ms)
+      max_attempts: 20
+      retry_interval_ms: 500
   tx_engine:
     private_key: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
     max_concurrency: 100
@@ -24,20 +29,17 @@ gateway:
     retry:
       max_attempts: 75
       retry_interval_ms: 3000
-
   contracts:
-    # Example local contract addresses - Update these after deployment
     decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
     input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
-    # Number of shares required for user decryption threshold consensus
     user_decrypt_shares_threshold: 9
+log:
 
-http_endpoint: "0.0.0.0:3000"
-metrics_endpoint: "0.0.0.0:9898"
-
-http_metrics:
-  histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
-
+  format: "pretty"          # compact, pretty, or json
+  show_file_line: false
+  show_thread_ids: false
+  show_timestamp: true
+  show_target: true
 
 keyurl:
     fhe_public_key:
@@ -47,26 +49,16 @@ keyurl:
       data_id: "crs-data-id"
       url: "http://0.0.0.0:3001/crs2048.bin"
 
-log:
-  # Choose format: compact, pretty, or json
-  format: "pretty"
-  # Show source code location for debugging
-  show_file_line: false
-  # Show thread IDs for concurrency debugging
-  show_thread_ids: false
-  # Include timestamps in logs
-  show_timestamp: true
-  # Show target module paths (optional field)
-  show_target: true
+http:
+  endpoint: "0.0.0.0:3000"
+  rate_limit:
+    requests_per_second: 30
+    burst_size: 30
+  metrics:
+    histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
 
-db_path_rocksdb: "./.database"
+metrics:
+  endpoint: "0.0.0.0:9898"
 
-# Instructions:
-# 1. Copy this file to local.yaml: cp config/local.yaml.example config/local.yaml
-# 2. Update the contract addresses after deploying your contracts
-# 3. Adjust the ws_url to match your local Ethereum node
-# 4. Modify log settings based on your debugging needs
-rate_limit_on_post_endpoints:
-  requests_per_second: 30
-  burst_size: 30
-
+storage:
+  db_path_rocksdb: "./.database"

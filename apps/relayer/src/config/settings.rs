@@ -81,6 +81,28 @@ pub struct RateLimitConfig {
     pub burst_size: u32,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct HttpConfig {
+    /// HTTP endpoint address
+    pub endpoint: Option<String>,
+    /// Rate limiting configuration for HTTP endpoints
+    pub rate_limit_on_post_endpoints: RateLimitConfig,
+    /// HTTP metrics configuration
+    pub metrics: HttpMetricsConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MetricsConfig {
+    /// Endpoint for metrics server (e.g., "0.0.0.0:9898")
+    pub endpoint: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct StorageConfig {
+    /// Path on disk to store Rocks DB database for crash recovery
+    pub db_path_rocksdb: String,
+}
+
 fn default_requests_per_second() -> u32 {
     30
 }
@@ -151,19 +173,14 @@ pub struct Settings {
     pub gateway: GatewayConfig,
     /// Logging configuration
     pub log: LogConfig,
-    /// HTTP endpoint address
-    pub http_endpoint: Option<String>,
     /// Hard-coded data (from config for keyurl)
     pub keyurl: KeyUrl,
-    /// Endpoint for metrics server (e.g., "0.0.0.0:9898")
-    pub metrics_endpoint: String,
-    /// HTTP metrics configuration
-    pub http_metrics: HttpMetricsConfig,
-    /// Rate limiting configuration for HTTP endpoints
-    #[serde(default)]
-    pub rate_limit_on_post_endpoints: RateLimitConfig,
-    /// Path on disk to store Rocks DB database for crash recovery
-    pub db_path_rocksdb: String,
+    /// HTTP server configuration
+    pub http: HttpConfig,
+    /// Metrics server configuration
+    pub metrics: MetricsConfig,
+    /// Storage configuration
+    pub storage: StorageConfig,
 }
 
 // Error type for application-specific configuration errors
@@ -208,7 +225,7 @@ impl Settings {
         settings.gateway.validate()?;
 
         // Ensure HTTP metrics configuration is provided
-        if settings.http_metrics.histogram_buckets.is_empty() {
+        if settings.http.metrics.histogram_buckets.is_empty() {
             panic!("HTTP metrics histogram buckets must be set in the configuration file.");
         }
 
@@ -311,10 +328,13 @@ keyurl:
   crs:
     data_id: "test-crs"
     url: "https://test.example.com/crs"
-metrics_endpoint: "0.0.0.0:9898"
-http_metrics:
-  histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
-db_path_rocksdb: "/tmp/test_db"
+http:
+  metrics:
+    histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
+metrics:
+  endpoint: "0.0.0.0:9898"
+storage:
+  db_path_rocksdb: "/tmp/test_db"
 "#;
 
         // Create a temporary config file
@@ -357,7 +377,7 @@ gateway:
     chain_id: 8009
   listener:
     ws_reconnect_config:
-      max_retries: 30
+      max_attempts: 30
       retry_interval_ms: 1000
   tx_engine:
     retry:
@@ -386,10 +406,13 @@ keyurl:
   crs:
     data_id: "test-crs"
     url: "https://test.example.com/crs"
-metrics_endpoint: "0.0.0.0:9898"
-http_metrics:
-  histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
-db_path_rocksdb: "/tmp/test_db"
+http:
+  metrics:
+    histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
+metrics:
+  endpoint: "0.0.0.0:9898"
+storage:
+  db_path_rocksdb: "/tmp/test_db"
 "#;
 
         // Create a temporary config file
