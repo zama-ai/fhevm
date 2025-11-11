@@ -142,16 +142,16 @@ export class StateManager {
         this.touch();
     }
 
-    public setAddress(key: string, value: string): void {
+    public setAddress(key: string, value: `0x${string}`): void {
         this.data.addresses[key] = value;
         this.touch();
     }
 
-    public getAddress(key: string): string | undefined {
-        return this.data.addresses[key];
+    public getAddress(key: string): `0x${string}` | undefined {
+        return this.data.addresses[key] as `0x${string}` | undefined;
     }
 
-    public getAddresses(): Record<string, string> {
+    public getAddresses(): Record<string, `0x${string}`> {
         return { ...this.data.addresses };
     }
 

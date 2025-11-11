@@ -39,7 +39,7 @@ export class TaskOutputReader {
         pkgPath: string,
         network: string,
         contractName: string,
-    ): string {
+    ): `0x${string}` {
         const artifactPath = path.join(
             this.projectRoot,
             pkgPath,
@@ -58,7 +58,7 @@ export class TaskOutputReader {
                 );
             }
 
-            return ethers.getAddress(data.address);
+            return ethers.getAddress(data.address) as `0x${string}`;
         } catch (error) {
             if (error instanceof ValidationError) {
                 throw error;
@@ -92,7 +92,7 @@ export class TaskOutputReader {
     public readEnvFile(
         envPath: string,
         fieldMapping?: Record<string, string>,
-    ): Record<string, string> {
+    ): Record<string, `0x${string}`> {
         if (!fs.existsSync(envPath)) {
             throw new ValidationError(`Environment file not found: ${envPath}`);
         }
@@ -101,7 +101,7 @@ export class TaskOutputReader {
             const raw = fs.readFileSync(envPath, "utf8");
             const parsed = dotenv.parse(raw);
 
-            const result: Record<string, string> = {};
+            const result: Record<string, `0x${string}`> = {};
 
             if (fieldMapping) {
                 // Use the provided mapping
@@ -110,14 +110,17 @@ export class TaskOutputReader {
                 )) {
                     const value = parsed[envKey];
                     if (value) {
-                        result[normalizedKey] = value.toLowerCase();
+                        result[normalizedKey] =
+                            value.toLowerCase() as `0x${string}`;
                     }
                 }
             } else {
                 // Return all fields as-is
                 for (const [key, value] of Object.entries(parsed)) {
                     result[key] =
-                        typeof value === "string" ? value.toLowerCase() : value;
+                        typeof value === "string"
+                            ? (value.toLowerCase() as `0x${string}`)
+                            : value;
                 }
             }
 

@@ -216,6 +216,7 @@ export const DeploymentConfigSchema = z.object({
     wallets: z.object({
         protocol_deployer: WalletSchema,
         deployer: WalletSchema,
+        governance_deployer: WalletSchema,
     }),
     operators: z.array(OperatorSchema).min(1),
     protocol: ProtocolSchema,

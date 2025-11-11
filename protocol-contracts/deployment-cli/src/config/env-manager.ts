@@ -12,7 +12,7 @@ type WalletKey = keyof DeploymentConfig["wallets"];
 
 interface AddressRecord {
     readonly key: string;
-    readonly value: string;
+    readonly value: `0x${string}`;
     readonly source: string;
 }
 
@@ -48,7 +48,11 @@ export class EnvManager {
         return fromEnv;
     }
 
-    public recordAddress(key: string, value: string, source = "step"): void {
+    public recordAddress(
+        key: string,
+        value: `0x${string}`,
+        source = "step",
+    ): void {
         const normalizedKey = key.toUpperCase();
         this.addresses.set(normalizedKey, {
             key: normalizedKey,
@@ -59,7 +63,7 @@ export class EnvManager {
         this.logger.info(`Recorded address ${normalizedKey}=${value}`);
     }
 
-    public getAddress(key: string): string {
+    public getAddress(key: string): `0x${string}` {
         const normalizedKey = key.toUpperCase();
         const value =
             this.addresses.get(normalizedKey)?.value ??
