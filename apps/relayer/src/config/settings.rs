@@ -50,32 +50,7 @@ pub struct ListenerConfig {
     pub last_block_number: Option<u64>,
     /// WebSocket reconnection configuration
     #[serde(default)]
-    pub reconnect_config: ReconnectConfig,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct ReconnectConfig {
-    #[serde(default = "default_reconnect_max_retries")]
-    pub max_retries: u32,
-    #[serde(default = "default_reconnect_retry_interval_ms")]
-    pub retry_interval_ms: u64,
-}
-
-impl Default for ReconnectConfig {
-    fn default() -> Self {
-        Self {
-            max_retries: default_reconnect_max_retries(),
-            retry_interval_ms: default_reconnect_retry_interval_ms(),
-        }
-    }
-}
-
-fn default_reconnect_max_retries() -> u32 {
-    20
-}
-
-fn default_reconnect_retry_interval_ms() -> u64 {
-    500
+    pub ws_reconnect_config: RetrySettings,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -385,7 +360,7 @@ gateway:
     http_url: "https://test-gateway.example.com"
     chain_id: 8009
   listener:
-    reconnect_config:
+    ws_reconnect_config:
       max_retries: 30
       retry_interval_ms: 1000
   tx_engine:

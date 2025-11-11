@@ -13,8 +13,7 @@ gateway:
   listener:
     # Optional: set the starting block number for event subscriptions
     # last_block_number: null
-    # WebSocket reconnection configuration (optional, defaults shown)
-    reconnect_config:
+    ws_reconnect_config:
       max_retries: 20        # Maximum number of reconnection attempts (default: 20)
       retry_interval_ms: 500 # Milliseconds to wait between reconnection attempts (default: 500ms)
   tx_engine:

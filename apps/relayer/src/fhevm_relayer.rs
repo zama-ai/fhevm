@@ -164,8 +164,12 @@ pub async fn run_fhevm_relayer(
     // === Initialize gateway listener with reconnection configuration
     let listener_client_ws = ArbitrumJsonRPCWsClient::new(
         &settings.gateway.blockchain_rpc.ws_url,
-        settings.gateway.listener.reconnect_config.max_retries,
-        settings.gateway.listener.reconnect_config.retry_interval_ms,
+        settings.gateway.listener.ws_reconnect_config.max_attempts,
+        settings
+            .gateway
+            .listener
+            .ws_reconnect_config
+            .retry_interval_ms,
     )
     .await
     .map_err(|e| eyre::eyre!("Failed to create event handler for gateway: {}", e))?;
