@@ -10,9 +10,13 @@ gateway:
     ws_url: "ws://localhost:8757"
     http_url: "http://localhost:8757"
     chain_id: 654321
-  listener: {}
+  listener:
     # Optional: set the starting block number for event subscriptions
     # last_block_number: null
+    # WebSocket reconnection configuration (optional, defaults shown)
+    reconnect_config:
+      max_retries: 20        # Maximum number of reconnection attempts (default: 20)
+      retry_interval_ms: 500 # Milliseconds to wait between reconnection attempts (default: 500ms)
   tx_engine:
     private_key: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
     max_concurrency: 100

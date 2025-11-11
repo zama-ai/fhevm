@@ -161,10 +161,14 @@ pub async fn run_fhevm_relayer(
         settings.gateway.contracts.user_decrypt_shares_threshold as usize,
     )?;
 
-    // === Initialize gateway listener
-    let listener_client_ws = ArbitrumJsonRPCWsClient::new(&settings.gateway.blockchain_rpc.ws_url)
-        .await
-        .map_err(|e| eyre::eyre!("Failed to create event handler for gateway: {}", e))?;
+    // === Initialize gateway listener with reconnection configuration
+    let listener_client_ws = ArbitrumJsonRPCWsClient::new(
+        &settings.gateway.blockchain_rpc.ws_url,
+        settings.gateway.listener.reconnect_config.max_retries,
+        settings.gateway.listener.reconnect_config.retry_interval_ms,
+    )
+    .await
+    .map_err(|e| eyre::eyre!("Failed to create event handler for gateway: {}", e))?;
     let listener_client_ws = Arc::new(listener_client_ws);
 
     let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
