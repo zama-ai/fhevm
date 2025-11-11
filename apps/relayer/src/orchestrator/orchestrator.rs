@@ -6,7 +6,7 @@ use crate::orchestrator::traits::{
 use anyhow::Error;
 use async_trait::async_trait;
 use std::sync::{Arc, RwLock};
-use tracing::{error, info, instrument};
+use tracing::{debug, error, instrument};
 use uuid::Uuid;
 
 pub struct Orchestrator<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> {
@@ -40,7 +40,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
 
         // Execute the futures sequentially.
         for hook in hooks {
-            info!("Running pre-dispatch hook: {}", hook);
+            debug!("Running pre-dispatch hook: {}", hook);
             hook.run(event.clone()).await;
         }
     }
