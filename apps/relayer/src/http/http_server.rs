@@ -1,4 +1,4 @@
-use crate::config::settings::KeyUrl;
+use crate::config::settings::{KeyUrl, RateLimitConfig};
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::http::health::{health_handler, liveness_handler, version_handler, HealthChecker};
 use crate::http::input_http_listener::{
@@ -16,6 +16,7 @@ use crate::http::userdecrypt_http_listener::{
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
 use std::str::FromStr;
@@ -29,6 +30,9 @@ use axum::{
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tower_governor::{
+    governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor, GovernorLayer,
+};
 use utoipa::{OpenApi, ToSchema};
 use utoipa_redoc::{Redoc, Servable};
 
@@ -59,6 +63,7 @@ pub async fn run_http_server<D>(
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     key_url: KeyUrl,
     gateway_rpc_url: String,
+    rate_limit_on_post_endpoints: RateLimitConfig,
 ) where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
@@ -259,6 +264,17 @@ pub async fn run_http_server<D>(
 )]
     struct ApiDoc;
 
+    // Configure rate limiting using settings (configurable via rate_limit_on_post_endpoints config section)
+    // Convert RPS to milliseconds per token: 1000ms / RPS = ms per token
+    let ms_per_token = 1000 / rate_limit_on_post_endpoints.requests_per_second;
+    let governor_conf = GovernorConfigBuilder::default()
+        .per_millisecond(ms_per_token as u64)
+        .burst_size(rate_limit_on_post_endpoints.burst_size)
+        .methods([Method::POST].to_vec())
+        .key_extractor(GlobalKeyExtractor)
+        .finish()
+        .unwrap();
+
     let app = Router::new()
         .route("/liveness", get(liveness_handler))
         .route(
@@ -266,21 +282,24 @@ pub async fn run_http_server<D>(
             get(move || async move { health_handler(health_checker).await }),
         )
         .route("/version", get(version_handler))
+        // Apply rate limiting to POST endpoints
         .route(
             "/{api_version}/input-proof",
             post(input_proof_documented::<D>),
         )
-        .layer(Extension(input_proof_handler))
         .route(
             "/{api_version}/public-decrypt",
             post(public_decrypt_documented::<D>),
         )
-        .layer(Extension(public_decrypt_handler))
         .route(
             "/{api_version}/user-decrypt",
             post(user_decrypt_documented::<D>),
         )
+        .layer(GovernorLayer::new(governor_conf))
+        .layer(Extension(input_proof_handler))
+        .layer(Extension(public_decrypt_handler))
         .layer(Extension(user_decrypt_handler))
+        // GET endpoint without rate limiting
         .route("/{api_version}/keyurl", get(keyurl_documented))
         .layer(Extension(key_url))
         .merge(Redoc::with_url("/docs", ApiDoc::openapi()));

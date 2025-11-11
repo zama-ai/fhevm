@@ -33,6 +33,8 @@ uuid = { version = "1", features = ["serde", "v4", "v7", "std"] }
 reqwest = "0.12.12"
 axum = "0.8.4"
 http = "0.2"
+tower = "0.5.2"
+tower_governor = "0.8.0"
 rusqlite = "0.33.0"
 rand = "0.9.0"
 tracing = "0.1.41"

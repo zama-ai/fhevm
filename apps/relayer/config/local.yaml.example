@@ -42,6 +42,7 @@ metrics_endpoint: "0.0.0.0:9898"
 http_metrics:
   histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
 
+
 keyurl:
     fhe_public_key:
       data_id: "fhe-public-key-data-id"
@@ -69,3 +70,7 @@ db_path_rocksdb: "./.database"
 # 2. Update the contract addresses after deploying your contracts
 # 3. Adjust the ws_url to match your local Ethereum node
 # 4. Modify log settings based on your debugging needs
+rate_limit_on_post_endpoints:
+  requests_per_second: 30
+  burst_size: 30
+

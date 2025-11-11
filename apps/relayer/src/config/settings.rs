@@ -97,6 +97,33 @@ pub struct HttpMetricsConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct RateLimitConfig {
+    /// Requests per second allowed (token refill rate)
+    #[serde(default = "default_requests_per_second")]
+    pub requests_per_second: u32,
+    /// Maximum burst size allowed (bucket capacity)
+    #[serde(default = "default_burst_size")]
+    pub burst_size: u32,
+}
+
+fn default_requests_per_second() -> u32 {
+    30
+}
+
+fn default_burst_size() -> u32 {
+    30
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            requests_per_second: default_requests_per_second(),
+            burst_size: default_burst_size(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct RetrySettings {
     #[serde(default = "default_max_attempts")]
     pub max_attempts: u32,
@@ -159,6 +186,9 @@ pub struct Settings {
     pub metrics_endpoint: String,
     /// HTTP metrics configuration
     pub http_metrics: HttpMetricsConfig,
+    /// Rate limiting configuration for HTTP endpoints
+    #[serde(default)]
+    pub rate_limit_on_post_endpoints: RateLimitConfig,
     /// Path on disk to store Rocks DB database for crash recovery
     pub db_path_rocksdb: String,
 }
