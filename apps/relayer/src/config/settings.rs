@@ -223,6 +223,9 @@ pub struct LogConfig {
     /// Whether to show timestamps (optional)
     #[serde(default)]
     pub show_timestamp: bool,
+    /// Whether to show target module paths
+    #[serde(default)]
+    pub show_target: bool,
 }
 
 impl Default for LogConfig {
@@ -232,6 +235,7 @@ impl Default for LogConfig {
             show_file_line: false,
             show_thread_ids: false,
             show_timestamp: true,
+            show_target: true,
         }
     }
 }

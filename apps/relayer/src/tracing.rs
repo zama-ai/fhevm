@@ -55,7 +55,7 @@ pub fn init_tracing(log_config: &LogConfig) -> eyre::Result<Option<FlushGuard>> 
                 .with_file(log_config.show_file_line)
                 .with_line_number(log_config.show_file_line)
                 .with_thread_ids(log_config.show_thread_ids)
-                .with_target(true)
+                .with_target(log_config.show_target)
                 .json();
             if !log_config.show_timestamp {
                 layer.without_time().boxed()
@@ -68,7 +68,7 @@ pub fn init_tracing(log_config: &LogConfig) -> eyre::Result<Option<FlushGuard>> 
                 .with_file(log_config.show_file_line)
                 .with_line_number(log_config.show_file_line)
                 .with_thread_ids(log_config.show_thread_ids)
-                .with_target(true)
+                .with_target(log_config.show_target)
                 .pretty();
             if !log_config.show_timestamp {
                 layer.without_time().boxed()
@@ -82,7 +82,7 @@ pub fn init_tracing(log_config: &LogConfig) -> eyre::Result<Option<FlushGuard>> 
                 .with_file(log_config.show_file_line)
                 .with_line_number(log_config.show_file_line)
                 .with_thread_ids(log_config.show_thread_ids)
-                .with_target(true)
+                .with_target(log_config.show_target)
                 .compact();
             if !log_config.show_timestamp {
                 layer.without_time().boxed()
@@ -96,7 +96,7 @@ pub fn init_tracing(log_config: &LogConfig) -> eyre::Result<Option<FlushGuard>> 
                 .with_file(log_config.show_file_line)
                 .with_line_number(log_config.show_file_line)
                 .with_thread_ids(log_config.show_thread_ids)
-                .with_target(true)
+                .with_target(log_config.show_target)
                 .compact();
             if !log_config.show_timestamp {
                 layer.without_time().boxed()
@@ -129,6 +129,7 @@ pub fn init_tracing(log_config: &LogConfig) -> eyre::Result<Option<FlushGuard>> 
         format = ?log_config.format,
         show_file_line = ?log_config.show_file_line,
         show_thread_ids = ?log_config.show_thread_ids,
+        show_target = ?log_config.show_target,
         "Tracing initialized successfully"
     );
 
