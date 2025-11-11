@@ -1,9 +1,6 @@
-
 # config/local.yaml.example
 # Example local configuration - Copy this file to local.yaml and adjust values as needed
 # Command to copy: cp config/local.yaml.example config/local.yaml
-
-environment: development
 
 gateway:
   blockchain_rpc:
@@ -50,8 +47,6 @@ keyurl:
       data_id: "crs-data-id"
       url: "http://0.0.0.0:3001/crs2048.bin"
 
-
-
 log:
   # Choose format: compact, pretty, or json
   format: "pretty"
@@ -61,6 +56,8 @@ log:
   show_thread_ids: false
   # Include timestamps in logs
   show_timestamp: true
+  # Show target module paths (optional field)
+  show_target: true
 
 db_path_rocksdb: "./.database"
 

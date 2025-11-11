@@ -147,8 +147,6 @@ pub struct KeyData {
 ///
 /// Contains all configuration settings for the relayer service.
 pub struct Settings {
-    /// Current environment (development, production, etc.)
-    pub environment: String,
     /// Network configurations
     pub gateway: GatewayConfig,
     /// Logging configuration
@@ -283,7 +281,6 @@ mod tests {
     #[test]
     fn test_user_decrypt_shares_threshold_is_required() {
         let config_content = r#"
-environment: "test"
 gateway:
   blockchain_rpc:
     ws_url: "wss://test-gateway.example.com"
@@ -353,7 +350,6 @@ db_path_rocksdb: "/tmp/test_db"
     #[test]
     fn test_user_decrypt_shares_threshold_works_when_present() {
         let config_content = r#"
-environment: "test"
 gateway:
   blockchain_rpc:
     ws_url: "wss://test-gateway.example.com"
