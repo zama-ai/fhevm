@@ -10,7 +10,7 @@ $$ LANGUAGE plpgsql;
 
 -- Status enum for all tables.
 -- tx_sent means we got a receipt. in-flight means tx is in the helper and proceeding.
-CREATE TYPE req_status AS ENUM ('queued', 'in-flight', 'tx_sent', 'completed', 'timed_out', 'failure');
+CREATE TYPE req_status AS ENUM ('queued', 'in_flight', 'tx_sent', 'completed', 'timed_out', 'failure');
 
 -- Table for user decryption requests.
 CREATE TABLE user_decrypt_req(
@@ -22,7 +22,7 @@ CREATE TABLE user_decrypt_req(
     res JSONB,
     "status" req_status NOT NULL DEFAULT 'queued',
     tx_hash TEXT,
-    consensus_reached BOOLEAN DEFAULT false,
+    consensus_reached BOOLEAN NOT NULL DEFAULT false,
     err_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
