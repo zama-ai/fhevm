@@ -47,7 +47,7 @@ use crate::{
         transaction::{
             helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
         },
-        ArbitrumJsonRPCWsClient, ContractAndTopicsFilter,
+        ArbitrumJsonRPCWsClient,
     },
     http::http_server::run_http_server,
     metrics,
@@ -176,8 +176,7 @@ pub async fn run_fhevm_relayer(
 
     // === Create a subscription for events and spawn a listener to listen for events from the subcription.
     // TODO: Pass the event_dispatcher to the event_listener
-    let filter_gateway =
-        ContractAndTopicsFilter::new(vec![decryption_address, input_verification_address], vec![]);
+    let gateway_contract_addresses = vec![decryption_address, input_verification_address];
 
     let gateway_block_store = Arc::new(BlockNumberStore::new(
         kv_store.clone(),
@@ -197,7 +196,7 @@ pub async fn run_fhevm_relayer(
             .unwrap_or("latest".to_string())
     );
     let subscription_gateway = listener_client_ws
-        .new_subscription(filter_gateway, latest_block_gateway)
+        .new_subscription(gateway_contract_addresses, latest_block_gateway)
         .await?;
     info!("Starting Relayer Gateway Listener");
     task_set.spawn(arbitrum_listener(

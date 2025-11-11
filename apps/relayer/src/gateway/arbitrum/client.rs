@@ -1,9 +1,9 @@
 use crate::core::errors::Error;
-use crate::gateway::arbitrum::ContractAndTopicsFilter;
 use alloy::{
     network::AnyNetwork,
+    primitives::Address,
     providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::{BlockNumberOrTag, Log as RpcLog},
+    rpc::types::{BlockNumberOrTag, Filter, Log as RpcLog},
 };
 use serde::{Deserialize, Serialize};
 
@@ -39,13 +39,16 @@ impl ArbitrumJsonRPCWsClient {
 
     pub async fn new_subscription(
         &self,
-        filter: ContractAndTopicsFilter,
+        contract_addresses: Vec<Address>,
         from_block_number: Option<u64>,
     ) -> Result<alloy::pubsub::SubscriptionStream<RpcLog>, Error> {
         let block_number_or_tag = from_block_number
             .map(BlockNumberOrTag::Number)
             .unwrap_or(BlockNumberOrTag::Latest);
-        let filter = filter.to_eth_subscription_filter(block_number_or_tag);
+        
+        let filter = Filter::new()
+            .from_block(block_number_or_tag)
+            .address(contract_addresses);
 
         let sub = self
             .provider
