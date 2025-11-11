@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE public_decrypt_req\n            SET err_reason = $1, status = 'failure'\n            WHERE internal_decryption_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "95a9b3d9ae6d69443149068defd1039ac68590dff5ccedeaf48adf2bcef40318"
+}

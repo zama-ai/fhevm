@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::database::{models::models::UserDecryptShare, pg_client::PgClient};
+use crate::store::sql::{client::PgClient, models::models::UserDecryptShare};
 
 pub struct UserDecryptShareRepository {
     pool: PgClient,

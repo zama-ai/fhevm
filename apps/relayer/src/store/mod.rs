@@ -16,3 +16,4 @@ pub use block_number::BlockNumberStore;
 pub use decryption_cache::{CacheError, CacheResult, PublicDecryptCache, UserDecryptCache};
 pub use event::EventStore;
 pub use user_decrypt_response_store::{UserDecryptResponseStore, UserDecryptionResponseShare};
+pub mod sql;

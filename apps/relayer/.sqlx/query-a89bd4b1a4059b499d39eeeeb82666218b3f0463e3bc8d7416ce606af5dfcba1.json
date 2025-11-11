@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE user_decrypt_req\n            SET gw_decryption_id = $1, tx_hash = $2, status = 'tx_sent'\n            WHERE internal_decryption_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a89bd4b1a4059b499d39eeeeb82666218b3f0463e3bc8d7416ce606af5dfcba1"
+}

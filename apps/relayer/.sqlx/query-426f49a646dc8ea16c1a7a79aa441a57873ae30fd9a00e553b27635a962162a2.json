@@ -1,0 +1,68 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_decrypt_share (gw_decryption_id, share_index, share, signature, extra_data)\n            VALUES ($1, $2, $3, $4, $5)\n            RETURNING *\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "gw_decryption_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "share_index",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "share",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "signature",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "extra_data",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "426f49a646dc8ea16c1a7a79aa441a57873ae30fd9a00e553b27635a962162a2"
+}

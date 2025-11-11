@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT count(*) as \"count!\"\n            FROM user_decrypt_share\n            WHERE gw_decryption_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7d58169e473b7a2c4b20bfa3ab6cc8d671f2c07ae1c772a30925280ca65ef784"
+}

@@ -2,9 +2,9 @@ use anyhow::Result;
 use serde_json::Value;
 use sqlx::types::Uuid;
 
-use crate::database::{
+use crate::store::sql::{
+    client::PgClient,
     models::models::{InputProofReq, InputProofReqStatus},
-    pg_client::PgClient,
 };
 
 pub struct InputProofReqRepository {

@@ -3,9 +3,9 @@ use serde_json::Value;
 use sqlx::types::Uuid;
 use std::collections::HashMap;
 
-use crate::database::{
+use crate::store::sql::{
+    client::PgClient,
     models::models::{UserDecryptReq, UserDecryptReqStatus},
-    pg_client::PgClient,
 };
 
 pub struct UserDecryptReqRepository {

@@ -1,0 +1,98 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO input_proof_req (ext_req_id, internal_input_proof_id, req)\n            VALUES ($1, $2, $3)\n            RETURNING\n                id,\n                ext_req_id,\n                internal_input_proof_id,\n                gw_input_proof_id,\n                req,\n                res,\n                status AS \"status: _\",\n                tx_hash,\n                err_reason,\n                created_at,\n                updated_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "ext_req_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "internal_input_proof_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "gw_input_proof_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "req",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "res",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "status: _",
+        "type_info": {
+          "Custom": {
+            "name": "req_status",
+            "kind": {
+              "Enum": [
+                "queued",
+                "in_flight",
+                "tx_sent",
+                "completed",
+                "timed_out",
+                "failure"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "tx_hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "err_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "46340cc22029e620a3b954542618b47e9066367be150a184398edbcc26a05cd7"
+}

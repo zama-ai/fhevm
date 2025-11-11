@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE input_proof_req\n            SET err_reason = $1, status = 'failure'\n            WHERE internal_input_proof_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a416847a43979f4053185cf2901e2ca0e9896fdd13a81fd7496ddb537857277a"
+}

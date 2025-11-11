@@ -35,7 +35,6 @@ axum = "0.8.4"
 http = "0.2"
 tower = "0.5.2"
 tower_governor = "0.8.0"
-rusqlite = "0.33.0"
 rand = "0.9.0"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
@@ -59,6 +58,8 @@ utoipa-redoc = { version = "6.0.0", features = ["axum"] }
 utoipa-rapidoc = { version = "6.0.0", features = ["axum"] }
 utoipa-scalar = { version = "0.3.0", features = ["axum"] }
 validator = { version = "0.20.0", features = ["derive"] }
+sqlx = { version = "0.8.6", features = ["chrono", "macros", "postgres", "runtime-tokio", "uuid"] }
+chrono = "0.4.42"
 
 [build-dependencies]
 built = { version = "0.8", features = [

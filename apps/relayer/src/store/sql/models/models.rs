@@ -3,7 +3,7 @@ use serde_json::Value;
 use sqlx::prelude::FromRow;
 use uuid::Uuid;
 
-use crate::database::models::model_request_status_enum::ReqStatus;
+use crate::store::sql::models::model_request_status_enum::ReqStatus;
 
 /// Represents a row in the `user_decrypt_req` table.
 #[derive(Debug, FromRow, Clone)]

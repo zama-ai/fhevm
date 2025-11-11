@@ -3,7 +3,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::error;
 
-use crate::database::pg_client::PgClient;
+use crate::store::sql::client::PgClient;
 
 pub async fn run_migrations(
     pool: &PgClient,
