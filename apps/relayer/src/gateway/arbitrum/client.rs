@@ -15,14 +15,14 @@ pub enum ChainName {
     Gateway,
 }
 
-pub struct EthereumJsonRPCWsClient {
+pub struct ArbitrumJsonRPCWsClient {
     provider: Arc<dyn Provider<AnyNetwork> + Send + Sync>,
 }
 
-unsafe impl Send for EthereumJsonRPCWsClient {}
-unsafe impl Sync for EthereumJsonRPCWsClient {}
+unsafe impl Send for ArbitrumJsonRPCWsClient {}
+unsafe impl Sync for ArbitrumJsonRPCWsClient {}
 
-impl EthereumJsonRPCWsClient {
+impl ArbitrumJsonRPCWsClient {
     #[instrument(skip_all)]
     pub async fn new(ws_url: &str) -> Result<Self, Error> {
         let ws = WsConnect::new(ws_url);
@@ -34,7 +34,7 @@ impl EthereumJsonRPCWsClient {
 
         let provider = Arc::new(provider);
 
-        Ok(EthereumJsonRPCWsClient { provider })
+        Ok(ArbitrumJsonRPCWsClient { provider })
     }
 
     pub async fn new_subscription(

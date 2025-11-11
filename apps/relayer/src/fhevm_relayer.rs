@@ -43,11 +43,11 @@ use crate::{
         UserDecryptEventId,
     },
     gateway::arbitrum::{
-        listener::ethereum_listener as gateway_ethereum_listener,
+        listener::arbitrum_listener,
         transaction::{
             helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
         },
-        ContractAndTopicsFilter, EthereumJsonRPCWsClient,
+        ArbitrumJsonRPCWsClient, ContractAndTopicsFilter,
     },
     http::http_server::run_http_server,
     metrics,
@@ -162,7 +162,7 @@ pub async fn run_fhevm_relayer(
     )?;
 
     // === Initialize gateway listener
-    let listener_client_ws = EthereumJsonRPCWsClient::new(&settings.gateway.blockchain_rpc.ws_url)
+    let listener_client_ws = ArbitrumJsonRPCWsClient::new(&settings.gateway.blockchain_rpc.ws_url)
         .await
         .map_err(|e| eyre::eyre!("Failed to create event handler for gateway: {}", e))?;
     let listener_client_ws = Arc::new(listener_client_ws);
@@ -200,7 +200,7 @@ pub async fn run_fhevm_relayer(
         .new_subscription(filter_gateway, latest_block_gateway)
         .await?;
     info!("Starting Relayer Gateway Listener");
-    task_set.spawn(gateway_ethereum_listener(
+    task_set.spawn(arbitrum_listener(
         subscription_gateway,
         Arc::clone(&orchestrator),
         Arc::clone(&gateway_block_store),

@@ -10,7 +10,7 @@ use alloy::rpc::types::Log;
 use futures::StreamExt;
 use std::sync::Arc;
 
-pub async fn ethereum_listener(
+pub async fn arbitrum_listener(
     mut subscription: alloy::pubsub::SubscriptionStream<Log>,
     orchestrator: Arc<
         Orchestrator<
