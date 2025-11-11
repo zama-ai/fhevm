@@ -3,26 +3,10 @@
 //! Binary entry point for the fhevm-relayer that handles CLI parsing and tracing initialization.
 
 use clap::Parser;
-use fhevm_relayer::config::settings::{LogConfig, Settings};
+use fhevm_relayer::config::settings::Settings;
+use fhevm_relayer::tracing::init_tracing;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-#[cfg(feature = "tracing-chrome")]
-use tracing_chrome::{ChromeLayerBuilder, FlushGuard};
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::EnvFilter;
-
-#[cfg(not(feature = "tracing-chrome"))]
-struct FlushGuard {}
-
-#[cfg(not(feature = "tracing-chrome"))]
-impl FlushGuard {
-    fn flush(&self) {}
-}
-
-#[cfg(not(feature = "tracing-chrome"))]
-impl Drop for FlushGuard {
-    fn drop(&mut self) {}
-}
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -69,114 +53,4 @@ async fn main() -> eyre::Result<()> {
     }
 
     result
-}
-
-/// Initialize tracing based on configuration settings.
-///
-/// # Arguments
-/// * `log_config` - The [`LogConfig`] containing logging preferences
-///
-/// # Returns
-/// * `Ok(())` - If logging was successfully initialized
-/// * `Err(`[`eyre::Error`]`)` - If initialization failed
-///
-/// # Configuration Options
-/// - Log level (trace, debug, info, warn, error)
-/// - Log format (compact, pretty, json)
-/// - File and line number display
-/// - Thread ID display
-fn init_tracing(log_config: &LogConfig) -> eyre::Result<Option<FlushGuard>> {
-    // Default: WARN for dependencies, INFO for fhevm_relayer. Override with RUST_LOG env var.
-    // Examples: RUST_LOG=debug | RUST_LOG=warn,fhevm_relayer=debug | RUST_LOG=warn,reqwest=debug
-    let env_filter = EnvFilter::try_from_default_env()
-        .or_else(|_| EnvFilter::try_new("warn,fhevm_relayer=info,ethereum_rpc_mock=info"))
-        .unwrap();
-
-    // TODO: hide this behing a tracing-chrome feature
-    // Build subscriber with common settings
-
-    // Apply format configuration and box the layer
-    let fmt_layer = match log_config.format.as_str() {
-        "json" => {
-            let layer = tracing_subscriber::fmt::layer()
-                .with_file(log_config.show_file_line)
-                .with_line_number(log_config.show_file_line)
-                .with_thread_ids(log_config.show_thread_ids)
-                .with_target(true)
-                .json();
-            if !log_config.show_timestamp {
-                layer.without_time().boxed()
-            } else {
-                layer.boxed()
-            }
-        },
-        "pretty" => {
-            let layer = tracing_subscriber::fmt::layer()
-                .with_file(log_config.show_file_line)
-                .with_line_number(log_config.show_file_line)
-                .with_thread_ids(log_config.show_thread_ids)
-                .with_target(true)
-                .pretty();
-            if !log_config.show_timestamp {
-                layer.without_time().boxed()
-            } else {
-                layer.boxed()
-            }
-        },
-        "compact" => {
-            let layer = tracing_subscriber::fmt::layer()
-                .with_file(log_config.show_file_line)
-                .with_line_number(log_config.show_file_line)
-                .with_thread_ids(log_config.show_thread_ids)
-                .with_target(true)
-                .compact();
-            if !log_config.show_timestamp {
-                layer.without_time().boxed()
-            } else {
-                layer.boxed()
-            }
-        },
-        _ => {
-            let layer = tracing_subscriber::fmt::layer()
-                .with_file(log_config.show_file_line)
-                .with_line_number(log_config.show_file_line)
-                .with_thread_ids(log_config.show_thread_ids)
-                .with_target(true)
-                .compact();
-            if !log_config.show_timestamp {
-                layer.without_time().boxed()
-            } else {
-                layer.boxed()
-            }
-        },
-    };
-
-    let tracing_subscriber_builder = tracing_subscriber::registry()
-        .with(env_filter)
-        .with(fmt_layer);
-
-    let optional_chrome_guard: Option<FlushGuard>;
-    #[cfg(feature = "tracing-chrome")]
-    {
-        // The TODO is now addressed: this block is conditional.
-        let (chrome_layer, chrome_tracing_guard) = ChromeLayerBuilder::new()
-            .trace_style(tracing_chrome::TraceStyle::Async)
-            .build();
-        tracing_subscriber_builder.with(chrome_layer).init(); // Initialize with the Chrome layer
-        optional_chrome_guard = Some(chrome_tracing_guard);
-    }
-    #[cfg(not(feature = "tracing-chrome"))]
-    {
-        tracing_subscriber_builder.init(); // Initialize without the Chrome layer
-        optional_chrome_guard = None;
-    }
-
-    info!(
-        format = ?log_config.format,
-        show_file_line = ?log_config.show_file_line,
-        show_thread_ids = ?log_config.show_thread_ids,
-        "Tracing initialized successfully"
-    );
-
-    Ok(optional_chrome_guard)
 }

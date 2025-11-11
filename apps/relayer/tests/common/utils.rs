@@ -4,6 +4,7 @@ use std::time::Duration;
 use ethereum_rpc_mock::{fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle};
 use fhevm_relayer::config::settings::Settings;
 use fhevm_relayer::run_fhevm_relayer;
+use fhevm_relayer::tracing::init_tracing_once;
 
 use alloy::primitives::Address;
 use rand::{rng, Rng};
@@ -29,9 +30,6 @@ impl TestSetup {
     /// Create isolated test setup with free ports and temp database
     #[allow(dead_code)]
     pub async fn new() -> eyre::Result<Self> {
-        // Initialize tracing once
-        init_tracing_once();
-
         // Get free ports
         let host_port = get_free_port()?;
         let gateway_port = get_free_port()?;
@@ -100,6 +98,9 @@ impl TestSetup {
         // Create isolated settings from temp config file
         let mut settings = Settings::new(Some(temp_config_path.to_string_lossy().to_string()))
             .expect("Failed to load default configuration");
+
+        // Initialize tracing once with settings
+        init_tracing_once(&settings.log);
 
         // Configure with isolated ports and database
         settings.db_path_rocksdb = temp_db_path;
@@ -170,26 +171,6 @@ fn get_free_port() -> eyre::Result<u16> {
         .map_err(|e| eyre::eyre!("Failed to get local address: {}", e))?
         .port();
     Ok(port)
-}
-
-/// Initialize tracing once for all tests
-#[allow(dead_code)]
-fn init_tracing_once() {
-    use std::sync::Once;
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let subscriber = tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| "warn,fhevm_relayer=info,ethereum_rpc_mock=info".into()),
-            )
-            .with_target(true)
-            .with_thread_ids(false)
-            .with_file(false)
-            .with_line_number(false);
-
-        let _ = subscriber.try_init();
-    });
 }
 
 /// Generate a random Ethereum address for testing

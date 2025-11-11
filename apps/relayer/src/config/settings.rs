@@ -212,7 +212,7 @@ pub fn get_required_env(key: &str) -> Result<String, AppConfigError> {
     env::var(key).map_err(|_| AppConfigError::MissingEnvVar(key.to_string()))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct LogConfig {
     /// Log format: compact, pretty, or json
     pub format: String,
