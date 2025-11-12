@@ -82,6 +82,16 @@ lint:
         - sdk/**
         - test-suite/**
 actions:
+  definitions:
+    - id: commitlint
+      description: Lint commit messages with commitlint
+      runtime: node
+      packages_file: package.json
+      run: cd ${workspace} && npx commitlint --edit ${file}
+      triggers:
+        - git_hooks: [commit-msg]
+  enabled:
+    - commitlint
   disabled:
     - git-lfs
     - trunk-announce
