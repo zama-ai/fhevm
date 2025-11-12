@@ -1,4 +1,5 @@
 ---
+title: Welcome to fhevm Gateway
 description: >-
   The fhevm Gateway.
 
@@ -14,8 +15,6 @@ layout:
   pagination:
     visible: false
 ---
-
-# Welcome to fhevm Gateway
 
 ## Get started
 
@@ -35,9 +34,6 @@ Ask technical questions and discuss with the community. Our team of experts usua
 
 Collaborate with us to advance the FHE spaces and drive innovation together.
 
-<!-- markdown-link-check-disable -->
-
 - [See the latest test release note](https://github.com/zama-ai/fhevm-gateway/releases)
 - [Request a feature](https://github.com/zama-ai/fhevm-gateway/issues/new/choose)
 - [Report a bug](https://github.com/zama-ai/fhevm-gateway/issues/new/choose)
-<!-- markdown-link-check-enable -->

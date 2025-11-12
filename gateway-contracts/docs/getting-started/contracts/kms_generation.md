@@ -5,7 +5,7 @@ This section describes the `KMSGeneration` contract. It is used to orchestrate p
 The contract is used to:
 
 - [Generate FHE keys](#generate-fhe-keys)
-- [Generate CRSs](#generate-crs)
+- [Generate CRSs](#generate-crss)
 
 All non-view functions are restricted to either the owner of the contract or the KMS nodes' transaction senders.
 

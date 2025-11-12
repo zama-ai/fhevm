@@ -27,7 +27,6 @@ lint:
     - git-diff-check
     - hadolint
     - isort
-    - markdownlint
     - osv-scanner
     - oxipng
     - ruff
@@ -38,11 +37,14 @@ lint:
     - trufflehog
     - yamllint
   enabled:
+    - markdownlint@0.45.0
     - prettier@3.6.2
     - cspell@9.3.0
   ignore:
     - linters: [ALL]
       paths:
+        - .devcontainer/**
+        - .github/**
         - charts/**
         - ci/**
         - coprocessor/**
