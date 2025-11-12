@@ -33,6 +33,16 @@ fmt-fix: ## Fix code formatting
 api-lint: ## Validate OpenAPI specification
 	@npx @redocly/cli lint openapi-async-design.yaml
 
+##@ Release
+release-minor: ## Release minor version bump (no publish, no tag)
+	@cargo release minor --no-publish --no-push --no-tag -x
+
+release-patch: ## Release patch version bump (no publish, no tag)
+	@cargo release patch --no-publish --no-push --no-tag -x
+
+release-rc: ## Release candidate version bump (no publish, no tag)
+	@cargo release rc --no-publish --no-push --no-tag -x
+
 
 ##@ Help
 help: ## Display this help message
