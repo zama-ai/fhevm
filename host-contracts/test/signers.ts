@@ -1,5 +1,6 @@
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { exec as oldExec } from 'child_process';
+import { HDNodeWallet } from 'ethers';
 import { config, ethers } from 'hardhat';
 import { promisify } from 'util';
 
@@ -8,12 +9,12 @@ import { waitForBalance } from './utils';
 const exec = promisify(oldExec);
 
 export interface Signers {
-  alice: HardhatEthersSigner;
-  bob: HardhatEthersSigner;
-  carol: HardhatEthersSigner;
-  dave: HardhatEthersSigner;
-  eve: HardhatEthersSigner;
-  fred: HardhatEthersSigner;
+  alice: HardhatEthersSigner | HDNodeWallet;
+  bob: HardhatEthersSigner | HDNodeWallet;
+  carol: HardhatEthersSigner | HDNodeWallet;
+  dave: HardhatEthersSigner | HDNodeWallet;
+  eve: HardhatEthersSigner | HDNodeWallet;
+  fred: HardhatEthersSigner | HDNodeWallet;
 }
 
 let signers: Signers;

@@ -5,8 +5,8 @@ pragma solidity ^0.8.24;
 import "../lib/FHE.sol";
 import {CoprocessorSetup} from "../lib/CoprocessorSetup.sol";
 
-/// @notice Contract for demonstrating reencryption of various FHE data types
-contract Reencrypt {
+/// @notice Contract for demonstrating user decryption of various FHE data types
+contract UserDecrypt {
     /// @dev Encrypted boolean
     ebool public xBool;
     /// @dev Encrypted 8-bit unsigned integer

@@ -4,7 +4,7 @@ import fs from 'fs';
 import { ethers, run } from 'hardhat';
 
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
-import { ACL } from '../../types';
+import { ACL } from '../../typechain-types';
 
 describe('Ownership tasks', function () {
   let acl: ACL;

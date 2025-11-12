@@ -19,6 +19,19 @@ contract TestInput {
         _xUint64 = inputEuint64;
     }
 
+    function setPublicUint64(externalEuint64 inputHandle, bytes calldata inputProof) public {
+        euint64 inputEuint64 = FHE.fromExternal(inputHandle, inputProof);
+        FHE.allowThis(inputEuint64);
+        FHE.makePubliclyDecryptable(inputEuint64);
+        _xUint64 = inputEuint64;
+    }
+
+    function checkPublicUint64(bytes memory abiEncodedCleartexts, bytes memory decryptionProof) public {
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = FHE.toBytes32(_xUint64);
+        FHE.checkSignatures(cts, abiEncodedCleartexts, decryptionProof);
+    }
+
     function getEuint64() public view returns (euint64) {
         return _xUint64;
     }

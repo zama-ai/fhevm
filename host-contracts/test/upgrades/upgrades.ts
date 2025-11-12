@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { ethers, upgrades } from 'hardhat';
 
-import { ACL, ACLUpgradedExample } from '../../types';
+import { ACL, ACLUpgradedExample, FHEVMExecutorUpgradedExample } from '../../typechain-types';
 import { getSigners, initSigners } from '../signers';
 
 describe('Upgrades', function () {
@@ -69,7 +69,7 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await executor.waitForDeployment();
-    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.1.0');
+    expect(await (executor as FHEVMExecutorUpgradedExample).getVersion()).to.equal('FHEVMExecutor v0.1.0');
     const executor2 = await upgrades.upgradeProxy(executor, executorFactoryUpgraded);
     await executor2.waitForDeployment();
     expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.4.0');

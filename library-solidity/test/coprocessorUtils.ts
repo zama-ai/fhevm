@@ -1,22 +1,15 @@
-import dotenv from 'dotenv';
+import type { FheTypeInfo } from '@fhevm/solidity/lib-js/common';
+import { ALL_FHE_TYPE_INFOS } from '@fhevm/solidity/lib-js/fheTypeInfos';
+import { ALL_OPERATORS_PRICES } from '@fhevm/solidity/lib-js/operatorsPrices';
 import type { ethers as EthersT } from 'ethers';
 import { log2 } from 'extra-bigint';
-import * as fs from 'fs';
 import { ethers } from 'hardhat';
 import { Database } from 'sqlite3';
-
-import type { FheTypeInfo } from '../lib-js/common';
-import { ALL_FHE_TYPE_INFOS } from '../lib-js/fheTypeInfos';
-import { ALL_OPERATORS_PRICES } from '../lib-js/operatorsPrices';
-
-const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('./fhevmTemp/addresses/.env.host'));
-const coprocAddress = parsedEnvCoprocessor.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
 
 let firstBlockListening = 0;
 let lastBlockSnapshot = 0;
 let lastCounterRand = 0;
 let counterRand = 0;
-let chainId: number;
 
 //const db = new Database('./sql.db'); // on-disk db for debugging
 const db = new Database(':memory:');
@@ -32,7 +25,7 @@ export function insertSQL(handle: string, clearText: BigInt | string, replace: b
 
 // Decrypt any handle, bypassing ACL
 // WARNING : only for testing or internal use
-export const getClearText = async (handle: string | bigint): Promise<string> => {
+export const getCoprocessorClearText = async (handle: string | bigint): Promise<string> => {
   return new Promise((resolve, reject) => {
     let attempts = 0;
     const maxRetries = 100;
@@ -72,9 +65,6 @@ const NumBits = {
   6: 128n, //euint128
   7: 160n, //eaddress
   8: 256n, //euint256
-  9: 512n, //ebytes64
-  10: 1024n, //ebytes128
-  11: 2048n, //ebytes256
 };
 
 export function numberToEvenHexString(num: number) {
@@ -118,11 +108,6 @@ function bitwiseNotUintBits(value: BigInt, numBits: number) {
   return ~value & BIT_MASK;
 }
 
-export const awaitCoprocessor = async (): Promise<void> => {
-  chainId = Number((await ethers.provider.getNetwork()).chainId);
-  await processAllPastFHEVMExecutorEvents();
-};
-
 const abi = [
   'event FheAdd(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result)',
   'event FheSub(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result)',
@@ -157,7 +142,7 @@ const abi = [
   'event FheRandBounded(address indexed caller, uint256 upperBound, uint8 randType, bytes16 seed, bytes32 result)',
 ];
 
-async function processAllPastFHEVMExecutorEvents() {
+export async function processAllPastFHEVMExecutorEvents(coprocessorContractAddress: `0x${string}`) {
   const provider = ethers.provider;
   const latestBlockNumber = await provider.getBlockNumber();
 
@@ -170,11 +155,11 @@ async function processAllPastFHEVMExecutorEvents() {
     }
   }
 
-  const contract = new ethers.Contract(coprocAddress, abi, provider);
+  const contract = new ethers.Contract(coprocessorContractAddress, abi, provider);
 
   // Fetch all events emitted by the contract
   const filter = {
-    address: coprocAddress,
+    address: coprocessorContractAddress,
     fromBlock: firstBlockListening,
     toBlock: latestBlockNumber,
   };
@@ -205,12 +190,12 @@ async function processAllPastFHEVMExecutorEvents() {
 }
 
 async function insertHandleFromEvent(event: FHEVMEvent) {
-  let handle;
-  let clearText;
-  let clearLHS;
-  let clearRHS;
+  let handle: string;
+  let clearText: bigint | string;
+  let clearLHS: string | bigint;
+  let clearRHS: string | bigint;
   let resultType: number;
-  let shift;
+  let shift: bigint;
 
   switch (event.eventName) {
     case 'TrivialEncrypt':
@@ -228,12 +213,12 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheAdd':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) + BigInt(event.args[2]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) + BigInt(clearRHS);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       }
@@ -244,13 +229,13 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheSub':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) - BigInt(event.args[2]);
         if (clearText < 0n) clearText = clearText + 2n ** NumBits[resultType as keyof typeof NumBits];
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) - BigInt(clearRHS);
         if (clearText < 0n) clearText = clearText + 2n ** NumBits[resultType as keyof typeof NumBits];
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
@@ -261,12 +246,12 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheMul':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) * BigInt(event.args[2]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) * BigInt(clearRHS);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       }
@@ -276,7 +261,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheDiv':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) / BigInt(event.args[2]);
       } else {
@@ -288,7 +273,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheRem':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) % BigInt(event.args[2]);
       } else {
@@ -300,12 +285,12 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheBitAnd':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) & BigInt(event.args[2]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) & BigInt(clearRHS);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       }
@@ -315,12 +300,12 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheBitOr':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) | BigInt(event.args[2]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) | BigInt(clearRHS);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       }
@@ -330,12 +315,12 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheBitXor':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) ^ BigInt(event.args[2]);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) ^ BigInt(clearRHS);
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       }
@@ -345,12 +330,12 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheShl':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) << BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits];
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) << BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits];
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       }
@@ -360,12 +345,12 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheShr':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) >> BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits];
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) >> BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits];
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       }
@@ -375,14 +360,14 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheRotl':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         shift = BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits];
         clearText =
           (BigInt(clearLHS) << shift) | (BigInt(clearLHS) >> (NumBits[resultType as keyof typeof NumBits] - shift));
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         shift = BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits];
         clearText =
           (BigInt(clearLHS) << shift) | (BigInt(clearLHS) >> (NumBits[resultType as keyof typeof NumBits] - shift));
@@ -394,14 +379,14 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheRotr':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         shift = BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits];
         clearText =
           (BigInt(clearLHS) >> shift) | (BigInt(clearLHS) << (NumBits[resultType as keyof typeof NumBits] - shift));
         clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         shift = BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits];
         clearText =
           (BigInt(clearLHS) >> shift) | (BigInt(clearLHS) << (NumBits[resultType as keyof typeof NumBits] - shift));
@@ -413,12 +398,12 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheEq':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
 
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) === BigInt(event.args[2]) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = clearLHS === clearRHS ? 1n : 0n;
       }
 
@@ -428,11 +413,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheEqBytes':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) === BigInt(event.args[2]) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) === BigInt(clearRHS) ? 1n : 0n;
       }
       insertSQL(handle, clearText);
@@ -441,11 +426,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheNe':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) !== BigInt(event.args[2]) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) !== BigInt(clearRHS) ? 1n : 0n;
       }
       insertSQL(handle, clearText);
@@ -454,11 +439,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheNeBytes':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) !== BigInt(event.args[2]) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) !== BigInt(clearRHS) ? 1n : 0n;
       }
       insertSQL(handle, clearText);
@@ -467,11 +452,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheGe':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) >= BigInt(event.args[2]) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) >= BigInt(clearRHS) ? 1n : 0n;
       }
       insertSQL(handle, clearText);
@@ -480,11 +465,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheGt':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) > BigInt(event.args[2]) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) > BigInt(clearRHS) ? 1n : 0n;
       }
       insertSQL(handle, clearText);
@@ -493,11 +478,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheLe':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) <= BigInt(event.args[2]) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) <= BigInt(clearRHS) ? 1n : 0n;
       }
       insertSQL(handle, clearText);
@@ -506,11 +491,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheLt':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) < BigInt(event.args[2]) ? 1n : 0n;
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) < BigInt(clearRHS) ? 1n : 0n;
       }
       insertSQL(handle, clearText);
@@ -519,11 +504,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheMax':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) > BigInt(event.args[2]) ? clearLHS : BigInt(event.args[2]);
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) > BigInt(clearRHS) ? clearLHS : clearRHS;
       }
       insertSQL(handle, clearText);
@@ -532,11 +517,11 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheMin':
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearLHS = await getClearText(event.args[1]);
+      clearLHS = await getCoprocessorClearText(event.args[1]);
       if (event.args[3] === '0x01') {
         clearText = BigInt(clearLHS) < BigInt(event.args[2]) ? clearLHS : BigInt(event.args[2]);
       } else {
-        clearRHS = await getClearText(event.args[2]);
+        clearRHS = await getCoprocessorClearText(event.args[2]);
         clearText = BigInt(clearLHS) < BigInt(clearRHS) ? clearLHS : clearRHS;
       }
       insertSQL(handle, clearText);
@@ -545,14 +530,15 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'Cast':
       resultType = parseInt(event.args[2]);
       handle = ethers.toBeHex(event.args[3], 32);
-      clearText = BigInt(await getClearText(event.args[1])) % 2n ** NumBits[resultType as keyof typeof NumBits];
+      clearText =
+        BigInt(await getCoprocessorClearText(event.args[1])) % 2n ** NumBits[resultType as keyof typeof NumBits];
       insertSQL(handle, clearText);
       break;
 
     case 'FheNot':
       handle = ethers.toBeHex(event.args[2], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearText = BigInt(await getClearText(event.args[1]));
+      clearText = BigInt(await getCoprocessorClearText(event.args[1]));
       clearText = bitwiseNotUintBits(clearText, Number(NumBits[resultType as keyof typeof NumBits]));
       insertSQL(handle, clearText);
       break;
@@ -560,7 +546,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'FheNeg':
       handle = ethers.toBeHex(event.args[2], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
-      clearText = BigInt(await getClearText(event.args[1]));
+      clearText = BigInt(await getCoprocessorClearText(event.args[1]));
       clearText = bitwiseNotUintBits(clearText, Number(NumBits[resultType as keyof typeof NumBits]));
       clearText = (clearText + 1n) % 2n ** NumBits[resultType as keyof typeof NumBits];
       insertSQL(handle, clearText);
@@ -569,9 +555,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
     case 'VerifyInput':
       handle = event.args[1];
       try {
-        await getClearText(BigInt(handle));
+        await getCoprocessorClearText(BigInt(handle));
       } catch {
-        throw Error('User input was not found in DB');
+        throw Error(`User input handle was not found in DB: ${handle}`);
       }
       break;
 
@@ -579,9 +565,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       handle = ethers.toBeHex(event.args[4], 32);
-      const clearControl = BigInt(await getClearText(event.args[1]));
-      const clearIfTrue = BigInt(await getClearText(event.args[2]));
-      const clearIfFalse = BigInt(await getClearText(event.args[3]));
+      const clearControl = BigInt(await getCoprocessorClearText(event.args[1]));
+      const clearIfTrue = BigInt(await getCoprocessorClearText(event.args[2]));
+      const clearIfFalse = BigInt(await getCoprocessorClearText(event.args[3]));
       if (clearControl === 1n) {
         clearText = clearIfTrue;
       } else {
@@ -608,7 +594,8 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
   }
 }
 
-export function getTxHCUFromTxReceipt(
+export function getTxHCUFromCoprocessorTxReceipt(
+  coprocessorContractAddress: `0x${string}`,
   receipt: EthersT.TransactionReceipt,
   FheTypeInfos: FheTypeInfo[] = ALL_FHE_TYPE_INFOS,
 ): {
@@ -630,9 +617,9 @@ export function getTxHCUFromTxReceipt(
   let hcuMap: Record<string, number> = {};
   let handleSet: Set<string> = new Set();
 
-  const contract = new ethers.Contract(coprocAddress, abi, ethers.provider);
+  const contract = new ethers.Contract(coprocessorContractAddress, abi, ethers.provider);
   const relevantLogs = receipt.logs.filter((log: EthersT.Log) => {
-    if (log.address.toLowerCase() !== coprocAddress.toLowerCase()) {
+    if (log.address.toLowerCase() !== coprocessorContractAddress.toLowerCase()) {
       return false;
     }
     try {

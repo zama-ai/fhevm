@@ -4,7 +4,7 @@ import type { ethers as EthersT } from 'ethers';
 import fs from 'fs';
 import { ethers } from 'hardhat';
 
-import { InputVerifier, InputVerifier__factory, TestInput } from '../../types';
+import { InputVerifier, InputVerifier__factory, TestInput } from '../../typechain-types';
 import { createInstances } from '../instance';
 import { Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
@@ -72,6 +72,11 @@ describe('InputVerifier', function () {
       keypair.privateKey,
       keypair.publicKey,
     );
+    if (typeof clearUint64 !== 'bigint') {
+      throw new Error(
+        `Unexpected user decryption result type. Expected 'bigint', got '${typeof clearUint64}' instead.`,
+      );
+    }
     return clearUint64;
   }
 

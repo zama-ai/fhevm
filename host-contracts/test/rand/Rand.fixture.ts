@@ -1,6 +1,6 @@
 import { ethers } from 'hardhat';
 
-import type { Rand } from '../../types';
+import type { Rand } from '../../typechain-types';
 import { getSigners } from '../signers';
 
 export async function deployRandFixture(): Promise<Rand> {

@@ -35,7 +35,7 @@
   },
   "homepage": "https://github.com/zama-ai/fhevm-solidity#readme",
   "devDependencies": {
-    "@zama-fhe/relayer-sdk": "^0.3.0-2",
+    "@zama-fhe/relayer-sdk": "^0.3.0-5",
     "@fhevm/host-contracts": "*",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.4",
@@ -78,8 +78,7 @@
     "sqlite3": "^5.1.7",
     "ts-generator": "^0.1.1",
     "typechain": "^8.2.0",
-    "typescript": "^5.1.6",
-    "web3-validator": "^2.0.6"
+    "typescript": "^5.1.6"
   },
   "optionalDependencies": {
     "solidity-comments-darwin-arm64": "0.1.1",

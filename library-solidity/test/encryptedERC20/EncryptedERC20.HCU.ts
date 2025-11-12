@@ -1,7 +1,6 @@
 import { expect } from 'chai';
 
-import { getTxHCUFromTxReceipt } from '../coprocessorUtils';
-import { createInstances } from '../instance';
+import { createInstances, getTxHCUFromTxReceipt } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 

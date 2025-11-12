@@ -1,7 +1,6 @@
 import { ethers, network } from 'hardhat';
 
-import { awaitCoprocessor } from '../coprocessorUtils';
-import { createInstances } from '../instance';
+import { awaitCoprocessor, createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
 describe('Tracing', function () {

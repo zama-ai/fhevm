@@ -1,6 +1,6 @@
 import { ethers } from 'hardhat';
 
-import type { EncryptedERC20 } from '../../types';
+import type { EncryptedERC20 } from '../../typechain-types';
 import { getSigners } from '../signers';
 
 export async function deployEncryptedERC20Fixture(): Promise<EncryptedERC20> {
