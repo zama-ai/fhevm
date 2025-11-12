@@ -208,7 +208,6 @@ In a real environment, before deploying the usual gateway contracts, several con
   - `ZamaERC20`: the `$ZAMA` token
   - `FeesBurner`: used for burning the operation fees
 - gateway chain:
-
   - `ZamaOFT`: the LayerZero OFT contract used to interact with the `ZamaERC20`
   - `FeesSenderToBurner`: contract with a LayerZero endpoint used for sending fees to `FeesBurner`
 
