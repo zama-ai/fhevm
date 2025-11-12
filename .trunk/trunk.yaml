@@ -48,6 +48,20 @@ lint:
           success_codes: [0, 1]
           read_output_from: stdout
           run_from: ${root_or_parent_with(.solhint.json)}
+    - name: prettier
+      files:
+        - typescript
+        - yaml
+        - css
+        - postcss
+        - sass
+        - html
+        - markdown
+        - json
+        - javascript
+        - graphql
+        - prettier_supported_configs
+        - solidity
   disabled:
     - actionlint
     - bandit
