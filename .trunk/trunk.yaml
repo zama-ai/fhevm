@@ -26,6 +26,13 @@ tools:
       extra_packages:
         - solhint-plugin-prettier
         - prettier
+    - name: prettier
+      runtime: node
+      package: prettier
+      shims: [prettier]
+      extra_packages:
+        - "@trivago/prettier-plugin-sort-imports"
+        - prettier-plugin-solidity
 lint:
   files:
     - name: solidity
