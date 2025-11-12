@@ -11,12 +11,54 @@ import {CoprocessorConfig} from "../lib/Impl.sol";
  *          which are deployed & maintained by Zama.
  */
 library ZamaConfig {
-    function getSepoliaProtocolId() internal pure returns (uint256) {
-        /// @note Zama Ethereum Sepolia protocol id is '10000 + Zama Ethereum protocol id'
+    /// @notice Returned if the Zama protocol is not supported on the current chain
+    error ZamaProtocolUnsupported();
+
+    function getEthereumCoprocessorConfig() internal view returns (CoprocessorConfig memory config) {
+        if (block.chainid == 1) {
+            config = _getEthereumConfig();
+        } else if (block.chainid == 11155111) {
+            config = _getSepoliaConfig();
+        } else if (block.chainid == 31337) {
+            config = _getLocalConfig();
+        } else {
+            revert ZamaProtocolUnsupported();
+        }
+    }
+
+    function getConfidentialProtocolId() internal view returns (uint256) {
+        if (block.chainid == 1) {
+            return _getEthereumProtocolId();
+        } else if (block.chainid == 11155111) {
+            return _getSepoliaProtocolId();
+        } else if (block.chainid == 31337) {
+            return _getLocalProtocolId();
+        }
+        return 0;
+    }
+
+    /// @dev chainid == 1
+    function _getEthereumProtocolId() private pure returns (uint256) {
+        // Zama Ethereum protocol id is '1'
+        return 1;
+    }
+
+    /// @dev chainid == 1
+    function _getEthereumConfig() private pure returns (CoprocessorConfig memory) {
+        // The addresses below are placeholders and should be replaced with actual addresses
+        // once deployed on the Ethereum mainnet.
+        return
+            CoprocessorConfig({ACLAddress: address(0), CoprocessorAddress: address(0), KMSVerifierAddress: address(0)});
+    }
+
+    /// @dev chainid == 11155111
+    function _getSepoliaProtocolId() private pure returns (uint256) {
+        // Zama Ethereum Sepolia protocol id is '10000 + Zama Ethereum protocol id'
         return 10001;
     }
 
-    function getSepoliaConfig() internal pure returns (CoprocessorConfig memory) {
+    /// @dev chainid == 11155111
+    function _getSepoliaConfig() private pure returns (CoprocessorConfig memory) {
         return
             CoprocessorConfig({
                 ACLAddress: 0xf0Ffdc93b7E186bC2f8CB3dAA75D86d1930A433D,
@@ -25,41 +67,35 @@ library ZamaConfig {
             });
     }
 
-    function getEthereumProtocolId() internal pure returns (uint256) {
-        /// @note Zama Ethereum protocol id is '1'
-        return 1;
+    /// @dev chainid == 11155111
+    function _getLocalProtocolId() private pure returns (uint256) {
+        /// @note Development protocol id is '100000 + Zama Ethereum protocol id'
+        return 100001;
     }
 
-    function getEthereumConfig() internal pure returns (CoprocessorConfig memory) {
-        /// @note The addresses below are placeholders and should be replaced with actual addresses
-        /// once deployed on the Ethereum mainnet.
+    function _getLocalConfig() private pure returns (CoprocessorConfig memory) {
         return
-            CoprocessorConfig({ACLAddress: address(0), CoprocessorAddress: address(0), KMSVerifierAddress: address(0)});
+            CoprocessorConfig({
+                ACLAddress: 0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D,
+                CoprocessorAddress: 0xe3a9105a3a932253A70F126eb1E3b589C643dD24,
+                KMSVerifierAddress: 0x901F8942346f7AB3a01F6D7613119Bca447Bb030
+            });
     }
 }
 
 /**
- * @title   EthereumConfig.
+ * @title   ZamaEthereumConfig.
  * @dev     This contract can be inherited by a contract wishing to use the FHEVM contracts provided by Zama
  *          on the Ethereum (mainnet) network (chainId = 1) or Sepolia (testnet) network (chainId = 11155111).
  *          Other providers may offer similar contracts deployed at different addresses.
  *          If you wish to use them, you should rely on the instructions from these providers.
  */
-contract EthereumConfig {
+abstract contract ZamaEthereumConfig {
     constructor() {
-        if (block.chainid == 1) {
-            FHE.setCoprocessor(ZamaConfig.getEthereumConfig());
-        } else if (block.chainid == 11155111) {
-            FHE.setCoprocessor(ZamaConfig.getSepoliaConfig());
-        }
+        FHE.setCoprocessor(ZamaConfig.getEthereumCoprocessorConfig());
     }
 
-    function protocolId() public view returns (uint256) {
-        if (block.chainid == 1) {
-            return ZamaConfig.getEthereumProtocolId();
-        } else if (block.chainid == 11155111) {
-            return ZamaConfig.getSepoliaProtocolId();
-        }
-        return 0;
+    function confidentialProtocolId() public view returns (uint256) {
+        return ZamaConfig.getConfidentialProtocolId();
     }
 }
