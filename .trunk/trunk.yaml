@@ -53,7 +53,6 @@ lint:
     - bandit
     - black
     - checkov
-    - clippy
     - dotenv-linter
     - git-diff-check
     - hadolint
@@ -68,6 +67,7 @@ lint:
     - trufflehog
     - yamllint
   enabled:
+    - clippy@1.91.0
     - markdownlint@0.45.0
     - prettier@3.6.2
     - cspell@9.3.0
