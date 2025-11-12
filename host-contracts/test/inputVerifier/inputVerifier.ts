@@ -23,6 +23,15 @@ describe('InputVerifier', function () {
     privateKey: string;
   };
 
+  // This pass is necessary to restore the original InputVerifier state
+  // If this pass is omitted, future tests may fail
+  afterEach(async function () {
+    process.env.NUM_COPROCESSORS = '1';
+    const coprocessorAddressSigner0 = process.env['COPROCESSOR_SIGNER_ADDRESS_0']!;
+    const tx = await inputVerifier.connect(deployer).defineNewContext([coprocessorAddressSigner0], 1);
+    await tx.wait();
+  });
+
   before(async function () {
     await initSigners(2);
     signers = await getSigners();

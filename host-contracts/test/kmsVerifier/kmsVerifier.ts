@@ -18,6 +18,15 @@ describe('KmsVerifier', function () {
   let testInputContract: TestInput;
   let testInputContractAddress: string;
 
+  // This pass is necessary to restore the original KMSVerifier state
+  // If this pass is omitted, future tests may fail
+  afterEach(async function () {
+    process.env.NUM_KMS_NODES = '1';
+    const kmsAddressSigner0 = process.env['KMS_SIGNER_ADDRESS_0']!;
+    const tx = await kmsVerifier.connect(deployer).defineNewContext([kmsAddressSigner0], 1);
+    await tx.wait();
+  });
+
   before(async function () {
     await initSigners(2);
     signers = await getSigners();
