@@ -33,6 +33,9 @@ wallets:
   deployer:
     description: "Deployer for gateway and host contracts"
     private_key_env: "DEPLOYER_PRIVATE_KEY"
+  governance_deployer:
+    description: "Governance deployer (owns governance until DAO takes over)"
+    private_key_env: "GOVERNANCE_DEPLOYER_PRIVATE_KEY"
 
 operators:
   - name: "Operator 1"

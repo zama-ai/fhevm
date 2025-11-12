@@ -30,7 +30,7 @@ export class Step02Safe extends BaseStep {
 
         // Check if Safe is already deployed
         const taskOutput = new TaskOutputReader(projectRoot);
-        let safeProxyAddress: string | undefined;
+        let safeProxyAddress: `0x${string}` | undefined;
         try {
             safeProxyAddress = taskOutput.readHardhatDeployment(
                 this.pkgName,

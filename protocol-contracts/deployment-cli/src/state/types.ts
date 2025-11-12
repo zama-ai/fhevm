@@ -12,7 +12,7 @@ export interface StepTransaction {
 }
 
 export interface StepResultData {
-    readonly addresses?: Record<string, string>;
+    readonly addresses?: Record<string, `0x${string}`>;
     readonly transactions?: StepTransaction[];
     readonly artifacts?: Record<string, unknown>;
     readonly notes?: string[];
@@ -36,5 +36,5 @@ export interface DeploymentStateData {
         updatedAt: string;
     };
     steps: Record<string, StepState>;
-    addresses: Record<string, string>;
+    addresses: Record<string, `0x${string}`>;
 }

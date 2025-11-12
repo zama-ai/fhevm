@@ -49,7 +49,7 @@ export class Step01AragonDao extends BaseStep {
 
         return {
             addresses: {
-                DAO_ADDRESS: getAddress(daoAddress),
+                DAO_ADDRESS: getAddress(daoAddress) as `0x${string}`,
             },
         };
     }
