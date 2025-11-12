@@ -7,11 +7,15 @@ parallel_requests;number_of_measures;decryption_type
 50;50;public
 100;50;public
 200;10;public
+300;5;public
+400;5;public
 1;50;user
 2;50;user
 5;50;user
 10;50;user
 20;50;user
 50;30;user
-100;10;user
-200;5;user
+100;50;user
+200;10;user
+300;5;user
+400;5;user
