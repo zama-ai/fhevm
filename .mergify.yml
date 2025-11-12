@@ -26,4 +26,3 @@ pull_request_rules:
       label:
         toggle:
           - merge-queued
-

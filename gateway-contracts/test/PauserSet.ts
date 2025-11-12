@@ -89,7 +89,7 @@ describe("PauserSet", function () {
     expect(await pauserSet.isPauser(newPauser)).to.be.true;
   });
 
-  it("Should revert swappig the pauser", async function () {
+  it("Should revert swapping the pauser", async function () {
     const newPauser = createRandomWallet();
     await expect(pauserSet.connect(owner).swapPauser(newPauser.address, newPauser.address))
       .to.be.revertedWithCustomError(pauserSet, "AccountNotPauser")

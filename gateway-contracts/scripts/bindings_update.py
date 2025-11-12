@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-import os
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -220,27 +220,27 @@ class BindingsUpdater:
         )
 
 
-BRED = "\033[91m\033[1m"
-BGREEN = "\033[92m\033[1m"
-BYELLOW = "\033[93m\033[1m"
-BBLUE = "\033[94m\033[1m"
+B_RED = "\033[91m\033[1m"
+B_GREEN = "\033[92m\033[1m"
+B_YELLOW = "\033[93m\033[1m"
+B_BLUE = "\033[94m\033[1m"
 NC = "\033[0m"
 
 
 def log_info(msg: str):
-    print(f"{BBLUE}[*]{NC} {msg}")
+    print(f"{B_BLUE}[*]{NC} {msg}")
 
 
 def log_success(msg: str):
-    print(f"{BGREEN}[+]{NC} {msg}")
+    print(f"{B_GREEN}[+]{NC} {msg}")
 
 
 def log_error(msg: str):
-    print(f"{BRED}[-]{NC} {msg}")
+    print(f"{B_RED}[-]{NC} {msg}")
 
 
 def log_warning(msg: str):
-    print(f"{BYELLOW}[!]{NC} {msg}")
+    print(f"{B_YELLOW}[!]{NC} {msg}")
 
 
 if __name__ == "__main__":
