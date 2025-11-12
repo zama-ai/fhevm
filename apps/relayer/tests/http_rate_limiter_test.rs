@@ -206,6 +206,63 @@ async fn execute_batch(
     }
 }
 
+async fn execute_get_batch(client: &reqwest::Client, url: &str, batch: &Batch) -> BatchResult {
+    let mut all_tasks = Vec::new();
+
+    for i in 0..batch.request_count {
+        let client = client.clone();
+        let url = url.to_string();
+
+        let task = tokio::spawn(async move {
+            let res = client
+                .get(&url)
+                .timeout(Duration::from_secs(10))
+                .send()
+                .await;
+
+            let status = match &res {
+                Ok(response) => response.status().as_u16(),
+                Err(_) => 0,
+            };
+
+            (i, status, res.is_ok())
+        });
+
+        all_tasks.push(task);
+
+        // Add delay between requests if specified
+        if batch.delay_between_requests_ms > 0 && i < batch.request_count - 1 {
+            sleep(Duration::from_millis(batch.delay_between_requests_ms)).await;
+        }
+    }
+
+    // Wait for all requests in this batch to complete
+    let results = join_all(all_tasks).await;
+
+    // Analyze results for this batch
+    let mut successful_requests = 0;
+    let mut rate_limit_post_endpoints_requests = 0;
+    let mut error_requests = 0;
+
+    for result in results {
+        if let Ok((_request_id, status, _success)) = result {
+            match status {
+                200 => successful_requests += 1,
+                429 => rate_limit_post_endpoints_requests += 1,
+                _ => error_requests += 1,
+            }
+        } else {
+            error_requests += 1;
+        }
+    }
+
+    BatchResult {
+        successful_requests,
+        rate_limit_post_endpoints_requests,
+        error_requests,
+    }
+}
+
 async fn run_scenario(
     setup: &TestSetup,
     scenario: &TestScenario,
@@ -468,5 +525,89 @@ async fn test_user_decrypt_rate_limit_post_endpoints_scenarios() {
         validate_scenario_results(&scenario, &results);
 
         println!("✓ Scenario '{}' completed successfully\n", scenario.name);
+    }
+}
+
+async fn run_get_scenario(
+    _setup: &TestSetup,
+    scenario: &TestScenario,
+    url: &str,
+) -> Vec<BatchResult> {
+    let client = reqwest::Client::new();
+    let mut batch_results = Vec::new();
+
+    println!("Running GET scenario: {}", scenario.name);
+
+    for (batch_idx, batch) in scenario.batches.iter().enumerate() {
+        println!(
+            "  Batch {}: {} requests, {}ms delay between, {}ms delay after",
+            batch_idx + 1,
+            batch.request_count,
+            batch.delay_between_requests_ms,
+            batch.delay_after_batch_ms
+        );
+
+        let result = execute_get_batch(&client, url, batch).await;
+
+        println!(
+            "    Results: {} successful, {} rate limited, {} errors",
+            result.successful_requests,
+            result.rate_limit_post_endpoints_requests,
+            result.error_requests
+        );
+
+        batch_results.push(result);
+
+        // Add delay after batch if specified and not the last batch
+        if batch.delay_after_batch_ms > 0 && batch_idx < scenario.batches.len() - 1 {
+            sleep(Duration::from_millis(batch.delay_after_batch_ms)).await;
+        }
+    }
+
+    batch_results
+}
+
+#[tokio::test]
+async fn test_get_endpoints_burst_no_rate_limiting() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Define a burst scenario with 100 concurrent requests (no delays)
+    let burst_batch = Batch::new(100, 0, 0);
+    let burst_expectation = BatchExpectation {
+        min_successful: 98, // Allow for 2% tolerance
+        max_successful: 100,
+        min_rate_limit_post_endpoints: 0,
+        max_rate_limit_post_endpoints: 0, // GET endpoints should NEVER be rate limited
+        max_errors: 2,
+    };
+
+    let burst_scenario = TestScenario::new(
+        "GET Endpoint Burst Test",
+        vec![burst_batch],
+        vec![burst_expectation],
+    );
+
+    let endpoints = vec![
+        (
+            "liveness",
+            format!("http://localhost:{}/liveness", setup.http_port),
+        ),
+        (
+            "version",
+            format!("http://localhost:{}/version", setup.http_port),
+        ),
+        (
+            "keyurl",
+            format!("http://localhost:{}/v1/keyurl", setup.http_port),
+        ),
+    ];
+
+    for (endpoint_name, url) in endpoints {
+        println!("Testing {} endpoint", endpoint_name);
+
+        let results = run_get_scenario(&setup, &burst_scenario, &url).await;
+        validate_scenario_results(&burst_scenario, &results);
+
+        println!("✓ {} endpoint burst test passed\n", endpoint_name);
     }
 }
