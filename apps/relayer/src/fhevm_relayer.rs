@@ -224,7 +224,7 @@ pub async fn run_fhevm_relayer(
             Arc::clone(&orchestrator),
             settings.keyurl,
             settings.gateway.blockchain_rpc.http_url,
-            settings.http.rate_limit_on_post_endpoints,
+            settings.http.rate_limit_post_endpoints,
         ));
     };
 

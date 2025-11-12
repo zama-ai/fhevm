@@ -51,7 +51,7 @@ keyurl:
 
 http:
   endpoint: "0.0.0.0:3000"
-  rate_limit:
+  rate_limit_post_endpoints:
     requests_per_second: 30
     burst_size: 30
   metrics:

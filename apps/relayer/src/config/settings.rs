@@ -83,7 +83,7 @@ pub struct HttpConfig {
     /// HTTP endpoint address
     pub endpoint: Option<String>,
     /// Rate limiting configuration for HTTP endpoints
-    pub rate_limit_on_post_endpoints: RateLimitConfig,
+    pub rate_limit_post_endpoints: RateLimitConfig,
     /// HTTP metrics configuration
     pub metrics: HttpMetricsConfig,
 }
@@ -360,7 +360,7 @@ keyurl:
     data_id: "test-crs"
     url: "https://test.example.com/crs"
 http:
-  rate_limit_on_post_endpoints:
+  rate_limit_post_endpoints:
     requests_per_second: 30
     burst_size: 30
   metrics:
