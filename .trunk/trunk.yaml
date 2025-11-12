@@ -16,7 +16,31 @@ runtimes:
     - node@22.16.0
     - python@3.10.8
 # This is the section where you manage your linters. (https://docs.trunk.io/check/configuration)
+tools:
+  definitions:
+    - name: solhint
+      runtime: node
+      package: solhint
+      known_good_version: 5.1.0
+      shims: [solhint]
+      extra_packages:
+        - solhint-plugin-prettier
+        - prettier
 lint:
+  files:
+    - name: solidity
+      extensions:
+        - sol
+  definitions:
+    - name: solhint
+      files: [solidity]
+      tools: [solhint]
+      commands:
+        - run: solhint --disc -f sarif ${target}
+          output: sarif
+          success_codes: [0, 1]
+          read_output_from: stdout
+          run_from: ${root_or_parent_with(.solhint.json)}
   disabled:
     - actionlint
     - bandit
@@ -40,6 +64,7 @@ lint:
     - markdownlint@0.45.0
     - prettier@3.6.2
     - cspell@9.3.0
+    - solhint@5.1.0
   ignore:
     - linters: [ALL]
       paths:

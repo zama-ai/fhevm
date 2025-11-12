@@ -129,6 +129,7 @@ words:
   - snakecase
   - soldeer
   - solhint
+  - solhintrc
   - sourcify
   - sqlx
   - srcset
