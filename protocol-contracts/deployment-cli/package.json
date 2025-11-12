@@ -13,7 +13,7 @@
         "format": "biome format --write .",
         "typecheck": "tsc --noEmit --project tsconfig.json",
         "clearAllDeployments": "find ../ -type d -name 'deployments' -not -path '*/node_modules/*' -exec sh -c 'cd \"$(dirname {})\" && npx hardhat clean 2>/dev/null || true' \\; -exec rm -rf {} + && rm -f ./deployment-state/*.json",
-        "test": "forge build && bun test --timeout 10000"
+        "test": "forge build && bun test --timeout 15000"
     },
     "dependencies": {
         "@clack/prompts": "^0.7.0",

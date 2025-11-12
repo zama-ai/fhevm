@@ -53,7 +53,7 @@ protocol:
     dao_multisig_threshold: "2/3"
   token:
     recipients:
-      - address: "0xd2097BFD29BE52D57Ed56eabfa960d1Bb42D6bF0"
+      - address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
         amount: "1000000000000000000000000000"
   thresholds:
     mpc: 1

@@ -9,6 +9,7 @@ import {
     type Address,
     createWalletClient,
     encodeFunctionData,
+    encodePacked,
     type GetContractReturnType,
     getAddress,
     getContract,
@@ -69,7 +70,6 @@ describe("Post-Deployment E2E Tests", () => {
     let anvilProcessGateway: { proc: AnvilProcess; client: ExtendedTestClient };
 
     // Test accounts
-    let adminAddress: Address;
     let aliceAddress: Address;
     let bobAddress: Address;
 
@@ -171,15 +171,22 @@ describe("Post-Deployment E2E Tests", () => {
         ) as DeploymentAddresses;
 
         // Setup test accounts
-        adminAddress = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as Address;
-        aliceAddress = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC" as Address;
-        bobAddress = "0x90F79bf6EB2c4f870365E785982E1f101E93b906" as Address;
+        // Load alice address from deployment config
+        const cfgPath = path.resolve(
+            resolveProjectRoot(),
+            "protocol-contracts/deployment-cli/deployment-state",
+            "deployment-config.yaml",
+        );
+        const raw = readFileSync(cfgPath, "utf-8");
+        const cfg = YAML.parse(raw) as DeploymentConfig;
+        const recipients = (cfg?.protocol?.token?.recipients ?? []) as Array<{
+            address: string;
+            amount: string;
+        }>;
+        aliceAddress = getAddress(recipients[0].address) as Address;
+        bobAddress = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8" as Address;
 
         // Fund test accounts on both chains
-        await anvilProcessL1.client.setBalance({
-            address: adminAddress,
-            value: parseEther("10000"),
-        });
         await anvilProcessL1.client.setBalance({
             address: aliceAddress,
             value: parseEther("10000"),
@@ -189,10 +196,6 @@ describe("Post-Deployment E2E Tests", () => {
             value: parseEther("10000"),
         });
 
-        await anvilProcessGateway.client.setBalance({
-            address: adminAddress,
-            value: parseEther("10000"),
-        });
         await anvilProcessGateway.client.setBalance({
             address: aliceAddress,
             value: parseEther("10000"),
@@ -396,7 +399,7 @@ describe("Post-Deployment E2E Tests", () => {
             );
         });
 
-        it("should verify ownership according to deployment", async () => {
+        it("should verify ownership: Host Chain Contracts should be owned by DAO, Gateway Chain Contracts should be owned by Safe", async () => {
             // Host Chain Contracts should be owned by DAO
             expect(await zamaOFTAdapter.read.owner()).toBe(
                 getAddress(addresses.DAO_ADDRESS),
@@ -484,43 +487,9 @@ describe("Post-Deployment E2E Tests", () => {
                 expect(bal === expected * 10n ** 18n).toBe(true);
             }
         });
-        it.todo(
-            "should mint tokens to alice via governance proposal",
-            async () => {
-                // TODO: This test is expected to fail because INITIAL_ADMIN doesn't have MINTER_ROLE
-                // The DAO doesn't have MINTER_ROLE
-                const mintAmount = parseEther("1000");
 
-                const balanceBefore = (await zamaERC20.read.balanceOf([
-                    aliceAddress,
-                ])) as bigint;
-
-                // Use executeViaAdminPlugin to mint tokens to alice
-                const mintData = encodeFunctionData({
-                    abi: zamaERC20.abi,
-                    functionName: "mint",
-                    args: [aliceAddress, mintAmount],
-                });
-
-                await executeViaAdminPlugin(ctx, [
-                    {
-                        to: addresses.ZAMA_TOKEN,
-                        value: 0n,
-                        data: mintData,
-                    },
-                ]);
-
-                const balanceAfter = (await zamaERC20.read.balanceOf([
-                    aliceAddress,
-                ])) as bigint;
-                expect(balanceAfter).toBe(balanceBefore + mintAmount);
-            },
-        );
-
-        it.todo("should allow alice to transfer tokens to bob", async () => {
-            // TODO: alice doesn't have tokens
-            const transferAmount = parseEther("100");
-
+        it("should allow alice to transfer tokens to bob", async () => {
+            const transferAmount = 1n;
             const aliceBalanceBefore = (await zamaERC20.read.balanceOf([
                 aliceAddress,
             ])) as bigint;
@@ -529,14 +498,14 @@ describe("Post-Deployment E2E Tests", () => {
             ])) as bigint;
 
             // Impersonate alice
-            await anvilProcessGateway.client.impersonateAccount({
+            await anvilProcessL1.client.impersonateAccount({
                 address: aliceAddress,
             });
 
             const aliceSigner = createWalletClient({
                 account: aliceAddress,
-                chain: anvilProcessGateway.client.chain,
-                transport: http(ctx.networks.getGateway().rpcUrl),
+                chain: anvilProcessL1.client.chain,
+                transport: http(ctx.networks.getEthereum().rpcUrl),
             });
 
             const tokenAsAlice = getContract({
@@ -549,11 +518,11 @@ describe("Post-Deployment E2E Tests", () => {
                 bobAddress,
                 transferAmount,
             ]);
-            await anvilProcessGateway.client.waitForTransactionReceipt({
+            await anvilProcessL1.client.waitForTransactionReceipt({
                 hash,
             });
 
-            await anvilProcessGateway.client.stopImpersonatingAccount({
+            await anvilProcessL1.client.stopImpersonatingAccount({
                 address: aliceAddress,
             });
 
@@ -568,26 +537,40 @@ describe("Post-Deployment E2E Tests", () => {
             expect(bobBalanceAfter).toBe(bobBalanceBefore + transferAmount);
         });
 
-        it.todo("should allow bob to burn his tokens", async () => {
-            // TODO: bob doesn't have tokens
-            const burnAmount = parseEther("50");
+        it("should allow bob to burn his tokens", async () => {
+            // Ensure bob has tokens before the test by sending from alice to bob
+            await anvilProcessL1.client.impersonateAccount({
+                address: aliceAddress,
+            });
+            const aliceSigner = createWalletClient({
+                account: aliceAddress,
+                chain: anvilProcessL1.client.chain,
+                transport: http(ctx.networks.getEthereum().rpcUrl),
+            });
+            const burnAmount = 1n;
+            const tokenAsAlice = getContract({
+                address: addresses.ZAMA_TOKEN as Address,
+                abi: zamaERC20.abi,
+                client: aliceSigner,
+            });
+            await tokenAsAlice.write.transfer([bobAddress, burnAmount]);
 
+            // Verify bob has tokens
             const bobBalanceBefore = (await zamaERC20.read.balanceOf([
                 bobAddress,
             ])) as bigint;
+            expect(bobBalanceBefore).toBeGreaterThanOrEqual(burnAmount);
+
             const totalSupplyBefore =
                 (await zamaERC20.read.totalSupply()) as bigint;
-
-            await anvilProcessGateway.client.impersonateAccount({
+            await anvilProcessL1.client.impersonateAccount({
                 address: bobAddress,
             });
-
             const bobSigner = createWalletClient({
                 account: bobAddress,
-                chain: anvilProcessGateway.client.chain,
-                transport: http(ctx.networks.getGateway().rpcUrl),
+                chain: anvilProcessL1.client.chain,
+                transport: http(ctx.networks.getEthereum().rpcUrl),
             });
-
             const tokenAsBob = getContract({
                 address: addresses.ZAMA_TOKEN as Address,
                 abi: zamaERC20.abi,
@@ -595,11 +578,11 @@ describe("Post-Deployment E2E Tests", () => {
             });
 
             const hash = await tokenAsBob.write.burn([burnAmount]);
-            await anvilProcessGateway.client.waitForTransactionReceipt({
+            await anvilProcessL1.client.waitForTransactionReceipt({
                 hash,
             });
 
-            await anvilProcessGateway.client.stopImpersonatingAccount({
+            await anvilProcessL1.client.stopImpersonatingAccount({
                 address: bobAddress,
             });
 
@@ -621,170 +604,307 @@ describe("Post-Deployment E2E Tests", () => {
             expect(typeof isPaused).toBe("boolean");
         });
 
-        it.todo(
-            "should allow cross-chain token transfer from Ethereum to Gateway",
-            async () => {
-                // TODO: alice doesn't have tokens
-                // First, ensure alice has tokens on L1
-                const testAddress =
-                    "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65" as Address;
-                await anvilProcessL1.client.setBalance({
-                    address: testAddress,
-                    value: parseEther("10"),
-                });
+        async function sendTokensFromEthereumToGateway(
+            amount: bigint,
+            sender: Address,
+        ): Promise<void> {
+            await anvilProcessL1.client.impersonateAccount({
+                address: sender,
+            });
+            const senderSignerL1 = createWalletClient({
+                account: sender,
+                chain: anvilProcessL1.client.chain,
+                transport: http(ctx.networks.getEthereum().rpcUrl),
+            });
+            const tokenAsSender = getContract({
+                address: addresses.ZAMA_TOKEN as Address,
+                abi: zamaERC20.abi,
+                client: senderSignerL1,
+            });
 
-                // Mint tokens to test address via governance
-                const mintAmount = parseEther("1000");
-                const targets = [addresses.ZAMA_TOKEN];
-                const values = [0];
-                const functionSignatures = [""];
-                const datas = [
-                    encodeFunctionData({
-                        abi: zamaERC20.abi,
-                        functionName: "mint",
-                        args: [testAddress, mintAmount],
-                    }),
-                ];
-                const operations = [0];
+            // Mint tokens to sender
+            let hash = await tokenAsSender.write.mint([sender, amount]);
+            await anvilProcessL1.client.waitForTransactionReceipt({ hash });
 
-                const options = Options.newOptions()
-                    .addExecutorLzReceiveOption(500000, 0)
-                    .toHex()
-                    .toString() as `0x${string}`;
+            // Approve OFTAdapter
+            hash = await tokenAsSender.write.approve([
+                addresses.ZAMA_OFT_ADAPTER as Address,
+                amount,
+            ]);
+            await anvilProcessL1.client.waitForTransactionReceipt({ hash });
 
-                const quotedFee =
-                    (await governanceOAppSender.read.quoteSendCrossChainTransaction(
-                        [
-                            targets,
-                            values,
-                            functionSignatures,
-                            datas,
-                            operations,
-                            options,
-                        ],
-                    )) as bigint;
+            // Send tokens from Ethereum to Gateway
+            const options = Options.newOptions()
+                .addExecutorLzReceiveOption(200000, 0)
+                .toHex()
+                .toString() as `0x${string}`;
 
-                const daoAddress = getAddress(addresses.DAO_ADDRESS) as Address;
-                await anvilProcessL1.client.impersonateAccount({
-                    address: daoAddress,
-                });
-                await anvilProcessL1.client.setBalance({
-                    address: daoAddress,
-                    value: parseEther("10"),
-                });
+            const sendToGatewayParam = [
+                eidZamaTestnet,
+                pad(sender, { size: 32 }),
+                amount,
+                amount,
+                options,
+                "0x" as `0x${string}`,
+                "0x" as `0x${string}`,
+            ] as const;
 
-                const daoSigner = createWalletClient({
-                    account: daoAddress,
-                    chain: anvilProcessL1.client.chain,
-                    transport: http(
-                        anvilProcessL1.client.chain?.rpcUrls.default.http[0] ??
-                            "",
-                    ),
-                });
+            const adapterAsSender = getContract({
+                address: addresses.ZAMA_OFT_ADAPTER as Address,
+                abi: zamaOFTAdapter.abi,
+                client: senderSignerL1,
+            });
 
-                const senderAsDAO = getContract({
-                    address: addresses.GOVERNANCE_OAPP_SENDER as Address,
-                    abi: governanceOAppSender.abi,
-                    client: daoSigner,
-                });
+            const messagingFee = (await adapterAsSender.read.quoteSend([
+                sendToGatewayParam,
+                false,
+            ])) as { nativeFee: bigint; lzTokenFee: bigint };
 
-                let hash = await senderAsDAO.write.sendRemoteProposal(
-                    [
-                        targets,
-                        values,
-                        functionSignatures,
-                        datas,
-                        operations,
-                        options,
-                    ],
-                    { value: quotedFee },
-                );
+            const { result } = await adapterAsSender.simulate.send(
+                [
+                    sendToGatewayParam,
+                    [messagingFee.nativeFee, messagingFee.lzTokenFee],
+                    sender,
+                ],
+                { value: messagingFee.nativeFee },
+            );
 
-                await anvilProcessL1.client.waitForTransactionReceipt({ hash });
-                await anvilProcessL1.client.stopImpersonatingAccount({
-                    address: daoAddress,
-                });
+            hash = await adapterAsSender.write.send(
+                [
+                    sendToGatewayParam,
+                    [messagingFee.nativeFee, messagingFee.lzTokenFee],
+                    sender,
+                ],
+                { value: messagingFee.nativeFee },
+            );
+            await anvilProcessL1.client.stopImpersonatingAccount({
+                address: sender,
+            });
 
-                // Deliver mint message
-                const message = encodeGovernanceMessage(
-                    targets,
-                    values,
-                    functionSignatures,
-                    datas,
-                    operations,
-                );
+            // Deliver the OFT message to Gateway
+            // OFT message format: sendTo (bytes32) + amountSD (uint64)
+            // With 18 decimals token and 6 shared decimals, conversion rate = 10^12
+            const sharedDecimals = 6;
+            const decimalConversionRate = 10n ** BigInt(18 - sharedDecimals);
+            const amountSD =
+                (result[1] as { amountReceivedLD: bigint }).amountReceivedLD /
+                decimalConversionRate;
 
-                await deliverToReceiver(
-                    anvilProcessGateway.client,
-                    addresses.GOVERNANCE_OAPP_RECEIVER as Address,
-                    governanceOAppReceiver.abi,
-                    eidEthereumTestnet,
-                    addresses.GOVERNANCE_OAPP_SENDER,
-                    message,
-                    Options.fromOptions(options),
-                );
+            // Encode OFT message: recipient (bytes32) + amount in shared decimals (uint64)
+            // Use encodePacked for tightly packed encoding (no ABI padding)
+            const oftMessage = encodePacked(
+                ["bytes32", "uint64"],
+                [pad(sender, { size: 32 }), amountSD],
+            );
 
-                // Now perform cross-chain transfer
-                const sendAmount = parseEther("100");
+            await deliverToReceiver(
+                anvilProcessGateway.client,
+                addresses.ZAMA_OFT as Address,
+                zamaOFT.abi,
+                eidEthereumTestnet,
+                addresses.ZAMA_OFT_ADAPTER,
+                oftMessage,
+                Options.fromOptions(options),
+            );
+        }
 
-                // Test address needs to approve OFTAdapter
-                await anvilProcessGateway.client.impersonateAccount({
-                    address: testAddress,
-                });
+        it("should allow cross-chain token transfer from Ethereum to Gateway", async () => {
+            const snapshot = await anvilProcessL1.client.snapshot();
+            const initialAmount = parseEther("100");
 
-                const testSigner = createWalletClient({
-                    account: testAddress,
-                    chain: anvilProcessGateway.client.chain,
-                    transport: http(
-                        anvilProcessGateway.client.chain?.rpcUrls.default
-                            .http[0],
-                    ),
-                });
+            // Check balances before
+            const aliceERC20BalanceBefore = (await zamaERC20.read.balanceOf([
+                aliceAddress,
+            ])) as bigint;
+            const aliceOFTBalanceBefore = (await zamaOFT.read.balanceOf([
+                aliceAddress,
+            ])) as bigint;
+            const adapterBalanceBefore = (await zamaERC20.read.balanceOf([
+                addresses.ZAMA_OFT_ADAPTER as Address,
+            ])) as bigint;
 
-                const tokenAsTest = getContract({
-                    address: addresses.ZAMA_TOKEN as Address,
-                    abi: zamaERC20.abi,
-                    client: testSigner,
-                });
+            // Send tokens from Ethereum to Gateway
+            await sendTokensFromEthereumToGateway(initialAmount, aliceAddress);
 
-                hash = await tokenAsTest.write.approve([
-                    addresses.ZAMA_OFT_ADAPTER as Address,
-                    sendAmount,
-                ]);
-                await anvilProcessGateway.client.waitForTransactionReceipt({
-                    hash,
-                });
+            // Check balances after
+            const aliceERC20BalanceAfter = (await zamaERC20.read.balanceOf([
+                aliceAddress,
+            ])) as bigint;
+            const aliceOFTBalanceAfter = (await zamaOFT.read.balanceOf([
+                aliceAddress,
+            ])) as bigint;
+            const adapterBalanceAfter = (await zamaERC20.read.balanceOf([
+                addresses.ZAMA_OFT_ADAPTER as Address,
+            ])) as bigint;
 
-                await anvilProcessGateway.client.stopImpersonatingAccount({
-                    address: testAddress,
-                });
+            // Alice should have less ERC20 tokens on Ethereum
+            expect(aliceERC20BalanceAfter).toBe(
+                aliceERC20BalanceBefore - initialAmount,
+            );
 
-                // Check balances before
-                const testERC20BalanceBefore = (await zamaERC20.read.balanceOf([
-                    testAddress,
-                ])) as bigint;
-                const _testOFTBalanceBefore = (await zamaOFT.read.balanceOf([
-                    testAddress,
-                ])) as bigint;
+            // Alice should have received OFT tokens on Gateway
+            expect(aliceOFTBalanceAfter).toBe(
+                aliceOFTBalanceBefore + initialAmount,
+            );
 
-                // Prepare OFT send - NOTE: In actual deployment, need to call from L1 side
-                // Since tokens are on Gateway side, we need to send from Gateway to L1 (reverse direction)
-                // This test verifies the OFT infrastructure is in place
-                expect(testERC20BalanceBefore).toBeGreaterThanOrEqual(
-                    sendAmount,
-                );
-            },
-        );
+            // Adapter should have locked the tokens
+            expect(adapterBalanceAfter).toBe(
+                adapterBalanceBefore + initialAmount,
+            );
+
+            await anvilProcessL1.client.revert({ id: snapshot });
+        });
+
+        it("should allow cross-chain token transfer from Gateway back to Ethereum", async () => {
+            const snapshot = await anvilProcessL1.client.snapshot();
+            const initialAmount = parseEther("100");
+
+            // First, send tokens from Ethereum to Gateway so alice has OFT tokens
+            await sendTokensFromEthereumToGateway(initialAmount, aliceAddress);
+
+            // Now alice has OFT tokens on Gateway, send some back to Ethereum
+            const sendBackAmount = parseEther("75");
+
+            // Check balances before sending back
+            const aliceERC20BalanceBefore = (await zamaERC20.read.balanceOf([
+                aliceAddress,
+            ])) as bigint;
+            const aliceOFTBalanceBefore = (await zamaOFT.read.balanceOf([
+                aliceAddress,
+            ])) as bigint;
+            const adapterBalanceBefore = (await zamaERC20.read.balanceOf([
+                addresses.ZAMA_OFT_ADAPTER as Address,
+            ])) as bigint;
+
+            // Build LayerZero send parameters (from Gateway back to Ethereum)
+            const options = Options.newOptions()
+                .addExecutorLzReceiveOption(200000, 0)
+                .toHex()
+                .toString() as `0x${string}`;
+
+            const sendBackParam = [
+                eidEthereumTestnet,
+                pad(aliceAddress, { size: 32 }),
+                sendBackAmount,
+                sendBackAmount,
+                options,
+                "0x" as `0x${string}`,
+                "0x" as `0x${string}`,
+            ] as const;
+
+            // Quote the fee
+            const messagingFeeBack = (await zamaOFT.read.quoteSend([
+                sendBackParam,
+                false,
+            ])) as { nativeFee: bigint; lzTokenFee: bigint };
+
+            // Send OFT tokens back to Ethereum
+            await anvilProcessGateway.client.impersonateAccount({
+                address: aliceAddress,
+            });
+            await anvilProcessGateway.client.setBalance({
+                address: aliceAddress,
+                value: messagingFeeBack.nativeFee + parseEther("1"),
+            });
+
+            const aliceSignerGateway = createWalletClient({
+                account: aliceAddress,
+                chain: anvilProcessGateway.client.chain,
+                transport: http(ctx.networks.getGateway().rpcUrl),
+            });
+
+            const oftAsAlice = getContract({
+                address: addresses.ZAMA_OFT as Address,
+                abi: zamaOFT.abi,
+                client: aliceSignerGateway,
+            });
+
+            const { result } = await oftAsAlice.simulate.send(
+                [
+                    sendBackParam,
+                    [messagingFeeBack.nativeFee, messagingFeeBack.lzTokenFee],
+                    aliceAddress,
+                ],
+                { value: messagingFeeBack.nativeFee },
+            );
+
+            const hash = await oftAsAlice.write.send(
+                [
+                    sendBackParam,
+                    [messagingFeeBack.nativeFee, messagingFeeBack.lzTokenFee],
+                    aliceAddress,
+                ],
+                { value: messagingFeeBack.nativeFee },
+            );
+            await anvilProcessGateway.client.waitForTransactionReceipt({
+                hash,
+            });
+            await anvilProcessGateway.client.stopImpersonatingAccount({
+                address: aliceAddress,
+            });
+
+            // Deliver the OFT message to Ethereum
+            const sharedDecimals = 6;
+            const decimalConversionRate = 10n ** BigInt(18 - sharedDecimals);
+            const amountSD =
+                (result[1] as { amountReceivedLD: bigint }).amountReceivedLD /
+                decimalConversionRate;
+
+            // Encode OFT message: recipient (bytes32) + amount in shared decimals (uint64)
+            // Use encodePacked for tightly packed encoding (no ABI padding)
+            const oftMessageBack = encodePacked(
+                ["bytes32", "uint64"],
+                [pad(aliceAddress, { size: 32 }), amountSD],
+            );
+
+            await deliverToReceiver(
+                anvilProcessL1.client,
+                addresses.ZAMA_OFT_ADAPTER as Address,
+                zamaOFTAdapter.abi,
+                eidZamaTestnet,
+                addresses.ZAMA_OFT,
+                oftMessageBack,
+                Options.fromOptions(options),
+            );
+
+            // Check balances after
+            const aliceERC20BalanceAfter = (await zamaERC20.read.balanceOf([
+                aliceAddress,
+            ])) as bigint;
+            const aliceOFTBalanceAfter = (await zamaOFT.read.balanceOf([
+                aliceAddress,
+            ])) as bigint;
+            const adapterBalanceAfter = (await zamaERC20.read.balanceOf([
+                addresses.ZAMA_OFT_ADAPTER as Address,
+            ])) as bigint;
+
+            // Alice should have less OFT tokens on Gateway
+            expect(aliceOFTBalanceAfter).toBe(
+                aliceOFTBalanceBefore - sendBackAmount,
+            );
+
+            // Alice should have received ERC20 tokens back on Ethereum
+            expect(aliceERC20BalanceAfter).toBe(
+                aliceERC20BalanceBefore + sendBackAmount,
+            );
+
+            // Adapter should have released tokens
+            expect(adapterBalanceAfter).toBe(
+                adapterBalanceBefore - sendBackAmount,
+            );
+
+            await anvilProcessL1.client.revert({ id: snapshot });
+        });
     });
 
     describe("PauserSet & PauserSetWrapper on Host Chain", () => {
-        it("should verify PauserSetWrapper is configured with correct target", async () => {
+        it("should verify PauserSetWrapper is configured with ZamaToken as target", async () => {
             expect(await pauserSetWrapperHost.read.CONTRACT_TARGET()).toBe(
                 getAddress(addresses.ZAMA_TOKEN),
             );
         });
 
-        it("should verify PauserSetWrapper is configured with correct PauserSet", async () => {
+        it("should verify PauserSetWrapper is configured with PauserSetHost as pauser set", async () => {
             expect(await pauserSetWrapperHost.read.PAUSER_SET()).toBe(
                 getAddress(addresses.PAUSER_SET_HOST),
             );
@@ -1212,239 +1332,17 @@ describe("Post-Deployment E2E Tests", () => {
             expect(isEnabled).toBe(true);
         });
 
-        it.todo("should send cross-chain proposal to mint tokens", async () => {
-            // TODO: This test is expected to fail because no one has the MINTER_ROLE yet.
-            const mintAmount = parseEther("500");
-
-            const bobBalanceBefore = (await zamaERC20.read.balanceOf([
-                bobAddress,
-            ])) as bigint;
-
-            // Build proposal parameters
-            const targets = [addresses.ZAMA_TOKEN];
-            const values = [0];
-            const functionSignatures = [""];
-            const datas = [
-                encodeFunctionData({
-                    abi: zamaERC20.abi,
-                    functionName: "mint",
-                    args: [bobAddress, mintAmount],
-                }),
-            ];
-            const operations = [0];
-
-            const options = Options.newOptions()
-                .addExecutorLzReceiveOption(500000, 0)
-                .toHex()
-                .toString() as `0x${string}`;
-
-            const quotedFee =
-                (await governanceOAppSender.read.quoteSendCrossChainTransaction(
-                    [
-                        targets,
-                        values,
-                        functionSignatures,
-                        datas,
-                        operations,
-                        options,
-                    ],
-                )) as bigint;
-
-            const daoAddress = getAddress(addresses.DAO_ADDRESS) as Address;
-            await anvilProcessL1.client.impersonateAccount({
-                address: daoAddress,
-            });
-            await anvilProcessL1.client.setBalance({
-                address: daoAddress,
-                value: parseEther("10"),
-            });
-
-            const daoSigner = createWalletClient({
-                account: daoAddress,
-                chain: anvilProcessL1.client.chain,
-                transport: http(
-                    anvilProcessL1.client.chain?.rpcUrls.default.http[0],
-                ),
-            });
-
-            const senderAsDAO = getContract({
-                address: addresses.GOVERNANCE_OAPP_SENDER as Address,
-                abi: governanceOAppSender.abi,
-                client: daoSigner,
-            });
-
-            const hash = await senderAsDAO.write.sendRemoteProposal(
-                [
-                    targets,
-                    values,
-                    functionSignatures,
-                    datas,
-                    operations,
-                    options,
-                ],
-                { value: quotedFee },
-            );
-
-            await anvilProcessL1.client.waitForTransactionReceipt({ hash });
-            await anvilProcessL1.client.stopImpersonatingAccount({
-                address: daoAddress,
-            });
-
-            // Deliver message to Gateway
-            const message = encodeGovernanceMessage(
-                targets,
-                values,
-                functionSignatures,
-                datas,
-                operations,
-            );
-
-            await deliverToReceiver(
-                anvilProcessGateway.client,
-                addresses.GOVERNANCE_OAPP_RECEIVER as Address,
-                governanceOAppReceiver.abi,
-                eidEthereumTestnet,
-                addresses.GOVERNANCE_OAPP_SENDER,
-                message,
-                Options.fromOptions(options),
-            );
-
-            // Verify Bob received the tokens
-            const bobBalanceAfter = (await zamaERC20.read.balanceOf([
-                bobAddress,
-            ])) as bigint;
-            expect(bobBalanceAfter).toBe(bobBalanceBefore + mintAmount);
-        });
-
-        it.todo(
-            "should send multi-action proposal via governance",
-            async () => {
-                // TODO: This test is expected to fail because no one has the MINTER_ROLE yet.
-                const mintAmount1 = parseEther("200");
-                const mintAmount2 = parseEther("300");
-
-                const aliceBalanceBefore = (await zamaERC20.read.balanceOf([
-                    aliceAddress,
-                ])) as bigint;
-                const bobBalanceBefore = (await zamaERC20.read.balanceOf([
-                    bobAddress,
-                ])) as bigint;
-
-                const targets = [addresses.ZAMA_TOKEN, addresses.ZAMA_TOKEN];
-                const values = [0, 0];
-                const functionSignatures = ["", ""];
-                const datas = [
-                    encodeFunctionData({
-                        abi: zamaERC20.abi,
-                        functionName: "mint",
-                        args: [aliceAddress, mintAmount1],
-                    }),
-                    encodeFunctionData({
-                        abi: zamaERC20.abi,
-                        functionName: "mint",
-                        args: [bobAddress, mintAmount2],
-                    }),
-                ];
-                const operations = [0, 0];
-
-                const options = Options.newOptions()
-                    .addExecutorLzReceiveOption(600000, 0)
-                    .toHex()
-                    .toString() as `0x${string}`;
-
-                const quotedFee =
-                    (await governanceOAppSender.read.quoteSendCrossChainTransaction(
-                        [
-                            targets,
-                            values,
-                            functionSignatures,
-                            datas,
-                            operations,
-                            options,
-                        ],
-                    )) as bigint;
-
-                const daoAddress = getAddress(addresses.DAO_ADDRESS) as Address;
-                await anvilProcessL1.client.impersonateAccount({
-                    address: daoAddress,
-                });
-                await anvilProcessL1.client.setBalance({
-                    address: daoAddress,
-                    value: parseEther("10"),
-                });
-
-                const daoSigner = createWalletClient({
-                    account: daoAddress,
-                    chain: anvilProcessL1.client.chain,
-                    transport: http(
-                        anvilProcessL1.client.chain?.rpcUrls.default.http[0],
-                    ),
-                });
-
-                const senderAsDAO = getContract({
-                    address: addresses.GOVERNANCE_OAPP_SENDER as Address,
-                    abi: governanceOAppSender.abi,
-                    client: daoSigner,
-                });
-
-                const hash = await senderAsDAO.write.sendRemoteProposal(
-                    [
-                        targets,
-                        values,
-                        functionSignatures,
-                        datas,
-                        operations,
-                        options,
-                    ],
-                    { value: quotedFee },
-                );
-
-                await anvilProcessL1.client.waitForTransactionReceipt({ hash });
-                await anvilProcessL1.client.stopImpersonatingAccount({
-                    address: daoAddress,
-                });
-
-                // Deliver message
-                const message = encodeGovernanceMessage(
-                    targets,
-                    values,
-                    functionSignatures,
-                    datas,
-                    operations,
-                );
-
-                await deliverToReceiver(
-                    anvilProcessGateway.client,
-                    addresses.GOVERNANCE_OAPP_RECEIVER as Address,
-                    governanceOAppReceiver.abi,
-                    eidEthereumTestnet,
-                    addresses.GOVERNANCE_OAPP_SENDER,
-                    message,
-                    Options.fromOptions(options),
-                );
-
-                const aliceBalanceAfter = (await zamaERC20.read.balanceOf([
-                    aliceAddress,
-                ])) as bigint;
-                const bobBalanceAfter = (await zamaERC20.read.balanceOf([
-                    bobAddress,
-                ])) as bigint;
-
-                expect(aliceBalanceAfter).toBe(
-                    aliceBalanceBefore + mintAmount1,
-                );
-                expect(bobBalanceAfter).toBe(bobBalanceBefore + mintAmount2);
-            },
-        );
-
-        it("should verify Safe owners", async () => {
+        it("should verify Safe owners - only protocol deployer Phase 2", async () => {
             const owners = (await safeProxy.read.getOwners()) as Address[];
-            expect(owners.length).toBeGreaterThan(0);
+            expect(owners.length).toBe(1);
+            expect(owners[0]).toBe(
+                getAddress(ctx.env.getWallet("protocol_deployer").address),
+            );
         });
 
-        it("should verify Safe threshold", async () => {
+        it("should verify Safe threshold - only protocol deployer Phase 2", async () => {
             const threshold = (await safeProxy.read.getThreshold()) as bigint;
-            expect(threshold).toBeGreaterThan(0n);
+            expect(threshold).toBe(1n);
         });
     });
 
