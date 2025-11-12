@@ -9,7 +9,6 @@ import {
     type Address,
     createWalletClient,
     encodeFunctionData,
-    encodePacked,
     type GetContractReturnType,
     getAddress,
     getContract,
@@ -40,7 +39,13 @@ import {
     waitForRpcReady,
 } from "./utils/anvil.js";
 import { loadContractABIs } from "./utils/contract-loader.js";
-import { deliverToReceiver, encodeGovernanceMessage } from "./utils/helpers.js";
+import {
+    buildLzOptions,
+    deliverToReceiver,
+    encodeGovernanceMessage,
+    sendOFTFromAdapterAndDeliver,
+    sendOFTFromOFTAndDeliver,
+} from "./utils/helpers.js";
 
 dotenv.config();
 
@@ -368,7 +373,7 @@ describe("Post-Deployment E2E Tests", () => {
             expect(isAddress(addresses.PAUSER_SET_WRAPPER)).toBe(true);
         });
 
-        it("should have correct governance wiring", async () => {
+        it("should peer governance OAppSender with OAppReceiver and set AdminModule", async () => {
             // Check peers are set
             const senderPeer = (await governanceOAppSender.read.peers([
                 eidZamaTestnet,
@@ -428,7 +433,7 @@ describe("Post-Deployment E2E Tests", () => {
     });
 
     describe("Token & OFT Actions", () => {
-        it("should have correct token bridging wiring", async () => {
+        it("should peer ZamaOFTAdapter with ZamaOFT", async () => {
             // Check OFT peers
             const adapterPeer = (await zamaOFTAdapter.read.peers([
                 eidZamaTestnet,
@@ -451,7 +456,7 @@ describe("Post-Deployment E2E Tests", () => {
             expect(oftPeer.toLowerCase()).toBe(expectedOftPeer.toLowerCase());
         });
 
-        it("should have correct roles granted", async () => {
+        it("should grant DEFAULT_ADMIN_ROLE to DAO and MINTING_PAUSER_ROLE to PauserSetWrapper", async () => {
             // Check roles on deployed token
             expect(
                 await zamaERC20.read.hasRole([
@@ -596,118 +601,6 @@ describe("Post-Deployment E2E Tests", () => {
             expect(totalSupplyAfter).toBe(totalSupplyBefore - burnAmount);
         });
 
-        it("should verify paused state", async () => {
-            // Check if paused
-            const isPaused = (await zamaERC20.read.paused()) as boolean;
-            // Note: In deployed contracts, paused state depends on actual deployment state
-            // We just verify the function is callable
-            expect(typeof isPaused).toBe("boolean");
-        });
-
-        async function sendTokensFromEthereumToGateway(
-            amount: bigint,
-            sender: Address,
-        ): Promise<void> {
-            await anvilProcessL1.client.impersonateAccount({
-                address: sender,
-            });
-            const senderSignerL1 = createWalletClient({
-                account: sender,
-                chain: anvilProcessL1.client.chain,
-                transport: http(ctx.networks.getEthereum().rpcUrl),
-            });
-            const tokenAsSender = getContract({
-                address: addresses.ZAMA_TOKEN as Address,
-                abi: zamaERC20.abi,
-                client: senderSignerL1,
-            });
-
-            // Mint tokens to sender
-            let hash = await tokenAsSender.write.mint([sender, amount]);
-            await anvilProcessL1.client.waitForTransactionReceipt({ hash });
-
-            // Approve OFTAdapter
-            hash = await tokenAsSender.write.approve([
-                addresses.ZAMA_OFT_ADAPTER as Address,
-                amount,
-            ]);
-            await anvilProcessL1.client.waitForTransactionReceipt({ hash });
-
-            // Send tokens from Ethereum to Gateway
-            const options = Options.newOptions()
-                .addExecutorLzReceiveOption(200000, 0)
-                .toHex()
-                .toString() as `0x${string}`;
-
-            const sendToGatewayParam = [
-                eidZamaTestnet,
-                pad(sender, { size: 32 }),
-                amount,
-                amount,
-                options,
-                "0x" as `0x${string}`,
-                "0x" as `0x${string}`,
-            ] as const;
-
-            const adapterAsSender = getContract({
-                address: addresses.ZAMA_OFT_ADAPTER as Address,
-                abi: zamaOFTAdapter.abi,
-                client: senderSignerL1,
-            });
-
-            const messagingFee = (await adapterAsSender.read.quoteSend([
-                sendToGatewayParam,
-                false,
-            ])) as { nativeFee: bigint; lzTokenFee: bigint };
-
-            const { result } = await adapterAsSender.simulate.send(
-                [
-                    sendToGatewayParam,
-                    [messagingFee.nativeFee, messagingFee.lzTokenFee],
-                    sender,
-                ],
-                { value: messagingFee.nativeFee },
-            );
-
-            hash = await adapterAsSender.write.send(
-                [
-                    sendToGatewayParam,
-                    [messagingFee.nativeFee, messagingFee.lzTokenFee],
-                    sender,
-                ],
-                { value: messagingFee.nativeFee },
-            );
-            await anvilProcessL1.client.stopImpersonatingAccount({
-                address: sender,
-            });
-
-            // Deliver the OFT message to Gateway
-            // OFT message format: sendTo (bytes32) + amountSD (uint64)
-            // With 18 decimals token and 6 shared decimals, conversion rate = 10^12
-            const sharedDecimals = 6;
-            const decimalConversionRate = 10n ** BigInt(18 - sharedDecimals);
-            const amountSD =
-                (result[1] as { amountReceivedLD: bigint }).amountReceivedLD /
-                decimalConversionRate;
-
-            // Encode OFT message: recipient (bytes32) + amount in shared decimals (uint64)
-            // Use encodePacked for tightly packed encoding (no ABI padding)
-            const oftMessage = encodePacked(
-                ["bytes32", "uint64"],
-                [pad(sender, { size: 32 }), amountSD],
-            );
-
-            await deliverToReceiver(
-                anvilProcessGateway.client,
-                addresses.ZAMA_OFT as Address,
-                zamaOFT.abi,
-                eidEthereumTestnet,
-                addresses.ZAMA_OFT_ADAPTER,
-                oftMessage,
-                Options.fromOptions(options),
-            );
-        }
-
         it("should allow cross-chain token transfer from Ethereum to Gateway", async () => {
             const snapshot = await anvilProcessL1.client.snapshot();
             const initialAmount = parseEther("100");
@@ -724,7 +617,20 @@ describe("Post-Deployment E2E Tests", () => {
             ])) as bigint;
 
             // Send tokens from Ethereum to Gateway
-            await sendTokensFromEthereumToGateway(initialAmount, aliceAddress);
+            await sendOFTFromAdapterAndDeliver({
+                srcClient: anvilProcessL1.client,
+                dstClient: anvilProcessGateway.client,
+                srcEid: eidEthereumTestnet,
+                dstEid: eidZamaTestnet,
+                sender: aliceAddress,
+                amountLD: initialAmount,
+                erc20Address: addresses.ZAMA_TOKEN as Address,
+                erc20Abi: zamaERC20.abi,
+                oftAdapterAddress: addresses.ZAMA_OFT_ADAPTER as Address,
+                oftAdapterAbi: zamaOFTAdapter.abi,
+                oftOnDstAddress: addresses.ZAMA_OFT as Address,
+                oftOnDstAbi: zamaOFT.abi,
+            });
 
             // Check balances after
             const aliceERC20BalanceAfter = (await zamaERC20.read.balanceOf([
@@ -760,7 +666,20 @@ describe("Post-Deployment E2E Tests", () => {
             const initialAmount = parseEther("100");
 
             // First, send tokens from Ethereum to Gateway so alice has OFT tokens
-            await sendTokensFromEthereumToGateway(initialAmount, aliceAddress);
+            await sendOFTFromAdapterAndDeliver({
+                srcClient: anvilProcessL1.client,
+                dstClient: anvilProcessGateway.client,
+                srcEid: eidEthereumTestnet,
+                dstEid: eidZamaTestnet,
+                sender: aliceAddress,
+                amountLD: initialAmount,
+                erc20Address: addresses.ZAMA_TOKEN as Address,
+                erc20Abi: zamaERC20.abi,
+                oftAdapterAddress: addresses.ZAMA_OFT_ADAPTER as Address,
+                oftAdapterAbi: zamaOFTAdapter.abi,
+                oftOnDstAddress: addresses.ZAMA_OFT as Address,
+                oftOnDstAbi: zamaOFT.abi,
+            });
 
             // Now alice has OFT tokens on Gateway, send some back to Ethereum
             const sendBackAmount = parseEther("75");
@@ -776,96 +695,19 @@ describe("Post-Deployment E2E Tests", () => {
                 addresses.ZAMA_OFT_ADAPTER as Address,
             ])) as bigint;
 
-            // Build LayerZero send parameters (from Gateway back to Ethereum)
-            const options = Options.newOptions()
-                .addExecutorLzReceiveOption(200000, 0)
-                .toHex()
-                .toString() as `0x${string}`;
-
-            const sendBackParam = [
-                eidEthereumTestnet,
-                pad(aliceAddress, { size: 32 }),
-                sendBackAmount,
-                sendBackAmount,
-                options,
-                "0x" as `0x${string}`,
-                "0x" as `0x${string}`,
-            ] as const;
-
-            // Quote the fee
-            const messagingFeeBack = (await zamaOFT.read.quoteSend([
-                sendBackParam,
-                false,
-            ])) as { nativeFee: bigint; lzTokenFee: bigint };
-
             // Send OFT tokens back to Ethereum
-            await anvilProcessGateway.client.impersonateAccount({
-                address: aliceAddress,
+            await sendOFTFromOFTAndDeliver({
+                srcClient: anvilProcessGateway.client,
+                dstClient: anvilProcessL1.client,
+                srcEid: eidZamaTestnet,
+                dstEid: eidEthereumTestnet,
+                sender: aliceAddress,
+                amountLD: sendBackAmount,
+                oftOnSrcAddress: addresses.ZAMA_OFT as Address,
+                oftOnSrcAbi: zamaOFT.abi,
+                oftAdapterOnDstAddress: addresses.ZAMA_OFT_ADAPTER as Address,
+                oftAdapterOnDstAbi: zamaOFTAdapter.abi,
             });
-            await anvilProcessGateway.client.setBalance({
-                address: aliceAddress,
-                value: messagingFeeBack.nativeFee + parseEther("1"),
-            });
-
-            const aliceSignerGateway = createWalletClient({
-                account: aliceAddress,
-                chain: anvilProcessGateway.client.chain,
-                transport: http(ctx.networks.getGateway().rpcUrl),
-            });
-
-            const oftAsAlice = getContract({
-                address: addresses.ZAMA_OFT as Address,
-                abi: zamaOFT.abi,
-                client: aliceSignerGateway,
-            });
-
-            const { result } = await oftAsAlice.simulate.send(
-                [
-                    sendBackParam,
-                    [messagingFeeBack.nativeFee, messagingFeeBack.lzTokenFee],
-                    aliceAddress,
-                ],
-                { value: messagingFeeBack.nativeFee },
-            );
-
-            const hash = await oftAsAlice.write.send(
-                [
-                    sendBackParam,
-                    [messagingFeeBack.nativeFee, messagingFeeBack.lzTokenFee],
-                    aliceAddress,
-                ],
-                { value: messagingFeeBack.nativeFee },
-            );
-            await anvilProcessGateway.client.waitForTransactionReceipt({
-                hash,
-            });
-            await anvilProcessGateway.client.stopImpersonatingAccount({
-                address: aliceAddress,
-            });
-
-            // Deliver the OFT message to Ethereum
-            const sharedDecimals = 6;
-            const decimalConversionRate = 10n ** BigInt(18 - sharedDecimals);
-            const amountSD =
-                (result[1] as { amountReceivedLD: bigint }).amountReceivedLD /
-                decimalConversionRate;
-
-            // Encode OFT message: recipient (bytes32) + amount in shared decimals (uint64)
-            // Use encodePacked for tightly packed encoding (no ABI padding)
-            const oftMessageBack = encodePacked(
-                ["bytes32", "uint64"],
-                [pad(aliceAddress, { size: 32 }), amountSD],
-            );
-
-            await deliverToReceiver(
-                anvilProcessL1.client,
-                addresses.ZAMA_OFT_ADAPTER as Address,
-                zamaOFTAdapter.abi,
-                eidZamaTestnet,
-                addresses.ZAMA_OFT,
-                oftMessageBack,
-                Options.fromOptions(options),
-            );
 
             // Check balances after
             const aliceERC20BalanceAfter = (await zamaERC20.read.balanceOf([
@@ -975,10 +817,7 @@ describe("Post-Deployment E2E Tests", () => {
             const datas = [addPauserData];
             const operations = [0];
 
-            const options = Options.newOptions()
-                .addExecutorLzReceiveOption(200000, 0)
-                .toHex()
-                .toString() as `0x${string}`;
+            const { hex: optionsHex, obj: options } = buildLzOptions(200000);
             const quotedFee =
                 (await governanceOAppSender.read.quoteSendCrossChainTransaction(
                     [
@@ -987,7 +826,7 @@ describe("Post-Deployment E2E Tests", () => {
                         functionSignatures,
                         datas,
                         operations,
-                        options,
+                        optionsHex,
                     ],
                 )) as bigint;
 
@@ -1016,7 +855,7 @@ describe("Post-Deployment E2E Tests", () => {
                     functionSignatures,
                     datas,
                     operations,
-                    options,
+                    optionsHex,
                 ],
                 { value: quotedFee },
             );
@@ -1039,7 +878,7 @@ describe("Post-Deployment E2E Tests", () => {
                 EndpointId.SEPOLIA_V2_TESTNET,
                 addresses.GOVERNANCE_OAPP_SENDER,
                 message,
-                Options.fromOptions(options),
+                options,
             );
 
             const after = await pauserSetGateway.read.isPauser([testPauser]);
@@ -1071,10 +910,7 @@ describe("Post-Deployment E2E Tests", () => {
             const datas = [d1, d2];
             const operations = [0, 0];
 
-            const options = Options.newOptions()
-                .addExecutorLzReceiveOption(200000, 0)
-                .toHex()
-                .toString() as `0x${string}`;
+            const { hex: optionsHex, obj: options } = buildLzOptions(200000);
             const quotedFee =
                 (await governanceOAppSender.read.quoteSendCrossChainTransaction(
                     [
@@ -1083,7 +919,7 @@ describe("Post-Deployment E2E Tests", () => {
                         functionSignatures,
                         datas,
                         operations,
-                        options,
+                        optionsHex,
                     ],
                 )) as bigint;
 
@@ -1112,7 +948,7 @@ describe("Post-Deployment E2E Tests", () => {
                     functionSignatures,
                     datas,
                     operations,
-                    options,
+                    optionsHex,
                 ],
                 { value: quotedFee },
             );
@@ -1135,7 +971,7 @@ describe("Post-Deployment E2E Tests", () => {
                 EndpointId.SEPOLIA_V2_TESTNET,
                 addresses.GOVERNANCE_OAPP_SENDER,
                 message,
-                Options.fromOptions(options),
+                options,
             );
 
             expect(await pauserSetGateway.read.isPauser([p1])).toBe(true);
