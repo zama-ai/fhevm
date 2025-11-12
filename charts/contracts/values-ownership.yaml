@@ -1,0 +1,108 @@
+# =============================================================================
+# FHEVM Smart Contracts Configuration
+# =============================================================================
+# This chart handles ownership transfer of gateway and host contracts
+# =============================================================================
+
+# NOTE: These values are for reference only
+# The chart is for gateway and host contracts
+
+# -----------------------------------------------------------------------------
+# Gateway ownership transfer
+# -----------------------------------------------------------------------------
+# Transfers the ownership of the gateway contracts to a new address
+gatewayOwnershipTransfer:
+  enabled: true
+
+  # Prevent redeployment if already done for current version
+  # preventRedeployment: false
+
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/gateway-contracts
+    tag: v0.10.0
+
+  # ConfigMap to store deployed contract addresses
+  configmap:
+    name: "addresses"
+    annotations:
+
+  # Environment variables
+  env:
+    # Deployer's private key
+    - name: DEPLOYER_PRIVATE_KEY
+      value: ""
+
+    # GatewayConfig contract address
+    - name: GATEWAY_CONFIG_ADDRESS
+      value: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Security context for container execution
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10001
+
+  # Commands to run in sequence
+  commands:
+    # Transfer ownership of gateway contracts to new address
+    - npx hardhat task:transferGatewayOwnership --new-owner-address <new-owner-address>
+
+# -----------------------------------------------------------------------------
+# Host ownership transfer
+# -----------------------------------------------------------------------------
+# Transfers the ownership of the host contracts to a new address
+hostOwnershipTransfer:
+  enabled: true
+
+  # Prevent redeployment if already done for current version
+  # preventRedeployment: false
+
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/host-contracts
+    tag: v0.10.0
+
+  # ConfigMap to store deployed contract addresses
+  configmap:
+    name: "addresses"
+    annotations:
+
+  # Environment variables
+  env:
+    # Deployer's private key
+    - name: DEPLOYER_PRIVATE_KEY
+      value: ""
+
+    # ACL contract address
+    - name: ACL_CONTRACT_ADDRESS
+      value: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Security context for container execution
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10001
+
+  # Commands to run in sequence
+  commands:
+    # Transfer ownership of host contracts to new address
+    - npx hardhat task:transferHostOwnership --new-owner-address <new-owner-address>
