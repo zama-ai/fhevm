@@ -36,7 +36,7 @@ impl UserDecryptReqRepository {
                 gw_decryption_id,
                 req,
                 res,
-                status AS "status: _",
+                req_status AS "req_status: _",
                 tx_hash,
                 consensus_reached,
                 err_reason,
@@ -62,7 +62,7 @@ impl UserDecryptReqRepository {
         let rows_affected = sqlx::query!(
             r#"
             UPDATE user_decrypt_req
-            SET gw_decryption_id = $1, tx_hash = $2, status = 'tx_sent'
+            SET gw_decryption_id = $1, tx_hash = $2, req_status = 'tx_sent'
             WHERE internal_decryption_id = $3
             "#,
             gw_decryption_id,
@@ -84,7 +84,7 @@ impl UserDecryptReqRepository {
         let rows_affected = sqlx::query!(
             r#"
             UPDATE user_decrypt_req
-            SET err_reason = $1, status = 'failure'
+            SET err_reason = $1, req_status = 'failure'
             WHERE internal_decryption_id = $2
             "#,
             err_reason,
@@ -96,12 +96,12 @@ impl UserDecryptReqRepository {
         Ok(rows_affected)
     }
 
-    /// (Medium/high frequency): Update by gateway Id with response jsonb and status to completed.
+    /// (Medium/high frequency): Update by gateway Id with response jsonb and req_status to completed.
     pub async fn update_with_response(&self, gw_decryption_id: i32, res: Value) -> Result<u64> {
         let rows_affected = sqlx::query!(
             r#"
             UPDATE user_decrypt_req
-            SET res = $1, status = 'completed'
+            SET res = $1, req_status = 'completed'
             WHERE gw_decryption_id = $2
             "#,
             res,
@@ -113,14 +113,14 @@ impl UserDecryptReqRepository {
         Ok(rows_affected)
     }
 
-    /// (High frequency): Select by external Id to get the response, internal id, and status.
+    /// (High frequency): Select by external Id to get the response, internal id, and req_status.
     pub async fn find_status_by_ext_req_id(
         &self,
         ext_req_id: Uuid,
     ) -> Result<Option<UserDecryptReqStatus>> {
         let result = sqlx::query_as(
             r#"
-            SELECT res, internal_decryption_id, status
+            SELECT res, internal_decryption_id, req_status
             FROM user_decrypt_req
             WHERE ext_req_id = $1
             "#,
@@ -131,19 +131,19 @@ impl UserDecryptReqRepository {
         Ok(result)
     }
 
-    /// (Internal transaction poller): Update status to in_flight for the oldest queued request and retrieve it.
+    /// (Internal transaction poller): Update req_status to in_flight for the oldest queued request and retrieve it.
     pub async fn fetch_and_mark_oldest_queued(&self) -> Result<Option<UserDecryptReq>> {
-        // This query atomically finds the oldest 'queued' entry, updates its status,
+        // This query atomically finds the oldest 'queued' entry, updates its req_status,
         // and returns it, preventing race conditions between multiple pollers.
         let req = sqlx::query_as!(
             UserDecryptReq,
             r#"
             UPDATE user_decrypt_req
-            SET status = 'in_flight'
+            SET req_status = 'in_flight'
             WHERE id = (
                 SELECT id
                 FROM user_decrypt_req
-                WHERE status = 'queued'
+                WHERE req_status = 'queued'
                 ORDER BY created_at ASC
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
@@ -155,7 +155,7 @@ impl UserDecryptReqRepository {
                 gw_decryption_id,
                 req,
                 res,
-                status AS "status: _",
+                req_status AS "req_status: _",
                 tx_hash,
                 consensus_reached,
                 err_reason,
@@ -174,7 +174,7 @@ impl UserDecryptReqRepository {
             r#"
             SELECT gw_decryption_id, consensus_reached
             FROM user_decrypt_req
-            WHERE status = 'tx_sent' AND gw_decryption_id IS NOT NULL
+            WHERE req_status = 'tx_sent' AND gw_decryption_id IS NOT NULL
             "#
         )
         .fetch_all(&self.pool.get_pool())

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE input_proof_req\n            SET gw_input_proof_id = $1, tx_hash = $2, req_status = 'tx_sent'\n            WHERE internal_input_proof_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d85c3400dc7194545395ee0e2f18b01b04a53d7a091a5e71851350f9d2937d48"
+}

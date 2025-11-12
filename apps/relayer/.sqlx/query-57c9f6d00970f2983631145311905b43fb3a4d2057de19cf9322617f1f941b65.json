@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT gw_decryption_id, consensus_reached\n            FROM user_decrypt_req\n            WHERE status = 'tx_sent' AND gw_decryption_id IS NOT NULL\n            ",
+  "query": "\n            SELECT gw_decryption_id, consensus_reached\n            FROM user_decrypt_req\n            WHERE req_status = 'tx_sent' AND gw_decryption_id IS NOT NULL\n            ",
   "describe": {
     "columns": [
       {
@@ -22,5 +22,5 @@
       false
     ]
   },
-  "hash": "301f05873aefb0a7a26c8ebdec42a8a1dd02b90622b43b3aee4e1d5344a5aa93"
+  "hash": "57c9f6d00970f2983631145311905b43fb3a4d2057de19cf9322617f1f941b65"
 }

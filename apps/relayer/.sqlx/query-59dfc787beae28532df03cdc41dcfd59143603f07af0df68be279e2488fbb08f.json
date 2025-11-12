@@ -25,7 +25,7 @@
       },
       {
         "ordinal": 4,
-        "name": "signature",
+        "name": "kms_signature",
         "type_info": "Text"
       },
       {

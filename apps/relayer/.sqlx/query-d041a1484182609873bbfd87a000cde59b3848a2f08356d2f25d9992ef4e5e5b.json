@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE user_decrypt_req\n            SET res = $1, req_status = 'completed'\n            WHERE gw_decryption_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d041a1484182609873bbfd87a000cde59b3848a2f08356d2f25d9992ef4e5e5b"
+}

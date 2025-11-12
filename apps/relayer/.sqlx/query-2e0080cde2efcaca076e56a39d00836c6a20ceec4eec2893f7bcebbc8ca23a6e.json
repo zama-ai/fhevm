@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO user_decrypt_req (ext_req_id, internal_decryption_id, req)\n            VALUES ($1, $2, $3)\n            RETURNING\n                id,\n                ext_req_id,\n                internal_decryption_id,\n                gw_decryption_id,\n                req,\n                res,\n                status AS \"status: _\",\n                tx_hash,\n                consensus_reached,\n                err_reason,\n                created_at,\n                updated_at\n            ",
+  "query": "\n            INSERT INTO input_proof_req (ext_req_id, internal_input_proof_id, req)\n            VALUES ($1, $2, $3)\n            RETURNING\n                id,\n                ext_req_id,\n                internal_input_proof_id,\n                gw_input_proof_id,\n                req,\n                res,\n                req_status AS \"req_status: _\",\n                tx_hash,\n                err_reason,\n                created_at,\n                updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -15,12 +15,12 @@
       },
       {
         "ordinal": 2,
-        "name": "internal_decryption_id",
-        "type_info": "Text"
+        "name": "internal_input_proof_id",
+        "type_info": "Uuid"
       },
       {
         "ordinal": 3,
-        "name": "gw_decryption_id",
+        "name": "gw_input_proof_id",
         "type_info": "Int4"
       },
       {
@@ -35,7 +35,7 @@
       },
       {
         "ordinal": 6,
-        "name": "status: _",
+        "name": "req_status: _",
         "type_info": {
           "Custom": {
             "name": "req_status",
@@ -59,21 +59,16 @@
       },
       {
         "ordinal": 8,
-        "name": "consensus_reached",
-        "type_info": "Bool"
-      },
-      {
-        "ordinal": 9,
         "name": "err_reason",
         "type_info": "Text"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -81,7 +76,7 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Text",
+        "Uuid",
         "Jsonb"
       ]
     },
@@ -94,11 +89,10 @@
       true,
       false,
       true,
-      false,
       true,
       false,
       false
     ]
   },
-  "hash": "ce1c40430f84a16c5548f3d8e7168beb5166b88e7c167a66b7fb940b37f1fcd6"
+  "hash": "2e0080cde2efcaca076e56a39d00836c6a20ceec4eec2893f7bcebbc8ca23a6e"
 }

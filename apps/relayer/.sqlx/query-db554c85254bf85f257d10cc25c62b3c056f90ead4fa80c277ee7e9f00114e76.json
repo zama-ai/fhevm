@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO input_proof_req (ext_req_id, internal_input_proof_id, req)\n            VALUES ($1, $2, $3)\n            RETURNING\n                id,\n                ext_req_id,\n                internal_input_proof_id,\n                gw_input_proof_id,\n                req,\n                res,\n                status AS \"status: _\",\n                tx_hash,\n                err_reason,\n                created_at,\n                updated_at\n            ",
+  "query": "\n            INSERT INTO public_decrypt_req (ext_req_id, internal_decryption_id, req)\n            VALUES ($1, $2, $3)\n            RETURNING\n                id,\n                ext_req_id,\n                internal_decryption_id,\n                gw_decryption_id,\n                req,\n                res,\n                req_status AS \"req_status: _\",\n                tx_hash,\n                err_reason,\n                created_at,\n                updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -15,12 +15,12 @@
       },
       {
         "ordinal": 2,
-        "name": "internal_input_proof_id",
-        "type_info": "Uuid"
+        "name": "internal_decryption_id",
+        "type_info": "Text"
       },
       {
         "ordinal": 3,
-        "name": "gw_input_proof_id",
+        "name": "gw_decryption_id",
         "type_info": "Int4"
       },
       {
@@ -35,7 +35,7 @@
       },
       {
         "ordinal": 6,
-        "name": "status: _",
+        "name": "req_status: _",
         "type_info": {
           "Custom": {
             "name": "req_status",
@@ -76,7 +76,7 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid",
+        "Text",
         "Jsonb"
       ]
     },
@@ -94,5 +94,5 @@
       false
     ]
   },
-  "hash": "46340cc22029e620a3b954542618b47e9066367be150a184398edbcc26a05cd7"
+  "hash": "db554c85254bf85f257d10cc25c62b3c056f90ead4fa80c277ee7e9f00114e76"
 }

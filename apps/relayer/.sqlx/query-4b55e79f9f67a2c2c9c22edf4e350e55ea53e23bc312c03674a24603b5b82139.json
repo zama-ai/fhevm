@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO user_decrypt_share (gw_decryption_id, share_index, share, signature, extra_data)\n            VALUES ($1, $2, $3, $4, $5)\n            RETURNING *\n            ",
+  "query": "\n            INSERT INTO user_decrypt_share (gw_decryption_id, share_index, share, kms_signature, extra_data)\n            VALUES ($1, $2, $3, $4, $5)\n            RETURNING *\n            ",
   "describe": {
     "columns": [
       {
@@ -25,7 +25,7 @@
       },
       {
         "ordinal": 4,
-        "name": "signature",
+        "name": "kms_signature",
         "type_info": "Text"
       },
       {
@@ -64,5 +64,5 @@
       false
     ]
   },
-  "hash": "426f49a646dc8ea16c1a7a79aa441a57873ae30fd9a00e553b27635a962162a2"
+  "hash": "4b55e79f9f67a2c2c9c22edf4e350e55ea53e23bc312c03674a24603b5b82139"
 }

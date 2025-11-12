@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE user_decrypt_req\n            SET status = 'in_flight'\n            WHERE id = (\n                SELECT id\n                FROM user_decrypt_req\n                WHERE status = 'queued'\n                ORDER BY created_at ASC\n                LIMIT 1\n                FOR UPDATE SKIP LOCKED\n            )\n            RETURNING\n                id,\n                ext_req_id,\n                internal_decryption_id,\n                gw_decryption_id,\n                req,\n                res,\n                status AS \"status: _\",\n                tx_hash,\n                consensus_reached,\n                err_reason,\n                created_at,\n                updated_at\n            ",
+  "query": "\n            INSERT INTO user_decrypt_req (ext_req_id, internal_decryption_id, req)\n            VALUES ($1, $2, $3)\n            RETURNING\n                id,\n                ext_req_id,\n                internal_decryption_id,\n                gw_decryption_id,\n                req,\n                res,\n                req_status AS \"req_status: _\",\n                tx_hash,\n                consensus_reached,\n                err_reason,\n                created_at,\n                updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -35,7 +35,7 @@
       },
       {
         "ordinal": 6,
-        "name": "status: _",
+        "name": "req_status: _",
         "type_info": {
           "Custom": {
             "name": "req_status",
@@ -79,7 +79,11 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb"
+      ]
     },
     "nullable": [
       false,
@@ -96,5 +100,5 @@
       false
     ]
   },
-  "hash": "172f70e1e404f40324c1a7c9cdded0824a88e6564a891aa47770d99f7803cb5e"
+  "hash": "1a03a56cee52593581ff537eae106ea14206b00f8acf6a0088bcc84ca8d0312b"
 }

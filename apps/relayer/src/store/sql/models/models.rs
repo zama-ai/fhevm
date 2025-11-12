@@ -14,7 +14,7 @@ pub struct UserDecryptReq {
     pub gw_decryption_id: Option<i32>,
     pub req: Value,
     pub res: Option<Value>,
-    pub status: ReqStatus,
+    pub req_status: ReqStatus,
     pub tx_hash: Option<String>,
     pub consensus_reached: bool,
     pub err_reason: Option<String>,
@@ -29,7 +29,7 @@ pub struct UserDecryptShare {
     pub gw_decryption_id: i32,
     pub share_index: i32,
     pub share: String,
-    pub signature: String,
+    pub kms_signature: String,
     pub extra_data: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -44,7 +44,7 @@ pub struct PublicDecryptReq {
     pub gw_decryption_id: Option<i32>,
     pub req: Value,
     pub res: Option<Value>,
-    pub status: ReqStatus,
+    pub req_status: ReqStatus,
     pub tx_hash: Option<String>,
     pub err_reason: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -60,7 +60,7 @@ pub struct InputProofReq {
     pub gw_input_proof_id: Option<i32>,
     pub req: Value,
     pub res: Option<Value>,
-    pub status: ReqStatus,
+    pub req_status: ReqStatus,
     pub tx_hash: Option<String>,
     pub err_reason: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -74,7 +74,7 @@ pub struct InputProofReq {
 pub struct UserDecryptReqStatus {
     pub res: Option<Value>,
     pub internal_decryption_id: String,
-    pub status: ReqStatus,
+    pub req_status: ReqStatus,
 }
 
 /// Partial data returned for a GET request on a public decryption.
@@ -82,7 +82,7 @@ pub struct UserDecryptReqStatus {
 pub struct PublicDecryptReqStatus {
     pub res: Option<Value>,
     pub internal_decryption_id: String,
-    pub status: ReqStatus,
+    pub req_status: ReqStatus,
 }
 
 /// Partial data returned for a GET request on an input proof.
@@ -90,5 +90,5 @@ pub struct PublicDecryptReqStatus {
 pub struct InputProofReqStatus {
     pub res: Option<Value>,
     pub internal_input_proof_id: Uuid,
-    pub status: ReqStatus,
+    pub req_status: ReqStatus,
 }

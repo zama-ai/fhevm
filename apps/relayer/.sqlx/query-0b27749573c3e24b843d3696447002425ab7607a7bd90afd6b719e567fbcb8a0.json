@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE input_proof_req\n            SET status = 'in_flight'\n            WHERE id = (\n                SELECT id\n                FROM input_proof_req\n                WHERE status = 'queued'\n                ORDER BY created_at ASC\n                LIMIT 1\n                FOR UPDATE SKIP LOCKED\n            )\n            RETURNING\n                id,\n                ext_req_id,\n                internal_input_proof_id,\n                gw_input_proof_id,\n                req,\n                res,\n                status AS \"status: _\",\n                tx_hash,\n                err_reason,\n                created_at,\n                updated_at\n            ",
+  "query": "\n            UPDATE public_decrypt_req\n            SET req_status = 'in_flight'\n            WHERE id = (\n                SELECT id\n                FROM public_decrypt_req\n                WHERE req_status = 'queued'\n                ORDER BY created_at ASC\n                LIMIT 1\n                FOR UPDATE SKIP LOCKED\n            )\n            RETURNING\n                id,\n                ext_req_id,\n                internal_decryption_id,\n                gw_decryption_id,\n                req,\n                res,\n                req_status AS \"req_status: _\",\n                tx_hash,\n                err_reason,\n                created_at,\n                updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -15,12 +15,12 @@
       },
       {
         "ordinal": 2,
-        "name": "internal_input_proof_id",
-        "type_info": "Uuid"
+        "name": "internal_decryption_id",
+        "type_info": "Text"
       },
       {
         "ordinal": 3,
-        "name": "gw_input_proof_id",
+        "name": "gw_decryption_id",
         "type_info": "Int4"
       },
       {
@@ -35,7 +35,7 @@
       },
       {
         "ordinal": 6,
-        "name": "status: _",
+        "name": "req_status: _",
         "type_info": {
           "Custom": {
             "name": "req_status",
@@ -90,5 +90,5 @@
       false
     ]
   },
-  "hash": "338b5cee7722ab2129408b904140a4f8e4368fe425dfdc8ed5c46443e5afcda1"
+  "hash": "0b27749573c3e24b843d3696447002425ab7607a7bd90afd6b719e567fbcb8a0"
 }

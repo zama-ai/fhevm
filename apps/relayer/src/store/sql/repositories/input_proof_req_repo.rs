@@ -35,7 +35,7 @@ impl InputProofReqRepository {
                 gw_input_proof_id,
                 req,
                 res,
-                status AS "status: _",
+                req_status AS "req_status: _",
                 tx_hash,
                 err_reason,
                 created_at,
@@ -60,7 +60,7 @@ impl InputProofReqRepository {
         let rows_affected = sqlx::query!(
             r#"
             UPDATE input_proof_req
-            SET gw_input_proof_id = $1, tx_hash = $2, status = 'tx_sent'
+            SET gw_input_proof_id = $1, tx_hash = $2, req_status = 'tx_sent'
             WHERE internal_input_proof_id = $3
             "#,
             gw_input_proof_id,
@@ -82,7 +82,7 @@ impl InputProofReqRepository {
         let rows_affected = sqlx::query!(
             r#"
             UPDATE input_proof_req
-            SET err_reason = $1, status = 'failure'
+            SET err_reason = $1, req_status = 'failure'
             WHERE internal_input_proof_id = $2
             "#,
             err_reason,
@@ -99,7 +99,7 @@ impl InputProofReqRepository {
         let rows_affected = sqlx::query!(
             r#"
             UPDATE input_proof_req
-            SET res = $1, status = 'completed'
+            SET res = $1, req_status = 'completed'
             WHERE gw_input_proof_id = $2
             "#,
             res,
@@ -118,7 +118,7 @@ impl InputProofReqRepository {
     ) -> Result<Option<InputProofReqStatus>> {
         let result = sqlx::query_as(
             r#"
-            SELECT res, internal_input_proof_id, status
+            SELECT res, internal_input_proof_id, req_status
             FROM input_proof_req
             WHERE ext_req_id = $1
             "#,
@@ -129,17 +129,17 @@ impl InputProofReqRepository {
         Ok(result)
     }
 
-    /// (Internal transaction poller): Update status to in-flight for the oldest queued request and retrieve it.
+    /// (Internal transaction poller): Update req_status to in-flight for the oldest queued request and retrieve it.
     pub async fn fetch_and_mark_oldest_queued(&self) -> Result<Option<InputProofReq>> {
         let req = sqlx::query_as!(
             InputProofReq,
             r#"
             UPDATE input_proof_req
-            SET status = 'in_flight'
+            SET req_status = 'in_flight'
             WHERE id = (
                 SELECT id
                 FROM input_proof_req
-                WHERE status = 'queued'
+                WHERE req_status = 'queued'
                 ORDER BY created_at ASC
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
@@ -151,7 +151,7 @@ impl InputProofReqRepository {
                 gw_input_proof_id,
                 req,
                 res,
-                status AS "status: _",
+                req_status AS "req_status: _",
                 tx_hash,
                 err_reason,
                 created_at,

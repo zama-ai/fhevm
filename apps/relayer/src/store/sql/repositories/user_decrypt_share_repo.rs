@@ -17,20 +17,20 @@ impl UserDecryptShareRepository {
         gw_decryption_id: i32,
         share_index: i32,
         share: &str,
-        signature: &str,
+        kms_signature: &str,
         extra_data: Option<&str>,
     ) -> Result<UserDecryptShare> {
         let share = sqlx::query_as!(
             UserDecryptShare,
             r#"
-            INSERT INTO user_decrypt_share (gw_decryption_id, share_index, share, signature, extra_data)
+            INSERT INTO user_decrypt_share (gw_decryption_id, share_index, share, kms_signature, extra_data)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
             "#,
             gw_decryption_id,
             share_index,
             share,
-            signature,
+            kms_signature,
             extra_data
         )
         .fetch_one(&self.pool.get_pool())
