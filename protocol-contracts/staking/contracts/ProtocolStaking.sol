@@ -32,7 +32,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         address _stakingToken;
         uint256 _totalEligibleStakedWeight;
         // Stake - release
-        uint256 _unstakeCooldownPeriod;
+        uint48 _unstakeCooldownPeriod;
         mapping(address recipient => Checkpoints.Trace208) _unstakeRequests;
         mapping(address recipient => uint256) _released;
         // Reward - issuance curve
@@ -91,7 +91,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         address governor,
         address upgrader,
         address manager,
-        uint256 initialUnstakeCooldownPeriod
+        uint48 initialUnstakeCooldownPeriod
     ) public initializer {
         __AccessControlDefaultAdminRules_init(0, governor);
         _grantRole(UPGRADER_ROLE, upgrader);
@@ -130,7 +130,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         (, uint256 lastReleaseTime, uint256 totalRequestedToWithdraw) = $
             ._unstakeRequests[recipient]
             .latestCheckpoint();
-        uint48 releaseTime = uint48(Math.max(Time.timestamp() + $._unstakeCooldownPeriod, lastReleaseTime));
+        uint48 releaseTime = SafeCast.toUint48(Math.max(Time.timestamp() + $._unstakeCooldownPeriod, lastReleaseTime));
         $._unstakeRequests[recipient].push(releaseTime, uint208(totalRequestedToWithdraw + amount));
 
         emit TokensUnstaked(msg.sender, recipient, amount, releaseTime);
@@ -184,7 +184,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
 
     /**
      * @dev Adds the eligible account role to `account`. Only accounts with the eligible account
-     * role earn rewards for staked tokens. Only callable by the role admin for 
+     * role earn rewards for staked tokens. Only callable by the role admin for
      * `ELIGIBLE_ACCOUNT_ROLE`. By default this is `MANAGER_ROLE`.
      * @param account The account to grant the `ELIGIBLE_ACCOUNT_ROLE` role to.
      */
@@ -194,7 +194,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
 
     /**
      * @dev Removes the eligible account role from `account`. `account` stops to earn rewards
-     * but maintains all existing rewards. Only callable by the role admin for 
+     * but maintains all existing rewards. Only callable by the role admin for
      * `ELIGIBLE_ACCOUNT_ROLE`. By default this is `MANAGER_ROLE`.
      * @param account The account to revoke the `ELIGIBLE_ACCOUNT_ROLE` role from.
      */
@@ -207,7 +207,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * by `MANAGER_ROLE` role.
      * @param unstakeCooldownPeriod_ The new unstake cooldown period.
      */
-    function setUnstakeCooldownPeriod(uint256 unstakeCooldownPeriod_) public onlyRole(MANAGER_ROLE) {
+    function setUnstakeCooldownPeriod(uint48 unstakeCooldownPeriod_) public onlyRole(MANAGER_ROLE) {
         _setUnstakeCooldownPeriod(unstakeCooldownPeriod_);
     }
 
@@ -315,8 +315,8 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         return success;
     }
 
-    function _setUnstakeCooldownPeriod(uint256 unstakeCooldownPeriod_) internal {
-        require(unstakeCooldownPeriod_ != 0, InvalidUnstakeCooldownPeriod());
+    function _setUnstakeCooldownPeriod(uint48 unstakeCooldownPeriod_) internal {
+        require(unstakeCooldownPeriod_ != 0 && unstakeCooldownPeriod_ <= 365 days, InvalidUnstakeCooldownPeriod());
         _getProtocolStakingStorage()._unstakeCooldownPeriod = unstakeCooldownPeriod_;
 
         emit UnstakeCooldownPeriodSet(unstakeCooldownPeriod_);

@@ -659,12 +659,16 @@ describe('Protocol Staking', function () {
     });
   });
 
-  it('set cooldown period should revert for 0', async function () {
-    await expect(this.mock.connect(this.manager).setUnstakeCooldownPeriod(0)).to.be.revertedWithCustomError(
-      this.mock,
-      'InvalidUnstakeCooldownPeriod',
-    );
-  });
+  for (const invalidPeriod of [
+    { desc: 'zero', value: 0 },
+    { desc: 'over a year', value: 31_536_001n },
+  ]) {
+    it(`set cooldown period should revert for ${invalidPeriod.desc}`, async function () {
+      await expect(
+        this.mock.connect(this.manager).setUnstakeCooldownPeriod(invalidPeriod.value),
+      ).to.be.revertedWithCustomError(this.mock, 'InvalidUnstakeCooldownPeriod');
+    });
+  }
 
   describe('Transfer', function () {
     it('transfer is disabled', async function () {
