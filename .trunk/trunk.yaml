@@ -101,7 +101,10 @@ lint:
         - library-solidity/**
         - protocol-contracts/**
         - sdk/**
-        - test-suite/**
+        - test-suite/assets/**
+        - test-suite/e2e/**
+        - test-suite/fhevm/**
+        - gateway-contracts/rust_bindings/**
 actions:
   definitions:
     - id: commitlint

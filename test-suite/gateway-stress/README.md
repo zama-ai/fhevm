@@ -6,6 +6,7 @@ A simple tool to send a configurable number of parallel decryption requests (pub
 decrypts at the time of writing), at a given frequency and for a specified duration.
 
 ## Table of Contents
+
 - [Introduction](#introduction)
 - [Build](#build)
 - [Configuration](#configuration)
@@ -25,11 +26,12 @@ build of the Docker images for the tool.
 
 ## Configuration
 
-To configure the tool, you can must use a configuration file (TOML format).
+To configure the tool, you can use a configuration file (TOML format).
 
 Every configuration option is documented in the example [configuration file](config/config.toml).
 
 Some of the configuration fields can be overridden via the CLI:
+
 - `tests_duration`
 - `tests_interval`
 - `parallel_requests`
@@ -75,6 +77,7 @@ cargo run -- -c config/config.toml gw -t user
 
 The `benchmark` command take a CSV file in input (and the global config file as well).
 Each line of this CSV represent a burst of decryption to benchmark, which is composed of:
+
 - The number of parallel requests in the burst (1st column)
 - The number of time we must measure this burst (2nd column)
 - The type of decryption in the burst (`public` or `user`)
