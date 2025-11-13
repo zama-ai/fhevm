@@ -67,10 +67,9 @@ library ZamaConfig {
             });
     }
 
-    /// @dev chainid == 11155111
+    /// @dev chainid == 31337
     function _getLocalProtocolId() private pure returns (uint256) {
-        /// @note Development protocol id is '100000 + Zama Ethereum protocol id'
-        return 100001;
+        return type(uint256).max;
     }
 
     function _getLocalConfig() private pure returns (CoprocessorConfig memory) {
