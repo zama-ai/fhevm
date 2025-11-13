@@ -90,9 +90,9 @@ async fn publish_user_decryption(
 
     sqlx::query!(
         "INSERT INTO user_decryption_requests(\
-                decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context\
-            ) \
-            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+            decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context\
+        ) \
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         request.decryptionId.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
         request.userAddress.as_slice(),

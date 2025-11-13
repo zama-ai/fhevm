@@ -24,6 +24,7 @@ use tracing::{error, info, warn};
 pub struct GatewayEvent {
     pub kind: GatewayEventKind,
     pub already_sent: bool,
+    pub error_counter: i16,
     pub otlp_context: PropagationContext,
 }
 
@@ -31,6 +32,7 @@ impl GatewayEvent {
     pub fn new(kind: GatewayEventKind, otlp_context: PropagationContext) -> Self {
         GatewayEvent {
             kind,
+            error_counter: 0,
             already_sent: false,
             otlp_context,
         }
@@ -39,12 +41,13 @@ impl GatewayEvent {
     /// Sets the `under_process` field of the event as `FALSE` in the database.
     pub async fn mark_as_pending(&self, db: &Pool<Postgres>) {
         let already_sent = self.already_sent;
+        let err_count = self.error_counter;
         match &self.kind {
             GatewayEventKind::PublicDecryption(e) => {
-                mark_public_decryption_as_pending(db, e.decryptionId, already_sent).await
+                mark_public_decryption_as_pending(db, e.decryptionId, already_sent, err_count).await
             }
             GatewayEventKind::UserDecryption(e) => {
-                mark_user_decryption_as_pending(db, e.decryptionId, already_sent).await
+                mark_user_decryption_as_pending(db, e.decryptionId, already_sent, err_count).await
             }
             GatewayEventKind::PrepKeygen(e) => {
                 mark_prep_keygen_as_pending(db, e.prepKeygenId, already_sent).await
@@ -102,6 +105,7 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: row.try_get::<i16, _>("error_counter")?,
         already_sent: row.try_get::<bool, _>("already_sent")?,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
@@ -123,6 +127,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: row.try_get::<i16, _>("error_counter")?,
         already_sent: row.try_get::<bool, _>("already_sent")?,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
@@ -136,6 +141,7 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: 0,
         already_sent: row.try_get::<bool, _>("already_sent")?,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
@@ -148,6 +154,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: 0,
         already_sent: row.try_get::<bool, _>("already_sent")?,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
@@ -161,6 +168,7 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: 0,
         already_sent: row.try_get::<bool, _>("already_sent")?,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
@@ -170,6 +178,7 @@ pub fn from_prss_init_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     let kind = GatewayEventKind::PrssInit(U256::from_le_bytes(row.try_get::<[u8; 32], _>("id")?));
     Ok(GatewayEvent {
         kind,
+        error_counter: 0,
         already_sent: false,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
@@ -184,28 +193,41 @@ pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<GatewayEvent
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: 0,
         already_sent: false,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
 /// Sets the `under_process` field of the `PublicDecryptionRequest` as `FALSE` in the database.
-pub async fn mark_public_decryption_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
+pub async fn mark_public_decryption_as_pending(
+    db: &Pool<Postgres>,
+    id: U256,
+    already_sent: bool,
+    error_counter: i16,
+) {
     let query = sqlx::query!(
-        "UPDATE public_decryption_requests SET under_process = FALSE, already_sent = $1 \
-        WHERE decryption_id = $2",
+        "UPDATE public_decryption_requests SET under_process = FALSE, already_sent = $1, error_counter = $2 \
+        WHERE decryption_id = $3",
         already_sent,
+        error_counter,
         id.as_le_slice()
     );
     execute_free_event_query(db, query).await;
 }
 
 /// Sets the `under_process` field of the `UserDecryptionRequest` as `FALSE` in the database.
-pub async fn mark_user_decryption_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
+pub async fn mark_user_decryption_as_pending(
+    db: &Pool<Postgres>,
+    id: U256,
+    already_sent: bool,
+    error_counter: i16,
+) {
     let query = sqlx::query!(
-        "UPDATE user_decryption_requests SET under_process = FALSE, already_sent = $1 \
-        WHERE decryption_id = $2",
+        "UPDATE user_decryption_requests SET under_process = FALSE, already_sent = $1, error_counter = $2 \
+        WHERE decryption_id = $3",
         already_sent,
+        error_counter,
         id.as_le_slice()
     );
     execute_free_event_query(db, query).await;
