@@ -24,6 +24,8 @@ RUN --mount=type=bind,source=apps/relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=.git/index,target=.git/index \
     --mount=type=bind,source=.git/objects,target=.git/objects \
     --mount=type=bind,source=.git/refs,target=.git/refs \
+    --mount=type=bind,source=apps/relayer/migrations,target=migrations \
+    --mount=type=bind,source=apps/relayer/.sqlx,target=.sqlx \
     # --mount=type=bind,source=apps/relayer/artifacts/contract-abis,target=artifacts/contract-abis \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
