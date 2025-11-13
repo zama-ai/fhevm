@@ -254,7 +254,7 @@ library FHE {
     /// @param handlesList The list of handles as an array of bytes32 to verify
     /// @param abiEncodedCleartexts The ABI-encoded list of decrypted values associated with each handle in the `handlesList`.
     ///                             The list order must match the list of handles in `handlesList`
-    /// @param decryptionProof The KMS public decryption proof computed by the KMS Signers assiciated to `handlesList` and 
+    /// @param decryptionProof The KMS public decryption proof computed by the KMS Signers associated to `handlesList` and 
     ///                       `abiEncodedCleartexts`
     /// @return true if the signatures verification succeeds, false otherwise
     /// @dev Private low-level function used to verify the KMS signatures.
