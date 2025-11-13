@@ -8,7 +8,7 @@ use axum::{
 use serde::{de, Deserialize, Deserializer};
 use serde_json::Value;
 use std::str::FromStr;
-use std::{borrow::Cow, collections::HashMap, sync::Mutex};
+use std::{borrow::Cow, sync::Mutex};
 use tokio::sync::oneshot;
 use validator::ValidationError;
 
@@ -53,16 +53,17 @@ pub fn de_string_or_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result
 // It must start with "0x", be 42 characters long, and contain hex characters.
 pub fn validate_blockchain_address(address: &str) -> Result<(), ValidationError> {
     if !address.starts_with("0x") {
-        return Err(ValidationError::new("must_start_with_0x")
-            .with_message("Address should start with 0x".into()));
+        return Err(ValidationError::new("validation_error")
+            .with_message("Address must start with 0x".into()));
     }
     if address.len() != 42 {
-        return Err(ValidationError::new("invalid_length")
-            .with_message("Address should be 42 characters long".into()));
+        return Err(ValidationError::new("validation_error")
+            .with_message("Address must be 42 characters long".into()));
     }
     // The `hex` crate robustly checks if the string slice (after "0x") is valid hex.
     if hex::decode(&address[2..]).is_err() {
-        return Err(ValidationError::new("invalid_hex_characters"));
+        return Err(ValidationError::new("validation_error")
+            .with_message("Address contains invalid hex characters".into()));
     }
     Ok(())
 }
@@ -78,13 +79,14 @@ pub fn validate_blockchain_addresses(addresses: &Vec<String>) -> Result<(), Vali
 pub fn validate_hex_string(hex_str: &str) -> Result<(), ValidationError> {
     // Allow both with and without "0x" prefix
     if hex_str.starts_with("0x") {
-        return Err(ValidationError::new("must_not_start_with_0x")
-            .with_message("it should not start with 0x".into()));
+        return Err(ValidationError::new("validation_error")
+            .with_message("Hex string must not start with 0x".into()));
     };
 
     if hex::decode(hex_str).is_err() {
-        return Err(ValidationError::new("invalid_hex_characters")
-            .with_message("invalid hex string".into()));
+        return Err(
+            ValidationError::new("validation_error").with_message("Invalid hex string".into())
+        );
     }
     Ok(())
 }
@@ -98,32 +100,33 @@ pub fn validate_hex_strings(hex_strs: &Vec<String>) -> Result<(), ValidationErro
 
 pub fn validate_extra_data_field(extra_data: &str) -> Result<(), ValidationError> {
     if extra_data != "0x00" {
-        return Err(ValidationError::new("invalid_value")
-            .with_message("the only allowed value is 0x00".into()));
+        return Err(
+            ValidationError::new("validation_error").with_message("Extra data must be 0x00".into())
+        );
     }
     Ok(())
 }
 
 pub fn validate_u32_string(value: &str) -> Result<(), ValidationError> {
     if value.parse::<u32>().is_err() {
-        return Err(ValidationError::new("invalid_u32_string")
-            .with_message("the value is not a valid u32 string".into()));
+        return Err(ValidationError::new("validation_error")
+            .with_message("Value must be a valid u32 number".into()));
     }
     Ok(())
 }
 
 pub fn validate_u64_string(value: &str) -> Result<(), ValidationError> {
     if value.parse::<u64>().is_err() {
-        return Err(ValidationError::new("invalid_u64_string")
-            .with_message("the value is not a valid u64 string".into()));
+        return Err(ValidationError::new("validation_error")
+            .with_message("Value must be a valid u64 number".into()));
     }
     Ok(())
 }
 
 pub fn validate_u256_string(value: &str) -> Result<(), ValidationError> {
     if U256::from_str(value).is_err() {
-        return Err(ValidationError::new("invalid_u256_string")
-            .with_message("the value is not a valid U256 string".into()));
+        return Err(ValidationError::new("validation_error")
+            .with_message("Value must be a valid U256 number".into()));
     }
     Ok(())
 }
@@ -137,8 +140,8 @@ pub fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
 #[derive(Debug)]
 pub enum AppResponse<V: serde::Serialize> {
     Success(V),
-    BadRequest(validator::ValidationErrors),
-    Unprocessable(Cow<'static, str>),
+    BadRequest(Cow<'static, str>),
+    ValidationError(validator::ValidationErrors),
     InternalServerError(Cow<'static, str>),
 }
 
@@ -148,14 +151,14 @@ impl<V: serde::Serialize> AppResponse<V> {
         AppResponse::Success(data)
     }
 
-    /// Creates a new bad request response with the given validation errors.
-    pub fn bad_request(errors: validator::ValidationErrors) -> Self {
-        AppResponse::BadRequest(errors)
+    /// Creates a new unprocessable entity response with the given message.
+    pub fn bad_request<S: Into<Cow<'static, str>>>(message: S) -> Self {
+        AppResponse::BadRequest(message.into())
     }
 
-    /// Creates a new unprocessable entity response with the given message.
-    pub fn unprocessable<S: Into<Cow<'static, str>>>(message: S) -> Self {
-        AppResponse::Unprocessable(message.into())
+    /// Creates a new bad request response with the given validation errors.
+    pub fn invalid_request(errors: validator::ValidationErrors) -> Self {
+        AppResponse::ValidationError(errors)
     }
 
     /// Creates a new internal server error response with the given message.
@@ -164,10 +167,45 @@ impl<V: serde::Serialize> AppResponse<V> {
     }
 }
 
-#[derive(serde::Serialize)]
-struct ErrorDetail {
-    code: String,
-    message: String,
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorCode {
+    BadRequest,
+    InvalidRequest,
+    RateLimited,
+    InternalServerError,
+}
+
+impl ErrorCode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ErrorCode::BadRequest => "bad_request",
+            ErrorCode::InvalidRequest => "invalid_request",
+            ErrorCode::RateLimited => "rate_limited",
+            ErrorCode::InternalServerError => "internal_server_error",
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct ErrorDetail {
+    pub field: String,
+    pub issue: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct ApiError {
+    pub code: ErrorCode,
+    pub message: String,
+    pub request_id: Option<String>,
+    pub retry_after_seconds: Option<u64>,
+    pub reason: Option<String>,
+    pub details: Option<Vec<ErrorDetail>>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+pub struct ErrorResponse {
+    pub error: ApiError,
 }
 
 // Implement `IntoResponse` so Axum can convert our enum into an HTTP response.
@@ -175,45 +213,73 @@ impl<V: serde::Serialize> IntoResponse for AppResponse<V> {
     fn into_response(self) -> Response {
         match self {
             AppResponse::Success(data) => (StatusCode::OK, Json(data)).into_response(),
-            AppResponse::BadRequest(errors) => {
-                let error_map = errors
+            AppResponse::BadRequest(message) => {
+                let api_error = ApiError {
+                    code: ErrorCode::BadRequest,
+                    message: message.to_string(),
+                    request_id: None,
+                    retry_after_seconds: None,
+                    reason: None,
+                    details: None,
+                };
+
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": api_error })),
+                )
+                    .into_response()
+            }
+            AppResponse::ValidationError(errors) => {
+                let details = errors
                     .field_errors()
                     .iter()
-                    .map(|(field, errors)| {
-                        (
-                            to_camel_case(field),
-                            errors
-                                .iter()
-                                .map(|e| ErrorDetail {
-                                    message: e
-                                        .message
-                                        .as_ref()
-                                        .map(|m| m.to_string())
-                                        .unwrap_or_default(),
-                                    code: e.code.to_string(),
-                                })
-                                .collect::<Vec<_>>(),
-                        )
+                    .flat_map(|(field, field_errors)| {
+                        field_errors.iter().map(move |e| ErrorDetail {
+                            field: to_camel_case(field),
+                            issue: e
+                                .message
+                                .as_ref()
+                                .map(|m| m.to_string())
+                                .unwrap_or_else(|| format!("Invalid {}", field)),
+                        })
                     })
-                    .collect::<HashMap<_, _>>();
+                    .collect::<Vec<_>>();
 
-                let body = Json(serde_json::json!({
-                    "status": StatusCode::BAD_REQUEST.as_u16(),
-                    "type": "validation",
-                    "errors": error_map
-                }));
-                (StatusCode::BAD_REQUEST, body).into_response()
+                let api_error = ApiError {
+                    code: ErrorCode::InvalidRequest,
+                    message: "One or more fields are invalid".to_string(),
+                    request_id: None,
+                    retry_after_seconds: None,
+                    reason: None,
+                    details: if details.is_empty() {
+                        None
+                    } else {
+                        Some(details)
+                    },
+                };
+
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": api_error })),
+                )
+                    .into_response()
             }
-            AppResponse::Unprocessable(message) => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(serde_json::json!({ "message": message })),
-            )
-                .into_response(),
-            AppResponse::InternalServerError(message) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "message": message })),
-            )
-                .into_response(),
+            AppResponse::InternalServerError(message) => {
+                let api_error = ApiError {
+                    code: ErrorCode::InternalServerError,
+                    message: message.to_string(),
+                    request_id: None,
+                    retry_after_seconds: None,
+                    reason: None,
+                    details: None,
+                };
+
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": api_error })),
+                )
+                    .into_response()
+            }
         }
     }
 }

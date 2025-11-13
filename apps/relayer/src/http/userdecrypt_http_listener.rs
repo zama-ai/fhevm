@@ -135,7 +135,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         info!("Handling user decryption request in http listener");
         // Validate the payload
         if let Err(errors) = payload.validate() {
-            return UserDecryptResponse::bad_request(errors).into_response();
+            return UserDecryptResponse::invalid_request(errors).into_response();
         }
 
         let user_decrypt_request = match UserDecryptRequest::try_from(payload.clone()) {
@@ -152,7 +152,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
                 //     error!("Failed to parse durationDays: {}", e);
                 // }
 
-                return UserDecryptResponse::unprocessable(format!(
+                return UserDecryptResponse::bad_request(format!(
                     "failed to parse request: {error}"
                 ))
                 .into_response();

@@ -2,9 +2,9 @@ mod common;
 
 use crate::common::utils::TestSetup;
 use alloy::primitives::{Address, Bytes};
+use fhevm_relayer::http::utils::{ErrorResponse, ErrorCode};
 use rand::{rng, Rng};
 use serde_json::json;
-use std::str::FromStr;
 
 mod constants {
     pub const TIMEOUT_SECS: u64 = 10;
@@ -214,17 +214,13 @@ async fn test_input_proof_empty_ciphertext_error() {
     let res_text = res.text().await;
     assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
     if let Ok(ok_text) = res_text {
-        match serde_json::Value::from_str(&ok_text) {
-            Ok(val) => {
-                assert!(
-                    val.get("errors").is_some(),
-                    "Expected 'errors' field in response"
-                );
-                let errors = val.get("errors").unwrap();
-                assert!(
-                    errors.get("ciphertextWithInputVerification").is_some(),
-                    "Expected 'ciphertextWithInputVerification' field in errors"
-                );
+        match serde_json::from_str::<ErrorResponse>(&ok_text) {
+            Ok(error_response) => {
+                assert_eq!(error_response.error.code, ErrorCode::InvalidRequest);
+                let details = error_response.error.details.expect("Expected details in error response");
+                assert!(details.iter().any(|detail| 
+                    detail.field == "ciphertextWithInputVerification"
+                ), "Expected 'ciphertextWithInputVerification' field in error details");
             }
             Err(e) => println!("Returned error text could not be parsed: {}", e),
         }
@@ -263,19 +259,14 @@ async fn test_input_proof_invalid_contract_address_error() {
     let res_text = res.text().await;
     assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
     if let Ok(ok_text) = res_text {
-        match serde_json::Value::from_str(&ok_text) {
-            Ok(val) => {
-                assert!(
-                    val.get("errors").is_some(),
-                    "Expected 'errors' field in response"
-                );
-                let errors = val.get("errors").unwrap();
-                assert!(
-                    errors.get("contractAddress").is_some(),
-                    "Expected 'contractAddress' field in errors"
-                );
-                let errors = &errors.get("contractAddress").unwrap().as_array().unwrap()[0];
-                assert_eq!(errors.get("code").unwrap(), "invalid_length",);
+        println!("{}", ok_text);
+        match serde_json::from_str::<ErrorResponse>(&ok_text) {
+            Ok(error_response) => {
+                assert_eq!(error_response.error.code, ErrorCode::InvalidRequest);
+                let details = error_response.error.details.expect("Expected details in error response");
+                assert!(details.iter().any(|detail| 
+                    detail.field == "contractAddress" && detail.issue.contains("42 characters")
+                ), "Expected 'contractAddress' validation error about length");
             }
             Err(e) => println!("Returned error text could not be parsed: {}", e),
         }
@@ -314,19 +305,13 @@ async fn test_input_proof_invalid_user_address_error() {
     let res_text = res.text().await;
     assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
     if let Ok(ok_text) = res_text {
-        match serde_json::Value::from_str(&ok_text) {
-            Ok(val) => {
-                assert!(
-                    val.get("errors").is_some(),
-                    "Expected 'errors' field in response"
-                );
-                let errors = val.get("errors").unwrap();
-                assert!(
-                    errors.get("userAddress").is_some(),
-                    "Expected 'userAddress' field in errors"
-                );
-                let errors = &errors.get("userAddress").unwrap().as_array().unwrap()[0];
-                assert_eq!(errors.get("code").unwrap(), "invalid_length",);
+        match serde_json::from_str::<ErrorResponse>(&ok_text) {
+            Ok(error_response) => {
+                assert_eq!(error_response.error.code, ErrorCode::InvalidRequest);
+                let details = error_response.error.details.expect("Expected details in error response");
+                assert!(details.iter().any(|detail| 
+                    detail.field == "userAddress" && detail.issue.contains("42 characters")
+                ), "Expected 'userAddress' validation error about length");
             }
             Err(e) => println!("Returned error text could not be parsed: {}", e),
         }
@@ -362,23 +347,13 @@ async fn test_input_proof_invalid_hex_error() {
     let res_text = res.text().await;
     assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
     if let Ok(ok_text) = res_text {
-        match serde_json::Value::from_str(&ok_text) {
-            Ok(val) => {
-                assert!(
-                    val.get("errors").is_some(),
-                    "Expected 'errors' field in response"
-                );
-                let errors = val.get("errors").unwrap();
-                assert!(
-                    errors.get("ciphertextWithInputVerification").is_some(),
-                    "Expected 'ciphertextWithInputVerification' field in errors"
-                );
-                let errors = &errors
-                    .get("ciphertextWithInputVerification")
-                    .unwrap()
-                    .as_array()
-                    .unwrap()[0];
-                assert_eq!(errors.get("code").unwrap(), "invalid_hex_characters",);
+        match serde_json::from_str::<ErrorResponse>(&ok_text) {
+            Ok(error_response) => {
+                assert_eq!(error_response.error.code, ErrorCode::InvalidRequest);
+                let details = error_response.error.details.expect("Expected details in error response");
+                assert!(details.iter().any(|detail| 
+                    detail.field == "ciphertextWithInputVerification" && detail.issue.contains("hex")
+                ), "Expected 'ciphertextWithInputVerification' validation error about hex");
             }
             Err(e) => println!("Returned error text could not be parsed: {}", e),
         }

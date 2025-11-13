@@ -84,7 +84,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         info!("Handling input proof request");
         // Validate the payload
         if let Err(errors) = payload.validate() {
-            return InputProofResponse::bad_request(errors).into_response();
+            return InputProofResponse::invalid_request(errors).into_response();
         }
 
         let request_id = self.orchestrator.new_request_id();
@@ -123,7 +123,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             Ok(event_data) => event_data,
             Err(message) => {
                 // TODO: check if this is an unprocessable content or an internal server error
-                return InputProofResponse::unprocessable(message.to_string()).into_response();
+                return InputProofResponse::bad_request(message.to_string()).into_response();
             }
         };
         let request_data = InputProofEventData::ReqRcvdFromUser {

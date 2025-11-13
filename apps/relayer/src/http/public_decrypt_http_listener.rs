@@ -75,7 +75,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         // Validate the payload
         if let Err(errors) = payload.validate() {
             debug!("Validation errors: {:?}", errors);
-            return PublicDecryptResponse::bad_request(errors).into_response();
+            return PublicDecryptResponse::invalid_request(errors).into_response();
         }
 
         let public_decrypt_request = match PublicDecryptRequest::try_from(payload.clone()) {
@@ -83,7 +83,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
             Err(error) => {
                 error!("Conversion failed: {}", error);
 
-                return PublicDecryptResponse::unprocessable(format!(
+                return PublicDecryptResponse::bad_request(format!(
                     "failed to parse request: {error}"
                 ))
                 .into_response();
