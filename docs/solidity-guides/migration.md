@@ -1,5 +1,3 @@
-# Migrate to v0.9
-
 FHEVM v0.9 introduces major architectural changes, including:
 
 - Removal of the Zama Oracle
