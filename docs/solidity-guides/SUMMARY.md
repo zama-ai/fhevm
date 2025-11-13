@@ -39,5 +39,5 @@
   - [Write FHEVM-enabled Hardhat Tasks](hardhat//write_task.md)
 - [Foundry](foundry.md)
 - [HCU](hcu.md)
-- [Migrate to v0.7](migration.md)
+- [Migrate to v0.9](migration.md)
 - [How to Transform Your Smart Contract into a FHEVM Smart Contract?](transform_smart_contract_with_fhevm.md)

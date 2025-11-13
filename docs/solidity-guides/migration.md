@@ -1,59 +1,136 @@
-# Migration
+# Migrate to v0.9
 
-This document provides instructions on migrating from FHEVM v0.6 to v0.7.
+FHEVM v0.9 introduces major architectural changes, including:
 
-## From 0.6.x
+- Removal of the Zama Oracle
+- Introduction of a self-relaying public decryption workflow
+- Unified `ZamaEthereumConfig` replacing `SepoliaConfig`
 
-### Package and library
+This guide explains what changed and how to migrate your project smoothly.
 
-The package is now `@fhevm/solidity` instead of `FHEVM` and the library name has changed from `TFHE` to `FHE`
+# What Changed in FHEVM v0.9?
 
-```solidity
-import { FHE } from "@fhevm/solidity";
-```
+Before diving into migration steps, it’s important to understand the main breaking change: public decryption is no longer handled by a Zama Oracle, but by your dApp’s off-chain logic.
 
-### Configuration
+## FHEVM v0.8 Oracle-Based Decryption
 
-Configuration has been renamed from `SepoliaZamaConfig` to `SepoliaConfig`.
+In FHEVM v0.8, the decryption process relies on a trusted **Oracle** to relay the decryption request and proof between the dApp and the Zama Key Management System (KMS). This approach abstracts the complexity but introduces an external dependency.
+
+**Decryption Steps:**
+
+| Step   | Component                    | Action                                                                                                           |
+| :----- | :--------------------------- | :--------------------------------------------------------------------------------------------------------------- |
+| **1.** | **dApp (Solidity)**          | Calls `FHE.requestDecryption()` to signal a need for clear data.                                                 |
+| **2.** | **Oracle**                   | Listens for the on-chain decryption request event.                                                               |
+| **3.** | **Oracle (Off-chain)**       | Performs the `publicDecryption` with the Zama KMS, retrieving the **clear values** and the **decryption proof**. |
+| **4.** | **Oracle**                   | Calls the user-specified dApp **callback Solidity function** with the clear values and the associated proof.     |
+| **5.** | **dApp (Solidity Callback)** | Calls `FHE.verifySignatures()` to verify the authenticity of the clear values using the provided proof.          |
+
+> **Key takeaway for v0.8:** The Oracle is the trusted intermediary responsible for performing the off-chain decryption and submitting the result back to the dApp contract.
+
+## FHEVM v0.9 Self-Relaying Decryption & dApp Responsibility
+
+The FHEVM v0.9 architecture shifts to a **self-relaying model**, empowering the dApp client (the user) to execute the off-chain decryption and re-submission. This decentralizes the process and removes the dependency on a general-purpose Oracle.
+
+**Example Scenario: Checking a Player's Encrypted Score**
+
+Consider a **Game contract** where Alice's final score is stored encrypted on-chain. Alice needs to prove her clear score to claim a reward.
+
+| Step   | Component                    | Action                                                                                                                                                                                  |
+| :----- | :--------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1.** | **Game Contract (Solidity)** | An on-chain function is called to make Alice's encrypted score **publicly decryptable**.                                                                                                |
+| **2.** | **Alice (Client/Off-chain)** | Alice fetches the publicly decryptable encrypted score from the Game contract.                                                                                                          |
+| **3.** | **Alice (Client/Off-chain)** | Alice or any third-party service uses the **`@zama-fhe/relayer-sdk`** to call the off-chain `publicDecrypt` function. This returns the clear score value and a **proof of decryption**. |
+| **4.** | **Alice (Client/On-chain)**  | Alice calls a function on the **Game contract** with the decrypted clear score and the proof.                                                                                           |
+| **5.** | **Game Contract (Solidity)** | The contract calls `FHE.verifySignatures()` to **verify the score's validity** using the provided proof.                                                                                |
+| **6.** | **Game Contract (Solidity)** | If the score is valid, the contract executes the game logic (e.g., distributing Alice's prize).                                                                                         |
+
+> **Key takeaway for FHEVM v0.9:** Decryption is a **user-driven, off-chain process**. The dApp client is responsible for off-chain decryption, fetching the proof, and relaying the result back on-chain for verification.
+
+**Why this matters:** If your dApp previously relied on the Oracle, you must rewrite your decryption flow.
+The migration steps below guide you through this change.
+
+# Migration Checklist
+
+Here is a brief, ordered list of the steps required to successfully migrate your project to FHEVM v0.9:
+
+1.  **Update Dependencies:** Upgrade all key Zama FHE packages to their **FHEVM v0.9 versions**.
+2.  **Update Solidity Config:** Replace the removed `SepoliaConfig` with the unified **`ZamaEthereumConfig`**.
+3.  **Update Solidity Code:** Remove all calls to the discontinued Oracle-based FHE library functions.
+4.  **Re-compile & Re-deploy:** Due to new FHEVM addresses, all affected contracts must be re-compiled and re-deployed on Sepolia.
+5.  **Rewrite Public Decryption Logic:** Eliminate reliance on the discontinued Zama Oracle and implement the **self-relaying** workflow using the `@zama-fhe/relayer-sdk` and `FHE.verifySignatures()`.
+
+Follow these steps for a smooth transition to FHEVM v0.9:
+
+## Step 1: Update Core Dependencies
+
+Ensure your project uses the latest versions of the FHEVM development tools.
+
+| Dependency              | Minimum Required Version | Notes                                                                 |
+| :---------------------- | :----------------------- | :-------------------------------------------------------------------- |
+| `@fhevm/solidity`       | `v0.9.1`                 | Contains the updated FHE library contracts.                           |
+| `@zama-fhe/relayer-sdk` | `v0.3.0-5`               | **Crucial for v0.9:** Enables the new self-relaying decryption model. |
+| `@fhevm/hardhat-plugin` | `v0.3.0-1`               | Latest tooling support for development and deployment.                |
+
+## Step 2: Update Network Configuration in Solidity
+
+The Solidity contracts now use a unified configuration contract defined in `@fhevm/solidity/config/ZamaConfig.sol`.
+
+- **⚠️ Removal:** The `SepoliaConfig` contract is now **removed**.
+- **✅ New Standard:** Update your imports and usages to use the new standard **`ZamaEthereumConfig`** contract. This change simplifies future cross-chain compatibility.
+
+The new `ZamaEthereumConfig` abstract contract now dynamically resolves the FHEVM host addresses according to the `block.chainid`.
+
+Replace:
 
 ```solidity
 import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 ```
 
-Also, the function to define manually the Coprocessor has been renamed from `setFHEVM` to `setCoprocessor`, and the function to define the oracle is now integrated into `setCoprocessor`.
+With:
 
 ```solidity
-import { ZamaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
-constructor () {
-  FHE.setCoprocessor(ZamaConfig.getSepoliaConfig());
-}
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 ```
 
 You can read more about [Configuration on the dedicated page](configure.md).
 
-### Decryption Oracle
+## Step 3: Update Solidity Code
 
-Previously, an abstract contract `GatewayCaller` was used to request decryption. It has been replaced by `FHE.requestDecryption`:
+The Zama public decryption Oracle is discontinued. The following functions are no more available in the FHE Solidity library:
 
-```solidity
-function requestBoolInfinite() public {
-  bytes32[] memory cts = new bytes32[](1);
-  cts[0] = FHE.toBytes32(myEncryptedValue);
-  FHE.requestDecryption(cts, this.myCallback.selector);
-}
-```
+- `FHE.loadRequestedHandles`
+- `FHE.requestDecryptionWithoutSavingHandles`
+- `FHE.requestDecryption`
 
-You can read more about [Decryption Oracle on the dedicated page](decryption/oracle.md).
+## Step 4: Re-compile and Re-deploy Smart Contracts
 
-### Deprecation of ebytes
+Due to fundamental changes in the FHEVM implementation and underlying infrastructure:
 
-`ebytes` has been deprecated and removed from FHEVM.
+- **New FHEVM Addresses:** The contract addresses for core FHE components have changed.
+- **Action:** You **must** re-compile your entire Solidity codebase and re-deploy all affected contracts to the **Sepolia** network.
 
-### Block gas limit
+## Step 5: Adjust Public Decryption Logic (Crucial Architectural Change)
 
-Block gas limit has been removed in favor of HCU (Homomorphic Complexity Unit) limit. FHEVM 0.7.0 includes two limits:
+The most significant change is the discontinuation of the Zama Oracle. This requires substantial adjustments to how your dApp handles decryption on-chain.
 
-- **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order. This limit is set to **5,000,000** HCU.
-- **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel. This limit is set to **20,000,000** HCU.
+| Aspect                 | FHEVM v0.8 (Old Logic)                                                | FHEVM v0.9 (New Logic)                                                               |
+| :--------------------- | :-------------------------------------------------------------------- | :----------------------------------------------------------------------------------- |
+| **Decryption Handler** | **Zama Oracle** actively listens for requests and submits the result. | **dApp Client/User** performs the off-chain decryption (self-relaying).              |
+| **Solidity Function**  | Used `FHE.requestDecryption()`.                                       | You will now create custom functions that accept the decrypted value and the proof.  |
+| **Client-Side Tool**   | N/A                                                                   | **Use `@zama-fhe/relayer-sdk`** to perform the `publicDecrypt` and obtain the proof. |
 
-You can read more about [HCU on the dedicated page](hcu.md).
+> **Action:** Thoroughly review your Solidity code, dApp logic, and backend services. Any code relying on the external Oracle must be rewritten to implement the self-relaying workflow using the `@zama-fhe/relayer-sdk`.
+
+# FHEVM v0.9 Code Examples: Public Decryption Logic
+
+The following code examples illustrate the **new public decryption logic** introduced in v0.9. This new workflow uses the combination of:
+
+- **On-chain public decyption permission** via `FHE.makePubliclyDecryptable`
+- **Off-chain decryption** via `publicDecrypt` using the `@zama-fhe/relayer-sdk` or the FHEVM Hardhat Plugin
+- **On-chain signature verification** via `FHE.checkSignatures`
+
+### Code Examples
+
+- [HeadsOrTails](../examples/heads-or-tails.md): Demonstrates the complete public decryption workflow where a cipher text is first marked as decryptable on-chain via `FHE.makePubliclyDecryptable`, and its cleartext value is subsequently verified on-chain using `FHE.checkSignatures` after being fetched off-chain via `publicDecrypt`.
+- [HighestDieRoll](../examples/highest-die-roll.md): Extends the public decryption workflow to a multi-input scenario, demonstrating how the on-chain `FHE.checkSignatures` function ensures the authenticity of multiple cleartext values derived from multiple encrypted on-chain cypher texts.
