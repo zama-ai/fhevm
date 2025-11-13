@@ -27,6 +27,9 @@ library FHE {
     /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
 
+    /// @notice This event is emitted when public decryption has been successfully verified.
+    event PublicDecryptionVerified(bytes32[] handlesList, bytes abiEncodedCleartexts);
+
     /**
      * @notice                  Sets the coprocessor addresses.
      * @param coprocessorConfig Coprocessor config struct that contains contract addresses.
@@ -9072,24 +9075,57 @@ library FHE {
         expirationDate = Impl.getUserDecryptionDelegationExpirationDate(delegator, delegate, contractAddress);
     }
 
-    /**
-     * @dev Internal low-level function used to verify the KMS signatures.
-     * @notice  Warning: MUST be called directly in the callback function called by the relayer.
-     * @notice Warning: this function never reverts, its boolean return value must be checked.
-     * @dev clearTexts is the abi-encoding of the list of all decrypted values assiociated to handlesList, in same order.
-     * @dev Only static native solidity types for clear values are supported, so clearTexts is the concatenation of all clear values appended to 32 bytes.
-     * @dev decryptionProof contains KMS signatures corresponding to clearTexts and associated handlesList, and needed metadata for KMS context.
-     **/
-    function verifySignatures(
+    /// @notice Reverts if the KMS signatures verification against the provided handles and public decryption data
+    ///         fails.
+    /// @dev The function MUST be called inside a public decryption callback function of a dApp contract
+    ///      to verify the signatures and prevent fake decryption results for being submitted.
+    /// @param handlesList The list of handles as an array of bytes32 to check
+    /// @param abiEncodedCleartexts The ABI-encoded list of decrypted values associated with each handle in the `handlesList`.
+    ///                             The ABI-encoded list order must match the `handlesList` order.
+    /// @param decryptionProof The KMS public decryption proof. It includes the KMS signatures, associated metadata,
+    ///                        and the context needed for verification.
+    /// @dev Reverts if any of the following conditions are met:
+    ///      - The `decryptionProof` is empty or has an invalid length.
+    ///      - The number of valid signatures is zero or less than the configured KMS signers threshold.
+    ///      - Any signature is produced by an address that is not a registered KMS signer.
+    ///      - The signatures verification returns false.
+    function checkSignatures(
         bytes32[] memory handlesList,
-        bytes memory cleartexts,
+        bytes memory abiEncodedCleartexts,
         bytes memory decryptionProof
-    ) internal returns (bool) {
+    ) internal {
+        bool isVerified = _verifySignatures(handlesList, abiEncodedCleartexts, decryptionProof);
+        if (!isVerified) {
+            revert InvalidKMSSignatures();
+        }
+        emit PublicDecryptionVerified(handlesList, abiEncodedCleartexts);
+    }
+
+    /// @notice Verifies KMS signatures against the provided handles and public decryption data.
+    /// @param handlesList The list of handles as an array of bytes32 to verify
+    /// @param abiEncodedCleartexts The ABI-encoded list of decrypted values associated with each handle in the `handlesList`.
+    ///                             The list order must match the list of handles in `handlesList`
+    /// @param decryptionProof The KMS public decryption proof computed by the KMS Signers associated to `handlesList` and
+    ///                       `abiEncodedCleartexts`
+    /// @return true if the signatures verification succeeds, false otherwise
+    /// @dev Private low-level function used to verify the KMS signatures.
+    ///      Warning: this function never reverts, its boolean return value must be checked.
+    ///      The decryptionProof is the numSigners + kmsSignatures + extraData (1 + 65*numSigners + extraData bytes)
+    ///      Only static native solidity types for clear values are supported, so `abiEncodedCleartexts` is the concatenation of all clear values appended to 32 bytes.
+    /// @dev Reverts if any of the following conditions are met by the underlying KMS verifier:
+    ///      - The `decryptionProof` is empty or has an invalid length.
+    ///      - The number of valid signatures is zero or less than the configured KMS signers threshold.
+    ///      - Any signature is produced by an address that is not a registered KMS signer.
+    function _verifySignatures(
+        bytes32[] memory handlesList,
+        bytes memory abiEncodedCleartexts,
+        bytes memory decryptionProof
+    ) private returns (bool) {
         CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
                 handlesList,
-                cleartexts,
+                abiEncodedCleartexts,
                 decryptionProof
             );
     }
