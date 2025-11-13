@@ -19,6 +19,8 @@ interface IERC20Mintable is IERC20 {
 
 /**
  * @dev Staking contract that distributes newly minted tokens to eligible accounts at a configurable flow rate.
+ * 
+ * NOTE: This staking contract does not support non-standard ERC-20 tokens such as fee-on-transfer or rebasing tokens.
  * @custom:security-contact security@zama.ai
  */
 contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20VotesUpgradeable, UUPSUpgradeable {
@@ -144,7 +146,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * WARNING: If this contract is upgraded to add slashing, the ability to withdraw to a
      * different address should be reconsidered.
      */
-    function release(address account) public {
+    function release(address account) public virtual {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
         uint256 totalAmountCooledDown = $._unstakeRequests[account].upperLookup(Time.timestamp());
         uint256 amountToRelease = totalAmountCooledDown - $._released[account];
@@ -266,7 +268,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @param account The account having tokens cooling down.
      * @return The releasable amount of tokens after the cooldown period.
      */
-    function awaitingRelease(address account) public view returns (uint256) {
+    function awaitingRelease(address account) public view virtual returns (uint256) {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
         return $._unstakeRequests[account].latest() - $._released[account];
     }
