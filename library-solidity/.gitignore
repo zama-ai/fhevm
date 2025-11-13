@@ -138,3 +138,7 @@ typechain-types
 .openzeppelin/unknown*
 .openzeppelin/sepolia.json
 fhevmTemp/
+
+#forge
+/dependencies
+/cache_forge
