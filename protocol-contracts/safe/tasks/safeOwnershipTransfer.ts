@@ -3,16 +3,12 @@ import { task, types } from "hardhat/config";
 import { Network, HardhatEthersHelpers } from "hardhat/types";
 
 import { getRequiredEnvVar } from "./utils/loadVariables";
-
-async function getSafeProxyAndAddress(ethers: HardhatEthersHelpers) {
-  const safeAddress = getRequiredEnvVar("SAFE_ADDRESS");
-  const safeProxy = await ethers.getContractAt("SafeL2", safeAddress);
-  return { safeProxy, safeAddress };
-}
+import { getSafeProxyAddress } from "./utils/addresses";
+import { safeProxySol } from "../typechain-types/@safe-global/safe-contracts/contracts/proxies";
 
 async function getSafeKitDeployer(
   deployer: string,
-  safeAddress: string,
+  safeProxyAddress: string,
   network: Network,
   ethers: HardhatEthersHelpers,
 ) {
@@ -34,7 +30,7 @@ async function getSafeKitDeployer(
   const safeKitDeployer = await Safe.init({
     provider: network.provider,
     signer: deployer,
-    safeAddress,
+    safeAddress: safeProxyAddress,
     contractNetworks,
   });
 
@@ -53,13 +49,13 @@ task("task:addOwnersToSafe").setAction(async function (
   const { deployer } = await getNamedAccounts();
 
   // Get the Safe proxy and address
-  const { safeProxy, safeAddress } = await getSafeProxyAndAddress(ethers);
+  const { safeProxy, safeProxyAddress } = await getSafeProxyAddress(ethers);
 
   // Make sure the deployer is an owner of the SafeL2Proxy contract
   const safeOwners = await safeProxy.getOwners();
   if (!safeOwners.includes(deployer)) {
     throw new Error(
-      `Deployer should be an owner of the SafeL2Proxy contract. 
+      `Deployer should be an owner of the SafeL2Proxy contract.
         Current owners: ${safeOwners.join(", ")}, expected: ${deployer}`,
     );
   }
@@ -73,7 +69,7 @@ task("task:addOwnersToSafe").setAction(async function (
   // Get the SafeKit deployer
   const safeKitDeployer = await getSafeKitDeployer(
     deployer,
-    safeAddress,
+    safeProxyAddress,
     network,
     ethers,
   );
@@ -122,7 +118,7 @@ task("task:checkSafeOwners")
     { getNamedAccounts, ethers },
   ) {
     // Get the Safe proxy
-    const { safeProxy } = await getSafeProxyAndAddress(ethers);
+    const { safeProxy } = await getSafeProxyAddress(ethers);
 
     // Get the number of new owners
     const numNewOwners = Number(getRequiredEnvVar("SAFE_NUM_NEW_OWNERS"));
@@ -147,7 +143,7 @@ task("task:checkSafeOwners")
     // Check that the number of owners is correct
     if (owners.length !== expectedOwnersAsArray.length) {
       throw new Error(
-        `The number of owners in the Safe is incorrect. Expected: ${expectedOwnersAsArray.join(", ")} 
+        `The number of owners in the Safe is incorrect. Expected: ${expectedOwnersAsArray.join(", ")}
       (length ${expectedOwnersAsArray.length}), Got: ${owners.join(", ")} (length ${owners.length})`,
       );
     }
@@ -171,13 +167,13 @@ task("task:removeDeployerFromSafeOwnersAndUpdateThreshold").setAction(
     const { deployer } = await getNamedAccounts();
 
     // Get the Safe proxy and address
-    const { safeProxy, safeAddress } = await getSafeProxyAndAddress(ethers);
+    const { safeProxy, safeProxyAddress } = await getSafeProxyAddress(ethers);
 
     // Make sure the deployer is an owner of the SafeL2Proxy contract
     const safeOwners = await safeProxy.getOwners();
     if (!safeOwners.includes(deployer)) {
       throw new Error(
-        `Deployer should be an owner of the SafeL2Proxy contract. 
+        `Deployer should be an owner of the SafeL2Proxy contract.
         Current owners: ${safeOwners.join(", ")}, expected: ${deployer}`,
       );
     }
@@ -191,7 +187,7 @@ task("task:removeDeployerFromSafeOwnersAndUpdateThreshold").setAction(
     // Get the SafeKit deployer
     const safeKitDeployer = await getSafeKitDeployer(
       deployer,
-      safeAddress,
+      safeProxyAddress,
       network,
       ethers,
     );

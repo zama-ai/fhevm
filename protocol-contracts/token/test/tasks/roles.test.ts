@@ -139,38 +139,38 @@ describe('ZamaERC20 Role task suite', function () {
         })
     })
 
-    describe('PAUSING_MINTER_ROLE', async () => {
-        it('grants and revokes PAUSING_MINTER_ROLE via tasks', async () => {
+    describe('MINTING_PAUSER_ROLE', async () => {
+        it('grants and revokes MINTING_PAUSER_ROLE via tasks', async () => {
             expect(await zamaERC20.hasRole(pausingRole, pausing.address)).to.be.false
 
-            await run('zama:erc20:grant:pausing_minter_role', {
+            await run('zama:erc20:grant:minting_pauser_role', {
                 address: pausing.address,
                 contractAddress: zamaERC20.address,
             })
             expect(await zamaERC20.hasRole(pausingRole, pausing.address)).to.be.true
 
-            await run('zama:erc20:revoke:pausing_minter_role', {
+            await run('zama:erc20:revoke:minting_pauser_role', {
                 address: pausing.address,
                 contractAddress: zamaERC20.address,
             })
             expect(await zamaERC20.hasRole(pausingRole, pausing.address)).to.be.false
         })
 
-        it('renounces PAUSING_MINTER_ROLE for the connected signer via task', async () => {
+        it('renounces MINTING_PAUSER_ROLE for the connected signer via task', async () => {
             expect(await zamaERC20.hasRole(pausingRole, deployer.address)).to.be.false
 
-            await run('zama:erc20:grant:pausing_minter_role', {
+            await run('zama:erc20:grant:minting_pauser_role', {
                 address: deployer.address,
                 contractAddress: zamaERC20.address,
             })
             expect(await zamaERC20.hasRole(pausingRole, deployer.address)).to.be.true
 
-            await run('zama:erc20:renounce:pausing_minter_role', { contractAddress: zamaERC20.address })
+            await run('zama:erc20:renounce:minting_pauser_role', { contractAddress: zamaERC20.address })
             expect(await zamaERC20.hasRole(pausingRole, deployer.address)).to.be.false
         })
 
-        it('should fail if grantee already has the PAUSING_MINTER_ROLE', async () => {
-            await run('zama:erc20:grant:pausing_minter_role', {
+        it('should fail if grantee already has the MINTING_PAUSER_ROLE', async () => {
+            await run('zama:erc20:grant:minting_pauser_role', {
                 address: pausing.address,
                 contractAddress: zamaERC20.address,
             })
@@ -178,35 +178,35 @@ describe('ZamaERC20 Role task suite', function () {
             expect(await zamaERC20.hasRole(pausingRole, pausing.address)).to.be.true
 
             await expect(
-                run('zama:erc20:grant:pausing_minter_role', {
+                run('zama:erc20:grant:minting_pauser_role', {
                     address: pausing.address,
                     contractAddress: zamaERC20.address,
                 })
             ).to.be.rejected
         })
 
-        it('should fail if revokee does not have the PAUSING_MINTER_ROLE', async () => {
+        it('should fail if revokee does not have the MINTING_PAUSER_ROLE', async () => {
             expect(await zamaERC20.hasRole(pausingRole, pausing.address)).to.be.false
 
             await expect(
-                run('zama:erc20:revoke:pausing_minter_role', {
+                run('zama:erc20:revoke:minting_pauser_role', {
                     address: pausing.address,
                     contractAddress: zamaERC20.address,
                 })
             ).to.be.rejected
         })
 
-        it('should fail if signer tries to renounce to a PAUSING_MINTER_ROLE it does not have', async () => {
+        it('should fail if signer tries to renounce to a MINTING_PAUSER_ROLE it does not have', async () => {
             expect(await zamaERC20.hasRole(pausingRole, pausing.address)).to.be.false
 
             await expect(
-                run('zama:erc20:renounce:pausing_minter_role', {
+                run('zama:erc20:renounce:minting_pauser_role', {
                     contractAddress: zamaERC20.address,
                 })
             ).to.be.rejected
         })
 
-        it('should fail to grant PAUSING_MINTER_ROLE if signer is not the role admin', async () => {
+        it('should fail to grant MINTING_PAUSER_ROLE if signer is not the role admin', async () => {
             // The resolveContext() function takes the first element from the array returned by `ethers.getSigners()`
             // Thus, to run the task with the deployer/signer not being the owner, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
             const roleAdmin = await zamaERC20.getRoleAdmin(pausingRole)
@@ -216,14 +216,14 @@ describe('ZamaERC20 Role task suite', function () {
             expect(await zamaERC20.hasRole(roleAdmin, deployer.address)).to.be.false
 
             await expect(
-                run('zama:erc20:grant:pausing_minter_role', {
+                run('zama:erc20:grant:minting_pauser_role', {
                     address: deployer.address,
                     contractAddress: zamaERC20.address,
                 })
             ).to.be.rejected
         })
 
-        it('should fail to revoke PAUSING_MINTER_ROLE if signer is not the role admin', async () => {
+        it('should fail to revoke MINTING_PAUSER_ROLE if signer is not the role admin', async () => {
             // The resolveContext() function takes the first element from the array returned by `ethers.getSigners()`
             // Thus, to run the task with the deployer/signer not being the owner, we renounce to the admin role of the contract roles (DEFAULT_ADMIN_ROLE).
             const roleAdmin = await zamaERC20.getRoleAdmin(pausingRole)
@@ -233,18 +233,18 @@ describe('ZamaERC20 Role task suite', function () {
             expect(await zamaERC20.hasRole(roleAdmin, deployer.address)).to.be.false
 
             await expect(
-                run('zama:erc20:revoke:pausing_minter_role', {
+                run('zama:erc20:revoke:minting_pauser_role', {
                     address: deployer.address,
                     contractAddress: zamaERC20.address,
                 })
             ).to.be.rejected
         })
 
-        it('should fail to renounce PAUSING_MINTER_ROLE if signer does not have the role', async () => {
+        it('should fail to renounce MINTING_PAUSER_ROLE if signer does not have the role', async () => {
             expect(await zamaERC20.hasRole(pausingRole, deployer.address)).to.be.false
 
             await expect(
-                run('zama:erc20:renounce:pausing_minter_role', {
+                run('zama:erc20:renounce:minting_pauser_role', {
                     contractAddress: zamaERC20.address,
                 })
             ).to.be.rejected

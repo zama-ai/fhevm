@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use clap::{command, Parser};
 use fhevm_engine_common::telemetry::MetricsConfig;
+use fhevm_engine_common::utils::DatabaseURL;
 use humantime::parse_duration;
 use sns_worker::{SchedulePolicy, SNS_LATENCY_OP_HISTOGRAM_CONF};
 use tracing::Level;
@@ -48,7 +49,7 @@ pub struct Args {
     /// Postgres database url. If unspecified DATABASE_URL environment variable
     /// is used
     #[arg(long)]
-    pub database_url: Option<String>,
+    pub database_url: Option<DatabaseURL>,
 
     /// KeySet file. If unspecified the the keys are read from the database
     #[arg(long)]

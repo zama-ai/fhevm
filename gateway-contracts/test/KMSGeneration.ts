@@ -414,6 +414,15 @@ describe("KMSGeneration", function () {
           .to.be.revertedWithCustomError(kmsGeneration, "KeygenOngoing")
           .withArgs(keyId);
       });
+
+      it("Should revert on keygen response because the key digests are empty", async function () {
+        // Trigger a first keygen request: `keyId`
+        await kmsGeneration.connect(owner).keygen(paramsType);
+
+        await expect(kmsGeneration.connect(kmsTxSenders[0]).keygenResponse(keyId, [], kmsSignaturesKeygen[0]))
+          .to.be.revertedWithCustomError(kmsGeneration, "EmptyKeyDigests")
+          .withArgs(keyId);
+      });
     });
 
     describe("After key generation", function () {

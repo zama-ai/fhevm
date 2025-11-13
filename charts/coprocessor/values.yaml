@@ -155,11 +155,16 @@ hostListener:
     - --health-port=8080
     - --dependence-cache-size=128
     - --reorg-maximum-duration-in-blocks=50
+
     ### Catchup parameters (optional)
     # - --catchup-margin
     # - --catchup-paging
     # - --start-at-block  # To be used to catch up from a specific block
     # - --end-at-block    # To be used to stop at a specific block
+
+    ### New in v0.10
+    - --service-name="host-listener"
+    - --catchup-finalization-in-blocks=20  # Continuous catchup will wait for block "finalization"
 
   # Service ports configuration
   ports:
@@ -752,6 +757,7 @@ txSender:
     - --service-name=txn-sender
     - --metric-host-txn-latency=0.1:60.0:0.1
     - --metric-zkproof-txn-latency=0.1:60.0:0.1
+    - --gauge-update-interval-secs=10
 
   # Service ports configuration
   ports:

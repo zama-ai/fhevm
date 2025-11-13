@@ -23,28 +23,34 @@ use tracing::{error, info, warn};
 #[derive(Clone, Debug, PartialEq)]
 pub struct GatewayEvent {
     pub kind: GatewayEventKind,
+    pub already_sent: bool,
     pub otlp_context: PropagationContext,
 }
 
 impl GatewayEvent {
     pub fn new(kind: GatewayEventKind, otlp_context: PropagationContext) -> Self {
-        GatewayEvent { kind, otlp_context }
+        GatewayEvent {
+            kind,
+            already_sent: false,
+            otlp_context,
+        }
     }
 
     /// Sets the `under_process` field of the event as `FALSE` in the database.
     pub async fn mark_as_pending(&self, db: &Pool<Postgres>) {
+        let already_sent = self.already_sent;
         match &self.kind {
             GatewayEventKind::PublicDecryption(e) => {
-                mark_public_decryption_as_pending(db, e.decryptionId).await
+                mark_public_decryption_as_pending(db, e.decryptionId, already_sent).await
             }
             GatewayEventKind::UserDecryption(e) => {
-                mark_user_decryption_as_pending(db, e.decryptionId).await
+                mark_user_decryption_as_pending(db, e.decryptionId, already_sent).await
             }
             GatewayEventKind::PrepKeygen(e) => {
-                mark_prep_keygen_as_pending(db, e.prepKeygenId).await
+                mark_prep_keygen_as_pending(db, e.prepKeygenId, already_sent).await
             }
-            GatewayEventKind::Keygen(e) => mark_keygen_as_pending(db, e.keyId).await,
-            GatewayEventKind::Crsgen(e) => mark_crsgen_as_pending(db, e.crsId).await,
+            GatewayEventKind::Keygen(e) => mark_keygen_as_pending(db, e.keyId, already_sent).await,
+            GatewayEventKind::Crsgen(e) => mark_crsgen_as_pending(db, e.crsId, already_sent).await,
             GatewayEventKind::PrssInit(_) => mark_prss_init_as_pending(db, PRSS_INIT_ID).await,
             GatewayEventKind::KeyReshareSameSet(e) => {
                 mark_key_reshare_same_set_as_pending(db, e.keyId).await
@@ -96,6 +102,7 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        already_sent: row.try_get::<bool, _>("already_sent")?,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -116,6 +123,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        already_sent: row.try_get::<bool, _>("already_sent")?,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -128,6 +136,7 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        already_sent: row.try_get::<bool, _>("already_sent")?,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -139,6 +148,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        already_sent: row.try_get::<bool, _>("already_sent")?,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -151,6 +161,7 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        already_sent: row.try_get::<bool, _>("already_sent")?,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -159,6 +170,7 @@ pub fn from_prss_init_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     let kind = GatewayEventKind::PrssInit(U256::from_le_bytes(row.try_get::<[u8; 32], _>("id")?));
     Ok(GatewayEvent {
         kind,
+        already_sent: false,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
@@ -172,50 +184,61 @@ pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<GatewayEvent
     });
     Ok(GatewayEvent {
         kind,
+        already_sent: false,
         otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
 /// Sets the `under_process` field of the `PublicDecryptionRequest` as `FALSE` in the database.
-pub async fn mark_public_decryption_as_pending(db: &Pool<Postgres>, id: U256) {
+pub async fn mark_public_decryption_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
     let query = sqlx::query!(
-        "UPDATE public_decryption_requests SET under_process = FALSE WHERE decryption_id = $1",
+        "UPDATE public_decryption_requests SET under_process = FALSE, already_sent = $1 \
+        WHERE decryption_id = $2",
+        already_sent,
         id.as_le_slice()
     );
     execute_free_event_query(db, query).await;
 }
 
 /// Sets the `under_process` field of the `UserDecryptionRequest` as `FALSE` in the database.
-pub async fn mark_user_decryption_as_pending(db: &Pool<Postgres>, id: U256) {
+pub async fn mark_user_decryption_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
     let query = sqlx::query!(
-        "UPDATE user_decryption_requests SET under_process = FALSE WHERE decryption_id = $1",
+        "UPDATE user_decryption_requests SET under_process = FALSE, already_sent = $1 \
+        WHERE decryption_id = $2",
+        already_sent,
         id.as_le_slice()
     );
     execute_free_event_query(db, query).await;
 }
 
 /// Sets the `under_process` field of the `PrepKeygenRequest` as `FALSE` in the database.
-pub async fn mark_prep_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
+pub async fn mark_prep_keygen_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
     let query = sqlx::query!(
-        "UPDATE prep_keygen_requests SET under_process = FALSE WHERE prep_keygen_id = $1",
+        "UPDATE prep_keygen_requests SET under_process = FALSE, already_sent = $1 \
+        WHERE prep_keygen_id = $2",
+        already_sent,
         id.as_le_slice()
     );
     execute_free_event_query(db, query).await;
 }
 
 /// Sets the `under_process` field of the `KeygenRequest` as `FALSE` in the database.
-pub async fn mark_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
+pub async fn mark_keygen_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
     let query = sqlx::query!(
-        "UPDATE keygen_requests SET under_process = FALSE WHERE key_id = $1",
+        "UPDATE keygen_requests SET under_process = FALSE, already_sent = $1 \
+        WHERE key_id = $2",
+        already_sent,
         id.as_le_slice()
     );
     execute_free_event_query(db, query).await;
 }
 
 /// Sets the `under_process` field of the `CrsgenRequest` as `FALSE` in the database.
-pub async fn mark_crsgen_as_pending(db: &Pool<Postgres>, id: U256) {
+pub async fn mark_crsgen_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
     let query = sqlx::query!(
-        "UPDATE crsgen_requests SET under_process = FALSE WHERE crs_id = $1",
+        "UPDATE crsgen_requests SET under_process = FALSE, already_sent = $1 \
+        WHERE crs_id = $2",
+        already_sent,
         id.as_le_slice()
     );
     execute_free_event_query(db, query).await;

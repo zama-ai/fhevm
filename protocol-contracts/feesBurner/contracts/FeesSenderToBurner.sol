@@ -48,7 +48,7 @@ contract FeesSenderToBurner {
 
         if (amountNormalized == 0) revert NotEnoughZAMAToSend();
 
-        bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(80000, 0);
+        bytes memory options = OptionsBuilder.newOptions();
 
         SendParam memory sendParam = SendParam({
             dstEid: DESTINATION_EID,
@@ -64,7 +64,7 @@ contract FeesSenderToBurner {
 
         IOFT(ZAMA_OFT).send{ value: msg.value }(sendParam, msgFee, msg.sender);
 
-        emit FeesForwarded(amount, DESTINATION_EID, PROTOCOL_FEES_BURNER, options, msg.value);
+        emit FeesForwarded(amountNormalized, DESTINATION_EID, PROTOCOL_FEES_BURNER, options, msgFee.nativeFee);
     }
 
     function quote() external view returns (uint256) {
@@ -72,7 +72,7 @@ contract FeesSenderToBurner {
         uint256 amountNormalized = (amount/(_DECIMAL_CONVERSION_RATE))*_DECIMAL_CONVERSION_RATE;
         if (amountNormalized == 0) revert NotEnoughZAMAToSend();
 
-        bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(80000, 0);
+        bytes memory options = OptionsBuilder.newOptions();
 
         SendParam memory sendParam = SendParam({
             dstEid: DESTINATION_EID,

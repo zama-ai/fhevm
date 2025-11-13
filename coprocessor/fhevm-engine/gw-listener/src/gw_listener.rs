@@ -81,7 +81,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         );
         let db_pool = PgPoolOptions::new()
             .max_connections(self.conf.database_pool_size)
-            .connect(&self.conf.database_url)
+            .connect(self.conf.database_url.as_str())
             .await?;
 
         let input_verification_handle = {
@@ -199,7 +199,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             };
             // clipped to positive block number
             // note, we cannot catchup block 0
-            last_processed_block_num = Some(from_block.try_into().unwrap_or(0));
+            last_processed_block_num = Some((from_block - 1).try_into().unwrap_or(0));
         }
 
         loop {
@@ -549,7 +549,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         // Check database connection
         let db_pool_result = PgPoolOptions::new()
             .max_connections(self.conf.database_pool_size)
-            .connect(&self.conf.database_url)
+            .connect(self.conf.database_url.as_str())
             .await;
 
         match db_pool_result {

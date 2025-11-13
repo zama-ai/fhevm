@@ -31,13 +31,30 @@ contract MultichainACL is
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /**
+     * @notice The domain separator for the allow public decrypt hash.
+     */
+    bytes32 private constant ALLOW_PUBLIC_DECRYPT_DOMAIN_SEPARATOR_HASH =
+        keccak256(bytes("MultichainACL.allowPublicDecrypt"));
+
+    /**
+     * @notice The domain separator for the allow account hash.
+     */
+    bytes32 private constant ALLOW_ACCOUNT_DOMAIN_SEPARATOR_HASH = keccak256(bytes("MultichainACL.allowAccount"));
+
+    /**
+     * @notice The domain separator for the delegate user decryption hash.
+     */
+    bytes32 private constant DELEGATE_USER_DECRYPTION_DOMAIN_SEPARATOR_HASH =
+        keccak256(bytes("MultichainACL.delegateUserDecryption"));
+
+    /**
      * @dev The following constants are used for versioning the contract. They are made private
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
     string private constant CONTRACT_NAME = "MultichainACL";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -46,7 +63,7 @@ contract MultichainACL is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -118,12 +135,12 @@ contract MultichainACL is
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IMultichainACL-allowPublicDecrypt}.
@@ -134,33 +151,36 @@ contract MultichainACL is
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
+        // Compute the hash of the allow call, unique across all types of allow calls.
+        bytes32 allowHash = _getAllowPublicDecryptHash(ctHandle);
+
         // Associate the ctHandle to coprocessor context ID 1 to anticipate their introduction in V2.
         // Only set the context ID if it hasn't been set yet to avoid multiple identical SSTOREs.
-        if ($.allowContextId[ctHandle] == 0) {
-            $.allowContextId[ctHandle] = 1;
+        if ($.allowContextId[allowHash] == 0) {
+            $.allowContextId[allowHash] = 1;
         }
 
         // Check if the coprocessor has already allowed the ciphertext handle for public decryption.
         // A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
         // the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
-        if ($.allowCoprocessors[ctHandle][msg.sender]) {
+        if ($.allowCoprocessors[allowHash][msg.sender]) {
             revert CoprocessorAlreadyAllowedPublicDecrypt(ctHandle, msg.sender);
         }
-        $.allowCounters[ctHandle]++;
-        $.allowCoprocessors[ctHandle][msg.sender] = true;
+        $.allowCounters[allowHash]++;
+        $.allowCoprocessors[allowHash][msg.sender] = true;
 
         // Store the coprocessor transaction sender address for the public decryption response
         // It is important to consider the same mapping fields used for the consensus
         // A "late" valid coprocessor transaction sender address will still be added in the list.
-        $.allowConsensusTxSenders[ctHandle].push(msg.sender);
+        $.allowConsensusTxSenders[allowHash].push(msg.sender);
 
         // Emit the event at each call for monitoring purposes.
         emit AllowPublicDecrypt(ctHandle, msg.sender, extraData);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.isAllowed[ctHandle] && _isConsensusReached($.allowCounters[ctHandle])) {
-            $.isAllowed[ctHandle] = true;
+        if (!$.isAllowed[allowHash] && _isConsensusReached($.allowCounters[allowHash])) {
+            $.isAllowed[allowHash] = true;
             emit AllowPublicDecryptConsensus(ctHandle, extraData);
         }
     }
@@ -217,7 +237,7 @@ contract MultichainACL is
         address contractAddress,
         uint64 delegationCounter,
         uint64 expirationDate
-    ) external virtual onlyCoprocessorTxSender {
+    ) external virtual onlyCoprocessorTxSender onlyRegisteredHostChain(chainId) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
         bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
             chainId,
@@ -297,7 +317,7 @@ contract MultichainACL is
         address contractAddress,
         uint64 delegationCounter,
         uint64 expirationDate
-    ) external virtual onlyCoprocessorTxSender {
+    ) external virtual onlyCoprocessorTxSender onlyRegisteredHostChain(chainId) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
         bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
             chainId,
@@ -374,7 +394,8 @@ contract MultichainACL is
     function isPublicDecryptAllowed(bytes32 ctHandle) external view virtual returns (bool) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        return $.isAllowed[ctHandle];
+        bytes32 allowHash = _getAllowPublicDecryptHash(ctHandle);
+        return $.isAllowed[allowHash];
     }
 
     /**
@@ -413,7 +434,8 @@ contract MultichainACL is
     ) external view virtual returns (address[] memory) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        return $.allowConsensusTxSenders[ctHandle];
+        bytes32 allowHash = _getAllowPublicDecryptHash(ctHandle);
+        return $.allowConsensusTxSenders[allowHash];
     }
 
     /**
@@ -514,10 +536,17 @@ contract MultichainACL is
     }
 
     /**
+     * @notice Returns the hash of a allow public decrypt call.
+     */
+    function _getAllowPublicDecryptHash(bytes32 ctHandle) internal pure virtual returns (bytes32) {
+        return keccak256(abi.encode(ALLOW_PUBLIC_DECRYPT_DOMAIN_SEPARATOR_HASH, ctHandle));
+    }
+
+    /**
      * @notice Returns the hash of a allow account call.
      */
     function _getAllowAccountHash(bytes32 ctHandle, address accountAddress) internal pure virtual returns (bytes32) {
-        return keccak256(abi.encode(ctHandle, accountAddress));
+        return keccak256(abi.encode(ALLOW_ACCOUNT_DOMAIN_SEPARATOR_HASH, ctHandle, accountAddress));
     }
 
     /**
@@ -531,7 +560,18 @@ contract MultichainACL is
         uint64 delegationCounter,
         uint64 expirationDate
     ) internal pure virtual returns (bytes32) {
-        return keccak256(abi.encode(chainId, delegator, delegate, contractAddress, delegationCounter, expirationDate));
+        return
+            keccak256(
+                abi.encode(
+                    DELEGATE_USER_DECRYPTION_DOMAIN_SEPARATOR_HASH,
+                    chainId,
+                    delegator,
+                    delegate,
+                    contractAddress,
+                    delegationCounter,
+                    expirationDate
+                )
+            );
     }
 
     /**
@@ -551,9 +591,6 @@ contract MultichainACL is
         mapping(address => bool) storage alreadyDelegatedUserDecryptionCoprocessors = $
             .alreadyDelegatedUserDecryptionCoprocessors[delegateUserDecryptionHash];
 
-        mapping(address => bool) storage alreadyRevokedUserDecryptionCoprocessors = $
-            .alreadyRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash];
-
         // Check if the coprocessor has already delegated the user decryption.
         if (alreadyDelegatedUserDecryptionCoprocessors[msg.sender]) {
             revert CoprocessorAlreadyDelegatedUserDecryption(
@@ -566,6 +603,9 @@ contract MultichainACL is
                 msg.sender
             );
         }
+
+        mapping(address => bool) storage alreadyRevokedUserDecryptionCoprocessors = $
+            .alreadyRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash];
 
         // Check if the coprocessor has already revoked the user decryption delegation.
         if (alreadyRevokedUserDecryptionCoprocessors[msg.sender]) {

@@ -121,7 +121,7 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE public_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, extra_data, otlp_context
+                RETURNING req.decryption_id, sns_ct_materials, extra_data, otlp_context, already_sent
             ",
         )
         .bind(self.events_batch_size as i16)
@@ -144,7 +144,7 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context
+                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context, already_sent
             ",
         )
         .bind(self.events_batch_size as i16)
@@ -167,7 +167,7 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prep_keygen_requests.prep_keygen_id = req.prep_keygen_id
-                RETURNING req.prep_keygen_id, epoch_id, params_type, otlp_context
+                RETURNING req.prep_keygen_id, epoch_id, params_type, otlp_context, already_sent
             ",
         )
         .fetch_all(&self.db_pool)
@@ -189,7 +189,7 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE keygen_requests.key_id = req.key_id
-                RETURNING prep_keygen_id, req.key_id, otlp_context
+                RETURNING prep_keygen_id, req.key_id, otlp_context, already_sent
             ",
         )
         .fetch_all(&self.db_pool)
@@ -211,7 +211,7 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE crsgen_requests.crs_id = req.crs_id
-                RETURNING req.crs_id, max_bit_length, params_type, otlp_context
+                RETURNING req.crs_id, max_bit_length, params_type, otlp_context, already_sent
             ",
         )
         .fetch_all(&self.db_pool)

@@ -679,6 +679,12 @@ describe('ZamaERC20 - Unit Test', () => {
                         expect(etherAliceBalanceAfter).to.eq(etherAliceBalanceBefore.add(SEND_AMOUNT))
                     })
 
+                    it('should not send recovered ETH to null address', async () => {
+                        await expect(
+                            zamaERC20.connect(admin).recoverEther(SEND_AMOUNT, ethers.constants.AddressZero)
+                        ).to.be.revertedWithCustomError(zamaERC20, 'InvalidNullRecipient')
+                    })
+
                     it('should fail when trying to recover more than available balance', async () => {
                         await expect(
                             zamaERC20.connect(admin).recoverEther(SEND_AMOUNT.mul(2), alice.address)
@@ -730,6 +736,14 @@ describe('ZamaERC20 - Unit Test', () => {
 
                         expect(mockERC20ContractBalanceAfter).to.eq(mockERC20ContractBalanceBefore.sub(SEND_AMOUNT))
                         expect(mockERC20AliceBalanceAfter).to.eq(mockERC20AliceBalanceBefore.add(SEND_AMOUNT))
+                    })
+
+                    it('should not send recovered ERC20 to null address', async () => {
+                        await expect(
+                            zamaERC20
+                                .connect(admin)
+                                .recoverERC20(zamaERC20.address, SEND_AMOUNT, ethers.constants.AddressZero)
+                        ).to.be.revertedWithCustomError(zamaERC20, 'InvalidNullRecipient')
                     })
 
                     it('should let DEFAULT_ADMIN_ROLE recover 0 $ZAMA from contract while unpaused', async () => {
@@ -907,6 +921,14 @@ describe('ZamaERC20 - Unit Test', () => {
                     it('should let DEFAULT_ADMIN_ROLE recover ERC721Mock from contract while paused', async () => {
                         await zamaERC20.connect(admin).recoverERC721(ERC721Mock.address, TOKEN_ID, alice.address)
                         expect(await ERC721Mock.ownerOf(TOKEN_ID)).to.eq(alice.address)
+                    })
+
+                    it('should not send recovered ERC721 to null address', async () => {
+                        await expect(
+                            zamaERC20
+                                .connect(admin)
+                                .recoverERC721(ERC721Mock.address, TOKEN_ID, ethers.constants.AddressZero)
+                        ).to.be.revertedWithCustomError(zamaERC20, 'InvalidNullRecipient')
                     })
 
                     it('should not let MINTER_ROLE recover ERC721Mock from contract while paused', async () => {

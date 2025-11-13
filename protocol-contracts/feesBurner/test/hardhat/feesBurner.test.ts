@@ -68,12 +68,30 @@ describe("FeesBurner", () => {
     await zamaERC20.grantRole(MINTER_ROLE, deployer.address);
 
     // Setting destination endpoints in the LZEndpoint mock for each MyOFT instance
-
     await mockEndpointV2A.setDestLzEndpoint(zamaOFTAddress, mockEndpointV2BAddress);
     await mockEndpointV2B.setDestLzEndpoint(zamaOFTAdapterAddress, mockEndpointV2AAddress);
+    
     // Setting each OFT instance as a peer of the other in the mock LZEndpoint
     await zamaOFTAdapter.connect(deployer).setPeer(eidB, ethers.zeroPadValue(zamaOFTAddress, 32));
     await zamaOFT.connect(deployer).setPeer(eidA, ethers.zeroPadValue(zamaOFTAdapterAddress, 32));
+    
+    //  Set enforced executor options
+    const enforcedOptionsOFT = [
+      {
+        eid: eidA,
+        msgType: await zamaOFT.SEND(),
+        options: Options.newOptions().addExecutorLzReceiveOption(50000, 0).toHex().toString(),
+      },
+    ];
+    await zamaOFT.setEnforcedOptions(enforcedOptionsOFT);
+    const enforcedOptionsOFTAdapter = [
+      {
+        eid: eidB,
+        msgType: await zamaOFTAdapter.SEND(),
+        options: Options.newOptions().addExecutorLzReceiveOption(50000, 0).toHex().toString(),
+      },
+    ];
+    await zamaOFTAdapter.setEnforcedOptions(enforcedOptionsOFTAdapter);
   });
 
   describe("ProtocolFeesBurner", () => {
@@ -224,10 +242,7 @@ describe("FeesBurner", () => {
       it("should properly quote native fees for bridging", async () => {
         const quotedFees = await feesSenderToBurner.quote();
 
-        await expect(feesSenderToBurner.sendFeesToBurner({ value: quotedFees - 1n })).to.be.revertedWithCustomError(
-          feesSenderToBurnerInterface,
-          "InsufficientFee",
-        );
+        await expect(feesSenderToBurner.sendFeesToBurner({ value: quotedFees - 1n })).to.be.revertedWith('LayerZeroMock: not enough native for fees');
         expect(await feesSenderToBurner.sendFeesToBurner({ value: quotedFees })).not.to.be.reverted;
       });
 

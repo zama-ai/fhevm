@@ -3,7 +3,7 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
-use fhevm_engine_common::{metrics_server, telemetry};
+use fhevm_engine_common::{metrics_server, telemetry, utils::DatabaseURL};
 use gw_listener::aws_s3::AwsS3Client;
 use gw_listener::chain_id_from_env;
 use gw_listener::gw_listener::GatewayListener;
@@ -18,7 +18,7 @@ use tracing::{error, info, Level};
 #[command(version, about, long_about = None)]
 struct Conf {
     #[arg(long)]
-    database_url: Option<String>,
+    database_url: Option<DatabaseURL>,
 
     #[arg(long, default_value_t = 16)]
     database_pool_size: u32,
@@ -105,18 +105,14 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(conf.log_level)
         .init();
 
-    info!(conf = ?conf, "Starting gw_listener");
-
     if !conf.service_name.is_empty() {
         if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
             error!(error = %err, "Failed to setup OTLP");
         }
     }
 
-    let database_url = conf
-        .database_url
-        .clone()
-        .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
+    info!(gateway_url = %conf.gw_url, max_retries = %conf.provider_max_retries,
+         retry_interval = ?conf.provider_retry_interval, "Connecting to Gateway");
 
     let provider = loop {
         match ProviderBuilder::new()
@@ -152,7 +148,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let config = ConfigSettings {
         host_chain_id,
-        database_url,
+        database_url: conf.database_url.clone().unwrap_or_default(),
         database_pool_size: conf.database_pool_size,
         verify_proof_req_db_channel: conf.verify_proof_req_database_channel,
         gw_url: conf.gw_url,

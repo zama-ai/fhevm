@@ -78,7 +78,7 @@ task("task:deploySafe").setAction(async function (
   ]);
 
   // The staticCall allows to predict the address of the upcoming Safe proxy before it is deployed
-  const safeAddress =
+  const safeProxyAddress =
     await proxyFactoryContract.createProxyWithNonce.staticCall(
       safeSingleton.address,
       safeData,
@@ -96,11 +96,11 @@ task("task:deploySafe").setAction(async function (
   const safeProxyName = "SafeL2Proxy";
   await deployments.save(safeProxyName, {
     abi: safeSingleton.abi,
-    address: safeAddress,
+    address: safeProxyAddress,
   });
 
   console.log(
-    `Deployed contract: ${safeProxyName}, address: ${safeAddress}, network: ${network.name}`,
+    `Deployed contract: ${safeProxyName}, address: ${safeProxyAddress}, network: ${network.name}`,
   );
 });
 
@@ -118,7 +118,7 @@ task("task:deployAdminModule").setAction(async function (
 
   let safeProxyAddress;
   if (network.name === "hardhat") {
-    safeProxyAddress = getRequiredEnvVar("SAFE_ADDRESS");
+    safeProxyAddress = getRequiredEnvVar("SAFE_PROXY_ADDRESS");
   } else {
     safeProxyAddress = await getDeployedAddress(network.name, "SafeL2Proxy");
   }

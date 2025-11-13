@@ -1,0 +1,32 @@
+{
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+    "features": {
+        "ghcr.io/devcontainers/features/rust:1": {},
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+        "ghcr.io/devcontainers/features/common-utils:2": {},
+        "ghcr.io/devcontainers/features/node:1": {}
+    },
+    "postCreateCommand": "./.devcontainer/post_create_command.sh",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "vadimcn.vscode-lldb",
+                "juanblanco.solidity",
+                "eamodio.gitlens"
+            ],
+            "settings": {
+                "git.allowForcePush": true,
+                "diffEditor.ignoreTrimWhitespace": false,
+                "editor.formatOnSave": true,
+                "rust-analyzer.linkedProjects": [
+                    "coprocessor/fhevm-engine/Cargo.toml",
+                    "kms-connector/Cargo.toml"
+                ],
+                "rust-analyzer.cargo.extraEnv": {
+                    "SQLX_OFFLINE": "true"
+                }
+            }
+        }
+    }
+}

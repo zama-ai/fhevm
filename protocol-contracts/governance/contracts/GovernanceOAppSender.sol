@@ -5,19 +5,12 @@ import { OAppSender, OAppCore, Origin, MessagingFee, MessagingReceipt } from "@l
 import { OAppOptionsType3 } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OAppOptionsType3.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { MessagingParams } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import { Operation } from "./shared/Structs.sol";
 
 contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     /// @notice Msg type for sending data, for use in OAppOptionsType3 as an enforced option.
     uint16 public constant SEND = 1;
     uint32 public immutable DESTINATION_EID; /// @dev 40424 for Zama testnet, and ??? for mainnet.
-
-    /// @notice A Safe transaction operation.
-    /// @custom:variant Call The Safe transaction is executed with the `CALL` opcode.
-    /// @custom:variant Delegatecall The Safe transaction is executed with the `DELEGATECALL` opcode.
-    enum Operation {
-        Call,
-        DelegateCall
-    }
 
     /// @notice This struct is used to avoid stack too deep errors
     struct MessagingReceiptOptions {
@@ -29,6 +22,8 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     error FailedToWithdrawETH();
     /// @notice Thrown when trying to send cross-chain tx if contract holds unsufficient ETH to pay the LZ fees.
     error InsufficientBalanceForFee();
+    /// @notice Thrown when recipient is the null address.
+    error InvalidNullRecipient();
     /// @notice Thrown when trying to deploy this contract on an unsupported blockchain.
     error UnsupportedChainID();
 
@@ -74,6 +69,7 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
     /// @notice Quotes the gas needed to pay for the full cross-chain transaction in native gas.
     /// @param targets The target contracts to be called.
     /// @param values The values to be sent.
+    /// @param functionSignatures Function signatures - optional: if empty string, datas[i] is already starting with the function selector.
     /// @param datas The calldatas to be used.
     /// @param operations The Safe operations.
     /// @param options Message execution options (e.g., for sending gas to destination).
@@ -96,7 +92,9 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
         fee = mfee.nativeFee;
     }
 
-    /// @notice Send a cross-chain proposal to Zama Gateway chain. Only the owner, i.e the Aragaon DAO, should be able to send proposals.
+    /// @notice Send a cross-chain proposal to Zama Gateway chain. Only the owner, i.e the Aragon DAO, should be able to send proposals.
+    /// @notice The default LayerZero executor caps payload size at 10000 bytes. Proposals with many batched calls or large calldata can
+    /// exceed this limit and cause `_lzSend` to revert on the source chain.
     /// @param targets The target contracts to be called.
     /// @param values The values to be sent.
     /// @param datas The calldatas to be used (with function selector, if functionSignatures[i] is an empty string).
@@ -120,32 +118,37 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
             options
         );
         if (address(this).balance < quotedFee) revert InsufficientBalanceForFee();
-
         {
             // local scope to avoid stack too deep error
             uint256 targetLen = targets.length;
-            uint256 valueLen = values.length;
-            uint256 dataLen = datas.length;
-            uint256 operationLen = operations.length;
-            uint256 functionSignatureLen = functionSignatures.length;
             if (targetLen == 0) revert TargetsIsEmpty();
-            if (targetLen != valueLen) revert TargetsNotSameLengthAsValues();
-            if (targetLen != dataLen) revert TargetsNotSameLengthAsDatas();
-            if (targetLen != operationLen) revert TargetsNotSameLengthAsOperations();
-            if (targetLen != functionSignatureLen) revert TargetsNotSameLengthAsFunctionSignatures();
+            if (targetLen != values.length) revert TargetsNotSameLengthAsValues();
+            if (targetLen != datas.length) revert TargetsNotSameLengthAsDatas();
+            if (targetLen != operations.length) revert TargetsNotSameLengthAsOperations();
+            if (targetLen != functionSignatures.length) revert TargetsNotSameLengthAsFunctionSignatures();
         }
 
+        bytes memory message = abi.encode(targets, values, functionSignatures, datas, operations);
+        MessagingReceiptOptions memory receiptOptions = _sendWithOptions(message, options, quotedFee);
+
+        emit RemoteProposalSent(targets, values, functionSignatures, datas, operations, receiptOptions);
+    }
+
+    /// @dev Combines options, sends the message, and returns the receipt bundled with the used options.
+    function _sendWithOptions(
+        bytes memory message,
+        bytes calldata options,
+        uint256 quotedFee
+    ) private returns (MessagingReceiptOptions memory) {
+        bytes memory combinedOptions = combineOptions(DESTINATION_EID, SEND, options);
         MessagingReceipt memory receipt = _lzSend(
             DESTINATION_EID,
-            abi.encode(targets, values, functionSignatures, datas, operations),
-            combineOptions(DESTINATION_EID, SEND, options),
+            message,
+            combinedOptions,
             MessagingFee(quotedFee, 0),
             address(this)
         );
-
-        MessagingReceiptOptions memory receiptOptions = MessagingReceiptOptions({ receipt: receipt, options: options });
-
-        emit RemoteProposalSent(targets, values, functionSignatures, datas, operations, receiptOptions);
+        return MessagingReceiptOptions({ receipt: receipt, options: combinedOptions });
     }
 
     /// @dev We override the default LZ internal _lzSend function, to make the contract able to pay LZ fees.
@@ -174,8 +177,10 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
 
     /// @dev Allows the owner to withdraw ETH held by the contract.
     /// @param amount Amount of withdrawn ETH.
-    /// @param recipient Receiver of the withdrawn ETH.
+    /// @param recipient Receiver of the withdrawn ETH, should be non-null.
     function withdrawETH(uint256 amount, address recipient) external onlyOwner {
+        if (recipient == address(0)) revert InvalidNullRecipient();
+
         (bool success, ) = recipient.call{ value: amount }("");
         if (!success) {
             revert FailedToWithdrawETH();

@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { OAppReceiver, OAppCore, Origin, MessagingFee } from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
-import { OAppOptionsType3 } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OAppOptionsType3.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Operation } from "./shared/Structs.sol";
 
@@ -16,15 +15,23 @@ interface IAdminModule {
     ) external;
 }
 
-contract GovernanceOAppReceiver is OAppReceiver, OAppOptionsType3 {
+contract GovernanceOAppReceiver is OAppReceiver {
     /// @notice The address of the privileged AdminModule of the Safe owning GatewayConfig contract.
     IAdminModule public adminSafeModule;
 
+    /// @notice Thrown when trying to set the adminSafeModule to same value than the already set one.
+    error AdminSafeModuleAlreadySet(address adminModule);
     /// @notice Thrown when trying to receive cross-chain tx while adminSafeModule is not set yet.
     error AdminSafeModuleNotSet();
     /// @notice Thrown when trying to set the adminSafeModule to the null address.
     error AdminSafeModuleIsNull();
+    /// @notice Thrown when failing to withdraw ETH from the contract.
+    error FailedToWithdrawETH();
+    /// @notice Thrown when recipient is the null address.
+    error InvalidNullRecipient();
 
+    /// @notice Emitted when a new Safe AdminModule has been setup.
+    event AdminSafeModuleUpdated(address indexed oldModule, address indexed newModule);
     /// @notice Emitted when a proposal has been successfully received and executed by the Safe through the AdminModule.
     event ProposalExecuted(
         Origin origin,
@@ -35,6 +42,8 @@ contract GovernanceOAppReceiver is OAppReceiver, OAppOptionsType3 {
         bytes[] datas,
         Operation[] operations
     );
+    /// @notice Emitted when ETH has been successfully withdrawn from the contract.
+    event WithdrawnETH(address indexed recipient, uint256 amount);
 
     /// @notice Initialize with Endpoint V2 and owner address.
     /// @param endpoint The local chain's LayerZero Endpoint V2 address.
@@ -45,13 +54,16 @@ contract GovernanceOAppReceiver is OAppReceiver, OAppOptionsType3 {
     /// @param adminModule  The address of the privileged AdminModule of the Safe owning GatewayConfig contract.
     function setAdminSafeModule(address adminModule) external onlyOwner {
         if (adminModule == address(0)) revert AdminSafeModuleIsNull();
+        address oldAdminSafeModule = address(adminSafeModule);
+        if (oldAdminSafeModule == adminModule) revert AdminSafeModuleAlreadySet(adminModule);
         adminSafeModule = IAdminModule(adminModule);
+        emit AdminSafeModuleUpdated(oldAdminSafeModule, adminModule);
     }
 
     /// @notice Invoked by GovernanceOAppReceiver when EndpointV2.lzReceive is called.
     /// @notice Reverts if adminSafeModule was not set.
-    /// @dev   origin    Metadata (source chain, sender address, nonce).
-    /// @dev   guid      Global unique ID for tracking this message.
+    /// @param   origin    Metadata (source chain, sender address, nonce).
+    /// @param   guid      Global unique ID for tracking this message.
     /// @param message   ABI-encoded bytes (the string we sent earlier).
     /// @dev   executor  Executor address that delivered the message.
     /// @dev   extraData Additional data from the Executor (unused here).
@@ -83,5 +95,18 @@ contract GovernanceOAppReceiver is OAppReceiver, OAppOptionsType3 {
         adminSafeModule.executeSafeTransactions(targets, values, datas, operations);
 
         emit ProposalExecuted(origin, guid, targets, values, functionSignatures, datas, operations);
+    }
+
+    /// @dev Allows the owner to withdraw ETH held by the contract.
+    /// @param amount Amount of withdrawn ETH.
+    /// @param recipient Receiver of the withdrawn ETH, should be non-null.
+    function withdrawETH(uint256 amount, address recipient) external onlyOwner {
+        if (recipient == address(0)) revert InvalidNullRecipient();
+
+        (bool success, ) = recipient.call{ value: amount }("");
+        if (!success) {
+            revert FailedToWithdrawETH();
+        }
+        emit WithdrawnETH(recipient, amount);
     }
 }

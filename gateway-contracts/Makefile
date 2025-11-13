@@ -47,16 +47,11 @@ docker-compose-up: docker-compose-down
 docker-compose-down:
 	docker compose -vvv down -v --remove-orphans
 
-check-bindings: ensure-addresses update-bindings
-	git diff --exit-code || { \
-		echo "Rust bindings are not up-to-date."; \
-		echo "Please run 'make update-bindings' to update them."; \
-		exit 1; \
-	}
+check-bindings: ensure-addresses
+	python3 scripts/bindings_update.py check
 
 update-bindings: ensure-addresses
 	python3 scripts/bindings_update.py update
-	cd rust_bindings; cargo fmt --all
 
 lint-bindings:
 	cd rust_bindings && cargo clippy -- -D warnings && cd ..
@@ -117,9 +112,8 @@ ensure-addresses:
 # - estraverse@1.9.3: invalid SPDX identifier (`BSD`) but licensed under `BSD-2-Clause` (https://www.npmjs.com/package/estraverse)
 # - source-map@0.2.0: invalid SPDX identifier (`BSD`) but licensed under `BSD-3-Clause` (https://www.npmjs.com/package/source-map)
 # - web3-utils@1.10.4: licensed under `LGPL-3.0 license` (https://www.npmjs.com/package/web3-utils), which we only allow for tooling
-# - @safe-global/safe-contracts@1.4.1-2: licensed under `LGPL-3.0 license` (https://www.npmjs.com/package/@safe-global/safe-contracts), which we only allow for tooling
 check-licenses:
-	output=$$(npx license-checker --onlyAllow '0BSD; Apache-2.0; BSD-2-Clause; BSD-3-Clause; CC-BY-3.0; CC0-1.0; ISC; MIT; MPL-2.0; Python-2.0; WTFPL; PSF;' --excludePackages 'estraverse@1.9.3;source-map@0.2.0;web3-utils@1.10.4;@safe-global/safe-contracts@1.4.1-2;' 2>&1); \
+	output=$$(npx license-checker --onlyAllow '0BSD; Apache-2.0; BSD-2-Clause; BSD-3-Clause; CC-BY-3.0; CC0-1.0; ISC; MIT; MPL-2.0; Python-2.0; WTFPL; PSF;' --excludePackages 'estraverse@1.9.3;source-map@0.2.0;web3-utils@1.10.4;' 2>&1); \
 	status=$$?; \
 	if [ $$status -ne 0 ]; then \
 		printf '%s\n' "$$output"; \

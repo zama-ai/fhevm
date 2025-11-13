@@ -26,13 +26,19 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     IKMSGeneration private constant KMS_GENERATION = IKMSGeneration(kmsGenerationAddress);
 
     /**
+     * @notice The domain separator for the add ciphertext hash.
+     */
+    bytes32 private constant ADD_CIPHERTEXT_DOMAIN_SEPARATOR_HASH =
+        keccak256(bytes("CiphertextCommits.addCiphertextMaterial"));
+
+    /**
      * @dev The following constants are used for versioning the contract. They are made private
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
     string private constant CONTRACT_NAME = "CiphertextCommits";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -41,7 +47,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -103,12 +109,11 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Re-initializes the contract from V1.
-     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {ICiphertextCommits-addCiphertextMaterial}.
@@ -131,7 +136,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         // This hash is used to differentiate different calls to the function, in particular when
         // tracking the consensus on the received ciphertext material.
         // Note that chainId is not included in the hash because it is already contained in the ctHandle.
-        bytes32 addCiphertextHash = keccak256(abi.encode(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest));
+        bytes32 addCiphertextHash = _getAddCiphertextHash(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
         $.addCiphertextHashCounters[addCiphertextHash]++;
 
         // Associate the handle to coprocessor context ID 1 to anticipate their introduction in V2.
@@ -197,7 +202,13 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function getCiphertextMaterials(
         bytes32[] calldata ctHandles
     ) external view virtual returns (CiphertextMaterial[] memory ctMaterials) {
+        // Check that the list of handles is not empty
+        if (ctHandles.length == 0) {
+            revert EmptyCtHandles();
+        }
+
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
+
         ctMaterials = new CiphertextMaterial[](ctHandles.length);
 
         for (uint256 i = 0; i < ctHandles.length; i++) {
@@ -228,6 +239,11 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function getSnsCiphertextMaterials(
         bytes32[] calldata ctHandles
     ) external view virtual returns (SnsCiphertextMaterial[] memory snsCtMaterials) {
+        // Check that the list of handles is not empty
+        if (ctHandles.length == 0) {
+            revert EmptyCtHandles();
+        }
+
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
         snsCtMaterials = new SnsCiphertextMaterial[](ctHandles.length);
 
@@ -302,6 +318,21 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
+    }
+
+    /**
+     * @notice Returns the hash of a add ciphertext hash.
+     */
+    function _getAddCiphertextHash(
+        bytes32 ctHandle,
+        uint256 keyId,
+        bytes32 ciphertextDigest,
+        bytes32 snsCiphertextDigest
+    ) internal pure virtual returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(ADD_CIPHERTEXT_DOMAIN_SEPARATOR_HASH, ctHandle, keyId, ciphertextDigest, snsCiphertextDigest)
+            );
     }
 
     /**

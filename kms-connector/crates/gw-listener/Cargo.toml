@@ -27,6 +27,7 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 connector-utils = { workspace = true, features = ["tests"] }
+alloy = { workspace = true, features = ["json-rpc"] }
 rstest.workspace = true
 serial_test.workspace = true
 tempfile.workspace = true

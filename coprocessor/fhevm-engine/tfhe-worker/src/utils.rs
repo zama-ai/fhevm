@@ -168,13 +168,6 @@ pub fn sort_computations_by_dependencies(
     Ok((res, handles_to_check_in_db))
 }
 
-pub fn db_url(args: &crate::daemon_cli::Args) -> String {
-    if let Some(db_url) = &args.database_url {
-        return db_url.clone();
-    }
-    std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined")
-}
-
 #[test]
 fn test_invalid_handle_too_short() {
     let comp = vec![AsyncComputation {

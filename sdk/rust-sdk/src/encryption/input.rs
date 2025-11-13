@@ -12,6 +12,10 @@ use crate::encryption::IntoU256;
 use crate::encryption::primitives::create_encryption_parameters;
 use std::sync::Arc;
 use tfhe::{safe_serialization::safe_serialize, zk::ZkComputeLoad};
+
+const RAW_CT_HASH_DOMAIN_SEPARATOR: &str = "ZK-w_rct";
+const HANDLE_HASH_DOMAIN_SEPARATOR: &str = "ZK-w_hdl";
+
 /// Struct for building encrypted inputs with verification data
 /// Only constants are used for the builder factory
 pub struct InputBuilderFactory {
@@ -316,7 +320,8 @@ impl EncryptedInputBuilder {
         ciphertext_version: u8,
     ) -> Result<Vec<[u8; 32]>> {
         // Calculate ciphertext hash using keccak256
-        let ciphertext_hash = keccak256(ciphertext);
+        let ciphertext_preimage = [RAW_CT_HASH_DOMAIN_SEPARATOR.as_bytes(), ciphertext].concat();
+        let ciphertext_hash = keccak256(ciphertext_preimage);
 
         // Convert chain_id to bytes (ensuring we only use the last 8 bytes)
         let chain_id_bytes = chain_id_to_bytes(chain_id);
@@ -345,6 +350,7 @@ impl EncryptedInputBuilder {
                 // Create a buffer for the handle using the same scheme as the JavaScript version
                 let index_byte = index as u8;
                 let mut hash_input = Vec::new();
+                hash_input.extend_from_slice(HANDLE_HASH_DOMAIN_SEPARATOR.as_bytes());
                 hash_input.extend_from_slice(ciphertext_hash.as_slice());
                 hash_input.push(index_byte);
                 hash_input.extend_from_slice(acl_contract_address.as_slice());

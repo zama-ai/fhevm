@@ -1,0 +1,38 @@
+{
+    "name": "@zama/fhevm-deployment-cli",
+    "version": "0.1.0",
+    "description": "Deployment CLI for the Zama FHEVM protocol",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "tsc --project tsconfig.json",
+        "start": "bun run src/index.ts",
+        "lint": "biome check .",
+        "lint:fix": "biome check --write .",
+        "format": "biome format --write .",
+        "typecheck": "tsc --noEmit --project tsconfig.json",
+        "clearAllDeployments": "find ../ -type d -name 'deployments' -not -path '*/node_modules/*' -exec sh -c 'cd \"$(dirname {})\" && npx hardhat clean 2>/dev/null || true' \\; -exec rm -rf {} + && rm -f ./deployment-state/*.json",
+        "test": "vitest run",
+        "test:watch": "vitest"
+    },
+    "dependencies": {
+        "@clack/prompts": "^0.7.0",
+        "chalk": "^5.3.0",
+        "commander": "^12.1.0",
+        "dotenv": "^17.2.3",
+        "ethers": "^6.15.0",
+        "execa": "^8.0.1",
+        "fs-extra": "^11.2.0",
+        "ora": "^8.1.0",
+        "yaml": "^2.7.0",
+        "zod": "^3.23.8"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "2.3.3",
+        "@types/fs-extra": "^11.0.4",
+        "@types/node": "^20.12.12",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.6.3",
+        "vitest": "^1.6.0"
+    }
+}

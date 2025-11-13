@@ -2,7 +2,7 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers'
 import { expect } from 'chai'
 import { Contract, ContractFactory } from 'ethers'
 import { deployments, ethers } from 'hardhat'
-import { execTransaction } from './utils/execTransaction.ts'
+import { execTransaction } from './utils/execTransaction'
 
 import { Options } from '@layerzerolabs/lz-v2-utilities'
 import { EndpointId } from '@layerzerolabs/lz-definitions'
@@ -237,7 +237,7 @@ describe('GovernanceOApp Test', function () {
         expect(BigInt(await gatewayConfigMockBis.value())).to.equal(2n)
     })
 
-    it('owner can wihdraw ETH from prefunded governanceOAppSender', async function () {
+    it('owner can wihdraw ETH from prefunded GovernanceOAppSender', async function () {
         await owner.sendTransaction({
             to: governanceOAppSender.address,
             value: ethers.utils.parseEther('1'),
@@ -257,6 +257,68 @@ describe('GovernanceOApp Test', function () {
         const tolerance = ethers.utils.parseEther('0.0001').toBigInt() // account gas used for the tx
         const diff = received > expected ? received - expected : expected - received
         expect(diff <= tolerance).to.equal(true)
+    })
+
+    it('should not send recovered funds from GovernanceOAppSender to null address', async function () {
+        await owner.sendTransaction({
+            to: governanceOAppSender.address,
+            value: ethers.utils.parseEther('1'),
+        })
+        const tx = governanceOAppSender
+            .connect(owner)
+            .withdrawETH(ethers.utils.parseEther('1'), ethers.constants.AddressZero)
+        try {
+            await tx
+            expect.fail('withdrawETH should have reverted with InvalidNullRecipient')
+        } catch (err: any) {
+            const data = err.data
+            const selector = data.slice(0, 10)
+            const expected = governanceOAppSender.interface.getSighash('InvalidNullRecipient()')
+            expect(selector).to.equal(expected)
+        }
+    })
+
+    it('owner can wihdraw ETH from prefunded GovernanceOAppReceiver', async function () {
+        await ethers.provider.send('hardhat_setBalance', [
+            // on a real network, funds could be sent to GovernanceOAppReceiver contract via the payable lzReceive method
+            governanceOAppReceiver.address,
+            '0xde0b6b3a7640000', // 1 ETH in hex
+        ])
+
+        const balanceOwnerBefore = await ethers.provider.getBalance(owner.address)
+        const balanceGovReceiverBefore = await ethers.provider.getBalance(governanceOAppReceiver.address)
+        expect(balanceGovReceiverBefore.toBigInt()).to.equal(ethers.utils.parseEther('1').toBigInt())
+
+        await governanceOAppReceiver.withdrawETH(ethers.utils.parseEther('1'), owner.address)
+
+        const balanceOwnerAfter = await ethers.provider.getBalance(owner.address)
+        const balanceGovReceiverAfter = await ethers.provider.getBalance(governanceOAppReceiver.address)
+        expect(balanceGovReceiverAfter.toBigInt()).to.equal(0n)
+        const received = balanceOwnerAfter.sub(balanceOwnerBefore).toBigInt()
+        const expected = ethers.utils.parseEther('1').toBigInt()
+        const tolerance = ethers.utils.parseEther('0.0001').toBigInt() // account gas used for the tx
+        const diff = received > expected ? received - expected : expected - received
+        expect(diff <= tolerance).to.equal(true)
+    })
+
+    it('should not send recovered funds from GovernanceOAppReceiver to null address', async function () {
+        await ethers.provider.send('hardhat_setBalance', [
+            // on a real network, funds could be sent to GovernanceOAppReceiver contract via the payable lzReceive method
+            governanceOAppReceiver.address,
+            '0xde0b6b3a7640000', // 1 ETH in hex
+        ])
+        const tx = governanceOAppReceiver
+            .connect(owner)
+            .withdrawETH(ethers.utils.parseEther('1'), ethers.constants.AddressZero)
+        try {
+            await tx
+            expect.fail('withdrawETH should have reverted with InvalidNullRecipient')
+        } catch (err: any) {
+            const data = err.data
+            const selector = data.slice(0, 10)
+            const expected = governanceOAppReceiver.interface.getSighash('InvalidNullRecipient()')
+            expect(selector).to.equal(expected)
+        }
     })
 
     it('should send a payable remote proposal', async function () {

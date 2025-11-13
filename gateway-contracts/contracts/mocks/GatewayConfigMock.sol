@@ -19,8 +19,6 @@ contract GatewayConfigMock {
         Custodian[] custodians
     );
 
-    event ReinitializeGatewayConfigV3(KmsNode[] newKmsNodes);
-
     event UpdateKmsNodes(
         KmsNode[] newKmsNodes,
         uint256 newMpcThreshold,
@@ -63,10 +61,6 @@ contract GatewayConfigMock {
         Custodian[] memory custodians = new Custodian[](1);
 
         emit InitializeGatewayConfig(metadata, thresholds, kmsNodes, coprocessors, custodians);
-    }
-
-    function reinitializeV3(KmsNode[] calldata newKmsNodes) public {
-        emit ReinitializeGatewayConfigV3(newKmsNodes);
     }
 
     function updateKmsNodes(

@@ -1,0 +1,7 @@
+dist
+node_modules
+*.log
+.DS_Store
+deployment-state/**/*.json
+*.env
+!.env.example

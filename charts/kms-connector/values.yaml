@@ -283,6 +283,12 @@ kmsConnectorTxSender:
 
   # Wallet configuration for transaction signing
   wallet:
+    awsKms:
+      # If set to true, will use the AWS KMS key specified in the configmap instead of the private key specified in the secret
+      enabled: false
+      configmap:
+        name: mpc-party
+        key: KMS_CONNECTOR__TX_SENDER_AWS_KMS_KEY_ID
     secret:
       name: kms-connector-tx-sender
       key: kms-wallet

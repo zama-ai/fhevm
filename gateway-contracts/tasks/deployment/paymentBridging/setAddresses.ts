@@ -1,6 +1,6 @@
 import { task, types } from "hardhat/config";
 
-import { getRequiredEnvVar, loadAddressEnvVarsFromFile, pascalCaseToAddressEnvVar } from "../../utils";
+import { getRequiredAddressEnvVar, loadAddressEnvVarsFromFile } from "../../utils";
 import { appendAddressToSolidityFile, createSolidityAddressesFile } from "../utils";
 import { MOCKED_PAYMENT_BRIDGING_ADDRESSES_ENV_FILE_NAME } from "./mocked";
 
@@ -8,7 +8,7 @@ import { MOCKED_PAYMENT_BRIDGING_ADDRESSES_ENV_FILE_NAME } from "./mocked";
 const PAYMENT_BRIDGING_ADDRESSES_SOLIDITY_FILE_NAME = "PaymentBridgingAddresses.sol";
 
 function setPaymentBridgingContractAddress(name: string) {
-  const address = getRequiredEnvVar(pascalCaseToAddressEnvVar(name));
+  const address = getRequiredAddressEnvVar(name);
 
   console.log(`Setting ${name} address`);
   appendAddressToSolidityFile(name, address, PAYMENT_BRIDGING_ADDRESSES_SOLIDITY_FILE_NAME);

@@ -1,5 +1,6 @@
 use alloy::primitives::Uint;
 use alloy::transports::http::reqwest::Url;
+use fhevm_engine_common::utils::DatabaseURL;
 use std::time::Duration;
 
 use tracing::error;
@@ -36,7 +37,7 @@ impl TryFrom<u8> for KeyType {
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {
     pub host_chain_id: ChainId,
-    pub database_url: String,
+    pub database_url: DatabaseURL,
     pub database_pool_size: u32,
     pub verify_proof_req_db_channel: String,
 
@@ -67,8 +68,7 @@ impl Default for ConfigSettings {
     fn default() -> Self {
         Self {
             host_chain_id: chain_id_from_env().unwrap_or(12345),
-            database_url: std::env::var("DATABASE_URL")
-                .unwrap_or("postgres://postgres:postgres@localhost/coprocessor".to_owned()),
+            database_url: DatabaseURL::default(),
             database_pool_size: 16,
             verify_proof_req_db_channel: "event_zkpok_new_work".to_owned(),
             gw_url: "ws://127.0.0.1:8546".try_into().expect("Invalid URL"),

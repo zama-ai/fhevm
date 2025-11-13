@@ -69,7 +69,7 @@ describe('Zama Token OFT Transfer', () => {
         zamaERC20 = await zamaERC20Factory
             .connect(deployer)
             .deploy('ZAMAERC20', 'ZAMA', [owner.address], [INITIAL_MINT_AMOUNT], admin.address)
-        // Grant the admin the MINTER_ROLE & PAUSING_MINTER_ROLE
+        // Grant the admin the MINTER_ROLE & MINTING_PAUSER_ROLE
         zamaERC20.connect(admin).grantRole(MINTER_ROLE, admin.address)
         zamaERC20.connect(admin).grantRole(MINTING_PAUSER_ROLE, admin.address)
 

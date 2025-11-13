@@ -132,7 +132,7 @@ impl TestEnvironment {
                 .await
                 .expect("valid db instance");
             eprintln!("New test database on {}", instance.db_url());
-            conf.database_url = instance.db_url().to_owned();
+            conf.database_url = instance.db_url.clone();
             _test_instance = Some(instance);
         };
         conf.error_sleep_initial_secs = 1;
@@ -140,7 +140,7 @@ impl TestEnvironment {
         let db_pool = PgPoolOptions::new()
             .max_connections(16)
             .acquire_timeout(Duration::from_secs(5))
-            .connect(&conf.database_url)
+            .connect(conf.database_url.as_str())
             .await?;
 
         // Delete all proofs from the database.

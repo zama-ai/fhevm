@@ -75,6 +75,11 @@ describe("Mock contracts", function () {
     addresses: [DefaultAddress],
   };
 
+  const DefaultDelegationAccounts = {
+    delegatorAddress: DefaultAddress,
+    delegateAddress: DefaultAddress,
+  };
+
   const DefaultParamsType = ParamsTypeEnum.Default;
 
   const DefaultKmsDigest = {
@@ -164,6 +169,29 @@ describe("Mock contracts", function () {
           DefaultRequestValidity,
           DefaultContractsInfo,
           DefaultAddress,
+          DefaultBytes,
+          DefaultBytes,
+          DefaultBytes,
+        ),
+      )
+        .to.emit(decryptionMock, "UserDecryptionRequest")
+        .withArgs(
+          userDecryptionCounterId,
+          toValues([DefaultSnsCiphertextMaterial]),
+          DefaultAddress,
+          DefaultBytes,
+          DefaultBytes,
+        );
+    });
+
+    it("Should emit UserDecryptionRequest event on delegated user decryption request", async function () {
+      userDecryptionCounterId++;
+      await expect(
+        decryptionMock.delegatedUserDecryptionRequest(
+          EmptyArray,
+          DefaultRequestValidity,
+          DefaultDelegationAccounts,
+          DefaultContractsInfo,
           DefaultBytes,
           DefaultBytes,
           DefaultBytes,
