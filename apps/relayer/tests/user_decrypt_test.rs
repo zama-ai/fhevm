@@ -31,7 +31,7 @@ mod helpers {
 
     pub fn random_signature() -> String {
         let mut rng = rng();
-        (0..128)
+        (0..130)
             .map(|_| rng.random_range(0..16))
             .map(|digit| format!("{:x}", digit))
             .collect()

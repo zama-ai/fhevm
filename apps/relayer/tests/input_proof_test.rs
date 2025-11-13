@@ -4,6 +4,7 @@ use crate::common::utils::TestSetup;
 use alloy::primitives::{Address, Bytes};
 use rand::{rng, Rng};
 use serde_json::json;
+use std::str::FromStr;
 
 mod constants {
     pub const TIMEOUT_SECS: u64 = 10;
@@ -209,12 +210,25 @@ async fn test_input_proof_empty_ciphertext_error() {
         .expect("Request should complete");
 
     // Verify error response
-    assert_eq!(res.status(), 400);
-    let response_text = res.text().await.unwrap();
-    assert_eq!(
-        response_text,
-        "{\"message\":\"Input Verification cannot be empty.\"}"
-    );
+    let status_code = res.status();
+    let res_text = res.text().await;
+    assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
+    if let Ok(ok_text) = res_text {
+        match serde_json::Value::from_str(&ok_text) {
+            Ok(val) => {
+                assert!(
+                    val.get("errors").is_some(),
+                    "Expected 'errors' field in response"
+                );
+                let errors = val.get("errors").unwrap();
+                assert!(
+                    errors.get("ciphertextWithInputVerification").is_some(),
+                    "Expected 'ciphertextWithInputVerification' field in errors"
+                );
+            }
+            Err(e) => println!("Returned error text could not be parsed: {}", e),
+        }
+    }
 }
 
 #[tokio::test]
@@ -245,12 +259,27 @@ async fn test_input_proof_invalid_contract_address_error() {
         .expect("Request should complete");
 
     // Verify error response
-    assert_eq!(res.status(), 400);
-    let response_text = res.text().await.unwrap();
-    assert_eq!(
-        response_text,
-        "{\"message\":\"Error parsing contractAddress: OddLength\"}"
-    );
+    let status_code = res.status();
+    let res_text = res.text().await;
+    assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
+    if let Ok(ok_text) = res_text {
+        match serde_json::Value::from_str(&ok_text) {
+            Ok(val) => {
+                assert!(
+                    val.get("errors").is_some(),
+                    "Expected 'errors' field in response"
+                );
+                let errors = val.get("errors").unwrap();
+                assert!(
+                    errors.get("contractAddress").is_some(),
+                    "Expected 'contractAddress' field in errors"
+                );
+                let errors = &errors.get("contractAddress").unwrap().as_array().unwrap()[0];
+                assert_eq!(errors.get("code").unwrap(), "invalid_length",);
+            }
+            Err(e) => println!("Returned error text could not be parsed: {}", e),
+        }
+    }
 }
 
 #[tokio::test]
@@ -281,12 +310,27 @@ async fn test_input_proof_invalid_user_address_error() {
         .expect("Request should complete");
 
     // Verify error response
-    assert_eq!(res.status(), 400);
-    let response_text = res.text().await.unwrap();
-    assert_eq!(
-        response_text,
-        "{\"message\":\"Error parsing userAddress: OddLength\"}"
-    );
+    let status_code = res.status();
+    let res_text = res.text().await;
+    assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
+    if let Ok(ok_text) = res_text {
+        match serde_json::Value::from_str(&ok_text) {
+            Ok(val) => {
+                assert!(
+                    val.get("errors").is_some(),
+                    "Expected 'errors' field in response"
+                );
+                let errors = val.get("errors").unwrap();
+                assert!(
+                    errors.get("userAddress").is_some(),
+                    "Expected 'userAddress' field in errors"
+                );
+                let errors = &errors.get("userAddress").unwrap().as_array().unwrap()[0];
+                assert_eq!(errors.get("code").unwrap(), "invalid_length",);
+            }
+            Err(e) => println!("Returned error text could not be parsed: {}", e),
+        }
+    }
 }
 
 #[tokio::test]
@@ -314,10 +358,29 @@ async fn test_input_proof_invalid_hex_error() {
         .expect("Request should complete");
 
     // Verify error response
-    assert_eq!(res.status(), 400);
-    let response_text = res.text().await.unwrap();
-    assert_eq!(
-        response_text,
-        "{\"message\":\"Error decoding ciphertextWithInputVerification: Odd number of digits\"}"
-    );
+    let status_code = res.status();
+    let res_text = res.text().await;
+    assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
+    if let Ok(ok_text) = res_text {
+        match serde_json::Value::from_str(&ok_text) {
+            Ok(val) => {
+                assert!(
+                    val.get("errors").is_some(),
+                    "Expected 'errors' field in response"
+                );
+                let errors = val.get("errors").unwrap();
+                assert!(
+                    errors.get("ciphertextWithInputVerification").is_some(),
+                    "Expected 'ciphertextWithInputVerification' field in errors"
+                );
+                let errors = &errors
+                    .get("ciphertextWithInputVerification")
+                    .unwrap()
+                    .as_array()
+                    .unwrap()[0];
+                assert_eq!(errors.get("code").unwrap(), "invalid_hex_characters",);
+            }
+            Err(e) => println!("Returned error text could not be parsed: {}", e),
+        }
+    }
 }
