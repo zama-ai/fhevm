@@ -2,7 +2,7 @@ mod common;
 
 use crate::common::utils::TestSetup;
 use alloy::primitives::{Address, Bytes};
-use fhevm_relayer::http::utils::{ErrorResponse, ErrorCode};
+use fhevm_relayer::http::utils::{ErrorCode, ErrorResponse};
 use rand::{rng, Rng};
 use serde_json::json;
 
@@ -216,11 +216,68 @@ async fn test_input_proof_empty_ciphertext_error() {
     if let Ok(ok_text) = res_text {
         match serde_json::from_str::<ErrorResponse>(&ok_text) {
             Ok(error_response) => {
-                assert_eq!(error_response.error.code, ErrorCode::InvalidRequest);
-                let details = error_response.error.details.expect("Expected details in error response");
-                assert!(details.iter().any(|detail| 
-                    detail.field == "ciphertextWithInputVerification"
-                ), "Expected 'ciphertextWithInputVerification' field in error details");
+                assert_eq!(error_response.error.code, ErrorCode::ValidationFailed);
+                let details = error_response
+                    .error
+                    .details
+                    .expect("Expected details in error response");
+                assert!(
+                    details
+                        .iter()
+                        .any(|detail| detail.field == "ciphertextWithInputVerification"),
+                    "Expected 'ciphertextWithInputVerification' field in error details"
+                );
+            }
+            Err(e) => println!("Returned error text could not be parsed: {}", e),
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_input_proof_missing_ciphertext_error() {
+    // Setup test environment
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Create payload with missing ciphertext field
+
+    let payload = json!({
+        "contractChainId": &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        "contractAddress": format!("{:?}", helpers::random_address()),
+        "userAddress": format!("{:?}", helpers::random_address()),
+        "extraData": constants::EXTRA_DATA
+    });
+
+    // Make request with missing ciphertext field
+    let client = reqwest::Client::new();
+    let res = client
+        .post(helpers::v1_input_proof_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Request should complete");
+
+    // Verify error response
+    let status_code = res.status();
+    let res_text = res.text().await;
+    assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
+    if let Ok(ok_text) = res_text {
+        println!("{}", ok_text);
+        match serde_json::from_str::<ErrorResponse>(&ok_text) {
+            Ok(error_response) => {
+                assert_eq!(error_response.error.code, ErrorCode::MissingFields);
+                let details = error_response
+                    .error
+                    .details
+                    .expect("Expected details in error response");
+                assert!(
+                    details
+                        .iter()
+                        .any(|detail| detail.field == "ciphertextWithInputVerification"
+                            && detail.issue.contains("required")),
+                    "Expected 'ciphertextWithInputVerification' missing field error"
+                );
             }
             Err(e) => println!("Returned error text could not be parsed: {}", e),
         }
@@ -262,11 +319,18 @@ async fn test_input_proof_invalid_contract_address_error() {
         println!("{}", ok_text);
         match serde_json::from_str::<ErrorResponse>(&ok_text) {
             Ok(error_response) => {
-                assert_eq!(error_response.error.code, ErrorCode::InvalidRequest);
-                let details = error_response.error.details.expect("Expected details in error response");
-                assert!(details.iter().any(|detail| 
-                    detail.field == "contractAddress" && detail.issue.contains("42 characters")
-                ), "Expected 'contractAddress' validation error about length");
+                assert_eq!(error_response.error.code, ErrorCode::ValidationFailed);
+                let details = error_response
+                    .error
+                    .details
+                    .expect("Expected details in error response");
+                assert!(
+                    details
+                        .iter()
+                        .any(|detail| detail.field == "contractAddress"
+                            && detail.issue.contains("42 characters")),
+                    "Expected 'contractAddress' validation error about length"
+                );
             }
             Err(e) => println!("Returned error text could not be parsed: {}", e),
         }
@@ -307,11 +371,16 @@ async fn test_input_proof_invalid_user_address_error() {
     if let Ok(ok_text) = res_text {
         match serde_json::from_str::<ErrorResponse>(&ok_text) {
             Ok(error_response) => {
-                assert_eq!(error_response.error.code, ErrorCode::InvalidRequest);
-                let details = error_response.error.details.expect("Expected details in error response");
-                assert!(details.iter().any(|detail| 
-                    detail.field == "userAddress" && detail.issue.contains("42 characters")
-                ), "Expected 'userAddress' validation error about length");
+                assert_eq!(error_response.error.code, ErrorCode::ValidationFailed);
+                let details = error_response
+                    .error
+                    .details
+                    .expect("Expected details in error response");
+                assert!(
+                    details.iter().any(|detail| detail.field == "userAddress"
+                        && detail.issue.contains("42 characters")),
+                    "Expected 'userAddress' validation error about length"
+                );
             }
             Err(e) => println!("Returned error text could not be parsed: {}", e),
         }
@@ -349,11 +418,18 @@ async fn test_input_proof_invalid_hex_error() {
     if let Ok(ok_text) = res_text {
         match serde_json::from_str::<ErrorResponse>(&ok_text) {
             Ok(error_response) => {
-                assert_eq!(error_response.error.code, ErrorCode::InvalidRequest);
-                let details = error_response.error.details.expect("Expected details in error response");
-                assert!(details.iter().any(|detail| 
-                    detail.field == "ciphertextWithInputVerification" && detail.issue.contains("hex")
-                ), "Expected 'ciphertextWithInputVerification' validation error about hex");
+                assert_eq!(error_response.error.code, ErrorCode::ValidationFailed);
+                let details = error_response
+                    .error
+                    .details
+                    .expect("Expected details in error response");
+                assert!(
+                    details
+                        .iter()
+                        .any(|detail| detail.field == "ciphertextWithInputVerification"
+                            && detail.issue.contains("hex")),
+                    "Expected 'ciphertextWithInputVerification' validation error about hex"
+                );
             }
             Err(e) => println!("Returned error text could not be parsed: {}", e),
         }

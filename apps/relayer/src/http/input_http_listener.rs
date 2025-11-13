@@ -3,10 +3,10 @@ use crate::core::event::{
     RelayerEventData,
 };
 use crate::http::docs_utils::ChainId;
-use crate::http::utils::{de_string_or_number, AppResponse, OnceHandler};
+use crate::http::utils::{de_string_or_number, parse_and_validate, AppResponse, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
-use axum::{extract::Json, response::IntoResponse};
+use axum::{body::Bytes, extract::FromRequest, http::Request, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -80,18 +80,39 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
     // pub contractAddress: String, // Hex encoded address with 0x prefix.
     // pub userAddress: String,     // Hex encoded address with 0x prefix.
     /// Handles requests to the endpoint for input proof.
-    #[instrument(name="handle-input", skip_all, fields(contract=%payload.contract_address, contract_chain_id=%payload.contract_chain_id, userAddress=%payload.user_address))]
-    pub async fn handle(&self, Json(payload): Json<InputProofRequestJson>) -> impl IntoResponse {
-        info!("Handling input proof request");
-        // Validate the payload
-        if let Err(errors) = payload.validate() {
-            return InputProofResponse::invalid_request(errors).into_response();
-        }
-
+    #[instrument(name = "handle-input", skip_all, fields(request_id))]
+    pub async fn handle<S>(&self, req: Request<axum::body::Body>, _state: &S) -> impl IntoResponse
+    where
+        S: Send + Sync,
+    {
+        // Generate request ID first so it's available for all error responses
         let request_id = self.orchestrator.new_request_id();
-        let _span = span!(Level::INFO, "handle-input-req", request_id = %request_id); // Add other relevant top-level details
+        let _span = span!(Level::INFO, "handle-input-req", request_id = %request_id);
 
-        info!("Validated and assigned request id: {}", request_id);
+        info!(
+            "Handling input proof request, generated request id: {}",
+            request_id
+        );
+
+        let body = match Bytes::from_request(req, _state).await {
+            Ok(body) => body,
+            Err(_) => {
+                let mut response = AppResponse::<()>::request_error("Failed to read request body");
+                response.set_request_id(&request_id.to_string());
+                return response.into_response();
+            }
+        };
+
+        let request_data: InputProofRequest = match parse_and_validate::<
+            InputProofRequestJson,
+            InputProofRequest,
+        >(&body, &request_id.to_string())
+        {
+            Ok(request) => request,
+            Err(error_response) => return *error_response,
+        };
+
+        info!("Successfully parsed and validated request");
 
         // Register once handlers for receiving the decryption response from the gateway
         let (gateway_response_handler, gateway_response_rx): (
@@ -120,21 +141,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             error_handler,
         );
         info!("Registered once handler for handling input proof failure");
-        let request_data: InputProofRequest = match payload.try_into() {
-            Ok(event_data) => event_data,
-            Err(message) => {
-                // TODO: check if this is an unprocessable content or an internal server error
-                return InputProofResponse::bad_request(message.to_string()).into_response();
-            }
-        };
-        let request_data = InputProofEventData::ReqRcvdFromUser {
+
+        let event_data = InputProofEventData::ReqRcvdFromUser {
             input_proof_request: request_data,
         };
 
         let event = RelayerEvent::new(
             request_id,
             self.api_version,
-            RelayerEventData::InputProof(request_data),
+            RelayerEventData::InputProof(event_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;
         info!("dispatched event to orchestrator to initiate processing");
@@ -236,7 +251,6 @@ mod tests {
             }
         }
     }
-
 
     #[test]
     fn test_valid_json_with_string_id_succeeds() {
@@ -369,6 +383,7 @@ mod tests {
         let errors = data.validate().unwrap_err();
         assert!(errors.field_errors().contains_key("extra_data"));
     }
+
     #[test]
     fn test_invalid_chain_id_fails() {
         let fake_data = InputProofRequestJson {

@@ -2,15 +2,21 @@ use crate::core::event::{
     ApiVersion, PublicDecryptEventData, PublicDecryptEventId, PublicDecryptRequest, RelayerEvent,
     RelayerEventData,
 };
-use crate::http::utils::{AppResponse, OnceHandler};
+use crate::http::utils::{parse_and_validate, AppResponse, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use alloy::primitives::Bytes;
-use axum::{extract::Json, http::StatusCode, response::IntoResponse};
+use axum::{
+    body::Bytes as AxumBytes,
+    extract::FromRequest,
+    http::{Request, StatusCode},
+    response::IntoResponse,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
-use tracing::{debug, error, info, instrument, span, Level};
+use tracing::{error, info, instrument, span, Level};
 use utoipa::ToSchema;
 use validator::Validate;
 
@@ -69,32 +75,39 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         }
     }
 
-    #[instrument(name="handle-public-decrypt", skip_all, fields(handles=?payload.ciphertext_handles))]
-    pub async fn handle(&self, Json(payload): Json<PublicDecryptRequestJson>) -> impl IntoResponse {
-        info!("Handling public decryption request in http listener");
-        // Validate the payload
-        if let Err(errors) = payload.validate() {
-            debug!("Validation errors: {:?}", errors);
-            return PublicDecryptResponse::invalid_request(errors).into_response();
-        }
+    #[instrument(name = "handle-public-decrypt", skip_all, fields(request_id))]
+    pub async fn handle<S>(&self, req: Request<axum::body::Body>, _state: &S) -> impl IntoResponse
+    where
+        S: Send + Sync,
+    {
+        // Generate request ID first so it's available for all error responses
+        let request_id = self.orchestrator.new_request_id();
+        let _span = span!(Level::INFO, "handle-public-decrypt-req", request_id = %request_id);
 
-        let public_decrypt_request = match PublicDecryptRequest::try_from(payload.clone()) {
-            Ok(request) => request,
-            Err(error) => {
-                error!("Conversion failed: {}", error);
+        info!(
+            "Handling public decryption request, generated request id: {}",
+            request_id
+        );
 
-                return PublicDecryptResponse::bad_request(format!(
-                    "failed to parse request: {error}"
-                ))
-                .into_response();
+        let body = match AxumBytes::from_request(req, _state).await {
+            Ok(body) => body,
+            Err(_) => {
+                let mut response = AppResponse::<()>::request_error("Failed to read request body");
+                response.set_request_id(&request_id.to_string());
+                return response.into_response();
             }
         };
 
-        // Generate Request ID
-        let request_id = self.orchestrator.new_request_id();
-        let _span = span!(Level::INFO, "handle-public-decrypt-req", request_id = %request_id); // Add other relevant top-level details
+        let public_decrypt_request: PublicDecryptRequest =
+            match parse_and_validate::<PublicDecryptRequestJson, PublicDecryptRequest>(
+                &body,
+                &request_id.to_string(),
+            ) {
+                Ok(request) => request,
+                Err(error_response) => return *error_response,
+            };
 
-        info!("Validated and assigned request id: {}", request_id);
+        info!("Successfully parsed and validated request");
 
         // Register once handlers for receiving the decryption response from the gateway
         let (response_handler, response_rx): (

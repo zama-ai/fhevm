@@ -3,18 +3,20 @@ use crate::core::event::{
     UserDecryptRequest,
 };
 use crate::http::docs_utils::ChainId;
-use crate::http::utils::{de_string_or_number, serialize_vec_as_hex, AppResponse, OnceHandler};
+use crate::http::utils::{
+    de_string_or_number, parse_and_validate, serialize_vec_as_hex, AppResponse, OnceHandler,
+};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use alloy::primitives::Bytes;
-use axum::{extract::Json, response::IntoResponse};
+use axum::{body::Bytes as AxumBytes, extract::FromRequest, http::Request, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::hash::Hash;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::info;
-use tracing::{error, instrument, span, Level};
+use tracing::{instrument, span, Level};
 use utoipa::ToSchema;
 use validator::Validate;
 
@@ -131,39 +133,39 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
     }
 
     /// Handles requests to the endpoint for user decrypt.
-    #[instrument(name="handle-user-decrypt", skip_all, fields(user_address=%payload.user_address, cts=?payload.handle_contract_pairs))]
-    pub async fn handle(&self, Json(payload): Json<UserDecryptRequestJson>) -> impl IntoResponse {
-        info!("Handling user decryption request in http listener");
-        // Validate the payload
-        if let Err(errors) = payload.validate() {
-            return UserDecryptResponse::invalid_request(errors).into_response();
-        }
+    #[instrument(name = "handle-user-decrypt", skip_all, fields(request_id))]
+    pub async fn handle<S>(&self, req: Request<axum::body::Body>, _state: &S) -> impl IntoResponse
+    where
+        S: Send + Sync,
+    {
+        // Generate request ID first so it's available for all error responses
+        let request_id = self.orchestrator.new_request_id();
+        let _span = span!(Level::INFO, "handle-user-decrypt-req", request_id = %request_id);
 
-        let user_decrypt_request = match UserDecryptRequest::try_from(payload.clone()) {
-            Ok(request) => request,
-            Err(error) => {
-                // TODO: this should not happen anymore as we validate the payload.
-                error!("Conversion failed: {}", error);
-                // Try to identify exactly where it's failing
-                // if let Err(e) = serde_json::to_string(&payload) {
-                //     error!("Cannot serialize payload: {}", e);
-                // }
-                // // Try parsing individual fields
-                // if let Err(e) = payload.request_validity.duration_days.parse::<u32>() {
-                //     error!("Failed to parse durationDays: {}", e);
-                // }
+        info!(
+            "Handling user decryption request, generated request id: {}",
+            request_id
+        );
 
-                return UserDecryptResponse::bad_request(format!(
-                    "failed to parse request: {error}"
-                ))
-                .into_response();
+        let body = match AxumBytes::from_request(req, _state).await {
+            Ok(body) => body,
+            Err(_) => {
+                let mut response = AppResponse::<()>::request_error("Failed to read request body");
+                response.set_request_id(&request_id.to_string());
+                return response.into_response();
             }
         };
 
-        let request_id = self.orchestrator.new_request_id();
-        let _span = span!(Level::INFO, "handle-user-decrypt-req", request_id = %request_id); // Add other relevant top-level details
+        let user_decrypt_request: UserDecryptRequest =
+            match parse_and_validate::<UserDecryptRequestJson, UserDecryptRequest>(
+                &body,
+                &request_id.to_string(),
+            ) {
+                Ok(request) => request,
+                Err(error_response) => return *error_response,
+            };
 
-        info!("Validated and assigned request id: {}", request_id);
+        info!("Successfully parsed and validated request");
 
         // Register once handlers for receiving the decryption response from the gateway.
         let (response_handler, response_rx): (

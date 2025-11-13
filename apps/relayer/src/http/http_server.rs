@@ -23,7 +23,7 @@ use std::str::FromStr;
 
 use axum::{
     extract::Path,
-    http::StatusCode,
+    http::{Request, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Extension, Json, Router,
@@ -85,18 +85,14 @@ pub async fn run_http_server<D>(
     responses(
         (status = 200, description = "Successfully proved ciphertexts", body = InputProofResponseJson),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
-        // TODO: Define a shared error response body for 400 errors
-        (status = 400, description = "Bad request", body = InputProofErrorResponseJson),
-        // TODO: Define a shared error response body for 422 errors
-        (status = 422, description = "Failed to deserialize the JSON body"),
-        // TODO: Define a shared error response body for 500 errors
-        (status = 500, description = "Internal server error", body = InputProofErrorResponseJson),
+        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
     ),
 )]
     async fn input_proof_documented<D>(
         Path(api_version): Path<String>,
         Extension(input_proof_handler): Extension<Arc<InputProofHandler<D>>>,
-        Json(payload): Json<InputProofRequestJson>,
+        req: Request<axum::body::Body>,
     ) -> impl IntoResponse
     where
         D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
@@ -106,7 +102,7 @@ pub async fn run_http_server<D>(
                 HTTPApiVersion::V1 => http_metrics::with_http_metrics(
                     HttpEndpoint::InputProof,
                     HttpMethod::Post,
-                    async move { input_proof_handler.handle(Json(payload)).await },
+                    async move { input_proof_handler.handle(req, &()).await },
                 )
                 .await
                 .into_response(),
@@ -132,16 +128,15 @@ pub async fn run_http_server<D>(
     request_body = UserDecryptRequestJson,
     responses(
         (status = 200, description = "Successfully decrypted", body = UserDecryptResponseJson),
-        (status = 500, description = "Internal server error", body = UserDecryptErrorResponseJson),
+        (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
-        (status = 400, description = "Bad request", body = UserDecryptErrorResponseJson),
-        (status = 422, description = "Failed to deserialize the JSON body"),
+        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
     ),
 )]
     async fn user_decrypt_documented<D>(
         Path(api_version): Path<String>,
         Extension(user_decrypt_handler): Extension<Arc<UserDecryptHandler<D>>>,
-        Json(payload): Json<UserDecryptRequestJson>,
+        req: Request<axum::body::Body>,
     ) -> impl IntoResponse
     where
         D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
@@ -151,7 +146,7 @@ pub async fn run_http_server<D>(
                 HTTPApiVersion::V1 => http_metrics::with_http_metrics(
                     HttpEndpoint::UserDecrypt,
                     HttpMethod::Post,
-                    async move { user_decrypt_handler.handle(Json(payload)).await },
+                    async move { user_decrypt_handler.handle(req, &()).await },
                 )
                 .await
                 .into_response(),
@@ -176,16 +171,15 @@ pub async fn run_http_server<D>(
     request_body = PublicDecryptRequestJson,
     responses(
         (status = 200, description = "Successfully decrypted", body = PublicDecryptResponseJson),
-        (status = 500, description = "Internal server error", body = PublicDecryptErrorResponseJson),
-        (status = 400, description = "Bad request", body = PublicDecryptErrorResponseJson),
+        (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
+        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
-        (status = 422, description = "Failed to deserialize the JSON body"),
     ),
 )]
     async fn public_decrypt_documented<D>(
         Path(api_version): Path<String>,
         Extension(public_decrypt_handler): Extension<Arc<PublicDecryptHandler<D>>>,
-        Json(payload): Json<PublicDecryptRequestJson>,
+        req: Request<axum::body::Body>,
     ) -> impl IntoResponse
     where
         D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
@@ -195,7 +189,7 @@ pub async fn run_http_server<D>(
                 HTTPApiVersion::V1 => http_metrics::with_http_metrics(
                     HttpEndpoint::PublicDecrypt,
                     HttpMethod::Post,
-                    async move { public_decrypt_handler.handle(Json(payload)).await },
+                    async move { public_decrypt_handler.handle(req, &()).await },
                 )
                 .await
                 .into_response(),
@@ -260,6 +254,7 @@ pub async fn run_http_server<D>(
         schemas(InputProofRequestJson, InputProofResponseJson, InputProofErrorResponseJson),
         schemas(KeyUrlResponseJson),
         schemas(VersionErrorResponseJson),
+        schemas(crate::http::utils::ErrorResponse, crate::http::utils::ApiError, crate::http::utils::ErrorDetail),
     ),
     tags(
         (name = "FHEVM Relayer API", description = "FHEVM Relayer API")

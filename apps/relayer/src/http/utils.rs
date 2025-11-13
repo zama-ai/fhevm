@@ -1,14 +1,16 @@
 use crate::orchestrator::traits::{Event, EventHandler};
 use alloy::primitives::U256;
 use axum::{
-    http::StatusCode,
+    body::Bytes,
+    extract::FromRequest,
+    http::{Request, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use serde::{de, Deserialize, Deserializer};
+use serde::{de, de::DeserializeOwned, Deserialize, Deserializer};
 use serde_json::Value;
 use std::str::FromStr;
-use std::{borrow::Cow, sync::Mutex};
+use std::sync::Mutex;
 use tokio::sync::oneshot;
 use validator::ValidationError;
 
@@ -152,14 +154,183 @@ pub fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
     hex::encode(vec)
 }
 
+/// Generic parser function that handles JSON parsing, validation, and conversion in one place.
+/// This consolidates all parsing logic and ensures consistent error handling across endpoints.
+pub fn parse_and_validate<JsonType, RequestType>(
+    body: &[u8],
+    request_id: &str,
+) -> Result<RequestType, Box<Response>>
+where
+    JsonType: DeserializeOwned + validator::Validate,
+    RequestType: TryFrom<JsonType>,
+    <RequestType as TryFrom<JsonType>>::Error: std::fmt::Display,
+{
+    // 1. Parse JSON with custom error handling
+    let payload: JsonType = match serde_json::from_slice(body) {
+        Ok(payload) => payload,
+        Err(e) => {
+            let error_msg = e.to_string();
+
+            // Check if it's a field-specific error vs true JSON syntax error
+            if error_msg.contains("missing field")
+                || error_msg.contains("invalid type")
+                || error_msg.contains("unknown field")
+            {
+                // Field-specific JSON issues - use validation error structure
+                let mut errors = validator::ValidationErrors::new();
+                let field_name = extract_field_from_serde_error(&e);
+                let issue = format_serde_error_message(&e);
+
+                // Map field name to static str
+                let field_key: &'static str = match field_name.as_str() {
+                    "contractChainId" => "contract_chain_id",
+                    "contractAddress" => "contract_address",
+                    "userAddress" => "user_address",
+                    "ciphertextWithInputVerification" => "ciphertext_with_input_verification",
+                    "extraData" => "extra_data",
+                    _ => "request",
+                };
+
+                let mut error = validator::ValidationError::new("json_error");
+                error.message = Some(issue.into());
+                errors.add(field_key, error);
+
+                let mut response = if error_msg.contains("missing field") {
+                    AppResponse::<()>::missing_fields(errors)
+                } else {
+                    AppResponse::<()>::validation_failed(errors)
+                };
+
+                response.set_request_id(request_id);
+                return Err(Box::new(response.into_response()));
+            } else {
+                // True malformed JSON syntax error
+                let mut response = AppResponse::<()>::malformed_json("Invalid JSON format");
+                response.set_request_id(request_id);
+                return Err(Box::new(response.into_response()));
+            }
+        }
+    };
+
+    // 2. Validate the parsed payload
+    if let Err(errors) = payload.validate() {
+        let mut response = AppResponse::<()>::validation_failed(errors);
+        response.set_request_id(request_id);
+        return Err(Box::new(response.into_response()));
+    }
+
+    // 3. Convert to final request type
+    match RequestType::try_from(payload) {
+        Ok(request) => Ok(request),
+        Err(error) => {
+            // If validation passed but conversion failed, this is an internal server error
+            tracing::error!(
+                "Internal error: Conversion failed after validation passed: {}",
+                error
+            );
+            let mut response =
+                AppResponse::<()>::internal_server_error("Internal processing error");
+            response.set_request_id(request_id);
+            Err(Box::new(response.into_response()))
+        }
+    }
+}
+
+/// Custom JSON extractor that handles both parsing and validation errors consistently.
+/// Uses our standardized error response format for all failures.
+pub struct ValidatedJson<T>(pub T);
+
+impl<T, S> FromRequest<S> for ValidatedJson<T>
+where
+    T: DeserializeOwned + validator::Validate,
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request(
+        req: Request<axum::body::Body>,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        // 1. Extract raw body
+        let body = match Bytes::from_request(req, state).await {
+            Ok(body) => body,
+            Err(_) => {
+                return Err(
+                    AppResponse::<()>::request_error("Failed to read request body").into_response(),
+                );
+            }
+        };
+
+        // 2. Parse JSON with custom error handling
+        let payload: T = match serde_json::from_slice(&body) {
+            Ok(payload) => payload,
+            Err(e) => {
+                let error_msg = e.to_string();
+
+                // Check if it's a field-specific error (missing field, wrong type, unknown field)
+                // vs true JSON syntax error
+                if error_msg.contains("missing field")
+                    || error_msg.contains("invalid type")
+                    || error_msg.contains("unknown field")
+                {
+                    // Field-specific JSON issues - use validation error structure
+                    let mut errors = validator::ValidationErrors::new();
+                    let field_name = extract_field_from_serde_error(&e);
+                    let issue = format_serde_error_message(&e);
+
+                    // Map field name to static str to satisfy lifetime requirements
+                    let field_key: &'static str = match field_name.as_str() {
+                        "contractChainId" => "contract_chain_id",
+                        "contractAddress" => "contract_address",
+                        "userAddress" => "user_address",
+                        "ciphertextWithInputVerification" => "ciphertext_with_input_verification",
+                        "extraData" => "extra_data",
+                        _ => "request",
+                    };
+
+                    let mut error = validator::ValidationError::new("json_error");
+                    error.message = Some(issue.into());
+                    errors.add(field_key, error);
+
+                    if error_msg.contains("missing field") {
+                        return Err(AppResponse::<()>::missing_fields(errors).into_response());
+                    } else {
+                        return Err(AppResponse::<()>::validation_failed(errors).into_response());
+                    }
+                } else {
+                    // True malformed JSON syntax error - no field details
+                    return Err(
+                        AppResponse::<()>::malformed_json("Invalid JSON format").into_response()
+                    );
+                }
+            }
+        };
+
+        // 3. Validate with custom error handling
+        if let Err(errors) = payload.validate() {
+            return Err(AppResponse::<()>::validation_failed(errors).into_response());
+        }
+
+        Ok(ValidatedJson(payload))
+    }
+}
+
 /// A generic enum to handle various API response types.
 /// The generic parameter `V` allows the success variant to hold any serializable data.
 #[derive(Debug)]
 pub enum AppResponse<V: serde::Serialize> {
     Success(V),
-    BadRequest(Cow<'static, str>),
-    ValidationError(validator::ValidationErrors),
-    InternalServerError(Cow<'static, str>),
+    BadRequest {
+        code: ErrorCode,
+        message: String,
+        details: Option<Vec<ErrorDetail>>,
+        request_id: Option<String>,
+    },
+    InternalServerError {
+        code: ErrorCode,
+        message: String,
+        request_id: Option<String>,
+    },
 }
 
 impl<V: serde::Serialize> AppResponse<V> {
@@ -168,27 +339,147 @@ impl<V: serde::Serialize> AppResponse<V> {
         AppResponse::Success(data)
     }
 
-    /// Creates a new unprocessable entity response with the given message.
-    pub fn bad_request<S: Into<Cow<'static, str>>>(message: S) -> Self {
-        AppResponse::BadRequest(message.into())
+    /// Creates a new malformed JSON response (for JSON syntax errors).
+    pub fn malformed_json<S: Into<String>>(message: S) -> Self {
+        AppResponse::BadRequest {
+            code: ErrorCode::MalformedJson,
+            message: message.into(),
+            details: None,
+            request_id: None,
+        }
     }
 
-    /// Creates a new bad request response with the given validation errors.
+    /// Creates a new request error response (for body read failures, etc.).
+    pub fn request_error<S: Into<String>>(message: S) -> Self {
+        AppResponse::BadRequest {
+            code: ErrorCode::RequestError,
+            message: message.into(),
+            details: None,
+            request_id: None,
+        }
+    }
+
+    /// Creates a new missing fields response.
+    pub fn missing_fields(errors: validator::ValidationErrors) -> Self {
+        let details = Self::extract_field_details(errors);
+        let field_names: Vec<String> = details.iter().map(|d| d.field.clone()).collect();
+        let count = field_names.len();
+
+        let message = if count == 1 {
+            format!("Missing required field (1): {}", field_names[0])
+        } else {
+            format!(
+                "Missing required fields ({}): {}",
+                count,
+                field_names.join(", ")
+            )
+        };
+
+        AppResponse::BadRequest {
+            code: ErrorCode::MissingFields,
+            message,
+            details: if details.is_empty() {
+                None
+            } else {
+                Some(details)
+            },
+            request_id: None,
+        }
+    }
+
+    /// Creates a new validation error response.
+    pub fn validation_failed(errors: validator::ValidationErrors) -> Self {
+        let details = Self::extract_field_details(errors);
+        let field_names: Vec<String> = details.iter().map(|d| d.field.clone()).collect();
+        let count = field_names.len();
+
+        let message = if count == 1 {
+            format!("Validation failed (1): {}", field_names[0])
+        } else {
+            format!("Validation failed ({}): {}", count, field_names.join(", "))
+        };
+
+        AppResponse::BadRequest {
+            code: ErrorCode::ValidationFailed,
+            message,
+            details: if details.is_empty() {
+                None
+            } else {
+                Some(details)
+            },
+            request_id: None,
+        }
+    }
+
+    /// @deprecated Use request_error instead
+    pub fn bad_request<S: Into<String>>(message: S) -> Self {
+        Self::request_error(message)
+    }
+
+    /// @deprecated Use missing_fields or validation_failed instead
     pub fn invalid_request(errors: validator::ValidationErrors) -> Self {
-        AppResponse::ValidationError(errors)
+        Self::validation_failed(errors)
+    }
+
+    /// Helper to extract field details from validation errors
+    fn extract_field_details(errors: validator::ValidationErrors) -> Vec<ErrorDetail> {
+        errors
+            .field_errors()
+            .iter()
+            .flat_map(|(field, field_errors)| {
+                field_errors.iter().map(move |e| ErrorDetail {
+                    field: to_camel_case(field),
+                    issue: e
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_else(|| format!("Invalid {}", field)),
+                })
+            })
+            .collect()
     }
 
     /// Creates a new internal server error response with the given message.
-    pub fn internal_server_error<S: Into<Cow<'static, str>>>(message: S) -> Self {
-        AppResponse::InternalServerError(message.into())
+    pub fn internal_server_error<S: Into<String>>(message: S) -> Self {
+        AppResponse::InternalServerError {
+            code: ErrorCode::InternalServerError,
+            message: message.into(),
+            request_id: None,
+        }
+    }
+
+    /// Sets the request ID for error responses
+    pub fn set_request_id(&mut self, request_id: &str) {
+        match self {
+            AppResponse::BadRequest {
+                request_id: ref mut rid,
+                ..
+            } => {
+                *rid = Some(request_id.to_string());
+            }
+            AppResponse::InternalServerError {
+                request_id: ref mut rid,
+                ..
+            } => {
+                *rid = Some(request_id.to_string());
+            }
+            AppResponse::Success(_) => {
+                // Success responses don't need request IDs in error context
+            }
+        }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
-    BadRequest,
-    InvalidRequest,
+    // BadRequest subcategories
+    MalformedJson,
+    MissingFields,
+    ValidationFailed,
+    RequestError, // For body read failures, version errors, etc.
+
+    // Other HTTP status categories
     RateLimited,
     InternalServerError,
 }
@@ -196,21 +487,23 @@ pub enum ErrorCode {
 impl ErrorCode {
     pub fn as_str(&self) -> &'static str {
         match self {
-            ErrorCode::BadRequest => "bad_request",
-            ErrorCode::InvalidRequest => "invalid_request",
+            ErrorCode::MalformedJson => "malformed_json",
+            ErrorCode::MissingFields => "missing_fields",
+            ErrorCode::ValidationFailed => "validation_failed",
+            ErrorCode::RequestError => "request_error",
             ErrorCode::RateLimited => "rate_limited",
             ErrorCode::InternalServerError => "internal_server_error",
         }
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, utoipa::ToSchema)]
 pub struct ErrorDetail {
     pub field: String,
     pub issue: String,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, utoipa::ToSchema)]
 pub struct ApiError {
     pub code: ErrorCode,
     pub message: String,
@@ -220,7 +513,7 @@ pub struct ApiError {
     pub details: Option<Vec<ErrorDetail>>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, utoipa::ToSchema)]
 pub struct ErrorResponse {
     pub error: ApiError,
 }
@@ -230,14 +523,19 @@ impl<V: serde::Serialize> IntoResponse for AppResponse<V> {
     fn into_response(self) -> Response {
         match self {
             AppResponse::Success(data) => (StatusCode::OK, Json(data)).into_response(),
-            AppResponse::BadRequest(message) => {
+            AppResponse::BadRequest {
+                code,
+                message,
+                details,
+                request_id,
+            } => {
                 let api_error = ApiError {
-                    code: ErrorCode::BadRequest,
-                    message: message.to_string(),
-                    request_id: None,
+                    code,
+                    message,
+                    request_id,
                     retry_after_seconds: None,
                     reason: None,
-                    details: None,
+                    details,
                 };
 
                 (
@@ -246,46 +544,15 @@ impl<V: serde::Serialize> IntoResponse for AppResponse<V> {
                 )
                     .into_response()
             }
-            AppResponse::ValidationError(errors) => {
-                let details = errors
-                    .field_errors()
-                    .iter()
-                    .flat_map(|(field, field_errors)| {
-                        field_errors.iter().map(move |e| ErrorDetail {
-                            field: to_camel_case(field),
-                            issue: e
-                                .message
-                                .as_ref()
-                                .map(|m| m.to_string())
-                                .unwrap_or_else(|| format!("Invalid {}", field)),
-                        })
-                    })
-                    .collect::<Vec<_>>();
-
+            AppResponse::InternalServerError {
+                code,
+                message,
+                request_id,
+            } => {
                 let api_error = ApiError {
-                    code: ErrorCode::InvalidRequest,
-                    message: "One or more fields are invalid".to_string(),
-                    request_id: None,
-                    retry_after_seconds: None,
-                    reason: None,
-                    details: if details.is_empty() {
-                        None
-                    } else {
-                        Some(details)
-                    },
-                };
-
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": api_error })),
-                )
-                    .into_response()
-            }
-            AppResponse::InternalServerError(message) => {
-                let api_error = ApiError {
-                    code: ErrorCode::InternalServerError,
-                    message: message.to_string(),
-                    request_id: None,
+                    code,
+                    message,
+                    request_id,
                     retry_after_seconds: None,
                     reason: None,
                     details: None,
@@ -323,4 +590,61 @@ pub fn to_camel_case<S: AsRef<str>>(s: S) -> String {
     }
 
     result
+}
+
+/// Extract field name from serde JSON error message
+fn extract_field_from_serde_error(error: &serde_json::Error) -> String {
+    let error_msg = error.to_string();
+
+    // Pattern: "missing field `fieldName`"
+    if let Some(start) = error_msg.find("missing field `") {
+        let start = start + "missing field `".len();
+        if let Some(end) = error_msg[start..].find('`') {
+            return error_msg[start..start + end].to_string();
+        }
+    }
+
+    // Pattern: "invalid type: ... for key `fieldName`"
+    if let Some(start) = error_msg.find(" for key `") {
+        let start = start + " for key `".len();
+        if let Some(end) = error_msg[start..].find('`') {
+            return error_msg[start..start + end].to_string();
+        }
+    }
+
+    // Pattern: "unknown field `fieldName`"
+    if let Some(start) = error_msg.find("unknown field `") {
+        let start = start + "unknown field `".len();
+        if let Some(end) = error_msg[start..].find('`') {
+            return error_msg[start..start + end].to_string();
+        }
+    }
+
+    // Fallback: use generic field name
+    "request".to_string()
+}
+
+/// Format serde error message to be user-friendly
+fn format_serde_error_message(error: &serde_json::Error) -> String {
+    let error_msg = error.to_string();
+
+    if error_msg.contains("missing field") {
+        "This field is required".to_string()
+    } else if error_msg.contains("invalid type") {
+        if error_msg.contains("expected a string") {
+            "Value must be a string".to_string()
+        } else if error_msg.contains("expected a number") {
+            "Value must be a number".to_string()
+        } else if error_msg.contains("expected a boolean") {
+            "Value must be true or false".to_string()
+        } else {
+            "Invalid data type".to_string()
+        }
+    } else if error_msg.contains("unknown field") {
+        "Unknown field".to_string()
+    } else if error_msg.contains("expected") && error_msg.contains("found") {
+        "Invalid JSON format".to_string()
+    } else {
+        "Invalid JSON".to_string()
+    }
 }
