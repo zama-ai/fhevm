@@ -106,14 +106,6 @@ lint:
         - test-suite/fhevm/**
         - gateway-contracts/rust_bindings/**
 actions:
-  definitions:
-    - id: commitlint
-      description: Lint commit messages with commitlint
-      runtime: node
-      packages_file: package.json
-      run: cd ${workspace} && npx commitlint --edit ${file}
-      triggers:
-        - git_hooks: [commit-msg]
   enabled:
     - commitlint
     - trunk-check-pre-push
