@@ -15,7 +15,9 @@ gateway:
     max_concurrency: 100
     retry:
       max_attempts: 30
-      retry_interval_ms: 2000
+      # The time is treated as seconds in code, even the config name has _ms suffix.
+      # This will be fixed in next rc, until then treat the value as seconds.
+      retry_interval_ms: 2
 
 http:
   endpoint: "0.0.0.0:3000"
