@@ -161,7 +161,7 @@ impl ReadinessChecker {
         Fut: std::future::Future<Output = Result<bool, alloy::contract::Error>>,
     {
         let max_retries = self.retry_config.max_attempts;
-        let retry_interval = Duration::from_secs(self.retry_config.retry_interval_ms);
+        let retry_interval = Duration::from_millis(self.retry_config.retry_interval_ms);
 
         let mut retries = 0;
 
