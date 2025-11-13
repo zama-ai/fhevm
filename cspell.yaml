@@ -16,7 +16,6 @@ words:
   - capwords
   - chaijs
   - chainguard
-  - chainguard
   - chrono
   - ciphertext
   - ciphertexts
@@ -99,6 +98,7 @@ words:
   - overprovision
   - oxipng
   - plaintext
+  - postcss
   - postgres
   - postgresql
   - prehash
