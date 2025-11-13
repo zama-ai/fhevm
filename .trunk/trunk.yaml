@@ -107,6 +107,7 @@ lint:
         - gateway-contracts/rust_bindings/**
 actions:
   enabled:
+    - commitizen
     - commitlint
     - trunk-check-pre-push
     - trunk-fmt-pre-commit

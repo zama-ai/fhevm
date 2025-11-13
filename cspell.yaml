@@ -23,6 +23,7 @@ words:
   - codegen
   - codeowners
   - commitlint
+  - commitizen
   - cooldown
   - copro
   - crsgen
