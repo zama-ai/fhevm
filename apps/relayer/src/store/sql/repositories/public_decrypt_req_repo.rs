@@ -4,7 +4,7 @@ use sqlx::types::Uuid;
 
 use crate::store::sql::{
     client::PgClient,
-    models::models::{PublicDecryptReq, PublicDecryptReqStatus},
+    models::public_decrypt_req_model::{PublicDecryptReq, PublicDecryptReqStatus},
 };
 
 pub struct PublicDecryptReqRepository {

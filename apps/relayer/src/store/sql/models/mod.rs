@@ -1,2 +1,5 @@
-pub mod model_request_status_enum;
-pub mod models;
+pub mod input_proof_req_model;
+pub mod public_decrypt_req_model;
+pub mod user_decrypt_share_model;
+pub mod req_status_enum_model;
+pub mod user_decrypt_req_model;

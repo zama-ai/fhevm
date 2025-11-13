@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use crate::store::sql::{
     client::PgClient,
-    models::models::{UserDecryptReq, UserDecryptReqStatus},
+    models::user_decrypt_req_model::{UserDecryptReq, UserDecryptReqStatus},
 };
 
 pub struct UserDecryptReqRepository {

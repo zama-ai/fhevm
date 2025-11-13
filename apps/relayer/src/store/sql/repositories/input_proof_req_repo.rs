@@ -4,7 +4,7 @@ use sqlx::types::Uuid;
 
 use crate::store::sql::{
     client::PgClient,
-    models::models::{InputProofReq, InputProofReqStatus},
+    models::input_proof_req_model::{InputProofReq, InputProofReqStatus},
 };
 
 pub struct InputProofReqRepository {
