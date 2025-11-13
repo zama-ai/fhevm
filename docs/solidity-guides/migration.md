@@ -1,8 +1,58 @@
-# FHEVM v0.9 Migration Guide
+# Migrate to v0.9
 
-The FHEVM v0.9 release introduces significant architectural changes, primarily by removing the dependency on the Zama Oracle service and consolidating network configuration. This guide outlines the essential steps to successfully migrate your dApp to FHEVM v0.9.
+FHEVM v0.9 introduces major architectural changes, including:
 
-## ✅ Migration Checklist
+- Removal of the Zama Oracle
+- Introduction of a self-relaying public decryption workflow
+- Unified EthereumConfig replacing SepoliaConfig
+- Updated FHEVM system contracts on Sepolia
+
+This guide explains what changed and how to migrate your project smoothly.
+
+# What Changed in FHEVM v0.9?
+
+Before diving into migration steps, it’s important to understand the main breaking change: public decryption is no longer handled by a Zama Oracle, but by your dApp’s off-chain logic.
+
+## FHEVM v0.8 Oracle-Based Decryption
+
+In FHEVM v0.8, the decryption process relies on a trusted **Oracle** to relay the decryption request and proof between the dApp and the Zama Key Management System (KMS). This approach abstracts the complexity but introduces an external dependency.
+
+**Decryption Steps:**
+
+| Step   | Component                    | Action                                                                                                           |
+| :----- | :--------------------------- | :--------------------------------------------------------------------------------------------------------------- |
+| **1.** | **dApp (Solidity)**          | Calls `FHE.requestDecryption()` to signal a need for clear data.                                                 |
+| **2.** | **Oracle**                   | Listens for the on-chain decryption request event.                                                               |
+| **3.** | **Oracle (Off-chain)**       | Performs the `publicDecryption` with the Zama KMS, retrieving the **clear values** and the **decryption proof**. |
+| **4.** | **Oracle**                   | Calls the user-specified dApp **callback Solidity function** with the clear values and the associated proof.     |
+| **5.** | **dApp (Solidity Callback)** | Calls `FHE.verifySignatures()` to verify the authenticity of the clear values using the provided proof.          |
+
+> **Key takeaway for v0.8:** The Oracle is the trusted intermediary responsible for performing the off-chain decryption and submitting the result back to the dApp contract.
+
+## FHEVM v0.9 Self-Relaying Decryption & dApp Responsibility
+
+The FHEVM v0.9 architecture shifts to a **self-relaying model**, empowering the dApp client (the user) to execute the off-chain decryption and re-submission. This decentralizes the process and removes the dependency on a general-purpose Oracle.
+
+**Example Scenario: Checking a Player's Encrypted Score**
+
+Consider a **Game contract** where Alice's final score is stored encrypted on-chain. Alice needs to prove her clear score to claim a reward.
+
+| Step   | Component                    | Action                                                                                                                                                                                  |
+| :----- | :--------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1.** | **Game Contract (Solidity)** | An on-chain function is called to make Alice's encrypted score **publicly decryptable**.                                                                                                |
+| **2.** | **Alice (Client/Off-chain)** | Alice fetches the publicly decryptable encrypted score from the Game contract.                                                                                                          |
+| **3.** | **Alice (Client/Off-chain)** | Alice or any third-party service uses the **`@zama-fhe/relayer-sdk`** to call the off-chain `publicDecrypt` function. This returns the clear score value and a **proof of decryption**. |
+| **4.** | **Alice (Client/On-chain)**  | Alice calls a function on the **Game contract** with the decrypted clear score and the proof.                                                                                           |
+| **5.** | **Game Contract (Solidity)** | The contract calls `FHE.verifySignatures()` to **verify the score's validity** using the provided proof.                                                                                |
+| **6.** | **Game Contract (Solidity)** | If the score is valid, the contract executes the game logic (e.g., distributing Alice's prize).                                                                                         |
+
+> **Key takeaway for FHEVM v0.9:** Decryption is a **user-driven, off-chain process**. The dApp client is responsible for off-chain decryption, fetching the proof, and relaying the result back on-chain for verification.
+
+**Why this matters:** If your dApp previously relied on the Oracle, you must rewrite your decryption flow.
+The migration steps below guide you through this change.
+
+
+# Migration Checklist
 
 Here is a brief, ordered list of the steps required to successfully migrate your project to FHEVM v0.9:
 
@@ -74,46 +124,3 @@ The most significant change is the discontinuation of the Zama Oracle. This requ
 | **Client-Side Tool**   | N/A                                                                   | **Use `@zama-fhe/relayer-sdk`** to perform the `publicDecrypt` and obtain the proof. |
 
 > **Action:** Thoroughly review your Solidity code, dApp logic, and backend services. Any code relying on the external Oracle must be rewritten to implement the self-relaying workflow using the `@zama-fhe/relayer-sdk`.
-
-# 📖 FHEVM Public Decryption Workflow: From Oracle-Relaying (FHEVM v0.8) to Self-Relaying (FHEVM v0.9)
-
-This documentation outlines the architectural shift in the FHEVM Public decryption workflow, highlighting the change in responsibility from an external Oracle to the dApp's off-chain logic.
-
----
-
-## 1. FHEVM v0.8 Oracle-Based Decryption
-
-In FHEVM v0.8, the decryption process relies on a trusted **Oracle** to relay the decryption request and proof between the dApp and the Zama Key Management System (KMS). This approach abstracts the complexity but introduces an external dependency.
-
-### Decryption Steps
-
-| Step   | Component                    | Action                                                                                                           |
-| :----- | :--------------------------- | :--------------------------------------------------------------------------------------------------------------- |
-| **1.** | **dApp (Solidity)**          | Calls `FHE.requestDecryption()` to signal a need for clear data.                                                 |
-| **2.** | **Oracle**                   | Listens for the on-chain decryption request event.                                                               |
-| **3.** | **Oracle (Off-chain)**       | Performs the `publicDecryption` with the Zama KMS, retrieving the **clear values** and the **decryption proof**. |
-| **4.** | **Oracle**                   | Calls the user-specified dApp **callback Solidity function** with the clear values and the associated proof.     |
-| **5.** | **dApp (Solidity Callback)** | Calls `FHE.verifySignatures()` to verify the authenticity of the clear values using the provided proof.          |
-
-> **Key takeaway for v8:** The Oracle is the trusted intermediary responsible for performing the off-chain decryption and submitting the result back to the dApp contract.
-
----
-
-## 2. FHEVM v0.9 Self-Relaying Decryption & dApp Responsibility
-
-The FHEVM v0.9 architecture shifts to a **self-relaying model**, empowering the dApp client (the user) to execute the off-chain decryption and re-submission. This decentralizes the process and removes the dependency on a general-purpose Oracle.
-
-### Example Scenario: Checking a Player's Encrypted Score
-
-Consider a **Game contract** where Alice's final score is stored encrypted on-chain. Alice needs to prove her clear score to claim a reward.
-
-| Step   | Component                    | Action                                                                                                                                                                                  |
-| :----- | :--------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1.** | **Game Contract (Solidity)** | An on-chain function is called to make Alice's encrypted score **publicly decryptable**.                                                                                                |
-| **2.** | **Alice (Client/Off-chain)** | Alice fetches the publicly decryptable encrypted score from the Game contract.                                                                                                          |
-| **3.** | **Alice (Client/Off-chain)** | Alice or any third-party service uses the **`@zama-fhe/relayer-sdk`** to call the off-chain `publicDecrypt` function. This returns the clear score value and a **proof of decryption**. |
-| **4.** | **Alice (Client/On-chain)**  | Alice calls a function on the **Game contract** with the decrypted clear score and the proof.                                                                                           |
-| **5.** | **Game Contract (Solidity)** | The contract calls `FHE.verifySignatures()` to **verify the score's validity** using the provided proof.                                                                                |
-| **6.** | **Game Contract (Solidity)** | If the score is valid, the contract executes the game logic (e.g., distributing Alice's prize).                                                                                         |
-
-> **Key takeaway for FHEVM v0.9:** Decryption is a **user-driven, off-chain process**. The dApp client is responsible for off-chain decryption, fetching the proof, and relaying the result back on-chain for verification.
