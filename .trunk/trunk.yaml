@@ -69,7 +69,6 @@ lint:
     - checkov
     - dotenv-linter
     - git-diff-check
-    - hadolint
     - isort
     - osv-scanner
     - oxipng
@@ -81,6 +80,7 @@ lint:
     - trufflehog
     - yamllint
   enabled:
+    - hadolint@2.14.0
     - clippy@1.91.0
     - markdownlint@0.45.0
     - prettier@3.6.2
