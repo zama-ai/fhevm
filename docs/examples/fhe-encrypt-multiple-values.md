@@ -26,12 +26,12 @@ import {
   euint32,
   eaddress
 } from "@fhevm/solidity/lib/FHE.sol";
-import { EthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /**
  * This trivial example demonstrates the FHE encryption mechanism.
  */
-contract EncryptMultipleValues is EthereumConfig {
+contract EncryptMultipleValues is ZamaEthereumConfig {
   ebool private _encryptedEbool;
   euint32 private _encryptedEuint32;
   eaddress private _encryptedEaddress;

@@ -18,7 +18,7 @@ This ensures Hardhat can compile and test your contracts as expected.
 pragma solidity ^0.8.24;
 
 import {FHE, externalEuint64, euint64, eaddress, ebool} from "@fhevm/solidity/lib/FHE.sol";
-import {EthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
@@ -26,7 +26,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 
 import {ConfidentialFungibleToken} from "@openzeppelin/confidential-contracts/token/ConfidentialFungibleToken.sol";
 
-contract BlindAuction is EthereumConfig, ReentrancyGuard {
+contract BlindAuction is ZamaEthereumConfig, ReentrancyGuard {
     /// @notice The recipient of the highest bid once the auction ends
     address public beneficiary;
 

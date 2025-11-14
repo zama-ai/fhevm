@@ -73,14 +73,14 @@ pragma solidity ^0.8.24;
 pragma solidity ^0.8.24;
 
 import { FHE, euint32, externalEuint32 } from "@fhevm/solidity/lib/FHE.sol";
-import { EthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 ```
 
 These imports:
 
 - **FHE** — the core library to work with FHEVM encrypted types
 - **euint32** and **externalEuint32** — encrypted uint32 types used in FHEVM
-- **EthereumConfig** — provides the FHEVM configuration for the Ethereum mainnet or Ethereum Sepolia testnet networks.\
+- **ZamaEthereumConfig** — provides the FHEVM configuration for the Ethereum mainnet or Ethereum Sepolia testnet networks.\
   Inheriting from it enables your contract to use the FHE library
 
 #### Replace the current contract declaration:
@@ -94,16 +94,16 @@ contract Counter {
 
 ```solidity
 /// @title A simple FHE counter contract
-contract FHECounter is EthereumConfig {
+contract FHECounter is ZamaEthereumConfig {
 ```
 
 This change:
 
 - Renames the contract to `FHECounter`
-- Inherits from `EthereumConfig` to enable FHEVM support
+- Inherits from `ZamaEthereumConfig` to enable FHEVM support
 
 {% hint style="warning" %}
-This contract must inherit from the `EthereumConfig` abstract contract; otherwise, it will not be able to execute any FHEVM-related functionality on Sepolia or Hardhat.
+This contract must inherit from the `ZamaEthereumConfig` abstract contract; otherwise, it will not be able to execute any FHEVM-related functionality on Sepolia or Hardhat.
 {% endhint %}
 
 From your project's root directory, run:
