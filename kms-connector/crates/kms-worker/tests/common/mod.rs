@@ -11,7 +11,7 @@ use connector_utils::{
     },
     types::{
         GatewayEventKind,
-        db::{ParamsTypeDb, SnsCiphertextMaterialDbItem},
+        db::{EventType, ParamsTypeDb, SnsCiphertextMaterialDbItem},
         gw_event::PRSS_INIT_ID,
     },
 };
@@ -26,29 +26,32 @@ use tracing::info;
 
 pub async fn insert_rand_request(
     db: &Pool<Postgres>,
-    request_str: &str,
+    request_str: EventType,
     id: Option<U256>,
     already_sent: bool,
 ) -> anyhow::Result<GatewayEventKind> {
     let inserted_response = match request_str {
-        "PublicDecryptionRequest" => insert_rand_public_decryption_request(db, id, already_sent)
+        EventType::PublicDecryptionRequest => {
+            insert_rand_public_decryption_request(db, id, already_sent)
+                .await?
+                .into()
+        }
+        EventType::UserDecryptionRequest => {
+            insert_rand_user_decryption_request(db, id, already_sent)
+                .await?
+                .into()
+        }
+        EventType::PrepKeygenRequest => insert_rand_prep_keygen_request(db, id, already_sent)
             .await?
             .into(),
-        "UserDecryptionRequest" => insert_rand_user_decryption_request(db, id, already_sent)
+        EventType::KeygenRequest => insert_rand_keygen_request(db, id, already_sent)
             .await?
             .into(),
-        "PrepKeygenRequest" => insert_rand_prep_keygen_request(db, id, already_sent)
+        EventType::CrsgenRequest => insert_rand_crsgen_request(db, id, already_sent)
             .await?
             .into(),
-        "KeygenRequest" => insert_rand_keygen_request(db, id, already_sent)
-            .await?
-            .into(),
-        "CrsgenRequest" => insert_rand_crsgen_request(db, id, already_sent)
-            .await?
-            .into(),
-        "PrssInit" => insert_rand_prss_init(db, id).await?.into(),
-        "KeyReshareSameSet" => insert_rand_key_reshare_same_set(db, id).await?.into(),
-        s => panic!("Unexpected response kind: {s}"),
+        EventType::PrssInit => insert_rand_prss_init(db, id).await?.into(),
+        EventType::KeyReshareSameSet => insert_rand_key_reshare_same_set(db, id).await?.into(),
     };
     Ok(inserted_response)
 }
@@ -258,17 +261,23 @@ pub async fn insert_rand_key_reshare_same_set(
     })
 }
 
-pub async fn check_no_request_in_db(db: &Pool<Postgres>, request_str: &str) -> anyhow::Result<()> {
+pub async fn check_no_request_in_db(
+    db: &Pool<Postgres>,
+    event_type: EventType,
+) -> anyhow::Result<()> {
     info!("Checking no requests are remaining in DB...");
-    let query = match request_str {
-        "PublicDecryptionRequest" => "SELECT COUNT(decryption_id) FROM public_decryption_requests",
-        "UserDecryptionRequest" => "SELECT COUNT(decryption_id) FROM user_decryption_requests",
-        "PrepKeygenRequest" => "SELECT COUNT(prep_keygen_id) FROM prep_keygen_requests",
-        "KeygenRequest" => "SELECT COUNT(key_id) FROM keygen_requests",
-        "CrsgenRequest" => "SELECT COUNT(crs_id) FROM crsgen_requests",
-        "PrssInit" => "SELECT COUNT(id) FROM prss_init",
-        "KeyReshareSameSet" => "SELECT COUNT(key_id) FROM key_reshare_same_set",
-        s => panic!("Unexpected request kind: {s}"),
+    let query = match event_type {
+        EventType::PublicDecryptionRequest => {
+            "SELECT COUNT(decryption_id) FROM public_decryption_requests"
+        }
+        EventType::UserDecryptionRequest => {
+            "SELECT COUNT(decryption_id) FROM user_decryption_requests"
+        }
+        EventType::PrepKeygenRequest => "SELECT COUNT(prep_keygen_id) FROM prep_keygen_requests",
+        EventType::KeygenRequest => "SELECT COUNT(key_id) FROM keygen_requests",
+        EventType::CrsgenRequest => "SELECT COUNT(crs_id) FROM crsgen_requests",
+        EventType::PrssInit => "SELECT COUNT(id) FROM prss_init",
+        EventType::KeyReshareSameSet => "SELECT COUNT(key_id) FROM key_reshare_same_set",
     };
     let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
     if count == 0 {
