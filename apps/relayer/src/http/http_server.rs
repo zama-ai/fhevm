@@ -13,9 +13,12 @@ use crate::http::userdecrypt_http_listener::{
     UserDecryptErrorResponseJson, UserDecryptHandler, UserDecryptRequestJson,
     UserDecryptResponseJson,
 };
+use crate::http::utils::AppResponse;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
+use chrono::Utc;
+use rand::Rng;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
@@ -31,7 +34,8 @@ use axum::{
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_governor::{
-    governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor, GovernorLayer,
+    governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor, GovernorError,
+    GovernorLayer,
 };
 use utoipa::{OpenApi, ToSchema};
 use utoipa_redoc::{Redoc, Servable};
@@ -55,6 +59,36 @@ impl FromStr for HTTPApiVersion {
             "v1" => Ok(HTTPApiVersion::V1),
             _ => Err(()),
         }
+    }
+}
+
+/// Custom error handler for rate limiting that returns structured JSON responses.
+fn create_rate_limit_error_handler(
+    config: &RateLimitConfig,
+) -> impl Fn(GovernorError) -> axum::response::Response + Clone {
+    let base_retry_after_seconds = config.retry_after_seconds;
+    let jitter_max_ms = config.jitter_max_ms;
+
+    move |_err: GovernorError| {
+        // Calculate retry-after with millisecond precision jitter
+        let base_ms = base_retry_after_seconds * 1000;
+        let total_ms = if jitter_max_ms > 0 {
+            let jitter = rand::rng().random_range(0..=jitter_max_ms);
+            base_ms + jitter
+        } else {
+            base_ms
+        };
+
+        // Generate RFC 7231 timestamp indicating when client should retry
+        // Uses absolute timestamp instead of relative seconds for cache-safety
+        let retry_time = Utc::now() + chrono::Duration::milliseconds(total_ms as i64);
+        let retry_after_timestamp = retry_time.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+
+        AppResponse::<()>::rate_limited(
+            "Too many requests at relayer HTTP server",
+            &retry_after_timestamp,
+        )
+        .into_response()
     }
 }
 
@@ -86,6 +120,7 @@ pub async fn run_http_server<D>(
         (status = 200, description = "Successfully verified input proof", body = InputProofResponseJson),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
         (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
+        (status = 429, description = "Too many requests", body = crate::http::utils::ErrorResponse),
         (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
     ),
 )]
@@ -130,6 +165,7 @@ pub async fn run_http_server<D>(
         (status = 200, description = "Successfully decrypted", body = UserDecryptResponseJson),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
         (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
+        (status = 429, description = "Too many requests", body = crate::http::utils::ErrorResponse),
         (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
     ),
 )]
@@ -173,6 +209,7 @@ pub async fn run_http_server<D>(
         (status = 200, description = "Successfully decrypted", body = PublicDecryptResponseJson),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
         (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
+        (status = 429, description = "Too many requests", body = crate::http::utils::ErrorResponse),
         (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
     ),
 )]
@@ -278,34 +315,37 @@ pub async fn run_http_server<D>(
         .finish()
         .unwrap();
 
-    let app = Router::new()
-        .route("/liveness", get(liveness_handler))
-        .route(
-            "/healthz",
-            get(move || async move { health_handler(health_checker).await }),
-        )
-        .route("/version", get(version_handler))
-        // Apply rate limiting to POST endpoints
-        .route(
-            "/{api_version}/input-proof",
-            post(input_proof_documented::<D>),
-        )
-        .route(
-            "/{api_version}/public-decrypt",
-            post(public_decrypt_documented::<D>),
-        )
-        .route(
-            "/{api_version}/user-decrypt",
-            post(user_decrypt_documented::<D>),
-        )
-        .layer(GovernorLayer::new(governor_conf))
-        .layer(Extension(input_proof_handler))
-        .layer(Extension(public_decrypt_handler))
-        .layer(Extension(user_decrypt_handler))
-        // GET endpoint without rate limiting
-        .route("/{api_version}/keyurl", get(keyurl_documented))
-        .layer(Extension(key_url))
-        .merge(Redoc::with_url("/docs", ApiDoc::openapi()));
+    let app =
+        Router::new()
+            .route("/liveness", get(liveness_handler))
+            .route(
+                "/healthz",
+                get(move || async move { health_handler(health_checker).await }),
+            )
+            .route("/version", get(version_handler))
+            // Apply rate limiting to POST endpoints
+            .route(
+                "/{api_version}/input-proof",
+                post(input_proof_documented::<D>),
+            )
+            .route(
+                "/{api_version}/public-decrypt",
+                post(public_decrypt_documented::<D>),
+            )
+            .route(
+                "/{api_version}/user-decrypt",
+                post(user_decrypt_documented::<D>),
+            )
+            .layer(GovernorLayer::new(governor_conf).error_handler(
+                create_rate_limit_error_handler(&rate_limit_on_post_endpoints),
+            ))
+            .layer(Extension(input_proof_handler))
+            .layer(Extension(public_decrypt_handler))
+            .layer(Extension(user_decrypt_handler))
+            // GET endpoint without rate limiting
+            .route("/{api_version}/keyurl", get(keyurl_documented))
+            .layer(Extension(key_url))
+            .merge(Redoc::with_url("/docs", ApiDoc::openapi()));
 
     println!("Server listening on http://{http_endpoint}");
 

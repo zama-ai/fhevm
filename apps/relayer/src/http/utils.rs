@@ -331,6 +331,13 @@ pub enum AppResponse<V: serde::Serialize> {
         message: String,
         request_id: Option<String>,
     },
+    TooManyRequests {
+        code: ErrorCode,
+        message: String,
+        reason: String,
+        retry_after: String,
+        request_id: Option<String>,
+    },
 }
 
 impl<V: serde::Serialize> AppResponse<V> {
@@ -448,6 +455,17 @@ impl<V: serde::Serialize> AppResponse<V> {
         }
     }
 
+    /// Creates a new rate limited response.
+    pub fn rate_limited<S: Into<String>>(reason: S, retry_after: S) -> Self {
+        AppResponse::TooManyRequests {
+            code: ErrorCode::RateLimited,
+            message: "Rate limit exceeded".to_string(),
+            reason: reason.into(),
+            retry_after: retry_after.into(),
+            request_id: None,
+        }
+    }
+
     /// Sets the request ID for error responses
     pub fn set_request_id(&mut self, request_id: &str) {
         match self {
@@ -463,6 +481,12 @@ impl<V: serde::Serialize> AppResponse<V> {
             } => {
                 *rid = Some(request_id.to_string());
             }
+            AppResponse::TooManyRequests {
+                request_id: ref mut rid,
+                ..
+            } => {
+                *rid = Some(request_id.to_string());
+            }
             AppResponse::Success(_) => {
                 // Success responses don't need request IDs in error context
             }
@@ -472,15 +496,19 @@ impl<V: serde::Serialize> AppResponse<V> {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
+#[schema(example = "validation_failed")]
 pub enum ErrorCode {
-    // BadRequest subcategories
+    /// JSON syntax error or malformed JSON
     MalformedJson,
+    /// Required fields are missing from the request
     MissingFields,
+    /// Field validation failed (invalid format, out of range, etc.)
     ValidationFailed,
-    RequestError, // For body read failures, version errors, etc.
-
-    // Other HTTP status categories
+    /// General request errors (body read failures, version errors, etc.)
+    RequestError,
+    /// Rate limit exceeded
     RateLimited,
+    /// Internal server processing error
     InternalServerError,
 }
 
@@ -508,7 +536,10 @@ pub struct ApiError {
     pub code: ErrorCode,
     pub message: String,
     pub request_id: Option<String>,
-    pub retry_after_seconds: Option<u64>,
+    /// RFC 7231 timestamp indicating when client should retry (e.g. "Wed, 21 Oct 2015 07:28:00 GMT").
+    /// Uses absolute timestamp instead of relative seconds for cache-safety.
+    #[schema(example = "Thu, 14 Nov 2024 15:30:00 GMT")]
+    pub retry_after: Option<String>,
     pub reason: Option<String>,
     pub details: Option<Vec<ErrorDetail>>,
 }
@@ -533,7 +564,7 @@ impl<V: serde::Serialize> IntoResponse for AppResponse<V> {
                     code,
                     message,
                     request_id,
-                    retry_after_seconds: None,
+                    retry_after: None,
                     reason: None,
                     details,
                 };
@@ -553,13 +584,35 @@ impl<V: serde::Serialize> IntoResponse for AppResponse<V> {
                     code,
                     message,
                     request_id,
-                    retry_after_seconds: None,
+                    retry_after: None,
                     reason: None,
                     details: None,
                 };
 
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": api_error })),
+                )
+                    .into_response()
+            }
+            AppResponse::TooManyRequests {
+                code,
+                message,
+                reason,
+                retry_after,
+                request_id,
+            } => {
+                let api_error = ApiError {
+                    code,
+                    message,
+                    request_id,
+                    retry_after: Some(retry_after),
+                    reason: Some(reason),
+                    details: None,
+                };
+
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
                     Json(serde_json::json!({ "error": api_error })),
                 )
                     .into_response()

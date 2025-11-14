@@ -76,6 +76,10 @@ pub struct RateLimitConfig {
     pub requests_per_second: u32,
     /// Maximum burst size allowed (bucket capacity)
     pub burst_size: u32,
+    /// Base retry-after time in seconds for rate limited responses
+    pub retry_after_seconds: u64,
+    /// Maximum additional jitter in milliseconds (0 = no jitter)
+    pub jitter_max_ms: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -281,6 +285,8 @@ http:
   rate_limit_on_post_endpoints:
     requests_per_second: 30
     burst_size: 30
+    retry_after_seconds: 3
+    jitter_max_ms: 2000
   metrics:
     histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
 metrics:
@@ -363,6 +369,8 @@ http:
   rate_limit_post_endpoints:
     requests_per_second: 30
     burst_size: 30
+    retry_after_seconds: 3
+    jitter_max_ms: 2000
   metrics:
     histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
 metrics:
