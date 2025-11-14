@@ -126,10 +126,7 @@ async fn test_processing_request(event_type: EventType, already_sent: bool) -> a
     // Mocking Gateway
     let asserter = Asserter::new();
 
-    if matches!(
-        event_type,
-        EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest
-    ) {
+    if matches!(event_type, EventType::PublicDecryptionRequest) {
         let is_decryption_done_call_response = false;
         asserter.push_success(&is_decryption_done_call_response.abi_encode());
     }

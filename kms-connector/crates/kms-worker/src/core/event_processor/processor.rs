@@ -112,9 +112,8 @@ impl<P: Provider> DbEventProcessor<P> {
                     .await
             }
             GatewayEventKind::UserDecryption(req) => {
-                self.decryption_processor
-                    .check_decryption_not_already_done(req.decryptionId)
-                    .await?;
+                // No need to check decryption is done for user decrypt, as MPC parties don't
+                // communicate between each other for user decrypt
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
