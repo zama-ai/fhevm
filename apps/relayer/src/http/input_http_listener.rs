@@ -15,7 +15,7 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 /// Represents the payload coming into the endpoint for input proof.
-#[derive(Debug, Deserialize, Validate, Clone, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, Validate, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct InputProofRequestJson {
     /// Contract's chain id
@@ -180,7 +180,6 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
 mod tests {
     use super::*;
     use fake::{Dummy, Fake};
-    use serde::ser::{Serialize, SerializeStruct, Serializer};
     use serde_json;
 
     struct HexString(pub usize);
@@ -237,26 +236,6 @@ mod tests {
         }
     }
 
-    impl Serialize for InputProofRequestJson {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            // Number of fields: 5
-            let mut state = serializer.serialize_struct("InputProofRequestJson", 5)?;
-
-            state.serialize_field("contractChainId", &self.contract_chain_id)?;
-            state.serialize_field("contractAddress", &self.contract_address)?;
-            state.serialize_field("userAddress", &self.user_address)?;
-            state.serialize_field(
-                "ciphertextWithInputVerification",
-                &self.ciphertext_with_input_verification,
-            )?;
-            state.serialize_field("extraData", &self.extra_data)?;
-
-            state.end()
-        }
-    }
 
     #[test]
     fn test_valid_json_with_string_id_succeeds() {
