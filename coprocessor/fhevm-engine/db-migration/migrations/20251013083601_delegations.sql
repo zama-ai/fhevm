@@ -4,8 +4,8 @@ CREATE TABLE IF NOT EXISTS delegate_user_decrypt (
     delegate BYTEA NOT NULL,
     contract_address BYTEA NOT NULL,
     delegation_counter BIGINT NOT NULL,
-    old_expiration_date BIGINT NOT NULL, -- 0 = first time delegation
-    new_expiration_date BIGINT NOT NULL, -- 0 = revoke
+    old_expiration_date NUMERIC NOT NULL, -- 0 = first time delegation
+    new_expiration_date NUMERIC NOT NULL, -- 0 = revoke
     host_chain_id BIGINT NOT NULL,
     block_number BIGINT NOT NULL,
     block_hash BYTEA NOT NULL, -- to check finality
