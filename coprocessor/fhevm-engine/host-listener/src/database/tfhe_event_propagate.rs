@@ -6,7 +6,7 @@ use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::DatabaseURL;
-use fhevm_engine_common::utils::{compact_hex, HeartBeat};
+use fhevm_engine_common::utils::{to_hex, HeartBeat};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Uuid;
@@ -528,7 +528,7 @@ impl Database {
 
                 for handle in handles.clone() {
                     info!(
-                        handle = compact_hex(&handle),
+                        handle = to_hex(&handle),
                         "Allowed for public decryption"
                     );
 

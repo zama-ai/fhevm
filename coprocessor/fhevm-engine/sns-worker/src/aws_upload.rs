@@ -9,7 +9,7 @@ use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry::{self};
-use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::utils::to_hex;
 use futures::future::join_all;
 use opentelemetry::global::BoxedSpan;
 use sha3::{Digest, Keccak256};
@@ -129,7 +129,7 @@ async fn run_uploader_loop(
                         {
                             warn!(
                                 error = %err,
-                                handle = compact_hex(&item.handle),
+                                handle = to_hex(&item.handle),
                                 "Failed to lock pending uploads",
                             );
                             trx.rollback().await?;
@@ -219,7 +219,7 @@ async fn upload_ciphertexts(
     client: &Client,
     conf: &S3Config,
 ) -> Result<(), ExecutionError> {
-    let handle_as_hex: String = compact_hex(&task.handle);
+    let handle_as_hex: String = to_hex(&task.handle);
     info!(handle = handle_as_hex, "Received task");
 
     let mut jobs = vec![];
@@ -466,7 +466,7 @@ async fn fetch_pending_uploads(
                 Some(ct) => ct,
                 None => {
                     error!(
-                        handle = compact_hex(&handle),
+                        handle = to_hex(&handle),
                         format_id = row.ciphertext128_format,
                         "Failed to create a BigCiphertext from DB data",
                     );
@@ -586,7 +586,7 @@ async fn try_resubmit(
                 for task in jobs {
                     select! {
                         _ = tasks.send(task.clone()) => {
-                            info!(handle = compact_hex(task.handle()), "resubmitted");
+                            info!(handle = to_hex(task.handle()), "resubmitted");
                         },
                         _ = token.cancelled() => {
                             return Ok(());

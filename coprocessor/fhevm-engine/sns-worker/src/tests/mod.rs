@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::{anyhow, Ok};
 use aws_config::BehaviorVersion;
-use fhevm_engine_common::utils::{compact_hex, DatabaseURL};
+use fhevm_engine_common::utils::{to_hex, DatabaseURL};
 use serde::{Deserialize, Serialize};
 use serial_test::serial;
 use std::{
@@ -304,7 +304,7 @@ async fn test_lifo_mode() {
                 task.handle == [i as u8; 32],
                 "Task (asc) handle does not match expected value"
             );
-            info!("Asc Task handle: {}", compact_hex(&task.handle));
+            info!("Asc Task handle: {}", to_hex(&task.handle));
         }
     } else {
         panic!("No tasks found in Asc order");

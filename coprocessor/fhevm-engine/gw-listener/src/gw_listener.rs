@@ -4,7 +4,7 @@ use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
 use fhevm_engine_common::telemetry;
-use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::utils::to_hex;
 use futures_util::{future::join_all, StreamExt};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
@@ -335,7 +335,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         log: Log,
     ) -> anyhow::Result<()> {
         let transaction_id = log.transaction_hash.map(|h| h.to_vec()).unwrap_or_default();
-        info!(zk_proof_id = %request.zkProofId, tid = %compact_hex(&transaction_id), "Received ZK proof request event");
+        info!(zk_proof_id = %request.zkProofId, tid = %to_hex(&transaction_id), "Received ZK proof request event");
 
         let chain_id = request.contractChainId.to::<i64>();
 

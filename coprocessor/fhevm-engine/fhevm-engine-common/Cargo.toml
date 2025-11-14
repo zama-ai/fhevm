@@ -49,6 +49,7 @@ nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu"]
 latency = []
 throughput = []
+compact-hex = []
 
 [build-dependencies]
 tonic-build = { workspace = true }

@@ -1,5 +1,5 @@
 use crate::utils::{next_random_handle, query_and_save_pks, EnvConfig, Inputs, DEF_TYPE};
-use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::utils::to_hex;
 use host_listener::database::tfhe_event_propagate::Handle;
 use rand::Rng;
 use std::collections::HashMap;
@@ -179,7 +179,7 @@ pub async fn generate_random_handle_vec(
         builder.push(rand::rng().random::<u64>());
     }
 
-    info!(target: "tool", "ZK Transaction: tx_id: {:?}, inputs = {:?}", compact_hex(transaction_id.as_ref()), count);
+    info!(target: "tool", "ZK Transaction: tx_id: {:?}, inputs = {:?}", to_hex(transaction_id.as_ref()), count);
 
     let the_list = builder
         .build_with_proof_packed(&public_params, &aux_data, tfhe::zk::ZkComputeLoad::Proof)
