@@ -75,6 +75,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         }
     }
 
+    /// Handles requests to the endpoint for public decrypt.
     #[instrument(name = "handle-public-decrypt", skip_all, fields(request_id))]
     pub async fn handle<S>(&self, req: Request<axum::body::Body>, _state: &S) -> impl IntoResponse
     where

@@ -77,13 +77,13 @@ pub async fn run_http_server<D>(
 
     /// Input proof
     ///
-    /// Requests a Private encryption
+    /// Requests input proof verification
     #[utoipa::path(
     post,
     path = "/input-proof",
     request_body = InputProofRequestJson,
     responses(
-        (status = 200, description = "Successfully proved ciphertexts", body = InputProofResponseJson),
+        (status = 200, description = "Successfully verified input proof", body = InputProofResponseJson),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
         (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
         (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
@@ -128,9 +128,9 @@ pub async fn run_http_server<D>(
     request_body = UserDecryptRequestJson,
     responses(
         (status = 200, description = "Successfully decrypted", body = UserDecryptResponseJson),
-        (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
         (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
     ),
 )]
     async fn user_decrypt_documented<D>(
@@ -171,9 +171,9 @@ pub async fn run_http_server<D>(
     request_body = PublicDecryptRequestJson,
     responses(
         (status = 200, description = "Successfully decrypted", body = PublicDecryptResponseJson),
-        (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
-        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
+        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
     ),
 )]
     async fn public_decrypt_documented<D>(
@@ -253,8 +253,13 @@ pub async fn run_http_server<D>(
         schemas(UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptErrorResponseJson),
         schemas(InputProofRequestJson, InputProofResponseJson, InputProofErrorResponseJson),
         schemas(KeyUrlResponseJson),
+        schemas(crate::http::keyurl_http_listener::Response, crate::http::keyurl_http_listener::FheKeyInfo, crate::http::keyurl_http_listener::KeyData),
         schemas(VersionErrorResponseJson),
-        schemas(crate::http::utils::ErrorResponse, crate::http::utils::ApiError, crate::http::utils::ErrorDetail),
+        schemas(crate::http::utils::ErrorResponse, crate::http::utils::ApiError, crate::http::utils::ErrorDetail, crate::http::utils::ErrorCode),
+        schemas(crate::http::userdecrypt_http_listener::HandleContractPairJson, crate::http::userdecrypt_http_listener::RequestValidityJson, crate::http::userdecrypt_http_listener::UserDecryptResponsePayloadJson),
+        schemas(crate::http::input_http_listener::InputProofResponsePayloadJson),
+        schemas(crate::http::public_decrypt_http_listener::PublicDecryptResponsePayloadJson),
+        schemas(crate::http::docs_utils::ChainId),
     ),
     tags(
         (name = "FHEVM Relayer API", description = "FHEVM Relayer API")
