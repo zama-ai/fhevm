@@ -21,6 +21,7 @@ pub struct InputProofRequestJson {
     /// Contract's chain id
     #[serde(deserialize_with = "de_string_or_number")]
     #[schema(value_type = ChainId)]
+    #[validate(custom(function = "crate::http::utils::validate_chain_id_string"))]
     pub contract_chain_id: String,
     /// Contract's address
     #[validate(custom(function = "crate::http::utils::validate_blockchain_address"))]
@@ -367,5 +368,16 @@ mod tests {
         let data: InputProofRequestJson = serde_json::from_str(&invalid_json).unwrap();
         let errors = data.validate().unwrap_err();
         assert!(errors.field_errors().contains_key("extra_data"));
+    }
+    #[test]
+    fn test_invalid_chain_id_fails() {
+        let fake_data = InputProofRequestJson {
+            contract_chain_id: "invalid_chain_id".to_string(),
+            ..().fake()
+        };
+        let invalid_json = serde_json::to_string(&fake_data).unwrap();
+        let data: InputProofRequestJson = serde_json::from_str(&invalid_json).unwrap();
+        let errors = data.validate().unwrap_err();
+        assert!(errors.field_errors().contains_key("contract_chain_id"));
     }
 }

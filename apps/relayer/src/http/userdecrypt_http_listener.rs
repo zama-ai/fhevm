@@ -32,6 +32,7 @@ pub struct UserDecryptRequestJson {
     pub request_validity: RequestValidityJson,
     #[serde(deserialize_with = "de_string_or_number")]
     #[schema(value_type = ChainId)]
+    #[validate(custom(function = "crate::http::utils::validate_chain_id_string"))]
     pub contracts_chain_id: String,
 
     /// Array of contract addresses

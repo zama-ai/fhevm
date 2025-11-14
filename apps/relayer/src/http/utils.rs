@@ -131,6 +131,23 @@ pub fn validate_u256_string(value: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
+pub fn validate_chain_id_string(value: &str) -> Result<(), ValidationError> {
+    // Match the logic in parse_chain_id() function
+    let result = if let Some(stripped) = value.strip_prefix("0x") {
+        // Parse as hex if it starts with 0x
+        u64::from_str_radix(stripped, 16)
+    } else {
+        // Parse as decimal otherwise
+        value.parse::<u64>()
+    };
+
+    if result.is_err() {
+        return Err(ValidationError::new("validation_error")
+            .with_message("Chain ID must be a valid decimal number (e.g., '123456') or hex string with 0x prefix (e.g., '0x1e240')".into()));
+    }
+    Ok(())
+}
+
 pub fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
     hex::encode(vec)
 }
