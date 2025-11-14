@@ -31,12 +31,12 @@
       {
         "ordinal": 5,
         "name": "old_expiration_date",
-        "type_info": "Int8"
+        "type_info": "Numeric"
       },
       {
         "ordinal": 6,
         "name": "new_expiration_date",
-        "type_info": "Int8"
+        "type_info": "Numeric"
       },
       {
         "ordinal": 7,

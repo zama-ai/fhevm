@@ -23,6 +23,7 @@ use alloy::{
 
 use anyhow::Result;
 use async_trait::async_trait;
+use sqlx::types::BigDecimal;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -531,6 +532,24 @@ where
     }
 }
 
+fn expiration_date_to_u64(value: BigDecimal) -> u64 {
+    let value = value.round(0); // round to integer
+    let (integer, _scale) = value.as_bigint_and_exponent();
+    // Clip to range
+    let (sign, digits) = integer.to_u64_digits();
+    if sign == bigdecimal::num_bigint::Sign::Minus {
+        error!("Negative value for expiration date, setting to 0");
+        0
+    } else if digits.len() > 1 {
+        error!("Too big value value for expiration date, setting to u64::MAX");
+        u64::MAX
+    } else if digits.len() == 1 {
+        digits[0]
+    } else {
+        0
+    }
+}
+
 pub async fn delayed_sorted_delegation(
     tx: &mut DbTransaction<'_>,
     up_to_block_number: u64,
@@ -556,8 +575,8 @@ pub async fn delayed_sorted_delegation(
             delegate: delegation.delegate,
             contract_address: delegation.contract_address,
             delegation_counter: delegation.delegation_counter as u64,
-            old_expiration_date: delegation.old_expiration_date as u64,
-            new_expiration_date: delegation.new_expiration_date as u64,
+            old_expiration_date: expiration_date_to_u64(delegation.old_expiration_date),
+            new_expiration_date: expiration_date_to_u64(delegation.new_expiration_date),
             host_chain_id: delegation.host_chain_id as u64,
             block_hash: delegation.block_hash,
             block_number: delegation.block_number as u64,
