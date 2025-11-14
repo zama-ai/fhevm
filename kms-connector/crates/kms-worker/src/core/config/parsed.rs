@@ -40,6 +40,8 @@ pub struct Config {
     pub events_batch_size: u8,
     /// Number of retries for GRPC requests sent to the KMS Core.
     pub grpc_request_retries: u8,
+    /// The maximum number of decryption attempts.
+    pub max_decryption_attempts: u16,
 
     /// Number of retries for S3 ciphertext retrieval.
     pub s3_ciphertext_retrieval_retries: u8,
@@ -121,6 +123,7 @@ impl Config {
             service_name: raw_config.service_name,
             events_batch_size: raw_config.events_batch_size,
             grpc_request_retries: raw_config.grpc_request_retries,
+            max_decryption_attempts: raw_config.max_decryption_attempts,
             s3_ciphertext_retrieval_retries: raw_config.s3_ciphertext_retrieval_retries,
             s3_connect_timeout: s3_ciphertext_retrieval_timeout,
             task_limit: raw_config.task_limit,
@@ -158,6 +161,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_EVENTS_BATCH_SIZE");
             env::remove_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES");
+            env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
         }
@@ -237,6 +241,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
             env::set_var("KMS_CONNECTOR_EVENTS_BATCH_SIZE", "15");
             env::set_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES", "5");
+            env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
             env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4");
         }
@@ -266,6 +271,7 @@ mod tests {
         assert_eq!(config.service_name, "kms-connector-test");
         assert_eq!(config.events_batch_size, 15);
         assert_eq!(config.grpc_request_retries, 5);
+        assert_eq!(config.max_decryption_attempts, 300);
         assert_eq!(config.s3_ciphertext_retrieval_retries, 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
 

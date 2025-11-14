@@ -346,7 +346,7 @@ async fn init_kms_worker<P: Provider + Clone + 'static>(
     config: Config,
     provider: P,
     db: &Pool<Postgres>,
-) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P>, DbKmsResponsePublisher>> {
+) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P>>> {
     let kms_client = KmsClient::connect(&config).await?;
     let s3_client = reqwest::Client::new();
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
@@ -358,6 +358,7 @@ async fn init_kms_worker<P: Provider + Clone + 'static>(
         kms_client.clone(),
         decryption_processor,
         kms_generation_processor,
+        config.max_decryption_attempts,
         db.clone(),
     );
     let response_publisher = DbKmsResponsePublisher::new(db.clone());

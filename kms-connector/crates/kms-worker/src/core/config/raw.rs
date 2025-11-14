@@ -36,6 +36,8 @@ pub struct RawConfig {
     pub events_batch_size: u8,
     #[serde(default = "default_grpc_request_retries")]
     pub grpc_request_retries: u8,
+    #[serde(default = "default_max_decryption_attempts")]
+    pub max_decryption_attempts: u16,
     #[serde(default = "default_s3_ciphertext_retrieval_retries")]
     pub s3_ciphertext_retrieval_retries: u8,
     #[serde(default = "default_s3_connect_timeout")]
@@ -66,6 +68,10 @@ fn default_events_batch_size() -> u8 {
 
 fn default_grpc_request_retries() -> u8 {
     3
+}
+
+fn default_max_decryption_attempts() -> u16 {
+    200
 }
 
 fn default_s3_ciphertext_retrieval_retries() -> u8 {
@@ -137,6 +143,7 @@ impl Default for RawConfig {
             service_name: "kms-connector".to_string(),
             events_batch_size: 10,
             grpc_request_retries: 3,
+            max_decryption_attempts: default_max_decryption_attempts(),
             s3_ciphertext_retrieval_retries: 3,
             s3_connect_timeout: 2,
             task_limit: default_task_limit(),
