@@ -46,18 +46,18 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     expect(() => input.add64(1n)).to.throw('Packing more than 2048 bits in a single input ciphertext is unsupported');
   });
 
-  it('should be able to pack up to 2 euint128s', async function () {
+  it('should be able to pack up to 8 euint256s', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    for (let i = 0; i < 2; i++) {
-      input.addBytes128(bigIntToBytes128(797979n));
+    for (let i = 0; i < 8; i++) {
+      input.add256(797979n);
     }
     await input.encrypt();
   });
 
-  it('should be unable to pack more than 2 euint128s', async function () {
+  it('should not be able to pack more than 8 euint256s', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    for (let i = 0; i < 2; i++) {
-      input.addBytes128(bigIntToBytes128(797979n));
+    for (let i = 0; i < 8; i++) {
+      input.add256(797979n);
     }
     expect(() => input.addBool(false)).to.throw(
       'Packing more than 2048 bits in a single input ciphertext is unsupported',
@@ -66,12 +66,22 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
 
   it('should be able to pack up to 2048 bits but not more', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    input.addBytes128(bigIntToBytes128(797979n));
-    input.addBytes64(bigIntToBytes64(797979n));
+    input.add256(797979n);
+    input.add256(797978n);
+    input.add256(797977n);
+    input.add256(797976n);
+    input.add256(797975n);
+    input.add256(797974n);
     input.add256(6887n);
     input.add128(6887n);
     input.add64(6887n);
     input.add64(6887n);
+    let bits = input.getBits();
+    let total = 0;
+    for (let i = 0; i < bits.length; ++i) {
+      total += bits[i];
+    }
+    expect(total).to.eq(2048);
     expect(() => input.addBool(false)).to.throw(
       'Packing more than 2048 bits in a single input ciphertext is unsupported',
     );
