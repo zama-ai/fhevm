@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE delegate_user_decrypt\n        SET reorg_out = true\n        WHERE block_hash IN (SELECT unnest($1::bytea[]))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c23ffbe8e1840eb63722e1d1811ba32941e6d8bc4d5c369edef3a66d622a46e"
+}

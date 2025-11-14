@@ -20,7 +20,7 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
     ciphertext_commits_address: Address,
     multichain_acl_address: Address,
     db_pool: Pool<Postgres>,
-    provider: NonceManagedProvider<P>,
+    gateway_provider: NonceManagedProvider<P>,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
@@ -30,7 +30,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
         ciphertext_commits_address: Address,
         multichain_acl_address: Address,
         signer: AbstractSigner,
-        provider: NonceManagedProvider<P>,
+        gateway_provider: NonceManagedProvider<P>,
+        host_chain_provider: P,
         cancel_token: CancellationToken,
         conf: ConfigSettings,
         gas: Option<u64>,
@@ -46,7 +47,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             Arc::new(
                 ops::verify_proof::VerifyProofOperation::new(
                     input_verification_address,
-                    provider.clone(),
+                    gateway_provider.clone(),
                     signer.clone(),
                     conf.clone(),
                     gas,
@@ -56,18 +57,29 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             ),
             Arc::new(ops::add_ciphertext::AddCiphertextOperation::new(
                 ciphertext_commits_address,
-                provider.clone(),
+                gateway_provider.clone(),
                 conf.clone(),
                 gas,
                 db_pool.clone(),
             )),
-            Arc::new(ops::allow_handle::MultichainACLOperation::new(
+            Arc::new(ops::allow_handle::AllowHandleOperation::new(
                 multichain_acl_address,
-                provider.clone(),
+                gateway_provider.clone(),
                 conf.clone(),
                 gas,
                 db_pool.clone(),
             )),
+            Arc::new(
+                ops::delegate_user_decrypt::DelegateUserDecryptOperation::new(
+                    multichain_acl_address,
+                    gateway_provider.clone(),
+                    host_chain_provider,
+                    conf.clone(),
+                    gas,
+                    db_pool.clone(),
+                    cancel_token.clone(),
+                ),
+            ),
         ];
         Ok(Self {
             cancel_token,
@@ -77,7 +89,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             ciphertext_commits_address,
             multichain_acl_address,
             db_pool,
-            provider,
+            gateway_provider,
         })
     }
 
@@ -250,7 +262,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
         // The provider internal retry may last a long time, so we set a timeout.
         match tokio::time::timeout(
             self.conf.health_check_timeout,
-            self.provider.get_block_number(),
+            self.gateway_provider.get_block_number(),
         )
         .await
         {

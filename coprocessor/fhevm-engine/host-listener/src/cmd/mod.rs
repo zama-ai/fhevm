@@ -815,6 +815,7 @@ impl InfiniteLogIter {
 }
 
 async fn db_insert_block(
+    chain_id: u64,
     db: &mut Database,
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
@@ -829,6 +830,7 @@ async fn db_insert_block(
     let mut retries = 10;
     loop {
         let res = db_insert_block_no_retry(
+            chain_id,
             db,
             block_logs,
             acl_contract_address,
@@ -836,6 +838,15 @@ async fn db_insert_block(
         )
         .await;
         let Err(err) = res else {
+            // Notify the database of the new block
+            // Delayed delegation rely on this signal to reconsider ready delegation
+            if !block_logs.catchup {
+                if let Err(err) =
+                    db.block_notification(block_logs.summary.number).await
+                {
+                    error!(error = %err, "Error notifying listener for new block");
+                };
+            }
             return Ok(());
         };
         if retries == 0 {
@@ -855,6 +866,7 @@ async fn db_insert_block(
 }
 
 async fn db_insert_block_no_retry(
+    chain_id: u64,
     db: &mut Database,
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
@@ -863,6 +875,8 @@ async fn db_insert_block_no_retry(
     let mut tx = db.new_transaction().await?;
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
+    let block_hash = block_logs.summary.hash;
+    let block_number = block_logs.summary.number;
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
@@ -879,7 +893,9 @@ async fn db_insert_block_no_retry(
                     &mut tx,
                     &event,
                     &log.transaction_hash,
-                    &log.block_number,
+                    chain_id,
+                    block_hash.as_ref(),
+                    block_number,
                 )
                 .await?;
                 continue;
@@ -894,7 +910,7 @@ async fn db_insert_block_no_retry(
                     event,
                     transaction_hash: log.transaction_hash,
                     is_allowed: false, // updated in the next loop
-                    block_number: log.block_number,
+                    block_number,
                 };
                 tfhe_event_log.push(log);
                 continue;
@@ -1028,6 +1044,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
     while let Some(block_logs) = log_iter.next().await {
         let _ = db_insert_block(
+            chain_id,
             &mut db,
             &block_logs,
             &acl_contract_address,

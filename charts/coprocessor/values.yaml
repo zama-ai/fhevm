@@ -755,8 +755,15 @@ txSender:
     - --gas-limit-overprovision-percent=120
     - --graceful-shutdown-timeout=8s
     - --service-name=txn-sender
+    # New in 0.10
     - --metric-host-txn-latency=0.1:60.0:0.1
     - --metric-zkproof-txn-latency=0.1:60.0:0.1
+    - --host-chain-url=$(ETHEREUM_RPC_URL)  # mandatory
+    - --delegation-block-delay=10  # not applied immediately to avoid reorg
+    - --delegation-clear-after-n_blocks=648000  # ~3 months at 12s block time, only on successful delegations
+    - --delegation-fallback-polling=30  # polling fallback in seconds when notification are not received
+    - --delegation-max-retry=100000  # does not include immediate retry on transient error which are infinite
+    - --retry-immediately-on-nonce-error=2  # nonce error happens as error from one transaction can invalidate other nonce
 
   # Service ports configuration
   ports:
