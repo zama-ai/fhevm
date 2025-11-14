@@ -71,9 +71,6 @@ const NumBits = {
   6: 128n, //euint128
   7: 160n, //eaddress
   8: 256n, //euint256
-  9: 512n, //ebytes64
-  10: 1024n, //ebytes128
-  11: 2048n, //ebytes256
 };
 
 export function numberToEvenHexString(num: number) {

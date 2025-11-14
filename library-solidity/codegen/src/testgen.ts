@@ -40,7 +40,7 @@ export function generateSolidityOverloadTestFiles(operators: Operator[], fheType
     generateOverloadsForTFHEUnaryOperators(fheType, operators, signatures),
   );
 
-  // TODO Add tests for conversion from plaintext and externalEXXX to all supported types (e.g., externalEXXX --> ebool, bytes memory --> ebytes64, uint32 --> euint32)
+  // TODO Add tests for conversion from plaintext and externalEXXX to all supported types (e.g., externalEXXX --> ebool, uint32 --> euint32)
   return signatures;
 }
 
