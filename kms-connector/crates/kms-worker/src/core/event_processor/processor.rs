@@ -72,9 +72,9 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
             (
                 Err(ProcessingError::Recoverable(e)),
                 GatewayEventKind::PublicDecryption(_) | GatewayEventKind::UserDecryption(_),
-            ) if event.error_counter as u16 > self.max_decryption_attempts => {
+            ) if event.error_counter as u16 >= self.max_decryption_attempts => {
                 error!(
-                    "{}. Maximum number of decryption attempt reached: {}",
+                    "{}. Maximum number of decryption attempts reached: {}",
                     ProcessingError::Recoverable(e),
                     event.error_counter
                 );

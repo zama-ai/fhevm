@@ -151,8 +151,8 @@ impl Display for EventType {
 impl From<&GatewayEventKind> for EventType {
     fn from(value: &GatewayEventKind) -> Self {
         match value {
-            GatewayEventKind::PublicDecryption { .. } => Self::PublicDecryptionRequest,
-            GatewayEventKind::UserDecryption { .. } => Self::UserDecryptionRequest,
+            GatewayEventKind::PublicDecryption(_) => Self::PublicDecryptionRequest,
+            GatewayEventKind::UserDecryption(_) => Self::UserDecryptionRequest,
             GatewayEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             GatewayEventKind::Keygen(_) => Self::KeygenRequest,
             GatewayEventKind::Crsgen(_) => Self::CrsgenRequest,

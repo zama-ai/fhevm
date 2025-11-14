@@ -229,11 +229,11 @@ fn prepare_mocks(req: &GatewayEventKind, already_sent: bool) -> MockSet {
             "/kms_service.v1.CoreServiceEndpoint/{resp_endpoint}"
         ));
         match req {
-            GatewayEventKind::PublicDecryption { .. } => then.pb(PublicDecryptionResponse {
+            GatewayEventKind::PublicDecryption(_) => then.pb(PublicDecryptionResponse {
                 payload: Some(PublicDecryptionResponsePayload::default()),
                 ..Default::default()
             }),
-            GatewayEventKind::UserDecryption { .. } => then.pb(UserDecryptionResponse {
+            GatewayEventKind::UserDecryption(_) => then.pb(UserDecryptionResponse {
                 payload: Some(UserDecryptionResponsePayload::default()),
                 ..Default::default()
             }),
@@ -262,8 +262,8 @@ async fn wait_for_response_in_db(
 ) -> anyhow::Result<KmsResponse> {
     info!("Waiting for response to be stored in DB...");
     let query = match req {
-        GatewayEventKind::PublicDecryption { .. } => "SELECT * FROM public_decryption_responses",
-        GatewayEventKind::UserDecryption { .. } => "SELECT * FROM user_decryption_responses",
+        GatewayEventKind::PublicDecryption(_) => "SELECT * FROM public_decryption_responses",
+        GatewayEventKind::UserDecryption(_) => "SELECT * FROM user_decryption_responses",
         GatewayEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
         GatewayEventKind::Keygen(_) => "SELECT * FROM keygen_responses",
         GatewayEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
@@ -277,10 +277,10 @@ async fn wait_for_response_in_db(
             tokio::time::sleep(Duration::from_millis(200)).await;
         } else {
             match req {
-                GatewayEventKind::PublicDecryption { .. } => {
+                GatewayEventKind::PublicDecryption(_) => {
                     break kms_response::from_public_decryption_row(&result[0])?;
                 }
-                GatewayEventKind::UserDecryption { .. } => {
+                GatewayEventKind::UserDecryption(_) => {
                     break kms_response::from_user_decryption_row(&result[0])?;
                 }
                 GatewayEventKind::PrepKeygen(_) => {
