@@ -3,9 +3,11 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import { ethers, run } from 'hardhat';
 
+import { ACL } from '../../typechain-types';
+
 describe('Pausing and Unpausing Tasks', function () {
   let pauserSet;
-  let acl;
+  let acl: ACL;
 
   describe('Hardhat pausing/unpausing tasks', function () {
     before(async function () {
@@ -13,8 +15,8 @@ describe('Pausing and Unpausing Tasks', function () {
       let aclFactory = await ethers.getContractFactory('ACL');
       const origPauserSetAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).PAUSER_SET_CONTRACT_ADDRESS;
       const origACLAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;
-      pauserSet = await pauserSetFactory.attach(origPauserSetAdd);
-      acl = await aclFactory.attach(origACLAdd);
+      pauserSet = pauserSetFactory.attach(origPauserSetAdd);
+      acl = aclFactory.attach(origACLAdd) as ACL;
     });
 
     it('Should pause acl', async function () {

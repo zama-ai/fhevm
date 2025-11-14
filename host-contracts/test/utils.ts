@@ -1,16 +1,26 @@
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import type {
+  ClearValueType,
+  FhevmInstance,
+  PublicDecryptResults,
+  UserDecryptResults,
+} from '@zama-fhe/relayer-sdk/node';
 import { toBufferBE } from 'bigint-buffer';
-import { ContractMethodArgs, Typed } from 'ethers';
-import { Signer } from 'ethers';
+import { Typed } from 'ethers';
+import type { ContractMethodArgs, Signer } from 'ethers';
 import { ethers, network } from 'hardhat';
 import hre from 'hardhat';
 
-import type { Counter } from '../types';
-import { TypedContractMethod } from '../types/common';
+import type { Counter } from '../typechain-types';
+import type { TypedContractMethod } from '../typechain-types/common';
 import { getSigners } from './signers';
 
+export async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
-  const signers = await hre.ethers.getSigners();
+  const signers: HardhatEthersSigner[] = await hre.ethers.getSigners();
   if (signers.findIndex((s) => s.address === signer.address) === -1) {
     throw new Error(
       `The provided address (${signer.address}) is not the address of a valid hardhat signer.
@@ -102,7 +112,7 @@ async function deployCounterContract(): Promise<Counter> {
   const contract = await contractFactory.connect(signers.dave).deploy();
   await contract.waitForDeployment();
 
-  return contract;
+  return contract as unknown as Counter;
 }
 
 export const mineNBlocks = async (n: number) => {
@@ -126,15 +136,15 @@ export const bigIntToBytes256 = (value: bigint) => {
 export const userDecryptSingleHandle = async (
   handle: string,
   contractAddress: string,
-  instance: any,
+  instance: FhevmInstance,
   signer: Signer,
   privateKey: string,
   publicKey: string,
-): Promise<bigint> => {
-  const ctHandleContractPairs = [
+): Promise<ClearValueType> => {
+  const handleContractPairs = [
     {
-      ctHandle: handle,
-      contractAddress: contractAddress,
+      handle,
+      contractAddress,
     },
   ];
   const startTimeStamp = Math.floor(Date.now() / 1000).toString();
@@ -153,17 +163,82 @@ export const userDecryptSingleHandle = async (
 
   const signerAddress = await signer.getAddress();
 
-  const decryptedValue = (
-    await instance.userDecrypt(
-      ctHandleContractPairs,
-      privateKey,
-      publicKey,
-      signature.replace('0x', ''),
-      contractAddresses,
-      signerAddress,
-      startTimeStamp,
-      durationDays,
-    )
-  )[0];
-  return decryptedValue;
+  const results: UserDecryptResults = await instance.userDecrypt(
+    handleContractPairs,
+    privateKey,
+    publicKey,
+    signature.replace('0x', ''),
+    contractAddresses,
+    signerAddress,
+    startTimeStamp,
+    durationDays,
+  );
+
+  return results[handle as `0x${string}`];
 };
+
+// `delegate` performs a user decrypt on behalf of `delegator`
+// export const delegatedUserDecryptSingleHandle = async (params: {
+//   instance: FhevmInstance;
+//   handle: string;
+//   signer: Signer;
+//   contractAddress: string;
+//   delegatorAddress: string;
+//   kmsPrivateKey: string;
+//   kmsPublicKey: string;
+// }): Promise<bigint | boolean | string> => {
+//   const HandleContractPairs = [
+//     {
+//       ctHandle: params.handle,
+//       contractAddress: params.contractAddress,
+//     },
+//   ];
+//   const startTimeStamp = Math.floor(Date.now() / 1000).toString();
+//   const durationDays = '10'; // String for consistency
+//   const contractAddresses = [params.contractAddress];
+//   const instance = params.instance;
+//   const signer = params.signer;
+//   const userAddress = await signer.getAddress();
+
+//   // Use the new createEIP712 function
+//   const eip712 = instance.createEIP712(
+//     params.kmsPublicKey,
+//     contractAddresses,
+//     startTimeStamp,
+//     durationDays,
+//     params.delegatorAddress,
+//   );
+
+//   // Update the signing to match the new primaryType
+//   const signature = await signer.signTypedData(
+//     eip712.domain,
+//     {
+//       DelegatedUserDecryptRequestVerification: eip712.types.DelegatedUserDecryptRequestVerification,
+//     },
+//     eip712.message,
+//   );
+
+//   if (!instance.delegatedUserDecrypt) {
+//     throw new Error(`instance.delegatedUserDecrypt not yet implemented`);
+//   }
+
+//   // ========================================================
+//   //
+//   // Todo: Call the delegate user decrypt function instead!
+//   //
+//   // ========================================================
+//   const result = await instance.delegatedUserDecrypt(
+//     HandleContractPairs,
+//     params.kmsPrivateKey,
+//     params.kmsPublicKey,
+//     signature.replace('0x', ''),
+//     contractAddresses,
+//     userAddress,
+//     startTimeStamp,
+//     durationDays,
+//     params.delegatorAddress,
+//   );
+
+//   const decryptedValue = result[params.handle];
+//   return decryptedValue;
+// };

@@ -8,16 +8,21 @@
   },
   "main": "contracts/ACL.sol",
   "scripts": {
-    "compile": "HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
-    "deploy:emptyProxies": "hardhat task:deployEmptyUUPSProxies &&  hardhat compile:specific --contract 'contracts/immutable' && hardhat task:deployPauserSet",
+    "addresses": "npm run deploy:emptyProxies",
+    "tsc": "tsc --project tsconfig.json --noEmit",
+    "clean": "rm -rf addresses dist build artifacts cache typechain-types",
+    "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
+    "compile:examples": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile:specific --contract 'examples'",
+    "compile": "cross-env HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
+    "deploy:emptyProxies": "hardhat task:deployEmptyUUPSProxies && hardhat compile:specific --contract 'contracts/immutable' && hardhat task:deployPauserSet",
     "lint": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
-    "test": "hardhat test",
     "coverage": "SOLIDITY_COVERAGE=true hardhat coverage",
     "codegen": "../library-solidity/codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
     "codegen:overloads": "../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
+    "test": "hardhat test",
     "test:gas": "hardhat test --grep Gas",
     "test:forge": "forge test",
     "forge:soldeer": "forge soldeer install"
@@ -47,8 +52,7 @@
     "prettier-plugin-solidity": "^1.1.3",
     "sha3": "^2.1.4",
     "solidity-coverage": "^0.8.14",
-    "sqlite3": "^5.1.7",
-    "web3-validator": "^2.0.6"
+    "sqlite3": "^5.1.7"
   },
   "optionalDependencies": {
     "solidity-comments-darwin-arm64": "0.1.1",

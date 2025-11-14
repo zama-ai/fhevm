@@ -14,13 +14,13 @@ describe('EncryptedERC20:Gas', function () {
     const contractFactory = await ethers.getContractFactory('EncryptedERC20');
     const contract = await contractFactory.connect(this.signers.alice).deploy('Naraggara', 'NARA');
     const contractAddress = await contract.getAddress();
-    const deployTx = await contract.deploymentTransaction();
-    const receipt = await deployTx.wait(1);
-    console.log('Gas consumed in EncryptedERC20 deployment:', '\x1b[1m' + receipt.gasUsed.toString() + '\x1b[0m');
+    const deployTx = contract.deploymentTransaction();
+    const receipt = await deployTx!.wait(1);
+    console.log('Gas consumed in EncryptedERC20 deployment:', '\x1b[1m' + receipt!.gasUsed.toString() + '\x1b[0m');
 
     const transaction = await contract.mint(1000);
     const rcptMint = await transaction.wait();
-    console.log('Gas consumed in EncryptedERC20 Mint tx:', '\x1b[1m' + rcptMint.gasUsed.toString() + '\x1b[0m');
+    console.log('Gas consumed in EncryptedERC20 Mint tx:', '\x1b[1m' + rcptMint!.gasUsed.toString() + '\x1b[0m');
 
     const input = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
     input.add64(1337);
@@ -31,7 +31,10 @@ describe('EncryptedERC20:Gas', function () {
       encryptedTransferAmount.inputProof,
     );
     const rcptTransfer = await tx.wait();
-    console.log('Gas consumed in EncryptedERC20 Transfer tx:', '\x1b[1m' + rcptTransfer.gasUsed.toString() + '\x1b[0m');
+    console.log(
+      'Gas consumed in EncryptedERC20 Transfer tx:',
+      '\x1b[1m' + rcptTransfer!.gasUsed.toString() + '\x1b[0m',
+    );
 
     const inputAlice = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
     inputAlice.add64(1337);
@@ -42,7 +45,7 @@ describe('EncryptedERC20:Gas', function () {
       encryptedAllowanceAmount.inputProof,
     );
     const rcptApprove = await txbis.wait();
-    console.log('Gas consumed in EncryptedERC20 Approve tx:', '\x1b[1m' + rcptApprove.gasUsed.toString() + '\x1b[0m');
+    console.log('Gas consumed in EncryptedERC20 Approve tx:', '\x1b[1m' + rcptApprove!.gasUsed.toString() + '\x1b[0m');
 
     const bobErc20 = contract.connect(this.signers.bob);
     const inputBob1 = this.instances.bob.createEncryptedInput(contractAddress, this.signers.bob.address);
@@ -57,7 +60,7 @@ describe('EncryptedERC20:Gas', function () {
     const rcptTransferFrom = await tx2.wait();
     console.log(
       'Gas consumed in EncryptedERC20 TransferFrom tx:',
-      '\x1b[1m' + rcptTransferFrom.gasUsed.toString() + '\x1b[0m',
+      '\x1b[1m' + rcptTransferFrom!.gasUsed.toString() + '\x1b[0m',
     );
   });
 });

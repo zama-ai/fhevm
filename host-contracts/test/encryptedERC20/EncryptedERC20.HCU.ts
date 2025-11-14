@@ -1,7 +1,6 @@
 import { expect } from 'chai';
 
-import { getTxHCUFromTxReceipt } from '../coprocessorUtils';
-import { createInstances } from '../instance';
+import { createInstances, getTxHCUFromTxReceipt } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
@@ -34,10 +33,10 @@ describe('EncryptedERC20:HCU', function () {
     const t2 = await tx.wait();
     expect(t2?.status).to.eq(1);
 
-    const { globalTxHCU: HCUTransfer, maxTxHCUDepth: HCUMaxDepthTransfer } = getTxHCUFromTxReceipt(t2);
+    const { globalTxHCU: HCUTransfer, maxTxHCUDepth: HCUMaxDepthTransfer } = getTxHCUFromTxReceipt(t2!);
     console.log('Total HCU in transfer', HCUTransfer);
     console.log('HCU Depth in transfer', HCUMaxDepthTransfer);
-    console.log('Native Gas Consumed in transfer', t2.gasUsed);
+    console.log('Native Gas Consumed in transfer', t2!.gasUsed);
 
     // Le euint64 (149000) +  TrivialEncrypt euint64 (32) + Select euint64 (55000) + Add euint64 (162000)
     /// + TrivialEncrypt euint64(32) (Initialize balance to 0) + Sub euint euint64 (162000)
@@ -74,10 +73,10 @@ describe('EncryptedERC20:HCU', function () {
 
     const t3 = await tx3.wait();
 
-    const { globalTxHCU: HCUTransferFrom, maxTxHCUDepth: HCUMaxDepthTransferFrom } = getTxHCUFromTxReceipt(t3);
+    const { globalTxHCU: HCUTransferFrom, maxTxHCUDepth: HCUMaxDepthTransferFrom } = getTxHCUFromTxReceipt(t3!);
     console.log('Total HCU in transferFrom', HCUTransferFrom);
     console.log('HCU Depth in transferFrom', HCUMaxDepthTransferFrom);
-    console.log('Native Gas Consumed in transferFrom', t3.gasUsed);
+    console.log('Native Gas Consumed in transferFrom', t3!.gasUsed);
 
     // Le euint64 (149000) + Le euint64 (149000) + And ebool (34000) + Sub euint64 (162000) + TrivialEncrypt (32) + Select euint64 (55000) +
     // Select euint64 (55000) + Add ebool (25000) + TrivialEncrypt (Initialize balance to 0) (32) + Sub euint64 (162000)

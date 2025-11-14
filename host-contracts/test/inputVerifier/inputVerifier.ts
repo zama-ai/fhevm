@@ -4,7 +4,7 @@ import type { ethers as EthersT } from 'ethers';
 import fs from 'fs';
 import { ethers } from 'hardhat';
 
-import { InputVerifier, InputVerifier__factory, TestInput } from '../../types';
+import { InputVerifier, InputVerifier__factory, TestInput } from '../../typechain-types';
 import { createInstances } from '../instance';
 import { Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
@@ -22,6 +22,15 @@ describe('InputVerifier', function () {
     publicKey: string;
     privateKey: string;
   };
+
+  // This pass is necessary to restore the original InputVerifier state
+  // If this pass is omitted, future tests may fail
+  afterEach(async function () {
+    process.env.NUM_COPROCESSORS = '1';
+    const coprocessorAddressSigner0 = process.env['COPROCESSOR_SIGNER_ADDRESS_0']!;
+    const tx = await inputVerifier.connect(deployer).defineNewContext([coprocessorAddressSigner0], 1);
+    await tx.wait();
+  });
 
   before(async function () {
     await initSigners(2);
@@ -72,6 +81,11 @@ describe('InputVerifier', function () {
       keypair.privateKey,
       keypair.publicKey,
     );
+    if (typeof clearUint64 !== 'bigint') {
+      throw new Error(
+        `Unexpected user decryption result type. Expected 'bigint', got '${typeof clearUint64}' instead.`,
+      );
+    }
     return clearUint64;
   }
 

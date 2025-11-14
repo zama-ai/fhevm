@@ -149,7 +149,6 @@ const config: HardhatUserConfig = {
     'examples/TracingSubCalls.sol': { default: 'off' },
   },
   typechain: {
-    outDir: 'types',
     target: 'ethers-v6',
   },
 };

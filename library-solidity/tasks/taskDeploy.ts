@@ -143,13 +143,13 @@ task('task:deployKMSVerifier').setAction(async function (taskArguments: TaskArgu
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/KMSVerifier.sol:KMSVerifier', deployer);
-  const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
-  const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
+  const parsedEnvHostAddresses = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
+  const proxyAddress = parsedEnvHostAddresses.KMS_VERIFIER_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
 
-  const verifyingContractSource = process.env.DECRYPTION_ADDRESS!;
-  const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
-  const initialThreshold = +process.env.KMS_THRESHOLD!;
+  const verifyingContractSource = getRequiredEnvVar('DECRYPTION_ADDRESS');
+  const chainIDSource = +getRequiredEnvVar('CHAIN_ID_GATEWAY');
+  const initialThreshold = +getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD');
   let initialSigners: string[] = [];
   const numSigners = getRequiredEnvVar('NUM_KMS_NODES');
 

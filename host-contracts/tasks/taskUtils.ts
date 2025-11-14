@@ -3,7 +3,7 @@ import fs from 'fs';
 import { task } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 
-import { InputVerifier, KMSVerifier } from '../types';
+import type { InputVerifier, KMSVerifier } from '../typechain-types';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Faucet

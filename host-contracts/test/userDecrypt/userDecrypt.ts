@@ -5,12 +5,12 @@ import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { userDecryptSingleHandle } from '../utils';
 
-describe('Reencryption', function () {
+describe('userDecrypt', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
     this.instances = await createInstances(this.signers);
-    const contractFactory = await ethers.getContractFactory('Reencrypt');
+    const contractFactory = await ethers.getContractFactory('UserDecrypt');
 
     this.contract = await contractFactory.connect(this.signers.alice).deploy();
     await this.contract.waitForDeployment();
@@ -18,7 +18,7 @@ describe('Reencryption', function () {
     this.instances = await createInstances(this.signers);
   });
 
-  it('test reencrypt ebool', async function () {
+  it('test userDecrypt ebool', async function () {
     const handle = await this.contract.xBool();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     const decryptedValue = await userDecryptSingleHandle(
@@ -29,7 +29,7 @@ describe('Reencryption', function () {
       privateKey,
       publicKey,
     );
-    expect(decryptedValue).to.equal(1n);
+    expect(decryptedValue).to.equal(true);
 
     // on the other hand, Bob should be unable to read Alice's handle
     try {
@@ -44,14 +44,14 @@ describe('Reencryption', function () {
       );
       expect.fail('Expected an error to be thrown - Bob should not be able to reencrypt Alice balance');
     } catch (error) {
-      expect(error.message).to.equal('User is not authorized to reencrypt this handle!');
+      expect((error as Error).message).to.equal('User is not authorized to reencrypt this handle!');
     }
 
     // and should be impossible to call reencrypt if contractAddress is in list of userAddresses
     try {
-      const ctHandleContractPairs = [
+      const handleContractPairs = [
         {
-          ctHandle: handle,
+          handle,
           contractAddress: this.signers.alice.address, // this should be impossible, as expected by this test
         },
       ];
@@ -70,7 +70,7 @@ describe('Reencryption', function () {
       );
 
       await this.instances.alice.userDecrypt(
-        ctHandleContractPairs,
+        handleContractPairs,
         privateKey,
         publicKey,
         signature.replace('0x', ''),
@@ -82,13 +82,13 @@ describe('Reencryption', function () {
 
       expect.fail('Expected an error to be thrown - userAddress and contractAddress cannot be equal');
     } catch (error) {
-      expect(error.message).to.equal(
+      expect((error as Error).message).to.equal(
         'userAddress should not be equal to contractAddress when requesting reencryption!',
       );
     }
   });
 
-  it('test reencrypt euint8', async function () {
+  it('test userDecrypt euint8', async function () {
     const handle = await this.contract.xUint8();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     const decryptedValue = await userDecryptSingleHandle(
@@ -102,7 +102,7 @@ describe('Reencryption', function () {
     expect(decryptedValue).to.equal(42n);
   });
 
-  it('test reencrypt euint16', async function () {
+  it('test userDecrypt euint16', async function () {
     const handle = await this.contract.xUint16();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     const decryptedValue = await userDecryptSingleHandle(
@@ -116,7 +116,7 @@ describe('Reencryption', function () {
     expect(decryptedValue).to.equal(16n);
   });
 
-  it('test reencrypt euint32', async function () {
+  it('test userDecrypt euint32', async function () {
     const handle = await this.contract.xUint32();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     const decryptedValue = await userDecryptSingleHandle(
@@ -130,7 +130,7 @@ describe('Reencryption', function () {
     expect(decryptedValue).to.equal(32n);
   });
 
-  it('test reencrypt euint64', async function () {
+  it('test userDecrypt euint64', async function () {
     const handle = await this.contract.xUint64();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     const decryptedValue = await userDecryptSingleHandle(
@@ -144,7 +144,7 @@ describe('Reencryption', function () {
     expect(decryptedValue).to.equal(18446744073709551600n);
   });
 
-  it('test reencrypt euint128', async function () {
+  it('test userDecrypt euint128', async function () {
     const handle = await this.contract.xUint128();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     const decryptedValue = await userDecryptSingleHandle(
@@ -158,7 +158,7 @@ describe('Reencryption', function () {
     expect(decryptedValue).to.equal(145275933516363203950142179850024740765n);
   });
 
-  it('test reencrypt eaddress', async function () {
+  it('test userDecrypt eaddress', async function () {
     const handle = await this.contract.xAddress();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     const decryptedValue = await userDecryptSingleHandle(
@@ -169,10 +169,10 @@ describe('Reencryption', function () {
       privateKey,
       publicKey,
     );
-    expect(decryptedValue).to.equal(BigInt('0x8ba1f109551bD432803012645Ac136ddd64DBA72'));
+    expect(decryptedValue).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
   });
 
-  it('test reencrypt euint256', async function () {
+  it('test userDecrypt euint256', async function () {
     const handle = await this.contract.xUint256();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     const decryptedValue = await userDecryptSingleHandle(
