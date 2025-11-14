@@ -3,6 +3,7 @@ use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
+use bigdecimal::BigDecimal;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
@@ -730,8 +731,8 @@ impl Database {
             &delegate.into_array(),
             &contract_address.into_array(),
             delegation_counter as i64,
-            old_expiration_date as i64,
-            new_expiration_date as i64,
+            BigDecimal::from(old_expiration_date),
+            BigDecimal::from(new_expiration_date),
             chain_id as i64,
             block_number as i64,
             block_hash,

@@ -15,6 +15,7 @@ bench = false
 anyhow = { workspace = true }
 alloy = { workspace = true }
 alloy-primitives = { workspace = true }
+bigdecimal = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
 lru = { workspace = true }
