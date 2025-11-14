@@ -1,6 +1,6 @@
 use crate::core::{
     config::Config,
-    event_processor::{eip712::alloy_to_protobuf_domain, s3::S3Service},
+    event_processor::{ProcessingError, eip712::alloy_to_protobuf_domain, s3::S3Service},
 };
 use alloy::{
     hex,
@@ -10,7 +10,9 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::KmsGrpcRequest;
-use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
+use fhevm_gateway_bindings::decryption::Decryption::{
+    self, DecryptionInstance, SnsCiphertextMaterial,
+};
 use kms_grpc::kms::v1::{
     PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
@@ -23,6 +25,9 @@ pub struct DecryptionProcessor<P: Provider> {
     /// The EIP712 domain of the `Decryption` contract.
     domain: Eip712Domain,
 
+    /// The instance of the `Decryption` contract used to check decryption were not already done.
+    decryption_contract: DecryptionInstance<P>,
+
     /// The entity used to collect ciphertexts from S3 buckets.
     s3_service: S3Service<P>,
 }
@@ -31,7 +36,7 @@ impl<P> DecryptionProcessor<P>
 where
     P: Provider,
 {
-    pub fn new(config: &Config, s3_service: S3Service<P>) -> Self {
+    pub fn new(config: &Config, provider: P, s3_service: S3Service<P>) -> Self {
         let domain = Eip712Domain {
             name: Some(Cow::Owned(config.decryption_contract.domain_name.clone())),
             version: Some(Cow::Owned(
@@ -41,8 +46,33 @@ where
             verifying_contract: Some(config.decryption_contract.address),
             salt: None,
         };
+        let decryption_contract = Decryption::new(config.decryption_contract.address, provider);
 
-        Self { s3_service, domain }
+        Self {
+            decryption_contract,
+            s3_service,
+            domain,
+        }
+    }
+
+    pub async fn check_decryption_not_already_done(
+        &self,
+        decryption_id: U256,
+    ) -> Result<(), ProcessingError> {
+        let is_decryption_done = self
+            .decryption_contract
+            .isDecryptionDone(decryption_id)
+            .call()
+            .await
+            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+
+        if is_decryption_done {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "Decryption already done on the Gateway"
+            )));
+        }
+
+        Ok(())
     }
 
     pub async fn prepare_decryption_request(
@@ -143,5 +173,51 @@ impl UserDecryptionExtraData {
             user_address,
             public_key,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::{
+        providers::{ProviderBuilder, mock::Asserter},
+        sol_types::SolValue,
+        transports::http::reqwest,
+    };
+
+    #[tokio::test]
+    async fn check_decryption_not_already_done() {
+        let asserter = Asserter::new();
+        let mock_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+
+        let config = Config::default();
+        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
+        let decryption_processor = DecryptionProcessor::new(&config, mock_provider, s3_service);
+
+        asserter.push_failure_msg("Transport Error");
+        assert!(matches!(
+            decryption_processor
+                .check_decryption_not_already_done(U256::ZERO)
+                .await
+                .unwrap_err(),
+            ProcessingError::Recoverable(_)
+        ));
+
+        asserter.push_success(&false.abi_encode());
+        decryption_processor
+            .check_decryption_not_already_done(U256::ZERO)
+            .await
+            .unwrap();
+
+        asserter.push_success(&true.abi_encode());
+        assert!(matches!(
+            decryption_processor
+                .check_decryption_not_already_done(U256::ZERO)
+                .await
+                .unwrap_err(),
+            ProcessingError::Irrecoverable(_)
+        ));
     }
 }
