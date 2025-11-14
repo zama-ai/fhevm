@@ -1,7 +1,7 @@
 import { assert } from 'chai';
 import { ethers } from 'hardhat';
 
-import type { FHEVMManualTestSuite } from '../../types/contracts/tests/FHEVMManualTestSuite';
+import type { FHEVMManualTestSuite } from '../../types/contracts/operations/FHEVMManualTestSuite';
 import { createInstance } from '../instance';
 import { getSigner } from '../signers';
 import { bigIntToBytes256 } from '../utils';
