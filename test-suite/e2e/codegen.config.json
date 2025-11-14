@@ -21,7 +21,7 @@
       "imports": [
         ["instance", "../instance"],
         ["signers", "../signers"],
-        ["typechain", "../../types"]
+        ["typechain", "../../types/contracts/operations"]
       ]
     }
   }
