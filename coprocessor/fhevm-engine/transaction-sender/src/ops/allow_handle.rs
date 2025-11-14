@@ -24,7 +24,7 @@ use alloy::{
 use anyhow::bail;
 use async_trait::async_trait;
 use fhevm_engine_common::{
-    telemetry, tenant_keys::query_tenant_info, types::AllowEvents, utils::compact_hex,
+    telemetry, tenant_keys::query_tenant_info, types::AllowEvents, utils::to_hex,
 };
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
@@ -49,7 +49,7 @@ impl Display for Key {
         write!(
             f,
             "Key {{ handle: {}, account: {}, tenant_id: {}, event_type: {:?} }}",
-            compact_hex(&self.handle),
+            to_hex(&self.handle),
             self.account_addr,
             self.tenant_id,
             self.event_type
@@ -78,7 +78,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
         current_unlimited_retries_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        let h = compact_hex(&key.handle);
+        let h = to_hex(&key.handle);
 
         info!(handle = h, "Processing transaction");
         let _t = telemetry::tracer("call_allow_account", &src_transaction_id);
@@ -407,7 +407,7 @@ where
 
             let chain_id = tenant.chain_id;
             let handle = row.handle.clone();
-            let h_as_hex = compact_hex(&handle);
+            let h_as_hex = to_hex(&handle);
             let event_type = match AllowEvents::try_from(row.event_type) {
                 Ok(event_type) => event_type,
                 Err(_) => {

@@ -19,7 +19,7 @@ use alloy::{
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{telemetry, tenant_keys::query_tenant_info, utils::compact_hex};
+use fhevm_engine_common::{telemetry, tenant_keys::query_tenant_info, utils::to_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -49,7 +49,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         current_unlimited_retries_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        let h = compact_hex(handle);
+        let h = to_hex(handle);
 
         info!(handle = h, "Processing transaction");
         let _t = telemetry::tracer("call_add_ciphertext", &src_transaction_id);
@@ -245,7 +245,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         err: &str,
         current_retry_count: i32,
     ) -> anyhow::Result<()> {
-        let compact_hex_handle = compact_hex(handle);
+        let compact_hex_handle = to_hex(handle);
         if current_retry_count == self.conf.add_ciphertexts_max_retries - 1 {
             error!(
                 action = REVIEW,
@@ -281,7 +281,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         err: &str,
         current_unlimited_retries_count: i32,
     ) -> anyhow::Result<()> {
-        let compact_hex_handle = compact_hex(handle);
+        let compact_hex_handle = to_hex(handle);
         if current_unlimited_retries_count >= (self.conf.review_after_unlimited_retries as i32) - 1
         {
             error!(
@@ -370,7 +370,7 @@ where
                         FixedBytes::from(try_into_array::<32>(ct128)?),
                     ),
                     _ => {
-                        error!(handle = compact_hex(&handle), "Missing ciphertext(s)");
+                        error!(handle = to_hex(&handle), "Missing ciphertext(s)");
                         continue;
                     }
                 };
@@ -379,11 +379,11 @@ where
             let key_id = U256::from_be_bytes(tenant_info.key_id);
 
             info!(
-                handle = compact_hex(&handle),
+                handle = to_hex(&handle),
                 chain_id = tenant_info.chain_id,
-                key_id = compact_hex(&tenant_info.key_id),
-                ct64 = compact_hex(ciphertext64_digest.as_ref()),
-                ct128 = compact_hex(ciphertext128_digest.as_ref()),
+                key_id = to_hex(&tenant_info.key_id),
+                ct64_digest = to_hex(ciphertext64_digest.as_ref()),
+                ct128_digest = to_hex(ciphertext128_digest.as_ref()),
                 "Adding ciphertext"
             );
 

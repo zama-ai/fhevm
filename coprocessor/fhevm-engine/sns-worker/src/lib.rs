@@ -23,7 +23,7 @@ use fhevm_engine_common::{
     telemetry::{self, OtelTracer},
     telemetry::{register_histogram, MetricsConfig},
     types::FhevmError,
-    utils::{compact_hex, DatabaseURL},
+    utils::{to_hex, DatabaseURL},
 };
 use futures::join;
 use serde::{Deserialize, Serialize};
@@ -270,8 +270,8 @@ impl HandleItem {
 
         info!(
             "Mark ct128 as uploaded, handle: {}, digest: {}, format: {:?}",
-            compact_hex(&self.handle),
-            compact_hex(&digest),
+            to_hex(&self.handle),
+            to_hex(&digest),
             format,
         );
 
@@ -295,8 +295,8 @@ impl HandleItem {
 
         info!(
             "Mark ct64 as uploaded, handle: {}, digest: {}",
-            compact_hex(&self.handle),
-            compact_hex(&digest)
+            to_hex(&self.handle),
+            to_hex(&digest)
         );
 
         Ok(())

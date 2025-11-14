@@ -16,7 +16,7 @@ use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
-use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::utils::to_hex;
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
 use sqlx::Pool;
@@ -511,7 +511,7 @@ fn compute_task(
     let span = error_span!("compute", thread_id = %thread_id);
     let _enter = span.enter();
 
-    let handle = compact_hex(&task.handle);
+    let handle = to_hex(&task.handle);
 
     // Check if the task is cancelled
     if token.is_cancelled() {
@@ -625,7 +625,7 @@ async fn update_ciphertext128(
             match res {
                 Ok(val) => {
                     info!(
-                        handle = compact_hex(&task.handle),
+                        handle = to_hex(&task.handle),
                         query_res = format!("{:?}", val),
                         "Inserted ct128 in DB"
                     );
@@ -712,7 +712,7 @@ fn decrypt_big_ct(
             }
             .expect("Failed to decrypt");
 
-            info!(plaintext = pt, handle = compact_hex(handle), "Decrypted");
+            info!(plaintext = pt, handle = to_hex(handle), "Decrypted");
         }
     }
 }

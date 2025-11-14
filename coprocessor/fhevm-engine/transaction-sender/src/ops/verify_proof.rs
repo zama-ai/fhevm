@@ -163,6 +163,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
                 } else {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     error!(
+                        zk_proof_id = txn_request.0,
                         transaction_request = ?overprovisioned_txn_req,
                         error = %e,
                         "Transaction sending failed"
@@ -202,6 +203,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
 
         if receipt.status() {
             info!(
+                zk_proof_id = txn_request.0,
                 transaction_hash = %receipt.transaction_hash,
                 "Transaction succeeded"
             );
@@ -216,6 +218,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         } else {
             VERIFY_PROOF_FAIL_COUNTER.inc();
             error!(
+                zk_proof_id = txn_request.0,
                 transaction_hash = %receipt.transaction_hash,
                 status = receipt.status(),
                 "Transaction failed"
@@ -227,9 +230,10 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
             )
             .await?;
             return Err(anyhow::anyhow!(
-                "Transaction {} failed with status {}",
+                "Transaction {} for zk_proof_id {} failed with status {}",
                 receipt.transaction_hash,
-                receipt.status()
+                txn_request.0,
+                receipt.status(),
             ));
         }
         Ok(())
