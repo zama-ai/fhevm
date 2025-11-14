@@ -22,9 +22,9 @@ The `ZamaConfig` library exposes functions to retrieve FHEVM configuration struc
 
 Under the hood, this library encapsulates the network-specific addresses of Zama's FHEVM infrastructure into a single struct (`FHEVMConfigStruct`).
 
-## EthereumConfig
+## ZamaEthereumConfig
 
-The `EthereumConfig` contract is designed to be inherited by a user contract. The constructor automatically sets up the FHEVM coprocessor and decryption oracle using the configuration provided by the library for the respective network. When a contract inherits from `EthereumConfig`, the constructor calls `FHE.setCoprocessor` with the appropriate addresses. This ensures that the inheriting contract is automatically wired to the correct FHEVM contracts and oracle for the target network, abstracting away manual address management and reducing the risk of misconfiguration.
+The `ZamaEthereumConfig` contract is designed to be inherited by a user contract. The constructor automatically sets up the FHEVM coprocessor and decryption oracle using the configuration provided by the library for the respective network. When a contract inherits from `ZamaEthereumConfig`, the constructor calls `FHE.setCoprocessor` with the appropriate addresses. This ensures that the inheriting contract is automatically wired to the correct FHEVM contracts and oracle for the target network, abstracting away manual address management and reducing the risk of misconfiguration.
 
 **Example**
 
@@ -32,9 +32,9 @@ The `EthereumConfig` contract is designed to be inherited by a user contract. Th
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { EthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract MyERC20 is EthereumConfig {
+contract MyERC20 is ZamaEthereumConfig {
   constructor() {
     // Additional initialization logic if needed
   }
@@ -64,4 +64,4 @@ require(FHE.isInitialized(counter), "Counter not initialized!");
 
 ## Summary
 
-By leveraging prebuilt a configuration contract like `EthereumConfig` in `ZamaConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.
+By leveraging prebuilt a configuration contract like `ZamaEthereumConfig` in `ZamaConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.
