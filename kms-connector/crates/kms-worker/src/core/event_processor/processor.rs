@@ -100,6 +100,9 @@ impl<P: Provider> DbEventProcessor<P> {
         match &event.kind {
             GatewayEventKind::PublicDecryption(req) => {
                 self.decryption_processor
+                    .check_decryption_not_already_done(req.decryptionId)
+                    .await?;
+                self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
                         &req.snsCtMaterials,
@@ -109,6 +112,9 @@ impl<P: Provider> DbEventProcessor<P> {
                     .await
             }
             GatewayEventKind::UserDecryption(req) => {
+                self.decryption_processor
+                    .check_decryption_not_already_done(req.decryptionId)
+                    .await?;
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
