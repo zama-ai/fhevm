@@ -68,6 +68,7 @@ To check if an entity has permission to access a ciphertext, use functions like 
 - **Confidential parameters**: Pass encrypted values securely between contracts, ensuring only authorized entities can access them.
 - **Secure state management**: Store encrypted state variables while controlling who can modify or read them.
 - **Privacy-preserving computations**: Enable computations on encrypted data with confidence that permissions are enforced.
+- **Publicly Verifiable Result Reveal**: Enable the public reveal of a confidential operation's final result. For example, enabling the public to verify the final price in a sealed-bid confidential auction.
 
 ---
 
