@@ -2,14 +2,18 @@
 
 # Array of examples to run
 examples=(
+    "demo"
+    "input"
+    # "keygen"  # example already run in the test-rust-sdk workflow before starting the unit tests
     "minimal-eip712-signing"
     "minimal-encrypted-input"
+    "minimal-public-decryption-request"
+    "minimal-public-decryption-response"
     "minimal-sdk-setup"
     "minimal-user-keys-generation"
     "minimal-user-decryption-request"
     "minimal-user-decryption-response"
-    "minimal-public-decryption-request"
-    "minimal-public-decryption-response"
+    "user-decryption"
 )
 
 # Array to store error messages
