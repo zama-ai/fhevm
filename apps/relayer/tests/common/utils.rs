@@ -34,12 +34,14 @@ impl TestSetup {
         let host_port = get_free_port()?;
         let gateway_port = get_free_port()?;
         let http_port = get_free_port()?;
+        let metrics_port = get_free_port()?;
 
         tracing::info!(
-            "Setting up isolated test on ports {} (host), {} (gateway), {} (http)",
+            "Setting up isolated test on ports {} (host), {} (gateway), {} (http), {} (metrics)",
             host_port,
             gateway_port,
-            http_port
+            http_port,
+            metrics_port
         );
 
         // Create temporary database directory
@@ -107,6 +109,7 @@ impl TestSetup {
         settings.http.endpoint = Some(format!("0.0.0.0:{}", http_port));
         settings.gateway.blockchain_rpc.http_url = format!("http://localhost:{}", gateway_port);
         settings.gateway.blockchain_rpc.ws_url = format!("ws://localhost:{}", gateway_port);
+        settings.metrics.endpoint = format!("0.0.0.0:{}", metrics_port);
 
         // Start relayer service with isolated settings
         let cancellation_token = CancellationToken::new();
@@ -122,6 +125,7 @@ impl TestSetup {
             settings.gateway.blockchain_rpc.http_url.clone();
         relayer_settings.gateway.blockchain_rpc.ws_url =
             settings.gateway.blockchain_rpc.ws_url.clone();
+        relayer_settings.metrics.endpoint = settings.metrics.endpoint.clone();
 
         tokio::spawn(async move {
             tracing::debug!("Starting isolated relayer service...");
@@ -135,10 +139,11 @@ impl TestSetup {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         tracing::info!(
-            "Isolated test setup complete on ports {} (host), {} (gateway), {} (http)",
+            "Isolated test setup complete on ports {} (host), {} (gateway), {} (http), {} (metrics)",
             host_port,
             gateway_port,
-            http_port
+            http_port,
+            metrics_port
         );
 
         Ok(TestSetup {
