@@ -2,7 +2,8 @@ mod common;
 
 use crate::common::utils::TestSetup;
 use crate::common::validation_helper::{
-    expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success, test_endpoint, test_endpoint_raw_body, with_invalid_field,
+    expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success,
+    test_endpoint, test_endpoint_raw_body, with_invalid_field,
 };
 use alloy::primitives::{Address, Bytes, B256};
 use rand::{rng, Rng};
@@ -178,6 +179,31 @@ async fn test_success_concurrent_requests() {
 #[case::short_contract_address("contractAddresses", json!(["0xfds"]), constants::LENGTH_MUST_BE_42_CHARACTERS)]
 #[case::missing_0x_contract_address("contractAddresses", json!(["1234567890123456789012345678901234567890"]), constants::HEX_MUST_START_WITH_0X)]
 #[case::invalid_hex_contract_address("contractAddresses", json!(["0x123zzz5678901234567890123456789012345678"]), constants::HEX_INVALID_CHARACTERS)]
+#[tokio::test]
+async fn test_error_invalid_fields_set_1(
+    #[case] field: &str,
+    #[case] invalid_value: serde_json::Value,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    test_endpoint(
+        &helpers::v1_user_decrypt_url(&setup),
+        base_payload,
+        with_invalid_field(field, invalid_value),
+        expect_invalid_field(field, expected_issue),
+    )
+    .await;
+}
+
+#[rstest]
 // User address validation
 #[case::empty_user_address("userAddress", json!(""), constants::HEX_MUST_START_WITH_0X)]
 #[case::short_user_address("userAddress", json!("0xfds"), constants::LENGTH_MUST_BE_42_CHARACTERS)]
@@ -190,7 +216,7 @@ async fn test_success_concurrent_requests() {
 #[case::wrong_extra_data("extraData", json!("0x01"), constants::EXACT_MUST_BE_0X00)]
 #[case::invalid_extra_data("extraData", json!("invalid"), constants::EXACT_MUST_BE_0X00)]
 #[tokio::test]
-async fn test_error_invalid_fields(
+async fn test_error_invalid_fields_set_2(
     #[case] field: &str,
     #[case] invalid_value: serde_json::Value,
     #[case] expected_issue: &str,
@@ -215,7 +241,10 @@ async fn test_error_invalid_fields(
 
 #[rstest]
 #[case::short_handle("abcdef", constants::LENGTH_MUST_BE_64_CHARACTERS)]
-#[case::handle_with_0x_prefix("0xabcdef123456789012345678901234567890123456789012345678901234567890", constants::HEX_MUST_NOT_START_WITH_0X)]
+#[case::handle_with_0x_prefix(
+    "0xabcdef123456789012345678901234567890123456789012345678901234567890",
+    constants::HEX_MUST_NOT_START_WITH_0X
+)]
 #[tokio::test]
 async fn test_error_invalid_nested_handle_fields(
     #[case] invalid_handle: &str,
