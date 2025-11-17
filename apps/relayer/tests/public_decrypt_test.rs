@@ -2,7 +2,7 @@ mod common;
 
 use crate::common::utils::TestSetup;
 use crate::common::validation_helper::{
-    expect_invalid_field, expect_missing_field, expect_success, test_endpoint, with_invalid_field,
+    expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success, test_endpoint, test_endpoint_raw_body, with_invalid_field,
 };
 use alloy::primitives::B256;
 use rand::{rng, Rng};
@@ -187,6 +187,21 @@ async fn test_error_missing_two_fields_reports_first_only(
             }
         },
         expect_missing_field(expected_reported_field), // Only expect the first field to be reported
+    )
+    .await;
+}
+
+#[rstest]
+#[case::missing_closing_brace(r#"{"field": "value""#)]
+#[case::missing_comma(r#"{"field1": "value1" "field2": "value2"}"#)]
+#[tokio::test]
+async fn test_error_malformed_json(#[case] malformed_json: &str) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    test_endpoint_raw_body(
+        &helpers::v1_public_decrypt_url(&setup),
+        malformed_json,
+        expect_malformed_json(),
     )
     .await;
 }

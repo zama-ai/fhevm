@@ -114,3 +114,36 @@ pub fn expect_invalid_field(
 {
     expect_validation_issues(&[(field, issue_contains)])
 }
+
+// Test endpoint with raw text instead of JSON for malformed JSON testing
+pub async fn test_endpoint_raw_body(
+    url: &str,
+    raw_body: &str,
+    verify: impl FnOnce(
+        reqwest::Response,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>,
+) {
+    let res = reqwest::Client::new()
+        .post(url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .body(raw_body.to_string())
+        .send()
+        .await
+        .unwrap();
+
+    verify(res).await;
+}
+
+// Verify function for malformed JSON errors
+pub fn expect_malformed_json(
+) -> impl FnOnce(reqwest::Response) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+{
+    |res| {
+        Box::pin(async move {
+            assert_eq!(res.status(), 400);
+            let error: ErrorResponse = res.json().await.unwrap();
+            assert_eq!(error.error.code, ErrorCode::MalformedJson);
+        })
+    }
+}
