@@ -1,23 +1,27 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { MaxUint256, Wallet } from "ethers";
-import { task } from "hardhat/config";
+import { task, types } from "hardhat/config";
 import { HardhatEthersHelpers } from "hardhat/types";
 
 import { getRequiredEnvVar } from "./utils";
 
 // Funds the address with mocked $ZAMA tokens using the owner's balance
+// The amount is in mocked $ZAMA tokens
 async function fundTxSenderWithMockedZamaToken(
   deployer: Wallet,
   txSenderAddress: string,
   ethers: HardhatEthersHelpers,
   verbose: boolean = false,
-  amount: bigint = BigInt(10 ** 22),
+  amount: bigint = BigInt(10 ** 12),
 ) {
   // Get the ZamaOFT contract
   const zamaOFT = await ethers.getContractAt("ZamaOFT", getRequiredEnvVar("ZAMA_OFT_ADDRESS"), deployer);
 
+  // Convert the amount to mocked $ZAMA base units (using 18 decimals)
+  const amountInMockedZamaBaseUnits = amount * BigInt(10 ** 18);
+
   // Transfer the tokens to the signer
-  const tx = await zamaOFT.connect(deployer).transfer(txSenderAddress, amount);
+  const tx = await zamaOFT.connect(deployer).transfer(txSenderAddress, amountInMockedZamaBaseUnits);
   const receipt = await tx.wait();
 
   if (receipt?.status !== 1) {
@@ -25,10 +29,8 @@ async function fundTxSenderWithMockedZamaToken(
   }
 
   if (verbose) {
-    // Convert the amount to mocked $ZAMA base units (using 18 decimals)
-    const amountInMockedZamaTokens = amount / BigInt(10 ** 18);
     console.log(
-      `Funding successful: ${amountInMockedZamaTokens} mocked $ZAMA tokens transferred from deployer ${deployer.address} to address ${txSenderAddress}\n`,
+      `Funding successful: ${amount} mocked $ZAMA tokens transferred from deployer ${deployer.address} to address ${txSenderAddress}\n`,
     );
   }
 }
@@ -63,14 +65,16 @@ export async function approveContractWithMaxAllowance(
 // - Approving the ProtocolPayment contract with maximum allowance over the signer's tokens
 // The deployer is expected to have deployed the mocked ZamaOFT contract and thus have an initial
 // balance of mocked $ZAMA tokens
+// The amount is in mocked $ZAMA tokens
 export async function setTxSenderMockedPayment(
   deployer: Wallet,
   txSender: Wallet | HardhatEthersSigner,
   ethers: HardhatEthersHelpers,
   verbose: boolean = false,
+  amount: bigint = BigInt(10 ** 12),
 ) {
   // Fund the tx sender with mocked $ZAMA tokens using the deployer's balance
-  await fundTxSenderWithMockedZamaToken(deployer, txSender.address, ethers, verbose);
+  await fundTxSenderWithMockedZamaToken(deployer, txSender.address, ethers, verbose, amount);
 
   // Get the addresses of the ProtocolPayment contract to approve
   const protocolPaymentAddress = getRequiredEnvVar("PROTOCOL_PAYMENT_ADDRESS");
@@ -79,17 +83,20 @@ export async function setTxSenderMockedPayment(
   await approveContractWithMaxAllowance(txSender, protocolPaymentAddress, ethers, verbose);
 }
 
-task("task:setTxSenderMockedPayment").setAction(async function (_, hre) {
-  // Compile the mocked payment bridging contracts
-  await hre.run("compile:specific", { contract: "contracts/mockedPaymentBridging" });
+// Amount is in mocked $ZAMA tokens (NOT in base units with 18 decimals)
+task("task:setTxSenderMockedPayment")
+  .addParam("amount", "The amount of mocked $ZAMA tokens to fund the tx sender with", BigInt(10 ** 12), types.bigint)
+  .setAction(async function ({ amount }, hre) {
+    // Compile the mocked payment bridging contracts
+    await hre.run("compile:specific", { contract: "contracts/mockedPaymentBridging" });
 
-  // Get the deployer wallet
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-  const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+    // Get the deployer wallet
+    const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+    const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
-  // Get the tx sender wallet
-  const txSenderPrivateKey = getRequiredEnvVar("TX_SENDER_PRIVATE_KEY");
-  const txSender = new Wallet(txSenderPrivateKey).connect(hre.ethers.provider);
+    // Get the tx sender wallet
+    const txSenderPrivateKey = getRequiredEnvVar("TX_SENDER_PRIVATE_KEY");
+    const txSender = new Wallet(txSenderPrivateKey).connect(hre.ethers.provider);
 
-  await setTxSenderMockedPayment(deployer, txSender, hre.ethers, true);
-});
+    await setTxSenderMockedPayment(deployer, txSender, hre.ethers, true, amount);
+  });
