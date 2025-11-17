@@ -66,6 +66,9 @@ task("task:txSenderMintMockedZamaTokens")
     types.bigint,
   )
   .setAction(async function ({ amount }, hre) {
+    // Compile the mocked payment bridging contracts
+    await hre.run("compile:specific", { contract: "contracts/mockedPaymentBridging" });
+
     // Get the tx sender wallet
     const txSenderPrivateKey = getRequiredEnvVar("TX_SENDER_PRIVATE_KEY");
     const txSender = new Wallet(txSenderPrivateKey).connect(hre.ethers.provider);
@@ -75,6 +78,9 @@ task("task:txSenderMintMockedZamaTokens")
 
 // Approve the ProtocolPayment contract with maximum allowance over the tx sender's tokens
 task("task:txSenderMaxApprovePayment").setAction(async function (_, hre) {
+  // Compile the mocked payment bridging contracts
+  await hre.run("compile:specific", { contract: "contracts/mockedPaymentBridging" });
+
   // Get the tx sender wallet
   const txSenderPrivateKey = getRequiredEnvVar("TX_SENDER_PRIVATE_KEY");
   const txSender = new Wallet(txSenderPrivateKey).connect(hre.ethers.provider);
