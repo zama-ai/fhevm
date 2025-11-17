@@ -14,12 +14,12 @@ import {
 } from "../typechain-types";
 import {
   EIP712,
+  createAndFundRandomWallet,
   createByteInput,
   createCtHandles,
   createEIP712ResponseZKPoK,
   createRandomAddress,
   createRandomWallet,
-  createAndFundRandomWallet,
   getSignaturesZKPoK,
   loadTestVariablesFixture,
 } from "./utils";
@@ -104,13 +104,9 @@ describe("InputVerification", function () {
 
     it("Should request a proof verification", async function () {
       // Trigger a proof verification request
-      const txResponse = inputVerification.connect(tokenFundedTxSender).verifyProofRequest(
-        contractChainId,
-        contractAddress,
-        userAddress,
-        ciphertextWithZKProof,
-        extraDataV0,
-      );
+      const txResponse = inputVerification
+        .connect(tokenFundedTxSender)
+        .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0);
 
       await expect(txResponse)
         .to.emit(inputVerification, "VerifyProofRequest")
@@ -119,13 +115,9 @@ describe("InputVerification", function () {
 
     it("Should revert because the contract's chain ID does not correspond to a registered host chain", async function () {
       await expect(
-        inputVerification.connect(tokenFundedTxSender).verifyProofRequest(
-          fakeHostChainId,
-          contractAddress,
-          userAddress,
-          ciphertextWithZKProof,
-          extraDataV0,
-        ),
+        inputVerification
+          .connect(tokenFundedTxSender)
+          .verifyProofRequest(fakeHostChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0),
       )
         .revertedWithCustomError(inputVerification, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
@@ -137,13 +129,9 @@ describe("InputVerification", function () {
 
       // Try calling verify proof request
       await expect(
-        inputVerification.connect(tokenFundedTxSender).verifyProofRequest(
-          contractChainId,
-          contractAddress,
-          userAddress,
-          ciphertextWithZKProof,
-          extraDataV0,
-        ),
+        inputVerification
+          .connect(tokenFundedTxSender)
+          .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0),
       ).to.be.revertedWithCustomError(inputVerification, "EnforcedPause");
     });
 
@@ -223,13 +211,9 @@ describe("InputVerification", function () {
       signatures = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
 
       // The ZK proof ID will always be 1 since we reset the state of the network before each test (using fixtures)
-      await inputVerification.connect(tokenFundedTxSender).verifyProofRequest(
-        contractChainId,
-        contractAddress,
-        userAddress,
-        ciphertextWithZKProof,
-        extraDataV0,
-      );
+      await inputVerification
+        .connect(tokenFundedTxSender)
+        .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0);
     });
 
     it("Should emit an event when calling a single proof verification response", async function () {
@@ -600,13 +584,9 @@ describe("InputVerification", function () {
       inputVerificationAddress = await inputVerification.getAddress();
 
       // The ZK proof ID will always be 1 since we reset the state of the network before each test (using fixtures)
-      await inputVerification.connect(tokenFundedTxSender).verifyProofRequest(
-        contractChainId,
-        contractAddress,
-        userAddress,
-        ciphertextWithZKProof,
-        extraDataV0,
-      );
+      await inputVerification
+        .connect(tokenFundedTxSender)
+        .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0);
     });
 
     it("Should emit an event when calling a single proof rejection response", async function () {

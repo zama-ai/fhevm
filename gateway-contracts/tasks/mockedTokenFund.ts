@@ -56,37 +56,47 @@ export async function approveContractWithMaxAllowance(
   }
 }
 
-// Set the tx sender for mocked payment by:
-// - Funding the tx sender with mocked $ZAMA tokens (by minting them)
-// - Approving the ProtocolPayment contract with maximum allowance over the signer's tokens
-// The amount is in mocked $ZAMA tokens
-export async function setTxSenderMockedPayment(
-  txSender: Wallet | HDNodeWallet,
-  ethers: HardhatEthersHelpers,
-  verbose: boolean = false,
-  amount: bigint = BigInt(10 ** 4),
-) {
-  // Mint mocked $ZAMA tokens to the tx sender
-  await mintMockedZamaTokens(txSender, ethers, verbose, amount);
-
-  // Get the addresses of the ProtocolPayment contract to approve
-  const protocolPaymentAddress = getRequiredEnvVar("PROTOCOL_PAYMENT_ADDRESS");
-
-  // Approve the ProtocolPayment contract with maximum allowance over the signer's tokens
-  await approveContractWithMaxAllowance(txSender, protocolPaymentAddress, ethers, verbose);
-}
-
-// Set the account that sends request transactions (input verification, decryption) for mocked payment
+// Mint mocked $ZAMA tokens to the tx sender
 // Amount is in mocked $ZAMA tokens (NOT in base units with 18 decimals)
-task("task:setTxSenderMockedPayment")
-  .addOptionalParam("amount", "The amount of mocked $ZAMA tokens to fund the tx sender with", BigInt(10 ** 12), types.bigint)
+task("task:txSenderMintMockedZamaTokens")
+  .addOptionalParam(
+    "amount",
+    "The amount of mocked $ZAMA tokens to mint to the tx sender",
+    BigInt(10 ** 12),
+    types.bigint,
+  )
   .setAction(async function ({ amount }, hre) {
-    // Compile the mocked payment bridging contracts
-    await hre.run("compile:specific", { contract: "contracts/mockedPaymentBridging" });
-
     // Get the tx sender wallet
     const txSenderPrivateKey = getRequiredEnvVar("TX_SENDER_PRIVATE_KEY");
     const txSender = new Wallet(txSenderPrivateKey).connect(hre.ethers.provider);
 
-    await setTxSenderMockedPayment(txSender, hre.ethers, true, amount);
+    await mintMockedZamaTokens(txSender, hre.ethers, true, amount);
+  });
+
+// Approve the ProtocolPayment contract with maximum allowance over the tx sender's tokens
+task("task:txSenderMaxApprovePayment").setAction(async function (_, hre) {
+  // Get the tx sender wallet
+  const txSenderPrivateKey = getRequiredEnvVar("TX_SENDER_PRIVATE_KEY");
+  const txSender = new Wallet(txSenderPrivateKey).connect(hre.ethers.provider);
+
+  // Get the addresses of the ProtocolPayment contract to approve
+  const protocolPaymentAddress = getRequiredEnvVar("PROTOCOL_PAYMENT_ADDRESS");
+
+  await approveContractWithMaxAllowance(txSender, protocolPaymentAddress, hre.ethers, true);
+});
+
+// Set the account that sends request transactions (input verification, decryption) for mocked payment
+// - Funding the tx sender with mocked $ZAMA tokens (by minting them)
+// - Approving the ProtocolPayment contract with maximum allowance over the tx sender's tokens
+// Amount is in mocked $ZAMA tokens (NOT in base units with 18 decimals)
+task("task:setTxSenderMockedPayment")
+  .addOptionalParam(
+    "amount",
+    "The amount of mocked $ZAMA tokens to fund the tx sender with",
+    BigInt(10 ** 12),
+    types.bigint,
+  )
+  .setAction(async function ({ amount }, hre) {
+    await hre.run("task:txSenderMintMockedZamaTokens", { amount });
+    await hre.run("task:txSenderMaxApprovePayment");
   });
