@@ -1,8 +1,12 @@
 mod common;
 
 use crate::common::utils::TestSetup;
+use crate::common::validation_helper::{
+    expect_invalid_field, expect_missing_field, expect_success, test_endpoint, with_invalid_field,
+};
 use alloy::primitives::{Address, Bytes, B256};
 use rand::{rng, Rng};
+use rstest::rstest;
 use serde_json::json;
 use std::str::FromStr;
 
@@ -11,6 +15,9 @@ mod constants {
     pub const EXTRA_DATA: &str = "0x00";
     pub const REQUEST_VALIDITY_START: &str = "1742450894";
     pub const REQUEST_VALIDITY_DAYS: &str = "10";
+
+    // Validation error messages (directly from source code)
+    pub use fhevm_relayer::http::utils::validation_messages::*;
 }
 
 mod helpers {
@@ -91,11 +98,9 @@ mod helpers {
 }
 
 #[tokio::test]
-async fn test_user_decrypt_success() {
-    // Setup test environment
+async fn test_success_single_request() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-    // Prepare test data
     let user_address = helpers::random_address();
     let contract_address = helpers::random_address();
     let payload = helpers::create_user_decrypt_payload(
@@ -106,32 +111,23 @@ async fn test_user_decrypt_success() {
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
     let encrypted_bytes = helpers::random_encrypted_bytes();
 
-    // Configure mock for successful response
     setup
         .fhevm_mock
         .on_user_decrypt_success(handles, user_address, encrypted_bytes);
 
-    // Make HTTP request
-    let client = reqwest::Client::new();
-    let res = client
-        .post(helpers::v1_user_decrypt_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-        .json(&payload)
-        .send()
-        .await
-        .expect("Request should succeed");
-
-    // Verify success
-    assert_eq!(res.status(), 200, "Response: {}", res.text().await.unwrap());
+    test_endpoint(
+        &helpers::v1_user_decrypt_url(&setup),
+        payload,
+        |_| {},
+        expect_success(),
+    )
+    .await;
 }
 
 #[tokio::test]
-async fn test_user_decrypt_sequential_requests() {
-    // Setup test environment
+async fn test_success_concurrent_requests() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-    // Prepare test data
     let user_address = helpers::random_address();
     let contract_address = helpers::random_address();
     let payload = helpers::create_user_decrypt_payload(
@@ -142,41 +138,167 @@ async fn test_user_decrypt_sequential_requests() {
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
     let encrypted_bytes = helpers::random_encrypted_bytes();
 
-    let client = reqwest::Client::new();
+    setup
+        .fhevm_mock
+        .on_user_decrypt_success(handles, user_address, encrypted_bytes);
 
-    // Make multiple sequential requests
-    for i in 0..3 {
-        // Configure mock for each request
-        setup.fhevm_mock.on_user_decrypt_success(
-            handles.clone(),
-            user_address,
-            encrypted_bytes.clone(),
-        );
+    // Send multiple concurrent requests using test_endpoint
+    let mut tasks = tokio::task::JoinSet::new();
+    let number_of_requests = 5;
 
-        // Make HTTP request
-        let start = std::time::Instant::now();
-        let res = client
-            .post(helpers::v1_user_decrypt_url(&setup))
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-            .json(&payload)
-            .send()
-            .await
-            .expect("Request should succeed");
-        let duration = start.elapsed();
-
-        // Verify success
-        assert_eq!(
-            res.status(),
-            200,
-            "Request {}: {}",
-            i + 1,
-            res.text().await.unwrap()
-        );
-        println!(
-            "Sequential user decrypt request {} completed in {:?}",
-            i + 1,
-            duration
-        );
+    for i in 1..=number_of_requests {
+        let payload_clone = payload.clone();
+        let url = helpers::v1_user_decrypt_url(&setup);
+        tasks.spawn(async move {
+            test_endpoint(
+                &url,
+                payload_clone,
+                |_| {}, // No modifications needed
+                expect_success(),
+            )
+            .await;
+            i // Return request index for tracking
+        });
     }
+
+    // Wait for all requests to complete
+    while let Some(result) = tasks.join_next().await {
+        let index = result.expect("Task should complete");
+        println!("Concurrent request {} completed successfully", index);
+    }
+}
+
+#[rstest]
+// Chain ID validation
+#[case::empty_chain_id("contractsChainId", json!(""), constants::NUMBER_DECIMAL_OR_HEX)]
+#[case::invalid_chain_id_decimal("contractsChainId", json!("abc123"), constants::NUMBER_DECIMAL_OR_HEX)]
+#[case::invalid_chain_id_hex("contractsChainId", json!("0xzzz"), constants::NUMBER_DECIMAL_OR_HEX)]
+// Contract address validation
+#[case::empty_contract_addresses("contractAddresses", json!([]), constants::CANNOT_BE_EMPTY)]
+#[case::short_contract_address("contractAddresses", json!(["0xfds"]), constants::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::missing_0x_contract_address("contractAddresses", json!(["1234567890123456789012345678901234567890"]), constants::HEX_MUST_START_WITH_0X)]
+#[case::invalid_hex_contract_address("contractAddresses", json!(["0x123zzz5678901234567890123456789012345678"]), constants::HEX_INVALID_CHARACTERS)]
+// User address validation
+#[case::empty_user_address("userAddress", json!(""), constants::HEX_MUST_START_WITH_0X)]
+#[case::short_user_address("userAddress", json!("0xfds"), constants::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::missing_0x_user_address("userAddress", json!("1234567890123456789012345678901234567890"), constants::HEX_MUST_START_WITH_0X)]
+#[case::invalid_hex_user_address("userAddress", json!("0x123zzz5678901234567890123456789012345678"), constants::HEX_INVALID_CHARACTERS)]
+// Handle validation
+#[case::empty_handle_contract_pairs("handleContractPairs", json!([]), constants::CANNOT_BE_EMPTY)]
+// Extra data validation
+#[case::empty_extra_data("extraData", json!(""), constants::EXACT_MUST_BE_0X00)]
+#[case::wrong_extra_data("extraData", json!("0x01"), constants::EXACT_MUST_BE_0X00)]
+#[case::invalid_extra_data("extraData", json!("invalid"), constants::EXACT_MUST_BE_0X00)]
+#[tokio::test]
+async fn test_error_invalid_fields(
+    #[case] field: &str,
+    #[case] invalid_value: serde_json::Value,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    test_endpoint(
+        &helpers::v1_user_decrypt_url(&setup),
+        base_payload,
+        with_invalid_field(field, invalid_value),
+        expect_invalid_field(field, expected_issue),
+    )
+    .await;
+}
+
+#[rstest]
+#[case::short_handle("abcdef", constants::LENGTH_MUST_BE_64_CHARACTERS)]
+#[case::handle_with_0x_prefix("0xabcdef123456789012345678901234567890123456789012345678901234567890", constants::HEX_MUST_NOT_START_WITH_0X)]
+#[tokio::test]
+async fn test_error_invalid_nested_handle_fields(
+    #[case] invalid_handle: &str,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let mut base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    // Modify the nested handle field with the test case value
+    base_payload["handleContractPairs"][0]["handle"] = json!(invalid_handle);
+
+    test_endpoint(
+        &helpers::v1_user_decrypt_url(&setup),
+        base_payload,
+        |_| {}, // No additional modifications needed
+        expect_invalid_field("handleContractPairs", expected_issue),
+    )
+    .await;
+}
+
+#[rstest]
+#[case::missing_contracts_chain_id("contractsChainId")]
+#[case::missing_contract_addresses("contractAddresses")]
+#[case::missing_user_address("userAddress")]
+#[case::missing_handle_contract_pairs("handleContractPairs")]
+#[case::missing_request_validity("requestValidity")]
+#[case::missing_signature("signature")]
+#[case::missing_public_key("publicKey")]
+#[case::missing_extra_data("extraData")]
+#[tokio::test]
+async fn test_error_missing_fields(#[case] field: &str) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    test_endpoint(
+        &helpers::v1_user_decrypt_url(&setup),
+        base_payload,
+        |p| {
+            p.as_object_mut().unwrap().remove(field);
+        },
+        expect_missing_field(field),
+    )
+    .await;
+}
+
+#[rstest]
+#[case::contract_and_user_addresses(["contractAddresses", "userAddress"], "contractAddresses")]
+#[case::chain_id_and_handle_pairs(["contractsChainId", "handleContractPairs"], "handleContractPairs")]
+#[tokio::test]
+async fn test_error_missing_two_fields_reports_first_only(
+    #[case] fields_to_remove: [&str; 2],
+    #[case] expected_reported_field: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    test_endpoint(
+        &helpers::v1_user_decrypt_url(&setup),
+        base_payload,
+        |p| {
+            for field in &fields_to_remove {
+                p.as_object_mut().unwrap().remove(*field);
+            }
+        },
+        expect_missing_field(expected_reported_field), // Only expect the first field to be reported
+    )
+    .await;
 }

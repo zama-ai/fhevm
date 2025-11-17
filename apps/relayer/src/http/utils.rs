@@ -14,6 +14,30 @@ use std::sync::Mutex;
 use tokio::sync::oneshot;
 use validator::ValidationError;
 
+// Generic validation error messages (reusable across fields)
+pub mod validation_messages {
+    pub const GENERIC_MUST_NOT_BE_EMPTY: &str = "Must not be empty";
+    pub const GENERIC_REQUIRED_BUT_MISSING: &str = "Required but missing";
+
+    pub const NUMBER_DECIMAL_OR_HEX: &str = "Must be decimal number or 0x hex string";
+
+    pub const HEX_MUST_START_WITH_0X: &str = "Must start with 0x";
+    pub const HEX_MUST_NOT_START_WITH_0X: &str = "Must not start with 0x";
+    pub const HEX_INVALID_CHARACTERS: &str = "Contains invalid hex characters";
+    pub const HEX_INVALID_STRING: &str = "Invalid hex string";
+
+    // Generic length validation messages
+    pub const LENGTH_MUST_BE_EXACT: &str = "Must be exactly {} characters long";
+    pub const LENGTH_MUST_BE_42_CHARACTERS: &str = "Must be 42 characters long"; // Keep for backward compatibility
+    pub const LENGTH_MUST_BE_64_CHARACTERS: &str = "Must be 64 characters long"; // Keep for backward compatibility  
+    pub const LENGTH_MUST_BE_130_CHARACTERS: &str = "Must be 130 characters long"; // Keep for backward compatibility
+
+    // Generic collection validation messages  
+    pub const CANNOT_BE_EMPTY: &str = "Cannot be empty";
+
+    pub const EXACT_MUST_BE_0X00: &str = "Must be 0x00";
+}
+
 pub struct OnceHandler<T> {
     tx: Mutex<Option<oneshot::Sender<T>>>,
 }
@@ -56,16 +80,16 @@ pub fn de_string_or_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result
 pub fn validate_blockchain_address(address: &str) -> Result<(), ValidationError> {
     if !address.starts_with("0x") {
         return Err(ValidationError::new("validation_error")
-            .with_message("Address must start with 0x".into()));
+            .with_message(validation_messages::HEX_MUST_START_WITH_0X.into()));
     }
     if address.len() != 42 {
         return Err(ValidationError::new("validation_error")
-            .with_message("Address must be 42 characters long".into()));
+            .with_message(validation_messages::LENGTH_MUST_BE_42_CHARACTERS.into()));
     }
     // The `hex` crate robustly checks if the string slice (after "0x") is valid hex.
     if hex::decode(&address[2..]).is_err() {
         return Err(ValidationError::new("validation_error")
-            .with_message("Address contains invalid hex characters".into()));
+            .with_message(validation_messages::HEX_INVALID_CHARACTERS.into()));
     }
     Ok(())
 }
@@ -82,13 +106,12 @@ pub fn validate_hex_string(hex_str: &str) -> Result<(), ValidationError> {
     // Allow both with and without "0x" prefix
     if hex_str.starts_with("0x") {
         return Err(ValidationError::new("validation_error")
-            .with_message("Hex string must not start with 0x".into()));
+            .with_message(validation_messages::HEX_MUST_NOT_START_WITH_0X.into()));
     };
 
     if hex::decode(hex_str).is_err() {
-        return Err(
-            ValidationError::new("validation_error").with_message("Invalid hex string".into())
-        );
+        return Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::HEX_INVALID_STRING.into()));
     }
     Ok(())
 }
@@ -102,9 +125,8 @@ pub fn validate_hex_strings(hex_strs: &Vec<String>) -> Result<(), ValidationErro
 
 pub fn validate_extra_data_field(extra_data: &str) -> Result<(), ValidationError> {
     if extra_data != "0x00" {
-        return Err(
-            ValidationError::new("validation_error").with_message("Extra data must be 0x00".into())
-        );
+        return Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::EXACT_MUST_BE_0X00.into()));
     }
     Ok(())
 }
@@ -145,7 +167,26 @@ pub fn validate_chain_id_string(value: &str) -> Result<(), ValidationError> {
 
     if result.is_err() {
         return Err(ValidationError::new("validation_error")
-            .with_message("Chain ID must be a valid decimal number (e.g., '123456') or hex string with 0x prefix (e.g., '0x1e240')".into()));
+            .with_message(validation_messages::NUMBER_DECIMAL_OR_HEX.into()));
+    }
+    Ok(())
+}
+
+pub fn validate_handle_contract_pairs(
+    pairs: &Vec<crate::http::userdecrypt_http_listener::HandleContractPairJson>,
+) -> Result<(), ValidationError> {
+    for pair in pairs {
+        // Validate handle hex format first (to catch 0x prefix before length check)
+        validate_hex_string(&pair.handle)?;
+
+        // Validate handle length
+        if pair.handle.len() != 64 {
+            return Err(ValidationError::new("validation_error")
+                .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into()));
+        }
+
+        // Validate contract address
+        validate_blockchain_address(&pair.contract_address)?;
     }
     Ok(())
 }
@@ -184,10 +225,17 @@ where
                 // Map field name to static str
                 let field_key: &'static str = match field_name.as_str() {
                     "contractChainId" => "contract_chain_id",
+                    "contractsChainId" => "contracts_chain_id",
                     "contractAddress" => "contract_address",
+                    "contractAddresses" => "contract_addresses",
                     "userAddress" => "user_address",
                     "ciphertextWithInputVerification" => "ciphertext_with_input_verification",
                     "extraData" => "extra_data",
+                    "ciphertextHandles" => "ciphertext_handles",
+                    "handleContractPairs" => "handle_contract_pairs",
+                    "requestValidity" => "request_validity",
+                    "publicKey" => "public_key",
+                    "signature" => "signature",
                     _ => "request",
                 };
 
@@ -285,6 +333,7 @@ where
                         "userAddress" => "user_address",
                         "ciphertextWithInputVerification" => "ciphertext_with_input_verification",
                         "extraData" => "extra_data",
+                        "ciphertextHandles" => "ciphertext_handles",
                         _ => "request",
                     };
 
@@ -368,7 +417,16 @@ impl<V: serde::Serialize> AppResponse<V> {
 
     /// Creates a new missing fields response.
     pub fn missing_fields(errors: validator::ValidationErrors) -> Self {
-        let details = Self::extract_field_details(errors);
+        // For missing fields, create details with empty issue strings
+        let details: Vec<ErrorDetail> = errors
+            .field_errors()
+            .keys()
+            .map(|field| ErrorDetail {
+                field: to_camel_case(field),
+                issue: validation_messages::GENERIC_REQUIRED_BUT_MISSING.to_string(),
+            })
+            .collect();
+
         let field_names: Vec<String> = details.iter().map(|d| d.field.clone()).collect();
         let count = field_names.len();
 
@@ -525,13 +583,13 @@ impl ErrorCode {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, utoipa::ToSchema)]
 pub struct ErrorDetail {
     pub field: String,
     pub issue: String,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, utoipa::ToSchema)]
 pub struct ApiError {
     pub code: ErrorCode,
     pub message: String,

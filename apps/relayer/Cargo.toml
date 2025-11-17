@@ -80,3 +80,4 @@ tempfile = "3.10.1"
 ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock" }
 tower = { version = "0.5.2", features = ["util"] }
 fake = "4.4.0"
+rstest = "0.21.0"

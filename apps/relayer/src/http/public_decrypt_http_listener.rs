@@ -25,7 +25,7 @@ use validator::Validate;
 #[serde(rename_all = "camelCase")]
 pub struct PublicDecryptRequestJson {
     #[validate(
-        length(min = 1, message = "ciphertextHandles cannot be empty"),
+        length(min = 1, message = "Cannot be empty"),
         custom(function = "crate::http::utils::validate_hex_strings")
     )]
     pub ciphertext_handles: Vec<String>,

@@ -24,11 +24,10 @@ use validator::Validate;
 #[derive(Debug, Deserialize, Clone, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptRequestJson {
-    #[validate(length(
-        min = 1,
-        message = "At least one handle-contract pair must be provided"
-    ))]
-    #[validate(nested)]
+    #[validate(
+        length(min = 1, message = "Cannot be empty"),
+        custom(function = "crate::http::utils::validate_handle_contract_pairs")
+    )]
     pub handle_contract_pairs: Vec<HandleContractPairJson>,
     #[validate(nested)]
     pub request_validity: RequestValidityJson,
@@ -38,14 +37,14 @@ pub struct UserDecryptRequestJson {
     pub contracts_chain_id: String,
 
     /// Array of contract addresses
-    #[validate(length(min = 1, message = "At least one contract address must be provided"))]
+    #[validate(length(min = 1, message = "Cannot be empty"))]
     #[validate(custom(function = "crate::http::utils::validate_blockchain_addresses"))]
     pub contract_addresses: Vec<String>,
     /// User's wallet address
     #[validate(custom(function = "crate::http::utils::validate_blockchain_address"))]
     pub user_address: String,
     #[validate(
-        length(equal = 130, message = "Signature must be 130 characters long"),
+        length(equal = 130, message = "Must be 130 characters long"),
         custom(function = "crate::http::utils::validate_hex_string")
     )]
     pub signature: String,
@@ -62,7 +61,7 @@ pub struct UserDecryptRequestJson {
 #[serde(rename_all = "camelCase")]
 pub struct HandleContractPairJson {
     #[validate(
-        length(equal = 64, message = "Handle must be 64 characters long"),
+        length(equal = 64, message = "Must be 64 characters long"),
         custom(function = "crate::http::utils::validate_hex_string")
     )]
     pub handle: String,
@@ -475,19 +474,14 @@ mod tests {
                 ..().fake()
             };
             let invalid_json = serde_json::to_string(&fake_data).unwrap();
-            println!("Invalid JSON: {}", invalid_json);
             let data: UserDecryptRequestJson = serde_json::from_str(&invalid_json).unwrap();
             let errors = data.validate().unwrap_err();
             assert!(errors.errors().contains_key("handle_contract_pairs"));
-            match errors.errors()["handle_contract_pairs"].clone() {
-                ValidationErrorsKind::List(nested_errors) => {
-                    println!("Nested errors: {:?}", nested_errors);
-                    assert_eq!(nested_errors.len(), 1);
-                    let first: usize = 0;
-                    assert!(nested_errors[&first].field_errors().contains_key("handle"));
-                }
-                _ => panic!("Expected List type for handle_contract_pairs errors"),
-            }
+            // With custom validation, we get field-level validation errors
+            let field_errors = errors.field_errors()["handle_contract_pairs"];
+            assert_eq!(field_errors.len(), 1);
+            // The custom validation function returns a validation error with our message
+            assert!(field_errors[0].message.is_some());
         }
     }
 
@@ -515,17 +509,11 @@ mod tests {
             let data: UserDecryptRequestJson = serde_json::from_str(&invalid_json).unwrap();
             let errors = data.validate().unwrap_err();
             assert!(errors.errors().contains_key("handle_contract_pairs"));
-            match errors.errors()["handle_contract_pairs"].clone() {
-                ValidationErrorsKind::List(nested_errors) => {
-                    println!("Nested errors: {:?}", nested_errors);
-                    assert_eq!(nested_errors.len(), 1);
-                    let first: usize = 0;
-                    assert!(nested_errors[&first]
-                        .field_errors()
-                        .contains_key("contract_address"));
-                }
-                _ => panic!("Expected List type for handle_contract_pairs errors"),
-            }
+            // With custom validation, we get field-level validation errors
+            let field_errors = errors.field_errors()["handle_contract_pairs"];
+            assert_eq!(field_errors.len(), 1);
+            // The custom validation function returns a validation error with our message
+            assert!(field_errors[0].message.is_some());
         }
     }
 

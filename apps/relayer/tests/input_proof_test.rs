@@ -1,14 +1,20 @@
 mod common;
 
 use crate::common::utils::TestSetup;
+use crate::common::validation_helper::{
+    expect_invalid_field, expect_missing_field, expect_success, test_endpoint, with_invalid_field,
+};
 use alloy::primitives::{Address, Bytes};
-use fhevm_relayer::http::utils::{ErrorCode, ErrorResponse};
 use rand::{rng, Rng};
+use rstest::rstest;
 use serde_json::json;
 
 mod constants {
     pub const TIMEOUT_SECS: u64 = 10;
     pub const EXTRA_DATA: &str = "0x00";
+
+    // Validation error messages (directly from source code)
+    pub use fhevm_relayer::http::utils::validation_messages::*;
 }
 
 mod helpers {
@@ -30,408 +36,210 @@ mod helpers {
         Bytes::from(bytes)
     }
 
-    pub fn create_input_proof_payload(
-        chain_id: &str,
-        contract_address: Address,
-        user_address: Address,
-        ciphertext_hex: &str,
-    ) -> serde_json::Value {
-        json!({
-            "contractChainId": chain_id,
+    pub fn create_input_proof_payload(setup: &TestSetup) -> (serde_json::Value, Address, Bytes) {
+        let contract_address = random_address();
+        let user_address = random_address();
+        let ciphertext_data = random_bytes();
+
+        let payload = json!({
+            "contractChainId": setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
             "contractAddress": format!("{:?}", contract_address),
             "userAddress": format!("{:?}", user_address),
-            "ciphertextWithInputVerification": ciphertext_hex,
+            "ciphertextWithInputVerification": hex::encode(&ciphertext_data),
             "extraData": constants::EXTRA_DATA
-        })
+        });
+
+        (payload, user_address, ciphertext_data)
     }
 }
 
 #[tokio::test]
-async fn test_input_proof_reject_by_gateway_error() {
-    // Setup test environment
+async fn test_error_gateway_rejection() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-    // Prepare test data
-    let user_address = helpers::random_address();
-    let contract_address = helpers::random_address();
-    let ciphertext_data = helpers::random_bytes();
-    let ciphertext_hex = hex::encode(&ciphertext_data);
-
-    // Configure mock to reject this request
+    let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
     setup
         .fhevm_mock
         .on_input_proof_error(user_address, ciphertext_data);
 
-    // Create payload
-    let payload = helpers::create_input_proof_payload(
-        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
-        contract_address,
-        user_address,
-        &ciphertext_hex,
-    );
-
-    // Make HTTP request
-    let client = reqwest::Client::new();
-    let res = client
-        .post(helpers::v1_input_proof_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-        .json(&payload)
-        .send()
-        .await
-        .expect("Request should complete");
-
-    // Verify rejection
-    assert_eq!(res.status(), 400);
-    let response_text = res.text().await.unwrap();
-    assert!(response_text.contains("Transaction rejected") && response_text.contains("Rejected"));
+    test_endpoint(
+        &helpers::v1_input_proof_url(&setup),
+        payload,
+        |_| {},
+        |res| {
+            Box::pin(async move {
+                assert_eq!(res.status(), 400);
+                let response_text = res.text().await.unwrap();
+                assert!(
+                    response_text.contains("Transaction rejected")
+                        && response_text.contains("Rejected")
+                );
+            })
+        },
+    )
+    .await;
 }
 
 #[tokio::test]
-async fn test_input_proof_success() {
-    // Setup test environment
+async fn test_success_single_request() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-    // Prepare test data
-    let user_address = helpers::random_address();
-    let contract_address = helpers::random_address();
-    let ciphertext_data = helpers::random_bytes();
-    let ciphertext_hex = hex::encode(&ciphertext_data);
-
-    // Configure mock for successful response
+    let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
     setup
         .fhevm_mock
         .on_input_proof_success(user_address, ciphertext_data);
 
-    // Create payload
-    let payload = helpers::create_input_proof_payload(
-        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
-        contract_address,
-        user_address,
-        &ciphertext_hex,
-    );
-
-    // Make HTTP request
-    let client = reqwest::Client::new();
-    let res = client
-        .post(helpers::v1_input_proof_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-        .json(&payload)
-        .send()
-        .await
-        .expect("Request should succeed");
-
-    // Verify success
-    assert_eq!(res.status(), 200, "Response: {}", res.text().await.unwrap());
+    test_endpoint(
+        &helpers::v1_input_proof_url(&setup),
+        payload,
+        |_| {},
+        expect_success(),
+    )
+    .await;
 }
 
 #[tokio::test]
-async fn test_input_proof_concurrent_requests() {
-    // Setup test environment
+async fn test_success_concurrent_requests() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-    // Prepare test data
-    let user_address = helpers::random_address();
-    let contract_address = helpers::random_address();
-    let ciphertext_data = helpers::random_bytes();
-    let ciphertext_hex = hex::encode(&ciphertext_data);
-
-    // Configure mock for successful responses
+    let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
     setup
         .fhevm_mock
         .on_input_proof_success(user_address, ciphertext_data);
 
-    // Create payload
-    let payload = helpers::create_input_proof_payload(
-        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
-        contract_address,
-        user_address,
-        &ciphertext_hex,
-    );
-
-    // Send multiple concurrent requests
+    // Send multiple concurrent requests using test_endpoint
     let mut tasks = tokio::task::JoinSet::new();
     let number_of_requests = 10;
-    let url = helpers::v1_input_proof_url(&setup);
 
     for i in 1..=number_of_requests {
-        let url_clone = url.clone();
         let payload_clone = payload.clone();
+        let url = helpers::v1_input_proof_url(&setup);
         tasks.spawn(async move {
-            let client = reqwest::Client::new();
-            let res = client
-                .post(url_clone)
-                .header("Content-Type", "application/json")
-                .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-                .json(&payload_clone)
-                .send()
-                .await;
-            (res, i)
+            test_endpoint(
+                &url,
+                payload_clone,
+                |_| {}, // No modifications needed
+                expect_success(),
+            )
+            .await;
+            i // Return request index for tracking
         });
     }
 
-    // Verify all requests succeed
+    // Wait for all requests to complete
     while let Some(result) = tasks.join_next().await {
-        let (res, index) = result.expect("Task should complete");
-        let res = res.expect("HTTP request should succeed");
-        assert_eq!(
-            res.status(),
-            200,
-            "Request {}: {}",
-            index,
-            res.text().await.unwrap()
-        );
+        let index = result.expect("Task should complete");
     }
 }
 
+#[rstest]
+// Chain ID validation
+#[case::empty_chain_id("contractChainId", json!(""), constants::NUMBER_DECIMAL_OR_HEX)]
+#[case::invalid_chain_id_decimal("contractChainId", json!("abc123"), constants::NUMBER_DECIMAL_OR_HEX)]
+#[case::invalid_chain_id_hex("contractChainId", json!("0xzzz"), constants::NUMBER_DECIMAL_OR_HEX)]
+// Contract address validation
+#[case::empty_contract_address("contractAddress", json!(""), constants::HEX_MUST_START_WITH_0X)]
+#[case::short_contract_address("contractAddress", json!("0xfds"), constants::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::missing_0x_contract_address("contractAddress", json!("1234567890123456789012345678901234567890"), constants::HEX_MUST_START_WITH_0X)]
+#[case::invalid_hex_contract_address("contractAddress", json!("0x123zzz5678901234567890123456789012345678"), constants::HEX_INVALID_CHARACTERS)]
+// User address validation
+#[case::empty_user_address("userAddress", json!(""), constants::HEX_MUST_START_WITH_0X)]
+#[case::short_user_address("userAddress", json!("0xfds"), constants::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::missing_0x_user_address("userAddress", json!("1234567890123456789012345678901234567890"), constants::HEX_MUST_START_WITH_0X)]
+#[case::invalid_hex_user_address("userAddress", json!("0x123zzz5678901234567890123456789012345678"), constants::HEX_INVALID_CHARACTERS)]
+// Ciphertext validation
+#[case::empty_ciphertext("ciphertextWithInputVerification", json!(""), constants::GENERIC_MUST_NOT_BE_EMPTY)]
+#[case::invalid_hex_ciphertext("ciphertextWithInputVerification", json!("abcdefabcdefs"), constants::HEX_INVALID_STRING)]
+#[case::ciphertext_with_0x_prefix("ciphertextWithInputVerification", json!("0xabcdef"), constants::HEX_MUST_NOT_START_WITH_0X)]
+// Extra data validation
+#[case::empty_extra_data("extraData", json!(""), constants::EXACT_MUST_BE_0X00)]
+#[case::wrong_extra_data("extraData", json!("0x01"), constants::EXACT_MUST_BE_0X00)]
+#[case::invalid_extra_data("extraData", json!("invalid"), constants::EXACT_MUST_BE_0X00)]
 #[tokio::test]
-async fn test_input_proof_empty_ciphertext_error() {
-    // Setup test environment
+async fn test_error_invalid_fields(
+    #[case] field: &str,
+    #[case] invalid_value: serde_json::Value,
+    #[case] expected_issue: &str,
+) {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let (base_payload, _, _) = helpers::create_input_proof_payload(&setup);
 
-    // Create payload with empty ciphertext
-    let payload = helpers::create_input_proof_payload(
-        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
-        helpers::random_address(),
-        helpers::random_address(),
-        "", // Empty ciphertext
-    );
-
-    // Make request with empty ciphertext
-    let client = reqwest::Client::new();
-    let res = client
-        .post(helpers::v1_input_proof_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-        .json(&payload)
-        .send()
-        .await
-        .expect("Request should complete");
-
-    // Verify error response
-    let status_code = res.status();
-    let res_text = res.text().await;
-    assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
-    if let Ok(ok_text) = res_text {
-        match serde_json::from_str::<ErrorResponse>(&ok_text) {
-            Ok(error_response) => {
-                assert_eq!(error_response.error.code, ErrorCode::ValidationFailed);
-                let details = error_response
-                    .error
-                    .details
-                    .expect("Expected details in error response");
-                assert!(
-                    details
-                        .iter()
-                        .any(|detail| detail.field == "ciphertextWithInputVerification"),
-                    "Expected 'ciphertextWithInputVerification' field in error details"
-                );
-            }
-            Err(e) => println!("Returned error text could not be parsed: {}", e),
-        }
-    }
+    test_endpoint(
+        &helpers::v1_input_proof_url(&setup),
+        base_payload,
+        with_invalid_field(field, invalid_value),
+        expect_invalid_field(field, expected_issue),
+    )
+    .await;
 }
 
+#[rstest]
+#[case::missing_contract_chain_id("contractChainId")]
+#[case::missing_contract_address("contractAddress")]
+#[case::missing_user_address("userAddress")]
+#[case::missing_ciphertext("ciphertextWithInputVerification")]
+#[case::missing_extra_data("extraData")]
 #[tokio::test]
-async fn test_input_proof_missing_ciphertext_error() {
-    // Setup test environment
+async fn test_error_missing_fields(#[case] field: &str) {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let (base_payload, _, _) = helpers::create_input_proof_payload(&setup);
 
-    // Create payload with missing ciphertext field
-
-    let payload = json!({
-        "contractChainId": &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
-        "contractAddress": format!("{:?}", helpers::random_address()),
-        "userAddress": format!("{:?}", helpers::random_address()),
-        "extraData": constants::EXTRA_DATA
-    });
-
-    // Make request with missing ciphertext field
-    let client = reqwest::Client::new();
-    let res = client
-        .post(helpers::v1_input_proof_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-        .json(&payload)
-        .send()
-        .await
-        .expect("Request should complete");
-
-    // Verify error response
-    let status_code = res.status();
-    let res_text = res.text().await;
-    assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
-    if let Ok(ok_text) = res_text {
-        println!("{}", ok_text);
-        match serde_json::from_str::<ErrorResponse>(&ok_text) {
-            Ok(error_response) => {
-                assert_eq!(error_response.error.code, ErrorCode::MissingFields);
-                let details = error_response
-                    .error
-                    .details
-                    .expect("Expected details in error response");
-                assert!(
-                    details
-                        .iter()
-                        .any(|detail| detail.field == "ciphertextWithInputVerification"
-                            && detail.issue.contains("required")),
-                    "Expected 'ciphertextWithInputVerification' missing field error"
-                );
-            }
-            Err(e) => println!("Returned error text could not be parsed: {}", e),
-        }
-    }
+    test_endpoint(
+        &helpers::v1_input_proof_url(&setup),
+        base_payload,
+        |p| {
+            p.as_object_mut().unwrap().remove(field);
+        },
+        expect_missing_field(field),
+    )
+    .await;
 }
 
+#[rstest]
+#[case::contract_and_user_address(["contractAddress", "userAddress"], "contractAddress")]
+#[case::chain_id_and_ciphertext(["contractChainId", "ciphertextWithInputVerification"], "contractChainId")]
 #[tokio::test]
-async fn test_input_proof_invalid_contract_address_error() {
-    // Setup test environment
+async fn test_error_missing_two_fields_reports_first_only(
+    #[case] fields_to_remove: [&str; 2],
+    #[case] expected_reported_field: &str,
+) {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let (base_payload, _, _) = helpers::create_input_proof_payload(&setup);
 
-    // Create payload with invalid contract address
-    let payload = helpers::create_input_proof_payload(
-        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
-        helpers::random_address(),
-        helpers::random_address(),
-        &hex::encode(helpers::random_bytes()),
-    );
-    // Override with invalid contract address for this test
-    let mut payload = payload;
-    payload["contractAddress"] = json!("0xfds");
-
-    // Make request with invalid contract address
-    let client = reqwest::Client::new();
-    let res = client
-        .post(helpers::v1_input_proof_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-        .json(&payload)
-        .send()
-        .await
-        .expect("Request should complete");
-
-    // Verify error response
-    let status_code = res.status();
-    let res_text = res.text().await;
-    assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
-    if let Ok(ok_text) = res_text {
-        println!("{}", ok_text);
-        match serde_json::from_str::<ErrorResponse>(&ok_text) {
-            Ok(error_response) => {
-                assert_eq!(error_response.error.code, ErrorCode::ValidationFailed);
-                let details = error_response
-                    .error
-                    .details
-                    .expect("Expected details in error response");
-                assert!(
-                    details
-                        .iter()
-                        .any(|detail| detail.field == "contractAddress"
-                            && detail.issue.contains("42 characters")),
-                    "Expected 'contractAddress' validation error about length"
-                );
+    test_endpoint(
+        &helpers::v1_input_proof_url(&setup),
+        base_payload,
+        |p| {
+            for field in &fields_to_remove {
+                p.as_object_mut().unwrap().remove(*field);
             }
-            Err(e) => println!("Returned error text could not be parsed: {}", e),
-        }
-    }
+        },
+        expect_missing_field(expected_reported_field), // Only expect the first field to be reported
+    )
+    .await;
 }
 
+#[rstest]
+#[case::chain_contract_user(["contractChainId", "contractAddress", "userAddress"], "contractChainId")]
+#[case::contract_user_ciphertext(["contractAddress", "userAddress", "ciphertextWithInputVerification"], "contractAddress")]
+#[case::chain_ciphertext_extra(["contractChainId", "ciphertextWithInputVerification", "extraData"], "contractChainId")]
 #[tokio::test]
-async fn test_input_proof_invalid_user_address_error() {
-    // Setup test environment
+async fn test_error_missing_three_fields_reports_first_only(
+    #[case] fields_to_remove: [&str; 3],
+    #[case] expected_reported_field: &str,
+) {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let (base_payload, _, _) = helpers::create_input_proof_payload(&setup);
 
-    // Create payload with invalid user address
-    let payload = helpers::create_input_proof_payload(
-        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
-        helpers::random_address(),
-        helpers::random_address(),
-        &hex::encode(helpers::random_bytes()),
-    );
-    // Override with invalid user address for this test
-    let mut payload = payload;
-    payload["userAddress"] = json!("0xfds");
-
-    // Make request with invalid user address
-    let client = reqwest::Client::new();
-    let res = client
-        .post(helpers::v1_input_proof_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-        .json(&payload)
-        .send()
-        .await
-        .expect("Request should complete");
-
-    // Verify error response
-    let status_code = res.status();
-    let res_text = res.text().await;
-    assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
-    if let Ok(ok_text) = res_text {
-        match serde_json::from_str::<ErrorResponse>(&ok_text) {
-            Ok(error_response) => {
-                assert_eq!(error_response.error.code, ErrorCode::ValidationFailed);
-                let details = error_response
-                    .error
-                    .details
-                    .expect("Expected details in error response");
-                assert!(
-                    details.iter().any(|detail| detail.field == "userAddress"
-                        && detail.issue.contains("42 characters")),
-                    "Expected 'userAddress' validation error about length"
-                );
+    test_endpoint(
+        &helpers::v1_input_proof_url(&setup),
+        base_payload,
+        |p| {
+            for field in &fields_to_remove {
+                p.as_object_mut().unwrap().remove(*field);
             }
-            Err(e) => println!("Returned error text could not be parsed: {}", e),
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_input_proof_invalid_hex_error() {
-    // Setup test environment
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
-
-    // Create payload with invalid hex data (odd length)
-    let payload = helpers::create_input_proof_payload(
-        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
-        helpers::random_address(),
-        helpers::random_address(),
-        "abcdefabcdefs", // Invalid hex (odd length)
-    );
-
-    // Make request with invalid hex data
-    let client = reqwest::Client::new();
-    let res = client
-        .post(helpers::v1_input_proof_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-        .json(&payload)
-        .send()
-        .await
-        .expect("Request should complete");
-
-    // Verify error response
-    let status_code = res.status();
-    let res_text = res.text().await;
-    assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
-    if let Ok(ok_text) = res_text {
-        match serde_json::from_str::<ErrorResponse>(&ok_text) {
-            Ok(error_response) => {
-                assert_eq!(error_response.error.code, ErrorCode::ValidationFailed);
-                let details = error_response
-                    .error
-                    .details
-                    .expect("Expected details in error response");
-                assert!(
-                    details
-                        .iter()
-                        .any(|detail| detail.field == "ciphertextWithInputVerification"
-                            && detail.issue.contains("hex")),
-                    "Expected 'ciphertextWithInputVerification' validation error about hex"
-                );
-            }
-            Err(e) => println!("Returned error text could not be parsed: {}", e),
-        }
-    }
+        },
+        expect_missing_field(expected_reported_field), // Only expect the first field to be reported
+    )
+    .await;
 }

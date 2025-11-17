@@ -1,14 +1,21 @@
 mod common;
 
 use crate::common::utils::TestSetup;
+use crate::common::validation_helper::{
+    expect_invalid_field, expect_missing_field, expect_success, test_endpoint, with_invalid_field,
+};
 use alloy::primitives::B256;
 use rand::{rng, Rng};
+use rstest::rstest;
 use serde_json::json;
 use std::str::FromStr;
 
 mod constants {
     pub const TIMEOUT_SECS: u64 = 10;
     pub const EXTRA_DATA: &str = "0x00";
+
+    // Validation error messages (directly from source code)
+    pub use fhevm_relayer::http::utils::validation_messages::*;
 }
 
 mod helpers {
@@ -23,7 +30,7 @@ mod helpers {
         utils::random_handle()
     }
 
-    pub fn create_public_decrypt_payload() -> serde_json::Value {
+    pub fn create_public_decrypt_payload(setup: &TestSetup) -> serde_json::Value {
         let handle = random_handle();
         json!({
             "ciphertextHandles": [handle],
@@ -54,165 +61,132 @@ mod helpers {
 }
 
 #[tokio::test]
-async fn test_public_decrypt_success() {
-    // Setup test environment
+async fn test_success_single_request() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-    // Prepare test data
-    let payload = helpers::create_public_decrypt_payload();
+    let payload = helpers::create_public_decrypt_payload(&setup);
     let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
     let plaintext_values = helpers::random_plaintext_values(handles.len());
 
-    // Configure mock for successful response
     setup
         .fhevm_mock
         .on_public_decrypt_success(handles, plaintext_values);
 
-    // Make HTTP request
-    let client = reqwest::Client::new();
-    let start = std::time::Instant::now();
-    let res = client
-        .post(helpers::v1_public_decrypt_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-        .json(&payload)
-        .send()
-        .await
-        .expect("Request should succeed");
-    let duration = start.elapsed();
-
-    // Verify success
-    assert_eq!(res.status(), 200, "Response: {}", res.text().await.unwrap());
-    println!("Public decrypt request completed in {:?}", duration);
+    test_endpoint(
+        &helpers::v1_public_decrypt_url(&setup),
+        payload,
+        |_| {},
+        expect_success(),
+    )
+    .await;
 }
 
 #[tokio::test]
-async fn test_public_decrypt_sequential_requests() {
-    // Setup test environment
+async fn test_success_concurrent_requests() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-    // Prepare test data
-    let payload = helpers::create_public_decrypt_payload();
+    let payload = helpers::create_public_decrypt_payload(&setup);
     let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
     let plaintext_values = helpers::random_plaintext_values(handles.len());
 
-    let client = reqwest::Client::new();
-
-    // Make first request
-    setup
-        .fhevm_mock
-        .on_public_decrypt_success(handles.clone(), plaintext_values.clone());
-    let start = std::time::Instant::now();
-    let res = client
-        .post(helpers::v1_public_decrypt_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-        .json(&payload)
-        .send()
-        .await
-        .expect("Request should succeed");
-    let duration = start.elapsed();
-    assert_eq!(
-        res.status(),
-        200,
-        "First request: {}",
-        res.text().await.unwrap()
-    );
-    println!("First public decrypt request took: {:?}", duration);
-
-    // Make sequential requests
-    for i in 0..3 {
+    // Set up mock to handle multiple requests
+    for _ in 1..=10 {
         setup
             .fhevm_mock
             .on_public_decrypt_success(handles.clone(), plaintext_values.clone());
-        let start = std::time::Instant::now();
-        let res = client
-            .post(helpers::v1_public_decrypt_url(&setup))
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-            .json(&payload)
-            .send()
-            .await
-            .expect("Request should succeed");
-        let duration = start.elapsed();
-        assert_eq!(
-            res.status(),
-            200,
-            "Sequential request {}: {}",
-            i + 1,
-            res.text().await.unwrap()
-        );
-        println!(
-            "Sequential public decrypt request {} took: {:?}",
-            i + 1,
-            duration
-        );
     }
-}
 
-#[tokio::test]
-async fn test_public_decrypt_concurrent_requests() {
-    // Setup test environment
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
-
-    // Prepare test data
-    let payload = helpers::create_public_decrypt_payload();
-    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
-    let plaintext_values = helpers::random_plaintext_values(handles.len());
-
-    let number_of_requests = 5;
-
-    // Send concurrent requests
+    // Send multiple concurrent requests using test_endpoint
     let mut tasks = tokio::task::JoinSet::new();
-    let url = helpers::v1_public_decrypt_url(&setup);
+    let number_of_requests = 10;
 
-    for i in 0..number_of_requests {
+    for i in 1..=number_of_requests {
         let payload_clone = payload.clone();
-        let url_clone = url.clone();
-        let handles_clone = handles.clone();
-        let plaintext_values_clone = plaintext_values.clone();
-        let fhevm_mock_clone = setup.fhevm_mock.clone();
-
+        let url = helpers::v1_public_decrypt_url(&setup);
         tasks.spawn(async move {
-            // Configure mock for this request
-            fhevm_mock_clone.on_public_decrypt_success(handles_clone, plaintext_values_clone);
-
-            // Make HTTP request
-            let client = reqwest::Client::new();
-            let start = std::time::Instant::now();
-            let res = client
-                .post(url_clone)
-                .header("Content-Type", "application/json")
-                .timeout(std::time::Duration::from_secs(constants::TIMEOUT_SECS))
-                .json(&payload_clone)
-                .send()
-                .await
-                .expect("Request should succeed");
-            let duration = start.elapsed();
-
-            assert_eq!(
-                res.status(),
-                200,
-                "Concurrent request {}: {}",
-                i + 1,
-                res.text().await.unwrap()
-            );
-            println!(
-                "Concurrent public decrypt request {} took: {:?}",
-                i + 1,
-                duration
-            );
-            duration
+            test_endpoint(
+                &url,
+                payload_clone,
+                |_| {}, // No modifications needed
+                expect_success(),
+            )
+            .await;
+            i // Return request index for tracking
         });
     }
 
     // Wait for all requests to complete
-    let mut durations = Vec::new();
     while let Some(result) = tasks.join_next().await {
-        let duration = result.expect("Task should complete successfully");
-        durations.push(duration.as_micros());
+        let index = result.expect("Task should complete");
+        println!("Concurrent request {} completed successfully", index);
     }
+}
 
-    durations.sort();
-    println!("All concurrent request timings: {:?}μs", durations);
+#[rstest]
+// Ciphertext handles validation
+#[case::empty_ciphertext_handles("ciphertextHandles", json!([]), constants::CANNOT_BE_EMPTY)]
+#[case::invalid_hex_ciphertext_handle("ciphertextHandles", json!(["abcdefabcdefs"]), constants::HEX_INVALID_STRING)]
+#[case::ciphertext_handle_with_0x_prefix("ciphertextHandles", json!(["0xabcdef123456789012345678901234567890123456789012345678901234567890"]), constants::HEX_MUST_NOT_START_WITH_0X)]
+// Extra data validation
+#[case::empty_extra_data("extraData", json!(""), constants::EXACT_MUST_BE_0X00)]
+#[case::wrong_extra_data("extraData", json!("0x01"), constants::EXACT_MUST_BE_0X00)]
+#[case::invalid_extra_data("extraData", json!("invalid"), constants::EXACT_MUST_BE_0X00)]
+#[tokio::test]
+async fn test_error_invalid_fields(
+    #[case] field: &str,
+    #[case] invalid_value: serde_json::Value,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let base_payload = helpers::create_public_decrypt_payload(&setup);
+
+    test_endpoint(
+        &helpers::v1_public_decrypt_url(&setup),
+        base_payload,
+        with_invalid_field(field, invalid_value),
+        expect_invalid_field(field, expected_issue),
+    )
+    .await;
+}
+
+#[rstest]
+#[case::missing_ciphertext_handles("ciphertextHandles")]
+#[case::missing_extra_data("extraData")]
+#[tokio::test]
+async fn test_error_missing_fields(#[case] field: &str) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let base_payload = helpers::create_public_decrypt_payload(&setup);
+
+    test_endpoint(
+        &helpers::v1_public_decrypt_url(&setup),
+        base_payload,
+        |p| {
+            p.as_object_mut().unwrap().remove(field);
+        },
+        expect_missing_field(field),
+    )
+    .await;
+}
+
+#[rstest]
+#[case::both_fields(["ciphertextHandles", "extraData"], "ciphertextHandles")]
+#[tokio::test]
+async fn test_error_missing_two_fields_reports_first_only(
+    #[case] fields_to_remove: [&str; 2],
+    #[case] expected_reported_field: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let base_payload = helpers::create_public_decrypt_payload(&setup);
+
+    test_endpoint(
+        &helpers::v1_public_decrypt_url(&setup),
+        base_payload,
+        |p| {
+            for field in &fields_to_remove {
+                p.as_object_mut().unwrap().remove(*field);
+            }
+        },
+        expect_missing_field(expected_reported_field), // Only expect the first field to be reported
+    )
+    .await;
 }
