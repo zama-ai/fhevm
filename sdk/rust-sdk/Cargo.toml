@@ -1,8 +1,6 @@
-
-
 [package]
 name = "gateway-sdk"
-version = "0.9.1"
+version = "0.10.0"
 edition = "2024"
 
 # Library configuration
@@ -10,16 +8,11 @@ edition = "2024"
 name = "gateway_sdk"
 path = "src/lib.rs"
 
-# Binary configuration for the demo service
-[[bin]]
-name = "fhevm-demo"
-path = "src/main.rs"
-
 [dependencies]
-fhevm_gateway_bindings = { git = "https://git@github.com/zama-ai/fhevm.git", tag = "v0.9.0-1", default-features = false }
-kms = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.12.0", default-features = false }
-kms-grpc = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.12.0", default-features = false }
-bc2wrap = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.12.0", default-features = false }
+fhevm_gateway_bindings = { git = "https://git@github.com/zama-ai/fhevm.git", tag = "v0.10.0-3", default-features = false }
+kms = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.12.4", default-features = false }
+kms-grpc = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.12.4", default-features = false }
+bc2wrap = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.12.4", default-features = false }
 tfhe = { version = "1.4.0-alpha.3", features = ["boolean", "integer", "zk-pok"] }
 
 alloy = { version = "1.0", default-features = false, features = [
