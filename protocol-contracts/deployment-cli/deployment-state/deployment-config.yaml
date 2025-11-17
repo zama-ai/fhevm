@@ -63,7 +63,7 @@ protocol:
     coprocessor: 2
   pricing:
     input_verification: "10000000000000000000"
-    public_decryption: "10000000000000000000"
+    public_decryption: "1000000000000000000"
     user_decryption: "1000000000000000000"
   kms_nodes:
     - tx_sender_address: "0xc1d91b49A1B3D1324E93F86778C44a03f1063f1b"
