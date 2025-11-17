@@ -516,6 +516,11 @@ async fn upload_transaction_graph_results<'a>(
                         CoprocessorError::SchedulerError(SchedulerError::MissingInputs)
                     ) {
                         uncomputable.push((result.handle.clone(), result.transaction_id.clone()));
+                        // Make sure we don't mark this as an error since this simply means that the
+                        // inputs weren't available when we tried scheduling these operations.
+                        // Setting them as uncomputable will postpone them with an exponential backoff
+                        // and they will be retried later.
+                        continue;
                     }
                 }
                 WORKER_ERRORS_COUNTER.inc();
