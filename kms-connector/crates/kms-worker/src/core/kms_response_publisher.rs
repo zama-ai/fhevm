@@ -1,8 +1,8 @@
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
-        CrsgenResponse, KeygenResponse, KmsResponse, KmsResponseKind, PrepKeygenResponse,
-        PublicDecryptionResponse, UserDecryptionResponse, db::KeyDigestDbItem,
+        CrsgenResponse, GatewayEvent, KeygenResponse, KmsResponse, KmsResponseKind,
+        PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse, db::KeyDigestDbItem,
     },
 };
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
@@ -31,31 +31,19 @@ impl DbKmsResponsePublisher {
 impl KmsResponsePublisher for DbKmsResponsePublisher {
     #[tracing::instrument(skip_all)]
     async fn publish_response(&self, response: KmsResponse) -> anyhow::Result<()> {
-        let cloned_response = response.clone();
         info!("Storing response in DB...");
 
         let otlp_context = response.otlp_context;
-        let sqlx_result = match response.kind {
+        let query_result = match response.kind {
             KmsResponseKind::PublicDecryption(r) => {
-                self.publish_public_decryption(r, otlp_context).await
+                self.publish_public_decryption(r, otlp_context).await?
             }
             KmsResponseKind::UserDecryption(r) => {
-                self.publish_user_decryption(r, otlp_context).await
+                self.publish_user_decryption(r, otlp_context).await?
             }
-            KmsResponseKind::PrepKeygen(r) => self.publish_prep_keygen(r, otlp_context).await,
-            KmsResponseKind::Keygen(r) => self.publish_keygen(r, otlp_context).await,
-            KmsResponseKind::Crsgen(r) => self.publish_crsgen(r, otlp_context).await,
-        };
-
-        // Mark event associated to the current response as free on error
-        let query_result = match sqlx_result {
-            Ok(result) => result,
-            Err(e) => {
-                cloned_response
-                    .mark_associated_event_as_pending(&self.db_pool)
-                    .await;
-                return Err(e);
-            }
+            KmsResponseKind::PrepKeygen(r) => self.publish_prep_keygen(r, otlp_context).await?,
+            KmsResponseKind::Keygen(r) => self.publish_keygen(r, otlp_context).await?,
+            KmsResponseKind::Crsgen(r) => self.publish_crsgen(r, otlp_context).await?,
         };
 
         if query_result.rows_affected() == 1 {
@@ -157,5 +145,10 @@ impl DbKmsResponsePublisher {
         .execute(&self.db_pool)
         .await
         .map_err(anyhow::Error::from)
+    }
+
+    /// Sets the `under_process` field of the event as `FALSE` in the database.
+    pub async fn mark_event_as_pending(&self, event: GatewayEvent) {
+        event.mark_as_pending(&self.db_pool).await
     }
 }
