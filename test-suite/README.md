@@ -5,6 +5,7 @@ This repository provides a docker based setup to locally run an integration of Z
 For overview of the system, architecture and details on individual components, refer to our [documentation](https://docs.zama.ai/fhevm).
 
 ## Main features
+
 KMS can be configured to two modes:
 
 - Centralized
@@ -23,10 +24,10 @@ KMS can be configured to two modes:
   - [Reporting Security Issues](#reporting-security-issues)
 - [Support](#support)
 
-
 ## Get started
 
 ### Quickstart
+
 The test suite offers a unified CLI for all operations:
 
 ```sh
@@ -40,7 +41,8 @@ cd test-suite/fhevm
 # Trivial
 ./fhevm-cli test user-decryption
 # Trivial
-./fhevm-cli test public-decryption
+./fhevm-cli test public-decrypt-http-mixed
+./fhevm-cli test public-decrypt-http-ebool
 ./fhevm-cli test erc20
 
 # Upgrade a specific service
@@ -68,14 +70,16 @@ Therefore, for external developers or anyone setting up the stack for the first 
 ```
 
 This command instructs Docker Compose to:
+
 1.  Build the images locally using the `Dockerfile` and context specified in the respective `docker-compose/*.yml` files for each service. This process uses the source code available in your local checkout (or cloned sub-repositories).
 2.  Tag the newly built images with the versions specified in the `fhevm-cli` script.
 3.  Then, start the services using these freshly built local images.
 
 **Why `--build` is essential for external developers:**
-*   **Image Access:** Since pre-built images are private, `--build` allows you to construct the necessary images from the publicly available source code.
-*   **Local Modifications:** If you have made local changes to any of the Dockerfiles or the build context of a service (e.g., you've cloned one of the sub-repositories like `fhevm-contracts` or `fhevm-coprocessor` into the expected relative paths and made changes), `--build` ensures these changes are incorporated.
-*   **Ensuring Correct Setup:** It guarantees that you are running with images built directly from the provided source, eliminating discrepancies that could arise from attempting to pull non-existent or inaccessible public images.
+
+- **Image Access:** Since pre-built images are private, `--build` allows you to construct the necessary images from the publicly available source code.
+- **Local Modifications:** If you have made local changes to any of the Dockerfiles or the build context of a service (e.g., you've cloned one of the sub-repositories like `fhevm-contracts` or `fhevm-coprocessor` into the expected relative paths and made changes), `--build` ensures these changes are incorporated.
+- **Ensuring Correct Setup:** It guarantees that you are running with images built directly from the provided source, eliminating discrepancies that could arise from attempting to pull non-existent or inaccessible public images.
 
 🚧 **In summary:** Until public images are made available, external users should always use `./fhevm-cli deploy --build` to ensure a successful deployment.
 
@@ -90,6 +94,7 @@ This document outlines security best practices for the FHEVM project, particular
 Our repository contains example environment files `env/staging` that include sensitive values like private keys, mnemonics, and API keys. **These values are for testing purposes only** and should never be used in production environments.
 
 For production deployments:
+
 - **Do not** use the same keys, passwords, or mnemonics that appear in the example files
 - **Do not** commit actual production secrets to any repository
 - **Do** use a proper secrets management solution:
@@ -99,6 +104,7 @@ For production deployments:
   - Kubernetes Secrets (with proper encryption)
 
 Example of replacing sensitive data in production:
+
 ```bash
 # Replace test mnemonic with environment variable reference
 # TEST: MNEMONIC=coyote sketch defense hover finger envelope celery urge panther venue verb cheese
@@ -108,6 +114,7 @@ MNEMONIC=${PRODUCTION_MNEMONIC}
 # TEST: TX_SENDER_PRIVATE_KEY=0x8f82b3f482c19a95ac29c82cf048c076ed0de2530c64a73f2d2d7d1e64b5cc6e
 TX_SENDER_PRIVATE_KEY=${SECURE_PRIVATE_KEY}
 ```
+
 #### Development environment
 
 When developing locally:
@@ -117,8 +124,8 @@ When developing locally:
 - Consider using environment-specific configuration files (dev, staging, prod)
 - Use fake/test data for local development whenever possible
 
-
 #### Common sensitive data
+
 The following values should NEVER be committed to repositories:
 
 - Private keys
@@ -128,6 +135,7 @@ The following values should NEVER be committed to repositories:
 - JWT secrets
 
 ### Reporting security issues
+
 Please report security vulnerabilities to `security@zama.ia` rather than creating public issues.
 
 Include:
@@ -136,7 +144,6 @@ Include:
 - Steps to reproduce
 - Potential impact
 - Suggested mitigation (if any)
-
 
 ## Support
 

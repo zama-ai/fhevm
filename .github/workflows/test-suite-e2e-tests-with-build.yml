@@ -89,11 +89,6 @@ jobs:
         run: |
           ./fhevm-cli test input-proof
 
-      - name: Public Decryption test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decryption
-
       - name: User Decryption test
         working-directory: test-suite/fhevm
         run: |
