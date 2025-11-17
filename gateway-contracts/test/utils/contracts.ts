@@ -5,7 +5,6 @@ import hre from "hardhat";
 import path from "path";
 
 import { ADDRESSES_DIR } from "../../hardhat.config";
-import { setTxSenderMockedPayment } from "../../tasks/mockedZamaFund";
 import { getRequiredEnvVar } from "../../tasks/utils";
 import { fund } from "./wallets";
 
@@ -39,6 +38,14 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
   // A pauser can pause the protocol by pausing some of the contracts
   const pauser = new Wallet(getRequiredEnvVar("PAUSER_PRIVATE_KEY"), hre.ethers.provider);
   await checkIsHardhatSigner(pauser);
+
+  // The account that sends request transactions (input verification, decryption)
+  const txSenderPrivateKey = getRequiredEnvVar("TX_SENDER_PRIVATE_KEY");
+  const tokenFundedTxSender = new Wallet(txSenderPrivateKey, hre.ethers.provider);
+  await checkIsHardhatSigner(tokenFundedTxSender);
+
+  // Fund the tx sender with mocked $ZAMA tokens and approve the contracts with maximum allowance over its tokens
+  await hre.run("task:setTxSenderMockedPayment", { amount: BigInt(10 ** 12) });
 
   // Load the KMS transaction senders
   const kmsTxSenders = [];
@@ -124,6 +131,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
   return {
     owner,
     pauser,
+    tokenFundedTxSender,
     kmsTxSenders,
     kmsSigners,
     kmsNodeIps,
@@ -193,17 +201,6 @@ export async function loadTestVariablesFixture() {
   const mockedZamaOFT = await hre.ethers.getContractAt("ZamaOFT", getRequiredEnvVar("ZAMA_OFT_ADDRESS"));
   const mockedFeesSenderToBurnerAddress = getRequiredEnvVar("FEES_SENDER_TO_BURNER_ADDRESS");
 
-  // Get the first hardhat signer, used for sending all transactions in non-payment related tests
-  const hardhatSigners = await hre.ethers.getSigners();
-  const zamaFundedSigner = hardhatSigners[0];
-
-  // Fund the signer with mocked $ZAMA tokens and approve the contracts with maximum allowance over its tokens
-  await setTxSenderMockedPayment(fixtureData.owner, zamaFundedSigner, hre.ethers, true);
-
-  // Get the third hardhat signer and do not fund it with mocked $ZAMA tokens
-  // Note: the second signer is the owner, which is funded by default
-  const zamaUnfundedSigner = hardhatSigners[2];
-
   return {
     ...fixtureData,
     gatewayConfig,
@@ -220,7 +217,5 @@ export async function loadTestVariablesFixture() {
     protocolPayment,
     mockedZamaOFT,
     mockedFeesSenderToBurnerAddress,
-    zamaFundedSigner,
-    zamaUnfundedSigner,
   };
 }
