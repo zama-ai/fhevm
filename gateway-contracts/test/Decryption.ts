@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { approveContractWithMaxAllowance } from "../tasks/mockedZamaFund";
+import { approveContractWithMaxAllowance } from "../tasks/mockedTokenFund";
 import {
   CiphertextCommits,
   Decryption,
@@ -34,6 +34,7 @@ import {
   createRandomAddress,
   createRandomAddresses,
   createRandomWallet,
+  createAndFundRandomWallet,
   getKeyId,
   getPublicDecryptId,
   getSignaturesDelegatedUserDecryptRequest,
@@ -120,8 +121,7 @@ describe("Decryption", function () {
   let coprocessorTxSenders: HardhatEthersSigner[];
   let publicDecryptionPrice: bigint;
   let userDecryptionPrice: bigint;
-  let zamaFundedSigner: HardhatEthersSigner;
-  let zamaUnfundedSigner: HardhatEthersSigner;
+  let tokenFundedTxSender: Wallet;
   let protocolPaymentAddress: string;
   let decryptionAddress: string;
   let mockedFeesSenderToBurnerAddress: string;
@@ -236,15 +236,14 @@ describe("Decryption", function () {
       decryptionAddress = fixtureData.decryptionAddress;
       publicDecryptionPrice = fixtureData.publicDecryptionPrice;
       userDecryptionPrice = fixtureData.userDecryptionPrice;
-      zamaFundedSigner = fixtureData.zamaFundedSigner;
-      zamaUnfundedSigner = fixtureData.zamaUnfundedSigner;
+      tokenFundedTxSender = fixtureData.tokenFundedTxSender;
 
       protocolPaymentAddress = await protocolPayment.getAddress();
     });
 
     it("Should request a public decryption with multiple ctHandles", async function () {
       // Request public decryption
-      const requestTx = await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+      const requestTx = await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Check request event
       await expect(requestTx)
@@ -254,7 +253,7 @@ describe("Decryption", function () {
 
     it("Should request a public decryption with a single ctHandle", async function () {
       // Request public decryption with a single ctHandle
-      const requestTx = await decryption.publicDecryptionRequest([ctHandles[0]], extraDataV0);
+      const requestTx = await decryption.connect(tokenFundedTxSender).publicDecryptionRequest([ctHandles[0]], extraDataV0);
 
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
 
@@ -266,7 +265,7 @@ describe("Decryption", function () {
 
     it("Should revert because ctHandles list is empty", async function () {
       // Check that the request fails because the list of handles is empty
-      await expect(decryption.publicDecryptionRequest([], extraDataV0)).to.be.revertedWithCustomError(
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest([], extraDataV0)).to.be.revertedWithCustomError(
         decryption,
         "EmptyCtHandles",
       );
@@ -274,14 +273,14 @@ describe("Decryption", function () {
 
     it("Should revert because handle represents an invalid FHE type", async function () {
       // Check that the request fails because the ctHandle represents an invalid FHE type
-      await expect(decryption.publicDecryptionRequest([invalidFHETypeCtHandle], extraDataV0))
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest([invalidFHETypeCtHandle], extraDataV0))
         .to.be.revertedWithCustomError(decryption, "InvalidFHEType")
         .withArgs(invalidFHEType);
     });
 
     it("Should revert because handle represents an unsupported FHE type", async function () {
       // Check that the request fails because the ctHandle represents an unsupported FHE type
-      await expect(decryption.publicDecryptionRequest([unsupportedFHETypeCtHandle], extraDataV0))
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest([unsupportedFHETypeCtHandle], extraDataV0))
         .to.be.revertedWithCustomError(decryption, "UnsupportedFHEType")
         .withArgs(unsupportedFHEType);
     });
@@ -295,14 +294,14 @@ describe("Decryption", function () {
       const totalBitSize = numCtHandles * 256;
 
       // Check that the request fails because the total bit size exceeds the maximum allowed
-      await expect(decryption.publicDecryptionRequest(largeBitSizeCtHandles, extraDataV0))
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(largeBitSizeCtHandles, extraDataV0))
         .to.be.revertedWithCustomError(decryption, "MaxDecryptionRequestBitSizeExceeded")
         .withArgs(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
     });
 
     it("Should revert because handles are not allowed for public decryption", async function () {
       // Check that the request fails because the handles are not allowed for public decryption
-      await expect(decryption.publicDecryptionRequest(newCtHandles, extraDataV0))
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(newCtHandles, extraDataV0))
         .to.be.revertedWithCustomError(decryption, "PublicDecryptNotAllowed")
         .withArgs(newCtHandles[0]);
     });
@@ -318,7 +317,7 @@ describe("Decryption", function () {
       }
 
       // Check that the request fails because the ciphertext material is unavailable
-      await expect(decryption.publicDecryptionRequest(newCtHandles, extraDataV0))
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(newCtHandles, extraDataV0))
         .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
         .withArgs(newCtHandles[0]);
     });
@@ -338,7 +337,7 @@ describe("Decryption", function () {
       // Request public decryption
       // This step is necessary, else the decryptionId won't be set in the state and the
       // signature verification will use wrong handles
-      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Create a fake signature from the fake signer
       const [fakeSignature] = await getSignaturesPublicDecrypt(eip712Message, [fakeSigner]);
@@ -355,7 +354,7 @@ describe("Decryption", function () {
 
     it("Should revert because of two responses with same signature", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Trigger a first public decryption response
       await decryption
@@ -385,7 +384,7 @@ describe("Decryption", function () {
       }
 
       // Request public decryption with ctMaterials tied to different key IDs
-      const requestTx = decryption.publicDecryptionRequest([...ctHandles, newCtHandle], extraDataV0);
+      const requestTx = decryption.connect(tokenFundedTxSender).publicDecryptionRequest([...ctHandles, newCtHandle], extraDataV0);
 
       // Check that different key IDs are not allowed for batched public decryption
       await expect(requestTx)
@@ -403,7 +402,7 @@ describe("Decryption", function () {
 
     it("Should emit an event when calling a single public decryption response", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
       await expect(
         decryption
@@ -416,7 +415,7 @@ describe("Decryption", function () {
 
     it("Should public decrypt with 3 valid responses", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Trigger three valid public decryption responses
       await decryption
@@ -442,7 +441,7 @@ describe("Decryption", function () {
 
     it("Should public decrypt with 3 valid responses and ignore the other valid one", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Trigger four valid public decryption responses
       const responseTx1 = await decryption
@@ -471,7 +470,7 @@ describe("Decryption", function () {
 
     it("Should public decrypt with 3 valid and 1 malicious signatures", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Create a malicious EIP712 message: the decryptedResult is different from the expected one
       // but the signature is valid (the malicious decryptedResult is given to the response call)
@@ -526,7 +525,7 @@ describe("Decryption", function () {
 
     it("Should get all valid KMS transaction senders from public decryption consensus", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Trigger 2 valid public decryption responses
       await decryption
@@ -568,7 +567,7 @@ describe("Decryption", function () {
 
     it("Should get valid KMS transaction senders from public decryption consensus and ignore malicious ones", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Trigger 3 valid public decryption responses
       await decryption
@@ -628,7 +627,7 @@ describe("Decryption", function () {
       await decryption.connect(pauser).pause();
 
       // Try calling paused public decryption request
-      await expect(decryption.publicDecryptionRequest(ctHandles, extraDataV0)).to.be.revertedWithCustomError(
+      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0)).to.be.revertedWithCustomError(
         decryption,
         "EnforcedPause",
       );
@@ -636,7 +635,7 @@ describe("Decryption", function () {
 
     it("Should revert because the signer and the tx sender do not correspond to the same KMS node", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Check that triggering a public decryption response using a signature from the first KMS signer
       // with the second KMS transaction sender reverts
@@ -670,27 +669,30 @@ describe("Decryption", function () {
 
     describe("$ZAMA fees collection", function () {
       it("Should collect the $ZAMA fees for the public decryption", async function () {
-        const fundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const tokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
         const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
 
         // Trigger a public decryption request
-        await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
+        await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
         // Check that the $ZAMA fees have been collected from the funded signer and added to the
         // FeesSenderToBurner contract's balance
-        const newFundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const newTokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
         const newFeesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
-        expect(newFundedSignerBalance).to.equal(fundedSignerBalance - publicDecryptionPrice);
+        expect(newTokenFundedTxSenderBalance).to.equal(tokenFundedTxSenderBalance - publicDecryptionPrice);
         expect(newFeesSenderToBurnerBalance).to.equal(feesSenderToBurnerBalance + publicDecryptionPrice);
       });
 
       it("Should revert because sender has not enough $ZAMA tokens", async function () {
-        // Approve the ProtocolPayment contract with the maximum allowance over the signer's tokens
-        await approveContractWithMaxAllowance(zamaUnfundedSigner, protocolPaymentAddress, hre.ethers);
+        // Get a new random wallet with no $ZAMA tokens
+        const tokenUnfundedTxSender = await createAndFundRandomWallet();
 
-        await expect(decryption.connect(zamaUnfundedSigner).publicDecryptionRequest(ctHandles, extraDataV0))
+        // Approve the ProtocolPayment contract with the maximum allowance over the signer's tokens
+        await approveContractWithMaxAllowance(tokenUnfundedTxSender, protocolPaymentAddress, hre.ethers);
+
+        await expect(decryption.connect(tokenUnfundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0))
           .to.be.revertedWithCustomError(mockedZamaOFT, "ERC20InsufficientBalance")
-          .withArgs(zamaUnfundedSigner.address, 0, publicDecryptionPrice);
+          .withArgs(tokenUnfundedTxSender.address, 0, publicDecryptionPrice);
       });
     });
   });
@@ -825,15 +827,14 @@ describe("Decryption", function () {
       decryptionAddress = fixtureData.decryptionAddress;
       publicDecryptionPrice = fixtureData.publicDecryptionPrice;
       userDecryptionPrice = fixtureData.userDecryptionPrice;
-      zamaFundedSigner = fixtureData.zamaFundedSigner;
-      zamaUnfundedSigner = fixtureData.zamaUnfundedSigner;
+      tokenFundedTxSender = fixtureData.tokenFundedTxSender;
 
       protocolPaymentAddress = await protocolPayment.getAddress();
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
       // Request user decryption
-      const requestTx = await decryption.userDecryptionRequest(
+      const requestTx = await decryption.connect(tokenFundedTxSender).userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         contractsInfo,
@@ -855,7 +856,7 @@ describe("Decryption", function () {
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
 
       // Request user decryption
-      const requestTx = await decryption.userDecryptionRequest(
+      const requestTx = await decryption.connect(tokenFundedTxSender).userDecryptionRequest(
         singleCtHandleContractPair,
         requestValidity,
         contractsInfo,
@@ -873,7 +874,7 @@ describe("Decryption", function () {
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           [],
           requestValidity,
           contractsInfo,
@@ -893,7 +894,7 @@ describe("Decryption", function () {
         },
       ];
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           invalidChainIdCtHandleContractPairs,
           requestValidity,
           contractsInfo,
@@ -913,7 +914,7 @@ describe("Decryption", function () {
         chainId: fakeHostChainId,
       };
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           invalidContractsInfo,
@@ -931,7 +932,7 @@ describe("Decryption", function () {
         chainId: hostChainId,
       };
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           emptyContractsInfo,
@@ -951,7 +952,7 @@ describe("Decryption", function () {
       };
 
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           largeContractsInfo,
@@ -973,7 +974,7 @@ describe("Decryption", function () {
       };
 
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           ctHandleContractPairs,
           invalidRequestValidity,
           contractsInfo,
@@ -996,7 +997,7 @@ describe("Decryption", function () {
       };
 
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           ctHandleContractPairs,
           invalidRequestValidity,
           contractsInfo,
@@ -1020,7 +1021,7 @@ describe("Decryption", function () {
       // We do not check the actual values in the error message as the block.timestamp will change
       // between the request and the error emission
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           ctHandleContractPairs,
           futureRequestValidity,
           contractsInfo,
@@ -1044,7 +1045,7 @@ describe("Decryption", function () {
       // We do not check the actual values in the error message as the block.timestamp will change
       // between the request and the error emission
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           ctHandleContractPairs,
           expiredRequestValidity,
           contractsInfo,
@@ -1069,7 +1070,7 @@ describe("Decryption", function () {
       // represents an unsupported FHE type
       // Note that the user signature is not correct here but the FHE type validity is checked first
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           invalidFHETypeCtHandleContractPairs,
           requestValidity,
           contractsInfo,
@@ -1096,7 +1097,7 @@ describe("Decryption", function () {
       // represents an unsupported FHE type
       // Note that the user signature is not correct here but the FHE type validity is checked first
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           unsupportedFHETypeCtHandleContractPairs,
           requestValidity,
           contractsInfo,
@@ -1127,7 +1128,7 @@ describe("Decryption", function () {
       // Check that the request fails because the total bit size exceeds the maximum allowed
       // Note that the user signature is not correct here but the FHE type validity is checked first
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           largeByteSizeCtHandleContractPairs,
           requestValidity,
           contractsInfo,
@@ -1157,7 +1158,7 @@ describe("Decryption", function () {
       };
 
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           userAddressCtHandleContractPairs,
           requestValidity,
           userInContractsInfo,
@@ -1173,7 +1174,7 @@ describe("Decryption", function () {
 
     it("Should revert because the user is not allowed for user decryption on a ctHandle", async function () {
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           contractsInfo,
@@ -1189,7 +1190,7 @@ describe("Decryption", function () {
 
     it("Should revert because a contract is not allowed for user decryption on a ctHandle", async function () {
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           fakeContractAddressCtHandleContractPairs,
           requestValidity,
           contractsInfo,
@@ -1213,7 +1214,7 @@ describe("Decryption", function () {
       }
 
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           [newCtHandleContractPair],
           requestValidity,
           contractsInfo,
@@ -1232,7 +1233,7 @@ describe("Decryption", function () {
       const [fakeSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [fakeSigner]);
 
       // Request user decryption
-      const requestTx = decryption.userDecryptionRequest(
+      const requestTx = decryption.connect(tokenFundedTxSender).userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         contractsInfo,
@@ -1250,7 +1251,7 @@ describe("Decryption", function () {
       // Request user decryption
       // This step is necessary, else the decryptionId won't be set in the state and the
       // signature verification will use wrong handles
-      await decryption.userDecryptionRequest(
+      await decryption.connect(tokenFundedTxSender).userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         contractsInfo,
@@ -1305,7 +1306,7 @@ describe("Decryption", function () {
       const [fakeUserSignature] = await getSignaturesUserDecryptRequest(fakeEip712RequestMessage, [user]);
 
       // Request user decryption
-      const requestTx = decryption.userDecryptionRequest(
+      const requestTx = decryption.connect(tokenFundedTxSender).userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         fakeContractsInfo,
@@ -1332,7 +1333,7 @@ describe("Decryption", function () {
       }
 
       // Request user decryption with ctMaterials tied to different key IDs
-      const requestTx = decryption.userDecryptionRequest(
+      const requestTx = decryption.connect(tokenFundedTxSender).userDecryptionRequest(
         [...ctHandleContractPairs, newCtHandleContractPair],
         requestValidity,
         contractsInfo,
@@ -1358,7 +1359,7 @@ describe("Decryption", function () {
 
     it("Should revert because of two responses with same signature", async function () {
       // Request user decryption
-      await decryption.userDecryptionRequest(
+      await decryption.connect(tokenFundedTxSender).userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         contractsInfo,
@@ -1385,7 +1386,7 @@ describe("Decryption", function () {
 
     it("Should user decrypt with 3 valid responses", async function () {
       // Request user decryption
-      await decryption.userDecryptionRequest(
+      await decryption.connect(tokenFundedTxSender).userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         contractsInfo,
@@ -1429,7 +1430,7 @@ describe("Decryption", function () {
 
     it("Should user decrypt with 3 valid responses and ignore the other valid one", async function () {
       // Request user decryption
-      await decryption.userDecryptionRequest(
+      await decryption.connect(tokenFundedTxSender).userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         contractsInfo,
@@ -1470,7 +1471,7 @@ describe("Decryption", function () {
 
     it("Should get all KMS transaction senders from user decryption consensus", async function () {
       // Request user decryption
-      await decryption.userDecryptionRequest(
+      await decryption.connect(tokenFundedTxSender).userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         contractsInfo,
@@ -1541,7 +1542,7 @@ describe("Decryption", function () {
 
       // Try calling paused user decryption request
       await expect(
-        decryption.userDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           contractsInfo,
@@ -1555,7 +1556,7 @@ describe("Decryption", function () {
 
     it("Should revert because the signer and the tx sender do not correspond to the same KMS node", async function () {
       // Request user decryption
-      await decryption.userDecryptionRequest(
+      await decryption.connect(tokenFundedTxSender).userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         contractsInfo,
@@ -1604,11 +1605,11 @@ describe("Decryption", function () {
 
     describe("$ZAMA fees collection", function () {
       it("Should collect the $ZAMA fees for the user decryption", async function () {
-        const fundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const tokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
         const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
 
         // Trigger a user decryption request
-        await decryption.userDecryptionRequest(
+        await decryption.connect(tokenFundedTxSender).userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           contractsInfo,
@@ -1620,19 +1621,22 @@ describe("Decryption", function () {
 
         // Check that the $ZAMA fees have been collected from the funded signer and added to the
         // FeesSenderToBurner contract's balance
-        const newFundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const newTokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
         const newFeesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
-        expect(newFundedSignerBalance).to.equal(fundedSignerBalance - userDecryptionPrice);
+        expect(newTokenFundedTxSenderBalance).to.equal(tokenFundedTxSenderBalance - userDecryptionPrice);
         expect(newFeesSenderToBurnerBalance).to.equal(feesSenderToBurnerBalance + userDecryptionPrice);
       });
 
       it("Should revert because sender has not enough $ZAMA tokens", async function () {
+        // Get a new random wallet with no $ZAMA tokens
+        const tokenUnfundedTxSender = await createAndFundRandomWallet();
+
         // Approve the ProtocolPayment contract with the maximum allowance over the signer's tokens
-        await approveContractWithMaxAllowance(zamaUnfundedSigner, protocolPaymentAddress, hre.ethers);
+        await approveContractWithMaxAllowance(tokenUnfundedTxSender, protocolPaymentAddress, hre.ethers);
 
         await expect(
           decryption
-            .connect(zamaUnfundedSigner)
+            .connect(tokenUnfundedTxSender)
             .userDecryptionRequest(
               ctHandleContractPairs,
               requestValidity,
@@ -1644,7 +1648,7 @@ describe("Decryption", function () {
             ),
         )
           .to.be.revertedWithCustomError(mockedZamaOFT, "ERC20InsufficientBalance")
-          .withArgs(zamaUnfundedSigner.address, 0, userDecryptionPrice);
+          .withArgs(tokenUnfundedTxSender.address, 0, userDecryptionPrice);
       });
     });
   });
@@ -1803,15 +1807,13 @@ describe("Decryption", function () {
       eip712RequestMessage = fixtureData.eip712RequestMessage;
       userDecryptedShares = fixtureData.userDecryptedShares;
       userDecryptionPrice = fixtureData.userDecryptionPrice;
-      zamaFundedSigner = fixtureData.zamaFundedSigner;
-      zamaUnfundedSigner = fixtureData.zamaUnfundedSigner;
-
+      tokenFundedTxSender = fixtureData.tokenFundedTxSender;
       protocolPaymentAddress = await protocolPayment.getAddress();
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
       // Request delegated user decryption.
-      const requestTx = await decryption.delegatedUserDecryptionRequest(
+      const requestTx = await decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         delegationAccounts,
@@ -1839,7 +1841,7 @@ describe("Decryption", function () {
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
 
       // Request delegated user decryption.
-      const requestTx = await decryption.delegatedUserDecryptionRequest(
+      const requestTx = await decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
         singleCtHandleContractPairs,
         requestValidity,
         delegationAccounts,
@@ -1863,7 +1865,7 @@ describe("Decryption", function () {
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           [],
           requestValidity,
           delegationAccounts,
@@ -1883,7 +1885,7 @@ describe("Decryption", function () {
         },
       ];
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           invalidChainIdCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -1903,7 +1905,7 @@ describe("Decryption", function () {
         chainId: fakeHostChainId,
       };
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -1922,7 +1924,7 @@ describe("Decryption", function () {
       };
 
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -1942,7 +1944,7 @@ describe("Decryption", function () {
       };
 
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -1964,7 +1966,7 @@ describe("Decryption", function () {
       };
 
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           invalidRequestValidity,
           delegationAccounts,
@@ -1987,7 +1989,7 @@ describe("Decryption", function () {
       };
 
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           invalidRequestValidity,
           delegationAccounts,
@@ -2011,7 +2013,7 @@ describe("Decryption", function () {
       // We do not check the actual values in the error message as the block.timestamp will change
       // between the request and the error emission.
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           futureRequestValidity,
           delegationAccounts,
@@ -2035,7 +2037,7 @@ describe("Decryption", function () {
       // We do not check the actual values in the error message as the block.timestamp will change
       // between the request and the error emission.
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           expiredRequestValidity,
           delegationAccounts,
@@ -2060,7 +2062,7 @@ describe("Decryption", function () {
       // represents an unsupported FHE type.
       // Note that the delegate signature is not correct here but the FHE type validity is checked first.
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           invalidFHETypeCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -2087,7 +2089,7 @@ describe("Decryption", function () {
       // represents an unsupported FHE type.
       // Note that the delegate signature is not correct here but the FHE type validity is checked first.
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           unsupportedFHETypeCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -2118,7 +2120,7 @@ describe("Decryption", function () {
       // Check that the request fails because the total bit size exceeds the maximum allowed.
       // Note that the user signature is not correct here but the FHE type validity is checked first.
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           largeByteSizeCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -2148,7 +2150,7 @@ describe("Decryption", function () {
 
       // Check that the request fails because the delegated address is included in the ctHandleContractPairs list.
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           delegatorAddressCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -2164,7 +2166,7 @@ describe("Decryption", function () {
 
     it("Should revert because the delegator is not allowed to access a handle", async function () {
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           fakeDelegatorDelegationAccounts,
@@ -2180,7 +2182,7 @@ describe("Decryption", function () {
 
     it("Should revert because a contract is not allowed for user decryption on a ctHandle", async function () {
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           fakeContractAddressCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -2208,7 +2210,7 @@ describe("Decryption", function () {
       }
 
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           [newCtHandleContractPair],
           requestValidity,
           delegationAccounts,
@@ -2228,7 +2230,7 @@ describe("Decryption", function () {
         chainId: hostChainId,
       };
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -2252,7 +2254,7 @@ describe("Decryption", function () {
       const [fakeSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [fakeSigner]);
 
       // Request delegated user decryption.
-      const requestTx = decryption.delegatedUserDecryptionRequest(
+      const requestTx = decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         delegationAccounts,
@@ -2274,7 +2276,7 @@ describe("Decryption", function () {
 
       // Check that the request fails because the contract address is not included in the contractAddresses list.
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -2299,7 +2301,7 @@ describe("Decryption", function () {
       }
 
       // Request delegated user decryption with ctMaterials tied to different key IDs.
-      const requestTx = decryption.delegatedUserDecryptionRequest(
+      const requestTx = decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
         [...ctHandleContractPairs, newCtHandleContractPair],
         requestValidity,
         delegationAccounts,
@@ -2325,7 +2327,7 @@ describe("Decryption", function () {
 
     it("Should delegate user decrypt with 3 valid responses", async function () {
       // Request the delegated user decryption.
-      await decryption.delegatedUserDecryptionRequest(
+      await decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         delegationAccounts,
@@ -2369,7 +2371,7 @@ describe("Decryption", function () {
 
     it("Should delegate user decrypt with 3 valid responses and ignore the other valid one", async function () {
       // Request the delegated user decryption.
-      await decryption.delegatedUserDecryptionRequest(
+      await decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
         delegationAccounts,
@@ -2410,7 +2412,7 @@ describe("Decryption", function () {
 
       // Try calling paused delegated user decryption request.
       await expect(
-        decryption.delegatedUserDecryptionRequest(
+        decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -2477,11 +2479,11 @@ describe("Decryption", function () {
 
     describe("$ZAMA fees collection", function () {
       it("Should collect the $ZAMA fees for the delegated user decryption", async function () {
-        const fundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const tokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
         const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
 
         // Request the delegated user decryption.
-        await decryption.delegatedUserDecryptionRequest(
+        await decryption.connect(tokenFundedTxSender).delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
@@ -2493,19 +2495,22 @@ describe("Decryption", function () {
 
         // Check that the $ZAMA fees have been collected from the funded signer and added to the
         // FeesSenderToBurner contract's balance.
-        const newFundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const newTokenFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
         const newFeesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
-        expect(newFundedSignerBalance).to.equal(fundedSignerBalance - userDecryptionPrice);
+        expect(newTokenFundedTxSenderBalance).to.equal(tokenFundedTxSenderBalance - userDecryptionPrice);
         expect(newFeesSenderToBurnerBalance).to.equal(feesSenderToBurnerBalance + userDecryptionPrice);
       });
 
       it("Should revert because sender has not enough $ZAMA tokens", async function () {
+        // Get a new random wallet with no $ZAMA tokens 
+        const tokenUnfundedTxSender = await createAndFundRandomWallet();
+
         // Approve the ProtocolPayment contract with the maximum allowance over the signer's tokens.
-        await approveContractWithMaxAllowance(zamaUnfundedSigner, protocolPaymentAddress, hre.ethers);
+        await approveContractWithMaxAllowance(tokenUnfundedTxSender, protocolPaymentAddress, hre.ethers);
 
         await expect(
           decryption
-            .connect(zamaUnfundedSigner)
+            .connect(tokenUnfundedTxSender)
             .delegatedUserDecryptionRequest(
               ctHandleContractPairs,
               requestValidity,
@@ -2517,7 +2522,7 @@ describe("Decryption", function () {
             ),
         )
           .to.be.revertedWithCustomError(mockedZamaOFT, "ERC20InsufficientBalance")
-          .withArgs(zamaUnfundedSigner.address, 0, userDecryptionPrice);
+          .withArgs(tokenUnfundedTxSender.address, 0, userDecryptionPrice);
       });
     });
   });

@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { approveContractWithMaxAllowance } from "../tasks/mockedZamaFund";
+import { approveContractWithMaxAllowance } from "../tasks/mockedTokenFund";
 import {
   GatewayConfig,
   InputVerification,
@@ -19,6 +19,7 @@ import {
   createEIP712ResponseZKPoK,
   createRandomAddress,
   createRandomWallet,
+  createAndFundRandomWallet,
   getSignaturesZKPoK,
   loadTestVariablesFixture,
 } from "./utils";
@@ -80,8 +81,7 @@ describe("InputVerification", function () {
     let owner: Wallet;
     let pauser: Wallet;
     let inputVerificationPrice: bigint;
-    let zamaFundedSigner: HardhatEthersSigner;
-    let zamaUnfundedSigner: HardhatEthersSigner;
+    let tokenFundedTxSender: Wallet;
     let inputVerificationAddress: string;
     let protocolPaymentAddress: string;
     let mockedFeesSenderToBurnerAddress: string;
@@ -96,8 +96,7 @@ describe("InputVerification", function () {
       owner = fixture.owner;
       pauser = fixture.pauser;
       inputVerificationPrice = fixture.inputVerificationPrice;
-      zamaFundedSigner = fixture.zamaFundedSigner;
-      zamaUnfundedSigner = fixture.zamaUnfundedSigner;
+      tokenFundedTxSender = fixture.tokenFundedTxSender;
 
       inputVerificationAddress = await inputVerification.getAddress();
       protocolPaymentAddress = await protocolPayment.getAddress();
@@ -105,7 +104,7 @@ describe("InputVerification", function () {
 
     it("Should request a proof verification", async function () {
       // Trigger a proof verification request
-      const txResponse = inputVerification.verifyProofRequest(
+      const txResponse = inputVerification.connect(tokenFundedTxSender).verifyProofRequest(
         contractChainId,
         contractAddress,
         userAddress,
@@ -120,7 +119,7 @@ describe("InputVerification", function () {
 
     it("Should revert because the contract's chain ID does not correspond to a registered host chain", async function () {
       await expect(
-        inputVerification.verifyProofRequest(
+        inputVerification.connect(tokenFundedTxSender).verifyProofRequest(
           fakeHostChainId,
           contractAddress,
           userAddress,
@@ -138,7 +137,7 @@ describe("InputVerification", function () {
 
       // Try calling verify proof request
       await expect(
-        inputVerification.verifyProofRequest(
+        inputVerification.connect(tokenFundedTxSender).verifyProofRequest(
           contractChainId,
           contractAddress,
           userAddress,
@@ -150,34 +149,37 @@ describe("InputVerification", function () {
 
     describe("$ZAMA fees collection", function () {
       it("Should collect the $ZAMA fees for the input verification", async function () {
-        const fundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const fundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
         const feesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
 
         // Trigger a proof verification request
         const tx = await inputVerification
-          .connect(zamaFundedSigner)
+          .connect(tokenFundedTxSender)
           .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0);
         tx.wait();
 
         // Check that the $ZAMA fees have been collected from the funded signer and added to the
         // FeesSenderToBurner contract's balance
-        const newFundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const newFundedTxSenderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
         const newFeesSenderToBurnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
-        expect(newFundedSignerBalance).to.equal(fundedSignerBalance - inputVerificationPrice);
+        expect(newFundedTxSenderBalance).to.equal(fundedTxSenderBalance - inputVerificationPrice);
         expect(newFeesSenderToBurnerBalance).to.equal(feesSenderToBurnerBalance + inputVerificationPrice);
       });
 
       it("Should revert because sender has not enough $ZAMA tokens", async function () {
+        // Get a new random wallet with no $ZAMA tokens
+        const tokenUnfundedTxSender = await createAndFundRandomWallet();
+
         // Approve the ProtocolPayment contract with the maximum allowance over the signer's tokens
-        await approveContractWithMaxAllowance(zamaUnfundedSigner, protocolPaymentAddress, hre.ethers);
+        await approveContractWithMaxAllowance(tokenUnfundedTxSender, protocolPaymentAddress, hre.ethers);
 
         await expect(
           inputVerification
-            .connect(zamaUnfundedSigner)
+            .connect(tokenUnfundedTxSender)
             .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0),
         )
           .to.be.revertedWithCustomError(mockedZamaOFT, "ERC20InsufficientBalance")
-          .withArgs(zamaUnfundedSigner.address, 0, inputVerificationPrice);
+          .withArgs(tokenUnfundedTxSender.address, 0, inputVerificationPrice);
       });
     });
   });
@@ -188,6 +190,7 @@ describe("InputVerification", function () {
     let owner: Wallet;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
+    let tokenFundedTxSender: Wallet;
     let contractChainId: number;
     let inputVerificationAddress: string;
     let eip712Message: EIP712;
@@ -200,6 +203,7 @@ describe("InputVerification", function () {
       owner = fixture.owner;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
+      tokenFundedTxSender = fixture.tokenFundedTxSender;
       contractChainId = fixture.chainIds[0];
 
       inputVerificationAddress = await inputVerification.getAddress();
@@ -219,7 +223,7 @@ describe("InputVerification", function () {
       signatures = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
 
       // The ZK proof ID will always be 1 since we reset the state of the network before each test (using fixtures)
-      await inputVerification.verifyProofRequest(
+      await inputVerification.connect(tokenFundedTxSender).verifyProofRequest(
         contractChainId,
         contractAddress,
         userAddress,
@@ -579,6 +583,7 @@ describe("InputVerification", function () {
     let owner: Wallet;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
+    let tokenFundedTxSender: Wallet;
     let contractChainId: number;
     let inputVerificationAddress: string;
 
@@ -589,12 +594,13 @@ describe("InputVerification", function () {
       owner = fixture.owner;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
+      tokenFundedTxSender = fixture.tokenFundedTxSender;
       contractChainId = fixture.chainIds[0];
 
       inputVerificationAddress = await inputVerification.getAddress();
 
       // The ZK proof ID will always be 1 since we reset the state of the network before each test (using fixtures)
-      await inputVerification.verifyProofRequest(
+      await inputVerification.connect(tokenFundedTxSender).verifyProofRequest(
         contractChainId,
         contractAddress,
         userAddress,
