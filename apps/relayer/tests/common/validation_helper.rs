@@ -1,6 +1,7 @@
 use fhevm_relayer::http::utils::{ErrorCode, ErrorResponse};
 use serde_json::Value;
 
+#[allow(dead_code)]
 pub async fn test_endpoint(
     url: &str,
     base_payload: Value,
@@ -25,6 +26,7 @@ pub async fn test_endpoint(
 }
 
 // Verify functions
+#[allow(dead_code)]
 pub fn expect_success(
 ) -> impl FnOnce(reqwest::Response) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
 {
@@ -37,6 +39,7 @@ pub fn expect_success(
     }
 }
 
+#[allow(dead_code)]
 pub fn expect_missing_field(
     field: &str,
 ) -> impl FnOnce(reqwest::Response) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
@@ -65,6 +68,7 @@ pub fn expect_missing_field(
     }
 }
 
+#[allow(dead_code)]
 pub fn expect_validation_issues(
     issues: &[(&str, &str)],
 ) -> impl FnOnce(reqwest::Response) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
@@ -96,6 +100,7 @@ pub fn expect_validation_issues(
 }
 
 // Helper to create invalid field modifier
+#[allow(dead_code)]
 pub fn with_invalid_field(
     field: &str,
     invalid_value: serde_json::Value,
@@ -107,6 +112,7 @@ pub fn with_invalid_field(
 }
 
 // Simplified expectation for single field validation error
+#[allow(dead_code)]
 pub fn expect_invalid_field(
     field: &str,
     issue_contains: &str,
@@ -116,6 +122,7 @@ pub fn expect_invalid_field(
 }
 
 // Test endpoint with raw text instead of JSON for malformed JSON testing
+#[allow(dead_code)]
 pub async fn test_endpoint_raw_body(
     url: &str,
     raw_body: &str,
@@ -136,6 +143,7 @@ pub async fn test_endpoint_raw_body(
 }
 
 // Verify function for malformed JSON errors
+#[allow(dead_code)]
 pub fn expect_malformed_json(
 ) -> impl FnOnce(reqwest::Response) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
 {

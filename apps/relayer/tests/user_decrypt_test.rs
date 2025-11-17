@@ -12,7 +12,6 @@ use serde_json::json;
 use std::str::FromStr;
 
 mod constants {
-    pub const TIMEOUT_SECS: u64 = 10;
     pub const EXTRA_DATA: &str = "0x00";
     pub const REQUEST_VALIDITY_START: &str = "1742450894";
     pub const REQUEST_VALIDITY_DAYS: &str = "10";

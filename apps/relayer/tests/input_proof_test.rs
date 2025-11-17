@@ -2,7 +2,8 @@ mod common;
 
 use crate::common::utils::TestSetup;
 use crate::common::validation_helper::{
-    expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success, test_endpoint, test_endpoint_raw_body, with_invalid_field,
+    expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success,
+    test_endpoint, test_endpoint_raw_body, with_invalid_field,
 };
 use alloy::primitives::{Address, Bytes};
 use rand::{rng, Rng};
@@ -10,7 +11,6 @@ use rstest::rstest;
 use serde_json::json;
 
 mod constants {
-    pub const TIMEOUT_SECS: u64 = 10;
     pub const EXTRA_DATA: &str = "0x00";
 
     // Validation error messages (directly from source code)
@@ -128,7 +128,7 @@ async fn test_success_concurrent_requests() {
 
     // Wait for all requests to complete
     while let Some(result) = tasks.join_next().await {
-        let index = result.expect("Task should complete");
+        result.expect("Task should complete");
     }
 }
 

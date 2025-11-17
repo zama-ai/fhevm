@@ -29,10 +29,10 @@ pub mod validation_messages {
     // Generic length validation messages
     pub const LENGTH_MUST_BE_EXACT: &str = "Must be exactly {} characters long";
     pub const LENGTH_MUST_BE_42_CHARACTERS: &str = "Must be 42 characters long"; // Keep for backward compatibility
-    pub const LENGTH_MUST_BE_64_CHARACTERS: &str = "Must be 64 characters long"; // Keep for backward compatibility  
+    pub const LENGTH_MUST_BE_64_CHARACTERS: &str = "Must be 64 characters long"; // Keep for backward compatibility
     pub const LENGTH_MUST_BE_130_CHARACTERS: &str = "Must be 130 characters long"; // Keep for backward compatibility
 
-    // Generic collection validation messages  
+    // Generic collection validation messages
     pub const CANNOT_BE_EMPTY: &str = "Cannot be empty";
 
     pub const EXACT_MUST_BE_0X00: &str = "Must be 0x00";

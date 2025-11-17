@@ -2,7 +2,8 @@ mod common;
 
 use crate::common::utils::TestSetup;
 use crate::common::validation_helper::{
-    expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success, test_endpoint, test_endpoint_raw_body, with_invalid_field,
+    expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success,
+    test_endpoint, test_endpoint_raw_body, with_invalid_field,
 };
 use alloy::primitives::B256;
 use rand::{rng, Rng};
@@ -11,7 +12,6 @@ use serde_json::json;
 use std::str::FromStr;
 
 mod constants {
-    pub const TIMEOUT_SECS: u64 = 10;
     pub const EXTRA_DATA: &str = "0x00";
 
     // Validation error messages (directly from source code)
@@ -30,7 +30,7 @@ mod helpers {
         utils::random_handle()
     }
 
-    pub fn create_public_decrypt_payload(setup: &TestSetup) -> serde_json::Value {
+    pub fn create_public_decrypt_payload() -> serde_json::Value {
         let handle = random_handle();
         json!({
             "ciphertextHandles": [handle],
@@ -64,7 +64,7 @@ mod helpers {
 async fn test_success_single_request() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-    let payload = helpers::create_public_decrypt_payload(&setup);
+    let payload = helpers::create_public_decrypt_payload();
     let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
     let plaintext_values = helpers::random_plaintext_values(handles.len());
 
@@ -85,7 +85,7 @@ async fn test_success_single_request() {
 async fn test_success_concurrent_requests() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-    let payload = helpers::create_public_decrypt_payload(&setup);
+    let payload = helpers::create_public_decrypt_payload();
     let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
     let plaintext_values = helpers::random_plaintext_values(handles.len());
 
@@ -138,7 +138,7 @@ async fn test_error_invalid_fields(
     #[case] expected_issue: &str,
 ) {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let base_payload = helpers::create_public_decrypt_payload(&setup);
+    let base_payload = helpers::create_public_decrypt_payload();
 
     test_endpoint(
         &helpers::v1_public_decrypt_url(&setup),
@@ -155,7 +155,7 @@ async fn test_error_invalid_fields(
 #[tokio::test]
 async fn test_error_missing_fields(#[case] field: &str) {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let base_payload = helpers::create_public_decrypt_payload(&setup);
+    let base_payload = helpers::create_public_decrypt_payload();
 
     test_endpoint(
         &helpers::v1_public_decrypt_url(&setup),
@@ -176,7 +176,7 @@ async fn test_error_missing_two_fields_reports_first_only(
     #[case] expected_reported_field: &str,
 ) {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let base_payload = helpers::create_public_decrypt_payload(&setup);
+    let base_payload = helpers::create_public_decrypt_payload();
 
     test_endpoint(
         &helpers::v1_public_decrypt_url(&setup),
