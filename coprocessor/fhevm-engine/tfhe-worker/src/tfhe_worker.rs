@@ -299,7 +299,19 @@ async fn query_for_work<'a>(
 WITH selected_computations AS (
   (
     SELECT DISTINCT
-      c.transaction_id
+      c_creation_order.transaction_id
+    FROM (
+      SELECT transaction_id
+      FROM computations 
+      WHERE is_completed = FALSE
+        AND is_error = FALSE
+        AND is_allowed = TRUE
+      ORDER BY created_at
+      LIMIT $1
+    ) as c_creation_order
+   UNION ALL
+    SELECT DISTINCT
+      c_schedule_order.transaction_id
     FROM (
       SELECT transaction_id
       FROM computations 
@@ -308,7 +320,7 @@ WITH selected_computations AS (
         AND is_allowed = TRUE
       ORDER BY schedule_order
       LIMIT $1
-    ) as c
+    ) as c_schedule_order
   )
 )
 -- Acquire all computations from this transaction set
