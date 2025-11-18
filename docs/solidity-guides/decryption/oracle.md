@@ -34,7 +34,7 @@ contract TestAsyncDecrypt is ZamaEthereumConfig {
     require(!isDecryptionPending, "Decryption is in progress");
     bytes32[] memory cts = new bytes32[](1);
     cts[0] = FHE.toBytes32(xBool);
-    uint256 latestRequestId = FHE.requestDecryption(cts, this.myCustomCallback.selector);
+    latestRequestId = FHE.requestDecryption(cts, this.myCustomCallback.selector);
 
     /// @dev This prevents sending multiple requests before the first callback was sent.
     isDecryptionPending = true;
