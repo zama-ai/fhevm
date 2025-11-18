@@ -13,7 +13,7 @@ Public decryption of a confidential on-chain result is designed as an asynchrono
 
 #### Step 1: On-Chain Setup - Enabling Permanent Public Access
 
-This step is executed by the smart contract using the FHE library to signal that a specific confidential result is ready to be revealed.
+This step is executed by the smart contract using the FHE Solidity library to signal that a specific confidential result is ready to be revealed.
 
 - **FHE Solidity Library Function:** `FHE.makePubliclyDecryptable`
 - **Action:** The contract sets the ciphertext handle's status as publicly decryptable, **globally and permanently** authorizing any entity to request its off-chain cleartext value.
@@ -32,7 +32,7 @@ This step can be executed by any off-chain client using the Relayer SDK.
 
 #### Step 3: On-Chain Verification - Submit and Guarantee Authenticity
 
-This final step is executed on-chain by the contrat using the FHE library with the proof generated off-chain to ensure the cleartext submitted to the contract is trustworthy.
+This final step is executed on-chain by the contrat using the FHE Solidity library with the proof generated off-chain to ensure the cleartext submitted to the contract is trustworthy.
 
 - **FHE Solidity Library Function:** `FHE.checkSignatures`
 - **Action:** The caller submits the cleartext and decryption proof back to a contract function. The contract calls `FHE.checkSignatures`, which reverts the transaction if the proof is invalid or does not match the cleartext/ciphertext pair.
