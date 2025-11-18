@@ -61,12 +61,7 @@ pub struct UserDecryptRequestJson {
 #[derive(Debug, Deserialize, Clone, Serialize, Hash, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct HandleContractPairJson {
-    #[validate(
-        length(equal = 64, message = "Must be 64 characters long"),
-        custom(function = "crate::http::utils::validate_hex_string")
-    )]
     pub handle: String,
-    #[validate(custom(function = "crate::http::utils::validate_blockchain_address"))]
     pub contract_address: String,
 }
 
