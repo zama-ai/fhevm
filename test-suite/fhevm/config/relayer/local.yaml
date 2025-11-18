@@ -1,45 +1,46 @@
 environment: development
 
-http_endpoint: "0.0.0.0:3000"
+gateway:
+  listener:
+    ws_reconnect_config:
+      max_attempts: 20
+      retry_interval_ms: 500
+  tx_engine:
+    private_key: GATEWAY_PRIVATE_KEY
+    max_concurrency: 100
+    retry:
+      max_attempts: 100
+      retry_interval_ms: 500
+  readiness_checker:
+    max_concurrency: 100
+    retry:
+      max_attempts: 30
+      # The time is treated as seconds in code, even the config name has _ms suffix.
+      # This will be fixed in next rc, until then treat the value as seconds.
+      retry_interval_ms: 2
 
-transaction:
-  private_key_fhevm: FHEVM_PRIVATE_KEY
-  private_key_gateway: GATEWAY_PRIVATE_KEY
-  gas_limit: 150000
-  max_priority_fee: 2000000000
-  timeout_secs: 60
-  confirmations: 1
-  retry:
-    enabled: false
-    max_attempts: 3
-    base_delay_secs: 2
-    max_delay_secs: 60
-  ciphertext_check_retry:
-    enabled: false
-    max_attempts: 75
-    base_delay_secs: 3
-    max_delay_secs: 225
-
-metrics_endpoint: "0.0.0.0:9898"
-http_metrics:
-  histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
-
+http:
+  endpoint: "0.0.0.0:3000"
+  rate_limit_post_endpoints:
+    requests_per_second: 30
+    burst_size: 30
+    retry_after_seconds: 5
+    jitter_max_ms: 2000
+  metrics:
+    histogram_buckets: [0, 0.5, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 10, 12, 14, 16, 18, 20, 25, 30]
 
 log:
-  # Log level should be set using RUST_LOG environment variable
-  # Choose format: compact, pretty, or json
-  format: "pretty"
-  # Show source code location for debugging
-  show_file_line: false
-  # Show thread IDs for concurrency debugging
+  format: "compact"
+  show_file_line: true
   show_thread_ids: false
-  # Include timestamps in logs
   show_timestamp: true
-  # Optional: Set specific log levels for different modules
+  show_target: true
 
-db_path_rocksdb: "./.database"
+metrics:
+  endpoint: "0.0.0.0:9898"
 
-# Development-specific settings
+storage:
+  db_path_rocksdb: "./.database"
+
 development:
-  # Enable for detailed error messages
   verbose_errors: true
