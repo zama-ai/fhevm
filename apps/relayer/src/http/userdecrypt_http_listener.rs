@@ -43,6 +43,7 @@ pub struct UserDecryptRequestJson {
     /// User's wallet address
     #[validate(custom(function = "crate::http::utils::validate_blockchain_address"))]
     pub user_address: String,
+    // TODO: change validator function here for checking the rights signatures.
     #[validate(
         length(equal = 130, message = "Must be 130 characters long"),
         custom(function = "crate::http::utils::validate_hex_string")
@@ -84,7 +85,7 @@ impl Display for HandleContractPairJson {
 pub struct RequestValidityJson {
     #[validate(
         length(min = 1),
-        custom(function = "crate::http::utils::validate_u256_string")
+        custom(function = "crate::http::utils::validate_timestamp")
     )]
     pub start_timestamp: String,
     #[validate(custom(function = "crate::http::utils::validate_u32_string"))]
@@ -311,8 +312,6 @@ mod tests {
     impl Dummy<()> for RequestValidityJson {
         fn dummy_with_rng<R: rand::Rng + ?Sized>(_config: &(), rng: &mut R) -> Self {
             RequestValidityJson {
-                // TODO: check which timestamp makes sense here and adjust accordingly
-                // TODO: add some randomness
                 start_timestamp: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()

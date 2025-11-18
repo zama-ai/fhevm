@@ -11,6 +11,7 @@ use serde::{de, de::DeserializeOwned, Deserialize, Deserializer};
 use serde_json::Value;
 use std::str::FromStr;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::oneshot;
 use validator::ValidationError;
 
@@ -147,11 +148,28 @@ pub fn validate_u64_string(value: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
-pub fn validate_u256_string(value: &str) -> Result<(), ValidationError> {
-    if U256::from_str(value).is_err() {
-        return Err(ValidationError::new("validation_error")
-            .with_message("Value must be a valid U256 number".into()));
+pub fn validate_timestamp(value: &str) -> Result<(), ValidationError> {
+    let u256_value = U256::from_str(value).map_err(|_| {
+        ValidationError::new("validation_error")
+            .with_message("Value must be a valid U256 number".into())
+    })?;
+
+    // U256 to u64 conversion is truncating. It's safe for timestamps for the foreseeable future.
+    let timestamp = u256_value.to::<u64>();
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| {
+            ValidationError::new(ErrorCode::InternalServerError.as_str())
+                .with_message("System time is before UNIX epoch.".into())
+        })?
+        .as_secs();
+
+    if timestamp > now {
+        return Err(ValidationError::new(ErrorCode::ValidationFailed.as_str())
+            .with_message("Timestamp must not be in the future".into()));
     }
+
     Ok(())
 }
 
@@ -207,6 +225,7 @@ where
     <RequestType as TryFrom<JsonType>>::Error: std::fmt::Display,
 {
     // 1. Parse JSON with custom error handling
+    // TODO: Change the serde json parser by a custom parser for populating all errors.
     let payload: JsonType = match serde_json::from_slice(body) {
         Ok(payload) => payload,
         Err(e) => {
@@ -552,6 +571,8 @@ impl<V: serde::Serialize> AppResponse<V> {
     }
 }
 
+/// Non changeable without integrating a breaking change.
+/// This is used by the client to create UX logic on this code.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[schema(example = "validation_failed")]
@@ -596,9 +617,12 @@ pub struct ApiError {
     pub request_id: Option<String>,
     /// RFC 7231 timestamp indicating when client should retry (e.g. "Wed, 21 Oct 2015 07:28:00 GMT").
     /// Uses absolute timestamp instead of relative seconds for cache-safety.
+    /// retry_after is only used in the case of Rate limit errors.
     #[schema(example = "Thu, 14 Nov 2024 15:30:00 GMT")]
     pub retry_after: Option<String>,
+    /// reason is only used in the case of Rate limit errors.
     pub reason: Option<String>,
+    /// Only used in Bad Requests
     pub details: Option<Vec<ErrorDetail>>,
 }
 
