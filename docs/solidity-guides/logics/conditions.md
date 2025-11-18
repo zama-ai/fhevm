@@ -67,7 +67,7 @@ This is a simplified example to demonstrate the functionality.
 
 So far, this section only covered how to do branching using encrypted variables. However, there may be many cases where the "public" contract logic will depend on the outcome from a encrypted path.
 
-To do so, there are only one way to branch from an encrypted path to a non-encrypted path: it requires a public decryption using the oracle. Hence, any contract logic that requires moving from an encrypted input to a non-encrypted path always requires an async contract logic.
+To do so, there are only one way to branch from an encrypted path to a non-encrypted path: it requires an off-chain public decryption. Hence, any contract logic that requires moving from an encrypted input to a non-encrypted path always requires an async contract logic.
 
 ## **Example: Auction Bidding Logic: Item Release**
 
@@ -99,14 +99,24 @@ function bid(externalEuint64 encryptedValue, bytes calldata inputProof) external
 }
 
 function revealWinner() external onlyAfterEnd {
-  bytes32[] memory cts = new bytes32[](2);
-  cts[0] = FHE.toBytes32(highestBidder);
-  uint256 requestId = FHE.requestDecryption(cts, this.transferPrize.selector);
+  FHE.makePubliclyDecryptable(highestBidder);
 }
 
-function transferPrize(uint256 requestId, address auctionWinner, bytes memory signatures) external {
+function transferPrize(address auctionWinner, bytes calldata decryptionProof) external {
   require(!isPrizeDistributed, "Prize has already been distributed");
-  FHE.verifySignatures(requestId, signatures)
+
+  bytes32[] memory cts = new bytes32[](1);
+  cts[0] = FHE.toBytes32(highestBidder);
+
+  bytes memory cleartexts = abi.encode(auctionWinner);
+
+  // This FHE call reverts the transaction if:
+  // - the decryption proof is invalid.
+  // - the provided cleartext (auctionWinner) does not match the cleartext value
+  //   that results from the off-chain decryption of the ciphertext (highestBidder).
+  // - the decryption proof does not correspond to the specific pairing of
+  //   the ciphertext (highestBidder) and the cleartext (auctionWinner).
+  FHE.checkSignatures(cts, cleartexts, decryptionProof);
 
   isPrizeDistributed = true;
   // Business logic to transfer the prize to the auction winner
@@ -117,7 +127,7 @@ function transferPrize(uint256 requestId, address auctionWinner, bytes memory si
 This is a simplified example to demonstrate the functionality.
 {% endhint %}
 
-As you can see the in the above example, the path to move from an encrypted condition to a decrypted business logic must be async and requires calling the decryption oracle contract to reveal the result of the logic using encrypted variables.
+As you can see the in the above example, the path to move from an encrypted condition to a decrypted business logic must be async and requires an off-chain public decryption to reveal the result of the logic using encrypted variables.
 
 ## Summary
 
