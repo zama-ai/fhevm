@@ -17,7 +17,7 @@ decrypts at the time of writing), at a given frequency and for a specified durat
 
 ## Build
 
-You can build the tool by running the `cargo build --release` command in the
+You can build the tool by running the `cargo build --locked --release` command in the
 `test-suite/gateway-stress` directory.
 
 Alternatively, you can run the manual `gateway-stress-tool-docker-build` workflow to trigger the

@@ -6,7 +6,7 @@ ARG RUST_IMAGE_VERSION=1.91.0
 # Stage 1: Build gw-listener
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
-# The profile used to run `cargo build`
+# The profile used to run `cargo build --locked`
 ARG LTO_RELEASE=release
 
 # Use root user for build stage
@@ -25,7 +25,7 @@ COPY kms-connector ./kms-connector
 WORKDIR /app/kms-connector
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     git config --global --add safe.directory /app && \
-    cargo build --profile=${LTO_RELEASE} -p gw-listener
+    cargo build --locked --profile=${LTO_RELEASE} -p gw-listener
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod

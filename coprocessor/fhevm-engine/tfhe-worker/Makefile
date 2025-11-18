@@ -4,7 +4,7 @@ OPTIMIZATION_TARGET ?= throughput
 
 .PHONY: build
 build:
-	cargo build
+	cargo build --locked
 
 .PHONY: cleanup
 cleanup:

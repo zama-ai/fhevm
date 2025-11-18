@@ -35,8 +35,8 @@ WORKDIR /app/coprocessor/fhevm-engine
 
 # Build stress_generator binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    cargo fetch && \
-    SQLX_OFFLINE=true cargo build --release -p stress-test-generator
+    cargo fetch --locked && \
+    SQLX_OFFLINE=true cargo build --locked --release -p stress-test-generator
 
 # Stage 2: Runtime image
 FROM cgr.dev/chainguard/glibc-dynamic:latest AS prod
