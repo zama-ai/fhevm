@@ -117,6 +117,7 @@ task("task:pauseAllGatewayContracts")
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
+    await hre.run("compile:specific", { contract: "contracts" });
     console.log("Pause all Gateway contracts:");
 
     const name = "GatewayConfig";
@@ -145,6 +146,7 @@ task("task:unpauseAllGatewayContracts")
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
+    await hre.run("compile:specific", { contract: "contracts" });
     console.log("Unpause all Gateway contracts:");
     const name = "GatewayConfig";
 

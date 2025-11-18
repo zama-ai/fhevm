@@ -58,6 +58,7 @@ function usage {
   echo
   echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
   echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
+  echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|erc20|debug)"
   echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
   echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
@@ -105,6 +106,23 @@ case $COMMAND in
     fi
     "${SCRIPT_DIR}/scripts/deploy-fhevm-stack.sh" $BUILD_ARG
     echo -e "${GREEN}${BOLD} [SUCCESS] fhevm stack deployment complete!${RESET}"
+    ;;
+
+  pause)
+    print_logo
+    CONTRACTS=$1
+    if [[ ! $CONTRACTS =~ ^(gateway|host)$ ]]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $CONTRACTS${RESET}"
+      usage
+      exit 1
+    fi
+
+    echo -e "${LIGHT_BLUE}[PAUSE]${RESET} ${BOLD}Pausing $CONTRACTS...${RESET}"
+    docker compose -p "${PROJECT}" -f "${SCRIPT_DIR}/docker-compose/${CONTRACTS}-pause-docker-compose.yml" up -d
+    # Wait for the pause service to complete
+    echo -e "${YELLOW}[WAIT]${RESET} ${BOLD}Waiting for pause operation to complete...${RESET}"
+    docker compose -p "${PROJECT}" -f "${SCRIPT_DIR}/docker-compose/${CONTRACTS}-pause-docker-compose.yml" wait ${CONTRACTS}-sc-pause
+    echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}$CONTRACTS paused successfully${RESET}"
     ;;
 
   test)
@@ -168,9 +186,17 @@ case $COMMAND in
       docker_args+=("-g" "$GREP")
     else
       case $TEST_TYPE in
+        paused-input-proof)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test paused user input uint64")
+          ;;
         input-proof)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test user input uint64")
+          ;;
+        paused-user-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED USER DECRYPTION${RESET}"
+          docker_args+=("-g" "test paused user decrypt")
           ;;
         user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
