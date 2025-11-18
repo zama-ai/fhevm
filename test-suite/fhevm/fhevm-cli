@@ -38,7 +38,7 @@ export HOST_VERSION=${HOST_VERSION:-"v0.10.0-2"}
 # Other services.
 export CORE_VERSION=${CORE_VERSION:-"v0.12.4"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.6.0"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"v0.10.0-2"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"770f756"}
 
 
 function print_logo() {
@@ -172,6 +172,10 @@ case $COMMAND in
         input-proof)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test user input uint64")
+          ;;
+        input-proof-compute-decrypt)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test add 42 to uint64 input and decrypt")
           ;;
         user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"

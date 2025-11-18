@@ -157,6 +157,11 @@ jobs:
         run: |
           ./fhevm-cli test input-proof
 
+      - name: Input proof test with compute and decrypt (uint64)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test input-proof-compute-decrypt
+
       - name: User Decryption test
         working-directory: test-suite/fhevm
         run: |
