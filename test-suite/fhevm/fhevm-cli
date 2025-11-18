@@ -32,13 +32,13 @@ export SNS_WORKER_VERSION=${SNS_WORKER_VERSION:-"v0.10.0-2"}
 export ZKPROOF_WORKER_VERSION=${ZKPROOF_WORKER_VERSION:-"v0.10.0-2"}
 
 # Gateway and Host contracts.
-export GATEWAY_VERSION=${GATEWAY_VERSION:-"fdf13ed"}
+export GATEWAY_VERSION=${GATEWAY_VERSION:-"085ffb5"}
 export HOST_VERSION=${HOST_VERSION:-"v0.10.0-2"}
 
 # Other services.
 export CORE_VERSION=${CORE_VERSION:-"v0.12.4"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.6.0"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"fdf13ed"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"085ffb5"}
 
 
 function print_logo() {
@@ -58,6 +58,8 @@ function usage {
   echo
   echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
   echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
+  echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
+  echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|erc20|debug)"
   echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
   echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
@@ -75,8 +77,7 @@ function usage {
   echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
-  echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-ebool ${RESET}"
-  echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-mixed -n staging${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test public-decryption -n staging${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test erc20${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli upgrade coprocessor${RESET}"
   echo -e "${BLUE}============================================================${RESET}"
@@ -106,6 +107,40 @@ case $COMMAND in
     fi
     "${SCRIPT_DIR}/scripts/deploy-fhevm-stack.sh" $BUILD_ARG
     echo -e "${GREEN}${BOLD} [SUCCESS] fhevm stack deployment complete!${RESET}"
+    ;;
+
+  pause)
+    print_logo
+    CONTRACTS=$1
+    if [[ ! $CONTRACTS =~ ^(gateway|host)$ ]]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $CONTRACTS${RESET}"
+      usage
+      exit 1
+    fi
+
+    echo -e "${LIGHT_BLUE}[PAUSE]${RESET} ${BOLD}Pausing $CONTRACTS...${RESET}"
+    docker compose -p "${PROJECT}" -f "${SCRIPT_DIR}/docker-compose/${CONTRACTS}-pause-docker-compose.yml" up -d
+    # Wait for the pause service to complete
+    echo -e "${YELLOW}[WAIT]${RESET} ${BOLD}Waiting for pause operation to complete...${RESET}"
+    docker compose -p "${PROJECT}" -f "${SCRIPT_DIR}/docker-compose/${CONTRACTS}-pause-docker-compose.yml" wait ${CONTRACTS}-sc-pause
+    echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}$CONTRACTS paused successfully${RESET}"
+    ;;
+
+  unpause)
+    print_logo
+    CONTRACTS=$1
+    if [[ ! $CONTRACTS =~ ^(gateway|host)$ ]]; then
+      echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $CONTRACTS${RESET}"
+      usage
+      exit 1
+    fi
+
+    echo -e "${LIGHT_BLUE}[UNPAUSE]${RESET} ${BOLD}Unpausing $CONTRACTS...${RESET}"
+    docker compose -p "${PROJECT}" -f "${SCRIPT_DIR}/docker-compose/${CONTRACTS}-unpause-docker-compose.yml" up -d
+    # Wait for the unpause service to complete
+    echo -e "${YELLOW}[WAIT]${RESET} ${BOLD}Waiting for unpause operation to complete...${RESET}"
+    docker compose -p "${PROJECT}" -f "${SCRIPT_DIR}/docker-compose/${CONTRACTS}-unpause-docker-compose.yml" wait ${CONTRACTS}-sc-unpause
+    echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}$CONTRACTS unpaused successfully${RESET}"
     ;;
 
   test)
@@ -169,17 +204,25 @@ case $COMMAND in
       docker_args+=("-g" "$GREP")
     else
       case $TEST_TYPE in
+        paused-input-proof)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test paused user input uint64")
+          ;;
         input-proof)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test user input uint64")
           ;;
-        input-proof-compute-decrypt)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
-          docker_args+=("-g" "test add 42 to uint64 input and decrypt")
+        paused-user-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED USER DECRYPTION${RESET}"
+          docker_args+=("-g" "test paused user decrypt")
           ;;
         user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test user decrypt")
+          ;;
+        public-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
+          docker_args+=("-g" "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)")
           ;;
         erc20)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] ERC20${RESET}"

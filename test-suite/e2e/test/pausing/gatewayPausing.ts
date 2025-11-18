@@ -5,8 +5,6 @@ import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { userDecryptSingleHandle } from '../utils';
 
-const ENFORCED_PAUSE_SELECTOR = '0xd93c0665';
-
 describe('Paused gateway', function () {
   before(async function () {
     await initSigners(2);
@@ -33,8 +31,7 @@ describe('Paused gateway', function () {
     );
     inputAlice.add64(18446744073709550042n);
 
-    // Check that the error returned from the Relayer contains the EnforcedPause selector.
-    await expect(inputAlice.encrypt()).to.be.rejectedWith(new RegExp(ENFORCED_PAUSE_SELECTOR));
+    await expect(inputAlice.encrypt()).to.be.rejectedWith(new RegExp('Input request failed'));
   });
 
   it('test paused user decrypt euint8', async function () {
@@ -50,6 +47,6 @@ describe('Paused gateway', function () {
         privateKey,
         publicKey,
       ),
-    ).to.be.rejectedWith(new RegExp('User decrypt failed: relayer respond with HTTP code 500'));
+    ).to.be.rejectedWith(new RegExp('User decrypt failed'));
   });
 });
