@@ -13,6 +13,7 @@ use std::str::FromStr;
 
 mod constants {
     pub const EXTRA_DATA: &str = "0x00";
+    // TODO: Change this constant -> Should fail as well on the negative one.
     pub const REQUEST_VALIDITY_START: &str = "1742450894";
     pub const REQUEST_VALIDITY_DAYS: &str = "10";
 
@@ -21,6 +22,8 @@ mod constants {
 }
 
 mod helpers {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::*;
     use crate::common::utils;
 
@@ -64,13 +67,19 @@ mod helpers {
         user_address: Address,
     ) -> serde_json::Value {
         let handle = random_handle();
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
         json!({
             "handleContractPairs": [{
                 "handle": handle,
                 "contractAddress": format!("{:?}", contract_address)
             }],
             "requestValidity": {
-                "startTimestamp": constants::REQUEST_VALIDITY_START,
+                "startTimestamp": now - 1,
                 "durationDays": constants::REQUEST_VALIDITY_DAYS
             },
             "contractsChainId": chain_id,
@@ -168,6 +177,7 @@ async fn test_success_concurrent_requests() {
     }
 }
 
+// TODO: include the missing tests on this part.
 #[rstest]
 // Chain ID validation
 #[case::empty_chain_id("contractsChainId", json!(""), constants::NUMBER_DECIMAL_OR_HEX)]
@@ -244,6 +254,7 @@ async fn test_error_invalid_fields_set_2(
     "0xabcdef123456789012345678901234567890123456789012345678901234567890",
     constants::HEX_MUST_NOT_START_WITH_0X
 )]
+// TODO: add a new case for invalid timestamp -> Modify with instant now + seconds. -> Start timestamp a nested field !!! be aware.
 #[tokio::test]
 async fn test_error_invalid_nested_handle_fields(
     #[case] invalid_handle: &str,
