@@ -29,7 +29,7 @@ For help with these steps, refer to these tutorials:
 
 # Create the smart contracts
 
-Let’s now create a new contract called `BlindAuction.sol` in the `./contracts/` folder. To enable FHE operations in our contract, we will need to inherit our contract from `EthereumConfig`. This configuration provides the necessary parameters and network-specific settings required to interact with Zama’s FHEVM.
+Let’s now create a new contract called `BlindAuction.sol` in the `./contracts/` folder. To enable FHE operations in our contract, we will need to inherit our contract from `ZamaEthereumConfig`. This configuration provides the necessary parameters and network-specific settings required to interact with Zama’s FHEVM.
 
 Let’s also create some state variable that is going to be used in our auction.
 For the payment, we will rely on a `ConfidentialFungibleToken`. Indeed, we cannot use traditional ERC20, because even if the state in our auction is private, anyone can still monitor blockchain transactions and guess the bid value. By using a `ConfidentialFungibleToken` we ensure the amount stays hidden. This `ConfidentialFungibleToken` can be used with any ERC20, you will only need to wrap your token to hide future transfers.
@@ -41,11 +41,11 @@ Our contract will also include an `ERC721` token representing the NFT being auct
 pragma solidity ^0.8.24;
 
 import { FHE, externalEuint64, euint64, ebool } from "@fhevm/solidity/lib/FHE.sol";
-import { EthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 import { ConfidentialFungibleToken } from "@openzeppelin/confidential-contracts/token/ConfidentialFungibleToken.sol";
 // ...
 
-contract BlindAuction is EthereumConfig {
+contract BlindAuction is ZamaEthereumConfig {
   /// @notice The recipient of the highest bid once the auction ends
   address public beneficiary;
 
