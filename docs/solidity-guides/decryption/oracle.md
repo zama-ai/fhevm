@@ -13,9 +13,9 @@ Public decryption of a confidential on-chain result is designed as an asynchrono
 
 #### Step 1: On-Chain Setup - Enabling Permanent Public Access
 
-This step is executed by the smart contract to signal that a specific confidential result is ready to be revealed.
+This step is executed by the smart contract using the FHE library to signal that a specific confidential result is ready to be revealed.
 
-- **Function:** `FHE.makePubliclyDecryptable`
+- **FHE Solidity Library Function:** `FHE.makePubliclyDecryptable`
 - **Action:** The contract sets the ciphertext handle's status as publicly decryptable, **globally and permanently** authorizing any entity to request its off-chain cleartext value.
 - **Result:** The ciphertext is now accessible to any entity, which can request its decryption from the Zama off-chain Relayer.
 
@@ -23,18 +23,18 @@ This step is executed by the smart contract to signal that a specific confidenti
 
 This step can be executed by any off-chain client using the Relayer SDK.
 
-- **Function:** `relayer-sdk.publicDecrypt`
+- **Relayer SDK Function:** `FhevmInstance.publicDecrypt`
 - **Action:** The off-chain client submits the ciphertext handle to the Zama Relayer's Key Management System (KMS).
-- **Result:** Result: The Zama Relayer returns three items:
+- **Result:** The Zama Relayer returns three items:
   1. The cleartext (the decrypted value).
   2. The ABI-encoding of that cleartext.
-  3. A Decryption Proof (Signature) that cryptographically guarantees the KMS performed the decryption and the cleartext is the genuine result.
+  3. A Decryption Proof (a byte array of signatures and metadata) that serves as a cryptographic guarantee that the cleartext is the authentic, unmodified result of the decryption performed by the KMS.
 
 #### Step 3: On-Chain Verification - Submit and Guarantee Authenticity
 
-This final step uses the proof generated off-chain to ensure the cleartext submitted to the contract is trustworthy.
+This final step is executed on-chain by the contrat using the FHE library with the proof generated off-chain to ensure the cleartext submitted to the contract is trustworthy.
 
-- **Function:** `FHE.checkSignatures`
+- **FHE Solidity Library Function:** `FHE.checkSignatures`
 - **Action:** The caller submits the cleartext and decryption proof back to a contract function. The contract calls `FHE.checkSignatures`, which reverts the transaction if the proof is invalid or does not match the cleartext/ciphertext pair.
 - **Result:** The receiving contract gains a cryptographic guarantee that the submitted cleartext is the authentic decrypted value of the original ciphertext. The contract can then securely execute its business logic (e.g., reveal a vote, transfer funds, update state).
 
