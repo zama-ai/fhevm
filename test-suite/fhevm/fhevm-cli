@@ -37,7 +37,7 @@ export HOST_VERSION=${HOST_VERSION:-"v0.10.0-2"}
 
 # Other services.
 export CORE_VERSION=${CORE_VERSION:-"v0.12.4"}
-export RELAYER_VERSION=${RELAYER_VERSION:-"v0.5.0-2"}
+export RELAYER_VERSION=${RELAYER_VERSION:-"v0.6.0"}
 export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"5ce68e8"}
 
 
@@ -77,7 +77,8 @@ function usage {
   echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
-  echo -e "  ${PURPLE}./fhevm-cli test public-decryption -n staging${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-ebool ${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-mixed -n staging${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test erc20${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli upgrade coprocessor${RESET}"
   echo -e "${BLUE}============================================================${RESET}"
@@ -219,10 +220,6 @@ case $COMMAND in
         user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test user decrypt")
-          ;;
-        public-decryption)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
-          docker_args+=("-g" "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)")
           ;;
         erc20)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] ERC20${RESET}"
