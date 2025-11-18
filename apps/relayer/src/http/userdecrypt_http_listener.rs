@@ -29,7 +29,7 @@ pub struct UserDecryptRequestJson {
         custom(function = "crate::http::utils::validate_handle_contract_pairs")
     )]
     pub handle_contract_pairs: Vec<HandleContractPairJson>,
-    #[validate(nested)]
+    #[validate(custom(function = "crate::http::utils::validate_request_validity"))]
     pub request_validity: RequestValidityJson,
     #[serde(deserialize_with = "de_string_or_number")]
     #[schema(value_type = ChainId)]
@@ -78,12 +78,7 @@ impl Display for HandleContractPairJson {
 #[derive(Debug, Deserialize, Clone, Serialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestValidityJson {
-    #[validate(
-        length(min = 1),
-        custom(function = "crate::http::utils::validate_timestamp")
-    )]
     pub start_timestamp: String,
-    #[validate(custom(function = "crate::http::utils::validate_u32_string"))]
     pub duration_days: String,
 }
 
@@ -257,7 +252,6 @@ mod tests {
 
     use super::*;
     use fake::{Dummy, Fake};
-    use validator::ValidationErrorsKind;
 
     struct HexString(pub usize);
     struct PrefixedHexString(pub usize);
@@ -508,30 +502,6 @@ mod tests {
             assert_eq!(field_errors.len(), 1);
             // The custom validation function returns a validation error with our message
             assert!(field_errors[0].message.is_some());
-        }
-    }
-
-    #[test]
-    fn test_invalid_request_validity() {
-        let fake_data = UserDecryptRequestJson {
-            request_validity: {
-                RequestValidityJson {
-                    start_timestamp: "invalid_timestamp".to_string(),
-                    duration_days: "not_a_number".to_string(),
-                }
-            },
-            ..().fake()
-        };
-        let invalid_json = serde_json::to_string(&fake_data).unwrap();
-        let data: UserDecryptRequestJson = serde_json::from_str(&invalid_json).unwrap();
-        let errors = data.validate().unwrap_err();
-        assert!(errors.errors().contains_key("request_validity"));
-        match errors.errors()["request_validity"].clone() {
-            ValidationErrorsKind::Struct(nested_errors) => {
-                assert!(nested_errors.field_errors().contains_key("start_timestamp"));
-                assert!(nested_errors.field_errors().contains_key("duration_days"));
-            }
-            _ => panic!("Expected Struct type for request_validity errors"),
         }
     }
 

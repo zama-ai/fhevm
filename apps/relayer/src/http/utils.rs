@@ -1,4 +1,7 @@
-use crate::orchestrator::traits::{Event, EventHandler};
+use crate::{
+    http::userdecrypt_http_listener::RequestValidityJson,
+    orchestrator::traits::{Event, EventHandler},
+};
 use alloy::primitives::U256;
 use axum::{
     body::Bytes,
@@ -37,6 +40,7 @@ pub mod validation_messages {
     pub const CANNOT_BE_EMPTY: &str = "Cannot be empty";
 
     pub const EXACT_MUST_BE_0X00: &str = "Must be 0x00";
+    pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
 }
 
 pub struct OnceHandler<T> {
@@ -160,14 +164,14 @@ pub fn validate_timestamp(value: &str) -> Result<(), ValidationError> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| {
-            ValidationError::new(ErrorCode::InternalServerError.as_str())
+            ValidationError::new("internal_server_error")
                 .with_message("System time is before UNIX epoch.".into())
         })?
         .as_secs();
 
     if timestamp > now {
-        return Err(ValidationError::new(ErrorCode::ValidationFailed.as_str())
-            .with_message("Timestamp must not be in the future".into()));
+        return Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::TIMESTAMP_MUST_NOT_BE_IN_FUTURE.into()));
     }
 
     Ok(())
@@ -206,6 +210,14 @@ pub fn validate_handle_contract_pairs(
         // Validate contract address
         validate_blockchain_address(&pair.contract_address)?;
     }
+    Ok(())
+}
+
+pub fn validate_request_validity(
+    request_validity: &RequestValidityJson,
+) -> Result<(), ValidationError> {
+    validate_timestamp(&request_validity.start_timestamp)?;
+    validate_u32_string(&request_validity.duration_days)?;
     Ok(())
 }
 

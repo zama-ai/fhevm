@@ -5,6 +5,7 @@ use crate::common::validation_helper::{
     expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success,
     test_endpoint, test_endpoint_raw_body, with_invalid_field,
 };
+use crate::constants::FUTURE_DATE;
 use alloy::primitives::{Address, Bytes, B256};
 use rand::{rng, Rng};
 use rstest::rstest;
@@ -13,8 +14,8 @@ use std::str::FromStr;
 
 mod constants {
     pub const EXTRA_DATA: &str = "0x00";
-    // TODO: Change this constant -> Should fail as well on the negative one.
-    pub const REQUEST_VALIDITY_START: &str = "1742450894";
+    // Should failed since this date is in the future (2035)
+    pub const FUTURE_DATE: &str = "2051218800";
     pub const REQUEST_VALIDITY_DAYS: &str = "10";
 
     // Validation error messages (directly from source code)
@@ -79,7 +80,7 @@ mod helpers {
                 "contractAddress": format!("{:?}", contract_address)
             }],
             "requestValidity": {
-                "startTimestamp": now - 1,
+                "startTimestamp": (now - 1).to_string(),
                 "durationDays": constants::REQUEST_VALIDITY_DAYS
             },
             "contractsChainId": chain_id,
@@ -254,7 +255,6 @@ async fn test_error_invalid_fields_set_2(
     "0xabcdef123456789012345678901234567890123456789012345678901234567890",
     constants::HEX_MUST_NOT_START_WITH_0X
 )]
-// TODO: add a new case for invalid timestamp -> Modify with instant now + seconds. -> Start timestamp a nested field !!! be aware.
 #[tokio::test]
 async fn test_error_invalid_nested_handle_fields(
     #[case] invalid_handle: &str,
@@ -277,6 +277,34 @@ async fn test_error_invalid_nested_handle_fields(
         base_payload,
         |_| {}, // No additional modifications needed
         expect_invalid_field("handleContractPairs", expected_issue),
+    )
+    .await;
+}
+
+#[rstest]
+#[case::future_timestamp(FUTURE_DATE, constants::TIMESTAMP_MUST_NOT_BE_IN_FUTURE)]
+#[tokio::test]
+async fn test_error_invalid_nested_handle_fields_2(
+    #[case] future_date: &str,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let mut base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    // Modify the nested handle field with the test case value
+    base_payload["requestValidity"]["startTimestamp"] = json!(future_date);
+
+    test_endpoint(
+        &helpers::v1_user_decrypt_url(&setup),
+        base_payload,
+        |_| {}, // No additional modifications needed
+        expect_invalid_field("requestValidity", expected_issue),
     )
     .await;
 }
