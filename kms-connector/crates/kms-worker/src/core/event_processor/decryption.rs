@@ -1,12 +1,11 @@
 use crate::core::{
     config::Config,
-    event_processor::{ProcessingError, eip712::alloy_to_protobuf_domain, s3::S3Service},
+    event_processor::{ProcessingError, s3::S3Service},
 };
 use alloy::{
     hex,
     primitives::{Address, Bytes, U256},
     providers::Provider,
-    sol_types::Eip712Domain,
 };
 use anyhow::anyhow;
 use connector_utils::types::KmsGrpcRequest;
@@ -14,16 +13,15 @@ use fhevm_gateway_bindings::decryption::Decryption::{
     self, DecryptionInstance, SnsCiphertextMaterial,
 };
 use kms_grpc::kms::v1::{
-    PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
+    Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
-use std::borrow::Cow;
 use tracing::info;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
 pub struct DecryptionProcessor<P: Provider> {
     /// The EIP712 domain of the `Decryption` contract.
-    domain: Eip712Domain,
+    domain: Eip712DomainMsg,
 
     /// The instance of the `Decryption` contract used to check decryption were not already done.
     decryption_contract: DecryptionInstance<P>,
@@ -37,13 +35,11 @@ where
     P: Provider,
 {
     pub fn new(config: &Config, provider: P, s3_service: S3Service<P>) -> Self {
-        let domain = Eip712Domain {
-            name: Some(Cow::Owned(config.decryption_contract.domain_name.clone())),
-            version: Some(Cow::Owned(
-                config.decryption_contract.domain_version.clone(),
-            )),
-            chain_id: Some(U256::from(config.chain_id)),
-            verifying_contract: Some(config.decryption_contract.address),
+        let domain = Eip712DomainMsg {
+            name: config.decryption_contract.domain_name.clone(),
+            version: config.decryption_contract.domain_version.clone(),
+            chain_id: U256::from(config.chain_id).to_be_bytes_vec(),
+            verifying_contract: config.decryption_contract.address.to_string(),
             salt: None,
         };
         let decryption_contract = Decryption::new(config.decryption_contract.address, provider);
@@ -93,9 +89,6 @@ where
 
         let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
 
-        let domain_msg = alloy_to_protobuf_domain(&self.domain)?;
-        info!("Eip712Domain constructed: {domain_msg:?}",);
-
         let request_id = Some(RequestId {
             request_id: hex::encode(decryption_id.to_be_bytes::<32>()),
         });
@@ -108,7 +101,7 @@ where
                 request_id,
                 client_address,
                 key_id: Some(RequestId { request_id: key_id }),
-                domain: Some(domain_msg),
+                domain: Some(self.domain.clone()),
                 enc_key,
                 typed_ciphertexts: ciphertexts,
                 extra_data,
@@ -122,7 +115,7 @@ where
                 request_id,
                 ciphertexts,
                 key_id: Some(RequestId { request_id: key_id }),
-                domain: Some(domain_msg),
+                domain: Some(self.domain.clone()),
                 extra_data,
                 epoch_id: None,
                 context_id: None,

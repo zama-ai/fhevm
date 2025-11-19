@@ -501,7 +501,6 @@ const RETRYABLE_GRPC_CODE: [Code; 4] = [
 /// Sends a given GRPC request to the KMS with retries.
 ///
 /// Returns the number of errors and the result of the request.
-#[tracing::instrument(skip_all)]
 async fn send_request_with_retries<F, Fut, R>(
     retries: u8,
     mut request_fn: F,
@@ -544,7 +543,6 @@ where
 /// Polls the KMS for the result of a request previously sent, with retries.
 ///
 /// Returns the number of errors and the result of the polling.
-#[tracing::instrument(skip_all)]
 async fn poll_for_result<T, F, Fut>(
     retries: u8,
     mut poll_fn: F,
