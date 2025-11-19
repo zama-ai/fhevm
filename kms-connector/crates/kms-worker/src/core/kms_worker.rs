@@ -78,7 +78,7 @@ where
             let response_publisher = self.response_publisher.clone();
 
             spawn_with_limit(async move {
-                Self::process_event(event_processor, response_publisher, event).await
+                Self::handle_event(event_processor, response_publisher, event).await
             })
             .await;
         }
@@ -86,7 +86,7 @@ where
 
     /// Processes an event coming from the Gateway.
     #[tracing::instrument(skip(event_processor, response_publisher), fields(event = % event.kind))]
-    async fn process_event(
+    async fn handle_event(
         mut event_processor: Proc,
         response_publisher: DbKmsResponsePublisher,
         mut event: GatewayEvent,
