@@ -19,7 +19,7 @@ interface IERC20Mintable is IERC20 {
 
 /**
  * @dev Staking contract that distributes newly minted tokens to eligible accounts at a configurable flow rate.
- * 
+ *
  * NOTE: This staking contract does not support non-standard ERC-20 tokens such as fee-on-transfer or rebasing tokens.
  * @custom:security-contact security@zama.ai
  */
@@ -70,8 +70,6 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     /// @dev Emitted when the reward recipient of an account is updated.
     event RewardsRecipientSet(address indexed account, address indexed recipient);
 
-    /// @dev Emitted when an account unstakes to the zero address.
-    error InvalidUnstakeRecipient();
     /// @dev The account cannot be made eligible.
     error InvalidEligibleAccount(address account);
     /// @dev The tokens cannot be transferred.
@@ -117,25 +115,27 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     }
 
     /**
-     * @dev Unstake `amount` tokens from `msg.sender`'s staked balance to `recipient`.
-     * @param recipient The recipient where unstaked tokens should be sent.
      * @param amount The amount of tokens to unstake.
      * @return releaseTime The timestamp when the unstaked tokens can be released.
      *
+     * @dev Unstake `amount` tokens from `msg.sender`'s staked balance to `msg.sender`.
+     *
      * NOTE: Unstaked tokens are released by calling {release} after {unstakeCooldownPeriod}.
+     * WARNING: Unstake release times are strictly increasing per recipient even if the cooldown period
+     * is reduced. For a given account to fully realize the reduction in cooldown period, they may need
+     * to wait up to `OLD_COOLDOWN_PERIOD - NEW_COOLDOWN_PERIOD` seconds after the cooldown period is updated.
      */
-    function unstake(address recipient, uint256 amount) public returns (uint48) {
-        require(recipient != address(0), InvalidUnstakeRecipient());
+    function unstake(uint256 amount) public returns (uint48) {
         _burn(msg.sender, amount);
 
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
         (, uint256 lastReleaseTime, uint256 totalRequestedToWithdraw) = $
-            ._unstakeRequests[recipient]
+            ._unstakeRequests[msg.sender]
             .latestCheckpoint();
         uint48 releaseTime = SafeCast.toUint48(Math.max(Time.timestamp() + $._unstakeCooldownPeriod, lastReleaseTime));
-        $._unstakeRequests[recipient].push(releaseTime, uint208(totalRequestedToWithdraw + amount));
+        $._unstakeRequests[msg.sender].push(releaseTime, uint208(totalRequestedToWithdraw + amount));
 
-        emit TokensUnstaked(msg.sender, recipient, amount, releaseTime);
+        emit TokensUnstaked(msg.sender, msg.sender, amount, releaseTime);
         return releaseTime;
     }
 
@@ -206,7 +206,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
 
     /**
      * @dev Sets the {unstake} cooldown period in seconds to `unstakeCooldownPeriod`. Only callable
-     * by `MANAGER_ROLE` role.
+     * by `MANAGER_ROLE` role. See {unstake} for important notes regarding the cooldown period.
      * @param unstakeCooldownPeriod_ The new unstake cooldown period.
      */
     function setUnstakeCooldownPeriod(uint48 unstakeCooldownPeriod_) public onlyRole(MANAGER_ROLE) {
