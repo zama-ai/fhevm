@@ -205,10 +205,6 @@ case $COMMAND in
       docker_args+=("-g" "$GREP")
     else
       case $TEST_TYPE in
-        paused-input-proof)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED INPUT PROOF (uint64)${RESET}"
-          docker_args+=("-g" "test paused user input uint64")
-          ;;
         input-proof)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test user input uint64")
@@ -217,13 +213,17 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test add 42 to uint64 input and decrypt")
           ;;
-        paused-user-decryption)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED USER DECRYPTION${RESET}"
-          docker_args+=("-g" "test paused user decrypt")
+        paused-input-proof)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test paused gateway user input uint64")
           ;;
         user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test user decrypt")
+          ;;
+        paused-user-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED USER DECRYPTION${RESET}"
+          docker_args+=("-g" "test paused gateway user decrypt")
           ;;
         erc20)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] ERC20${RESET}"
@@ -236,6 +236,10 @@ case $COMMAND in
         public-decrypt-http-mixed)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION OVER HTTP FOR MIXED${RESET}"
           docker_args+=("-g" "test HTTPPublicDecrypt mixed")
+          ;;
+        paused-public-decrypt-http)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED PUBLIC DECRYPTION OVER HTTP${RESET}"
+          docker_args+=("-g" "test paused gateway HTTPPublicDecrypt")
           ;;
         operators)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"

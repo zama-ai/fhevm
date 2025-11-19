@@ -22,9 +22,15 @@ describe('Paused gateway', function () {
     this.userDecryptContract = await userDecryptContractFactory.connect(this.signers.alice).deploy();
     await this.userDecryptContract.waitForDeployment();
     this.userDecryptContractAddress = await this.userDecryptContract.getAddress();
+
+    // Initialize HTTPPublicDecrypt contract.
+    const httpPublicDecryptContractFactory = await ethers.getContractFactory('HTTPPublicDecrypt');
+    this.httpPublicDecryptContract = await httpPublicDecryptContractFactory.connect(this.signers.alice).deploy();
+    await this.httpPublicDecryptContract.waitForDeployment();
   });
 
-  it('test paused user input uint64 (non-trivial)', async function () {
+  // InputVerification tests.
+  it('test paused gateway user input uint64 (non-trivial)', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(
       this.testInputContractAddress,
       this.signers.alice.address,
@@ -34,10 +40,10 @@ describe('Paused gateway', function () {
     await expect(inputAlice.encrypt()).to.be.rejectedWith(new RegExp('Input request failed'));
   });
 
-  it('test paused user decrypt euint8', async function () {
-    const handle = await this.userDecryptContract.xUint8();
+  // UserDecryption tests.
+  it('test paused gateway user decrypt', async function () {
+    const handle = await this.userDecryptContract.xBool();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
-
     await expect(
       userDecryptSingleHandle(
         handle,
@@ -48,5 +54,15 @@ describe('Paused gateway', function () {
         publicKey,
       ),
     ).to.be.rejectedWith(new RegExp('User decrypt failed'));
+  });
+
+  // PublicDecryption tests.
+  it('test paused gateway HTTPPublicDecrypt', async function () {
+    const handleBool = await this.httpPublicDecryptContract.xBool();
+    const handleAddress = await this.httpPublicDecryptContract.xAddress();
+    const handle32 = await this.httpPublicDecryptContract.xUint32();
+    await expect(this.instances.alice.publicDecrypt([handleAddress, handle32, handleBool])).to.be.rejectedWith(
+      new RegExp('Public decrypt failed'),
+    );
   });
 });

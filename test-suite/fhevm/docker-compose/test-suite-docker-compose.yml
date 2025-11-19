@@ -3,7 +3,6 @@ services:
   test-suite-e2e-debug:
     container_name: fhevm-test-suite-e2e-debug
     image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
-    # image: test-suite/e2e:test-1
     build:
       context: ../../.. # root directory of the repository
       dockerfile: test-suite/e2e/Dockerfile

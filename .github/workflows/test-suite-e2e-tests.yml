@@ -182,7 +182,7 @@ jobs:
         run: |
           ./fhevm-cli test public-decrypt-http-mixed
 
-      # E2E tests for pausing mechanism in Gateway contracts
+      # E2E tests on pausing the Gateway contracts
       - name: Pause Gateway Contracts
         working-directory: test-suite/fhevm
         run: |
@@ -193,15 +193,51 @@ jobs:
         run: |
           ./fhevm-cli test paused-input-proof
 
+      - name: Paused user decryption test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test paused-user-decryption
+
+      - name: Paused public decryption HTTP endpoint test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test paused-public-decrypt-http
+
       - name: Unpause Gateway Contracts
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli unpause gateway
 
+      # E2E tests after unpausing the Gateway contracts
       - name: Input proof test (uint64)
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test input-proof
+
+      - name: Input proof test with compute and decrypt (uint64)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test input-proof-compute-decrypt
+
+      - name: User Decryption test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test user-decryption
+
+      - name: ERC20 test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test erc20
+
+      - name: Public Decryption HTTP endpoint test (ebool)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test public-decrypt-http-ebool
+
+      - name: Public Decryption HTTP endpoint test (mixed)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test public-decrypt-http-mixed
 
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
