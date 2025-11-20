@@ -35,8 +35,8 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         uint256 _totalEligibleStakedWeight;
         // Stake - release
         uint48 _unstakeCooldownPeriod;
-        mapping(address recipient => Checkpoints.Trace208) _unstakeRequests;
-        mapping(address recipient => uint256) _released;
+        mapping(address account => Checkpoints.Trace208) _unstakeRequests;
+        mapping(address account => uint256) _released;
         // Reward - issuance curve
         uint256 _lastUpdateTimestamp;
         uint256 _lastUpdateReward;
@@ -115,15 +115,15 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     }
 
     /**
-     * @param amount The amount of tokens to unstake.
-     * @return releaseTime The timestamp when the unstaked tokens can be released.
-     *
      * @dev Unstake `amount` tokens from `msg.sender`'s staked balance to `msg.sender`.
      *
      * NOTE: Unstaked tokens are released by calling {release} after {unstakeCooldownPeriod}.
      * WARNING: Unstake release times are strictly increasing per account even if the cooldown period
      * is reduced. For a given account to fully realize the reduction in cooldown period, they may need
      * to wait up to `OLD_COOLDOWN_PERIOD - NEW_COOLDOWN_PERIOD` seconds after the cooldown period is updated.
+     *
+     * @param amount The amount of tokens to unstake.
+     * @return releaseTime The timestamp when the unstaked tokens can be released.
      */
     function unstake(uint256 amount) public returns (uint48) {
         _burn(msg.sender, amount);
@@ -142,9 +142,6 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     /**
      * @dev Releases tokens requested for unstaking after the cooldown period to `account`.
      * @param account The account to release tokens to.
-     *
-     * WARNING: If this contract is upgraded to add slashing, the ability to withdraw to a
-     * different address should be reconsidered.
      */
     function release(address account) public virtual {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
@@ -216,7 +213,8 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     /**
      * @dev Sets the reward recipient for `msg.sender` to `recipient`. All future rewards for
      * `msg.sender` will be sent to `recipient`.
-     * @param recipient The recipient that will receive rewards on behalf of `msg.sender` for all future  {claimRewards} calls.
+     * @param recipient The recipient that will receive rewards on behalf of `msg.sender` for all future  
+     * {claimRewards} calls. If `recipient` is set to `address(0)`, rewards will be sent to the staking account.
      */
     function setRewardsRecipient(address recipient) public {
         _getProtocolStakingStorage()._rewardsRecipient[msg.sender] = recipient;
