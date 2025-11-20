@@ -5,6 +5,7 @@ pub mod user;
 pub use public::{init_public_decryption_response_listener, public_decryption_burst};
 pub use user::{init_user_decryption_response_listener, user_decryption_burst};
 
+use crate::blockchain::manager::AppProvider;
 use alloy::{
     primitives::{B256, LogData, U256},
     providers::Provider,
@@ -15,8 +16,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, trace, warn};
 
-use crate::blockchain::manager::AppProvider;
-
+pub const BURST_WAIT_TIMEOUT: Duration = Duration::from_mins(5);
 pub const EVENT_LISTENER_POLLING: Duration = Duration::from_millis(500);
 
 fn extract_id_from_receipt<F>(

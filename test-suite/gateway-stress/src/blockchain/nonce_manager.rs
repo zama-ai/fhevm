@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use futures::lock::{Mutex, MutexGuard};
 use std::collections::{BTreeSet, HashMap, hash_map::Entry};
 use std::sync::Arc;
-use tracing::debug;
+use tracing::trace;
 
 /// A robust, in-memory nonce manager for a scalable transaction engine.
 #[derive(Clone, Debug, Default)]
@@ -52,12 +52,12 @@ impl ZamaNonceManager {
         let nonce_to_use =
             if let Some(available_nonce) = account.available_nonces.iter().next().copied() {
                 account.available_nonces.remove(&available_nonce);
-                debug!(%address, nonce = available_nonce, "Reusing available nonce");
+                trace!(%address, nonce = available_nonce, "Reusing available nonce");
                 available_nonce
             } else {
                 let next = account.next_nonce;
                 account.next_nonce += 1;
-                debug!(%address, nonce = next, "Using next sequential nonce");
+                trace!(%address, nonce = next, "Using next sequential nonce");
                 next
             };
 
