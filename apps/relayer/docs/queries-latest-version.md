@@ -154,8 +154,8 @@ NOTE: PAUSING STRATEGY.
 2.  RelayerEvent Transaction::Send is emitted.
 
     1. TxHandler emitt the event Transaction::Sucess (receipt)
-       1. update the status to `receipt_received` + `tx_hash` + `gw_ref_id` by `internal_indexer_id`(we have the receipt at this point) -> We process the receipt. and we dispatch
-    2. TxHandler emit Transaction::Failed: set status to `failure` and `err_reason` by `internal_request_id` -> Dispatch error event as before to the orchestrator
+       1. update the status to `receipt_received` + `gw_req_tx_hash` + `gw_reference_id` by `int_request_id`(we have the receipt at this point) -> We process the receipt. and we dispatch
+    2. TxHandler emit Transaction::Failed: set status to `failure` and `err_reason` by `int_request_id` -> Dispatch error event as before to the orchestrator
 
 3.  Listener recieve input_proof share events transaction.
 
