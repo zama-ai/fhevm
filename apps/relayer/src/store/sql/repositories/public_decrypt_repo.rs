@@ -79,4 +79,23 @@ impl PublicDecryptRepository {
 
         Ok(result)
     }
+
+    // GATEWAY READINESS CHECK.
+    /// update public_decrypt_req by int_indexer_id for to req_status processing
+    /// Update req_status to 'processing' by int_indexer_id.
+    /// Returns the number of rows affected (1 if found, 0 if not).
+    pub async fn update_status_to_processing(&self, int_indexer_id_bytes: &[u8]) -> Result<u64> {
+        let result = sqlx::query!(
+            r#"
+            UPDATE public_decrypt_req
+            SET req_status = 'processing'::req_status
+            WHERE int_indexer_id = $1
+            "#,
+            int_indexer_id_bytes
+        )
+        .execute(&self.pool.get_pool())
+        .await?;
+
+        Ok(result.rows_affected())
+    }
 }
