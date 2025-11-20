@@ -107,7 +107,7 @@ pub fn validate_blockchain_addresses(addresses: &Vec<String>) -> Result<(), Vali
 }
 
 // Custom validation function for a hex string that must NOT have a "0x" prefix.
-pub fn validate_hex_string(hex_str: &str) -> Result<(), ValidationError> {
+pub fn validate_no_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
     // Allow both with and without "0x" prefix
     if hex_str.starts_with("0x") {
         return Err(ValidationError::new("validation_error")
@@ -121,9 +121,9 @@ pub fn validate_hex_string(hex_str: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
-pub fn validate_hex_strings(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
+pub fn validate_no_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
     for hex_str in hex_strs {
-        validate_hex_string(hex_str)?;
+        validate_no_0x_hex(hex_str)?;
     }
     Ok(())
 }
@@ -199,7 +199,7 @@ pub fn validate_handle_contract_pairs(
 ) -> Result<(), ValidationError> {
     for pair in pairs {
         // Validate handle hex format first (to catch 0x prefix before length check)
-        validate_hex_string(&pair.handle)?;
+        validate_no_0x_hex(&pair.handle)?;
 
         // Validate handle length
         if pair.handle.len() != 64 {

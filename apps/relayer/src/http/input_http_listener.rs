@@ -31,7 +31,7 @@ pub struct InputProofRequestJson {
     pub user_address: String, // Hex encoded address with 0x prefix.
     #[validate(
         length(min = 1, message = "Must not be empty"),
-        custom(function = "crate::http::utils::validate_hex_string")
+        custom(function = "crate::http::utils::validate_no_0x_hex")
     )]
     pub ciphertext_with_input_verification: String,
     /// Extra data field, always set to 0x00

@@ -46,11 +46,11 @@ pub struct UserDecryptRequestJson {
     // TODO: change validator function here for checking the rights signatures.
     #[validate(
         length(equal = 130, message = "Must be 130 characters long"),
-        custom(function = "crate::http::utils::validate_hex_string")
+        custom(function = "crate::http::utils::validate_no_0x_hex")
     )]
     pub signature: String,
     /// Public key
-    #[validate(custom(function = "crate::http::utils::validate_hex_string"))]
+    #[validate(custom(function = "crate::http::utils::validate_no_0x_hex"))]
     pub public_key: String,
     /// Extra data field, always set to 0x00
     #[validate(custom(function = "crate::http::utils::validate_extra_data_field"))]
