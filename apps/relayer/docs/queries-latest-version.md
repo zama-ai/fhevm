@@ -77,8 +77,7 @@ OR:
 update `user_decrypt_req` table `gw_consensus_tx_hash` = value, where `gw_reference_id` if consensus_tx_hash is null, and status = 'receipt_recieved'
 select (status, updated_at, err_reason, int_indexer_id,) where `gw_reference_id` = value
 
-here.
-6.  IF THIS IS A SHARE: [2 transactions / 2 calls]
+here. 6. IF THIS IS A SHARE: [2 transactions / 2 calls]
 
 // This lead to possibility of non relevant shares (DOCUMENT THIS !!!!! ON CODE.)
 // This also does not respect the status due to timeout on request context (ud tables.)
@@ -162,7 +161,7 @@ NOTE: PAUSING STRATEGY.
 - if input proof accepted:
   - Update into `input_proof_req` table: `res` = recieved value from gw where gateway_reference_id = value in the event and req_status = completed and accepted = `true` + `gw_response_tx_hash` (return `int_request_id`)
 - if input proof rejected:
-  - update input_proof_req with accpeted=false req_status=completed gw_response_tx_hash=tx hash of event (return `internal_request_id`)
+  - update input_proof_req with accpeted=false req_status=completed gw_response_tx_hash=tx hash of event (return `int_request_id`) (adding res to it as well...)
 
 6.  INternally: we forward event is recieved as it is already done in our internal logic.
 
