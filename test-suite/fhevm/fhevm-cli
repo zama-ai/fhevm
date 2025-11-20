@@ -217,6 +217,10 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test paused gateway user input uint64")
           ;;
+        paused-host-input-proof)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED HOST INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test paused host user input uint64")
+          ;;
         user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test user decrypt")
@@ -255,6 +259,10 @@ case $COMMAND in
         paused-gateway-public-decrypt-http)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED PUBLIC DECRYPTION OVER HTTP${RESET}"
           docker_args+=("-g" "test paused gateway HTTPPublicDecrypt")
+          ;;
+        paused-host-public-decrypt-http)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED HOST PUBLIC DECRYPTION OVER HTTP${RESET}"
+          docker_args+=("-g" "test paused host HTTPPublicDecrypt")
           ;;
         operators)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
