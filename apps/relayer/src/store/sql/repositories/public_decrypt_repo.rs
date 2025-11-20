@@ -7,7 +7,7 @@
 //     pool: PgClient,
 // }
 
-// impl UserDecryptReqRepository {
+// impl PublicDecryptRepository {
 //     pub fn new(pool: PgClient) -> Self {
 //         Self { pool }
 //     }

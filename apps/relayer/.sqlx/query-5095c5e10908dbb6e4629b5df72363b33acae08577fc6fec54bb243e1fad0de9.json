@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO input_proof_req (\n                ext_reference_id, \n                int_request_id, \n                req, \n                req_status\n            )\n            VALUES ($1, $2, $3, 'queued'::req_status)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5095c5e10908dbb6e4629b5df72363b33acae08577fc6fec54bb243e1fad0de9"
+}

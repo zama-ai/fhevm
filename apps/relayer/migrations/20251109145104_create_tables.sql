@@ -109,6 +109,8 @@ CREATE TABLE input_proof_req(
 
 -- Index with ext_ref_id.
 CREATE INDEX idx_input_proof_req_ext_req_id ON input_proof_req USING HASH (ext_reference_id);
+-- UUID v7 is time-ordered, so B-Tree is very efficient here.
+CREATE INDEX idx_input_proof_req_int_request_id ON input_proof_req (int_request_id);
 
 -- Trigger for updated at field.
 CREATE TRIGGER set_input_proof_req_updated_at

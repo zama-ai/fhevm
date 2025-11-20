@@ -11,11 +11,11 @@ use anyhow::Result;
 use sqlx::types::Json;
 use sqlx::types::Uuid;
 
-pub struct UserDecryptReqRepository {
+pub struct UserDecryptRepository {
     pool: PgClient,
 }
 
-impl UserDecryptReqRepository {
+impl UserDecryptRepository {
     pub fn new(pool: PgClient) -> Self {
         Self { pool }
     }

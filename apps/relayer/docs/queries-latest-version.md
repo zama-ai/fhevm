@@ -147,7 +147,7 @@ NOTE: PAUSING STRATEGY.
 1.  POST REQUEST => we recieve a payload (v1 or v2)
 
     - Create uuidV7 `internal_request_id`.
-    - Insert `ext_reference_id`, `internal_request_id`, `request` into `input_proof_req`
+    - Insert `ext_reference_id`, `int_request_id`, `request` into `input_proof_req`
       v1 routes -> Continue.
       v2 routes -> return `ext_reference_id` with 202 Created..
 
