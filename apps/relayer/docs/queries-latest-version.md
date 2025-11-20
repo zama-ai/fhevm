@@ -35,11 +35,6 @@
        1. update the status to `receipt_received` + `gw_req_tx_hash` + `gw_reference_id` by `int_indexer_id`(we have the receipt at this point) -> We process the receipt. and we dispatch
     2. TxHandler emit Transaction::Failed: set status to `failure` and `err_reason` by `internal_indexer_id` -> Dispatch error event as before to the orchestrator
 
-3.  Listener recieve user decrypt share or user consensus reached events transaction.
-
-    1. insert in `user_decrypt_share` table all the fields : `gw_ref_id`, `share_index`, `share`, `kms_signature`, `extra_data` and returns the number of existing elements after insertion (e.g 1, 2, ...)
-       1. if inserted number >= threshold + 1 -> update `user_decrypt_req` table by `gw_ref_id`
-
 4.  Listener recieve user decrypt share or user consensus reached events transaction.
 
 - If we recieve consensus reached tx:
@@ -49,7 +44,7 @@
 6.  IF THIS IS A SHARE:
 
     1.  insert into `user_decrypt_share` -> gw_ref_id, share_index, share, kms_signature, extra_data -> Return the count of total shares by `gw_ref_id` (QUERY)
-        - if count = threshold -> update user_decrypt_req table status = `completed` on `gw_ref_id` (ONLY ONE SINGLE TX QUERY)
+        - if count = threshold -> update user_decrypt_req table status = `completed` on `gw_reference_id` (ONLY ONE SINGLE TX QUERY)
         - return all the shares (IN THE SAME TX QUERY) + `internal_indexer_id`
 
 7.  INternally: we forward event is recieved as it is already done in our internal logic.

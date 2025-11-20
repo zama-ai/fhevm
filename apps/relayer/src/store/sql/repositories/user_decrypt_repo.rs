@@ -1,7 +1,7 @@
 use anyhow::Result;
 use sqlx::types::Uuid;
 
-use crate::store::sql::client::PgClient;
+use crate::store::sql::{client::PgClient, models::user_decrypt_share_model::UserDecryptShare};
 
 pub struct UserDecryptReqRepository {
     pool: PgClient,
@@ -120,6 +120,9 @@ impl UserDecryptReqRepository {
 
     // LISTENER REQUESTS.
 
+    // VERSION 1 for 2 next queries:
+    // TODO: two next queries should be in the same trasnaction.
+
     // We recieve a share event from the gw.
     /// Insert in user_decrypt_share table all the fields: gw_reference_id, share_index, share, kms_signature, extra_data and return number of shares for gw_reference_id in the table.
     /// Insert a share and return the total count of shares for this gw_reference_id.
@@ -160,6 +163,48 @@ impl UserDecryptReqRepository {
 
         Ok(count)
     }
+
+    /// update user_decrypt_reqf req_status to completed by gw_reference_id and return all shares from user_decrypt_share table by gw_reference_id.
+    /// Update req_status to 'completed' and return all associated shares.
+    /// Returns a Vector of UserDecryptShare.
+    pub async fn complete_req_and_get_shares(
+        &self,
+        gw_reference_id: i32,
+    ) -> Result<Vec<UserDecryptShare>> {
+        // We map the result directly to the UserDecryptShare struct
+        let shares = sqlx::query_as!(
+            UserDecryptShare,
+            r#"
+            WITH updated_req AS (
+                UPDATE user_decrypt_req
+                SET req_status = 'completed'::req_status
+                WHERE gw_reference_id = $1
+                RETURNING 1 -- We just return a dummy value to signal the update happened
+            )
+            SELECT 
+                id,
+                gw_reference_id,
+                share_index,
+                share,
+                kms_signature,
+                extra_data,
+                created_at,
+                updated_at
+            FROM user_decrypt_share
+            WHERE gw_reference_id = $1
+            -- OPTIONAL SAFETY: Only return shares if the request was actually found and updated
+            -- Remove the line below if you want shares even if the request ID was wrong
+            AND EXISTS (SELECT 1 FROM updated_req)
+            "#,
+            gw_reference_id
+        )
+        .fetch_all(&self.pool.get_pool())
+        .await?;
+
+        Ok(shares)
+    }
+
+    // TODO: Combine two last queries in one single db transaction.
 
     // Update user_decrypt_req table with gw_consensus_tx_hash by gw_reference_id only if gw_consensus_tx_hash is null.
     /// Update gw_consensus_tx_hash by gw_reference_id, but ONLY if it is currently NULL.
