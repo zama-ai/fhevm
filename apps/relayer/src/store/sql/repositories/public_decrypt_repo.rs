@@ -1,16 +1,16 @@
-use anyhow::Result;
-use uuid::Uuid;
+// use anyhow::Result;
+// use uuid::Uuid;
 
-use crate::store::sql::client::PgClient;
+// use crate::store::sql::client::PgClient;
 
-pub struct UserDecryptReqRepository {
-    pool: PgClient,
-}
+// pub struct UserDecryptReqRepository {
+//     pool: PgClient,
+// }
 
-impl UserDecryptReqRepository {
-    pub fn new(pool: PgClient) -> Self {
-        Self { pool }
-    }
+// impl UserDecryptReqRepository {
+//     pub fn new(pool: PgClient) -> Self {
+//         Self { pool }
+//     }
 
     // INITIAL POST REQUEST:
 
@@ -42,4 +42,4 @@ impl UserDecryptReqRepository {
     // / If no conflict, it inserts and returns the NEW ext_reference_id.
 
 
-}
+// }

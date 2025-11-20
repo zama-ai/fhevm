@@ -25,6 +25,14 @@ pub struct UserDecryptReq {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, FromRow)]
+pub struct ConsensusReqState {
+    pub req_status: ReqStatus,
+    pub updated_at: DateTime<Utc>,
+    pub err_reason: Option<String>,
+    pub int_indexer_id: Vec<u8>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserDecryptResponseModel {
     pub ext_reference_id: Uuid,

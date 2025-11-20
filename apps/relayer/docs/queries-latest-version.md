@@ -77,6 +77,7 @@ OR:
 update `user_decrypt_req` table `gw_consensus_tx_hash` = value, where `gw_reference_id` if consensus_tx_hash is null, and status = 'receipt_recieved'
 select (status, updated_at, err_reason, int_indexer_id,) where `gw_reference_id` = value
 
+here.
 6.  IF THIS IS A SHARE: [2 transactions / 2 calls]
 
 // This lead to possibility of non relevant shares (DOCUMENT THIS !!!!! ON CODE.)

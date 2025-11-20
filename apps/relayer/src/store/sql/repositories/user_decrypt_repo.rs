@@ -1,4 +1,5 @@
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
+use crate::store::sql::models::user_decrypt_req_model::ConsensusReqState;
 use crate::store::sql::{
     client::PgClient,
     models::{
@@ -172,8 +173,61 @@ impl UserDecryptReqRepository {
     // Update status to timed_out with err_reason = 'response timed out' (ACL propagation error). For now we can use the query above.
 
     // LISTENER REQUESTS.
+    // If we recieve consensus reached tx:
+    // update user_decrypt_req for gw_consensus_tx_hash by gw_reference_id
+    // and if consensus_tx_hash = null and if status = 'receipt_recieved'
+    // but in any case return (status, updated_at, err_reason, int_indexer_id) for `gw_reference_id`
+    /// Attempts to update consensus hash ONLY IF status is 'receipt_received' AND hash is null.
+    /// ALWAYS returns the current state of the row (req_status, updated_at, etc.) regardless of update success.
+    /// Step 6: Handle Consensus Tx.
+    pub async fn update_consensus_hash_and_return_state(
+        &self,
+        gw_reference_id: i32,
+        gw_consensus_tx_hash: &str,
+    ) -> Result<Option<ConsensusReqState>> {
+        let result = sqlx::query_as!(
+            ConsensusReqState,
+            r#"
+            WITH target AS (
+                SELECT id FROM user_decrypt_req WHERE gw_reference_id = $2
+            ),
+            updated_row AS (
+                UPDATE user_decrypt_req
+                SET gw_consensus_tx_hash = $1
+                WHERE id = (SELECT id FROM target)
+                  AND gw_consensus_tx_hash IS NULL
+                  AND req_status = 'receipt_received'::req_status
+                RETURNING req_status, updated_at, err_reason, int_indexer_id
+            )
+            -- 1. Select from updated_row
+            SELECT 
+                req_status as "req_status!: ReqStatus", 
+                updated_at as "updated_at!",
+                err_reason,
+                int_indexer_id as "int_indexer_id!"
+            FROM updated_row
+            
+            UNION ALL
+            
+            -- 2. Select from original table
+            SELECT 
+                req_status as "req_status!: ReqStatus", 
+                updated_at as "updated_at!",
+                err_reason, 
+                int_indexer_id as "int_indexer_id!"
+            FROM user_decrypt_req
+            WHERE id = (SELECT id FROM target)
+              AND NOT EXISTS (SELECT 1 FROM updated_row)
+            "#,
+            gw_consensus_tx_hash,
+            gw_reference_id
+        )
+        .fetch_optional(&self.pool.get_pool())
+        .await?;
 
-    // VERSION 1 for 2 next queries:
+        Ok(result)
+    }
+
     // TODO: two next queries should be in the same trasnaction.
 
     // We recieve a share event from the gw.
