@@ -4,7 +4,8 @@ use clap::{command, Parser};
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::utils::DatabaseURL;
 use humantime::parse_duration;
-use sns_worker::{SchedulePolicy, SNS_LATENCY_OP_HISTOGRAM_CONF};
+use sns_worker::metrics::SNS_LATENCY_OP_HISTOGRAM_CONF;
+use sns_worker::SchedulePolicy;
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -128,6 +129,9 @@ pub struct Args {
     /// Prometheus metrics: coprocessor_sns_op_latency_seconds
     #[arg(long, default_value = "0.1:10.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_sns_op_latency: MetricsConfig,
+
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    pub gauge_update_interval_secs: Option<u32>,
 }
 
 pub fn parse_args() -> Args {

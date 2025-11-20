@@ -3,6 +3,8 @@ mod executor;
 mod keyset;
 mod squash_noise;
 
+pub mod metrics;
+
 #[cfg(test)]
 mod tests;
 
@@ -21,7 +23,6 @@ use fhevm_engine_common::{
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
     telemetry::{self, OtelTracer},
-    telemetry::{register_histogram, MetricsConfig},
     types::FhevmError,
     utils::{to_hex, DatabaseURL},
 };
@@ -43,10 +44,8 @@ use tracing::{error, info, Level};
 use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
     executor::SwitchNSquashService,
+    metrics::spawn_gauge_update_routine,
 };
-
-use prometheus::Histogram;
-use std::sync::{LazyLock, OnceLock};
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
@@ -73,6 +72,12 @@ pub struct DBConfig {
     /// Enable LIFO (Last In, First Out) for processing tasks
     /// This is useful for prioritizing the most recent tasks
     pub lifo: bool,
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct SNSMetricsConfig {
+    pub addr: Option<String>,
+    pub gauge_update_interval_secs: Option<u32>,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -106,7 +111,7 @@ pub struct Config {
     pub s3: S3Config,
     pub log_level: Level,
     pub health_checks: HealthCheckConfig,
-    pub metrics_addr: Option<String>,
+    pub metrics: SNSMetricsConfig,
     pub enable_compression: bool,
     pub schedule_policy: SchedulePolicy,
     pub pg_auto_explain_with_min_duration: Option<Duration>,
@@ -390,9 +395,6 @@ pub async fn run_computation_loop(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = conf.health_checks.port;
 
-    // Start metrics server
-    metrics_server::spawn(conf.metrics_addr.clone(), token.child_token());
-
     let service = Arc::new(
         SwitchNSquashService::create(
             pool_mngr,
@@ -532,6 +534,21 @@ pub async fn run_all(
 
     let pg_mngr = pool_mngr.clone();
 
+    // Start metrics server
+    metrics_server::spawn(conf.metrics.addr.clone(), token.child_token());
+
+    // Start gauge update routine.
+    if let Some(interval_secs) = conf.metrics.gauge_update_interval_secs {
+        info!(
+            interval_secs = interval_secs,
+            "Starting gauge update routine"
+        );
+        spawn_gauge_update_routine(
+            Duration::from_secs(interval_secs.into()),
+            pg_mngr.pool().clone(),
+        );
+    }
+
     // Spawns a task to handle S3 uploads
     spawn(async move {
         if let Err(err) = run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await {
@@ -552,12 +569,3 @@ pub async fn run_all(
 
     Ok(())
 }
-
-pub static SNS_LATENCY_OP_HISTOGRAM_CONF: OnceLock<MetricsConfig> = OnceLock::new();
-pub static SNS_LATENCY_OP_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
-    register_histogram(
-        SNS_LATENCY_OP_HISTOGRAM_CONF.get(),
-        "coprocessor_sns_op_latency_seconds",
-        "Squash_noise computation latencies in seconds",
-    )
-});

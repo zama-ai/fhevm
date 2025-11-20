@@ -601,10 +601,12 @@ snsWorker:
     - --cleanup-interval=120s
     - --liveness-threshold=70s
     - --lifo=false
-    - --enable-compssion=true
+    - --enable-compression=true
     - --schedule-policy=rayon_parallel
     - --service-name=sns-worker
     - --log-level=INFO
+    # Only enable `gauge-update-interval-secs` for some of the workers to reduce DB load and not have duplicate metrics data for no reason.
+    # --gauge-update-interval-secs=10
     # - --pg-auto-explain-with-min-duration="30s"
     # - --keys-file-path
 

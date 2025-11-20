@@ -129,7 +129,41 @@ Metrics for zkproof-worker are to be added in future releases.
 
 ### sns-worker
 
-Metrics for sns-worker are to be added in future releases.
+#### Metric Name: `coprocessor_sns_worker_task_execute_success_counter`
+ - **Type**: Counter
+ - **Description**: Counts tasks executed by sns-worker successfully.
+ - **Alarm**: If the counter is a flat line over a period of time.
+    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+
+#### Metric Name: `coprocessor_sns_worker_task_execute_failure_counter`
+ - **Type**: Counter
+ - **Description**: Counts tasks errors in sns-worker.
+ - **Alarm**: If the counter increases over a period of time.
+    - **Recommendation**: more than 240 failures in 1 minute, i.e. `increase(counter[1m]) > 240`.
+
+#### Metric Name: `coprocessor_sns_worker_aws_upload_success_counter`
+ - **Type**: Counter
+ - **Description**: Counts AWS uploads by sns-worker.
+ - **Alarm**: If the counter is a flat line over a period of time.
+    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+
+#### Metric Name: `coprocessor_sns_worker_aws_upload_failure_counter`
+ - **Type**: Counter
+ - **Description**: Counts AWS upload errors in sns-worker.
+ - **Alarm**: If the counter increases over a period of time.
+    - **Recommendation**: more than 240 failures in 1 minute, i.e. `increase(counter[1m]) > 240`.
+
+#### Metric Name: `coprocessor_sns_worker_uncomplete_tasks_gauge`
+ - **Type**: Gauge
+ - **Description**: Tracks the number of uncomplete tasks in sns-worker.
+ - **Alarm**: If the gauge value exceeds a predefined threshold.
+    - **Recommendation**: more than 100 uncomplete over 2 minutes, i.e. `min_over_time(gauge[2m]) > 100`.
+
+#### Metric Name: `coprocessor_sns_worker_uncomplete_aws_uploads_gauge`
+ - **Type**: Gauge
+ - **Description**: Tracks the number of uncomplete AWS uploads in sns-worker.
+ - **Alarm**: If the gauge value exceeds a predefined threshold.
+    - **Recommendation**: more than 100 uncomplete over 2 minutes, i.e. `min_over_time(gauge[2m]) > 100`.
 
 ### tfhe-worker
 

@@ -1,3 +1,4 @@
+use crate::metrics::{AWS_UPLOAD_FAILURE_COUNTER, AWS_UPLOAD_SUCCESS_COUNTER};
 use crate::{
     BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, UploadJob,
 };
@@ -166,7 +167,10 @@ async fn run_uploader_loop(
                 let h = tokio::spawn(async move {
                     let s = item.otel.child_span("upload_s3");
                     match upload_ciphertexts(trx, item, &client, &conf).instrument(error_span!("upload_s3")).await {
-                        Ok(()) => telemetry::end_span(s),
+                        Ok(()) => {
+                            telemetry::end_span(s);
+                            AWS_UPLOAD_SUCCESS_COUNTER.inc();
+                        }
                         Err(err) => {
                             if let ExecutionError::S3TransientError(_) = err {
                                 ready_flag.store(false, Ordering::Release);
@@ -174,8 +178,8 @@ async fn run_uploader_loop(
                             } else {
                                 error!(error = %err, "Failed to upload ciphertexts");
                             }
-
                             telemetry::end_span_with_err(s, err.to_string());
+                            AWS_UPLOAD_FAILURE_COUNTER.inc();
                         }
                     }
                     drop(permit);
