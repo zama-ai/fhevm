@@ -69,4 +69,29 @@ impl InputProofRepository {
 
         Ok(result.rows_affected())
     }
+
+    // update status to failure and err_reason, by 'int_request_id'
+    /// Update req_status to 'failure' and set err_reason by int_request_id.
+    /// Returns number of rows affected.
+    pub async fn update_status_to_failure(
+        &self,
+        int_request_id: Uuid,
+        err_reason: &str,
+    ) -> Result<u64> {
+        let result = sqlx::query!(
+            r#"
+            UPDATE input_proof_req
+            SET 
+                req_status = 'failure'::req_status,
+                err_reason = $1
+            WHERE int_request_id = $2
+            "#,
+            err_reason,
+            int_request_id
+        )
+        .execute(&self.pool.get_pool())
+        .await?;
+
+        Ok(result.rows_affected())
+    }
 }
