@@ -36,7 +36,7 @@ async fn insert_tfhe_event(
     tx: &mut Transaction<'_>,
     log: alloy::rpc::types::Log<TfheContractEvents>,
     is_allowed: bool,
-) -> Result<(), sqlx::Error> {
+) -> Result<bool, sqlx::Error> {
     let event = LogTfhe {
         event: log.inner,
         transaction_hash: log.transaction_hash,
@@ -50,7 +50,7 @@ pub async fn allow_handle(
     db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
     handle: &[u8],
-) -> Result<(), sqlx::Error> {
+) -> Result<bool, sqlx::Error> {
     let account_address = String::new();
     let event_type = AllowEvents::AllowedForDecryption;
     db.insert_allowed_handle(tx, handle.to_owned(), account_address, event_type, None)
