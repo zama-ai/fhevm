@@ -228,8 +228,6 @@ impl UserDecryptReqRepository {
         Ok(result)
     }
 
-    // TODO: two next queries should be in the same trasnaction.
-
     // We recieve a share event from the gw.
     /// Insert in user_decrypt_share table all the fields: gw_reference_id, share_index, share, kms_signature, extra_data and return number of shares for gw_reference_id in the table.
     /// Insert a share and return the total count of shares for this gw_reference_id.
@@ -271,94 +269,84 @@ impl UserDecryptReqRepository {
         Ok(count)
     }
 
-    /// update user_decrypt_reqf req_status to completed by gw_reference_id and return all shares + int_indexer_id from user_decrypt_share table by gw_reference_id.
-    /// Update req_status to 'completed' and return all associated shares.
-    /// Returns a Vector of UserDecryptShare.
-    /// Update req_status to 'completed' and return (int_indexer_id, shares).
-    /// Returns a Tuple: (internal_indexer_id_bytes, List of shares).
-    pub async fn complete_req_and_get_shares(
+    /// update user_decrypt_reqf req_status to completed by gw_reference_id and return all shares + int_indexer_id + status + updated_at + err_reason from user_decrypt_share table by gw_reference_id.
+    /// Step 6 (Share Flow): Update to 'completed' and return Metadata + All Shares.
+    /// Returns a tuple: (ConsensusReqState, Vec<UserDecryptShare>).
+    /// Fails if the request is 'timed_out' or does not exist.
+    pub async fn complete_req_and_get_shares_metadata(
         &self,
         gw_reference_id: i32,
-    ) -> Result<(Vec<u8>, Vec<UserDecryptShare>)> {
+    ) -> Result<(ConsensusReqState, Vec<UserDecryptShare>)> {
         let records = sqlx::query!(
             r#"
             WITH updated_req AS (
                 UPDATE user_decrypt_req
                 SET req_status = 'completed'::req_status
                 WHERE gw_reference_id = $1
-                RETURNING int_indexer_id
+                  AND req_status != 'timed_out'::req_status -- Prevent updating if already timed out
+                RETURNING int_indexer_id, req_status, updated_at, err_reason
             )
             SELECT 
-                u.int_indexer_id, -- We grab this from the update
-                s.id,
+                -- Metadata from the Update (Force non-null types for SQLx)
+                u.int_indexer_id as "int_indexer_id!",
+                u.req_status as "req_status!: ReqStatus",
+                u.updated_at as "updated_at!",
+                u.err_reason,
+                
+                -- Share Data
+                s.id as share_id,
                 s.gw_reference_id,
                 s.share_index,
                 s.share,
                 s.kms_signature,
                 s.extra_data,
-                s.created_at,
-                s.updated_at
+                s.created_at as share_created_at,
+                s.updated_at as share_updated_at
             FROM user_decrypt_share s, updated_req u
             WHERE s.gw_reference_id = $1
+            ORDER BY s.share_index ASC
             "#,
             gw_reference_id
         )
         .fetch_all(&self.pool.get_pool())
         .await?;
 
-        // 2. Handle the case where no rows are returned (Should not happen if shares exist)
+        // If empty, it means either:
+        // 1. The gw_reference_id doesn't exist.
+        // 2. The request was 'timed_out' (so the UPDATE returned 0 rows).
+        // 3. There are no shares (unlikely if we reached threshold logic).
         if records.is_empty() {
             return Err(anyhow::anyhow!(
-                "No shares found for gw_reference_id {}",
+                "Request not found, timed out, or no shares available for gw_ref_id: {}",
                 gw_reference_id
             ));
         }
 
-        // 3. Extract int_indexer_id from the first row
-        let int_indexer_id = records[0].int_indexer_id.clone();
+        // 1. Extract Metadata from the first row (it's identical for all rows)
+        let first = &records[0];
+        let metadata = ConsensusReqState {
+            int_indexer_id: first.int_indexer_id.clone(),
+            req_status: first.req_status,
+            updated_at: first.updated_at,
+            err_reason: first.err_reason.clone(),
+        };
 
-        // 4. Map the anonymous records to your UserDecryptShare struct
+        // 2. Map all rows to UserDecryptShare struct
         let shares: Vec<UserDecryptShare> = records
             .into_iter()
             .map(|r| UserDecryptShare {
-                id: r.id,
+                id: r.share_id,
                 gw_reference_id: r.gw_reference_id,
                 share_index: r.share_index,
                 share: r.share,
                 kms_signature: r.kms_signature,
                 extra_data: r.extra_data,
-                created_at: r.created_at,
-                updated_at: r.updated_at,
+                created_at: r.share_created_at,
+                updated_at: r.share_updated_at,
             })
             .collect();
 
-        Ok((int_indexer_id, shares))
-    }
-
-    // TODO: Combine two last queries in one single db transaction.
-
-    // Update user_decrypt_req table with gw_consensus_tx_hash by gw_reference_id only if gw_consensus_tx_hash is null.
-    /// Update gw_consensus_tx_hash by gw_reference_id, but ONLY if it is currently NULL.
-    /// Returns 1 if updated, 0 if it was already set or id not found.
-    pub async fn update_consensus_hash_if_missing(
-        &self,
-        gw_reference_id: i32,
-        gw_consensus_tx_hash: &str,
-    ) -> Result<u64> {
-        let result = sqlx::query!(
-            r#"
-            UPDATE user_decrypt_req
-            SET gw_consensus_tx_hash = $1
-            WHERE gw_reference_id = $2 
-              AND gw_consensus_tx_hash IS NULL
-            "#,
-            gw_consensus_tx_hash,
-            gw_reference_id
-        )
-        .execute(&self.pool.get_pool())
-        .await?;
-
-        Ok(result.rows_affected())
+        Ok((metadata, shares))
     }
 
     // GET REQUESTS RESULTS.

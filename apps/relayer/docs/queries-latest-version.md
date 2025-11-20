@@ -96,7 +96,7 @@ here.
     1. select in `user_decrypt_req` by `ext_reference_id` and join on `gw_reference_id` to get all lines of `user_decrypt_share` 1 query. (need status field on query return + shares + updated at field)
 
     - if status == `completed` -> construct the response with the fields we queried.
-    - if status == `queued` or `receipt_receieved` -> return back `ext_req_id` with `status` and `updated_at` field.
+    - if status == `queued` or `receipt_receieved` -> return back `ext_reference_id` with `status` and `updated_at` field.
     - if status == `timed_out` 504 return `ext_req_id` + `status`.
     - if status == `failure` 400 return `ext_req_id` + `status` + `err_reason`.
 
