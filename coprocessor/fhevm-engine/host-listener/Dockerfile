@@ -39,9 +39,10 @@ FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/host_listener /usr/local/bin/host_listener
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/host_listener_poller /usr/local/bin/host_listener_poller
 
 USER fhevm:fhevm
 
-CMD ["/usr/local/bin/host_listener"]
+# No ENTRYPOINT - consumers specify the full command (binary + args) in docker-compose
 
 FROM prod AS dev
