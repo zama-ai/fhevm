@@ -9,22 +9,16 @@ use crate::store::sql::models::req_status_enum_model::ReqStatus;
 #[derive(Debug, FromRow, Clone)]
 pub struct InputProofReq {
     pub id: i32,
-    pub ext_req_id: Uuid,
-    pub internal_input_proof_id: Uuid,
-    pub gw_input_proof_id: Option<i32>,
+    pub ext_reference_id: Uuid,
+    pub int_request_id: Uuid,
+    pub gw_reference_id: Option<i32>,
+    pub accepted: Option<bool>,
     pub req: Value,
     pub res: Option<Value>,
     pub req_status: ReqStatus,
-    pub tx_hash: Option<String>,
+    pub gw_req_tx_hash: Option<String>,
+    pub gw_response_tx_hash: Option<String>,
     pub err_reason: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-}
-
-/// Partial data returned for a GET request on an input proof.
-#[derive(Debug, FromRow)]
-pub struct InputProofReqStatus {
-    pub res: Option<Value>,
-    pub internal_input_proof_id: Uuid,
-    pub req_status: ReqStatus,
 }

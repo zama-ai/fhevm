@@ -5,7 +5,7 @@ use sqlx::prelude::FromRow;
 #[derive(Debug, FromRow, Clone)]
 pub struct UserDecryptShare {
     pub id: i32,
-    pub gw_decryption_id: i32,
+    pub gw_reference_id: i32,
     pub share_index: i32,
     pub share: String,
     pub kms_signature: String,

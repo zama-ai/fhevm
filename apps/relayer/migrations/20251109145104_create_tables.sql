@@ -85,7 +85,7 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 CREATE TABLE input_proof_req(
     id SERIAL PRIMARY KEY,
     ext_reference_id UUID NOT NULL,
-    internal_request_id UUID NOT NULL, -- uuid v7 here. -- slight difference, we can have the same proof multiple times.
+    int_request_id UUID NOT NULL, -- uuid v7 here. -- slight difference, we can have the same proof multiple times.
     gw_reference_id INTEGER,
     accepted BOOLEAN DEFAULT null,
     req JSONB NOT NULL,
