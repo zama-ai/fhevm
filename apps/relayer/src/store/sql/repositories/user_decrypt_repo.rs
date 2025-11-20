@@ -129,7 +129,7 @@ impl UserDecryptRepository {
 
     // TRANSACTION REQUESTS.
 
-    /// Updating the req_status to receipt_received, gw_req_tx_hash, gw_reference_id.
+    /// Updating the req_status to receipt_received, gw_req_tx_hash, gw_reference_id by int_indexer_id
     /// Returns the number of rows affected (should be 1 or retry).
     pub async fn update_status_to_receipt_received_on_tx_success(
         &self,

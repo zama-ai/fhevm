@@ -123,4 +123,32 @@ impl PublicDecryptRepository {
 
         Ok(result.rows_affected())
     }
+
+    // TRANSACTION REQUESTS.
+    /// Updating the req_status to receipt_received, gw_req_tx_hash, gw_reference_id by int_indexer_id
+    /// Returns the number of rows affected (should be 1 or retry).
+    pub async fn update_status_to_receipt_received_on_tx_success(
+        &self,
+        int_indexer_id_bytes: &[u8],
+        gw_req_tx_hash: &str,
+        gw_reference_id: i32,
+    ) -> Result<u64> {
+        let result = sqlx::query!(
+            r#"
+            UPDATE public_decrypt_req
+            SET 
+                req_status = 'receipt_received'::req_status,
+                gw_req_tx_hash = $1,
+                gw_reference_id = $2
+            WHERE int_indexer_id = $3
+            "#,
+            gw_req_tx_hash,
+            gw_reference_id,
+            int_indexer_id_bytes
+        )
+        .execute(&self.pool.get_pool())
+        .await?;
+
+        Ok(result.rows_affected())
+    }
 }
