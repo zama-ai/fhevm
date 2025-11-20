@@ -98,4 +98,29 @@ impl PublicDecryptRepository {
 
         Ok(result.rows_affected())
     }
+
+    // if not ready after 30min..
+    /// Update req_status to 'timed_out' and set err_reason by int_indexer_id.
+    /// Returns the number of rows affected (1 if found, 0 if not).
+    pub async fn update_status_to_timed_out(
+        &self,
+        int_indexer_id_bytes: &[u8],
+        err_reason: &str,
+    ) -> Result<u64> {
+        let result = sqlx::query!(
+            r#"
+            UPDATE public_decrypt_req
+            SET 
+                req_status = 'timed_out'::req_status,
+                err_reason = $1
+            WHERE int_indexer_id = $2
+            "#,
+            err_reason,
+            int_indexer_id_bytes
+        )
+        .execute(&self.pool.get_pool())
+        .await?;
+
+        Ok(result.rows_affected())
+    }
 }

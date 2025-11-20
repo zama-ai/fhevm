@@ -102,6 +102,7 @@ impl UserDecryptRepository {
         Ok(result.rows_affected())
     }
 
+    // if not ready after 30min..
     /// Update req_status to 'timed_out' and set err_reason by int_indexer_id.
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_timed_out(
