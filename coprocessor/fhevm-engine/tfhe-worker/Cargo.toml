@@ -1,10 +1,10 @@
 [package]
 name = "tfhe-worker"
-version = "0.7.0"
-default-run = "tfhe_worker"
+version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+default-run = "tfhe_worker"
 
 [dependencies]
 # workspace dependencies

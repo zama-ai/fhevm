@@ -1,6 +1,6 @@
 {
   "name": "fhevm-gateway",
-  "version": "0.1.0-rc14",
+  "version": "0.10.0",
   "description": "",
   "main": "index.js",
   "scripts": {

@@ -1,6 +1,6 @@
 [package]
 name = "sns-worker"
-version = "0.7.0"
+version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -61,4 +61,3 @@ test-harness = { path = "../test-harness" }
 [dev-dependencies.sns-worker]
 path = "."
 features = ["test_decrypt_128", "test_s3_use_handle_as_key"]
-

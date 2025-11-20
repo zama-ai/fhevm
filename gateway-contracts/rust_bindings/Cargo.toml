@@ -4,7 +4,7 @@ name = "fhevm_gateway_bindings"
 publish = true
 edition = "2024"
 license = "BSD-3-Clause-Clear"
-version = "0.1.0-rc14"
+version = "0.10.0"
 
 [lints.rust]
 unused = "allow"
