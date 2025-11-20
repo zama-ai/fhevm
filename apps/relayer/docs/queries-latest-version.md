@@ -167,7 +167,7 @@ NOTE: PAUSING STRATEGY.
 
 7.  GET REQUEST will pass to get route: `ext_reference_id`
 
-    1. select in `input_proof_req` by `ext_reference_id` (need status `response` and `err_reason` and `updated_at`, and `accepted`)
+    1. select in `input_proof_req` by `ext_reference_id` (need status `response` and `err_reason` and `updated_at`, and `accepted` and `req_status`)
 
     - if status == `completed` -> we return 200 with response and `accepted`
     - if status == `queued` or `receipt_receieved` -> return back `ext_req_id` with `status` and `updated_at` field. and accepted=null

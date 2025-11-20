@@ -1,3 +1,5 @@
+use crate::store::sql::models::input_proof_req_model::InputProofResponseModel;
+use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use anyhow::Result;
 use uuid::Uuid;
 
@@ -152,6 +154,33 @@ impl InputProofRepository {
             gw_reference_id
         )
         .fetch_one(&self.pool.get_pool())
+        .await?;
+
+        Ok(result)
+    }
+
+    // GET REQUEST.
+    // select by ext_reference_id and return res, err_reason, accepted, updated_at
+    /// Select status, res, err_reason, accepted, and updated_at by ext_reference_id.
+    pub async fn find_status_by_ext_id(
+        &self,
+        ext_reference_id: Uuid,
+    ) -> Result<Option<InputProofResponseModel>> {
+        let result = sqlx::query_as!(
+            InputProofResponseModel,
+            r#"
+            SELECT 
+                req_status as "req_status!: ReqStatus",
+                res,
+                err_reason,
+                accepted,
+                updated_at
+            FROM input_proof_req
+            WHERE ext_reference_id = $1
+            "#,
+            ext_reference_id
+        )
+        .fetch_optional(&self.pool.get_pool())
         .await?;
 
         Ok(result)

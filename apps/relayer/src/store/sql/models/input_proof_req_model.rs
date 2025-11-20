@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::prelude::FromRow;
 use uuid::Uuid;
@@ -20,5 +21,14 @@ pub struct InputProofReq {
     pub gw_response_tx_hash: Option<String>,
     pub err_reason: Option<String>,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InputProofResponseModel {
+    pub req_status: ReqStatus,
+    pub res: Option<Value>,
+    pub err_reason: Option<String>,
+    pub accepted: Option<bool>,
     pub updated_at: DateTime<Utc>,
 }
