@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum ReqStatus {
     Queued,
+    Processing,
     #[sqlx(rename = "receipt_received")]
     ReceiptReceived,
     Completed,

@@ -72,6 +72,49 @@ impl UserDecryptReqRepository {
         Ok(result)
     }
 
+    // GW READINESS LOGIC CHECK.
+    /// update user_decrypt_req by int_indexer_id for to req_status processing
+    /// Update req_status to 'processing' by int_indexer_id.
+    /// Returns the number of rows affected (1 if found, 0 if not).
+    pub async fn update_status_to_processing(&self, int_indexer_id_bytes: &[u8]) -> Result<u64> {
+        let result = sqlx::query!(
+            r#"
+            UPDATE user_decrypt_req
+            SET req_status = 'processing'::req_status
+            WHERE int_indexer_id = $1
+            "#,
+            int_indexer_id_bytes
+        )
+        .execute(&self.pool.get_pool()) // Using execute() since we don't need to return data
+        .await?;
+
+        Ok(result.rows_affected())
+    }
+
+    /// Update req_status to 'timed_out' and set err_reason by int_indexer_id.
+    /// Returns the number of rows affected (1 if found, 0 if not).
+    pub async fn update_status_to_timed_out(
+        &self,
+        int_indexer_id_bytes: &[u8],
+        err_reason: &str,
+    ) -> Result<u64> {
+        let result = sqlx::query!(
+            r#"
+            UPDATE user_decrypt_req
+            SET 
+                req_status = 'timed_out'::req_status,
+                err_reason = $1
+            WHERE int_indexer_id = $2
+            "#,
+            err_reason,
+            int_indexer_id_bytes
+        )
+        .execute(&self.pool.get_pool())
+        .await?;
+
+        Ok(result.rows_affected())
+    }
+
     // TRANSACTION REQUESTS.
 
     /// Updating the req_status to receipt_received, gw_req_tx_hash, gw_reference_id.

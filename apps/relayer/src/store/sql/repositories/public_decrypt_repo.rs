@@ -14,9 +14,9 @@ impl UserDecryptReqRepository {
 
     // INITIAL POST REQUEST:
 
-    /// Check if there is already existing internal_indexer_id and return ext_reference_id if there is one
-    /// Check if there is already an existing internal_indexer_id.
-    /// Returns the ext_reference_id if found.
+    // Check if there is already existing internal_indexer_id and return ext_reference_id if there is one
+    // Check if there is already an existing internal_indexer_id.
+    // Returns the ext_reference_id if found.
     // pub async fn find_ext_ref_by_int_indexer_id(
     //     &self,
     //     int_indexer_id_bytes: &[u8],

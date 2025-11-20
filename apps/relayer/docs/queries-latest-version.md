@@ -45,7 +45,7 @@
 
 3.  Gateway readiness checker is triggered (large timeout, same for v1 and same for v2 - ~30 min coverage)
 
-    1. if ready -> update by `int_indexer_id` for field req_status = `processing` -> Transaction::Send
+    1. if ready -> update user_decrypt_req by `int_indexer_id` for field req_status = `processing` -> Transaction::Send
     2. if not ready after 30min.. -> update by `int_indexer_id` req_status = `timed_out` + `err_reason`
        -> UserDecrypt::Failed emitted.
 

@@ -17,6 +17,7 @@
             "kind": {
               "Enum": [
                 "queued",
+                "processing",
                 "receipt_received",
                 "completed",
                 "timed_out",
