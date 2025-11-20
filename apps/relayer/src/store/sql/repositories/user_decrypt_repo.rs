@@ -25,6 +25,11 @@ impl UserDecryptRepository {
     // Update status to timed_out with err_reason = 'response timed out' (ACL propagation error).
     // OR IN THE TIMEOUT REPO.
 
+    /* NOTE: max size for indexes
+        B-Tree (Default)	~2,704 bytes	Used for your UNIQUE indexes (int_indexer_id).
+        Hash (USING HASH)	Unlimited (1 GB)	Used for your non-unique lookups (ext_reference_id).
+    */
+
     // GENERAL REQUESTS.
 
     /// Check if there is already existing internal_indexer_id and return ext_reference_id if there is one
