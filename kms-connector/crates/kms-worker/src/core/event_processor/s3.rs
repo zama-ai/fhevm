@@ -112,10 +112,7 @@ where
         let mut s3_urls = Vec::new();
         for address in coprocessor_addresses.iter() {
             match self.get_coprocessor_s3_urls(*address).await {
-                Ok(s3_url) => {
-                    info!("Successfully fetched S3 bucket URL for coprocessor {address}: {s3_url}");
-                    s3_urls.push(s3_url);
-                }
+                Ok(s3_url) => s3_urls.push(s3_url),
                 Err(e) => {
                     warn!("Failed to prefetch S3 bucket URL for coprocessor {address}: {e}");
                 }
@@ -155,9 +152,7 @@ where
 
         S3_BUCKET_CACHE.insert(copro_addr, s3_bucket_url.clone());
         log_cache("S3 cache state after insert");
-        info!(
-            "Successfully retrieved and cached S3 bucket URL for coprocessor {copro_addr}: {s3_bucket_url}"
-        );
+        info!("S3 bucket URL for coprocessor {copro_addr} retrieved and cached: {s3_bucket_url}");
         Ok(s3_bucket_url)
     }
 

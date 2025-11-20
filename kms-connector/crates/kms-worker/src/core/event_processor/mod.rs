@@ -1,5 +1,4 @@
 mod decryption;
-mod eip712;
 mod kms;
 mod kms_client;
 mod processor;

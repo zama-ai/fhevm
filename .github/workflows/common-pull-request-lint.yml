@@ -37,12 +37,11 @@ jobs:
       - name: Install & run commitlint
         if: ${{ !startsWith(github.head_ref, 'mergify/merge-queue/') }}
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title  }}
         run: |
           npm install @commitlint/config-conventional@^18 conventional-changelog-conventionalcommits @commitlint/types@^18
           npm install -g @commitlint/cli@^18
-          npx commitlint --config .github/config/commitlint.config.js --from "${BASE_SHA}" --to "${HEAD_SHA}" --verbose
+          echo "$PR_TITLE" | npx commitlint --config .github/config/commitlint.config.js --verbose
 
       - name: Run zizmor 🌈
         uses: zizmorcore/zizmor-action@e673c3917a1aef3c65c972347ed84ccd013ecda4 # v0.2.0
