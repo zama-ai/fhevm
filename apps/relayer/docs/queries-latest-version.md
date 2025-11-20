@@ -1,0 +1,147 @@
+- (Medium frequency): Insert user decrypt request with internal Id (hash) and request.
+- (Medium frequency): Update request on successful transaction.
+- (Medium frequency): Update request on failed transaction.
+- (Medium/high frequency): Update by gateway Id with response jsonb and req_status to completed.
+- (High frequency): Select by external Id to get the response, internal id, and req_status.
+- (Internal transaction poller): Update req_status to in_flight for the oldest queued request and retrieve it.
+- (At start): Query all tx_sent transactions to populate a consensus hashmap.
+- (Medium update): Update the consensus_reached field by gateway id.
+
+## SCENARIOS :
+
+### FIRST TODO:
+
+-- TODO: change this to uniform names. (internal_decryption_id to internal_indexer_id) to bytea and enable hashmap ! we store as bytea not text (possibility of hash index)
+-- TODO: Change tx_sent to receipt_received status (MORE CLARITY.)
+-- DESIGNS COMMENTS: RETURN AS MINIMAL FIELDS AS POSSIBLE.
+-- use consistent structure for internal_req_id and external_req_id (or int ext)
+
+### NEEDED DATA STRUCT:
+
+1. At startup of the relayer:
+   - Query all the tables (to keep the same order):
+     SELECT req, internal_indexer_id from user_decrypt_req, public_decrypt_req, input_proof_req WHERE status == queued by created_at time. and call the event to send the transaction and take back the flows where they were.
+
+### USER DECRYPT:
+
+1.  POST REQUEST => we recieve a payload (v1 or v2)
+
+    1.  Compute `internal_indexer_id` from payload
+    2.  Check if it there in the `user_decrypt_req` table.
+        1. If it already exists: return the `ext_req_id` to the user with 202 OK.
+        2. If not.
+           1. Call readiness checker as an async function.
+              1. if failure: -> Return 400 Code: Not ready For Decryption.
+              2. if succeed: Insert the `req`, `ext_req_id`, `internal_indexer_id`. use ON CONFLICT METHOD for insert. if conflict get `ext_req_id`.
+                 v1 routes -> Continue.
+                 v2 routes -> return ext reqId with 202 Created..
+              3. if new creation.
+
+2.  RelayerEvent Transaction::Send is emitted.
+
+    1. TxHandler emitt the event Transaction::Sucess (receipt)
+       1. update the status to `receipt_received` + `tx_hash` + `gw_ref_id` by `internal_indexer_id`(we have the receipt at this point) -> We process the receipt. and we dispatch
+    2. TxHandler emit Transaction::Failed: set status to `failure` and `err_reason` by `internal_indexer_id` -> Dispatch error event as before to the orchestrator
+
+3.  Listener recieve user decrypt share or user consensus reached events transaction.
+
+    1. insert in `user_decrypt_share` table all the fields : `gw_ref_id`, `share_index`, `share`, `kms_signature`, `extra_data` and returns the number of existing elements after insertion (e.g 1, 2, ...)
+       1. if inserted number >= threshold + 1 -> update `user_decrypt_req` table by `gw_ref_id`
+
+4.  Listener recieve user decrypt share or user consensus reached events transaction.
+
+- If we recieve consensus reached tx:
+
+- update `user_decrypt_req` table consensus_tx_hash = value, by gw_ref_id if consensus_tx_hash is null, or ignore this update.
+
+6.  IF THIS IS A SHARE:
+
+    1.  insert into `user_decrypt_share` -> gw_ref_id, share_index, share, kms_signature, extra_data -> Return the count of total shares by `gw_ref_id` (QUERY)
+        - if count = threshold -> update user_decrypt_req table status = `completed` on `gw_ref_id` (ONLY ONE SINGLE TX QUERY)
+        - return all the shares (IN THE SAME TX QUERY) + `internal_indexer_id`
+
+7.  INternally: we forward event is recieved as it is already done in our internal logic.
+
+8.  GET REQUEST will pass to get route: `ext_req_id`
+
+    1. select in `user_decrypt_req by` by `ext_req_id` and join on `gw_ref_id` to get all lines of `user_decrypt_share` 1 query. (need status field on query return + shares + updated at field)
+
+    - if status == `completed` -> construct the response with the fields we queried.
+    - if status == `queued` or `receipt_receieved` -> return back `ext_req_id` with `status` and `updated_at` field.
+    - if status == `timed_out` 504 return `ext_req_id` + `status`.
+    - if status == `failure` 400 return `ext_req_id` + `status` + `err_reason`.
+
+DONE FOR U.D.
+
+NOTE: PAUSING STRATEGY.
+
+### PUBLIC DECRYPT:
+
+1.  POST REQUEST => we recieve a payload (v1 or v2)
+
+    1.  Compute `internal_indexer_id` from payload
+    2.  Check if it there in the `public_decrypt_req` table.
+        1. If it already exists: return the `ext_req_id` to the user with 202 OK.
+        2. If not.
+           1. Call readiness checker as an async function.
+              1. if failure: -> Return 400 Code: Not ready For Decryption.
+              2. if succeed: Insert the `req`, `ext_req_id`, `internal_indexer_id`. use ON CONFLICT METHOD for insert. if conflict get `ext_req_id`.
+                 v1 routes -> Continue.
+                 v2 routes -> return ext reqId with 202 Created..
+              3. if new creation.
+
+2.  RelayerEvent Transaction::Send is emitted.
+
+    1. TxHandler emitt the event Transaction::Sucess (receipt)
+       1. update the status to `receipt_received` + `tx_hash` + `gw_ref_id` by `internal_indexer_id`(we have the receipt at this point) -> We process the receipt. and we dispatch
+    2. TxHandler emit Transaction::Failed: set status to `failure` and `err_reason` by `internal_indexer_id` -> Dispatch error event as before to the orchestrator
+
+3.  Listener recieve public_decrypt share events transaction.
+
+- Update into `public_decrypt_req` table: `res` = recieved value from gw where gateway_reference_id = value in the event and req_status = completed and `gw_response_tx_hash` (return `internal_indexer_id
+
+4.  INternally: we forward event is recieved as it is already done in our internal logic.
+
+5.  GET REQUEST will pass to get route: `ext_req_id`
+
+    1. select in `public_decrypt_req` by `ext_req_id` (need status `response` and `err_reason` and `updated_at`)
+
+    - if status == `completed` -> we return 200 with response.
+    - if status == `queued` or `receipt_receieved` -> return back `ext_req_id` with `status` and `updated_at` field.
+    - if status == `timed_out` 504 return `ext_req_id` + `status`.
+    - if status == `failure` 400 return `ext_req_id` + `status` + `err_reason`.
+
+### INPUT PROOF
+
+- Comment: no readiness check
+
+1.  POST REQUEST => we recieve a payload (v1 or v2)
+
+    - Create uuidV7 `internal_request_id`.
+    - Insert `ext_reference_id`, `internal_request_id`, `request` into `input_proof_req`
+      v1 routes -> Continue.
+      v2 routes -> return `ext_reference_id` with 202 Created..
+
+2.  RelayerEvent Transaction::Send is emitted.
+
+    1. TxHandler emitt the event Transaction::Sucess (receipt)
+       1. update the status to `receipt_received` + `tx_hash` + `gw_ref_id` by `internal_indexer_id`(we have the receipt at this point) -> We process the receipt. and we dispatch
+    2. TxHandler emit Transaction::Failed: set status to `failure` and `err_reason` by `internal_request_id` -> Dispatch error event as before to the orchestrator
+
+3.  Listener recieve input_proof share events transaction.
+
+- if input proof accepted:
+  - Update into `input_proof_req` table: `res` = recieved value from gw where gateway_reference_id = value in the event and req_status = completed (return `internal_request_id`) and accepted = `true` + `gw_response_tx_hash`
+- if input proof rejected:
+  - update input_proof_req with accpeted=false req_status=completed gw_response_tx_hash=tx hash of event (return `internal_request_id`)
+
+6.  INternally: we forward event is recieved as it is already done in our internal logic.
+
+7.  GET REQUEST will pass to get route: `ext_reference_id`
+
+    1. select in `input_proof_req` by `ext_reference_id` (need status `response` and `err_reason` and `updated_at`, and `accepted`)
+
+    - if status == `completed` -> we return 200 with response and `accepted`
+    - if status == `queued` or `receipt_receieved` -> return back `ext_req_id` with `status` and `updated_at` field. and accepted=null
+    - if status == `timed_out` 504 return `ext_req_id` + `status`.
+    - if status == `failure` 400 return `ext_req_id` + `status` + `err_reason`.
