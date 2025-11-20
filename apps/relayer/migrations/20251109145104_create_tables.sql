@@ -30,6 +30,7 @@ CREATE TABLE user_decrypt_req(
 
 -- Indexes for user_decrypt_req
 CREATE INDEX idx_user_decrypt_req_ext_reference_id ON user_decrypt_req USING HASH (ext_reference_id);
+-- limit size with indexes.
 CREATE UNIQUE INDEX idx_user_decrypt_req_int_indexer_id ON user_decrypt_req (int_indexer_id);
 CREATE INDEX idx_user_decrypt_req_gw_reference_id ON user_decrypt_req (gw_reference_id);
 
@@ -108,9 +109,10 @@ CREATE TABLE input_proof_req(
 );
 
 -- Index with ext_ref_id.
-CREATE INDEX idx_input_proof_req_ext_req_id ON input_proof_req USING HASH (ext_reference_id);
+CREATE INDEX idx_input_proof_req_ext_reference_id ON input_proof_req USING HASH (ext_reference_id);
 -- UUID v7 is time-ordered, so B-Tree is very efficient here.
 CREATE INDEX idx_input_proof_req_int_request_id ON input_proof_req (int_request_id);
+CREATE INDEX idx_input_proof_req_gw_reference_id ON input_proof_req (gw_reference_id);
 
 -- Trigger for updated at field.
 CREATE TRIGGER set_input_proof_req_updated_at

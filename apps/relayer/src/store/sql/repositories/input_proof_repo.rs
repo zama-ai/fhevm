@@ -94,4 +94,36 @@ impl InputProofRepository {
 
         Ok(result.rows_affected())
     }
+
+    // LISTENER
+
+    // update by gateway_reference_id ->accepted = true res, req_status to 'completed' and gw_response_tx_hash, returns int_request_id
+    /// Update res, req_status to 'completed', gw_response_tx_hash, and accepted status.
+    /// Returns the int_request_id.
+    pub async fn accept_and_complete_input_proof_req(
+        &self,
+        gw_reference_id: i32,
+        res: serde_json::Value,
+        gw_response_tx_hash: &str,
+    ) -> Result<Uuid> {
+        let result = sqlx::query_scalar!(
+            r#"
+            UPDATE input_proof_req
+            SET 
+                res = $1,
+                req_status = 'completed'::req_status,
+                gw_response_tx_hash = $2,
+                accepted = true
+            WHERE gw_reference_id = $3
+            RETURNING int_request_id
+            "#,
+            res,
+            gw_response_tx_hash,
+            gw_reference_id
+        )
+        .fetch_one(&self.pool.get_pool())
+        .await?;
+
+        Ok(result)
+    }
 }

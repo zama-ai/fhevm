@@ -160,7 +160,7 @@ NOTE: PAUSING STRATEGY.
 3.  Listener recieve input_proof share events transaction.
 
 - if input proof accepted:
-  - Update into `input_proof_req` table: `res` = recieved value from gw where gateway_reference_id = value in the event and req_status = completed (return `internal_request_id`) and accepted = `true` + `gw_response_tx_hash`
+  - Update into `input_proof_req` table: `res` = recieved value from gw where gateway_reference_id = value in the event and req_status = completed and accepted = `true` + `gw_response_tx_hash` (return `int_request_id`)
 - if input proof rejected:
   - update input_proof_req with accpeted=false req_status=completed gw_response_tx_hash=tx hash of event (return `internal_request_id`)
 
