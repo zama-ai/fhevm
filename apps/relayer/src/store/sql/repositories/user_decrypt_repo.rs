@@ -167,6 +167,10 @@ impl UserDecryptReqRepository {
         Ok(result.rows_affected())
     }
 
+    // NOTE: This next query needs to be performed in a pg_cron job instead of being called by the internals. and is trigged on this condition:
+    // If status == 'receipt_recieved' and now - `updated_at` > 30 min roughly (TBD.)
+    // Update status to timed_out with err_reason = 'response timed out' (ACL propagation error). For now we can use the query above.
+
     // LISTENER REQUESTS.
 
     // VERSION 1 for 2 next queries:
