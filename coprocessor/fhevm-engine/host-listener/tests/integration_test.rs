@@ -299,7 +299,7 @@ async fn test_listener_no_event_loss(
     // Kill the listener
     eprintln!("First kill, check database valid block has been updated");
     listener_handle.abort();
-    let mut database = Database::new(
+    let database = Database::new(
         &args.database_url,
         &args.coprocessor_api_key.unwrap(),
         args.dependence_cache_size,

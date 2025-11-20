@@ -54,7 +54,7 @@ on:
 
 permissions: {}
 
-# Allow to run multiple instances of the same workflow in parallel when triggered manually 
+# Allow to run multiple instances of the same workflow in parallel when triggered manually
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -191,6 +191,12 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test random-subset
+
+      - name: Poller test
+        working-directory: test-suite/fhevm
+        run: |
+          docker stop coprocessor-host-listener
+          ./fhevm-cli test erc20
 
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
