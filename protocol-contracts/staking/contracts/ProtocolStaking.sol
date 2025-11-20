@@ -121,7 +121,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @dev Unstake `amount` tokens from `msg.sender`'s staked balance to `msg.sender`.
      *
      * NOTE: Unstaked tokens are released by calling {release} after {unstakeCooldownPeriod}.
-     * WARNING: Unstake release times are strictly increasing per recipient even if the cooldown period
+     * WARNING: Unstake release times are strictly increasing per account even if the cooldown period
      * is reduced. For a given account to fully realize the reduction in cooldown period, they may need
      * to wait up to `OLD_COOLDOWN_PERIOD - NEW_COOLDOWN_PERIOD` seconds after the cooldown period is updated.
      */
