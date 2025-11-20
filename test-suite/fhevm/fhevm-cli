@@ -260,6 +260,10 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED GATEWAY CONTRACTS${RESET}"
           docker_args+=("-g" "test paused gateway.*")
           ;;
+        paused-host-requests)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED HOST INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test paused host user input uint64|paused host HTTPPublicDecrypt")
+          ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
           docker exec -it fhevm-test-suite-e2e-debug bash
