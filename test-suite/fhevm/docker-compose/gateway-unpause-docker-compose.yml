@@ -12,7 +12,7 @@ services:
     env_file:
       - ../env/staging/.env.gateway-sc.local
     command:
-      - npx hardhat task:unpauseAllGatewayContracts
+      - npx hardhat compile && npx hardhat task:unpauseAllGatewayContracts
     volumes:
       - addresses-volume:/app/addresses  # workdir in gateway's Dockerfile is /app
 
