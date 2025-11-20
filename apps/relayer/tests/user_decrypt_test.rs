@@ -250,10 +250,10 @@ async fn test_error_invalid_fields_set_2(
 }
 
 #[rstest]
-#[case::short_handle("abcdef", constants::LENGTH_MUST_BE_64_CHARACTERS)]
-#[case::handle_with_0x_prefix(
-    "0xabcdef123456789012345678901234567890123456789012345678901234567890",
-    constants::HEX_MUST_NOT_START_WITH_0X
+#[case::short_handle("0xabcdef", constants::LENGTH_MUST_BE_64_CHARACTERS)]
+#[case::handle_without_0x_prefix(
+    "abcdef123456789012345678901234567890123456789012345678901234567890",
+    constants::HEX_MUST_START_WITH_0X
 )]
 #[tokio::test]
 async fn test_error_invalid_nested_handle_fields(

@@ -190,8 +190,9 @@ pub fn random_address() -> Address {
 #[allow(dead_code)]
 pub fn random_handle() -> String {
     let mut rng = rng();
-    (0..64)
+    let hex: String = (0..64)
         .map(|_| rng.random_range(0..16))
         .map(|digit| format!("{:x}", digit))
-        .collect()
+        .collect();
+    format!("0x{}", hex)
 }

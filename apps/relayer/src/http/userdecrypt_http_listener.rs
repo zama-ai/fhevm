@@ -45,7 +45,7 @@ pub struct UserDecryptRequestJson {
     pub user_address: String,
     // TODO: change validator function here for checking the rights signatures.
     #[validate(
-        length(equal = 130, message = "Must be 130 characters long"),
+        length(equal = 130, message = "Must be 132 characters long"),
         custom(function = "crate::http::utils::validate_no_0x_hex")
     )]
     pub signature: String,

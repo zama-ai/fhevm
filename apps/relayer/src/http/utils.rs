@@ -106,9 +106,7 @@ pub fn validate_blockchain_addresses(addresses: &Vec<String>) -> Result<(), Vali
     Ok(())
 }
 
-// Custom validation function for a hex string that must NOT have a "0x" prefix.
 pub fn validate_no_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
-    // Allow both with and without "0x" prefix
     if hex_str.starts_with("0x") {
         return Err(ValidationError::new("validation_error")
             .with_message(validation_messages::HEX_MUST_NOT_START_WITH_0X.into()));
@@ -121,9 +119,22 @@ pub fn validate_no_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
-pub fn validate_no_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
+pub fn validate_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
+    if !hex_str.starts_with("0x") {
+        return Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::HEX_MUST_START_WITH_0X.into()));
+    };
+
+    if hex::decode(&hex_str[2..]).is_err() {
+        return Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::HEX_INVALID_STRING.into()));
+    }
+    Ok(())
+}
+
+pub fn validate_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
     for hex_str in hex_strs {
-        validate_no_0x_hex(hex_str)?;
+        validate_0x_hex(hex_str)?;
     }
     Ok(())
 }
@@ -198,11 +209,10 @@ pub fn validate_handle_contract_pairs(
     pairs: &Vec<crate::http::userdecrypt_http_listener::HandleContractPairJson>,
 ) -> Result<(), ValidationError> {
     for pair in pairs {
-        // Validate handle hex format first (to catch 0x prefix before length check)
-        validate_no_0x_hex(&pair.handle)?;
+        validate_0x_hex(&pair.handle)?;
 
         // Validate handle length
-        if pair.handle.len() != 64 {
+        if pair.handle.len() != 66 {
             return Err(ValidationError::new("validation_error")
                 .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into()));
         }

@@ -26,7 +26,7 @@ use validator::Validate;
 pub struct PublicDecryptRequestJson {
     #[validate(
         length(min = 1, message = "Cannot be empty"),
-        custom(function = "crate::http::utils::validate_no_0x_hexs")
+        custom(function = "crate::http::utils::validate_0x_hexs")
     )]
     pub ciphertext_handles: Vec<String>,
     /// Extra data field, always set to 0x00
