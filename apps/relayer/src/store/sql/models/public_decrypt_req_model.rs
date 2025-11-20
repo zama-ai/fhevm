@@ -10,7 +10,7 @@ use crate::store::sql::models::req_status_enum_model::ReqStatus;
 pub struct PublicDecryptReq {
     pub id: i32,
     pub ext_reference_id: Uuid,
-    pub int_indexer_id: String,
+    pub int_indexer_id: Vec<u8>,
     pub gw_reference_id: Option<i32>,
     pub req: Value,
     pub res: Option<Value>,

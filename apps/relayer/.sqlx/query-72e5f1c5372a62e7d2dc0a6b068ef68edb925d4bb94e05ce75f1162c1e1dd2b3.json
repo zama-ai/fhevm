@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE user_decrypt_req\n            SET gw_consensus_tx_hash = $1\n            WHERE gw_reference_id = $2 \n              AND gw_consensus_tx_hash IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "72e5f1c5372a62e7d2dc0a6b068ef68edb925d4bb94e05ce75f1162c1e1dd2b3"
+}

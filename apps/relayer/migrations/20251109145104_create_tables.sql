@@ -16,7 +16,8 @@ CREATE TYPE req_status AS ENUM ('queued', 'receipt_received', 'completed', 'time
 CREATE TABLE user_decrypt_req(
     id SERIAL PRIMARY KEY,
     ext_reference_id UUID NOT NULL,
-    int_indexer_id TEXT NOT NULL,
+    -- int_indexer_id TEXT NOT NULL,
+    int_indexer_id BYTEA NOT NULL,
     gw_reference_id INTEGER,
     req JSONB NOT NULL,
     req_status req_status NOT NULL DEFAULT 'queued',
@@ -28,7 +29,9 @@ CREATE TABLE user_decrypt_req(
 );
 
 -- Indexes for user_decrypt_req
-CREATE INDEX idx_user_decrypt_req_ext_req_id ON user_decrypt_req USING HASH (ext_reference_id);
+CREATE INDEX idx_user_decrypt_req_ext_reference_id ON user_decrypt_req USING HASH (ext_reference_id);
+CREATE UNIQUE INDEX idx_user_decrypt_req_int_indexer_id ON user_decrypt_req (int_indexer_id);
+CREATE INDEX idx_user_decrypt_req_gw_reference_id ON user_decrypt_req (gw_reference_id);
 
 -- Trigger for updated at field.
 CREATE TRIGGER set_user_decrypt_req_updated_at
@@ -48,8 +51,10 @@ CREATE TABLE user_decrypt_share (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Indexes for gw_decryption_id
-CREATE INDEX idx_user_decrypt_share_gw_decryption_id ON user_decrypt_share(gw_decryption_id);
+-- Indexes for user_decrypt_share
+CREATE INDEX idx_user_decrypt_share_gw_decryption_id ON user_decrypt_share(gw_reference_id);
+-- Uniqueness of shares index (in case of recieving same share twice++)
+CREATE UNIQUE INDEX idx_user_decrypt_share_unique_composite_gw_reference_id_share_index ON user_decrypt_share (gw_reference_id, share_index);
 
 -- Trigger for updated at field.
 CREATE TRIGGER set_user_decrypt_share_updated_at
@@ -61,7 +66,8 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 CREATE TABLE public_decrypt_req(
     id SERIAL PRIMARY KEY,
     ext_reference_id UUID NOT NULL,
-    int_indexer_id TEXT NOT NULL,
+    -- int_indexer_id TEXT NOT NULL,
+    int_indexer_id BYTEA NOT NULL,
     gw_reference_id INTEGER,
     req JSONB NOT NULL,
     res JSONB,

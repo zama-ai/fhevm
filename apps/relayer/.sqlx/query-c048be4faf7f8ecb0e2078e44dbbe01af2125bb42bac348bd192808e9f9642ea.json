@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH inserted AS (\n                INSERT INTO user_decrypt_share (\n                    gw_reference_id,\n                    share_index,\n                    share,\n                    kms_signature,\n                    extra_data\n                )\n                VALUES ($1, $2, $3, $4, $5)\n                ON CONFLICT (gw_reference_id, share_index) DO NOTHING\n            )\n            SELECT COUNT(*) as \"count!\" -- The \"!\" tells SQLx this is never null\n            FROM user_decrypt_share\n            WHERE gw_reference_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c048be4faf7f8ecb0e2078e44dbbe01af2125bb42bac348bd192808e9f9642ea"
+}

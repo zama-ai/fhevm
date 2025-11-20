@@ -1,20 +1,12 @@
-- (Medium frequency): Insert user decrypt request with internal Id (hash) and request.
-- (Medium frequency): Update request on successful transaction.
-- (Medium frequency): Update request on failed transaction.
-- (Medium/high frequency): Update by gateway Id with response jsonb and req_status to completed.
-- (High frequency): Select by external Id to get the response, internal id, and req_status.
-- (Internal transaction poller): Update req_status to in_flight for the oldest queued request and retrieve it.
-- (At start): Query all tx_sent transactions to populate a consensus hashmap.
-- (Medium update): Update the consensus_reached field by gateway id.
 
 ## SCENARIOS :
 
 ### FIRST TODO:
 
--- TODO: change this to uniform names. (internal_decryption_id to internal_indexer_id) to bytea and enable hashmap ! we store as bytea not text (possibility of hash index)
--- TODO: Change tx_sent to receipt_received status (MORE CLARITY.)
+-- TODO: change this to uniform names. (internal_decryption_id to internal_indexer_id) to bytea and enable hashmap ! we store as bytea not text (possibility of hash index) OK.
+-- TODO: Change tx_sent to receipt_received status (MORE CLARITY.) OK.
 -- DESIGNS COMMENTS: RETURN AS MINIMAL FIELDS AS POSSIBLE.
--- use consistent structure for internal_req_id and external_req_id (or int ext)
+-- use consistent structure for internal_req_id and external_req_id (or int ext) Ok.
 
 ### NEEDED DATA STRUCT:
 
@@ -28,11 +20,11 @@
 
     1.  Compute `internal_indexer_id` from payload
     2.  Check if it there in the `user_decrypt_req` table.
-        1. If it already exists: return the `ext_req_id` to the user with 202 OK.
+        1. If it already exists: return the `ext_reference_id` to the user with 202 OK.
         2. If not.
            1. Call readiness checker as an async function.
               1. if failure: -> Return 400 Code: Not ready For Decryption.
-              2. if succeed: Insert the `req`, `ext_req_id`, `internal_indexer_id`. use ON CONFLICT METHOD for insert. if conflict get `ext_req_id`.
+              2. if succeed: Insert the `req`, `ext_reference_id`, `int_indexer_id`. use ON CONFLICT METHOD for insert. if conflict get `ext_reference_id`.
                  v1 routes -> Continue.
                  v2 routes -> return ext reqId with 202 Created..
               3. if new creation.
@@ -40,7 +32,7 @@
 2.  RelayerEvent Transaction::Send is emitted.
 
     1. TxHandler emitt the event Transaction::Sucess (receipt)
-       1. update the status to `receipt_received` + `tx_hash` + `gw_ref_id` by `internal_indexer_id`(we have the receipt at this point) -> We process the receipt. and we dispatch
+       1. update the status to `receipt_received` + `gw_req_tx_hash` + `gw_reference_id` by `int_indexer_id`(we have the receipt at this point) -> We process the receipt. and we dispatch
     2. TxHandler emit Transaction::Failed: set status to `failure` and `err_reason` by `internal_indexer_id` -> Dispatch error event as before to the orchestrator
 
 3.  Listener recieve user decrypt share or user consensus reached events transaction.
@@ -52,7 +44,7 @@
 
 - If we recieve consensus reached tx:
 
-- update `user_decrypt_req` table consensus_tx_hash = value, by gw_ref_id if consensus_tx_hash is null, or ignore this update.
+- update `user_decrypt_req` table `gw_consensus_tx_hash` = value, by `gw_reference_id` if consensus_tx_hash is null, or ignore this update.
 
 6.  IF THIS IS A SHARE:
 
