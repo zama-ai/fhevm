@@ -1,4 +1,3 @@
-
 ## SCENARIOS :
 
 ### FIRST TODO:
@@ -29,25 +28,67 @@
                  v2 routes -> return ext reqId with 202 Created..
               3. if new creation.
 
-2.  RelayerEvent Transaction::Send is emitted.
+2.  NEW FLOW POST:
+
+    1.  Compute `internal_indexer_id` from payload
+    2.  Check if it there in the `user_decrypt_req` table.
+
+        1. If it already exists: return the `ext_reference_id` to the user with 202 OK.
+        2. If not.
+
+           1. Call host ACL readiness checker as an async function. (DUMMY always pass for next implem - we will do it later with a host listener - substreams/poller...)
+              1. if failure: -> Return 400 Code: Not ready For Decryption.
+              2. if succeed: Insert the `req`, `ext_reference_id`, `int_indexer_id`. use ON CONFLICT METHOD for insert. if conflict get `ext_reference_id`.
+                 v1 routes -> Continue.
+                 v2 routes -> return ext reqId with 202 Created..
+              3. if new creation.
+
+3.  Gateway readiness checker is triggered (large timeout, same for v1 and same for v2 - ~30 min coverage)
+
+    1. if ready -> update by `int_indexer_id` for field req_status = `processing` -> Transaction::Send
+    2. if not ready after 30min.. -> update by `int_indexer_id` req_status = `timed_out` + `err_reason`
+       -> UserDecrypt::Failed emitted.
+
+4.  RelayerEvent Transaction::Send is emitted.
 
     1. TxHandler emitt the event Transaction::Sucess (receipt)
        1. update the status to `receipt_received` + `gw_req_tx_hash` + `gw_reference_id` by `int_indexer_id`(we have the receipt at this point) -> We process the receipt. and we dispatch
     2. TxHandler emit Transaction::Failed: set status to `failure` and `err_reason` by `internal_indexer_id` -> Dispatch error event as before to the orchestrator
 
-4.  Listener recieve user decrypt share or user consensus reached events transaction.
+-- Execute every one min in sql queries pg_cron. (We do at the end not now, just write the query.)
+// later do it as a pg_cron !!! 5. If status == 'receipt_recieved' and now - `updated_at` > 30 min. - update by `int_indexer_id` req_status = `timed_out` + `err_reason`='response timed out' (SAME QUERY IN POST MODE.)
+
+6.  Listener recieve user decrypt share or user consensus reached events transaction.
 
 - If we recieve consensus reached tx:
+  TODO: CHANGE THIS ONE !
+- update `user_decrypt_req` table `gw_consensus_tx_hash` = value, where `gw_reference_id` if consensus_tx_hash is null, and status = 'receipt_recieved' and return (status, updated_at, err_reason, int_indexer_id,)
+  - can be status = 'receipt_recieved' -> We ignore.
+  - status = 'timed_out' -> (get err_reason, int_indexer_id, status, updated_at)
 
-- update `user_decrypt_req` table `gw_consensus_tx_hash` = value, by `gw_reference_id` if consensus_tx_hash is null, or ignore this update.
+Rationale:
+Want to update the table when status = 'receipt_recieved' in either case. I want the actual status in the raw.
+for example: -> if the status is timed_out, i want to get status and updated at, in this case row affected will be zero. (we need err_reason and int_indexer_id)
 
-6.  IF THIS IS A SHARE:
+in one query:
+select `user_decrypt_req` where `gw_reference_id` and if consensus_tx_hash=null, and if status = 'receipt_recieved' update `consensus_tx_hash` = value received -> return (status, updated_at, err_reason, int_indexer_id,)
 
-    1.  insert into `user_decrypt_share` -> gw_ref_id, share_index, share, kms_signature, extra_data -> Return the count of total shares by `gw_ref_id` (QUERY)
-        - if count = threshold -> update user_decrypt_req table status = `completed` on `gw_reference_id` (ONLY ONE SINGLE TX QUERY)
-        - return all the shares (IN THE SAME TX QUERY) + `int_indexer_id`
+OR:
+update `user_decrypt_req` table `gw_consensus_tx_hash` = value, where `gw_reference_id` if consensus_tx_hash is null, and status = 'receipt_recieved'
+select (status, updated_at, err_reason, int_indexer_id,) where `gw_reference_id` = value
 
-7.  INternally: we forward event is recieved as it is already done in our internal logic.
+6.  IF THIS IS A SHARE: [2 transactions / 2 calls]
+
+// This lead to possibility of non relevant shares (DOCUMENT THIS !!!!! ON CODE.)
+// This also does not respect the status due to timeout on request context (ud tables.)
+// Even for timeouts, we are registering incoming shares.
+
+    transaction/call 1. insert into `user_decrypt_share` -> gw_reference_id, share_index, share, kms_signature, extra_data -> Return the count of total shares by `gw_reference_id` (QUERY)
+
+    transaction/call 2. if count = threshold -> update `user_decrypt_req` table status = `completed` on `gw_reference_id` status != 'timeout' (ONLY ONE SINGLE TX QUERY)
+        - return all the shares (IN THE SAME TX QUERY) + `int_indexer_id` + status + updated_at + err_reason
+
+7.  INternally: we forward event is recieved as it is already done in our internal logic. (timeout logic etc...)
 
 8.  GET REQUEST will pass to get route: `ext_req_id`
 
@@ -72,7 +113,7 @@ NOTE: PAUSING STRATEGY.
         2. If not.
            1. Call readiness checker as an async function.
               1. if failure: -> Return 400 Code: Not ready For Decryption.
-              2. if succeed: Insert the `req`, `ext_req_id`, `internal_indexer_id`. use ON CONFLICT METHOD for insert. if conflict get `ext_req_id`.
+              2. if succeed: Insert the `req`, `ext_reference_id`, `internal_indexer_id`. use ON CONFLICT METHOD for insert. if conflict get `ext_reference_id`.
                  v1 routes -> Continue.
                  v2 routes -> return ext reqId with 202 Created..
               3. if new creation.

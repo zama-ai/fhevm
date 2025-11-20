@@ -10,7 +10,7 @@ $$ LANGUAGE plpgsql;
 
 -- Status enum for all tables.
 --- COMPLETED status when we have consensus tx + all the x shares receieved (9 for user, 1 for public)
-CREATE TYPE req_status AS ENUM ('queued', 'receipt_received', 'completed', 'timed_out', 'failure');
+CREATE TYPE req_status AS ENUM ('queued', 'processing', 'receipt_received', 'completed', 'timed_out', 'failure');
 
 -- Table for user decryption requests.
 CREATE TABLE user_decrypt_req(
@@ -81,6 +81,8 @@ CREATE TABLE public_decrypt_req(
 );
 
 CREATE INDEX idx_public_decrypt_req_ext_req_id ON public_decrypt_req USING HASH (ext_reference_id);
+-- [REQUIRED] Create this index to make the search fast and support future ON CONFLICT logic
+CREATE UNIQUE INDEX idx_public_decrypt_req_int_indexer_id ON public_decrypt_req (int_indexer_id);
 
 -- Trigger for updated at field.
 CREATE TRIGGER set_public_decrypt_req_updated_at

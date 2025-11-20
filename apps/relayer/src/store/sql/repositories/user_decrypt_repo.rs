@@ -22,7 +22,6 @@ impl UserDecryptReqRepository {
     // GENERAL REQUESTS.
 
     /// Check if there is already existing internal_indexer_id and return ext_reference_id if there is one
-    /// The macro doesn't work here.
     pub async fn find_ext_reference_id_by_int_indexer_id(
         &self,
         int_indexer_id_bytes: &[u8],
