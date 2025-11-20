@@ -20,6 +20,11 @@ impl UserDecryptRepository {
         Self { pool }
     }
 
+    // NOTE: We have a query which is performed at the database level in a pg_cron job instead of being called by the internals. and is trigged on this condition:
+    // If status == 'receipt_recieved' and now - `updated_at` > 30 min roughly (TBD.)
+    // Update status to timed_out with err_reason = 'response timed out' (ACL propagation error).
+    // OR IN THE TIMEOUT REPO.
+
     // GENERAL REQUESTS.
 
     /// Check if there is already existing internal_indexer_id and return ext_reference_id if there is one
@@ -168,10 +173,6 @@ impl UserDecryptRepository {
         Ok(result.rows_affected())
     }
 
-    // NOTE: This next query needs to be performed in a pg_cron job instead of being called by the internals. and is trigged on this condition:
-    // If status == 'receipt_recieved' and now - `updated_at` > 30 min roughly (TBD.)
-    // Update status to timed_out with err_reason = 'response timed out' (ACL propagation error). For now we can use the query above.
-
     // LISTENER REQUESTS.
     // If we recieve consensus reached tx:
     // update user_decrypt_req for gw_consensus_tx_hash by gw_reference_id
@@ -231,6 +232,7 @@ impl UserDecryptRepository {
     // We recieve a share event from the gw.
     /// Insert in user_decrypt_share table all the fields: gw_reference_id, share_index, share, kms_signature, extra_data and return number of shares for gw_reference_id in the table.
     /// Insert a share and return the total count of shares for this gw_reference_id.
+    /// NOTE: This lead to possibility of non relevant shares, we can recieve unrelated shares non related to relayer events, or timed_out shares, we register them anyway.
     pub async fn insert_share_and_return_count(
         &self,
         gw_reference_id: i32,

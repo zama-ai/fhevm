@@ -119,3 +119,20 @@ CREATE TRIGGER set_input_proof_req_updated_at
 BEFORE UPDATE ON input_proof_req
 FOR EACH ROW
 EXECUTE PROCEDURE trigger_set_timestamp();
+
+-- Relative indexes for crons.
+-- Indexes are required even if we comes from internals jobs...
+-- 1. User Decrypt Timeout Index
+CREATE INDEX idx_user_decrypt_req_timeout_check 
+ON user_decrypt_req (updated_at) 
+WHERE req_status = 'receipt_received';
+
+-- 2. Public Decrypt Timeout Index
+CREATE INDEX idx_public_decrypt_req_timeout_check 
+ON public_decrypt_req (updated_at) 
+WHERE req_status = 'receipt_received';
+
+-- 3. Input Proof Timeout Index
+CREATE INDEX idx_input_proof_req_timeout_check 
+ON input_proof_req (updated_at) 
+WHERE req_status = 'receipt_received';
