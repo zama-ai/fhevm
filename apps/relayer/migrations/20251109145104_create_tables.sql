@@ -84,6 +84,8 @@ CREATE TABLE public_decrypt_req(
 CREATE INDEX idx_public_decrypt_req_ext_req_id ON public_decrypt_req USING HASH (ext_reference_id);
 -- [REQUIRED] Create this index to make the search fast and support future ON CONFLICT logic
 CREATE UNIQUE INDEX idx_public_decrypt_req_int_indexer_id ON public_decrypt_req (int_indexer_id);
+-- [REQUIRED] Needed for efficient updates by Gateway ID
+CREATE INDEX idx_public_decrypt_req_gw_reference_id ON public_decrypt_req (gw_reference_id);
 
 -- Trigger for updated at field.
 CREATE TRIGGER set_public_decrypt_req_updated_at

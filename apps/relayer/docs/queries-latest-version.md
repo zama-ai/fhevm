@@ -152,7 +152,7 @@ NOTE: PAUSING STRATEGY.
 
 5.  Listener recieve public_decrypt share events transaction.
 
-- update into public_decrypt_req by gw_reference_id, res = recieved value, where status != timed_out (ret -> int_indexer_id, status, updated_at, err_reason)
+- update into public_decrypt_req by gw_reference_id, res = recieved value, completed status where status != timed_out (ret -> int_indexer_id, status, updated_at, err_reason)
 
 4.  INternally: we forward event is recieved as it is already done in our internal logic.
 

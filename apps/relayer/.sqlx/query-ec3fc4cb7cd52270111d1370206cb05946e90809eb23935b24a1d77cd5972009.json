@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE public_decrypt_req\n            SET \n                req_status = 'failure'::req_status,\n                err_reason = $1\n            WHERE int_indexer_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ec3fc4cb7cd52270111d1370206cb05946e90809eb23935b24a1d77cd5972009"
+}

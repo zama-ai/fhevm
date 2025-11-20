@@ -277,6 +277,7 @@ impl UserDecryptRepository {
         Ok(count)
     }
 
+    // TODO: Should update this query with ! failed, but don't needed since we will surely not recieve the event from gw chain. (TX CRASHED..)
     /// update user_decrypt_reqf req_status to completed by gw_reference_id and return all shares + int_indexer_id + status + updated_at + err_reason from user_decrypt_share table by gw_reference_id.
     /// Step 6 (Share Flow): Update to 'completed' and return Metadata + All Shares.
     /// Returns a tuple: (ConsensusReqState, Vec<UserDecryptShare>).

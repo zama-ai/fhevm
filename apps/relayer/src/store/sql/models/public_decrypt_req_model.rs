@@ -21,3 +21,11 @@ pub struct PublicDecryptReq {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+#[derive(Debug, FromRow)]
+pub struct PublicReqStateModel {
+    pub int_indexer_id: Vec<u8>,
+    pub req_status: ReqStatus,
+    pub updated_at: DateTime<Utc>,
+    pub err_reason: Option<String>,
+}

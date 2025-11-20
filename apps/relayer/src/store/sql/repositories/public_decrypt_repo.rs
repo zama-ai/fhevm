@@ -1,3 +1,5 @@
+use crate::store::sql::models::public_decrypt_req_model::PublicReqStateModel;
+use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use anyhow::Result;
 use uuid::Uuid;
 
@@ -150,5 +152,66 @@ impl PublicDecryptRepository {
         .await?;
 
         Ok(result.rows_affected())
+    }
+
+    /// update req_status to failure and apply err_reason by internal_indexer_id
+    pub async fn update_status_to_failure_on_tx_failed(
+        &self,
+        int_indexer_id_bytes: &[u8],
+        err_reason: &str,
+    ) -> Result<u64> {
+        let result = sqlx::query!(
+            r#"
+            UPDATE public_decrypt_req
+            SET 
+                req_status = 'failure'::req_status,
+                err_reason = $1
+            WHERE int_indexer_id = $2
+            "#,
+            err_reason,
+            int_indexer_id_bytes
+        )
+        .execute(&self.pool.get_pool())
+        .await?;
+
+        Ok(result.rows_affected())
+    }
+
+    // LISTENER QUERIES:
+
+    // update by gw_reference_id, res, and status completed, where status != 'timed_out' or 'failure', returns int_indexer_id, status, updated_at, err_reason
+    /// Update res, req_status to 'completed', and gw_response_tx_hash.
+    /// Condition: req_status is NOT 'timed_out' AND NOT 'failure'.
+    /// Returns: (int_indexer_id, req_status, updated_at, err_reason).
+    pub async fn complete_req_with_res(
+        &self,
+        gw_reference_id: i32,
+        res: serde_json::Value,
+        gw_response_tx_hash: &str,
+    ) -> Result<Option<PublicReqStateModel>> {
+        let result = sqlx::query_as!(
+            PublicReqStateModel,
+            r#"
+            UPDATE public_decrypt_req
+            SET 
+                res = $1,
+                req_status = 'completed'::req_status,
+                gw_response_tx_hash = $2
+            WHERE gw_reference_id = $3
+              AND req_status NOT IN ('timed_out'::req_status, 'failure'::req_status)
+            RETURNING 
+                int_indexer_id as "int_indexer_id!", -- Force Non-Null
+                req_status as "req_status!: ReqStatus", 
+                updated_at as "updated_at!",         -- Force Non-Null
+                err_reason
+            "#,
+            res,
+            gw_response_tx_hash,
+            gw_reference_id
+        )
+        .fetch_optional(&self.pool.get_pool())
+        .await?;
+
+        Ok(result)
     }
 }
