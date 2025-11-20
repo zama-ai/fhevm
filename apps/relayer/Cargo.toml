@@ -59,7 +59,7 @@ utoipa-rapidoc = { version = "6.0.0", features = ["axum"] }
 utoipa-scalar = { version = "0.3.0", features = ["axum"] }
 validator = { version = "0.20.0", features = ["derive"] }
 sqlx = { version = "0.8.6", features = ["chrono", "macros", "postgres", "runtime-tokio", "uuid"] }
-chrono = "0.4.42"
+chrono = { version = "0.4.42", features = ["serde"] }
 
 [build-dependencies]
 built = { version = "0.8", features = [

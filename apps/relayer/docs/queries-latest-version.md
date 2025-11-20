@@ -51,7 +51,7 @@
 
 8.  GET REQUEST will pass to get route: `ext_req_id`
 
-    1. select in `user_decrypt_req by` by `ext_req_id` and join on `gw_ref_id` to get all lines of `user_decrypt_share` 1 query. (need status field on query return + shares + updated at field)
+    1. select in `user_decrypt_req` by `ext_reference_id` and join on `gw_reference_id` to get all lines of `user_decrypt_share` 1 query. (need status field on query return + shares + updated at field)
 
     - if status == `completed` -> construct the response with the fields we queried.
     - if status == `queued` or `receipt_receieved` -> return back `ext_req_id` with `status` and `updated_at` field.

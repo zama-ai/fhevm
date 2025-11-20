@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
 
 /// Represents a row in the `user_decrypt_share` table.
-#[derive(Debug, FromRow, Clone)]
+#[derive(Debug, FromRow, Clone, Serialize, Deserialize)]
 pub struct UserDecryptShare {
     pub id: i32,
     pub gw_reference_id: i32,

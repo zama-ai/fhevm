@@ -1,7 +1,14 @@
+use crate::store::sql::models::req_status_enum_model::ReqStatus;
+use crate::store::sql::{
+    client::PgClient,
+    models::{
+        user_decrypt_req_model::UserDecryptResponseModel,
+        user_decrypt_share_model::UserDecryptShare,
+    },
+};
 use anyhow::Result;
+use sqlx::types::Json;
 use sqlx::types::Uuid;
-
-use crate::store::sql::{client::PgClient, models::user_decrypt_share_model::UserDecryptShare};
 
 pub struct UserDecryptReqRepository {
     pool: PgClient,
@@ -252,5 +259,42 @@ impl UserDecryptReqRepository {
         .await?;
 
         Ok(result.rows_affected())
+    }
+
+    // GET REQUESTS RESULTS.
+    /// Select in user_decrypt_req by ext_reference_id and get all the shares on gw_reference_id to construct the the final response,
+    /// fields in return: ext_reference_id, req_status, shares, updated_at, err_reason, gw_req_tx_hash, gw_consensus_tx_hash.
+    pub async fn find_req_and_shares_by_ext_reference_id(
+        &self,
+        ext_reference_id: Uuid,
+    ) -> Result<Option<UserDecryptResponseModel>> {
+        let result = sqlx::query_as!(
+            UserDecryptResponseModel,
+            r#"
+            SELECT 
+                r.ext_reference_id,
+                r.req_status as "req_status!: ReqStatus", -- Force non-null Enum type
+                r.updated_at,
+                r.err_reason,
+                r.gw_req_tx_hash,
+                r.gw_consensus_tx_hash,
+                -- Aggregate shares into a JSON List. 
+                -- If no shares exist, return an empty JSON array '[]'
+                COALESCE(
+                    jsonb_agg(to_jsonb(s.*) ORDER BY s.share_index) 
+                    FILTER (WHERE s.id IS NOT NULL), 
+                    '[]'::jsonb
+                ) as "shares!: Json<Vec<UserDecryptShare>>"
+            FROM user_decrypt_req r
+            LEFT JOIN user_decrypt_share s ON r.gw_reference_id = s.gw_reference_id
+            WHERE r.ext_reference_id = $1
+            GROUP BY r.id
+            "#,
+            ext_reference_id
+        )
+        .fetch_optional(&self.pool.get_pool())
+        .await?;
+
+        Ok(result)
     }
 }
