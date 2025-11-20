@@ -19,7 +19,7 @@ interface IERC20Mintable is IERC20 {
 
 /**
  * @dev Staking contract that distributes newly minted tokens to eligible accounts at a configurable flow rate.
- * 
+ *
  * NOTE: This staking contract does not support non-standard ERC-20 tokens such as fee-on-transfer or rebasing tokens.
  * @custom:security-contact security@zama.ai
  */
@@ -217,6 +217,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @dev Sets the reward recipient for `msg.sender` to `recipient`. All future rewards for
      * `msg.sender` will be sent to `recipient`.
      * @param recipient The recipient that will receive rewards on behalf of `msg.sender` for all future  {claimRewards} calls.
+     * A value of `address(0)` indicates that rewards should be sent to `msg.sender`.
      */
     function setRewardsRecipient(address recipient) public {
         _getProtocolStakingStorage()._rewardsRecipient[msg.sender] = recipient;
