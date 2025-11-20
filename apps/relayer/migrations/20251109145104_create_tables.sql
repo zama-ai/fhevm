@@ -52,7 +52,8 @@ CREATE TABLE user_decrypt_share (
 );
 
 -- Indexes for user_decrypt_share
-CREATE INDEX idx_user_decrypt_share_gw_decryption_id ON user_decrypt_share(gw_reference_id);
+-- WE REMOVE THIS INDEX SINCE ITS REDUNDANT WITH THE UNIQUE INDEX BELOW
+-- CREATE INDEX idx_user_decrypt_share_gw_decryption_id ON user_decrypt_share(gw_reference_id);
 -- Uniqueness of shares index (in case of recieving same share twice++)
 CREATE UNIQUE INDEX idx_user_decrypt_share_unique_composite_gw_reference_id_share_index ON user_decrypt_share (gw_reference_id, share_index);
 

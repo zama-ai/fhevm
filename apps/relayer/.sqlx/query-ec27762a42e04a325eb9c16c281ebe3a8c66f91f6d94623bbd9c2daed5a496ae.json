@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH updated_req AS (\n                UPDATE user_decrypt_req\n                SET req_status = 'completed'::req_status\n                WHERE gw_reference_id = $1\n                RETURNING int_indexer_id\n            )\n            SELECT \n                u.int_indexer_id, -- We grab this from the update\n                s.id,\n                s.gw_reference_id,\n                s.share_index,\n                s.share,\n                s.kms_signature,\n                s.extra_data,\n                s.created_at,\n                s.updated_at\n            FROM user_decrypt_share s, updated_req u\n            WHERE s.gw_reference_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "int_indexer_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "gw_reference_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "share_index",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "share",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "kms_signature",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "extra_data",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "ec27762a42e04a325eb9c16c281ebe3a8c66f91f6d94623bbd9c2daed5a496ae"
+}

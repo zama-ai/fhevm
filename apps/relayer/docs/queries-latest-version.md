@@ -45,7 +45,7 @@
 
     1.  insert into `user_decrypt_share` -> gw_ref_id, share_index, share, kms_signature, extra_data -> Return the count of total shares by `gw_ref_id` (QUERY)
         - if count = threshold -> update user_decrypt_req table status = `completed` on `gw_reference_id` (ONLY ONE SINGLE TX QUERY)
-        - return all the shares (IN THE SAME TX QUERY) + `internal_indexer_id`
+        - return all the shares (IN THE SAME TX QUERY) + `int_indexer_id`
 
 7.  INternally: we forward event is recieved as it is already done in our internal logic.
 

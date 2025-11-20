@@ -164,44 +164,68 @@ impl UserDecryptReqRepository {
         Ok(count)
     }
 
-    /// update user_decrypt_reqf req_status to completed by gw_reference_id and return all shares from user_decrypt_share table by gw_reference_id.
+    /// update user_decrypt_reqf req_status to completed by gw_reference_id and return all shares + int_indexer_id from user_decrypt_share table by gw_reference_id.
     /// Update req_status to 'completed' and return all associated shares.
     /// Returns a Vector of UserDecryptShare.
+    /// Update req_status to 'completed' and return (int_indexer_id, shares).
+    /// Returns a Tuple: (internal_indexer_id_bytes, List of shares).
     pub async fn complete_req_and_get_shares(
         &self,
         gw_reference_id: i32,
-    ) -> Result<Vec<UserDecryptShare>> {
-        // We map the result directly to the UserDecryptShare struct
-        let shares = sqlx::query_as!(
-            UserDecryptShare,
+    ) -> Result<(Vec<u8>, Vec<UserDecryptShare>)> {
+        let records = sqlx::query!(
             r#"
             WITH updated_req AS (
                 UPDATE user_decrypt_req
                 SET req_status = 'completed'::req_status
                 WHERE gw_reference_id = $1
-                RETURNING 1 -- We just return a dummy value to signal the update happened
+                RETURNING int_indexer_id
             )
             SELECT 
-                id,
-                gw_reference_id,
-                share_index,
-                share,
-                kms_signature,
-                extra_data,
-                created_at,
-                updated_at
-            FROM user_decrypt_share
-            WHERE gw_reference_id = $1
-            -- OPTIONAL SAFETY: Only return shares if the request was actually found and updated
-            -- Remove the line below if you want shares even if the request ID was wrong
-            AND EXISTS (SELECT 1 FROM updated_req)
+                u.int_indexer_id, -- We grab this from the update
+                s.id,
+                s.gw_reference_id,
+                s.share_index,
+                s.share,
+                s.kms_signature,
+                s.extra_data,
+                s.created_at,
+                s.updated_at
+            FROM user_decrypt_share s, updated_req u
+            WHERE s.gw_reference_id = $1
             "#,
             gw_reference_id
         )
         .fetch_all(&self.pool.get_pool())
         .await?;
 
-        Ok(shares)
+        // 2. Handle the case where no rows are returned (Should not happen if shares exist)
+        if records.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No shares found for gw_reference_id {}",
+                gw_reference_id
+            ));
+        }
+
+        // 3. Extract int_indexer_id from the first row
+        let int_indexer_id = records[0].int_indexer_id.clone();
+
+        // 4. Map the anonymous records to your UserDecryptShare struct
+        let shares: Vec<UserDecryptShare> = records
+            .into_iter()
+            .map(|r| UserDecryptShare {
+                id: r.id,
+                gw_reference_id: r.gw_reference_id,
+                share_index: r.share_index,
+                share: r.share,
+                kms_signature: r.kms_signature,
+                extra_data: r.extra_data,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            })
+            .collect();
+
+        Ok((int_indexer_id, shares))
     }
 
     // TODO: Combine two last queries in one single db transaction.
