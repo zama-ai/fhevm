@@ -156,13 +156,13 @@ NOTE: PAUSING STRATEGY.
 
 4.  INternally: we forward event is recieved as it is already done in our internal logic.
 
-5.  GET REQUEST will pass to get route: `ext_req_id`
+5.  GET REQUEST will pass to get route: `ext_reference_id`
 
-    1. select in `public_decrypt_req` by `ext_req_id` (need status `response` and `err_reason` and `updated_at`)
+    1. select in `public_decrypt_req` by `ext_reference_id` (need status `res` and `err_reason` and `updated_at` and `ext_request_id`)
 
     - if status == `completed` -> we return 200 with response.
     - if status == `processing` -> return updated_at and ext_request_id and status with 202.
-    - if status == `queued` or `receipt_receieved` -> return back `ext_req_id` with `status` and `updated_at` field.
+    - if status == `queued` or `receipt_receieved` -> return back `ext_reference_id` with `status` and `updated_at` field.
     - if status == `timed_out` 504 return `ext_req_id` + `status`.
     - if status == `failure` 400 return `ext_req_id` + `status` + `err_reason`.
 

@@ -1,4 +1,6 @@
-use crate::store::sql::models::public_decrypt_req_model::PublicReqStateModel;
+use crate::store::sql::models::public_decrypt_req_model::{
+    PublicDecryptResponseModel, PublicReqStateModel,
+};
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use anyhow::Result;
 use uuid::Uuid;
@@ -208,6 +210,32 @@ impl PublicDecryptRepository {
             res,
             gw_response_tx_hash,
             gw_reference_id
+        )
+        .fetch_optional(&self.pool.get_pool())
+        .await?;
+
+        Ok(result)
+    }
+
+    // select in `public_decrypt_req` by `ext_reference_id` (need status `res` and `err_reason` and `updated_at` and `ext_request_id`)
+    /// Select status, res, err_reason, and updated_at by ext_reference_id.
+    pub async fn find_status_and_res_by_ext_id(
+        &self,
+        ext_reference_id: Uuid,
+    ) -> Result<Option<PublicDecryptResponseModel>> {
+        let result = sqlx::query_as!(
+            PublicDecryptResponseModel,
+            r#"
+            SELECT 
+                ext_reference_id,
+                req_status as "req_status!: ReqStatus", -- Force Non-Null Enum
+                res,
+                err_reason,
+                updated_at
+            FROM public_decrypt_req
+            WHERE ext_reference_id = $1
+            "#,
+            ext_reference_id
         )
         .fetch_optional(&self.pool.get_pool())
         .await?;

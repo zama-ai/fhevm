@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::prelude::FromRow;
 use uuid::Uuid;
@@ -28,4 +29,13 @@ pub struct PublicReqStateModel {
     pub req_status: ReqStatus,
     pub updated_at: DateTime<Utc>,
     pub err_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PublicDecryptResponseModel {
+    pub ext_reference_id: Uuid,
+    pub req_status: ReqStatus,
+    pub res: Option<Value>,
+    pub err_reason: Option<String>,
+    pub updated_at: DateTime<Utc>,
 }
