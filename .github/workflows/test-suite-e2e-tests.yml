@@ -188,20 +188,20 @@ jobs:
         run: |
           ./fhevm-cli pause gateway
 
-      - name: Paused input proof test (uint64)
+      - name: Paused Gateway input proof test (uint64)
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test paused-input-proof
+          ./fhevm-cli test paused-gateway-input-proof
 
-      - name: Paused user decryption test
+      - name: Paused Gateway user decryption test
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test paused-user-decryption
+          ./fhevm-cli test paused-gateway-user-decryption
 
-      - name: Paused public decryption HTTP endpoint test
+      - name: Paused Gateway public decryption HTTP endpoint test
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test paused-public-decrypt-http
+          ./fhevm-cli test paused-gateway-public-decrypt-http
 
       - name: Unpause Gateway Contracts
         working-directory: test-suite/fhevm
