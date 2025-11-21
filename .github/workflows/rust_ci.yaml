@@ -17,20 +17,13 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  compile-rust-unit-tests:
-    name: rust-ci/compile-rust-unit-tests
+  format:
+    name: rust-ci/format
     runs-on: ubuntu-latest
     strategy:
       matrix:
         folder: [apps/relayer]
     steps:
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-        with:
-          registry: ghcr.io
-          username: ${{ secrets.BOT_USERNAME }}
-          password: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
-
       - name: Checkout Project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -42,17 +35,55 @@ jobs:
         uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
         with:
           toolchain: stable
-          components: rustfmt, clippy, llvm-tools-preview
+          components: rustfmt
 
       - name: Check formatting
-        id: fmt
         working-directory: ${{ matrix.folder }}
         run: cargo fmt --all -- --check
 
+  clippy:
+    name: rust-ci/clippy
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        folder: [apps/relayer]
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
+        with:
+          toolchain: stable
+          components: clippy
+
       - name: Clippy
-        id: clippy
         working-directory: ${{ matrix.folder }}
         run: cargo clippy -- -D warnings
+
+  test:
+    name: rust-ci/test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        folder: [apps/relayer]
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
 
       - name: Run tests
         working-directory: ${{ matrix.folder }}
