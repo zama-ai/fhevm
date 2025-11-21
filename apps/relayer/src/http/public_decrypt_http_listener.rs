@@ -100,12 +100,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         };
 
         let public_decrypt_request: PublicDecryptRequest =
-            match parse_and_validate::<PublicDecryptRequestJson, PublicDecryptRequest>(
-                &body,
-                &request_id.to_string(),
-            ) {
+            match parse_and_validate::<PublicDecryptRequestJson, PublicDecryptRequest>(&body) {
                 Ok(request) => request,
-                Err(error_response) => return *error_response,
+                Err(parse_error) => {
+                    let error_response: AppResponse<()> =
+                        parse_error.to_app_response(&request_id.to_string());
+                    return error_response.into_response();
+                }
             };
 
         info!("Successfully parsed and validated request");

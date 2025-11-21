@@ -103,14 +103,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             }
         };
 
-        let request_data: InputProofRequest = match parse_and_validate::<
-            InputProofRequestJson,
-            InputProofRequest,
-        >(&body, &request_id.to_string())
-        {
-            Ok(request) => request,
-            Err(error_response) => return *error_response,
-        };
+        let request_data: InputProofRequest =
+            match parse_and_validate::<InputProofRequestJson, InputProofRequest>(&body) {
+                Ok(request) => request,
+                Err(parse_error) => {
+                    let error_response: AppResponse<()> =
+                        parse_error.to_app_response(&request_id.to_string());
+                    return error_response.into_response();
+                }
+            };
 
         info!("Successfully parsed and validated request");
 

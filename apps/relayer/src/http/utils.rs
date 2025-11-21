@@ -16,7 +16,88 @@ use std::str::FromStr;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::oneshot;
-use validator::ValidationError;
+use validator::{ValidationError, ValidationErrors};
+
+/// Error type for parsing and validation operations.
+/// This enum provides clean separation between parsing/validation logic and HTTP response creation.
+#[derive(Debug)]
+pub enum ParseError {
+    /// JSON syntax error or malformed JSON
+    MalformedJson(String),
+    /// Field-specific JSON issues (missing field, wrong type, unknown field)
+    FieldSpecificJson {
+        field_name: String,
+        issue: String,
+        error_type: FieldJsonErrorType,
+    },
+    /// Validation errors from the validator
+    ValidationFailed(ValidationErrors),
+    /// Conversion error from JsonType to RequestType
+    ConversionFailed(String),
+}
+
+/// Type of field-specific JSON error
+#[derive(Debug)]
+pub enum FieldJsonErrorType {
+    Missing,
+    InvalidType,
+    Unknown,
+}
+
+impl ParseError {
+    /// Convert ParseError to AppResponse with request_id
+    pub fn to_app_response<V: serde::Serialize>(&self, request_id: &str) -> AppResponse<V> {
+        let mut response = match self {
+            ParseError::MalformedJson(message) => AppResponse::malformed_json(message),
+            ParseError::FieldSpecificJson {
+                field_name,
+                issue,
+                error_type,
+            } => {
+                let mut errors = ValidationErrors::new();
+
+                // Map field name to static str
+                let field_key: &'static str = match field_name.as_str() {
+                    "contractChainId" => "contract_chain_id",
+                    "contractsChainId" => "contracts_chain_id",
+                    "contractAddress" => "contract_address",
+                    "contractAddresses" => "contract_addresses",
+                    "userAddress" => "user_address",
+                    "ciphertextWithInputVerification" => "ciphertext_with_input_verification",
+                    "extraData" => "extra_data",
+                    "ciphertextHandles" => "ciphertext_handles",
+                    "handleContractPairs" => "handle_contract_pairs",
+                    "requestValidity" => "request_validity",
+                    "publicKey" => "public_key",
+                    "signature" => "signature",
+                    _ => "request",
+                };
+
+                let mut error = ValidationError::new("json_error");
+                error.message = Some(issue.clone().into());
+                errors.add(field_key, error);
+
+                match error_type {
+                    FieldJsonErrorType::Missing => AppResponse::missing_fields(errors),
+                    FieldJsonErrorType::InvalidType | FieldJsonErrorType::Unknown => {
+                        AppResponse::validation_failed(errors)
+                    }
+                }
+            }
+            ParseError::ValidationFailed(errors) => AppResponse::validation_failed(errors.clone()),
+            ParseError::ConversionFailed(message) => {
+                tracing::error!(
+                    "Internal error: Conversion failed after validation passed: {}",
+                    message
+                );
+                AppResponse::internal_server_error("Internal processing error")
+            }
+        };
+
+        response.set_request_id(request_id);
+        response
+    }
+}
 
 // Generic validation error messages (reusable across fields)
 pub mod validation_messages {
@@ -237,10 +318,8 @@ pub fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
 
 /// Generic parser function that handles JSON parsing, validation, and conversion in one place.
 /// This consolidates all parsing logic and ensures consistent error handling across endpoints.
-pub fn parse_and_validate<JsonType, RequestType>(
-    body: &[u8],
-    request_id: &str,
-) -> Result<RequestType, Box<Response>>
+/// Returns a clean ParseError that can be converted to an AppResponse by the HTTP handlers.
+pub fn parse_and_validate<JsonType, RequestType>(body: &[u8]) -> Result<RequestType, ParseError>
 where
     JsonType: DeserializeOwned + validator::Validate,
     RequestType: TryFrom<JsonType>,
@@ -258,69 +337,41 @@ where
                 || error_msg.contains("invalid type")
                 || error_msg.contains("unknown field")
             {
-                // Field-specific JSON issues - use validation error structure
-                let mut errors = validator::ValidationErrors::new();
+                // Field-specific JSON issues
                 let field_name = extract_field_from_serde_error(&e);
                 let issue = format_serde_error_message(&e);
 
-                // Map field name to static str
-                let field_key: &'static str = match field_name.as_str() {
-                    "contractChainId" => "contract_chain_id",
-                    "contractsChainId" => "contracts_chain_id",
-                    "contractAddress" => "contract_address",
-                    "contractAddresses" => "contract_addresses",
-                    "userAddress" => "user_address",
-                    "ciphertextWithInputVerification" => "ciphertext_with_input_verification",
-                    "extraData" => "extra_data",
-                    "ciphertextHandles" => "ciphertext_handles",
-                    "handleContractPairs" => "handle_contract_pairs",
-                    "requestValidity" => "request_validity",
-                    "publicKey" => "public_key",
-                    "signature" => "signature",
-                    _ => "request",
-                };
-
-                let mut error = validator::ValidationError::new("json_error");
-                error.message = Some(issue.into());
-                errors.add(field_key, error);
-
-                let mut response = if error_msg.contains("missing field") {
-                    AppResponse::<()>::missing_fields(errors)
+                let error_type = if error_msg.contains("missing field") {
+                    FieldJsonErrorType::Missing
+                } else if error_msg.contains("unknown field") {
+                    FieldJsonErrorType::Unknown
                 } else {
-                    AppResponse::<()>::validation_failed(errors)
+                    FieldJsonErrorType::InvalidType
                 };
 
-                response.set_request_id(request_id);
-                return Err(Box::new(response.into_response()));
+                return Err(ParseError::FieldSpecificJson {
+                    field_name,
+                    issue,
+                    error_type,
+                });
             } else {
                 // True malformed JSON syntax error
-                let mut response = AppResponse::<()>::malformed_json("Invalid JSON format");
-                response.set_request_id(request_id);
-                return Err(Box::new(response.into_response()));
+                return Err(ParseError::MalformedJson("Invalid JSON format".to_string()));
             }
         }
     };
 
     // 2. Validate the parsed payload
     if let Err(errors) = payload.validate() {
-        let mut response = AppResponse::<()>::validation_failed(errors);
-        response.set_request_id(request_id);
-        return Err(Box::new(response.into_response()));
+        return Err(ParseError::ValidationFailed(errors));
     }
 
     // 3. Convert to final request type
     match RequestType::try_from(payload) {
         Ok(request) => Ok(request),
         Err(error) => {
-            // If validation passed but conversion failed, this is an internal server error
-            tracing::error!(
-                "Internal error: Conversion failed after validation passed: {}",
-                error
-            );
-            let mut response =
-                AppResponse::<()>::internal_server_error("Internal processing error");
-            response.set_request_id(request_id);
-            Err(Box::new(response.into_response()))
+            // If validation passed but conversion failed, this is an internal error
+            Err(ParseError::ConversionFailed(error.to_string()))
         }
     }
 }
