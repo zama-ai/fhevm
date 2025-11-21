@@ -1,4 +1,4 @@
-# Confidential token integration guide
+# Confidential token integration guide for Wallets
 
 This guide is for wallet and dApp developers who want to support confidential tokens on Zama Protocol. It focuses on ERC-7984 wallet flows: showing balances (user decryption) and sending transfers (encrypted inputs). For deeper SDK details, follow the [Relayer SDK guide](https://docs.zama.org/protocol/relayer-sdk-guides/).
 
