@@ -15,6 +15,7 @@ use crate::{
         traits::{Event, EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
     },
+    store::sql::repositories::input_proof_repo::InputProofRepository,
 };
 use std::str::FromStr;
 
@@ -101,6 +102,7 @@ pub struct GatewayHandler {
     input_verification_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
+    input_proof_repo: Arc<InputProofRepository>,
 }
 
 impl GatewayHandler {
@@ -108,12 +110,14 @@ impl GatewayHandler {
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         tx_helper: Arc<TransactionHelper>,
         contracts: ContractConfig,
+        input_proof_repo: Arc<InputProofRepository>,
     ) -> Self {
         Self {
             dispatcher,
             tx_helper,
             input_verification_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
+            input_proof_repo,
         }
     }
 

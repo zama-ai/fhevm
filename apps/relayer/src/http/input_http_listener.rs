@@ -6,6 +6,7 @@ use crate::http::docs_utils::ChainId;
 use crate::http::utils::{de_string_or_number, parse_and_validate, AppResponse, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
+use crate::store::sql::repositories::input_proof_repo::InputProofRepository;
 use axum::{body::Bytes, extract::FromRequest, http::Request, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -65,13 +66,19 @@ where
 {
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     api_version: ApiVersion,
+    input_proof_repo: Arc<InputProofRepository>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProofHandler<D> {
-    pub fn new(orchestrator: Arc<Orchestrator<D, RelayerEvent>>, api_version: ApiVersion) -> Self {
+    pub fn new(
+        orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+        api_version: ApiVersion,
+        input_proof_repo: Arc<InputProofRepository>,
+    ) -> Self {
         Self {
             orchestrator,
             api_version,
+            input_proof_repo,
         }
     }
 

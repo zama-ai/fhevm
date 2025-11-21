@@ -20,7 +20,7 @@ use crate::{
     },
     store::{
         key_value_db::KVStore, CacheResult, UserDecryptCache, UserDecryptResponseStore,
-        UserDecryptionResponseShare,
+        UserDecryptionResponseShare, sql::repositories::user_decrypt_repo::UserDecryptRepository,
     },
 };
 use alloy::sol_types::SolEvent;
@@ -93,6 +93,7 @@ pub struct GatewayHandler {
     tx_helper: Arc<TransactionHelper>,
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
+    user_decrypt_repo: Arc<UserDecryptRepository>,
 }
 
 impl GatewayHandler {
@@ -104,6 +105,7 @@ impl GatewayHandler {
         readiness_checker: Arc<ReadinessChecker>,
         decryption_address: Address,
         user_decrypt_shares_threshold: usize,
+        user_decrypt_repo: Arc<UserDecryptRepository>,
     ) -> Self {
         let cache = Arc::new(UserDecryptCache::new(kv_store));
 
@@ -118,6 +120,7 @@ impl GatewayHandler {
             tx_helper,
             readiness_checker,
             decryption_address,
+            user_decrypt_repo,
         }
     }
 

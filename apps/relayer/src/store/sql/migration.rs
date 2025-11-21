@@ -5,10 +5,7 @@ use tracing::error;
 
 use crate::store::sql::client::PgClient;
 
-pub async fn run_migrations(
-    pool: &PgClient,
-    // ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-) -> Result<(), anyhow::Error> {
+pub async fn run_migrations(pool: &PgClient) -> Result<(), anyhow::Error> {
     loop {
         match sqlx::migrate!().run(&pool.get_pool()).await {
             Ok(_) => break,

@@ -5,6 +5,7 @@ use crate::core::event::{
 use crate::http::utils::{parse_and_validate, AppResponse, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
+use crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository;
 use alloy::primitives::Bytes;
 use axum::{
     body::Bytes as AxumBytes,
@@ -65,13 +66,19 @@ where
 {
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     api_version: ApiVersion,
+    public_decrypt_repo: Arc<PublicDecryptRepository>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDecryptHandler<D> {
-    pub fn new(orchestrator: Arc<Orchestrator<D, RelayerEvent>>, api_version: ApiVersion) -> Self {
+    pub fn new(
+        orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+        api_version: ApiVersion,
+        public_decrypt_repo: Arc<PublicDecryptRepository>,
+    ) -> Self {
         Self {
             orchestrator,
             api_version,
+            public_decrypt_repo,
         }
     }
 

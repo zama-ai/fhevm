@@ -55,6 +55,13 @@ fmt-fix: ## Fix code formatting
 api-lint: ## Validate OpenAPI specification
 	@npx @redocly/cli lint openapi-async-design.yaml
 
+##@ SQL
+migrate: ## Run database migrations for relayer database
+	@cargo sqlx migrate run --database-url "postgresql://postgres:postgres@localhost:5433/relayer_db"
+
+sqlx-prepare: ## Prepare sqlx offline data for CI (run after schema changes)
+	@cargo sqlx prepare --database-url "postgresql://postgres:postgres@localhost:5433/relayer_db"
+
 ##@ Release
 release-minor: ## Release minor version bump (no publish, no tag)
 	@cargo release minor --no-publish --no-push --no-tag -x

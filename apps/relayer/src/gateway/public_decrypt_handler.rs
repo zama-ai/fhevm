@@ -18,7 +18,7 @@ use crate::{
         traits::{EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
     },
-    store::{key_value_db::KVStore, CacheResult, PublicDecryptCache},
+    store::{key_value_db::KVStore, CacheResult, PublicDecryptCache, sql::repositories::public_decrypt_repo::PublicDecryptRepository},
 };
 use alloy::sol_types::SolEvent;
 use alloy::{
@@ -82,6 +82,7 @@ pub struct GatewayHandler {
     tx_helper: Arc<TransactionHelper>,
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
+    public_decrypt_repo: Arc<PublicDecryptRepository>,
 }
 
 impl GatewayHandler {
@@ -92,6 +93,7 @@ impl GatewayHandler {
         tx_helper: Arc<TransactionHelper>,
         readiness_checker: Arc<ReadinessChecker>,
         decryption_address: Address,
+        public_decrypt_repo: Arc<PublicDecryptRepository>,
     ) -> Self {
         let cache = Arc::new(PublicDecryptCache::new(kv_store));
 
@@ -101,6 +103,7 @@ impl GatewayHandler {
             tx_helper,
             readiness_checker,
             decryption_address,
+            public_decrypt_repo,
         }
     }
 

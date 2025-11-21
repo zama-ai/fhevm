@@ -17,6 +17,10 @@ use crate::http::utils::AppResponse;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
+use crate::store::sql::repositories::{
+    input_proof_repo::InputProofRepository, public_decrypt_repo::PublicDecryptRepository,
+    user_decrypt_repo::UserDecryptRepository,
+};
 use chrono::Utc;
 use rand::Rng;
 use reqwest::Method;
@@ -92,12 +96,17 @@ fn create_rate_limit_error_handler(
     }
 }
 
+// There are TODO commands to remove argument bloat, after that this can be removed.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_http_server<D>(
     http_endpoint: SocketAddr,
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
-    key_url: KeyUrl,
-    gateway_rpc_url: String,
+    key_url: KeyUrl,         // TODO: move else where to reduce argument bloat
+    gateway_rpc_url: String, // TOOD: Move health checker to individual components. to reduce argument bloat.
     rate_limit_on_post_endpoints: RateLimitConfig,
+    input_proof_repo: Arc<InputProofRepository>,
+    public_decrypt_repo: Arc<PublicDecryptRepository>,
+    user_decrypt_repo: Arc<UserDecryptRepository>,
 ) where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
@@ -107,7 +116,11 @@ pub async fn run_http_server<D>(
     let health_checker = Arc::new(HealthChecker::new(gateway_rpc_url));
 
     // Build our application with the POST endpoint '/input-proof'
-    let input_proof_handler = Arc::new(InputProofHandler::new(orchestrator.clone(), api_version));
+    let input_proof_handler = Arc::new(InputProofHandler::new(
+        orchestrator.clone(),
+        api_version,
+        input_proof_repo,
+    ));
 
     /// Input proof
     ///
@@ -153,6 +166,7 @@ pub async fn run_http_server<D>(
     let user_decrypt_handler = Arc::new(UserDecryptHandler::new(
         Arc::clone(&orchestrator),
         api_version,
+        user_decrypt_repo,
     ));
     /// User decryption
     ///
@@ -196,7 +210,11 @@ pub async fn run_http_server<D>(
     }
 
     // Public decryption
-    let public_decrypt_handler = Arc::new(PublicDecryptHandler::new(orchestrator, api_version));
+    let public_decrypt_handler = Arc::new(PublicDecryptHandler::new(
+        orchestrator,
+        api_version,
+        public_decrypt_repo,
+    ));
 
     /// Public decryption
     ///

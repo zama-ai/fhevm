@@ -56,7 +56,18 @@ use crate::{
         traits::{EventHandler, HandlerRegistry, HookRegistry},
         Orchestrator, TokioEventDispatcher,
     },
-    store::{key_value_db::RocksDBKVStore, EventStore},
+    store::{
+        key_value_db::RocksDBKVStore,
+        sql::{
+            client::PgClient,
+            repositories::{
+                input_proof_repo::InputProofRepository,
+                public_decrypt_repo::PublicDecryptRepository,
+                user_decrypt_repo::UserDecryptRepository,
+            },
+        },
+        EventStore,
+    },
 };
 use prometheus::Registry;
 use std::sync::OnceLock;
@@ -119,6 +130,20 @@ pub async fn run_fhevm_relayer(
     info!("using rocks db databse at: {}", path_rocks_db.display());
     let kv_store = Arc::new(kv_store);
 
+    // Initialize PostgreSQL client and repositories
+    let pg_client = PgClient::new(
+        settings.storage.sql_database_url.clone(),
+        settings.storage.sql_max_connections,
+    )
+    .await;
+    let pg_client = Arc::new(pg_client);
+    info!("Initialized PostgreSQL client");
+
+    // Create SQL repositories
+    let input_proof_repo = Arc::new(InputProofRepository::new((*pg_client).clone()));
+    let public_decrypt_repo = Arc::new(PublicDecryptRepository::new((*pg_client).clone()));
+    let user_decrypt_repo = Arc::new(UserDecryptRepository::new((*pg_client).clone()));
+
     // Init and register event persistence hook
     let event_store = Arc::new(EventStore::<RelayerEvent>::new(kv_store.clone()));
     orchestrator.register_pre_dispatch_hook(EventPersistenceHook::<RelayerEvent>::new(
@@ -142,6 +167,7 @@ pub async fn run_fhevm_relayer(
         &orchestrator,
         gateway_tx_helper.clone(),
         settings.gateway.contracts.clone(),
+        input_proof_repo.clone(),
     )?;
 
     setup_public_decrypt_gateway_handler(
@@ -150,6 +176,7 @@ pub async fn run_fhevm_relayer(
         gateway_tx_helper.clone(),
         readiness_checker.clone(),
         decryption_address,
+        public_decrypt_repo.clone(),
     )?;
 
     setup_user_decrypt_gateway_handler(
@@ -159,6 +186,7 @@ pub async fn run_fhevm_relayer(
         readiness_checker.clone(),
         decryption_address,
         settings.gateway.contracts.user_decrypt_shares_threshold as usize,
+        user_decrypt_repo.clone(),
     )?;
 
     // === Initialize gateway listener with reconnection configuration
@@ -225,6 +253,9 @@ pub async fn run_fhevm_relayer(
             settings.keyurl,
             settings.gateway.blockchain_rpc.http_url,
             settings.http.rate_limit_post_endpoints,
+            input_proof_repo.clone(),
+            public_decrypt_repo.clone(),
+            user_decrypt_repo.clone(),
         ));
     };
 
@@ -279,11 +310,13 @@ fn setup_input_proof_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     tx_helper: Arc<GatewayTransactionHelper>,
     contracts: crate::config::settings::ContractConfig,
+    input_proof_repo: Arc<InputProofRepository>,
 ) -> eyre::Result<()> {
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(InputProofGatewayHandler::new(
         Arc::clone(orchestrator),
         tx_helper,
         contracts,
+        input_proof_repo,
     ));
 
     register_handler_for_events(
@@ -306,6 +339,7 @@ fn setup_public_decrypt_gateway_handler(
     tx_helper: Arc<GatewayTransactionHelper>,
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
+    public_decrypt_repo: Arc<PublicDecryptRepository>,
 ) -> eyre::Result<()> {
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(PublicDecryptGatewayHandler::new(
         Arc::clone(orchestrator),
@@ -313,6 +347,7 @@ fn setup_public_decrypt_gateway_handler(
         tx_helper,
         readiness_checker,
         decryption_address,
+        public_decrypt_repo,
     ));
 
     let event_ids = [
@@ -333,6 +368,7 @@ fn setup_user_decrypt_gateway_handler(
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
     user_decrypt_shares_threshold: usize,
+    user_decrypt_repo: Arc<UserDecryptRepository>,
 ) -> eyre::Result<()> {
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(UserDecryptGatewayHandler::new(
         Arc::clone(orchestrator),
@@ -341,6 +377,7 @@ fn setup_user_decrypt_gateway_handler(
         readiness_checker,
         decryption_address,
         user_decrypt_shares_threshold,
+        user_decrypt_repo,
     ));
 
     let event_ids = [

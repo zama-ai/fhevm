@@ -8,6 +8,7 @@ use crate::http::utils::{
 };
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
+use crate::store::sql::repositories::user_decrypt_repo::UserDecryptRepository;
 use alloy::primitives::Bytes;
 use axum::{body::Bytes as AxumBytes, extract::FromRequest, http::Request, response::IntoResponse};
 use serde::{Deserialize, Serialize};
@@ -113,13 +114,19 @@ where
 {
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     api_version: ApiVersion,
+    user_decrypt_repo: Arc<UserDecryptRepository>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecryptHandler<D> {
-    pub fn new(orchestrator: Arc<Orchestrator<D, RelayerEvent>>, api_version: ApiVersion) -> Self {
+    pub fn new(
+        orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+        api_version: ApiVersion,
+        user_decrypt_repo: Arc<UserDecryptRepository>,
+    ) -> Self {
         Self {
             orchestrator,
             api_version,
+            user_decrypt_repo,
         }
     }
 

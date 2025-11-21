@@ -4,6 +4,7 @@ use std::time::Duration;
 use ethereum_rpc_mock::{fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle};
 use fhevm_relayer::config::settings::Settings;
 use fhevm_relayer::run_fhevm_relayer;
+use fhevm_relayer::store::sql::client::PgClient;
 use fhevm_relayer::tracing::init_tracing_once;
 
 use alloy::primitives::Address;
@@ -247,6 +248,28 @@ pub fn random_address() -> Address {
     Address::from(bytes)
 }
 
+/// Generate a random handle (64 hex characters) for testing
+#[allow(dead_code)]
+pub fn random_handle() -> String {
+    let mut rng = rng();
+    let hex: String = (0..64)
+        .map(|_| rng.random_range(0..16))
+        .map(|digit| format!("{:x}", digit))
+        .collect();
+    format!("0x{}", hex)
+}
+
+/// Setup test database connection  
+/// Note: Run `make migrate` before running tests that use SQL repositories
+#[allow(dead_code)]
+pub async fn setup_test_database(
+    database_url: &str,
+    max_connections: u32,
+) -> eyre::Result<PgClient> {
+    let pg_client = PgClient::new(database_url.to_string(), max_connections).await;
+    Ok(pg_client)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -291,15 +314,4 @@ gateway:
         assert!(serialized.contains("max_attempts: 4"));
         assert!(serialized.contains("retry_interval_ms: 250"));
     }
-}
-
-/// Generate a random handle (64 hex characters) for testing
-#[allow(dead_code)]
-pub fn random_handle() -> String {
-    let mut rng = rng();
-    let hex: String = (0..64)
-        .map(|_| rng.random_range(0..16))
-        .map(|digit| format!("{:x}", digit))
-        .collect();
-    format!("0x{}", hex)
 }
