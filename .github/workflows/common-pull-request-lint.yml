@@ -4,7 +4,7 @@ on:
   pull_request:
 
 env:
-  ACTIONLINT_VERSION: 1.6.27
+  ACTIONLINT_VERSION: 1.7.8
 
 permissions: {}
 
@@ -25,6 +25,7 @@ jobs:
         uses: raven-actions/actionlint@01fce4f43a270a612932cb1c64d40505a029f821 # v2.0.0
         with:
             flags: "-ignore SC2001"
+            version: ${{ env.ACTIONLINT_VERSION }}
 
       - name: Ensure SHA pinned actions
         uses: zgosalvez/github-actions-ensure-sha-pinned-actions@64418826697dcd77c93a8e4a1f7601a1942e57b5 # v3.0.18
