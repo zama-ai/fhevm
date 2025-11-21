@@ -37,6 +37,11 @@ jobs:
           toolchain: stable
           components: rustfmt
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.folder }}
+
       - name: Check formatting
         working-directory: ${{ matrix.folder }}
         run: cargo fmt --all -- --check
@@ -61,6 +66,11 @@ jobs:
           toolchain: stable
           components: clippy
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.folder }}
+
       - name: Clippy
         working-directory: ${{ matrix.folder }}
         run: cargo clippy -- -D warnings
@@ -84,6 +94,11 @@ jobs:
         with:
           toolchain: stable
           components: llvm-tools-preview
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.folder }}
 
       - name: Run tests
         working-directory: ${{ matrix.folder }}
