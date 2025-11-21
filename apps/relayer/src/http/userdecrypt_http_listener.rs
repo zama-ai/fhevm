@@ -25,7 +25,7 @@ use validator::Validate;
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptRequestJson {
     #[validate(
-        length(min = 1, message = "Cannot be empty"),
+        length(min = 1, message = "Must not be empty"),
         custom(function = "crate::http::utils::validate_handle_contract_pairs")
     )]
     pub handle_contract_pairs: Vec<HandleContractPairJson>,
@@ -37,7 +37,7 @@ pub struct UserDecryptRequestJson {
     pub contracts_chain_id: String,
 
     /// Array of contract addresses
-    #[validate(length(min = 1, message = "Cannot be empty"))]
+    #[validate(length(min = 1, message = "Must not be empty"))]
     #[validate(custom(function = "crate::http::utils::validate_blockchain_addresses"))]
     pub contract_addresses: Vec<String>,
     /// User's wallet address
@@ -50,6 +50,7 @@ pub struct UserDecryptRequestJson {
     )]
     pub signature: String,
     /// Public key
+    #[validate(length(min = 2, message = "Must not be empty"))]
     #[validate(custom(function = "crate::http::utils::validate_no_0x_hex"))]
     pub public_key: String,
     /// Extra data field, always set to 0x00
@@ -245,4 +246,3 @@ impl Serialize for UserDecryptResponsePayloadJson {
         state.end()
     }
 }
-

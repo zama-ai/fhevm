@@ -124,9 +124,12 @@ async fn test_success_concurrent_requests() {
 
 #[rstest]
 // Ciphertext handles validation
-#[case::empty_ciphertext_handles("ciphertextHandles", json!([]), constants::CANNOT_BE_EMPTY)]
+#[case::empty_ciphertext_handles("ciphertextHandles", json!([]), constants::MUST_NOT_BE_EMPTY)]
 #[case::invalid_hex_ciphertext_handle("ciphertextHandles", json!(["0xabcdefabcdefs"]), constants::HEX_INVALID_STRING)]
+#[case::odd_length_ciphertext_handle("ciphertextHandles", json!(["0xabcdef1"]), constants::HEX_INVALID_STRING)]
+#[case::ciphertext_handle_with_invalid_hex_g("ciphertextHandles", json!(["0xabcdefg"]), constants::HEX_INVALID_STRING)]
 #[case::ciphertext_handle_without_0x_prefix("ciphertextHandles", json!(["abcdef123456789012345678901234567890123456789012345678901234567890"]), constants::HEX_MUST_START_WITH_0X)]
+#[case::empty_string_ciphertext_handle("ciphertextHandles", json!([""]), constants::HEX_MUST_START_WITH_0X)]
 // Extra data validation
 #[case::empty_extra_data("extraData", json!(""), constants::EXACT_MUST_BE_0X00)]
 #[case::wrong_extra_data("extraData", json!("0x01"), constants::EXACT_MUST_BE_0X00)]

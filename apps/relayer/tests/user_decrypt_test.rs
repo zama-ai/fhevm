@@ -179,12 +179,12 @@ async fn test_success_concurrent_requests() {
 }
 
 #[rstest]
-// Chain ID validation  
+// Chain ID validation
 #[case::empty_chain_id("contractsChainId", json!(""), constants::NUMBER_DECIMAL_OR_HEX)]
 #[case::invalid_chain_id_decimal("contractsChainId", json!("abc123"), constants::NUMBER_DECIMAL_OR_HEX)]
 #[case::invalid_chain_id_hex("contractsChainId", json!("0xzzz"), constants::NUMBER_DECIMAL_OR_HEX)]
 // Contract addresses validation
-#[case::empty_contract_addresses("contractAddresses", json!([]), constants::CANNOT_BE_EMPTY)]
+#[case::empty_contract_addresses("contractAddresses", json!([]), constants::MUST_NOT_BE_EMPTY)]
 #[case::short_contract_address("contractAddresses", json!(["0xfds"]), constants::LENGTH_MUST_BE_42_CHARACTERS)]
 #[case::long_contract_address("contractAddresses", json!(["0x1234567890123456789012345678901234567890123"]), constants::LENGTH_MUST_BE_42_CHARACTERS)]
 #[case::missing_0x_contract_address("contractAddresses", json!(["1234567890123456789012345678901234567890"]), constants::HEX_MUST_START_WITH_0X)]
@@ -200,7 +200,17 @@ async fn test_success_concurrent_requests() {
 #[case::user_address_with_invalid_hex_g("userAddress", json!("0x123456789012345678901234567890123456789g"), constants::HEX_INVALID_CHARACTERS)]
 #[case::empty_string_user_address("userAddress", json!(""), constants::HEX_MUST_START_WITH_0X)]
 // Handle contract pairs validation
-#[case::empty_handle_contract_pairs("handleContractPairs", json!([]), constants::CANNOT_BE_EMPTY)]
+#[case::empty_handle_contract_pairs("handleContractPairs", json!([]), constants::MUST_NOT_BE_EMPTY)]
+// Signature validation
+#[case::short_signature("signature", json!("abcdef12"), constants::LENGTH_MUST_BE_132_CHARACTERS)]
+#[case::long_signature("signature", json!("abcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"), constants::LENGTH_MUST_BE_132_CHARACTERS)]
+#[case::signature_with_0x_prefix("signature", json!("0xabcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"), constants::HEX_MUST_NOT_START_WITH_0X)]
+#[case::signature_with_invalid_hex_g("signature", json!("abcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890g"), constants::HEX_INVALID_STRING)]
+#[case::empty_signature("signature", json!(""), constants::LENGTH_MUST_BE_132_CHARACTERS)]
+// Public key validation
+#[case::public_key_with_0x_prefix("publicKey", json!("0xabcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"), constants::HEX_MUST_NOT_START_WITH_0X)]
+#[case::public_key_with_invalid_hex_g("publicKey", json!("abcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890g"), constants::HEX_INVALID_STRING)]
+#[case::empty_public_key("publicKey", json!(""), constants::MUST_NOT_BE_EMPTY)]
 // Extra data validation
 #[case::empty_extra_data("extraData", json!(""), constants::EXACT_MUST_BE_0X00)]
 #[case::wrong_extra_data("extraData", json!("0x01"), constants::EXACT_MUST_BE_0X00)]
@@ -231,10 +241,19 @@ async fn test_error_invalid_fields(
 
 #[rstest]
 #[case::short_handle("0xabcdef", constants::LENGTH_MUST_BE_64_CHARACTERS)]
+#[case::long_handle(
+    "0xabcdef1234567890123456789012345678901234567890123456789012345678901234567890",
+    constants::LENGTH_MUST_BE_64_CHARACTERS
+)]
+#[case::handle_with_invalid_hex_g(
+    "0xabcdefg123456789012345678901234567890123456789012345678901234567890",
+    constants::HEX_INVALID_STRING
+)]
 #[case::handle_without_0x_prefix(
     "abcdef123456789012345678901234567890123456789012345678901234567890",
     constants::HEX_MUST_START_WITH_0X
 )]
+#[case::empty_handle("", constants::HEX_MUST_START_WITH_0X)]
 #[tokio::test]
 async fn test_error_invalid_nested_handle_fields(
     #[case] invalid_handle: &str,

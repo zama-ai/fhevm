@@ -1,4 +1,4 @@
-use fhevm_relayer::http::utils::{ErrorCode, ErrorResponse};
+use fhevm_relayer::http::utils::{validation_messages, ErrorCode, ErrorResponse};
 use serde_json::Value;
 
 #[allow(dead_code)]
@@ -60,9 +60,12 @@ pub fn expect_missing_field(
             // Also assert that the issue message is correct for missing fields
             let field_detail = details.iter().find(|d| d.field == field).unwrap();
             assert_eq!(
-                field_detail.issue, "Required but missing",
-                "Expected missing field '{}' to have issue 'Required but missing', got: '{}'",
-                field, field_detail.issue
+                field_detail.issue,
+                validation_messages::GENERIC_REQUIRED_BUT_MISSING,
+                "Expected missing field '{}' to have issue '{}', got: '{}'",
+                field,
+                validation_messages::GENERIC_REQUIRED_BUT_MISSING,
+                field_detail.issue
             );
         })
     }

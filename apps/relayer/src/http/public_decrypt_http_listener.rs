@@ -25,7 +25,7 @@ use validator::Validate;
 #[serde(rename_all = "camelCase")]
 pub struct PublicDecryptRequestJson {
     #[validate(
-        length(min = 1, message = "Cannot be empty"),
+        length(min = 1, message = "Must not be empty"),
         custom(function = "crate::http::utils::validate_0x_hexs")
     )]
     pub ciphertext_handles: Vec<String>,
@@ -231,4 +231,3 @@ impl Serialize for PublicDecryptResponsePayloadJson {
 fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
     hex::encode(vec)
 }
-

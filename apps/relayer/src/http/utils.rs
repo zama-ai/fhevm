@@ -101,7 +101,6 @@ impl ParseError {
 
 // Generic validation error messages (reusable across fields)
 pub mod validation_messages {
-    pub const GENERIC_MUST_NOT_BE_EMPTY: &str = "Must not be empty";
     pub const GENERIC_REQUIRED_BUT_MISSING: &str = "Required but missing";
 
     pub const NUMBER_DECIMAL_OR_HEX: &str = "Must be decimal number or 0x hex string";
@@ -112,13 +111,12 @@ pub mod validation_messages {
     pub const HEX_INVALID_STRING: &str = "Invalid hex string";
 
     // Generic length validation messages
-    pub const LENGTH_MUST_BE_EXACT: &str = "Must be exactly {} characters long";
     pub const LENGTH_MUST_BE_42_CHARACTERS: &str = "Must be 42 characters long"; // Keep for backward compatibility
     pub const LENGTH_MUST_BE_64_CHARACTERS: &str = "Must be 64 characters long"; // Keep for backward compatibility
-    pub const LENGTH_MUST_BE_130_CHARACTERS: &str = "Must be 130 characters long"; // Keep for backward compatibility
+    pub const LENGTH_MUST_BE_132_CHARACTERS: &str = "Must be 132 characters long";
 
     // Generic collection validation messages
-    pub const CANNOT_BE_EMPTY: &str = "Cannot be empty";
+    pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
 
     pub const EXACT_MUST_BE_0X00: &str = "Must be 0x00";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";

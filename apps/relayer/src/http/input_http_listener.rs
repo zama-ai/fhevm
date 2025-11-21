@@ -192,4 +192,3 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         }
     }
 }
-

@@ -152,7 +152,7 @@ async fn test_success_concurrent_requests() {
 #[case::invalid_hex_user_address("userAddress", json!("0x123zzz5678901234567890123456789012345678"), constants::HEX_INVALID_CHARACTERS)]
 #[case::user_address_with_invalid_hex_g("userAddress", json!("0x123456789012345678901234567890123456789g"), constants::HEX_INVALID_CHARACTERS)]
 // Ciphertext validation
-#[case::empty_ciphertext("ciphertextWithInputVerification", json!(""), constants::GENERIC_MUST_NOT_BE_EMPTY)]
+#[case::empty_ciphertext("ciphertextWithInputVerification", json!(""), constants::MUST_NOT_BE_EMPTY)]
 #[case::invalid_hex_ciphertext("ciphertextWithInputVerification", json!("abcdefabcdefs"), constants::HEX_INVALID_STRING)]
 #[case::odd_length_ciphertext("ciphertextWithInputVerification", json!("abcdef1"), constants::HEX_INVALID_STRING)]
 #[case::ciphertext_with_invalid_hex_g("ciphertextWithInputVerification", json!("abcdefg"), constants::HEX_INVALID_STRING)]
