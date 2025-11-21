@@ -191,6 +191,31 @@ async fn test_success_concurrent_requests() {
 #[case::invalid_hex_contract_address("contractAddresses", json!(["0x123zzz5678901234567890123456789012345678"]), constants::HEX_INVALID_CHARACTERS)]
 #[case::contract_address_with_invalid_hex_g("contractAddresses", json!(["0x123456789012345678901234567890123456789g"]), constants::HEX_INVALID_CHARACTERS)]
 #[case::empty_string_contract_address("contractAddresses", json!([""]), constants::HEX_MUST_START_WITH_0X)]
+#[tokio::test]
+async fn test_error_invalid_fields_set_1(
+    #[case] field: &str,
+    #[case] invalid_value: serde_json::Value,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    test_endpoint(
+        &helpers::v1_user_decrypt_url(&setup),
+        base_payload,
+        with_invalid_field(field, invalid_value),
+        expect_invalid_field(field, expected_issue),
+    )
+    .await;
+}
+
+#[rstest]
 // User address validation
 #[case::empty_user_address("userAddress", json!(""), constants::HEX_MUST_START_WITH_0X)]
 #[case::short_user_address("userAddress", json!("0xfds"), constants::LENGTH_MUST_BE_42_CHARACTERS)]
@@ -201,6 +226,31 @@ async fn test_success_concurrent_requests() {
 #[case::empty_string_user_address("userAddress", json!(""), constants::HEX_MUST_START_WITH_0X)]
 // Handle contract pairs validation
 #[case::empty_handle_contract_pairs("handleContractPairs", json!([]), constants::MUST_NOT_BE_EMPTY)]
+#[tokio::test]
+async fn test_error_invalid_fields_set_2(
+    #[case] field: &str,
+    #[case] invalid_value: serde_json::Value,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    test_endpoint(
+        &helpers::v1_user_decrypt_url(&setup),
+        base_payload,
+        with_invalid_field(field, invalid_value),
+        expect_invalid_field(field, expected_issue),
+    )
+    .await;
+}
+
+#[rstest]
 // Signature validation
 #[case::short_signature("signature", json!("abcdef12"), constants::LENGTH_MUST_BE_132_CHARACTERS)]
 #[case::long_signature("signature", json!("abcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"), constants::LENGTH_MUST_BE_132_CHARACTERS)]
@@ -216,7 +266,7 @@ async fn test_success_concurrent_requests() {
 #[case::wrong_extra_data("extraData", json!("0x01"), constants::EXACT_MUST_BE_0X00)]
 #[case::invalid_extra_data("extraData", json!("invalid"), constants::EXACT_MUST_BE_0X00)]
 #[tokio::test]
-async fn test_error_invalid_fields(
+async fn test_error_invalid_fields_set_3(
     #[case] field: &str,
     #[case] invalid_value: serde_json::Value,
     #[case] expected_issue: &str,
