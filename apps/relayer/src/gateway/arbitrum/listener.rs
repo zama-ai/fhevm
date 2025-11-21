@@ -25,7 +25,7 @@ pub async fn arbitrum_listener(
             event = subscription.next() => match event {
                 Some(event_log) => {
                     let event = RelayerEvent::new(
-                        orchestrator.new_request_id(),
+                        orchestrator.new_internal_request_id(),
                         ApiVersion {
                             category: ApiCategory::PRODUCTION,
                             number: 1,

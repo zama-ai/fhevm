@@ -137,7 +137,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
         S: Send + Sync,
     {
         // Generate request ID first so it's available for all error responses
-        let request_id = self.orchestrator.new_request_id();
+        let request_id = self.orchestrator.new_internal_request_id();
         let _span = span!(Level::INFO, "handle-user-decrypt-req", request_id = %request_id);
 
         info!(

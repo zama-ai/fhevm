@@ -1,4 +1,4 @@
-use crate::orchestrator::request_id;
+use crate::orchestrator::ids;
 use crate::orchestrator::traits::Event;
 use crate::orchestrator::traits::{
     EventDispatcher, EventHandler, HandlerRegistry, HookRegistry, PreDispatchHook,
@@ -24,8 +24,12 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
         })
     }
 
-    pub fn new_request_id(&self) -> Uuid {
-        request_id::new_request_id()
+    pub fn new_internal_request_id(&self) -> Uuid {
+        ids::new_internal_request_id()
+    }
+
+    pub fn new_ext_reference_id(&self) -> Uuid {
+        ids::new_external_reference_id()
     }
 
     #[instrument(skip_all, fields(event_type=%(event.event_name()), request_id=%(event.request_id())))]
@@ -111,7 +115,7 @@ mod tests {
         let pubsub = Arc::new(TokioEventDispatcher::<RelayerEvent>::new());
         let orchestrator = Orchestrator::new(pubsub.clone());
 
-        let id = orchestrator.new_request_id();
+        let id = orchestrator.new_internal_request_id();
 
         let event = RelayerEvent::new(
             id,
