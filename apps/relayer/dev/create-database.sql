@@ -1,1 +1,1 @@
-CREATE DATABASE relayer;
+CREATE DATABASE relayer_db;
