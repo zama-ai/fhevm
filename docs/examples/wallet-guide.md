@@ -71,17 +71,17 @@ pnpm run start
 
 **Step 1**: On initially logging in and connect a wallet, a user’s confidential token balances are not yet visible/decrypted.
 
-![Screenshot 2025-11-03 at 18.40.38.png](Confidential%20token%20integration%20guide/Screenshot_2025-11-03_at_18.40.38.png)
+![Connect wallet to demo app](../.gitbook/assets/wallet-guide-1.png)
 
 **Step 2**: User can now sign and fetch their decrypted ERC-7984 confidential token balance. Balances are stored as ciphertext handles. To display a user’s balance, read the balance handle from your token and [perform **user decryption**](https://docs.zama.ai/protocol/relayer-sdk-guides/v0.1/fhevm-relayer/decryption/user-decryption) with an EIP-712-authorised session in the wallet. Ensure the token grants ACL permission to the user before decrypting.
 
-![Screenshot 2025-11-03 at 18.50.47.png](Confidential%20token%20integration%20guide/Screenshot_2025-11-03_at_18.50.47.png)
+![Sign user decryption request](../.gitbook/assets/wallet-guide-2.png)
 
-![Screenshot 2025-11-03 at 18.51.10.png](Confidential%20token%20integration%20guide/Screenshot_2025-11-03_at_18.51.10.png)
+![View confidential token balance](../.gitbook/assets/wallet-guide-3.png)
 
 **Step 3**: User chooses ERC-7984 confidential token amount to send, which is encrypted, signed and sent to destination address. Follow [**OpenZeppelin’s ERC-7984 transfer documentation**](https://docs.openzeppelin.com/confidential-contracts/token#transfer) for function variants and receiver callbacks. Amounts are passed as encrypted inputs that your wallet prepares with the Relayer SDK.
 
-![Screenshot 2025-11-03 at 18.53.37.png](Confidential%20token%20integration%20guide/Screenshot_2025-11-03_at_18.53.37.png)
+![Send confidential tokens](../.gitbook/assets/wallet-guide-4.png)
 
 ## **UI and UX recommendations**
 
@@ -99,4 +99,4 @@ pnpm run start
 ## Further reading
 
 - Detailed [**confidential contracts guide from OpenZeppelin**](https://docs.openzeppelin.com/confidential-contracts) (besides ERC-7984)
-- [**ERC-7984 tutorial and examples**](https://docs.zama.ai/protocol/examples/openzeppelin-confidential-contracts/erc7984/erc7984-tutorial)
+- [**ERC-7984 tutorial and examples**](./openzeppelin/README.md)
