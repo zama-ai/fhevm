@@ -71,7 +71,7 @@ impl PublicDecryptRepository {
             )
             VALUES ($1, $2, $3, 'queued'::req_status, NOW(), NOW())
             ON CONFLICT (int_indexer_id) 
-            DO UPDATE SET updated_at = NOW() -- Forces Postgres to return the ID even on conflict
+            DO UPDATE SET updated_at = public_decrypt_req.updated_at -- Dummy update, preserves existing timestamp
             RETURNING ext_reference_id
             "#,
             ext_reference_id,
