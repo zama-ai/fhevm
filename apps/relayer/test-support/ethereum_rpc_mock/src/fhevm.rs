@@ -121,6 +121,53 @@ impl FhevmMockWrapper {
         self.next_zk_proof_id.fetch_add(1, Ordering::SeqCst)
     }
 
+    /// Configure readiness checks to return false (simulating not ready state)
+    pub fn set_readiness_failure(&self) {
+        debug!("Configuring readiness checks to return false");
+        self.register_readiness_patterns(false);
+    }
+
+    /// Configure readiness checks to return true (simulating ready state)  
+    pub fn set_readiness_success(&self) {
+        debug!("Configuring readiness checks to return true");
+        self.register_readiness_patterns(true);
+    }
+
+    /// Register readiness check patterns directly with the mock server
+    fn register_readiness_patterns(&self, ready: bool) {
+        let response_value = if ready {
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        } else {
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        };
+
+        let readiness_response = Response::Success {
+            hash: None,
+            data: crate::mock_server::ResponseData::Bytes(Bytes::from_str(response_value).unwrap()),
+            scheduled_transactions: Vec::new(),
+        };
+
+        // Register public decryption readiness check
+        self.json_rpc_server.on_call(
+            matches_contract_and_selector_for_call(
+                self.decryption_contract,
+                Decryption::isPublicDecryptionReadyCall::SELECTOR,
+            ),
+            readiness_response.clone(),
+            UsageLimit::Unlimited,
+        );
+
+        // Register user decryption readiness check
+        self.json_rpc_server.on_call(
+            matches_contract_and_selector_for_call(
+                self.decryption_contract,
+                Decryption::isUserDecryptionReadyCall::SELECTOR,
+            ),
+            readiness_response,
+            UsageLimit::Unlimited,
+        );
+    }
+
     // Generic setup methods to eliminate duplication
 
     /// Generic registration method for decryption patterns
@@ -160,6 +207,9 @@ impl FhevmMockWrapper {
     /// Register user decryption that succeeds with the new multi-response pattern
     /// Emits events across multiple blocks using 3-3-3-1 pattern + consensus
     pub fn on_user_decrypt_success(&self, handles: Vec<B256>, user: Address, _result: Bytes) {
+        // Set up readiness check patterns to return true (ready)
+        self.set_readiness_success();
+
         let id = self.next_decryption_id();
         debug!(
             decryption_id = id,
@@ -299,23 +349,8 @@ impl FhevmMockWrapper {
             scheduled_transactions: vec![scheduled_tx],
         };
 
-        self.json_rpc_server.on_call(
-            matches_contract_and_selector_for_call(
-                self.decryption_contract,
-                Decryption::isUserDecryptionReadyCall::SELECTOR,
-            ),
-            Response::Success {
-                hash: None,
-                data: crate::mock_server::ResponseData::Bytes(
-                    Bytes::from_str(
-                        "0x0000000000000000000000000000000000000000000000000000000000000001",
-                    )
-                    .unwrap(),
-                ),
-                scheduled_transactions: Vec::new(),
-            },
-            UsageLimit::Unlimited,
-        );
+        // Set up default readiness patterns (ready state)
+        self.register_readiness_patterns(true);
 
         // Register pattern that returns immediate response with scheduled transaction
         self.json_rpc_server.on_transaction(
@@ -347,24 +382,8 @@ impl FhevmMockWrapper {
 
     /// Register public decryption that succeeds with the provided values
     pub fn on_public_decrypt_success(&self, handles: Vec<B256>, values: Vec<u64>) {
-        // Register the readiness check call
-        self.json_rpc_server.on_call(
-            matches_contract_and_selector_for_call(
-                self.decryption_contract,
-                Decryption::isPublicDecryptionReadyCall::SELECTOR,
-            ),
-            Response::Success {
-                hash: None,
-                data: crate::mock_server::ResponseData::Bytes(
-                    Bytes::from_str(
-                        "0x0000000000000000000000000000000000000000000000000000000000000001",
-                    )
-                    .unwrap(),
-                ),
-                scheduled_transactions: Vec::new(),
-            },
-            UsageLimit::Unlimited,
-        );
+        // Set up readiness check patterns to return true (ready)
+        self.set_readiness_success();
 
         // Register the transaction pattern
         self.register_decrypt_pattern(

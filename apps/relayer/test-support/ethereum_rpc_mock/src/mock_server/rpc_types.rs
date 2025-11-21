@@ -208,7 +208,7 @@ impl TryFrom<&Value> for CallParams {
             .parse::<Address>()
             .with_context(|| format!("Invalid 'to' address format: {}", to_str))?;
 
-        // Parse optional 'data' field with validation
+        // Parse 'input' field (alloy sends this field for eth_call)
         let input = tx_obj
             .get("input")
             .and_then(|v| v.as_str())
@@ -217,13 +217,13 @@ impl TryFrom<&Value> for CallParams {
                 // Validate hex string contains only valid characters
                 if !hex_str.chars().all(|c| c.is_ascii_hexdigit()) {
                     return Err(anyhow::anyhow!(
-                        "Data field contains invalid hex characters: {}",
+                        "Input field contains invalid hex characters: {}",
                         s
                     ));
                 }
                 hex::decode(hex_str)
                     .map(Bytes::from)
-                    .with_context(|| format!("Failed to decode hex data: {}", s))
+                    .with_context(|| format!("Failed to decode hex input: {}", s))
             })
             .transpose()?
             .unwrap_or_default();

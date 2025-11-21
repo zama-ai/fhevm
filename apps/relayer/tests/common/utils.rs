@@ -22,14 +22,32 @@ pub struct TestSetup {
     _host_handle: MockServerHandle,
     _gateway_handle: MockServerHandle,
     _temp_db: TempDir,
-    _temp_config: TempDir,
     _cancellation_token: CancellationToken,
 }
 
 impl TestSetup {
+    /// Create test setup with fast readiness config (4 attempts × 250ms = ~1s total)
+    /// This config is used in tests for readiness check timing out.
+    #[allow(dead_code)]
+    pub async fn new_with_fast_readiness() -> eyre::Result<Self> {
+        // Create temp config with modified readiness settings
+        let temp_config_dir = TempDir::new()?;
+        let temp_config_path = create_fast_readiness_config(&temp_config_dir)?;
+
+        Self::new_with_config_path(Some(temp_config_path)).await
+    }
+
     /// Create isolated test setup with free ports and temp database
     #[allow(dead_code)]
     pub async fn new() -> eyre::Result<Self> {
+        // Create a temp config based on the example config
+        let temp_config_dir = tempfile::TempDir::new()?;
+        let temp_config_path = create_default_config(&temp_config_dir)?;
+        Self::new_with_config_path(Some(temp_config_path)).await
+    }
+
+    /// Create setup with optional custom config path
+    async fn new_with_config_path(config_path: Option<std::path::PathBuf>) -> eyre::Result<Self> {
         // Get free ports
         let host_port = get_free_port()?;
         let gateway_port = get_free_port()?;
@@ -97,9 +115,10 @@ impl TestSetup {
             .await
             .map_err(|e| eyre::eyre!("Failed to start gateway mock server: {}", e))?;
 
-        // Create isolated settings from temp config file
-        let mut settings = Settings::new(Some(temp_config_path.to_string_lossy().to_string()))
-            .expect("Failed to load default configuration");
+        // Create settings from config file (default or custom)
+        let config_path_str = config_path.map(|p| p.to_string_lossy().to_string());
+        let mut settings =
+            Settings::new(config_path_str.clone()).expect("Failed to load configuration");
 
         // Initialize tracing once with settings
         init_tracing_once(&settings.log);
@@ -117,8 +136,7 @@ impl TestSetup {
 
         // Create a new settings instance for the relayer since Settings doesn't implement Clone
         let mut relayer_settings =
-            Settings::new(Some(temp_config_path.to_string_lossy().to_string()))
-                .expect("Failed to load default configuration");
+            Settings::new(config_path_str.clone()).expect("Failed to load configuration");
         relayer_settings.storage.db_path_rocksdb = settings.storage.db_path_rocksdb.clone();
         relayer_settings.http.endpoint = settings.http.endpoint.clone();
         relayer_settings.gateway.blockchain_rpc.http_url =
@@ -153,7 +171,6 @@ impl TestSetup {
             _host_handle: host_handle,
             _gateway_handle: gateway_handle,
             _temp_db: temp_db,
-            _temp_config: temp_config_dir,
             _cancellation_token: cancellation_token,
         })
     }
@@ -164,6 +181,38 @@ impl Drop for TestSetup {
         tracing::debug!("Cleaning up isolated test setup");
         self._cancellation_token.cancel();
     }
+}
+
+/// Create a default config file based on the example
+fn create_default_config(temp_dir: &tempfile::TempDir) -> eyre::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join("test_config.yaml");
+
+    // Simply copy the example config without modifications
+    std::fs::copy("config/local.yaml.example", &temp_config_path)
+        .map_err(|e| eyre::eyre!("Failed to copy example config: {}", e))?;
+
+    Ok(temp_config_path)
+}
+
+/// Create a config file with fast readiness settings (4 attempts × 250ms)
+fn create_fast_readiness_config(temp_dir: &TempDir) -> eyre::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join("fast_readiness.yaml");
+
+    // Read the default config
+    let config_content = std::fs::read_to_string("config/local.yaml.example")
+        .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
+
+    // Simple string replacement to modify only the readiness retry settings
+    let modified_content = config_content.replace(
+        "      max_attempts: 75\n      retry_interval_ms: 3000",
+        "      max_attempts: 4\n      retry_interval_ms: 250",
+    );
+
+    // Write to temp file
+    std::fs::write(&temp_config_path, modified_content)
+        .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
+
+    Ok(temp_config_path)
 }
 
 /// Get a free port by binding to port 0

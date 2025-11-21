@@ -383,3 +383,52 @@ async fn test_error_malformed_json(#[case] malformed_json: &str) {
     )
     .await;
 }
+
+/// Test readiness check failure returns 504 Gateway Timeout with correct message
+#[tokio::test]
+async fn test_readiness_check_failure_returns_504() {
+    // Use fast readiness config (4 attempts × 250ms = ~1s total)
+    let setup = TestSetup::new_with_fast_readiness()
+        .await
+        .expect("Failed to create test setup");
+
+    // Configure mock to always return false for readiness checks
+    setup.fhevm_mock.set_readiness_failure();
+
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    // Make direct HTTP request to test the endpoint
+    let response = reqwest::Client::new()
+        .post(helpers::v1_user_decrypt_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send HTTP request");
+
+    // Verify we get 504 Gateway Timeout
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::GATEWAY_TIMEOUT,
+        "Expected 504 Gateway Timeout status code"
+    );
+
+    // Verify error message
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .expect("Failed to parse response JSON");
+
+    assert_eq!(
+        body["message"].as_str(),
+        Some("Ciphertext not ready for decryption"),
+        "Expected readiness failure error message"
+    );
+}
