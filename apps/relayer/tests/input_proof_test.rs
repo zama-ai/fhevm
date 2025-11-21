@@ -140,61 +140,29 @@ async fn test_success_concurrent_requests() {
 // Contract address validation
 #[case::empty_contract_address("contractAddress", json!(""), constants::HEX_MUST_START_WITH_0X)]
 #[case::short_contract_address("contractAddress", json!("0xfds"), constants::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::long_contract_address("contractAddress", json!("0x1234567890123456789012345678901234567890123"), constants::LENGTH_MUST_BE_42_CHARACTERS)]
 #[case::missing_0x_contract_address("contractAddress", json!("1234567890123456789012345678901234567890"), constants::HEX_MUST_START_WITH_0X)]
 #[case::invalid_hex_contract_address("contractAddress", json!("0x123zzz5678901234567890123456789012345678"), constants::HEX_INVALID_CHARACTERS)]
-#[tokio::test]
-async fn test_error_invalid_fields(
-    #[case] field: &str,
-    #[case] invalid_value: serde_json::Value,
-    #[case] expected_issue: &str,
-) {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let (base_payload, _, _) = helpers::create_input_proof_payload(&setup);
-
-    test_endpoint(
-        &helpers::v1_input_proof_url(&setup),
-        base_payload,
-        with_invalid_field(field, invalid_value),
-        expect_invalid_field(field, expected_issue),
-    )
-    .await;
-}
-
-#[rstest]
+#[case::contract_address_with_invalid_hex_g("contractAddress", json!("0x123456789012345678901234567890123456789g"), constants::HEX_INVALID_CHARACTERS)]
 // User address validation
 #[case::empty_user_address("userAddress", json!(""), constants::HEX_MUST_START_WITH_0X)]
 #[case::short_user_address("userAddress", json!("0xfds"), constants::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::long_user_address("userAddress", json!("0x1234567890123456789012345678901234567890123"), constants::LENGTH_MUST_BE_42_CHARACTERS)]
 #[case::missing_0x_user_address("userAddress", json!("1234567890123456789012345678901234567890"), constants::HEX_MUST_START_WITH_0X)]
 #[case::invalid_hex_user_address("userAddress", json!("0x123zzz5678901234567890123456789012345678"), constants::HEX_INVALID_CHARACTERS)]
+#[case::user_address_with_invalid_hex_g("userAddress", json!("0x123456789012345678901234567890123456789g"), constants::HEX_INVALID_CHARACTERS)]
 // Ciphertext validation
 #[case::empty_ciphertext("ciphertextWithInputVerification", json!(""), constants::GENERIC_MUST_NOT_BE_EMPTY)]
 #[case::invalid_hex_ciphertext("ciphertextWithInputVerification", json!("abcdefabcdefs"), constants::HEX_INVALID_STRING)]
+#[case::odd_length_ciphertext("ciphertextWithInputVerification", json!("abcdef1"), constants::HEX_INVALID_STRING)]
+#[case::ciphertext_with_invalid_hex_g("ciphertextWithInputVerification", json!("abcdefg"), constants::HEX_INVALID_STRING)]
 #[case::ciphertext_with_0x_prefix("ciphertextWithInputVerification", json!("0xabcdef"), constants::HEX_MUST_NOT_START_WITH_0X)]
-#[tokio::test]
-async fn test_error_invalid_fields_2(
-    #[case] field: &str,
-    #[case] invalid_value: serde_json::Value,
-    #[case] expected_issue: &str,
-) {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let (base_payload, _, _) = helpers::create_input_proof_payload(&setup);
-
-    test_endpoint(
-        &helpers::v1_input_proof_url(&setup),
-        base_payload,
-        with_invalid_field(field, invalid_value),
-        expect_invalid_field(field, expected_issue),
-    )
-    .await;
-}
-
-#[rstest]
 // Extra data validation
 #[case::empty_extra_data("extraData", json!(""), constants::EXACT_MUST_BE_0X00)]
 #[case::wrong_extra_data("extraData", json!("0x01"), constants::EXACT_MUST_BE_0X00)]
 #[case::invalid_extra_data("extraData", json!("invalid"), constants::EXACT_MUST_BE_0X00)]
 #[tokio::test]
-async fn test_error_invalid_fields_3(
+async fn test_error_invalid_fields(
     #[case] field: &str,
     #[case] invalid_value: serde_json::Value,
     #[case] expected_issue: &str,

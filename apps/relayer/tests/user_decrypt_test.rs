@@ -178,55 +178,35 @@ async fn test_success_concurrent_requests() {
     }
 }
 
-// TODO: include the missing tests on this part.
 #[rstest]
-// Chain ID validation
+// Chain ID validation  
 #[case::empty_chain_id("contractsChainId", json!(""), constants::NUMBER_DECIMAL_OR_HEX)]
 #[case::invalid_chain_id_decimal("contractsChainId", json!("abc123"), constants::NUMBER_DECIMAL_OR_HEX)]
 #[case::invalid_chain_id_hex("contractsChainId", json!("0xzzz"), constants::NUMBER_DECIMAL_OR_HEX)]
-// Contract address validation
+// Contract addresses validation
 #[case::empty_contract_addresses("contractAddresses", json!([]), constants::CANNOT_BE_EMPTY)]
 #[case::short_contract_address("contractAddresses", json!(["0xfds"]), constants::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::long_contract_address("contractAddresses", json!(["0x1234567890123456789012345678901234567890123"]), constants::LENGTH_MUST_BE_42_CHARACTERS)]
 #[case::missing_0x_contract_address("contractAddresses", json!(["1234567890123456789012345678901234567890"]), constants::HEX_MUST_START_WITH_0X)]
 #[case::invalid_hex_contract_address("contractAddresses", json!(["0x123zzz5678901234567890123456789012345678"]), constants::HEX_INVALID_CHARACTERS)]
-#[tokio::test]
-async fn test_error_invalid_fields_set_1(
-    #[case] field: &str,
-    #[case] invalid_value: serde_json::Value,
-    #[case] expected_issue: &str,
-) {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let user_address = helpers::random_address();
-    let contract_address = helpers::random_address();
-    let base_payload = helpers::create_user_decrypt_payload(
-        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
-        contract_address,
-        user_address,
-    );
-
-    test_endpoint(
-        &helpers::v1_user_decrypt_url(&setup),
-        base_payload,
-        with_invalid_field(field, invalid_value),
-        expect_invalid_field(field, expected_issue),
-    )
-    .await;
-}
-
-#[rstest]
+#[case::contract_address_with_invalid_hex_g("contractAddresses", json!(["0x123456789012345678901234567890123456789g"]), constants::HEX_INVALID_CHARACTERS)]
+#[case::empty_string_contract_address("contractAddresses", json!([""]), constants::HEX_MUST_START_WITH_0X)]
 // User address validation
 #[case::empty_user_address("userAddress", json!(""), constants::HEX_MUST_START_WITH_0X)]
 #[case::short_user_address("userAddress", json!("0xfds"), constants::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::long_user_address("userAddress", json!("0x1234567890123456789012345678901234567890123"), constants::LENGTH_MUST_BE_42_CHARACTERS)]
 #[case::missing_0x_user_address("userAddress", json!("1234567890123456789012345678901234567890"), constants::HEX_MUST_START_WITH_0X)]
 #[case::invalid_hex_user_address("userAddress", json!("0x123zzz5678901234567890123456789012345678"), constants::HEX_INVALID_CHARACTERS)]
-// Handle validation
+#[case::user_address_with_invalid_hex_g("userAddress", json!("0x123456789012345678901234567890123456789g"), constants::HEX_INVALID_CHARACTERS)]
+#[case::empty_string_user_address("userAddress", json!(""), constants::HEX_MUST_START_WITH_0X)]
+// Handle contract pairs validation
 #[case::empty_handle_contract_pairs("handleContractPairs", json!([]), constants::CANNOT_BE_EMPTY)]
 // Extra data validation
 #[case::empty_extra_data("extraData", json!(""), constants::EXACT_MUST_BE_0X00)]
 #[case::wrong_extra_data("extraData", json!("0x01"), constants::EXACT_MUST_BE_0X00)]
 #[case::invalid_extra_data("extraData", json!("invalid"), constants::EXACT_MUST_BE_0X00)]
 #[tokio::test]
-async fn test_error_invalid_fields_set_2(
+async fn test_error_invalid_fields(
     #[case] field: &str,
     #[case] invalid_value: serde_json::Value,
     #[case] expected_issue: &str,
