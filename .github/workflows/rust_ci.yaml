@@ -38,7 +38,7 @@ jobs:
           components: rustfmt
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 #v2.8.1
         with:
           workspaces: ${{ matrix.folder }}
 
@@ -67,7 +67,7 @@ jobs:
           components: clippy
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 #v2.8.1
         with:
           workspaces: ${{ matrix.folder }}
 
@@ -95,10 +95,9 @@ jobs:
           toolchain: stable
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 #v2.8.1
         with:
           workspaces: ${{ matrix.folder }}
-
 
       - name: Run tests
         working-directory: ${{ matrix.folder }}
@@ -109,4 +108,3 @@ jobs:
           RUST_BACKTRACE=full cargo test --test user_decrypt_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test public_decrypt_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test input_proof_test -- --test-threads=1
-
