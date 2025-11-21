@@ -103,7 +103,7 @@ impl ReadinessChecker {
             &operation_desc,
         )
         .await
-        .map_err(EventProcessingError::HandlerError)
+        .map_err(|_| EventProcessingError::ReadinessCheckFailed)
     }
 
     /// Checks if the gateway is ready for user decryption, with retry logic.
@@ -147,7 +147,7 @@ impl ReadinessChecker {
             &operation_desc,
         )
         .await
-        .map_err(EventProcessingError::HandlerError)
+        .map_err(|_| EventProcessingError::ReadinessCheckFailed)
     }
 
     /// Internal helper for checking readiness with retry logic.

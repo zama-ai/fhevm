@@ -312,11 +312,7 @@ impl GatewayHandler {
 
     async fn dispatch_error_event(&self, event: RelayerEvent, error: EventProcessingError) {
         let error_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
-            PublicDecryptEventData::Failed {
-                error: EventProcessingError::TransactionError(format!(
-                    "Callback transaction failed: {error}"
-                )),
-            },
+            PublicDecryptEventData::Failed { error },
         ));
 
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {

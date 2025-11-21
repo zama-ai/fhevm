@@ -170,6 +170,13 @@ impl IntoResponse for RelayerEvent {
                         }),
                     )
                         .into_response(),
+                    EventProcessingError::ReadinessCheckFailed => (
+                        StatusCode::GATEWAY_TIMEOUT,
+                        Json(PublicDecryptErrorResponseJson {
+                            message: "Ciphertext not ready for decryption".to_string(),
+                        }),
+                    )
+                        .into_response(),
                     _ => (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(PublicDecryptErrorResponseJson {
@@ -185,14 +192,28 @@ impl IntoResponse for RelayerEvent {
                     let response_json = UserDecryptResponseJson::from(decrypt_response.clone());
                     (StatusCode::OK, Json(response_json)).into_response()
                 }
-                UserDecryptEventData::Failed {
-                    error: EventProcessingError::RequestReverted(fhevm_error),
-                } => {
-                    let error_response = UserDecryptErrorResponseJson {
-                        message: format!("Request reverted on gateway chain: {fhevm_error:?}"),
-                    };
-                    (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
-                }
+                UserDecryptEventData::Failed { error } => match error {
+                    EventProcessingError::RequestReverted(fhevm_error) => {
+                        let error_response = UserDecryptErrorResponseJson {
+                            message: format!("Request reverted on gateway chain: {fhevm_error:?}"),
+                        };
+                        (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
+                    }
+                    EventProcessingError::ReadinessCheckFailed => (
+                        StatusCode::GATEWAY_TIMEOUT,
+                        Json(UserDecryptErrorResponseJson {
+                            message: "Ciphertext not ready for decryption".to_string(),
+                        }),
+                    )
+                        .into_response(),
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(UserDecryptErrorResponseJson {
+                            message: format!("{error:?}"),
+                        }),
+                    )
+                        .into_response(),
+                },
                 _ => (
                     BAD_CONVERSION_STATUS_CODE,
                     Json(UserDecryptErrorResponseJson {

@@ -57,6 +57,9 @@ pub enum EventProcessingError {
 
     #[error("Hex conversion error: {0}")]
     HexError(String),
+
+    #[error("Ciphertext not ready for decryption")]
+    ReadinessCheckFailed,
 }
 
 impl From<GatewayTxnError> for EventProcessingError {
