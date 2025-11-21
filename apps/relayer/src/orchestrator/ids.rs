@@ -10,6 +10,14 @@ pub fn new_external_reference_id() -> Uuid {
     Uuid::new_v4()
 }
 
+/// Trait for generating deterministic indexer IDs using SHA-256 hashing.
+/// Implementations should process fields in a consistent order to ensure
+/// deterministic hash generation across different instances.
+pub trait IndexerIdGenerator {
+    /// Computes a deterministic SHA-256 hash of the implementing type.
+    fn compute_indexer_id(&self) -> [u8; 32];
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

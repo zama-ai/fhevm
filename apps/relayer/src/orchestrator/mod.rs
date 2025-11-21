@@ -9,3 +9,4 @@ pub use tokio_event_dispatcher::TokioEventDispatcher;
 
 pub mod hooks;
 mod ids;
+pub use ids::IndexerIdGenerator;
