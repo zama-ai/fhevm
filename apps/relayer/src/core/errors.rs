@@ -1,6 +1,9 @@
 use crate::{
     config::settings::AppConfigError,
-    gateway::arbitrum::transaction::{engine::GatewayTxnError, fhevm::FhevmError},
+    gateway::{
+        arbitrum::transaction::{engine::GatewayTxnError, fhevm::FhevmError},
+        readiness_checker::ReadinessCheckError,
+    },
 };
 use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
@@ -65,5 +68,16 @@ pub enum EventProcessingError {
 impl From<GatewayTxnError> for EventProcessingError {
     fn from(e: GatewayTxnError) -> Self {
         EventProcessingError::TransactionError(e.to_string())
+    }
+}
+
+impl From<ReadinessCheckError> for EventProcessingError {
+    fn from(e: ReadinessCheckError) -> Self {
+        match e {
+            ReadinessCheckError::Timeout => EventProcessingError::ReadinessCheckFailed,
+            ReadinessCheckError::ContractError(err) => {
+                EventProcessingError::HandlerError(err.to_string())
+            }
+        }
     }
 }

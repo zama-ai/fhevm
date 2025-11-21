@@ -12,13 +12,16 @@ use crate::{
             transaction::{helper::TransactionType, ReceiptProcessor, TransactionHelper},
             ComputeCalldata,
         },
-        readiness_checker::ReadinessChecker,
+        readiness_checker::{ReadinessCheckError, ReadinessChecker},
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
     },
-    store::{key_value_db::KVStore, CacheResult, PublicDecryptCache, sql::repositories::public_decrypt_repo::PublicDecryptRepository},
+    store::{
+        key_value_db::KVStore, sql::repositories::public_decrypt_repo::PublicDecryptRepository,
+        CacheResult, PublicDecryptCache,
+    },
 };
 use alloy::sol_types::SolEvent;
 use alloy::{
@@ -137,57 +140,109 @@ impl GatewayHandler {
                     .register_duplicate(decryption_id, event.request_id);
             }
             CacheResult::NotFound => {
-                info!("Sending request {} to gateway", event.request_id);
-                match self.send_public_decrypt_to_gateway(decrypt_request).await {
-                    Ok(decryption_id) => {
-                        if let Err(e) = self
-                            .cache
-                            .store_request_mapping(decrypt_request, decryption_id)
-                            .await
-                        {
-                            if (self.cache.unlock_request(decrypt_request).await).is_err() {
-                                warn!("Cache unlock failed, continuing with error dispatch");
-                            }
-                            self.dispatch_error_event(event, e.into()).await;
-                            return;
+                info!("Starting readiness check for request {}", event.request_id);
+                match self
+                    .start_readiness_check(event.clone(), decrypt_request)
+                    .await
+                {
+                    Ok(()) => {
+                        // Emit ReadinessCheckPassed event
+                        let readiness_event_data = RelayerEventData::PublicDecrypt(
+                            PublicDecryptEventData::ReadinessCheckPassed {
+                                decrypt_request: decrypt_request.clone(),
+                            },
+                        );
+                        let readiness_event = RelayerEvent::new(
+                            event.request_id,
+                            event.api_version,
+                            readiness_event_data,
+                        );
+                        if let Err(e) = self.dispatcher.dispatch_event(readiness_event).await {
+                            error!(?e, "Failed to dispatch ReadinessCheckPassed event");
                         }
-                        self.store_and_dispatch_success(
-                            event,
-                            decrypt_request.clone(),
-                            decryption_id,
-                        )
-                        .await;
+
+                        // TODO: Update database status to "ready"
+                        self.forward_transaction_to_gateway(event, decrypt_request)
+                            .await;
                     }
-                    Err(e) => {
+                    Err(readiness_error) => {
                         let _ = self.cache.unlock_request(decrypt_request).await;
-                        self.dispatch_error_event(event, e).await;
+                        self.dispatch_error_event(event, readiness_error).await;
                     }
                 }
             }
         }
     }
 
-    // Transaction operations
-
-    async fn send_public_decrypt_to_gateway(
+    async fn start_readiness_check(
         &self,
+        _event: RelayerEvent,
         decrypt_request: &PublicDecryptRequest,
-    ) -> Result<U256, EventProcessingError> {
+    ) -> Result<(), EventProcessingError> {
         let handles_fixed_bytes: Vec<FixedBytes<32>> = decrypt_request
             .ct_handles
             .iter()
             .map(|bytes| FixedBytes::from(*bytes))
             .collect();
 
-        self.readiness_checker
+        match self
+            .readiness_checker
             .check_public_decryption_readiness(
-                handles_fixed_bytes.clone(),
+                handles_fixed_bytes,
                 decrypt_request.extra_data.clone(),
             )
-            .await?;
-
-        self.send_transaction_to_gateway(handles_fixed_bytes, decrypt_request.extra_data.clone())
             .await
+        {
+            Ok(()) => {
+                info!("Readiness check passed");
+                Ok(())
+            }
+            Err(ReadinessCheckError::Timeout) => {
+                error!("Readiness check timed out");
+                Err(EventProcessingError::ReadinessCheckFailed)
+            }
+            Err(ReadinessCheckError::ContractError(err)) => {
+                error!("Readiness check contract error: {}", err);
+                Err(EventProcessingError::HandlerError(err.to_string()))
+            }
+        }
+    }
+
+    async fn forward_transaction_to_gateway(
+        &self,
+        event: RelayerEvent,
+        decrypt_request: &PublicDecryptRequest,
+    ) {
+        let handles_fixed_bytes: Vec<FixedBytes<32>> = decrypt_request
+            .ct_handles
+            .iter()
+            .map(|bytes| FixedBytes::from(*bytes))
+            .collect();
+
+        match self
+            .send_transaction_to_gateway(handles_fixed_bytes, decrypt_request.extra_data.clone())
+            .await
+        {
+            Ok(decryption_id) => {
+                if let Err(e) = self
+                    .cache
+                    .store_request_mapping(decrypt_request, decryption_id)
+                    .await
+                {
+                    if (self.cache.unlock_request(decrypt_request).await).is_err() {
+                        warn!("Cache unlock failed, continuing with error dispatch");
+                    }
+                    self.dispatch_error_event(event, e.into()).await;
+                    return;
+                }
+                self.store_and_dispatch_success(event, decrypt_request.clone(), decryption_id)
+                    .await;
+            }
+            Err(e) => {
+                let _ = self.cache.unlock_request(decrypt_request).await;
+                self.dispatch_error_event(event, e).await;
+            }
+        }
     }
 
     async fn send_transaction_to_gateway(

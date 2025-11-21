@@ -13,6 +13,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
+#[derive(Debug)]
+pub enum ReadinessCheckError {
+    Timeout,
+    ContractError(alloy::contract::Error),
+}
+
 type Provider = FillProvider<
     alloy::providers::fillers::JoinFill<
         alloy::providers::Identity,
@@ -77,19 +83,18 @@ impl ReadinessChecker {
     ///
     /// # Returns
     /// * `Ok(())` if the gateway is ready
-    /// * `Err(EventProcessingError)` if the gateway is not ready after all retries
+    /// * `Err(ReadinessCheckError)` with raw error details
     pub async fn check_public_decryption_readiness(
         &self,
         handles: Vec<FixedBytes<32>>,
         extra_data: Bytes,
-    ) -> Result<(), EventProcessingError> {
-        // Use the stored provider
+    ) -> Result<(), ReadinessCheckError> {
         let decryption = Decryption::new(self.decryption_address, self.provider.clone());
 
-        let operation_desc = format!("public decryption for handles: {:?}", handles);
+        info!("Starting public decryption readiness check");
 
-        self.check_readiness_internal(
-            || {
+        let result = self
+            .check_readiness_internal(|| {
                 let decryption = decryption.clone();
                 let handles = handles.clone();
                 let extra_data = extra_data.clone();
@@ -99,11 +104,15 @@ impl ReadinessChecker {
                         .call()
                         .await
                 }
-            },
-            &operation_desc,
-        )
-        .await
-        .map_err(|_| EventProcessingError::ReadinessCheckFailed)
+            })
+            .await;
+
+        match &result {
+            Ok(()) => info!("Public decryption readiness check passed"),
+            Err(e) => error!(error = ?e, "Public decryption readiness check failed"),
+        }
+
+        result
     }
 
     /// Checks if the gateway is ready for user decryption, with retry logic.
@@ -115,25 +124,19 @@ impl ReadinessChecker {
     ///
     /// # Returns
     /// * `Ok(())` if the gateway is ready
-    /// * `Err(EventProcessingError)` if the gateway is not ready after all retries
+    /// * `Err(ReadinessCheckError)` with raw error details
     pub async fn check_user_decryption_readiness(
         &self,
         user_address: Address,
         contract_pairs: Vec<Decryption::CtHandleContractPair>,
         extra_data: Bytes,
-    ) -> Result<(), EventProcessingError> {
-        // Use the stored provider
+    ) -> Result<(), ReadinessCheckError> {
         let decryption = Decryption::new(self.decryption_address, self.provider.clone());
 
-        let operation_desc = format!("user decryption for address: {:?}", user_address);
+        info!("Starting user decryption readiness check");
 
-        info!(
-            "Checking if the decryption manager is ready for user address: {:?} and contract pairs: {:?}",
-            user_address, contract_pairs
-        );
-
-        self.check_readiness_internal(
-            || {
+        let result = self
+            .check_readiness_internal(|| {
                 let decryption = decryption.clone();
                 let pairs = contract_pairs.clone();
                 let extra_data = extra_data.clone();
@@ -143,58 +146,61 @@ impl ReadinessChecker {
                         .call()
                         .await
                 }
-            },
-            &operation_desc,
-        )
-        .await
-        .map_err(|_| EventProcessingError::ReadinessCheckFailed)
+            })
+            .await;
+
+        match &result {
+            Ok(()) => info!("User decryption readiness check passed"),
+            Err(e) => error!(error = ?e, "User decryption readiness check failed"),
+        }
+
+        result
     }
 
-    /// Internal helper for checking readiness with retry logic.
-    async fn check_readiness_internal<F, Fut>(
-        &self,
-        check_fn: F,
-        operation_desc: &str,
-    ) -> Result<(), String>
+    async fn check_readiness_internal<F, Fut>(&self, check_fn: F) -> Result<(), ReadinessCheckError>
     where
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<bool, alloy::contract::Error>>,
     {
         let max_retries = self.retry_config.max_attempts;
         let retry_interval = Duration::from_millis(self.retry_config.retry_interval_ms);
-
         let mut retries = 0;
+        let mut last_error: Option<alloy::contract::Error> = None;
 
         loop {
             match check_fn().await {
                 Ok(is_ready) => {
                     if is_ready {
-                        info!("Gateway is ready for operation: {}", operation_desc);
                         return Ok(());
                     } else {
-                        info!("Gateway not ready for {}, retrying...", operation_desc);
+                        info!("Gateway not ready, will retry");
                     }
                 }
                 Err(err) => {
-                    error!(
-                        "Readiness check for {} failed with error: {}, retrying...",
-                        operation_desc, err
-                    );
+                    error!(error = %err, "Contract call failed, will retry");
+                    last_error = Some(err);
                 }
             }
 
             retries += 1;
             if retries >= max_retries {
-                warn!("Max retries reached for {} readiness check", operation_desc);
-                return Err(format!(
-                    "Gateway not ready for {} after {} retries",
-                    operation_desc, max_retries
-                ));
+                warn!(
+                    max_retries = max_retries,
+                    retry_interval_ms = self.retry_config.retry_interval_ms,
+                    "Max retries reached for readiness check"
+                );
+                return if let Some(err) = last_error {
+                    Err(ReadinessCheckError::ContractError(err))
+                } else {
+                    Err(ReadinessCheckError::Timeout)
+                };
             }
 
             info!(
-                "Retrying {} readiness check (attempt {}/{})",
-                operation_desc, retries, max_retries
+                attempt = retries,
+                max_attempts = max_retries,
+                retry_interval_ms = self.retry_config.retry_interval_ms,
+                "Retrying readiness check"
             );
             tokio::time::sleep(retry_interval).await;
         }

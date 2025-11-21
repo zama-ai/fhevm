@@ -49,10 +49,11 @@ impl From<GatewayChainEventId> for u8 {
 /// Event Ids corresponding the events of PublicDecryptEvent type.
 pub enum PublicDecryptEventId {
     ReqRcvdFromUser = 10,
-    ReqSentToGw = 11,
-    RespRcvdFromGw = 12,
-    Failed = 13,
-    RespSentToUser = 14,
+    ReadinessCheckPassed = 11,
+    ReqSentToGw = 12,
+    RespRcvdFromGw = 13,
+    Failed = 14,
+    RespSentToUser = 15,
 }
 
 impl From<PublicDecryptEventId> for u8 {
@@ -66,10 +67,11 @@ impl From<PublicDecryptEventId> for u8 {
 /// Event Ids corresponding the events of UserDecryptEvent type.
 pub enum UserDecryptEventId {
     ReqRcvdFromUser = 20,
-    ReqSentToGw = 21,
-    RespRcvdFromGw = 22,
-    RespSentToUser = 23,
-    Failed = 24,
+    ReadinessCheckPassed = 21,
+    ReqSentToGw = 22,
+    RespRcvdFromGw = 23,
+    RespSentToUser = 24,
+    Failed = 25,
 }
 
 impl From<UserDecryptEventId> for u8 {
@@ -280,6 +282,9 @@ impl Event for RelayerEvent {
                 PublicDecryptEventData::ReqRcvdFromUser { .. } => {
                     PublicDecryptEventId::ReqRcvdFromUser.into()
                 }
+                PublicDecryptEventData::ReadinessCheckPassed { .. } => {
+                    PublicDecryptEventId::ReadinessCheckPassed.into()
+                }
                 PublicDecryptEventData::ReqSentToGw { .. } => {
                     PublicDecryptEventId::ReqSentToGw.into()
                 }
@@ -294,6 +299,9 @@ impl Event for RelayerEvent {
             RelayerEventData::UserDecrypt(decrypt_event) => match decrypt_event {
                 UserDecryptEventData::ReqRcvdFromUser { .. } => {
                     UserDecryptEventId::ReqRcvdFromUser.into()
+                }
+                UserDecryptEventData::ReadinessCheckPassed { .. } => {
+                    UserDecryptEventId::ReadinessCheckPassed.into()
                 }
                 UserDecryptEventData::ReqSentToGw { .. } => UserDecryptEventId::ReqSentToGw.into(),
                 UserDecryptEventData::RespRcvdFromGw { .. } => {
@@ -398,6 +406,12 @@ pub enum PublicDecryptEventData {
         decrypt_request: PublicDecryptRequest,
     },
 
+    /// Event representing that readiness check has passed for a public decryption request.
+    /// Available for future API notifications.
+    ReadinessCheckPassed {
+        decrypt_request: PublicDecryptRequest,
+    },
+
     /// Event representing the result of sending a public decryption request to
     /// gateway. Id will be used to map the response that will be received later
     /// to the request.
@@ -420,6 +434,9 @@ impl PublicDecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
             PublicDecryptEventData::ReqRcvdFromUser { .. } => "PublicDecrypt::ReqRcvdFromUser",
+            PublicDecryptEventData::ReadinessCheckPassed { .. } => {
+                "PublicDecrypt::ReadinessCheckPassed"
+            }
             PublicDecryptEventData::ReqSentToGw { .. } => "PublicDecrypt::ReqSentToGw",
             PublicDecryptEventData::RespRcvdFromGw { .. } => "PublicDecrypt::RespRcvdFromGw",
             PublicDecryptEventData::RespSentToUser => "PublicDecrypt::RespSentToUser",
@@ -432,6 +449,10 @@ impl PublicDecryptEventData {
 pub enum UserDecryptEventData {
     /// Event representing a user decryption request for ciphertexts on fhevm.
     ReqRcvdFromUser { decrypt_request: UserDecryptRequest },
+
+    /// Event representing that readiness check has passed for a user decryption request.
+    /// Available for future API notifications.
+    ReadinessCheckPassed { decrypt_request: UserDecryptRequest },
 
     /// Event representing the result of sending a user decryption request to
     /// gateway. Id will be used to map the response that will be received later
@@ -455,6 +476,9 @@ impl UserDecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
             UserDecryptEventData::ReqRcvdFromUser { .. } => "UserDecrypt::ReqRcvdFromUser",
+            UserDecryptEventData::ReadinessCheckPassed { .. } => {
+                "UserDecrypt::ReadinessCheckPassed"
+            }
             UserDecryptEventData::ReqSentToGw { .. } => "UserDecrypt::ReqSentToGw",
             UserDecryptEventData::RespRcvdFromGw { .. } => "UserDecrypt::RespRcvdFromGw",
             UserDecryptEventData::RespSentToUser => "UserDecrypt::RespSentToFhevm",
