@@ -465,6 +465,7 @@ impl UserDecryptEventData {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct PublicDecryptRequest {
+    #[serde(serialize_with = "crate::http::utils::serialize_ct_handles_as_hex")]
     pub ct_handles: Vec<[u8; 32]>,
     pub extra_data: Bytes,
 }
