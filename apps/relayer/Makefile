@@ -15,7 +15,12 @@ test-unit: ## Run library/unit tests only
 	@cargo test --lib
 
 test-all: ## Run all tests (unit + integration)
-	@cargo test
+	@cargo test --lib
+	@cargo test --test transaction_helper_test -- --test-threads=1
+	@cargo test --test input_proof_test -- --test-threads=1
+	@cargo test --test public_decrypt_test -- --test-threads=1
+	@cargo test --test user_decrypt_test -- --test-threads=1
+	@cargo test --test http_rate_limiter_test -- --test-threads=1
 
 ##@ Linting
 clippy: ## Check code with clippy (no fixes)
