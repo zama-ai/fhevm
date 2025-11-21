@@ -100,14 +100,27 @@ jobs:
         with:
           workspaces: ${{ matrix.folder }}
 
+      - name: Cache grcov
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/grcov
+          key: grcov-${{ runner.os }}
+
       - name: Run tests
         working-directory: ${{ matrix.folder }}
         run: |
           export CARGO_INCREMENTAL=0
           export RUSTFLAGS='-Cinstrument-coverage'
           export LLVM_PROFILE_FILE='cargo-test-%p-%m.profraw'
-          RUST_BACKTRACE=full cargo test
-          cargo install grcov
+          RUST_BACKTRACE=full cargo test --lib
+          RUST_BACKTRACE=full cargo test --test transaction_helper_test
+          # Use test-threads=1 to force sequential execution. Otherwise they fail due to port free contention (temp fix).
+          RUST_BACKTRACE=full cargo test --test user_decrypt_test -- --test-threads=1
+          RUST_BACKTRACE=full cargo test --test public_decrypt_test -- --test-threads=1
+          RUST_BACKTRACE=full cargo test --test input_proof_test -- --test-threads=1
+          if [ ! -f ~/.cargo/bin/grcov ]; then
+            cargo install grcov
+          fi
           mkdir coverage
           ~/.cargo/bin/grcov . --binary-path ./target/debug/deps/ -s . --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o coverage/ -t markdown
           ~/.cargo/bin/grcov . --binary-path ./target/debug/deps/ -s . --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o ./ -t lcov
