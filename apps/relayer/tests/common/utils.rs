@@ -202,13 +202,25 @@ fn create_fast_readiness_config(temp_dir: &TempDir) -> eyre::Result<std::path::P
     let config_content = std::fs::read_to_string("config/local.yaml.example")
         .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
 
-    // Simple string replacement to modify only the readiness retry settings
-    let modified_content = config_content.replace(
-        "      max_attempts: 75\n      retry_interval_ms: 3000",
-        "      max_attempts: 4\n      retry_interval_ms: 250",
-    );
+    // Parse YAML as a generic value
+    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
+        .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
 
-    // Write to temp file
+    // Modify the readiness checker retry settings
+    if let Some(gateway) = config.get_mut("gateway") {
+        if let Some(readiness_checker) = gateway.get_mut("readiness_checker") {
+            if let Some(retry) = readiness_checker.get_mut("retry") {
+                retry["max_attempts"] = serde_yaml::Value::Number(serde_yaml::Number::from(4));
+                retry["retry_interval_ms"] =
+                    serde_yaml::Value::Number(serde_yaml::Number::from(250));
+            }
+        }
+    }
+
+    // Serialize back to YAML and write to temp file
+    let modified_content = serde_yaml::to_string(&config)
+        .map_err(|e| eyre::eyre!("Failed to serialize modified config: {}", e))?;
+
     std::fs::write(&temp_config_path, modified_content)
         .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
 
@@ -233,6 +245,52 @@ pub fn random_address() -> Address {
     let mut rng = rng();
     let bytes: [u8; 20] = rng.random();
     Address::from(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_yaml_parsing_approach() {
+        // Test that our YAML parsing and modification approach works correctly
+        let sample_config = r#"
+gateway:
+  readiness_checker:
+    max_concurrency: 100
+    retry:
+      max_attempts: 75
+      retry_interval_ms: 3000
+"#;
+
+        // Parse YAML as a generic value
+        let mut config: serde_yaml::Value =
+            serde_yaml::from_str(sample_config).expect("Failed to parse YAML");
+
+        // Modify the readiness checker retry settings
+        if let Some(gateway) = config.get_mut("gateway") {
+            if let Some(readiness_checker) = gateway.get_mut("readiness_checker") {
+                if let Some(retry) = readiness_checker.get_mut("retry") {
+                    retry["max_attempts"] = serde_yaml::Value::Number(serde_yaml::Number::from(4));
+                    retry["retry_interval_ms"] =
+                        serde_yaml::Value::Number(serde_yaml::Number::from(250));
+                }
+            }
+        }
+
+        // Verify the changes
+        let gateway = config.get("gateway").unwrap();
+        let readiness_checker = gateway.get("readiness_checker").unwrap();
+        let retry = readiness_checker.get("retry").unwrap();
+        let max_attempts = retry.get("max_attempts").unwrap().as_u64().unwrap();
+        let retry_interval = retry.get("retry_interval_ms").unwrap().as_u64().unwrap();
+
+        assert_eq!(max_attempts, 4);
+        assert_eq!(retry_interval, 250);
+
+        // Verify serialization works
+        let serialized = serde_yaml::to_string(&config).expect("Failed to serialize YAML");
+        assert!(serialized.contains("max_attempts: 4"));
+        assert!(serialized.contains("retry_interval_ms: 250"));
+    }
 }
 
 /// Generate a random handle (64 hex characters) for testing
