@@ -113,7 +113,7 @@ pub mod validation_messages {
     // Generic length validation messages
     pub const LENGTH_MUST_BE_42_CHARACTERS: &str = "Must be 42 characters long"; // Keep for backward compatibility
     pub const LENGTH_MUST_BE_64_CHARACTERS: &str = "Must be 64 characters long"; // Keep for backward compatibility
-    pub const LENGTH_MUST_BE_132_CHARACTERS: &str = "Must be 132 characters long";
+    pub const LENGTH_MUST_BE_130_CHARACTERS: &str = "Must be 130 characters long";
 
     // Generic collection validation messages
     pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
