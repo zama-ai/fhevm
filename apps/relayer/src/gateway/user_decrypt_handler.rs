@@ -19,14 +19,20 @@ use crate::{
         ContentHasher, Orchestrator, TokioEventDispatcher,
     },
     store::{
-        key_value_db::KVStore, sql::repositories::user_decrypt_repo::UserDecryptRepository,
+        key_value_db::KVStore,
+        sql::{
+            models::{
+                req_status_enum_model::ReqStatus, user_decrypt_share_model::UserDecryptShare,
+            },
+            repositories::user_decrypt_repo::UserDecryptRepository,
+        },
         CacheResult, UserDecryptCache, UserDecryptResponseStore, UserDecryptionResponseShare,
     },
 };
 use alloy::sol_types::SolEvent;
 use alloy::{
     network::{AnyReceiptEnvelope, AnyTransactionReceipt, ReceiptResponse},
-    primitives::{Address, FixedBytes, U256},
+    primitives::{Address, Bytes, FixedBytes, U256},
     rpc::types::{Log, TransactionReceipt},
 };
 use async_trait::async_trait;
@@ -94,6 +100,7 @@ pub struct GatewayHandler {
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
     user_decrypt_repo: Arc<UserDecryptRepository>,
+    user_decrypt_shares_threshold: i64,
 }
 
 impl GatewayHandler {
@@ -121,6 +128,7 @@ impl GatewayHandler {
             readiness_checker,
             decryption_address,
             user_decrypt_repo,
+            user_decrypt_shares_threshold: user_decrypt_shares_threshold as i64,
         }
     }
 
@@ -140,7 +148,6 @@ impl GatewayHandler {
             error!(?e, "Failed to dispatch cached response event");
         }
     }
-
 
     async fn handle_new_request(
         &self,
@@ -262,10 +269,11 @@ impl GatewayHandler {
         {
             if let Some(topic0) = log.topic0() {
                 if *topic0 == Decryption::UserDecryptionResponse::SIGNATURE_HASH {
-                    self.handle_individual_user_decrypt_response(log, &event)
+                    self.handle_individual_user_decrypt_response(log, event.clone())
                         .await;
                 } else if *topic0 == self.get_consensus_event_topic() {
-                    self.handle_user_decrypt_consensus_event(log, &event).await;
+                    self.handle_user_decrypt_consensus_event(log, event.clone())
+                        .await;
                 }
             }
         }
@@ -274,7 +282,7 @@ impl GatewayHandler {
     async fn handle_individual_user_decrypt_response(
         &self,
         log: &alloy::rpc::types::Log,
-        event: &RelayerEvent,
+        event: RelayerEvent,
     ) {
         match Decryption::UserDecryptionResponse::decode_log_data(log.data()) {
             Ok(user_decrypt_response) => {
@@ -284,6 +292,225 @@ impl GatewayHandler {
                     user_decryption_id
                 );
 
+                let gw_reference_id = match super::utils::u256_to_i64(user_decryption_id) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        error!(
+                            job_id = %event.job_id,
+                            decryption_id = %user_decryption_id,
+                            conversion_error = %e,
+                            "Failed to convert U256 decryption ID to i64"
+                        );
+                        //TODO(Mano): Better stratgfy to handle theg errro and confirmn with garteway team.
+                        self.dispatch_error_event(
+                            event,
+                            EventProcessingError::HandlerError(
+                                "Decryption ID too large".to_string(),
+                            ),
+                        )
+                        .await;
+                        return;
+                    }
+                };
+
+                let index_share = match super::utils::u256_to_i32(user_decrypt_response.indexShare)
+                {
+                    Ok(id) => id,
+                    Err(e) => {
+                        error!(
+                            job_id = %event.job_id,
+                            decryption_id = %user_decryption_id,
+                            conversion_error = %e,
+                            "Failed to convert U256 index of share to i32"
+                        );
+                        //TODO(Mano): Better stratgfy to handle theg errro and confirmn with garteway team.
+                        self.dispatch_error_event(
+                            event,
+                            EventProcessingError::HandlerError(
+                                "Index of share too large".to_string(),
+                            ),
+                        )
+                        .await;
+                        return;
+                    }
+                };
+
+                match self
+                    .user_decrypt_repo
+                    .insert_share_and_return_count(
+                        gw_reference_id,
+                        index_share,
+                        &hex::encode(&user_decrypt_response.userDecryptedShare),
+                        &hex::encode(&user_decrypt_response.signature),
+                        Some(&hex::encode(&user_decrypt_response.extraData)),
+                    )
+                    .await
+                {
+                    Ok(count) => {
+                        // even before fetching count, detect timeoout and send to user.
+                        if count == self.user_decrypt_shares_threshold {
+                            match self
+                                .user_decrypt_repo
+                                .complete_req_and_get_shares_metadata(gw_reference_id)
+                                .await
+                            {
+                                Ok((consensus_state, shares)) => {
+                                    match consensus_state.req_status {
+                                        ReqStatus::Completed => {
+                                            // build response and send
+                                            if shares.len() != (count as usize)
+                                                || shares.len()
+                                                    != self.user_decrypt_shares_threshold as usize
+                                            {
+                                                error!(
+                                                    job_id = %event.job_id,
+                                                    got_count = %count,
+                                                    expected_count = %shares.len(),
+                                                    threshold = %self.user_decrypt_shares_threshold,
+                                                    "Number of shares not matching count"
+                                                );
+                                                for share in shares {
+                                                    println!(
+                                                        "Share: {:?} {:?}",
+                                                        share.gw_reference_id, share.id
+                                                    );
+                                                }
+                                                self.dispatch_error_event(
+                                                    event.clone(),
+                                                    EventProcessingError::HandlerError(
+                                                        "Number of shares not matching count"
+                                                            .to_string(),
+                                                    ),
+                                                )
+                                                .await;
+                                            } else {
+                                                // Success case: assemble final response and send to user
+                                                match assemble_final_response(shares) {
+                                                    Ok(final_response) => {
+                                                        // Dispatch response event to notify waiting HTTP handlers
+                                                        // We need to find the original JobId for this decryption_id
+                                                        if let Some(original_job_id) =
+                                                            self.cache.get_job_id_for_decryption_id(
+                                                                user_decryption_id,
+                                                            )
+                                                        {
+                                                            let response_event_data =
+                                                                RelayerEventData::UserDecrypt(
+                                                                    UserDecryptEventData::RespRcvdFromGw {
+                                                                        decrypt_response: final_response
+                                                                            .clone(),
+                                                                    },
+                                                                );
+
+                                                            let response_event = RelayerEvent::new(
+                                                                original_job_id,
+                                                                event.api_version,
+                                                                response_event_data,
+                                                            );
+
+                                                            if let Err(e) = self
+                                                                .dispatcher
+                                                                .dispatch_event(response_event)
+                                                                .await
+                                                            {
+                                                                error!(?e, "Failed to dispatch response event to HTTP handlers");
+                                                            }
+                                                        } else {
+                                                            error!(
+                                                                "No JobId found for decryption_id={}",
+                                                                user_decryption_id
+                                                            );
+                                                        }
+                                                    }
+                                                    Err(hex_error) => {
+                                                        error!(
+                                                            job_id = %event.job_id,
+                                                            hex_error = %hex_error,
+                                                            "Failed to decode hex data in shares"
+                                                        );
+                                                        self.dispatch_error_event(
+                                                            event,
+                                                            EventProcessingError::HandlerError(
+                                                                format!("Failed to decode share data: {}", hex_error),
+                                                            ),
+                                                        )
+                                                        .await;
+                                                        return;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        ReqStatus::TimedOut => {
+                                            // build error object and send
+                                            error!(
+                                                job_id = %event.job_id,
+                                                "User decrypt request timed out (response timed out)"
+                                            );
+                                            self.dispatch_error_event(
+                                                event.clone(),
+                                                EventProcessingError::HandlerError(
+                                                    "User decrypt request timed out (response timed out)".to_string(),
+                                                ),
+                                            )
+                                            .await;
+                                            // unexpected state, trigger internal server error
+                                        }
+                                        _ => {
+                                            error!(
+                                                job_id = %event.job_id,
+                                                status = ?consensus_state.req_status,
+                                                "Unexpected state of requests"
+                                            );
+                                            self.dispatch_error_event(
+                                                event.clone(),
+                                                EventProcessingError::HandlerError(
+                                                    "Unexpected state of requests".to_string(),
+                                                ),
+                                            )
+                                            .await;
+                                            // unexpected state, trigger internal server error
+                                        }
+                                    }
+                                }
+                                Err(sql_error) => {
+                                    error!(
+                                        job_id = %event.job_id,
+                                        sql_operation = "user_decrypt.complete_req_and_get_shares_metadata",
+                                        sql_error = %sql_error,
+                                        "SQL operation failed"
+                                    );
+                                    self.dispatch_error_event(
+                                        event,
+                                        EventProcessingError::HandlerError(
+                                            "Cannot fetch user decrypt shares after completion"
+                                                .to_string(),
+                                        ),
+                                    )
+                                    .await;
+                                    return;
+                                }
+                            }
+                        }
+                        // Else pass
+                    }
+                    Err(sql_error) => {
+                        error!(
+                            job_id = %event.job_id,
+                            sql_operation = "user_decrypt.insert_share_and_return_count",
+                            sql_error = %sql_error,
+                            "SQL operation failed"
+                        );
+                        self.dispatch_error_event(
+                            event,
+                            EventProcessingError::HandlerError(
+                                "Cannot insert user decrypt share".to_string(),
+                            ),
+                        )
+                        .await;
+                        return;
+                    }
+                }
+
                 let share = UserDecryptionResponseShare {
                     decryption_id: user_decryption_id,
                     index_share: user_decrypt_response.indexShare,
@@ -291,7 +518,6 @@ impl GatewayHandler {
                     signature: user_decrypt_response.signature,
                     extra_data: user_decrypt_response.extraData,
                 };
-
                 match self.user_decrypt_response_store.add_response(share) {
                     Ok(Some(final_response)) => {
                         self.process_final_user_decrypt_response(
@@ -321,7 +547,7 @@ impl GatewayHandler {
     async fn handle_user_decrypt_consensus_event(
         &self,
         log: &alloy::rpc::types::Log,
-        event: &RelayerEvent,
+        event: RelayerEvent,
     ) {
         if let Some(decryption_id_topic) = log.topics().get(1) {
             let user_decryption_id = U256::from_be_bytes::<32>(
@@ -370,7 +596,7 @@ impl GatewayHandler {
         &self,
         user_decryption_id: U256,
         final_response: UserDecryptResponse,
-        event: &RelayerEvent,
+        event: RelayerEvent,
     ) {
         info!(
             "Final response assembled for decryption ID {} with {} shares",
@@ -392,25 +618,21 @@ impl GatewayHandler {
         // Dispatch response event to notify waiting HTTP handlers
         // We need to find the original JobId for this decryption_id
         if let Some(original_job_id) = self.cache.get_job_id_for_decryption_id(user_decryption_id) {
-            let response_event_data = RelayerEventData::UserDecrypt(
-                UserDecryptEventData::RespRcvdFromGw {
+            let response_event_data =
+                RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
                     decrypt_response: final_response.clone(),
-                },
-            );
-            
-            let response_event = RelayerEvent::new(
-                original_job_id,
-                event.api_version,
-                response_event_data,
-            );
-            
+                });
+
+            let response_event =
+                RelayerEvent::new(original_job_id, event.api_version, response_event_data);
+
             if let Err(e) = self.dispatcher.dispatch_event(response_event).await {
                 error!(?e, "Failed to dispatch response event to HTTP handlers");
             }
         } else {
             error!("No JobId found for decryption_id={}", user_decryption_id);
         }
-        
+
         self.cache.cleanup_mapping(&user_decryption_id);
         self.user_decrypt_response_store.cleanup(user_decryption_id);
     }
@@ -523,7 +745,10 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                         CacheResult::InProgress(_) => {
                             // Request already in progress - the orchestrator will handle
                             // distributing the result to all HTTP handlers with the same JobId
-                            info!("Request already in progress for job_id={}, waiting for result", event.job_id);
+                            info!(
+                                "Request already in progress for job_id={}, waiting for result",
+                                event.job_id
+                            );
                         }
                         CacheResult::NotFound => {
                             self.handle_new_request(event.clone(), decrypt_request, indexer_id)
@@ -566,4 +791,47 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
             _ => {}
         }
     }
+}
+
+fn assemble_final_response(shares: Vec<UserDecryptShare>) -> Result<UserDecryptResponse, String> {
+    // Sort shares by index_share to maintain order
+    let mut shares_vec: Vec<_> = shares.iter().map(|entry| entry.clone()).collect();
+    shares_vec.sort_by_key(|share| share.share_index);
+
+    let first_share = &shares_vec[0];
+    let decryption_id = U256::from(first_share.gw_reference_id);
+
+    // Extract reencrypted_shares with hex decoding
+    let mut reencrypted_shares = Vec::new();
+    for share in &shares_vec {
+        match hex::decode(&share.share) {
+            Ok(decoded) => reencrypted_shares.push(Bytes::from(decoded)),
+            Err(e) => return Err(format!("Failed to decode share hex: {}", e)),
+        }
+    }
+
+    // Extract signatures with hex decoding
+    let mut signatures = Vec::new();
+    for share in &shares_vec {
+        match hex::decode(&share.kms_signature) {
+            Ok(decoded) => signatures.push(Bytes::from(decoded)),
+            Err(e) => return Err(format!("Failed to decode signature hex: {}", e)),
+        }
+    }
+
+    // Use extra_data from first share with hex decoding
+    let extra_data = match &first_share.extra_data {
+        Some(hex_str) => match hex::decode(hex_str) {
+            Ok(decoded) => Bytes::from(decoded),
+            Err(e) => return Err(format!("Failed to decode extra_data hex: {}", e)),
+        },
+        None => Bytes::new(),
+    };
+
+    Ok(UserDecryptResponse {
+        gateway_request_id: decryption_id,
+        reencrypted_shares,
+        signatures,
+        extra_data,
+    })
 }
