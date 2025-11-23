@@ -10,6 +10,7 @@ use crate::store::sql::{
 use anyhow::Result;
 use sqlx::types::Json;
 use sqlx::types::Uuid;
+use sqlx::Row;
 
 pub struct UserDecryptRepository {
     pool: PgClient,
@@ -239,6 +240,7 @@ impl UserDecryptRepository {
     /// Insert in user_decrypt_share table all the fields: gw_reference_id, share_index, share, kms_signature, extra_data and return number of shares for gw_reference_id in the table.
     /// Insert a share and return the total count of shares for this gw_reference_id.
     /// NOTE: This lead to possibility of non relevant shares, we can recieve unrelated shares non related to relayer events, or timed_out shares, we register them anyway.
+    // TODO(xyz): return status here to detect timedout
     pub async fn insert_share_and_return_count(
         &self,
         gw_reference_id: i64,
@@ -247,23 +249,28 @@ impl UserDecryptRepository {
         kms_signature: &str,
         extra_data: Option<&str>,
     ) -> Result<i64> {
-        // We use a CTE to Insert and Count in one atomic operation
-        let count = sqlx::query_scalar!(
+        // Use advisory locks to serialize share operations per gw_reference_id
+        // Advisory locks block and wait instead of failing like SERIALIZABLE
+        let mut tx = self.pool.get_pool().begin().await?;
+        
+        // Acquire advisory lock - this WAITS for other transactions, doesn't fail
+        sqlx::query("SELECT pg_advisory_xact_lock($1::bigint)")
+            .bind(gw_reference_id)
+            .execute(&mut *tx)
+            .await?;
+
+        // First, do the INSERT
+        sqlx::query!(
             r#"
-            WITH inserted AS (
-                INSERT INTO user_decrypt_share (
-                    gw_reference_id,
-                    share_index,
-                    share,
-                    kms_signature,
-                    extra_data
-                )
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (gw_reference_id, share_index) DO NOTHING
+            INSERT INTO user_decrypt_share (
+                gw_reference_id,
+                share_index,
+                share,
+                kms_signature,
+                extra_data
             )
-            SELECT COUNT(*) as "count!" -- The "!" tells SQLx this is never null
-            FROM user_decrypt_share
-            WHERE gw_reference_id = $1
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (gw_reference_id, share_index) DO NOTHING
             "#,
             gw_reference_id,
             share_index,
@@ -271,9 +278,23 @@ impl UserDecryptRepository {
             kms_signature,
             extra_data
         )
-        .fetch_one(&self.pool.get_pool())
+        .execute(&mut *tx)
+        .await?;
+        
+        // Then do the COUNT as a separate query within the same transaction
+        // This WILL see the INSERT because it's a separate statement
+        let count = sqlx::query_scalar!(
+            r#"
+            SELECT COUNT(*) as "count!"
+            FROM user_decrypt_share
+            WHERE gw_reference_id = $1
+            "#,
+            gw_reference_id
+        )
+        .fetch_one(&mut *tx)
         .await?;
 
+        tx.commit().await?;
         Ok(count)
     }
 
