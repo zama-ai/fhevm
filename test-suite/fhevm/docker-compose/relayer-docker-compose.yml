@@ -12,3 +12,27 @@ services:
       - ../config/relayer/local.yaml:/app/config/local.yaml
     ports:
       - "3000:3000"
+    depends_on:
+      relayer-db:
+        condition: service_healthy
+
+  relayer-db:
+    container_name: fhevm-relayer-db
+    platform: linux/amd64
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: relayer
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
