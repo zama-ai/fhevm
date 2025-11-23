@@ -1,7 +1,6 @@
 use alloy::primitives::U256;
 use dashmap::DashMap;
 use std::future::Future;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
@@ -106,7 +105,7 @@ impl<T: Clone + Send + Sync + 'static> Default for Deduplicator<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicU32 as TestCounter;
+    use std::sync::atomic::{AtomicU32 as TestCounter, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::time::sleep;

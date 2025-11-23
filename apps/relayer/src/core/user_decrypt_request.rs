@@ -1,10 +1,10 @@
 use crate::core::event::UserDecryptRequest;
-use crate::orchestrator::IndexerIdGenerator;
+use crate::orchestrator::ContentHasher;
 use sha2::{Digest, Sha256};
 
-impl IndexerIdGenerator for UserDecryptRequest {
+impl ContentHasher for UserDecryptRequest {
     /// TODO: Consider canonical ordering for list items.
-    fn compute_indexer_id(&self) -> [u8; 32] {
+    fn content_hash(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
 
         hasher.update(b"contract_addresses:"); // 1
@@ -27,17 +27,11 @@ impl IndexerIdGenerator for UserDecryptRequest {
         hasher.update(b"public_key:"); // 5
         hasher.update(&self.public_key);
 
-        hasher.update(b"request_validity:"); // 6
-        hasher.update(b"duration_days:");
-        hasher.update(self.request_validity.duration_days.to_be_bytes::<32>());
-        hasher.update(b"start_timestamp:");
-        hasher.update(self.request_validity.start_timestamp.to_be_bytes::<32>());
-
-        hasher.update(b"signature:"); // 7
-        hasher.update(&self.signature);
-
-        hasher.update(b"user_address:"); // 8
+        hasher.update(b"user_address:"); // 6
         hasher.update(self.user_address.as_slice());
+
+        // NOTE: signature and request_validity are excluded from content hash
+        // because these are only used on-chain prior to receiving a decryption-id.
 
         hasher.finalize().into()
     }
@@ -50,7 +44,7 @@ mod tests {
     use alloy::primitives::{Address, Bytes, U256};
 
     #[test]
-    fn test_user_decrypt_request_indexer_id_deterministic() {
+    fn test_user_decrypt_request_content_hash_deterministic() {
         let request = UserDecryptRequest {
             ct_handle_contract_pairs: vec![HandleContractPair {
                 ct_handle: U256::from(123),
@@ -68,15 +62,15 @@ mod tests {
             extra_data: Bytes::from(vec![0x00]),
         };
 
-        let id1 = request.compute_indexer_id();
-        let id2 = request.compute_indexer_id();
+        let id1 = request.content_hash();
+        let id2 = request.content_hash();
 
-        assert_eq!(id1, id2, "Same request should produce same indexer ID");
-        assert_eq!(id1.len(), 32, "Indexer ID should be 32 bytes");
+        assert_eq!(id1, id2, "Same request should produce same content hash");
+        assert_eq!(id1.len(), 32, "Content hash should be 32 bytes");
     }
 
     #[test]
-    fn test_user_decrypt_request_indexer_id_different_for_different_requests() {
+    fn test_user_decrypt_request_content_hash_different_for_different_requests() {
         let request1 = UserDecryptRequest {
             ct_handle_contract_pairs: vec![HandleContractPair {
                 ct_handle: U256::from(123),
@@ -97,12 +91,58 @@ mod tests {
         let mut request2 = request1.clone();
         request2.contracts_chain_id = 1338; // Different chain ID
 
-        let id1 = request1.compute_indexer_id();
-        let id2 = request2.compute_indexer_id();
+        let id1 = request1.content_hash();
+        let id2 = request2.content_hash();
 
         assert_ne!(
             id1, id2,
-            "Different requests should produce different indexer IDs"
+            "Different requests should produce different content hashes"
+        );
+    }
+
+    #[test]
+    fn test_user_decrypt_request_excluded_fields_dont_affect_hash() {
+        let request1 = UserDecryptRequest {
+            ct_handle_contract_pairs: vec![HandleContractPair {
+                ct_handle: U256::from(123),
+                contract_address: Address::from([1; 20]),
+            }],
+            request_validity: RequestValidity {
+                start_timestamp: U256::from(1000),
+                duration_days: U256::from(30),
+            },
+            contracts_chain_id: 1337,
+            contract_addresses: vec![Address::from([1; 20])],
+            user_address: Address::from([2; 20]),
+            signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
+            public_key: Bytes::from(vec![0xab, 0xcd]),
+            extra_data: Bytes::from(vec![0x00]),
+        };
+
+        let mut request2 = request1.clone();
+        
+        // Change excluded fields - these should NOT affect the content hash
+        request2.signature = Bytes::from(vec![0xff, 0xff, 0xff, 0xff]);
+        request2.request_validity = RequestValidity {
+            start_timestamp: U256::from(999999),
+            duration_days: U256::from(99999),
+        };
+
+        let hash1 = request1.content_hash();
+        let hash2 = request2.content_hash();
+
+        assert_eq!(
+            hash1, hash2,
+            "Changing signature and request_validity should NOT affect content hash"
+        );
+
+        // Change included field - this SHOULD affect the content hash  
+        request2.contracts_chain_id = 9999;
+        let hash3 = request2.content_hash();
+
+        assert_ne!(
+            hash1, hash3,
+            "Changing contracts_chain_id should affect content hash"
         );
     }
 }

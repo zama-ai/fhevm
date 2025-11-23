@@ -16,7 +16,7 @@ use crate::{
     },
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler},
-        IndexerIdGenerator, Orchestrator, TokioEventDispatcher,
+        ContentHasher, Orchestrator, TokioEventDispatcher,
     },
     store::{
         key_value_db::KVStore, sql::repositories::user_decrypt_repo::UserDecryptRepository,
@@ -194,7 +194,7 @@ impl GatewayHandler {
                 let _ = self.cache.unlock_request(decrypt_request).await;
 
                 // Update database status to failure for transaction errors
-                let indexer_id = decrypt_request.compute_indexer_id();
+                let indexer_id = decrypt_request.content_hash();
                 let err_reason = format!("Transaction Failed: {}", e);
                 if let Err(sql_error) = self
                     .user_decrypt_repo
@@ -454,7 +454,7 @@ impl GatewayHandler {
         if let Err(e) = self
             .user_decrypt_repo
             .update_status_to_receipt_received_on_tx_success(
-                &decrypt_request.compute_indexer_id()[..],
+                &decrypt_request.content_hash()[..],
                 "",
                 gw_reference_id,
             )
@@ -463,7 +463,7 @@ impl GatewayHandler {
             // ALWAYS log immediately with full context (guaranteed)
             error!(
                 job_id = %event.job_id,
-                indexer_id = %hex::encode(decrypt_request.compute_indexer_id()),
+                indexer_id = %hex::encode(decrypt_request.content_hash()),
                 sql_operation = "user_decrypt.update_status_to_receipt_received_on_tx_success",
                 sql_error = %e,
                 "SQL operation failed"
@@ -512,7 +512,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 ..
             }) => {
                 info!("Processing user decrypt request {}", event.job_id);
-                let indexer_id = decrypt_request.compute_indexer_id();
+                let indexer_id = decrypt_request.content_hash();
 
                 match self.cache.check(decrypt_request).await {
                     Ok(cache_result) => match cache_result {

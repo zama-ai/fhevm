@@ -5,7 +5,7 @@ use crate::core::event::{
 use crate::core::job_id::JobId;
 use crate::http::utils::{parse_and_validate, AppResponse, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
-use crate::orchestrator::{IndexerIdGenerator, Orchestrator};
+use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository;
 use alloy::primitives::Bytes;
 use axum::{
@@ -120,7 +120,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         info!("Successfully parsed and validated request");
 
         // Compute content-based JobId for deduplication
-        let int_indexer_id = request.compute_indexer_id();
+        let int_indexer_id = request.content_hash();
         let job_id = JobId::from_sha256_hash(int_indexer_id);
 
         // Register once handlers for receiving the decryption response from the gateway

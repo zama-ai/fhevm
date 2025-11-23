@@ -1,10 +1,10 @@
 use crate::core::event::PublicDecryptRequest;
-use crate::orchestrator::IndexerIdGenerator;
+use crate::orchestrator::ContentHasher;
 use sha2::{Digest, Sha256};
 
-impl IndexerIdGenerator for PublicDecryptRequest {
+impl ContentHasher for PublicDecryptRequest {
     /// TODO: Consider canonical ordering for list items.
-    fn compute_indexer_id(&self) -> [u8; 32] {
+    fn content_hash(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
 
         hasher.update(b"ct_handles:"); // 1
@@ -25,21 +25,21 @@ mod tests {
     use alloy::primitives::Bytes;
 
     #[test]
-    fn test_public_decrypt_request_indexer_id_deterministic() {
+    fn test_public_decrypt_request_content_hash_deterministic() {
         let request = PublicDecryptRequest {
             ct_handles: vec![[1; 32], [2; 32]],
             extra_data: Bytes::from(vec![0xaa, 0xbb]),
         };
 
-        let id1 = request.compute_indexer_id();
-        let id2 = request.compute_indexer_id();
+        let id1 = request.content_hash();
+        let id2 = request.content_hash();
 
-        assert_eq!(id1, id2, "Same request should produce same indexer ID");
-        assert_eq!(id1.len(), 32, "Indexer ID should be 32 bytes");
+        assert_eq!(id1, id2, "Same request should produce same content hash");
+        assert_eq!(id1.len(), 32, "Content hash should be 32 bytes");
     }
 
     #[test]
-    fn test_public_decrypt_request_indexer_id_different_for_different_requests() {
+    fn test_public_decrypt_request_content_hash_different_for_different_requests() {
         let request1 = PublicDecryptRequest {
             ct_handles: vec![[1; 32]],
             extra_data: Bytes::from(vec![0xaa]),
@@ -50,12 +50,12 @@ mod tests {
             extra_data: Bytes::from(vec![0xaa]),
         };
 
-        let id1 = request1.compute_indexer_id();
-        let id2 = request2.compute_indexer_id();
+        let id1 = request1.content_hash();
+        let id2 = request2.content_hash();
 
         assert_ne!(
             id1, id2,
-            "Different requests should produce different indexer IDs"
+            "Different requests should produce different content hashes"
         );
     }
 }
