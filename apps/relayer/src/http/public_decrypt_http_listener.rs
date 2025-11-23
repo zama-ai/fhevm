@@ -119,6 +119,10 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
 
         info!("Successfully parsed and validated request");
 
+        // Compute content-based JobId for deduplication
+        let int_indexer_id = request.compute_indexer_id();
+        let job_id = JobId::from_sha256_hash(int_indexer_id);
+
         // Register once handlers for receiving the decryption response from the gateway
         let (response_handler, response_rx): (
             OnceHandler<RelayerEvent>,
@@ -128,7 +132,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
 
         self.orchestrator.register_once_handler(
             PublicDecryptEventId::RespRcvdFromGw.into(),
-            JobId::from_uuid_v7(request_id),
+            job_id,
             response_handler,
         );
         info!("Registered once handler for response");
@@ -142,13 +146,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
 
         self.orchestrator.register_once_handler(
             PublicDecryptEventId::Failed.into(),
-            JobId::from_uuid_v7(request_id),
+            job_id,
             error_handler,
         );
         info!("Registered once handler for error");
 
         let ext_reference_id = self.orchestrator.new_ext_reference_id();
-        let int_indexer_id = request.compute_indexer_id();
         let request_json = match serde_json::to_value(request.clone()) {
             Ok(json) => json,
             Err(e) => {
@@ -180,10 +183,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         }
 
         let event_data = PublicDecryptEventData::ReqRcvdFromUser {
-            decrypt_request: request,
+            decrypt_request: request.clone(),
         };
+        
         let event = RelayerEvent::new(
-            JobId::from_uuid_v7(request_id),
+            job_id,
             self.api_version,
             RelayerEventData::PublicDecrypt(event_data),
         );

@@ -5,7 +5,6 @@ use crate::{
             GatewayChainEventData, HandleContractPair, RelayerEvent, RelayerEventData,
             UserDecryptEventData, UserDecryptRequest, UserDecryptResponse,
         },
-        job_id::JobId,
     },
     gateway::{
         arbitrum::{
@@ -142,13 +141,6 @@ impl GatewayHandler {
         }
     }
 
-    fn register_duplicate_request(&self, decryption_id: U256, request_id: uuid::Uuid) {
-        info!(
-            "Duplicate request {} found for decryption {}",
-            request_id, decryption_id
-        );
-        self.cache.register_duplicate(decryption_id, request_id);
-    }
 
     async fn handle_new_request(
         &self,
@@ -186,7 +178,7 @@ impl GatewayHandler {
             Ok(user_decryption_id) => {
                 if let Err(e) = self
                     .cache
-                    .store_request_mapping(decrypt_request, user_decryption_id)
+                    .store_request_mapping(decrypt_request, user_decryption_id, event.job_id())
                     .await
                 {
                     if (self.cache.unlock_request(decrypt_request).await).is_err() {
@@ -397,30 +389,28 @@ impl GatewayHandler {
             );
         }
 
-        if let Some(waiting_requests) = self.cache.get_waiting_requests(user_decryption_id) {
-            for original_request_id in waiting_requests {
-                debug!("Notifying original request {}", original_request_id);
-
-                let next_event_data =
-                    RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
-                        decrypt_response: final_response.clone(),
-                    });
-
-                let next_event = RelayerEvent::new(
-                    JobId::from_uuid_v7(original_request_id),
-                    event.api_version,
-                    next_event_data,
-                );
-
-                let _ = self.dispatcher.dispatch_event(next_event).await;
+        // Dispatch response event to notify waiting HTTP handlers
+        // We need to find the original JobId for this decryption_id
+        if let Some(original_job_id) = self.cache.get_job_id_for_decryption_id(user_decryption_id) {
+            let response_event_data = RelayerEventData::UserDecrypt(
+                UserDecryptEventData::RespRcvdFromGw {
+                    decrypt_response: final_response.clone(),
+                },
+            );
+            
+            let response_event = RelayerEvent::new(
+                original_job_id,
+                event.api_version,
+                response_event_data,
+            );
+            
+            if let Err(e) = self.dispatcher.dispatch_event(response_event).await {
+                error!(?e, "Failed to dispatch response event to HTTP handlers");
             }
         } else {
-            warn!(
-                "No matching request IDs found for decryption ID {}",
-                user_decryption_id
-            );
+            error!("No JobId found for decryption_id={}", user_decryption_id);
         }
-
+        
         self.cache.cleanup_mapping(&user_decryption_id);
         self.user_decrypt_response_store.cleanup(user_decryption_id);
     }
@@ -437,14 +427,8 @@ impl GatewayHandler {
         decrypt_request: UserDecryptRequest,
         user_decryption_id: U256,
     ) {
-        let uuid = match event.job_id().as_uuid_v7() {
-            Some(uuid) => uuid,
-            None => {
-                error!("JobId is not a UUID variant, cannot register duplicate");
-                return;
-            }
-        };
-        self.cache.register_duplicate(user_decryption_id, uuid);
+        // No need to register duplicate - orchestrator handles distribution to all
+        // HTTP handlers subscribed to the same content-based JobId
 
         // Convert U256 to i64 for SQL operation (BIGINT)
         let gw_reference_id = match super::utils::u256_to_i64(user_decryption_id) {
@@ -536,12 +520,10 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                             self.dispatch_cached_response(event.clone(), decrypt_response)
                                 .await;
                         }
-                        CacheResult::InProgress(decryption_id) => {
-                            if let Some(uuid) = event.job_id().as_uuid_v7() {
-                                self.register_duplicate_request(decryption_id, uuid);
-                            } else {
-                                error!("JobId is not a UUID variant, cannot register duplicate request");
-                            }
+                        CacheResult::InProgress(_) => {
+                            // Request already in progress - the orchestrator will handle
+                            // distributing the result to all HTTP handlers with the same JobId
+                            info!("Request already in progress for job_id={}, waiting for result", event.job_id);
                         }
                         CacheResult::NotFound => {
                             self.handle_new_request(event.clone(), decrypt_request, indexer_id)

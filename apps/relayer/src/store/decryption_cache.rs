@@ -5,6 +5,7 @@ use crate::{
             PublicDecryptRequest, PublicDecryptResponse, RequestValidity, UserDecryptRequest,
             UserDecryptResponse,
         },
+        job_id::JobId,
     },
     metrics::{cache_operation, CacheOperation, CacheType},
     store::key_value_db::KVStore,
@@ -18,7 +19,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::{Mutex, Notify};
 use tracing::debug;
-use uuid::Uuid;
 use xxhash_rust::xxh3::Xxh3;
 
 #[derive(Debug, Error)]
@@ -91,7 +91,7 @@ where
     kv_store: Arc<dyn KVStore>,
     request_in_flight: DashMap<String, Arc<Notify>>,
     request_key_locks: DashMap<String, Arc<Mutex<()>>>,
-    id_mappings: Arc<DashMap<U256, Vec<Uuid>>>,
+    job_id_mappings: Arc<DashMap<U256, JobId>>,
     request_prefix: &'static str,
     response_prefix: &'static str,
     cache_type: CacheType,
@@ -115,7 +115,7 @@ where
             kv_store,
             request_in_flight: DashMap::new(),
             request_key_locks: DashMap::new(),
-            id_mappings: Arc::new(DashMap::new()),
+            job_id_mappings: Arc::new(DashMap::new()),
             request_prefix,
             response_prefix,
             cache_type,
@@ -212,6 +212,7 @@ where
         &self,
         request: &TRequest,
         decryption_id: U256,
+        job_id: JobId,
     ) -> Result<(), CacheError> {
         let key = request.generate_request_key(self.request_prefix);
         let value = serde_json::to_string(&decryption_id)
@@ -220,7 +221,11 @@ where
             .put(&key, &value)
             .await
             .map_err(|e| CacheError::CachePersistence(e.to_string()))?;
-        debug!("Cache added for {key} with {decryption_id}");
+        
+        // Store the JobId mapping for response dispatching
+        self.job_id_mappings.insert(decryption_id, job_id);
+        
+        debug!("Cache added for {key} with {decryption_id} and job_id={}", job_id);
 
         // Notify all waiters and clean up
         if let Some((_, notify)) = self.request_in_flight.remove(&key) {
@@ -257,21 +262,15 @@ where
         Ok(())
     }
 
-    pub fn register_duplicate(&self, decryption_id: U256, request_id: Uuid) {
-        self.id_mappings
-            .entry(decryption_id)
-            .or_default()
-            .push(request_id);
-    }
 
-    pub fn get_waiting_requests(&self, decryption_id: U256) -> Option<Vec<Uuid>> {
-        self.id_mappings
+    pub fn get_job_id_for_decryption_id(&self, decryption_id: U256) -> Option<JobId> {
+        self.job_id_mappings
             .get(&decryption_id)
-            .map(|entry| entry.value().clone())
+            .map(|entry| *entry.value())
     }
 
     pub fn cleanup_mapping(&self, decryption_id: &U256) {
-        self.id_mappings.remove(decryption_id);
+        self.job_id_mappings.remove(decryption_id);
     }
 }
 
@@ -285,7 +284,7 @@ where
             kv_store: self.kv_store.clone(),
             request_in_flight: DashMap::new(),
             request_key_locks: DashMap::new(),
-            id_mappings: self.id_mappings.clone(),
+            job_id_mappings: self.job_id_mappings.clone(),
             request_prefix: self.request_prefix,
             response_prefix: self.response_prefix,
             cache_type: self.cache_type,
@@ -325,6 +324,7 @@ impl UserDecryptCache {
 mod tests {
     use super::*;
     use crate::core::event::RequestValidity;
+    use crate::core::job_id::JobId;
     use crate::store::key_value_db::InMemoryKVStore;
     use alloy::primitives::{Address, Bytes, U256};
     use prometheus::Registry;
@@ -395,8 +395,9 @@ mod tests {
         assert!(matches!(result, CacheResult::NotFound));
 
         // Store request mapping
+        let job_id = JobId::from_uuid_v7(uuid::Uuid::now_v7());
         cache
-            .store_request_mapping(&request, decryption_id)
+            .store_request_mapping(&request, decryption_id, job_id)
             .await
             .unwrap();
 
@@ -437,8 +438,9 @@ mod tests {
         assert!(matches!(result, CacheResult::NotFound));
 
         // Store request mapping
+        let job_id = JobId::from_uuid_v7(uuid::Uuid::now_v7());
         cache
-            .store_request_mapping(&request, decryption_id)
+            .store_request_mapping(&request, decryption_id, job_id)
             .await
             .unwrap();
 
