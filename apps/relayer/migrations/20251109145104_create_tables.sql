@@ -1,5 +1,7 @@
 -- Migration for creating tables and functions.
 -- Fucntion for updating updated_at field on update.
+-- TODO: gw_reference_id uses BIGINT (i64) for U256 gateway reference IDs
+-- BIGINT range is 2^63-1, should be sufficient for gateway reference IDs
 CREATE OR REPLACE FUNCTION trigger_set_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -18,7 +20,7 @@ CREATE TABLE user_decrypt_req(
     ext_reference_id UUID NOT NULL,
     -- int_indexer_id TEXT NOT NULL,
     int_indexer_id BYTEA NOT NULL,
-    gw_reference_id INTEGER,
+    gw_reference_id BIGINT,
     req JSONB NOT NULL,
     req_status req_status NOT NULL DEFAULT 'queued',
     gw_req_tx_hash TEXT,
@@ -43,7 +45,7 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 -- Table for user decryption shares.
 CREATE TABLE user_decrypt_share (
     id SERIAL PRIMARY KEY,
-    gw_reference_id INTEGER NOT NULL,
+    gw_reference_id BIGINT NOT NULL,
     share_index INTEGER NOT NULL,
     share TEXT NOT NULL,
     kms_signature TEXT NOT NULL,
@@ -70,7 +72,7 @@ CREATE TABLE public_decrypt_req(
     ext_reference_id UUID NOT NULL,
     -- int_indexer_id TEXT NOT NULL,
     int_indexer_id BYTEA NOT NULL,
-    gw_reference_id INTEGER,
+    gw_reference_id BIGINT,
     req JSONB NOT NULL,
     res JSONB,
     req_status req_status NOT NULL DEFAULT 'queued',
@@ -98,7 +100,7 @@ CREATE TABLE input_proof_req(
     id SERIAL PRIMARY KEY,
     ext_reference_id UUID NOT NULL,
     int_request_id UUID NOT NULL, -- uuid v7 here. -- slight difference, we can have the same proof multiple times.
-    gw_reference_id INTEGER,
+    gw_reference_id BIGINT,
     accepted BOOLEAN DEFAULT null,
     req JSONB NOT NULL,
     res JSONB,

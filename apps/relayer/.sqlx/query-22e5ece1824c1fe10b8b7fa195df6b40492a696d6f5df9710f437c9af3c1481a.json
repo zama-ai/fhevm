@@ -45,7 +45,7 @@
       {
         "ordinal": 5,
         "name": "gw_reference_id",
-        "type_info": "Int4"
+        "type_info": "Int8"
       },
       {
         "ordinal": 6,
@@ -80,7 +80,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int4"
+        "Int8"
       ]
     },
     "nullable": [

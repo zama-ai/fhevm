@@ -135,7 +135,7 @@ impl UserDecryptRepository {
         &self,
         int_indexer_id_bytes: &[u8],
         gw_req_tx_hash: &str,
-        gw_reference_id: i32,
+        gw_reference_id: i64,
     ) -> Result<u64> {
         let result = sqlx::query!(
             r#"
@@ -189,7 +189,7 @@ impl UserDecryptRepository {
     /// Step 6: Handle Consensus Tx.
     pub async fn update_consensus_hash_and_return_state(
         &self,
-        gw_reference_id: i32,
+        gw_reference_id: i64,
         gw_consensus_tx_hash: &str,
     ) -> Result<Option<ConsensusReqState>> {
         let result = sqlx::query_as!(
@@ -241,7 +241,7 @@ impl UserDecryptRepository {
     /// NOTE: This lead to possibility of non relevant shares, we can recieve unrelated shares non related to relayer events, or timed_out shares, we register them anyway.
     pub async fn insert_share_and_return_count(
         &self,
-        gw_reference_id: i32,
+        gw_reference_id: i64,
         share_index: i32,
         share: &str,
         kms_signature: &str,
@@ -284,7 +284,7 @@ impl UserDecryptRepository {
     /// Fails if the request is 'timed_out' or does not exist.
     pub async fn complete_req_and_get_shares_metadata(
         &self,
-        gw_reference_id: i32,
+        gw_reference_id: i64,
     ) -> Result<(ConsensusReqState, Vec<UserDecryptShare>)> {
         let records = sqlx::query!(
             r#"

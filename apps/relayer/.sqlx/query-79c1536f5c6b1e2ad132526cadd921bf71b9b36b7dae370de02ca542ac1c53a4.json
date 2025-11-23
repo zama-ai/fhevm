@@ -41,7 +41,7 @@
     "parameters": {
       "Left": [
         "Text",
-        "Int4"
+        "Int8"
       ]
     },
     "nullable": [

@@ -135,7 +135,7 @@ impl PublicDecryptRepository {
         &self,
         int_indexer_id_bytes: &[u8],
         gw_req_tx_hash: &str,
-        gw_reference_id: i32,
+        gw_reference_id: i64,
     ) -> Result<u64> {
         let result = sqlx::query!(
             r#"
@@ -187,7 +187,7 @@ impl PublicDecryptRepository {
     /// Returns: (int_indexer_id, req_status, updated_at, err_reason).
     pub async fn complete_req_with_res(
         &self,
-        gw_reference_id: i32,
+        gw_reference_id: i64,
         res: serde_json::Value,
         gw_response_tx_hash: &str,
     ) -> Result<Option<PublicReqStateModel>> {

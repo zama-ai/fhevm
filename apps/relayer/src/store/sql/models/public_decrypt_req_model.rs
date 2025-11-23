@@ -12,7 +12,7 @@ pub struct PublicDecryptReq {
     pub id: i32,
     pub ext_reference_id: Uuid,
     pub int_indexer_id: Vec<u8>,
-    pub gw_reference_id: Option<i32>,
+    pub gw_reference_id: Option<i64>,
     pub req: Value,
     pub res: Option<Value>,
     pub req_status: ReqStatus,

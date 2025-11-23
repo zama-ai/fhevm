@@ -12,7 +12,7 @@ pub struct InputProofReq {
     pub id: i32,
     pub ext_reference_id: Uuid,
     pub int_request_id: Uuid,
-    pub gw_reference_id: Option<i32>,
+    pub gw_reference_id: Option<i64>,
     pub accepted: Option<bool>,
     pub req: Value,
     pub res: Option<Value>,
