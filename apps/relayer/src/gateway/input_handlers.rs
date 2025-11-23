@@ -6,6 +6,7 @@ use crate::{
             GatewayChainEventData, InputProofEventData, InputProofResponse, RelayerEvent,
             RelayerEventData,
         },
+        job_id::JobId,
     },
     gateway::arbitrum::transaction::{
         helper::TransactionType, ReceiptProcessor, TransactionHelper,
@@ -132,7 +133,7 @@ impl GatewayHandler {
         {
             info!(
                 "Input request received. Making tx to gateway: chain_id : {:?},request_id: {:?}, contract: {:?}, user: {:?}",
-                input_proof_request.contract_chain_id, event.request_id, input_proof_request.contract_address, input_proof_request.user_address
+                input_proof_request.contract_chain_id, event.job_id, input_proof_request.contract_address, input_proof_request.user_address
             );
 
             match self
@@ -156,16 +157,24 @@ impl GatewayHandler {
         }
     }
 
-    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
+    #[instrument(skip_all, fields(event_type=%event.event_name(), job_id=%event.job_id()))]
     async fn store_mapping_and_dispatch_success(&self, event: RelayerEvent, zkproof_id: U256) {
         let mut zk_id_to_req_id = self
             .input_verification_id_to_request_id
             .entry(zkproof_id)
             .or_default();
-        zk_id_to_req_id.value_mut().push(event.request_id());
+        zk_id_to_req_id
+            .value_mut()
+            .push(match event.job_id().as_uuid_v7() {
+                Some(uuid) => uuid,
+                None => {
+                    error!("JobId is not a UUID variant, cannot register duplicate");
+                    return;
+                }
+            });
 
         info!(
-            ?event.request_id,
+            ?event.job_id,
             ?zkproof_id,
             "Stored mapping between input_verification ID and request ID"
         );
@@ -181,7 +190,7 @@ impl GatewayHandler {
         }
     }
 
-    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
+    #[instrument(skip_all, fields(event_type=%event.event_name(), job_id=%event.job_id()))]
     async fn dispatch_input_proof_error(&self, event: RelayerEvent, error: EventProcessingError) {
         error!(
             error = ?error,
@@ -241,11 +250,11 @@ impl GatewayHandler {
             )
             .await
     }
-    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
+    #[instrument(skip_all, fields(event_type=%event.event_name(), job_id=%event.job_id()))]
     async fn handle_gateway_response_log(&self, event: RelayerEvent) {
         info!(
             "Input response received. Return result to user {:?}",
-            event.request_id,
+            event.job_id,
         );
 
         if let RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { log }) =
@@ -310,7 +319,7 @@ impl GatewayHandler {
 
                                             dispatch_set.spawn(async move {
                                                 let next_event = RelayerEvent::new(
-                                                    id,
+                                                    JobId::from_uuid_v7(id),
                                                     event.api_version,
                                                     next_event,
                                                 );
@@ -362,7 +371,7 @@ impl GatewayHandler {
                                             let id = *original_request_id;
                                             dispatch_set.spawn(async move {
                                                 let next_event = RelayerEvent::new(
-                                                    id,
+                                                    JobId::from_uuid_v7(id),
                                                     event.api_version,
                                                     next_event,
                                                 );
@@ -396,14 +405,14 @@ impl GatewayHandler {
 
 #[async_trait]
 impl EventHandler<RelayerEvent> for GatewayHandler {
-    #[instrument(skip_all, fields(event_type=%event.event_name(), request_id=%event.request_id()))]
+    #[instrument(skip_all, fields(event_type=%event.event_name(), job_id=%event.job_id()))]
     async fn handle_event(&self, event: RelayerEvent) {
         match &event.data {
             RelayerEventData::InputProof(input_event) => match input_event {
                 InputProofEventData::ReqRcvdFromUser {
                     input_proof_request,
                 } => {
-                    info!("Processing input proof request {}", event.request_id);
+                    info!("Processing input proof request {}", event.job_id);
                     let req_data = InputProofEventData::ReqRcvdFromUser {
                         input_proof_request: input_proof_request.clone(),
                     };
@@ -442,10 +451,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     if topic0_fixed == verify_proof_response_topic
                         || topic0_fixed == reject_proof_response_topic
                     {
-                        info!(
-                            "Processing gateway response for request {}",
-                            event.request_id
-                        );
+                        info!("Processing gateway response for request {}", event.job_id);
                         self.handle_gateway_response_log(event).await;
                     }
                 };

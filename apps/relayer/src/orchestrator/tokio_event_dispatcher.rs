@@ -1,4 +1,5 @@
 use super::traits::{EventDispatcher, HandlerRegistry};
+use crate::core::job_id::JobId;
 use crate::orchestrator::traits::Event;
 use crate::orchestrator::traits::EventHandler;
 use anyhow::Error;
@@ -6,13 +7,12 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tracing::{debug, instrument, Instrument};
-use uuid::Uuid;
 
 type EventHandlerMap<K, E> = Arc<DashMap<K, Vec<Arc<dyn EventHandler<E>>>>>;
 
 pub struct TokioEventDispatcher<E: Event + std::fmt::Debug> {
-    // (event-type-id, event-id) -> EventHandler
-    once_subscribers: EventHandlerMap<(u8, Uuid), E>,
+    // (event-type-id, workflow-id) -> EventHandler
+    once_subscribers: EventHandlerMap<(u8, JobId), E>,
     // (event-type-id) -> EventHandler
     suscribers: EventHandlerMap<u8, E>,
 }
@@ -29,20 +29,20 @@ impl<E: Event + std::fmt::Debug> TokioEventDispatcher<E> {
 
 #[async_trait]
 impl<E: Event + std::fmt::Debug> EventDispatcher<E> for TokioEventDispatcher<E> {
-    #[instrument(skip_all, fields(event_type=%(event.event_name()), request_id=%(event.request_id())))]
+    #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=%(event.job_id())))]
     async fn dispatch_event(&self, event: E) -> Result<(), Error> {
         let event = event.clone();
         // Handle once subscriptions
         // In this situation we remove the handler from our mapping
         if let Some((_, handlers)) = self
             .once_subscribers
-            .remove(&(event.event_id(), event.request_id()))
+            .remove(&(event.event_id(), event.job_id()))
         {
             let handlers = handlers.clone();
             debug!(
                 "Dispatching {}({}) to {} once-handlers.",
                 event.event_name(),
-                event.request_id(),
+                event.job_id(),
                 handlers.len()
             );
             for handler in handlers {
@@ -58,7 +58,7 @@ impl<E: Event + std::fmt::Debug> EventDispatcher<E> for TokioEventDispatcher<E> 
             debug!(
                 "Dispatching {}({}) to {} generic-handlers.",
                 event.event_name(),
-                event.request_id(),
+                event.job_id(),
                 handlers.len()
             );
             for handler in handlers {
@@ -72,7 +72,7 @@ impl<E: Event + std::fmt::Debug> EventDispatcher<E> for TokioEventDispatcher<E> 
             debug!(
                 "Dispatching event {}({}) didn't match any handler.",
                 event.event_name(),
-                event.request_id(),
+                event.job_id(),
             );
         }
         Ok(())
@@ -90,13 +90,13 @@ impl<E: Event + std::fmt::Debug> HandlerRegistry<E> for TokioEventDispatcher<E> 
     fn register_once_handler(
         &self,
         event_id: u8,
-        request_id: Uuid,
+        job_id: JobId,
         handler: Arc<dyn EventHandler<E>>,
     ) {
         self.once_subscribers
-            .entry((event_id, request_id))
+            .entry((event_id, job_id))
             .or_default()
             .push(handler);
-        debug!("Once-Handler registered for {},{}", event_id, request_id);
+        debug!("Once-Handler registered for {},{}", event_id, job_id);
     }
 }

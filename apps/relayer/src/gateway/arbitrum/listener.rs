@@ -3,6 +3,7 @@ use tracing::{error, info};
 use crate::core::event::{
     ApiCategory, ApiVersion, GatewayChainEventData, RelayerEvent, RelayerEventData,
 };
+use crate::core::job_id::JobId;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use crate::store::BlockNumberStore;
@@ -25,7 +26,7 @@ pub async fn arbitrum_listener(
             event = subscription.next() => match event {
                 Some(event_log) => {
                     let event = RelayerEvent::new(
-                        orchestrator.new_internal_request_id(),
+                        JobId::from_uuid_v7(orchestrator.new_internal_request_id()),
                         ApiVersion {
                             category: ApiCategory::PRODUCTION,
                             number: 1,

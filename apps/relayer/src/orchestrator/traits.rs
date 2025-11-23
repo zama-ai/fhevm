@@ -1,13 +1,13 @@
+use crate::core::job_id::JobId;
 use anyhow::Error;
 use async_trait::async_trait;
 use std::fmt::Display;
 use std::sync::Arc;
-use uuid::Uuid;
 
 pub trait Event: Clone + Send + Sync + 'static {
     fn event_name(&self) -> &str;
     fn event_id(&self) -> u8;
-    fn request_id(&self) -> Uuid;
+    fn job_id(&self) -> JobId;
     fn timestamp(&self) -> u64;
 }
 
@@ -23,12 +23,7 @@ pub trait EventHandler<E: Event>: Send + Sync {
 
 pub trait HandlerRegistry<E: Event> {
     fn register_handler(&self, event_id: u8, handler: Arc<dyn EventHandler<E>>);
-    fn register_once_handler(
-        &self,
-        event_id: u8,
-        request_id: Uuid,
-        handler: Arc<dyn EventHandler<E>>,
-    );
+    fn register_once_handler(&self, event_id: u8, job_id: JobId, handler: Arc<dyn EventHandler<E>>);
 }
 
 pub trait HookRegistry<E: Event> {

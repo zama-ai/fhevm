@@ -2,6 +2,7 @@ use crate::core::event::{
     ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptEventId,
     UserDecryptRequest,
 };
+use crate::core::job_id::JobId;
 use crate::http::docs_utils::ChainId;
 use crate::http::utils::{
     de_string_or_number, parse_and_validate, serialize_vec_as_hex, AppResponse, OnceHandler,
@@ -174,7 +175,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
 
         self.orchestrator.register_once_handler(
             UserDecryptEventId::RespRcvdFromGw.into(),
-            request_id,
+            JobId::from_uuid_v7(request_id),
             response_handler,
         );
         info!("Registered once handler for user decrypt response");
@@ -188,7 +189,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
 
         self.orchestrator.register_once_handler(
             UserDecryptEventId::Failed.into(),
-            request_id,
+            JobId::from_uuid_v7(request_id),
             error_handler,
         );
         info!("Registered once handler for user decrypt failure");
@@ -229,7 +230,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             decrypt_request: user_decrypt_request,
         };
         let event = RelayerEvent::new(
-            request_id,
+            JobId::from_uuid_v7(request_id),
             self.api_version,
             RelayerEventData::UserDecrypt(request_data),
         );

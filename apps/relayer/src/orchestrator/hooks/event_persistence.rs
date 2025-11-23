@@ -41,14 +41,14 @@ where
         match self.event_store.persist_event(event.clone()).await {
             Ok(_) => {
                 debug!(
-                    request_id = %event.request_id(),
+                    job_id = %event.job_id(),
                     event_name = %event.event_name(),
                     "Event persisted successfully"
                 );
             }
             Err(e) => {
                 error!(
-                    request_id = %event.request_id(),
+                    job_id = %event.job_id(),
                     event_name = %event.event_name(),
                     "Failed to persist event: {}", e
                 );
@@ -60,6 +60,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::job_id::JobId;
     use crate::core::test_utils::MockEvent;
     use crate::store::key_value_db::InMemoryKVStore;
     use crate::store::EventStore;
@@ -85,17 +86,23 @@ mod tests {
             events: &[(u8, String)],
         ) {
             for (event_id, event_name) in events {
-                let event = MockEvent::new(request_id, *event_id, event_name);
+                let event = MockEvent::new(JobId::from_uuid_v7(request_id), *event_id, event_name);
                 hook.run(event.clone()).await;
 
                 // Assert latest event is updated
-                let latest = store.get_latest_event(request_id).await.unwrap();
+                let latest = store
+                    .get_latest_event(JobId::from_uuid_v7(request_id))
+                    .await
+                    .unwrap();
                 assert!(latest.is_some());
                 assert_eq!(latest.as_ref().unwrap().event_id(), *event_id);
                 assert_eq!(latest.as_ref().unwrap().event_name(), event_name);
 
                 // Assert get_all_events returns correct number and order
-                let all = store.get_all_events(request_id).await.unwrap();
+                let all = store
+                    .get_all_events(JobId::from_uuid_v7(request_id))
+                    .await
+                    .unwrap();
                 assert_eq!(all.len(), *event_id as usize);
                 for (i, ev) in all.iter().enumerate() {
                     assert_eq!(ev.event_id(), (i as u8) + 1);

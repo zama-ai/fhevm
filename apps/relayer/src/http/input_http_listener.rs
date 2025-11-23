@@ -2,6 +2,7 @@ use crate::core::event::{
     ApiVersion, InputProofEventData, InputProofEventId, InputProofRequest, RelayerEvent,
     RelayerEventData,
 };
+use crate::core::job_id::JobId;
 use crate::http::docs_utils::ChainId;
 use crate::http::utils::{de_string_or_number, parse_and_validate, AppResponse, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -131,7 +132,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
 
         self.orchestrator.register_once_handler(
             InputProofEventId::RespRcvdFromGw.into(),
-            request_id,
+            JobId::from_uuid_v7(request_id),
             gateway_response_handler,
         );
         info!("Registered once handler for handling input proof gateway response");
@@ -145,7 +146,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
 
         self.orchestrator.register_once_handler(
             InputProofEventId::Failed.into(),
-            request_id,
+            JobId::from_uuid_v7(request_id),
             error_handler,
         );
         info!("Registered once handler for handling input proof failure");
@@ -155,7 +156,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
         };
 
         let event = RelayerEvent::new(
-            request_id,
+            JobId::from_uuid_v7(request_id),
             self.api_version,
             RelayerEventData::InputProof(event_data),
         );

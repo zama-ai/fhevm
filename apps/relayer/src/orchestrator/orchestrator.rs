@@ -1,3 +1,4 @@
+use crate::core::job_id::JobId;
 use crate::orchestrator::ids;
 use crate::orchestrator::traits::Event;
 use crate::orchestrator::traits::{
@@ -32,7 +33,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
         ids::new_external_reference_id()
     }
 
-    #[instrument(skip_all, fields(event_type=%(event.event_name()), request_id=%(event.request_id())))]
+    #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=%(event.job_id())))]
     async fn run_pre_dispatch_hooks_sequentially(&self, event: E) {
         // Acquire lock and prepare all hooks as Futures.
         let hooks: Vec<_> = if let Ok(hooks_guard) = self.pre_dispatch_hooks.read() {
@@ -54,7 +55,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
 impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> EventDispatcher<E>
     for Orchestrator<D, E>
 {
-    #[instrument(skip_all, fields(event_type=%(event.event_name()), request_id=%(event.request_id())))]
+    #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=%(event.job_id())))]
     async fn dispatch_event(&self, event: E) -> Result<(), Error> {
         self.run_pre_dispatch_hooks_sequentially(event.clone())
             .await;
@@ -82,11 +83,11 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HandlerRegistry<E>
     fn register_once_handler(
         &self,
         event_id: u8,
-        request_id: Uuid,
+        job_id: JobId,
         handler: Arc<dyn EventHandler<E>>,
     ) {
         self.event_dispatcher
-            .register_once_handler(event_id, request_id, handler);
+            .register_once_handler(event_id, job_id, handler);
     }
 }
 
@@ -96,6 +97,7 @@ mod tests {
     use crate::core::event::{
         ApiCategory, ApiVersion, PublicDecryptEventData, RelayerEvent, RelayerEventData,
     };
+    use crate::core::job_id::JobId;
     use crate::orchestrator::traits::{Event, EventDispatcher, EventHandler, HandlerRegistry};
     use crate::orchestrator::{Orchestrator, TokioEventDispatcher};
     use alloy::primitives::U256;
@@ -118,7 +120,7 @@ mod tests {
         let id = orchestrator.new_internal_request_id();
 
         let event = RelayerEvent::new(
-            id,
+            JobId::from_uuid_v7(id),
             ApiVersion {
                 category: ApiCategory::PRODUCTION,
                 number: 1,

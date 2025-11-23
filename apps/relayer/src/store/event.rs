@@ -2,8 +2,8 @@ use anyhow::{anyhow, Result};
 use serde_json;
 use std::sync::Arc;
 use tracing::{debug, error};
-use uuid::Uuid;
 
+use crate::core::job_id::JobId;
 use crate::orchestrator::traits::Event;
 use crate::store::key_value_db::KVStore;
 
@@ -28,45 +28,48 @@ where
         }
     }
 
-    // Helper to build key from request_id and event_id with padding
-    fn build_key(request_id: &Uuid, event_id: u8) -> String {
-        format!("{EVENT_PREFIX}:{request_id}-{event_id:04}")
+    // Helper to build key from job_id and event_id with padding
+    fn build_key(job_id: &JobId, event_id: u8) -> String {
+        format!(
+            "{EVENT_PREFIX}:{}-{event_id:04}",
+            job_id.to_database_string()
+        )
     }
 
-    // Helper to build a key prefix for a specific request ID
-    fn build_request_prefix(request_id: &Uuid) -> String {
-        format!("{EVENT_PREFIX}:{request_id}-")
+    // Helper to build a key prefix for a specific job ID
+    fn build_request_prefix(job_id: &JobId) -> String {
+        format!("{EVENT_PREFIX}:{}-", job_id.to_database_string())
     }
 
-    // Helper to build latest event ID key for a request ID
-    fn build_latest_event_id_key(request_id: &Uuid) -> String {
-        format!("{EVENT_PREFIX}:latest:{request_id}")
+    // Helper to build latest event ID key for a job ID
+    fn build_latest_event_id_key(job_id: &JobId) -> String {
+        format!("{EVENT_PREFIX}:latest:{}", job_id.to_database_string())
     }
 
     /// Persist an event.
     pub async fn persist_event(&self, event: E) -> Result<()> {
-        let request_id = event.request_id();
+        let job_id = event.job_id();
         let event_id = event.event_id();
 
         // Serialize the event to JSON
         let value = serde_json::to_string(&event)?;
 
-        // Store the event with a key that includes the request ID and event ID
-        let key = Self::build_key(&request_id, event_id);
+        // Store the event with a key that includes the job ID and event ID
+        let key = Self::build_key(&job_id, event_id);
         self.kv_store.put(&key, &value).await?;
 
-        // Update the latest event ID for this request
-        let latest_key = Self::build_latest_event_id_key(&request_id);
+        // Update the latest event ID for this job
+        let latest_key = Self::build_latest_event_id_key(&job_id);
         self.kv_store
             .put(&latest_key, &event_id.to_string())
             .await?;
         Ok(())
     }
 
-    /// Retrieve the latest event for a given request ID.
-    pub async fn get_latest_event(&self, request_id: Uuid) -> Result<Option<E>> {
-        // Get the latest event ID for this request
-        let latest_key = Self::build_latest_event_id_key(&request_id);
+    /// Retrieve the latest event for a given job ID.
+    pub async fn get_latest_event(&self, job_id: JobId) -> Result<Option<E>> {
+        // Get the latest event ID for this job
+        let latest_key = Self::build_latest_event_id_key(&job_id);
 
         if let Some(event_id_str) = self.kv_store.get(&latest_key).await? {
             // Parse the event ID
@@ -74,8 +77,8 @@ where
                 .parse::<u8>()
                 .map_err(|e| anyhow!("Invalid event ID format: {}", e))?;
 
-            // Get the event using the request ID and event ID
-            let key = Self::build_key(&request_id, event_id);
+            // Get the event using the job ID and event ID
+            let key = Self::build_key(&job_id, event_id);
             if let Some(value) = self.kv_store.get(&key).await? {
                 let event = serde_json::from_str(&value)?;
                 return Ok(Some(event));
@@ -85,9 +88,9 @@ where
         Ok(None)
     }
 
-    /// Retrieve all events for a given request ID.
-    pub async fn get_all_events(&self, request_id: Uuid) -> Result<Vec<E>> {
-        let prefix = Self::build_request_prefix(&request_id);
+    /// Retrieve all events for a given job ID.
+    pub async fn get_all_events(&self, job_id: JobId) -> Result<Vec<E>> {
+        let prefix = Self::build_request_prefix(&job_id);
         let pairs = self.kv_store.get_by_prefix(&prefix).await?;
 
         // Convert all values to Event objects
@@ -102,11 +105,7 @@ where
         // Sort events by event ID to ensure consistent ordering
         events.sort_by_key(|a| a.event_id());
 
-        debug!(
-            "Retrieved {} events for request_id={}",
-            events.len(),
-            request_id
-        );
+        debug!("Retrieved {} events for job_id={}", events.len(), job_id);
         Ok(events)
     }
 }
@@ -124,24 +123,24 @@ mod tests {
         let kv_store = Arc::new(InMemoryKVStore::default());
         let event_store = EventStore::<MockEvent>::new(kv_store);
 
-        let request_id = uuid::Uuid::new_v4();
+        let job_id = JobId::from_uuid_v7(uuid::Uuid::new_v4());
 
         // Create and persist some test events
-        let event1 = MockEvent::new(request_id, 1, "Event1");
-        let event2 = MockEvent::new(request_id, 2, "Event2");
+        let event1 = MockEvent::new(job_id, 1, "Event1");
+        let event2 = MockEvent::new(job_id, 2, "Event2");
 
         // Test persist_event
         event_store.persist_event(event1.clone()).await.unwrap();
         event_store.persist_event(event2.clone()).await.unwrap();
 
         // Test get_latest_event
-        let latest = event_store.get_latest_event(request_id).await.unwrap();
+        let latest = event_store.get_latest_event(job_id).await.unwrap();
         assert!(latest.is_some());
         assert_eq!(latest.as_ref().unwrap().event_id(), 2);
         assert_eq!(latest.as_ref().unwrap().event_name(), "Event2");
 
         // Test get_all_events
-        let events = event_store.get_all_events(request_id).await.unwrap();
+        let events = event_store.get_all_events(job_id).await.unwrap();
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].event_id(), 1);
         assert_eq!(events[0].event_name(), "Event1");

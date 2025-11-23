@@ -5,6 +5,7 @@ use crate::{
             GatewayChainEventData, PublicDecryptEventData, PublicDecryptRequest,
             PublicDecryptResponse, RelayerEvent, RelayerEventData,
         },
+        job_id::JobId,
     },
     gateway::{
         arbitrum::{
@@ -15,7 +16,7 @@ use crate::{
         readiness_checker::{ReadinessCheckError, ReadinessChecker},
     },
     orchestrator::{
-        traits::{EventDispatcher, EventHandler},
+        traits::{Event, EventDispatcher, EventHandler},
         IndexerIdGenerator, Orchestrator, TokioEventDispatcher,
     },
     store::{
@@ -117,12 +118,12 @@ impl GatewayHandler {
         event: RelayerEvent,
         decrypt_response: PublicDecryptResponse,
     ) {
-        info!("Cache hit for request {}", event.request_id);
+        info!("Cache hit for request {}", event.job_id);
         let next_event_data =
             RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
                 decrypt_response,
             });
-        let next_event = RelayerEvent::new(event.request_id, event.api_version, next_event_data);
+        let next_event = RelayerEvent::new(event.job_id(), event.api_version, next_event_data);
         if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
             error!(?e, "Failed to dispatch cached response event");
         }
@@ -142,7 +143,7 @@ impl GatewayHandler {
         decrypt_request: &PublicDecryptRequest,
         indexer_id: [u8; 32],
     ) {
-        info!("Starting readiness check for request {}", event.request_id);
+        info!("Starting readiness check for request {}", event.job_id);
 
         match self
             .start_readiness_check(event.clone(), decrypt_request)
@@ -157,7 +158,7 @@ impl GatewayHandler {
                 {
                     // ALWAYS log immediately with full context (guaranteed)
                     error!(
-                        request_id = %event.request_id,
+                        job_id = %event.job_id,
                         indexer_id = %hex::encode(indexer_id),
                         sql_operation = "public_decrypt.update_status_to_processing",
                         sql_error = %e,
@@ -179,7 +180,7 @@ impl GatewayHandler {
                         decrypt_request: decrypt_request.clone(),
                     });
                 let readiness_event =
-                    RelayerEvent::new(event.request_id, event.api_version, readiness_event_data);
+                    RelayerEvent::new(event.job_id(), event.api_version, readiness_event_data);
                 if let Err(e) = self.dispatcher.dispatch_event(readiness_event).await {
                     error!(?e, "Failed to dispatch ReadinessCheckPassed event");
                 }
@@ -261,23 +262,23 @@ impl GatewayHandler {
             }
             Err(e) => {
                 let _ = self.cache.unlock_request(decrypt_request).await;
-                
+
                 // Update database status to failure for transaction errors
                 let indexer_id = decrypt_request.compute_indexer_id();
                 let err_reason = format!("Transaction Failed: {}", e);
                 if let Err(sql_error) = self
                     .public_decrypt_repo
                     .update_status_to_failure_on_tx_failed(&indexer_id[..], &err_reason)
-                    .await 
+                    .await
                 {
                     error!(
-                        request_id = %event.request_id,
+                        job_id = %event.job_id,
                         indexer_id = %hex::encode(indexer_id),
                         sql_error = %sql_error,
                         "Failed to update transaction failure status in database"
                     );
                 }
-                
+
                 self.dispatch_error_event(event, e).await;
             }
         }
@@ -328,7 +329,7 @@ impl GatewayHandler {
                                     Ok(id) => id,
                                     Err(e) => {
                                         error!(
-                                            request_id = %event.request_id,
+                                            job_id = %event.job_id,
                                             decryption_id = %public_decryption_id,
                                             conversion_error = %e,
                                             "Failed to convert U256 decryption ID to i64"
@@ -369,7 +370,7 @@ impl GatewayHandler {
                             {
                                 // ALWAYS log immediately with full context (guaranteed)
                                 error!(
-                                    request_id = %event.request_id,
+                                    job_id = %event.job_id,
                                     decryption_id = %public_decryption_id,
                                     gw_reference_id = %gw_reference_id,
                                     sql_operation = "public_decrypt.complete_req_with_res",
@@ -413,7 +414,7 @@ impl GatewayHandler {
                                     );
 
                                     let next_event = RelayerEvent::new(
-                                        original_request_id,
+                                        JobId::from_uuid_v7(original_request_id),
                                         event.api_version,
                                         next_event_data,
                                     );
@@ -446,8 +447,14 @@ impl GatewayHandler {
         decrypt_request: PublicDecryptRequest,
         decryption_public_id: U256,
     ) {
-        self.cache
-            .register_duplicate(decryption_public_id, event.request_id);
+        let uuid = match event.job_id().as_uuid_v7() {
+            Some(uuid) => uuid,
+            None => {
+                error!("JobId is not a UUID variant, cannot register duplicate");
+                return;
+            }
+        };
+        self.cache.register_duplicate(decryption_public_id, uuid);
 
         if let Err(e) = self
             .cache
@@ -455,7 +462,7 @@ impl GatewayHandler {
             .await
         {
             warn!(
-                ?event.request_id,
+                ?event.job_id,
                 "error persisting public decrypt request to cache: {}", e
             );
         }
@@ -465,7 +472,7 @@ impl GatewayHandler {
             Ok(id) => id,
             Err(e) => {
                 error!(
-                    request_id = %event.request_id,
+                    job_id = %event.job_id,
                     decryption_id = %decryption_public_id,
                     conversion_error = %e,
                     "Failed to convert U256 decryption ID to i64"
@@ -492,7 +499,7 @@ impl GatewayHandler {
         {
             // ALWAYS log immediately with full context (guaranteed)
             error!(
-                request_id = %event.request_id,
+                job_id = %event.job_id,
                 indexer_id = %hex::encode(decrypt_request.compute_indexer_id()),
                 sql_operation = "public_decrypt.update_status_to_receipt_received_on_tx_success",
                 sql_error = %e,
@@ -546,7 +553,11 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                                 .await;
                         }
                         CacheResult::InProgress(decryption_id) => {
-                            self.register_duplicate_request(decryption_id, event.request_id);
+                            if let Some(uuid) = event.job_id().as_uuid_v7() {
+                                self.register_duplicate_request(decryption_id, uuid);
+                            } else {
+                                error!("JobId is not a UUID variant, cannot register duplicate request");
+                            }
                         }
                         CacheResult::NotFound => {
                             self.handle_new_request(event.clone(), decrypt_request, indexer_id)
@@ -554,7 +565,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                         }
                     },
                     Err(e) => {
-                        error!(?e, "Failed to check cache for request {}", event.request_id);
+                        error!(?e, "Failed to check cache for request {}", event.job_id);
                         self.dispatch_error_event(event.clone(), e.into()).await;
                     }
                 }
@@ -564,10 +575,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     if FixedBytes::<32>::from_slice(topic0.as_slice())
                         == Decryption::PublicDecryptionResponse::SIGNATURE_HASH
                     {
-                        info!(
-                            "Processing gateway response for request {}",
-                            event.request_id
-                        );
+                        info!("Processing gateway response for request {}", event.job_id);
                         self.handle_gateway_response_log(event).await;
                     }
                 };
@@ -577,7 +585,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
             }) => {
                 info!(
                     "Request {} sent to gateway with decryption ID {}",
-                    event.request_id, gw_req_reference_id
+                    event.job_id, gw_req_reference_id
                 );
             }
             _ => {}
