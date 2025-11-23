@@ -5,6 +5,7 @@ use crate::{
             GatewayChainEventData, PublicDecryptEventData, PublicDecryptRequest,
             PublicDecryptResponse, RelayerEvent, RelayerEventData,
         },
+        job_id::JobId,
     },
     gateway::{
         arbitrum::{
@@ -19,8 +20,7 @@ use crate::{
         ContentHasher, Orchestrator, TokioEventDispatcher,
     },
     store::{
-        key_value_db::KVStore, sql::repositories::public_decrypt_repo::PublicDecryptRepository,
-        CacheResult, PublicDecryptCache,
+        sql::repositories::public_decrypt_repo::PublicDecryptRepository,
     },
 };
 use alloy::sol_types::SolEvent;
@@ -81,7 +81,6 @@ impl ReceiptProcessor for PublicDecryptionRequestProcessor {
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    cache: Arc<PublicDecryptCache>,
     tx_helper: Arc<TransactionHelper>,
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
@@ -89,20 +88,15 @@ pub struct GatewayHandler {
 }
 
 impl GatewayHandler {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        kv_store: Arc<dyn KVStore>,
         tx_helper: Arc<TransactionHelper>,
         readiness_checker: Arc<ReadinessChecker>,
         decryption_address: Address,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
     ) -> Self {
-        let cache = Arc::new(PublicDecryptCache::new(kv_store));
-
         Self {
             dispatcher,
-            cache,
             tx_helper,
             readiness_checker,
             decryption_address,
@@ -182,7 +176,6 @@ impl GatewayHandler {
                     .await;
             }
             Err(readiness_error) => {
-                let _ = self.cache.unlock_request(decrypt_request).await;
                 self.dispatch_error_event(event, readiness_error).await;
             }
         }
@@ -238,22 +231,10 @@ impl GatewayHandler {
             .await
         {
             Ok(decryption_id) => {
-                if let Err(e) = self
-                    .cache
-                    .store_request_mapping(decrypt_request, decryption_id, event.job_id())
-                    .await
-                {
-                    if (self.cache.unlock_request(decrypt_request).await).is_err() {
-                        warn!("Cache unlock failed, continuing with error dispatch");
-                    }
-                    self.dispatch_error_event(event, e.into()).await;
-                    return;
-                }
                 self.store_and_dispatch_success(event, decrypt_request.clone(), decryption_id)
                     .await;
             }
             Err(e) => {
-                let _ = self.cache.unlock_request(decrypt_request).await;
 
                 // Update database status to failure for transaction errors
                 let indexer_id = decrypt_request.content_hash();
@@ -355,66 +336,60 @@ impl GatewayHandler {
                             };
 
                             //TODO(SQL): For now TxHash is empty, since its only for infomrational purpose. Later fill it prooperly.
-                            if let Err(e) = self
+                            let req_state = match self
                                 .public_decrypt_repo
                                 .complete_req_with_res(gw_reference_id, respond_json, "")
                                 .await
                             {
-                                // ALWAYS log immediately with full context (guaranteed)
-                                error!(
-                                    job_id = %event.job_id,
-                                    decryption_id = %public_decryption_id,
-                                    gw_reference_id = %gw_reference_id,
-                                    sql_operation = "public_decrypt.complete_req_with_res",
-                                    sql_error = %e,
-                                    "SQL operation failed"
-                                );
+                                Ok(Some(state)) => state,
+                                Ok(None) => {
+                                    warn!("Request not found or already completed/failed for gw_reference_id: {}", gw_reference_id);
+                                    return;
+                                }
+                                Err(e) => {
+                                    // ALWAYS log immediately with full context (guaranteed)
+                                    error!(
+                                        job_id = %event.job_id,
+                                        decryption_id = %public_decryption_id,
+                                        gw_reference_id = %gw_reference_id,
+                                        sql_operation = "public_decrypt.complete_req_with_res",
+                                        sql_error = %e,
+                                        "SQL operation failed"
+                                    );
 
-                                // Forward simple message to HTTP handler for 500
-                                self.dispatch_error_event(
-                                    event,
-                                    EventProcessingError::HandlerError(
-                                        "Failed SQL operation".to_string(),
-                                    ),
-                                )
-                                .await;
-                                return;
-                            }
+                                    // Forward simple message to HTTP handler for 500
+                                    self.dispatch_error_event(
+                                        event,
+                                        EventProcessingError::HandlerError(
+                                            "Failed SQL operation".to_string(),
+                                        ),
+                                    )
+                                    .await;
+                                    return;
+                                }
+                            };
 
-                            if let Err(e) = self
-                                .cache
-                                .store_response(public_decryption_id, decrypt_response.clone())
-                                .await
-                            {
-                                warn!(
-                                    ?public_decryption_id,
-                                    "error persisting public decrypt response to cache: {}", e
-                                );
-                            }
+                            // Create JobId from content hash stored in database
+                            let original_job_id = JobId::from_sha256_hash(
+                                req_state.int_indexer_id.try_into().unwrap_or([0u8; 32])
+                            );
 
                             // Dispatch response event to notify waiting HTTP handlers
-                            // We need to find the original JobId for this decryption_id
-                            if let Some(original_job_id) = self.cache.get_job_id_for_decryption_id(public_decryption_id) {
-                                let response_event_data = RelayerEventData::PublicDecrypt(
-                                    PublicDecryptEventData::RespRcvdFromGw {
-                                        decrypt_response: decrypt_response.clone(),
-                                    },
-                                );
-                                
-                                let response_event = RelayerEvent::new(
-                                    original_job_id,
-                                    event.api_version,
-                                    response_event_data,
-                                );
-                                
-                                if let Err(e) = self.dispatcher.dispatch_event(response_event).await {
-                                    error!(?e, "Failed to dispatch response event to HTTP handlers");
-                                }
-                            } else {
-                                error!("No JobId found for decryption_id={}", public_decryption_id);
-                            }
+                            let response_event_data = RelayerEventData::PublicDecrypt(
+                                PublicDecryptEventData::RespRcvdFromGw {
+                                    decrypt_response: decrypt_response.clone(),
+                                },
+                            );
                             
-                            self.cache.cleanup_mapping(&public_decryption_id);
+                            let response_event = RelayerEvent::new(
+                                original_job_id,
+                                event.api_version,
+                                response_event_data,
+                            );
+                            
+                            if let Err(e) = self.dispatcher.dispatch_event(response_event).await {
+                                error!(?e, "Failed to dispatch response event to HTTP handlers");
+                            }
                         }
                         Err(e) => {
                             error!(?e, "Failed to decode event data");
@@ -436,16 +411,6 @@ impl GatewayHandler {
         // No need to register duplicate - orchestrator handles distribution to all
         // HTTP handlers subscribed to the same content-based JobId
 
-        if let Err(e) = self
-            .cache
-            .store_request_mapping(&decrypt_request, decryption_public_id, event.job_id())
-            .await
-        {
-            warn!(
-                ?event.job_id,
-                "error persisting public decrypt request to cache: {}", e
-            );
-        }
 
         // Convert U256 to i64 for SQL operation (BIGINT)
         let gw_reference_id = match super::utils::u256_to_i64(decryption_public_id) {
@@ -526,27 +491,8 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
             }) => {
                 let indexer_id = decrypt_request.content_hash();
 
-                match self.cache.check(decrypt_request).await {
-                    Ok(cache_result) => match cache_result {
-                        CacheResult::Hit(decrypt_response) => {
-                            self.dispatch_cached_response(event.clone(), decrypt_response)
-                                .await;
-                        }
-                        CacheResult::InProgress(_) => {
-                            // Request already in progress - the orchestrator will handle
-                            // distributing the result to all HTTP handlers with the same JobId
-                            info!("Request already in progress for job_id={}, waiting for result", event.job_id);
-                        }
-                        CacheResult::NotFound => {
-                            self.handle_new_request(event.clone(), decrypt_request, indexer_id)
-                                .await;
-                        }
-                    },
-                    Err(e) => {
-                        error!(?e, "Failed to check cache for request {}", event.job_id);
-                        self.dispatch_error_event(event.clone(), e.into()).await;
-                    }
-                }
+                // HTTP handler already did SQL deduplication check, so just execute the request
+                self.handle_new_request(event.clone(), decrypt_request, indexer_id).await;
             }
             RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { ref log }) => {
                 if let Some(topic0) = log.topic0() {

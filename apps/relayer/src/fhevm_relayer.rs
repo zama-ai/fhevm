@@ -27,7 +27,6 @@ use crate::gateway::{
     readiness_checker::ReadinessChecker, InputProofGatewayHandler, PublicDecryptGatewayHandler,
     UserDecryptGatewayHandler,
 };
-use crate::store::key_value_db::KVStore;
 use crate::store::BlockNumberStore;
 use alloy::primitives::Address;
 use std::net::SocketAddr;
@@ -172,7 +171,6 @@ pub async fn run_fhevm_relayer(
 
     setup_public_decrypt_gateway_handler(
         &orchestrator,
-        kv_store.clone(),
         gateway_tx_helper.clone(),
         readiness_checker.clone(),
         decryption_address,
@@ -181,7 +179,6 @@ pub async fn run_fhevm_relayer(
 
     setup_user_decrypt_gateway_handler(
         &orchestrator,
-        kv_store.clone(),
         gateway_tx_helper.clone(),
         readiness_checker.clone(),
         decryption_address,
@@ -335,7 +332,6 @@ fn setup_input_proof_gateway_handler(
 /// Setup PublicDecryptGatewayHandler and register its events
 fn setup_public_decrypt_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    kv_store: Arc<dyn KVStore>,
     tx_helper: Arc<GatewayTransactionHelper>,
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
@@ -343,7 +339,6 @@ fn setup_public_decrypt_gateway_handler(
 ) -> eyre::Result<()> {
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(PublicDecryptGatewayHandler::new(
         Arc::clone(orchestrator),
-        kv_store,
         tx_helper,
         readiness_checker,
         decryption_address,
@@ -363,7 +358,6 @@ fn setup_public_decrypt_gateway_handler(
 /// Setup UserDecryptGatewayHandler and register its events
 fn setup_user_decrypt_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    kv_store: Arc<dyn KVStore>,
     tx_helper: Arc<GatewayTransactionHelper>,
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
@@ -372,7 +366,6 @@ fn setup_user_decrypt_gateway_handler(
 ) -> eyre::Result<()> {
     let handler: Arc<dyn EventHandler<RelayerEvent>> = Arc::new(UserDecryptGatewayHandler::new(
         Arc::clone(orchestrator),
-        kv_store,
         tx_helper,
         readiness_checker,
         decryption_address,
