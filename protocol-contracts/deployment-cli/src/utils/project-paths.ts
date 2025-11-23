@@ -22,7 +22,7 @@ export function resolveProjectRoot(): string {
         const parent = path.dirname(current);
         if (parent === current) {
             throw new Error(
-                "Unable to locate repository root (gateway-contracts directory not found).",
+                "Unable to locate repository root (expected both gateway-contracts and host-contracts).",
             );
         }
         current = parent;

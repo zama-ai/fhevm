@@ -28,15 +28,15 @@ export interface StatusEntry {
 }
 
 export class DeploymentOrchestrator {
-    private readonly logger: Logger;
-    private readonly config: DeploymentConfig;
-    private readonly configPath: string;
-    private readonly steps: DeploymentStep[];
-    private readonly state: StateManager;
-    private readonly env: EnvManager;
-    private readonly hardhat: HardhatRunner;
-    private readonly prompt: InteractivePrompt;
-    private readonly networks: NetworkRegistry;
+    public readonly logger: Logger;
+    public readonly config: DeploymentConfig;
+    public readonly configPath: string;
+    public readonly steps: DeploymentStep[];
+    public readonly state: StateManager;
+    public readonly env: EnvManager;
+    public readonly hardhat: HardhatRunner;
+    public readonly prompt: InteractivePrompt;
+    public readonly networks: NetworkRegistry;
 
     private constructor(
         logger: Logger,

@@ -5,3 +5,6 @@ node_modules
 deployment-state/**/*.json
 *.env
 !.env.example
+
+cache/
+out/

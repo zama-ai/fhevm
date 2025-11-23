@@ -1,18 +1,19 @@
 {
     "compilerOptions": {
-        "target": "ES2022",
-        "module": "NodeNext",
-        "moduleResolution": "NodeNext",
+        "lib": ["ESNext"],
+        "target": "ESNext",
+        "module": "Preserve",
+        "moduleDetection": "force",
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
         "skipLibCheck": true,
         "strict": true,
-        "rootDir": "src",
+        "rootDir": ".",
         "outDir": "dist",
         "resolveJsonModule": true,
         "noEmitOnError": true,
-        "types": ["node"]
+        "types": ["node", "bun"]
     },
-    "include": ["src"],
+    "include": ["src", "tests"],
     "exclude": ["dist", "node_modules"]
 }
