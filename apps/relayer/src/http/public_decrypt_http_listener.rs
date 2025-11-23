@@ -4,7 +4,7 @@ use crate::core::event::{
 };
 use crate::http::utils::{parse_and_validate, AppResponse, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
-use crate::orchestrator::Orchestrator;
+use crate::orchestrator::{IndexerIdGenerator, Orchestrator};
 use crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository;
 use alloy::primitives::Bytes;
 use axum::{
@@ -106,7 +106,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
             }
         };
 
-        let public_decrypt_request: PublicDecryptRequest =
+        let request: PublicDecryptRequest =
             match parse_and_validate::<PublicDecryptRequestJson, PublicDecryptRequest>(&body) {
                 Ok(request) => request,
                 Err(parse_error) => {
@@ -146,13 +146,45 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         );
         info!("Registered once handler for error");
 
-        let request_data = PublicDecryptEventData::ReqRcvdFromUser {
-            decrypt_request: public_decrypt_request,
+        let ext_reference_id = self.orchestrator.new_ext_reference_id();
+        let int_indexer_id = request.compute_indexer_id();
+        let request_json = match serde_json::to_value(request.clone()) {
+            Ok(json) => json,
+            Err(e) => {
+                error!("Failed to serialize request data to JSON: {}", e);
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
+        };
+
+        if let Err(e) = self
+            .public_decrypt_repo
+            .insert_data_on_conflict_and_get_ext_reference_id(
+                ext_reference_id,
+                &int_indexer_id[..],
+                request_json,
+            )
+            .await
+        {
+            error!(
+                "Failed to insert/get public decrypt into/from database: {}",
+                e
+            );
+            return AppResponse::<()>::internal_server_error_with_request_id(
+                request_id.to_string(),
+            )
+            .into_response();
+        }
+
+        let event_data = PublicDecryptEventData::ReqRcvdFromUser {
+            decrypt_request: request,
         };
         let event = RelayerEvent::new(
             request_id,
             self.api_version,
-            RelayerEventData::PublicDecrypt(request_data),
+            RelayerEventData::PublicDecrypt(event_data),
         );
         let _ = self.orchestrator.dispatch_event(event).await;
         info!("Dispatched event to orchestrator to initiate processing");

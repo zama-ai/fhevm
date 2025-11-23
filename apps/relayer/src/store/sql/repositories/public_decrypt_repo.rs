@@ -53,6 +53,7 @@ impl PublicDecryptRepository {
     /// Insert req, ext_reference_id, int_indexer_id.
     /// If conflict on int_indexer_id, it returns the EXISTING ext_reference_id.
     /// If no conflict, it inserts and returns the NEW ext_reference_id.
+    // TODO: Return the umber of rows affected.
     pub async fn insert_data_on_conflict_and_get_ext_reference_id(
         &self,
         ext_reference_id: Uuid,

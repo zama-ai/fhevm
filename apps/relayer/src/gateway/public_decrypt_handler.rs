@@ -16,7 +16,7 @@ use crate::{
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
-        Orchestrator, TokioEventDispatcher,
+        IndexerIdGenerator, Orchestrator, TokioEventDispatcher,
     },
     store::{
         key_value_db::KVStore, sql::repositories::public_decrypt_repo::PublicDecryptRepository,
@@ -110,66 +110,87 @@ impl GatewayHandler {
         }
     }
 
-    // Cache operations
+    // Cache state handlers - focused single-responsibility functions
 
-    async fn act_on_cache_result(
+    async fn dispatch_cached_response(
         &self,
-        cache_result: CacheResult<PublicDecryptResponse>,
+        event: RelayerEvent,
+        decrypt_response: PublicDecryptResponse,
+    ) {
+        info!("Cache hit for request {}", event.request_id);
+        let next_event_data =
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
+                decrypt_response,
+            });
+        let next_event = RelayerEvent::new(event.request_id, event.api_version, next_event_data);
+        if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+            error!(?e, "Failed to dispatch cached response event");
+        }
+    }
+
+    fn register_duplicate_request(&self, decryption_id: U256, request_id: uuid::Uuid) {
+        info!(
+            "Duplicate request {} found for decryption {}",
+            request_id, decryption_id
+        );
+        self.cache.register_duplicate(decryption_id, request_id);
+    }
+
+    async fn handle_new_request(
+        &self,
         event: RelayerEvent,
         decrypt_request: &PublicDecryptRequest,
+        indexer_id: [u8; 32],
     ) {
-        match cache_result {
-            CacheResult::Hit(decrypt_response) => {
-                info!("Cache hit for request {}", event.request_id);
-                let next_event_data =
-                    RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
-                        decrypt_response,
-                    });
-                let next_event =
-                    RelayerEvent::new(event.request_id, event.api_version, next_event_data);
-                if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
-                    error!(?e, "Failed to dispatch cached response event");
-                }
-            }
-            CacheResult::InProgress(decryption_id) => {
-                info!(
-                    "Duplicate request {} found for decryption {}",
-                    event.request_id, decryption_id
-                );
-                self.cache
-                    .register_duplicate(decryption_id, event.request_id);
-            }
-            CacheResult::NotFound => {
-                info!("Starting readiness check for request {}", event.request_id);
-                match self
-                    .start_readiness_check(event.clone(), decrypt_request)
+        info!("Starting readiness check for request {}", event.request_id);
+
+        match self
+            .start_readiness_check(event.clone(), decrypt_request)
+            .await
+        {
+            Ok(()) => {
+                // SQL operations using indexer_id
+                if let Err(e) = self
+                    .public_decrypt_repo
+                    .update_status_to_processing(&indexer_id[..])
                     .await
                 {
-                    Ok(()) => {
-                        // Emit ReadinessCheckPassed event
-                        let readiness_event_data = RelayerEventData::PublicDecrypt(
-                            PublicDecryptEventData::ReadinessCheckPassed {
-                                decrypt_request: decrypt_request.clone(),
-                            },
-                        );
-                        let readiness_event = RelayerEvent::new(
-                            event.request_id,
-                            event.api_version,
-                            readiness_event_data,
-                        );
-                        if let Err(e) = self.dispatcher.dispatch_event(readiness_event).await {
-                            error!(?e, "Failed to dispatch ReadinessCheckPassed event");
-                        }
+                    // ALWAYS log immediately with full context (guaranteed)
+                    error!(
+                        request_id = %event.request_id,
+                        indexer_id = %hex::encode(indexer_id),
+                        sql_operation = "public_decrypt.update_status_to_processing",
+                        sql_error = %e,
+                        "SQL operation failed"
+                    );
 
-                        // TODO: Update database status to "ready"
-                        self.forward_transaction_to_gateway(event, decrypt_request)
-                            .await;
-                    }
-                    Err(readiness_error) => {
-                        let _ = self.cache.unlock_request(decrypt_request).await;
-                        self.dispatch_error_event(event, readiness_error).await;
-                    }
+                    // Forward simple message to HTTP handler for 500
+                    self.dispatch_error_event(
+                        event,
+                        EventProcessingError::HandlerError("Failed SQL operation".to_string()),
+                    )
+                    .await;
+                    return;
                 }
+
+                // Emit ReadinessCheckPassed event
+                let readiness_event_data =
+                    RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReadinessCheckPassed {
+                        decrypt_request: decrypt_request.clone(),
+                    });
+                let readiness_event =
+                    RelayerEvent::new(event.request_id, event.api_version, readiness_event_data);
+                if let Err(e) = self.dispatcher.dispatch_event(readiness_event).await {
+                    error!(?e, "Failed to dispatch ReadinessCheckPassed event");
+                }
+
+                // Proceed with transaction sending
+                self.forward_transaction_to_gateway(event, decrypt_request)
+                    .await;
+            }
+            Err(readiness_error) => {
+                let _ = self.cache.unlock_request(decrypt_request).await;
+                self.dispatch_error_event(event, readiness_error).await;
             }
         }
     }
@@ -240,6 +261,23 @@ impl GatewayHandler {
             }
             Err(e) => {
                 let _ = self.cache.unlock_request(decrypt_request).await;
+                
+                // Update database status to failure for transaction errors
+                let indexer_id = decrypt_request.compute_indexer_id();
+                let err_reason = format!("Transaction Failed: {}", e);
+                if let Err(sql_error) = self
+                    .public_decrypt_repo
+                    .update_status_to_failure_on_tx_failed(&indexer_id[..], &err_reason)
+                    .await 
+                {
+                    error!(
+                        request_id = %event.request_id,
+                        indexer_id = %hex::encode(indexer_id),
+                        sql_error = %sql_error,
+                        "Failed to update transaction failure status in database"
+                    );
+                }
+                
                 self.dispatch_error_event(event, e).await;
             }
         }
@@ -284,6 +322,71 @@ impl GatewayHandler {
                                 signatures: req.signatures,
                                 extra_data: req.extraData,
                             };
+
+                            let gw_reference_id =
+                                match super::utils::u256_to_i64(public_decryption_id) {
+                                    Ok(id) => id,
+                                    Err(e) => {
+                                        error!(
+                                            request_id = %event.request_id,
+                                            decryption_id = %public_decryption_id,
+                                            conversion_error = %e,
+                                            "Failed to convert U256 decryption ID to i64"
+                                        );
+                                        //TODO(Mano): Better stratgfy to handle theg errro and confirmn with garteway team.
+                                        self.dispatch_error_event(
+                                            event,
+                                            EventProcessingError::HandlerError(
+                                                "Decryption ID too large".to_string(),
+                                            ),
+                                        )
+                                        .await;
+                                        return;
+                                    }
+                                };
+
+                            let respond_json = match serde_json::to_value(decrypt_response.clone())
+                            {
+                                Ok(json) => json,
+                                Err(e) => {
+                                    error!("Failed to serialize request data to JSON: {}", e);
+                                    self.dispatch_error_event(
+                                        event,
+                                        EventProcessingError::HandlerError(
+                                            "Decryption ID too large".to_string(),
+                                        ),
+                                    )
+                                    .await;
+                                    return;
+                                }
+                            };
+
+                            //TODO(SQL): For now TxHash is empty, since its only for infomrational purpose. Later fill it prooperly.
+                            if let Err(e) = self
+                                .public_decrypt_repo
+                                .complete_req_with_res(gw_reference_id, respond_json, "")
+                                .await
+                            {
+                                // ALWAYS log immediately with full context (guaranteed)
+                                error!(
+                                    request_id = %event.request_id,
+                                    decryption_id = %public_decryption_id,
+                                    gw_reference_id = %gw_reference_id,
+                                    sql_operation = "public_decrypt.complete_req_with_res",
+                                    sql_error = %e,
+                                    "SQL operation failed"
+                                );
+
+                                // Forward simple message to HTTP handler for 500
+                                self.dispatch_error_event(
+                                    event,
+                                    EventProcessingError::HandlerError(
+                                        "Failed SQL operation".to_string(),
+                                    ),
+                                )
+                                .await;
+                                return;
+                            }
 
                             if let Err(e) = self
                                 .cache
@@ -357,6 +460,53 @@ impl GatewayHandler {
             );
         }
 
+        // Convert U256 to i64 for SQL operation (BIGINT)
+        let gw_reference_id = match super::utils::u256_to_i64(decryption_public_id) {
+            Ok(id) => id,
+            Err(e) => {
+                error!(
+                    request_id = %event.request_id,
+                    decryption_id = %decryption_public_id,
+                    conversion_error = %e,
+                    "Failed to convert U256 decryption ID to i64"
+                );
+                //TODO(Mano): Better stratgfy to handle theg errro and confirmn with garteway team.
+                self.dispatch_error_event(
+                    event,
+                    EventProcessingError::HandlerError("Decryption ID too large".to_string()),
+                )
+                .await;
+                return;
+            }
+        };
+
+        //TODO(SQL): For now TxHash is empty, since its only for infomrational purpose. Later fill it prooperly.
+        if let Err(e) = self
+            .public_decrypt_repo
+            .update_status_to_receipt_received_on_tx_success(
+                &decrypt_request.compute_indexer_id()[..],
+                "",
+                gw_reference_id,
+            )
+            .await
+        {
+            // ALWAYS log immediately with full context (guaranteed)
+            error!(
+                request_id = %event.request_id,
+                indexer_id = %hex::encode(decrypt_request.compute_indexer_id()),
+                sql_operation = "public_decrypt.update_status_to_receipt_received_on_tx_success",
+                sql_error = %e,
+                "SQL operation failed"
+            );
+
+            // Forward simple message to HTTP handler for 500
+            self.dispatch_error_event(
+                event,
+                EventProcessingError::HandlerError("Failed SQL operation".to_string()),
+            )
+            .await;
+            return;
+        }
         let next_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
             PublicDecryptEventData::ReqSentToGw {
                 gw_req_reference_id: decryption_public_id,
@@ -386,16 +536,29 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
             RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromUser {
                 ref decrypt_request,
                 ..
-            }) => match self.cache.check(decrypt_request).await {
-                Ok(cache_result) => {
-                    self.act_on_cache_result(cache_result, event.clone(), decrypt_request)
-                        .await;
+            }) => {
+                let indexer_id = decrypt_request.compute_indexer_id();
+
+                match self.cache.check(decrypt_request).await {
+                    Ok(cache_result) => match cache_result {
+                        CacheResult::Hit(decrypt_response) => {
+                            self.dispatch_cached_response(event.clone(), decrypt_response)
+                                .await;
+                        }
+                        CacheResult::InProgress(decryption_id) => {
+                            self.register_duplicate_request(decryption_id, event.request_id);
+                        }
+                        CacheResult::NotFound => {
+                            self.handle_new_request(event.clone(), decrypt_request, indexer_id)
+                                .await;
+                        }
+                    },
+                    Err(e) => {
+                        error!(?e, "Failed to check cache for request {}", event.request_id);
+                        self.dispatch_error_event(event.clone(), e.into()).await;
+                    }
                 }
-                Err(e) => {
-                    error!(?e, "Failed to check cache for request {}", event.request_id);
-                    self.dispatch_error_event(event.clone(), e.into()).await;
-                }
-            },
+            }
             RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { ref log }) => {
                 if let Some(topic0) = log.topic0() {
                     if FixedBytes::<32>::from_slice(topic0.as_slice())

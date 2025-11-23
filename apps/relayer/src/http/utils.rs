@@ -655,6 +655,16 @@ impl<V: serde::Serialize> AppResponse<V> {
         }
     }
 
+    /// Creates a new internal server error response with request ID emphasized in the message.
+    pub fn internal_server_error_with_request_id<S: Into<String>>(request_id: S) -> Self {
+        let request_id_str = request_id.into();
+        AppResponse::InternalServerError {
+            code: ErrorCode::InternalServerError,
+            message: format!("Internal server error. Request ID: {}", request_id_str),
+            request_id: Some(request_id_str),
+        }
+    }
+
     /// Creates a new rate limited response.
     pub fn rate_limited<S: Into<String>>(reason: S, retry_after: S) -> Self {
         AppResponse::TooManyRequests {

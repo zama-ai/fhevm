@@ -129,6 +129,7 @@ NOTE: PAUSING STRATEGY.
     2.  Check if it there in the `public_decrypt_req` table.
 
         1.  If it already exists: return the `ext_req_id` to the user with 202 OK.
+            In new API, if already exists, we can return the result to user. so we need res + status as well. Buld it.
         2.  If not.
 
         3.  Call host ACL readiness checker as an async function. (DUMMY always pass for next implem - we will do it later with a host listener - substreams/poller...)
