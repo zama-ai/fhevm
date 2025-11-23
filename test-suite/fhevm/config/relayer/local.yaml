@@ -41,6 +41,7 @@ metrics:
 
 storage:
   db_path_rocksdb: "./.database"
+  sql_max_connections: 10
 
 development:
   verbose_errors: true
