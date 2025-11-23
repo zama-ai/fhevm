@@ -7,7 +7,7 @@ use crate::http::utils::{
     de_string_or_number, parse_and_validate, serialize_vec_as_hex, AppResponse, OnceHandler,
 };
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
-use crate::orchestrator::Orchestrator;
+use crate::orchestrator::{IndexerIdGenerator, Orchestrator};
 use crate::store::sql::repositories::user_decrypt_repo::UserDecryptRepository;
 use alloy::primitives::Bytes;
 use axum::{body::Bytes as AxumBytes, extract::FromRequest, http::Request, response::IntoResponse};
@@ -16,8 +16,7 @@ use std::fmt::Display;
 use std::hash::Hash;
 use std::sync::Arc;
 use tokio::sync::oneshot;
-use tracing::info;
-use tracing::{instrument, span, Level};
+use tracing::{error, info, instrument, span, Level};
 use utoipa::ToSchema;
 use validator::Validate;
 
@@ -193,6 +192,38 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             error_handler,
         );
         info!("Registered once handler for user decrypt failure");
+
+        let ext_reference_id = self.orchestrator.new_ext_reference_id();
+        let int_indexer_id = user_decrypt_request.compute_indexer_id();
+        let request_json = match serde_json::to_value(user_decrypt_request.clone()) {
+            Ok(json) => json,
+            Err(e) => {
+                error!("Failed to serialize request data to JSON: {}", e);
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
+        };
+
+        if let Err(e) = self
+            .user_decrypt_repo
+            .insert_data_on_conflict_and_get_ext_reference_id(
+                ext_reference_id,
+                &int_indexer_id[..],
+                request_json,
+            )
+            .await
+        {
+            error!(
+                "Failed to insert/get user decrypt into/from database: {}",
+                e
+            );
+            return AppResponse::<()>::internal_server_error_with_request_id(
+                request_id.to_string(),
+            )
+            .into_response();
+        }
 
         let request_data = UserDecryptEventData::ReqRcvdFromUser {
             decrypt_request: user_decrypt_request,

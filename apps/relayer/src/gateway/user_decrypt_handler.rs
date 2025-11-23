@@ -16,7 +16,7 @@ use crate::{
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
-        Orchestrator, TokioEventDispatcher,
+        IndexerIdGenerator, Orchestrator, TokioEventDispatcher,
     },
     store::{
         key_value_db::KVStore, sql::repositories::user_decrypt_repo::UserDecryptRepository,
@@ -124,58 +124,100 @@ impl GatewayHandler {
         }
     }
 
-    // Cache operations
+    // Cache state handlers - focused single-responsibility functions
 
-    async fn act_on_cache_result(
+    async fn dispatch_cached_response(
         &self,
-        cache_result: CacheResult<UserDecryptResponse>,
+        event: RelayerEvent,
+        decrypt_response: UserDecryptResponse,
+    ) {
+        info!("Cache hit for request {}", event.request_id);
+        let next_event_data =
+            RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
+                decrypt_response,
+            });
+        let next_event = RelayerEvent::new(event.request_id, event.api_version, next_event_data);
+        if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+            error!(?e, "Failed to dispatch cached response event");
+        }
+    }
+
+    fn register_duplicate_request(&self, decryption_id: U256, request_id: uuid::Uuid) {
+        info!(
+            "Duplicate request {} found for decryption {}",
+            request_id, decryption_id
+        );
+        self.cache.register_duplicate(decryption_id, request_id);
+    }
+
+    async fn handle_new_request(
+        &self,
         event: RelayerEvent,
         decrypt_request: &UserDecryptRequest,
+        indexer_id: [u8; 32],
     ) {
-        match cache_result {
-            CacheResult::Hit(decrypt_response) => {
-                info!("Cache hit for request {}", event.request_id);
-                let next_event_data =
-                    RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
-                        decrypt_response,
-                    });
-                let next_event =
-                    RelayerEvent::new(event.request_id, event.api_version, next_event_data);
-                if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
-                    error!(?e, "Failed to dispatch cached response event");
-                }
-            }
-            CacheResult::InProgress(decryption_id) => {
-                info!(
-                    "Duplicate request {} found for decryption {}",
-                    event.request_id, decryption_id
-                );
-                self.cache
-                    .register_duplicate(decryption_id, event.request_id);
-            }
-            CacheResult::NotFound => {
-                info!("Sending request {} to gateway", event.request_id);
-                match self.send_user_decrypt_to_gateway(decrypt_request).await {
-                    Ok(user_decryption_id) => {
-                        if let Err(e) = self
-                            .cache
-                            .store_request_mapping(decrypt_request, user_decryption_id)
-                            .await
-                        {
-                            if (self.cache.unlock_request(decrypt_request).await).is_err() {
-                                warn!("Cache unlock failed, continuing with error dispatch");
-                            }
-                            self.dispatch_error_event(event, e.into()).await;
-                            return;
-                        }
-                        self.store_and_dispatch_success(event, user_decryption_id)
-                            .await;
+        info!("Sending request {} to gateway", event.request_id);
+
+        // SQL operations using indexer_id
+        if let Err(e) = self
+            .user_decrypt_repo
+            .update_status_to_processing(&indexer_id[..])
+            .await
+        {
+            // ALWAYS log immediately with full context (guaranteed)
+            error!(
+                request_id = %event.request_id,
+                indexer_id = %hex::encode(indexer_id),
+                sql_operation = "user_decrypt.update_status_to_processing",
+                sql_error = %e,
+                "SQL operation failed"
+            );
+
+            // Forward simple message to HTTP handler for 500
+            self.dispatch_error_event(
+                event,
+                EventProcessingError::HandlerError("Failed SQL operation".to_string()),
+            )
+            .await;
+            return;
+        }
+
+        match self.send_user_decrypt_to_gateway(decrypt_request).await {
+            Ok(user_decryption_id) => {
+                if let Err(e) = self
+                    .cache
+                    .store_request_mapping(decrypt_request, user_decryption_id)
+                    .await
+                {
+                    if (self.cache.unlock_request(decrypt_request).await).is_err() {
+                        warn!("Cache unlock failed, continuing with error dispatch");
                     }
-                    Err(e) => {
-                        let _ = self.cache.unlock_request(decrypt_request).await;
-                        self.dispatch_error_event(event, e).await;
-                    }
+                    self.dispatch_error_event(event, e.into()).await;
+                    return;
                 }
+                self.store_and_dispatch_success(event, decrypt_request.clone(), user_decryption_id)
+                    .await;
+            }
+            Err(e) => {
+                let _ = self.cache.unlock_request(decrypt_request).await;
+                
+                // Update database status to failure for transaction errors
+                let indexer_id = decrypt_request.compute_indexer_id();
+                let err_reason = format!("Transaction Failed: {}", e);
+                if let Err(sql_error) = self
+                    .user_decrypt_repo
+                    .update_status_to_failure_on_tx_failed(&indexer_id[..], &err_reason)
+                    .await 
+                {
+                    error!(
+                        request_id = %event.request_id,
+                        indexer_id = %hex::encode(indexer_id),
+                        sql_error = %sql_error,
+                        "Failed to update transaction failure status in database"
+                    );
+                }
+                
+                self.dispatch_error_event(event, e).await;
             }
         }
     }
@@ -386,10 +428,58 @@ impl GatewayHandler {
 
     // Event dispatching
 
-    async fn store_and_dispatch_success(&self, event: RelayerEvent, user_decryption_id: U256) {
+    async fn store_and_dispatch_success(&self, event: RelayerEvent, decrypt_request: UserDecryptRequest, user_decryption_id: U256) {
         self.cache
             .register_duplicate(user_decryption_id, event.request_id);
 
+        // Convert U256 to i64 for SQL operation (BIGINT)
+        let gw_reference_id = match super::utils::u256_to_i64(user_decryption_id) {
+            Ok(id) => id,
+            Err(e) => {
+                error!(
+                    request_id = %event.request_id,
+                    decryption_id = %user_decryption_id,
+                    conversion_error = %e,
+                    "Failed to convert U256 decryption ID to i64"
+                );
+                //TODO(Mano): Better strategy to handle the error and confirm with gateway team.
+                self.dispatch_error_event(
+                    event,
+                    EventProcessingError::HandlerError("Decryption ID too large".to_string()),
+                )
+                .await;
+                return;
+            }
+        };
+
+        //TODO(SQL): For now TxHash is empty, since its only for informational purpose. Later fill it properly.
+        if let Err(e) = self
+            .user_decrypt_repo
+            .update_status_to_receipt_received_on_tx_success(
+                &decrypt_request.compute_indexer_id()[..],
+                "",
+                gw_reference_id,
+            )
+            .await
+        {
+            // ALWAYS log immediately with full context (guaranteed)
+            error!(
+                request_id = %event.request_id,
+                indexer_id = %hex::encode(decrypt_request.compute_indexer_id()),
+                sql_operation = "user_decrypt.update_status_to_receipt_received_on_tx_success",
+                sql_error = %e,
+                "SQL operation failed"
+            );
+
+            // Forward simple message to HTTP handler for 500
+            self.dispatch_error_event(
+                event,
+                EventProcessingError::HandlerError("Failed SQL operation".to_string()),
+            )
+            .await;
+            return;
+        }
+        
         let next_event = event.derive_next_event(RelayerEventData::UserDecrypt(
             UserDecryptEventData::ReqSentToGw {
                 gw_req_reference_id: user_decryption_id,
@@ -424,11 +514,22 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 ..
             }) => {
                 info!("Processing user decrypt request {}", event.request_id);
+                let indexer_id = decrypt_request.compute_indexer_id();
+
                 match self.cache.check(decrypt_request).await {
-                    Ok(cache_result) => {
-                        self.act_on_cache_result(cache_result, event.clone(), decrypt_request)
-                            .await;
-                    }
+                    Ok(cache_result) => match cache_result {
+                        CacheResult::Hit(decrypt_response) => {
+                            self.dispatch_cached_response(event.clone(), decrypt_response)
+                                .await;
+                        }
+                        CacheResult::InProgress(decryption_id) => {
+                            self.register_duplicate_request(decryption_id, event.request_id);
+                        }
+                        CacheResult::NotFound => {
+                            self.handle_new_request(event.clone(), decrypt_request, indexer_id)
+                                .await;
+                        }
+                    },
                     Err(e) => {
                         error!(
                             "Failed to check cache for request {}: {}",
