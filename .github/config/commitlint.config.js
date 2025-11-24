@@ -20,6 +20,21 @@ const Configuration = {
    */
   rules: {
     'type-empty': [RuleConfigSeverity.Error, 'never'],
+    'scope-enum': [RuleConfigSeverity.Error, 'always',
+      [
+        'coprocessor',
+        'host-contracts',
+        'gateway-contracts',
+        'protocol-contracts',
+        'contracts',
+        'library-solidity',
+        'kms-connector',
+        'sdk',
+        'test-suite',
+        'charts',
+        'common'
+      ]
+    ],
   },
 };
 

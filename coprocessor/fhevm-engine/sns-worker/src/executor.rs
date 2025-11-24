@@ -1,5 +1,8 @@
 use crate::aws_upload::check_is_ready;
 use crate::keyset::fetch_keyset;
+use crate::metrics::SNS_LATENCY_OP_HISTOGRAM;
+use crate::metrics::TASK_EXECUTE_FAILURE_COUNTER;
+use crate::metrics::TASK_EXECUTE_SUCCESS_COUNTER;
 use crate::squash_noise::SquashNoiseCiphertext;
 use crate::BigCiphertext;
 use crate::Ciphertext128Format;
@@ -8,7 +11,6 @@ use crate::InternalEvents;
 use crate::KeySet;
 use crate::SchedulePolicy;
 use crate::UploadJob;
-use crate::SNS_LATENCY_OP_HISTOGRAM;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
@@ -238,7 +240,15 @@ pub(crate) async fn run_loop(
             continue;
         };
 
-        let maybe_remaining = fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token).await?;
+        let (maybe_remaining, _tasks_processed) =
+            fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token)
+                .await
+                .inspect(|(_, tasks_processed)| {
+                    TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
+                })
+                .inspect_err(|_| {
+                    TASK_EXECUTE_FAILURE_COUNTER.inc();
+                })?;
         if maybe_remaining {
             if token.is_cancelled() {
                 return Ok(());
@@ -317,13 +327,14 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 }
 
 /// Fetch and process SnS tasks from the database.
+/// Returns (maybe_remaining, number_of_tasks_processed) on success.
 async fn fetch_and_execute_sns_tasks(
     pool: &PgPool,
     tx: &Sender<UploadJob>,
     keys: &KeySet,
     conf: &Config,
     token: &CancellationToken,
-) -> Result<bool, ExecutionError> {
+) -> Result<(bool, usize), ExecutionError> {
     let mut db_txn = match pool.begin().await {
         Ok(txn) => txn,
         Err(err) => {
@@ -341,8 +352,10 @@ async fn fetch_and_execute_sns_tasks(
     let trx = &mut db_txn;
 
     let mut maybe_remaining = false;
+    let tasks_processed;
     if let Some(mut tasks) = query_sns_tasks(trx, conf.db.batch_limit, order).await? {
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
+        tasks_processed = tasks.len();
 
         let t = telemetry::tracer("batch_execution", &None);
         t.set_attribute("count", tasks.len().to_string());
@@ -375,10 +388,11 @@ async fn fetch_and_execute_sns_tasks(
             }
         }
     } else {
+        tasks_processed = 0;
         db_txn.rollback().await?;
     }
 
-    Ok(maybe_remaining)
+    Ok((maybe_remaining, tasks_processed))
 }
 
 /// Queries the database for a fixed number of tasks.

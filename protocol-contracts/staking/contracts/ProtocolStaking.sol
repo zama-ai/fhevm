@@ -213,8 +213,8 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     /**
      * @dev Sets the reward recipient for `msg.sender` to `recipient`. All future rewards for
      * `msg.sender` will be sent to `recipient`.
-     * @param recipient The recipient that will receive rewards on behalf of `msg.sender` for all future  
-     * {claimRewards} calls. If `recipient` is set to `address(0)`, rewards will be sent to the staking account.
+     * @param recipient The recipient that will receive rewards on behalf of `msg.sender` for all future  {claimRewards} calls.
+     * A value of `address(0)` indicates that rewards should be sent to `msg.sender`.
      */
     function setRewardsRecipient(address recipient) public {
         _getProtocolStakingStorage()._rewardsRecipient[msg.sender] = recipient;

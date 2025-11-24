@@ -755,6 +755,6 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         enable_compression,
         schedule_policy,
         pg_auto_explain_with_min_duration: Some(Duration::from_secs(1)),
-        metrics_addr: None,
+        metrics: Default::default(),
     }
 }
