@@ -1,0 +1,56 @@
+import { PROTOCOL_STAKING_CONTRACT_NAME } from '../deployment';
+import { getProtocolStakingCoproProxyAddress, getProtocolStakingKMSProxyAddress } from '../utils/getAddresses';
+import { getRequiredEnvVar } from '../utils/loadVariables';
+import { task } from 'hardhat/config';
+import { HardhatRuntimeEnvironment } from 'hardhat/types';
+
+// Being a transfer of the governor role to the DAO for a protocol staking contract using the deployer account
+async function transferGovernorRole(protocolStakingProxyAddress: string, hre: HardhatRuntimeEnvironment) {
+  const { ethers, deployments, network, getNamedAccounts } = hre;
+  const { log } = deployments;
+
+  // Get the deployer account
+  const { deployer } = await getNamedAccounts();
+  const deployerSigner = await ethers.getSigner(deployer);
+
+  // Load the protocol staking contract
+  const protocolStaking = await ethers.getContractAt(
+    PROTOCOL_STAKING_CONTRACT_NAME,
+    protocolStakingProxyAddress,
+    deployerSigner,
+  );
+
+  // Load the DAO address
+  const DAO_ADDRESS = getRequiredEnvVar('DAO_ADDRESS');
+
+  // Begin the transfer of the governor role to the DAO
+  await protocolStaking.beginDefaultAdminTransfer(DAO_ADDRESS);
+
+  log(`Governor role of protocol staking contract at address ${protocolStakingProxyAddress} 
+      being transferred to DAO address ${DAO_ADDRESS} on network ${network.name}`);
+}
+
+// Being a transfer of the governor role to the DAO for the protocol staking contracts
+// This is te first step of a 2-step process to transfer the governor role to the DAO
+// The DAO then needs to accept the transfer by calling `acceptDefaultAdminTransfer()` function on
+// both protocol staking contracts
+// Example usage:
+// npx hardhat task:beingTransferProtocolStakingGovernorRolesToDAO --network ethereum-testnet
+task('task:beingTransferProtocolStakingGovernorRolesToDAO').setAction(async function (
+  _,
+  hre: HardhatRuntimeEnvironment,
+) {
+  const { log } = hre.deployments;
+
+  log('Being a transfer of the governor role to the DAO for the coprocessor protocol staking contract...');
+
+  const protocolStakingCoproProxyAddress = await getProtocolStakingCoproProxyAddress(hre);
+
+  transferGovernorRole(protocolStakingCoproProxyAddress, hre);
+
+  log('Being a transfer of the governor role to the DAO for the KMS protocol staking contract...');
+
+  const protocolStakingKmsProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
+
+  transferGovernorRole(protocolStakingKmsProxyAddress, hre);
+});
