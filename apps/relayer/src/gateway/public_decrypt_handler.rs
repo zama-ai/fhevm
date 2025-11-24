@@ -7,10 +7,11 @@ use crate::{
         },
         job_id::JobId,
     },
+    gateway::utils::sql_errors,
     gateway::{
         arbitrum::{
             bindings::Decryption,
-            transaction::{helper::{TransactionHelper, TransactionType}},
+            transaction::helper::{TransactionHelper, TransactionType},
             ComputeCalldata,
         },
         readiness_checker::{ReadinessCheckError, ReadinessChecker},
@@ -19,17 +20,13 @@ use crate::{
         traits::{EventDispatcher, EventHandler},
         ContentHasher, Orchestrator, TokioEventDispatcher,
     },
-    gateway::utils::sql_errors,
     store::sql::repositories::public_decrypt_repo::PublicDecryptRepository,
 };
+use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, U256};
 use alloy::sol_types::SolEvent;
-use alloy::{
-    primitives::{Address, Bytes, FixedBytes, TxHash, U256},
-};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::{error, info, warn};
-
 
 #[derive(Clone)]
 pub struct GatewayHandler {
@@ -90,30 +87,33 @@ impl GatewayHandler {
         }
     }
 
-    async fn mark_processing(
-        &self,
-        event: RelayerEvent,
-        job_id_hash: [u8; 32],
-    ) {
+    async fn mark_processing(&self, event: RelayerEvent, job_id_hash: [u8; 32]) {
         if let Err(e) = self
             .public_decrypt_repo
             .update_status_to_processing(&job_id_hash[..])
             .await
         {
             sql_errors::public_decrypt_sql_error(
-                &self.dispatcher, event, "public_decrypt.update_status_to_processing", &e, Some(("job_id_hash", &hex::encode(job_id_hash)))
-            ).await;
+                &self.dispatcher,
+                event,
+                "public_decrypt.update_status_to_processing",
+                &e,
+                Some(("job_id_hash", &hex::encode(job_id_hash))),
+            )
+            .await;
         }
     }
-
 
     async fn send_public_decrypt_request(
         &self,
         event: RelayerEvent,
         decrypt_request: PublicDecryptRequest,
     ) {
-        info!("Sending public decrypt request to gateway for {}", event.job_id);
-        
+        info!(
+            "Sending public decrypt request to gateway for {}",
+            event.job_id
+        );
+
         let handles_fixed_bytes: Vec<FixedBytes<32>> = decrypt_request
             .ct_handles
             .iter()
@@ -125,8 +125,11 @@ impl GatewayHandler {
             .await
         {
             Ok((decryption_id, tx_hash)) => {
-                info!("Public decrypt request sent to gateway for {}", event.job_id);
-                
+                info!(
+                    "Public decrypt request sent to gateway for {}",
+                    event.job_id
+                );
+
                 // Update status to receipt received (no event dispatching)
                 let job_id_hash = decrypt_request.content_hash();
                 let tx_hash_str = format!("{:?}", tx_hash);
@@ -140,8 +143,13 @@ impl GatewayHandler {
                     .await
                 {
                     sql_errors::public_decrypt_sql_error(
-                        &self.dispatcher, event, "public_decrypt.update_status_to_receipt_received_on_tx_success", &e, Some(("job_id_hash", &hex::encode(job_id_hash)))
-                    ).await;
+                        &self.dispatcher,
+                        event,
+                        "public_decrypt.update_status_to_receipt_received_on_tx_success",
+                        &e,
+                        Some(("job_id_hash", &hex::encode(job_id_hash))),
+                    )
+                    .await;
                 }
             }
             Err(e) => {
@@ -173,7 +181,8 @@ impl GatewayHandler {
     ) -> Result<(U256, TxHash), EventProcessingError> {
         let decryption_address = self.decryption_address;
 
-        let receipt = self.tx_helper
+        let receipt = self
+            .tx_helper
             .send_raw_transaction_sync(
                 TransactionType::PublicDecryptRequest,
                 decryption_address,
@@ -182,7 +191,9 @@ impl GatewayHandler {
             .await?;
 
         // Extract gateway reference ID from the PublicDecryptionRequest event
-        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<Decryption::PublicDecryptionRequest>(
+        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
+            Decryption::PublicDecryptionRequest,
+        >(
             &receipt,
             Decryption::PublicDecryptionRequest::SIGNATURE_HASH,
             |event| event.decryptionId,
@@ -192,9 +203,14 @@ impl GatewayHandler {
     }
 
     async fn decode_and_complete_response(&self, event: RelayerEvent) {
-        info!("Processing gateway response for public decrypt request {}", event.job_id);
-        if let RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { log, tx_hash }) =
-            &event.data
+        info!(
+            "Processing gateway response for public decrypt request {}",
+            event.job_id
+        );
+        if let RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+            log,
+            tx_hash,
+        }) = &event.data
         {
             if let Some(topic) = log.topic0() {
                 if *topic == Decryption::PublicDecryptionResponse::SIGNATURE_HASH {
@@ -213,11 +229,14 @@ impl GatewayHandler {
                                 extra_data: req.extraData,
                             };
 
-
                             let tx_hash_str = format!("{:?}", tx_hash);
                             let req_state = match self
                                 .public_decrypt_repo
-                                .complete_req_with_res(public_decryption_id, decrypt_response.clone(), &tx_hash_str)
+                                .complete_req_with_res(
+                                    public_decryption_id,
+                                    decrypt_response.clone(),
+                                    &tx_hash_str,
+                                )
                                 .await
                             {
                                 Ok(Some(state)) => state,
@@ -266,7 +285,10 @@ impl GatewayHandler {
                             if let Err(e) = self.dispatcher.dispatch_event(response_event).await {
                                 error!(?e, "Failed to dispatch response event to HTTP handlers");
                             } else {
-                                info!("Public decrypt response successfully sent for {}", event.job_id);
+                                info!(
+                                    "Public decrypt response successfully sent for {}",
+                                    event.job_id
+                                );
                             }
                         }
                         Err(e) => {
@@ -279,7 +301,6 @@ impl GatewayHandler {
     }
 
     // Event dispatching
-
 
     async fn notify_failed(&self, event: RelayerEvent, error: EventProcessingError) {
         let error_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
@@ -309,25 +330,35 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 match self.check_readiness(&decrypt_request_clone).await {
                     Ok(()) => {
                         info!("Readiness validation passed for {}", event.job_id);
-                        
+
                         // Stage 2: Update SQL status to processing
                         self.mark_processing(event.clone(), job_id_hash).await;
-                        
+
                         // Stage 3: Send to gateway (pure transaction execution)
-                        self.send_public_decrypt_request(event, decrypt_request_clone).await;
+                        self.send_public_decrypt_request(event, decrypt_request_clone)
+                            .await;
                     }
                     Err(readiness_error) => {
-                        error!("Readiness validation failed for {}: {:?}", event.job_id, readiness_error);
+                        error!(
+                            "Readiness validation failed for {}: {:?}",
+                            event.job_id, readiness_error
+                        );
                         self.notify_failed(event, readiness_error).await;
                     }
                 }
             }
-            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { ref log, tx_hash: _ }) => {
+            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+                ref log,
+                tx_hash: _,
+            }) => {
                 if let Some(topic0) = log.topic0() {
                     if FixedBytes::<32>::from_slice(topic0.as_slice())
                         == Decryption::PublicDecryptionResponse::SIGNATURE_HASH
                     {
-                        info!("Decoding and completing public decrypt response for request {}", event.job_id);
+                        info!(
+                            "Decoding and completing public decrypt response for request {}",
+                            event.job_id
+                        );
                         self.decode_and_complete_response(event).await;
                     }
                 };

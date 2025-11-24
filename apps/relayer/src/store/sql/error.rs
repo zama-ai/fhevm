@@ -6,19 +6,23 @@ pub enum SqlError {
         value: String,
         message: String,
     },
-    
+
     #[error("SQL execution error: {0}")]
     Execution(#[from] sqlx::Error),
-    
+
     #[error("Database connection error: {0}")]
     Connection(String),
-    
+
     #[error("Transaction failed: {0}")]
     Transaction(String),
 }
 
 impl SqlError {
-    pub fn conversion_error(field: &str, value: impl std::fmt::Display, error: impl std::fmt::Display) -> Self {
+    pub fn conversion_error(
+        field: &str,
+        value: impl std::fmt::Display,
+        error: impl std::fmt::Display,
+    ) -> Self {
         SqlError::DataConversion {
             field: field.to_string(),
             value: value.to_string(),

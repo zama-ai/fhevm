@@ -32,9 +32,9 @@ pub async fn arbitrum_listener(
                             category: ApiCategory::PRODUCTION,
                             number: 1,
                         },
-                        RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { 
-                            log: event_log.clone(), 
-                            tx_hash 
+                        RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+                            log: event_log.clone(),
+                            tx_hash
                         }),
                     );
                     orchestrator.dispatch_event(event).await.unwrap_or_else(|e| {

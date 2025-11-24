@@ -4,7 +4,11 @@ use alloy::primitives::U256;
 /// Converts U256 to i64 for database storage, returns error if value exceeds i64::MAX.
 pub fn u256_to_i64(v: U256) -> SqlResult<i64> {
     if v > U256::from(i64::MAX) {
-        return Err(SqlError::conversion_error("u256_value", v, "U256 value too large for i64"));
+        return Err(SqlError::conversion_error(
+            "u256_value",
+            v,
+            "U256 value too large for i64",
+        ));
     }
     Ok(v.as_limbs()[0] as i64)
 }
@@ -12,7 +16,11 @@ pub fn u256_to_i64(v: U256) -> SqlResult<i64> {
 /// Converts U256 to i32 for database storage, returns error if value exceeds i32::MAX.
 pub fn u256_to_i32(v: U256) -> SqlResult<i32> {
     if v > U256::from(i32::MAX) {
-        return Err(SqlError::conversion_error("u256_value", v, "U256 value too large for i32"));
+        return Err(SqlError::conversion_error(
+            "u256_value",
+            v,
+            "U256 value too large for i32",
+        ));
     }
     Ok(v.as_limbs()[0] as i32)
 }

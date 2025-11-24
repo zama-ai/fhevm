@@ -66,8 +66,13 @@ impl PublicDecryptRepository {
         int_indexer_id_bytes: &[u8],
         request: PublicDecryptRequest,
     ) -> SqlResult<Uuid> {
-        let req = serde_json::to_value(&request)
-            .map_err(|e| SqlError::conversion_error("request", "PublicDecryptRequest", format!("Failed to serialize: {}", e)))?;
+        let req = serde_json::to_value(&request).map_err(|e| {
+            SqlError::conversion_error(
+                "request",
+                "PublicDecryptRequest",
+                format!("Failed to serialize: {}", e),
+            )
+        })?;
         let result = sqlx::query_scalar!(
             r#"
             INSERT INTO public_decrypt_req (
@@ -204,8 +209,13 @@ impl PublicDecryptRepository {
     ) -> SqlResult<Option<PublicReqStateModel>> {
         let gw_reference_id = u256_to_i64(gw_reference_id)
             .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
-        let res = serde_json::to_value(&response)
-            .map_err(|e| SqlError::conversion_error("response", "PublicDecryptResponse", format!("Failed to serialize: {}", e)))?;
+        let res = serde_json::to_value(&response).map_err(|e| {
+            SqlError::conversion_error(
+                "response",
+                "PublicDecryptResponse",
+                format!("Failed to serialize: {}", e),
+            )
+        })?;
         let result = sqlx::query_as!(
             PublicReqStateModel,
             r#"

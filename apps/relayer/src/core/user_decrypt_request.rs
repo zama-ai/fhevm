@@ -120,7 +120,7 @@ mod tests {
         };
 
         let mut request2 = request1.clone();
-        
+
         // Change excluded fields - these should NOT affect the content hash
         request2.signature = Bytes::from(vec![0xff, 0xff, 0xff, 0xff]);
         request2.request_validity = RequestValidity {
@@ -136,7 +136,7 @@ mod tests {
             "Changing signature and request_validity should NOT affect content hash"
         );
 
-        // Change included field - this SHOULD affect the content hash  
+        // Change included field - this SHOULD affect the content hash
         request2.contracts_chain_id = 9999;
         let hash3 = request2.content_hash();
 

@@ -321,7 +321,7 @@ pub fn serialize_ct_handle_as_hex(handle: &[u8; 32]) -> String {
 
 /// Serializes Vec<[u8; 32]> CT handles as Vec<String> hex strings for serde.
 pub fn serialize_ct_handles_as_hex<S>(
-    handles: &Vec<[u8; 32]>,
+    handles: &[[u8; 32]],
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where

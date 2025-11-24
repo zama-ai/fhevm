@@ -190,7 +190,6 @@ impl FhevmMockWrapper {
         self.register_pattern(contract, selector, request_log, response_log);
     }
 
-
     // Public API methods
 
     /// Register user decryption that succeeds with the new multi-response pattern
@@ -413,10 +412,17 @@ impl FhevmMockWrapper {
     }
 
     /// Register unique input proof patterns, each generating a different zkProofId
-    fn register_dynamic_input_proof_pattern(&self, user: Address, data: Bytes, success: bool, count: usize) {
+    fn register_dynamic_input_proof_pattern(
+        &self,
+        user: Address,
+        data: Bytes,
+        success: bool,
+        count: usize,
+    ) {
         for _i in 0..count {
             let id = self.next_zk_proof_id();
-            let request_log = build_input_request(self.input_proof_contract, id, user, data.clone());
+            let request_log =
+                build_input_request(self.input_proof_contract, id, user, data.clone());
             let response_log = if success {
                 build_input_success_response(self.input_proof_contract, id, vec![])
             } else {

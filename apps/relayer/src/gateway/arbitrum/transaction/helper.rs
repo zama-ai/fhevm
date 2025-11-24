@@ -1,17 +1,16 @@
 use crate::gateway::arbitrum::transaction::engine::{CustomFillers, TransactionEngine};
 use crate::{core::errors::EventProcessingError, metrics};
+use alloy::network::AnyTransactionReceipt;
 use alloy::network::Ethereum;
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
-use alloy::network::AnyTransactionReceipt;
-use alloy::sol_types::SolEvent;
 use alloy::providers::RootProvider;
+use alloy::sol_types::SolEvent;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
 use tracing::info;
 
 pub type TxResult = AnyTransactionReceipt;
-
 
 pub type GatewayTransactionEngine = TransactionEngine<CustomFillers, RootProvider, Ethereum>;
 
@@ -129,18 +128,21 @@ impl TransactionHelper {
                             return Ok(gw_reference_id);
                         }
                         Err(e) => {
-                            return Err(EventProcessingError::HandlerError(
-                                format!("Failed to decode {} event: {}", T::SIGNATURE, e)
-                            ));
+                            return Err(EventProcessingError::HandlerError(format!(
+                                "Failed to decode {} event: {}",
+                                T::SIGNATURE,
+                                e
+                            )));
                         }
                     }
                 }
             }
         }
 
-        Err(EventProcessingError::HandlerError(
-            format!("{} event not found in transaction logs", T::SIGNATURE),
-        ))
+        Err(EventProcessingError::HandlerError(format!(
+            "{} event not found in transaction logs",
+            T::SIGNATURE
+        )))
     }
 }
 

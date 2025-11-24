@@ -11,7 +11,7 @@ use crate::{
     gateway::{
         arbitrum::{
             bindings::Decryption,
-            transaction::{helper::{TransactionHelper, TransactionType}},
+            transaction::helper::{TransactionHelper, TransactionType},
             ComputeCalldata,
         },
         readiness_checker::{ReadinessCheckError, ReadinessChecker},
@@ -201,7 +201,9 @@ impl GatewayHandler {
             .await?;
 
         // Extract gateway reference ID from the UserDecryptionRequest event
-        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<Decryption::UserDecryptionRequest>(
+        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
+            Decryption::UserDecryptionRequest,
+        >(
             &receipt,
             Decryption::UserDecryptionRequest::SIGNATURE_HASH,
             |event| event.decryptionId,
@@ -448,7 +450,8 @@ impl GatewayHandler {
             );
 
             let tx_hash_str = format!("{:?}", tx_hash);
-            let _result = self.user_decrypt_repo
+            let _result = self
+                .user_decrypt_repo
                 .update_consensus_hash_and_return_state(user_decryption_id, &tx_hash_str);
         } else {
             error!("UserDecryptionResponseThresholdReached event missing decryption_id topic");
@@ -542,7 +545,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
 
 fn assemble_final_response(shares: Vec<UserDecryptShare>) -> Result<UserDecryptResponse, String> {
     // Sort shares by index_share to maintain order
-    let mut shares_vec: Vec<_> = shares.iter().map(|entry| entry.clone()).collect();
+    let mut shares_vec: Vec<_> = shares.to_vec();
     shares_vec.sort_by_key(|share| share.share_index);
 
     let first_share = &shares_vec[0];

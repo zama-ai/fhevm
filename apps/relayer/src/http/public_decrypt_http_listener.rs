@@ -174,7 +174,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         let event_data = PublicDecryptEventData::ReqRcvdFromUser {
             decrypt_request: request.clone(),
         };
-        
+
         let event = RelayerEvent::new(
             job_id,
             self.api_version,

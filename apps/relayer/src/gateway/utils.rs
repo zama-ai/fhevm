@@ -1,8 +1,8 @@
+use crate::core::{errors::EventProcessingError, event::RelayerEvent};
+use crate::orchestrator::traits::EventDispatcher;
 use alloy::primitives::U256;
 use std::fmt::Display;
 use tracing::error;
-use crate::core::{errors::EventProcessingError, event::RelayerEvent};
-use crate::orchestrator::traits::EventDispatcher;
 
 /// Type-aware SQL error helpers for each handler type
 pub mod sql_errors {
@@ -33,18 +33,17 @@ pub mod sql_errors {
                 job_id = %event.job_id,
                 sql_operation = %operation,
                 sql_error = %sql_error,
-                handler_type = "user_decrypt", 
+                handler_type = "user_decrypt",
                 "SQL operation failed"
             );
         }
 
-        let error_event = event.derive_next_event(
-            crate::core::event::RelayerEventData::UserDecrypt(
+        let error_event =
+            event.derive_next_event(crate::core::event::RelayerEventData::UserDecrypt(
                 crate::core::event::UserDecryptEventData::Failed {
-                    error: EventProcessingError::HandlerError("Failed SQL operation".to_string())
-                }
-            )
-        );
+                    error: EventProcessingError::HandlerError("Failed SQL operation".to_string()),
+                },
+            ));
 
         if let Err(e) = dispatcher.dispatch_event(error_event).await {
             error!(?e, "Failed to dispatch SQL error event");
@@ -84,13 +83,12 @@ pub mod sql_errors {
             }
         }
 
-        let error_event = event.derive_next_event(
-            crate::core::event::RelayerEventData::PublicDecrypt(
+        let error_event =
+            event.derive_next_event(crate::core::event::RelayerEventData::PublicDecrypt(
                 crate::core::event::PublicDecryptEventData::Failed {
-                    error: EventProcessingError::HandlerError("Failed SQL operation".to_string())
-                }
-            )
-        );
+                    error: EventProcessingError::HandlerError("Failed SQL operation".to_string()),
+                },
+            ));
 
         if let Err(e) = dispatcher.dispatch_event(error_event).await {
             error!(?e, "Failed to dispatch SQL error event");
@@ -114,13 +112,12 @@ pub mod sql_errors {
             "SQL operation failed"
         );
 
-        let error_event = event.derive_next_event(
-            crate::core::event::RelayerEventData::InputProof(
+        let error_event =
+            event.derive_next_event(crate::core::event::RelayerEventData::InputProof(
                 crate::core::event::InputProofEventData::Failed {
-                    error: EventProcessingError::HandlerError("Failed SQL operation".to_string())
-                }
-            )
-        );
+                    error: EventProcessingError::HandlerError("Failed SQL operation".to_string()),
+                },
+            ));
 
         if let Err(e) = dispatcher.dispatch_event(error_event).await {
             error!(?e, "Failed to dispatch SQL error event");

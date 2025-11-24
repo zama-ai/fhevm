@@ -80,7 +80,7 @@ impl InputProofGatewayHandler {
                 };
 
                 let tx_hash_str = format!("{:?}", tx_hash);
-                if let Err(_) = self
+                if self
                     .input_proof_repo
                     .update_input_proof_status_to_receipt_received(
                         int_request_id,
@@ -88,6 +88,7 @@ impl InputProofGatewayHandler {
                         input_verification_id,
                     )
                     .await
+                    .is_err()
                 {
                     sql_errors::input_proof_sql_error(
                         &self.dispatcher,

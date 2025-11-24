@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use uuid::Uuid;
 
-
 /// Represents a job identifier that can support different ID types for different flows.
 /// Supports UUIDv7 and SHA256-based variants for different flow types and deduplication strategies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -46,8 +45,6 @@ impl JobId {
         }
     }
 
-
-
     /// Get the name of the current variant as a string.
     pub fn variant_name(&self) -> &'static str {
         match self {
@@ -80,7 +77,6 @@ impl From<Uuid> for JobId {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,7 +88,6 @@ mod tests {
 
         assert_eq!(job_id.as_uuid_v7(), Some(uuid));
     }
-
 
     #[test]
     fn test_job_id_from_conversion() {
@@ -181,7 +176,6 @@ mod tests {
         assert_eq!(job_id.to_string(), hex::encode(hash));
         assert_eq!(job_id.to_database_string(), hex::encode(hash));
     }
-
 
     #[test]
     fn test_job_id_variant_serialization() {
