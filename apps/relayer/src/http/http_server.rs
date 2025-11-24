@@ -310,7 +310,7 @@ pub async fn run_http_server<D>(
         schemas(KeyUrlResponseJson),
         schemas(crate::http::keyurl_http_listener::Response, crate::http::keyurl_http_listener::FheKeyInfo, crate::http::keyurl_http_listener::KeyData),
         schemas(VersionErrorResponseJson),
-        schemas(crate::http::utils::ErrorResponse, crate::http::utils::ApiError, crate::http::utils::ErrorDetail, crate::http::utils::ErrorCode),
+        schemas(crate::http::utils::ErrorResponse, crate::http::utils::ApiError, crate::http::utils::ErrorDetail, crate::http::utils::ErrorLabel),
         schemas(crate::http::userdecrypt_http_listener::HandleContractPairJson, crate::http::userdecrypt_http_listener::RequestValidityJson, crate::http::userdecrypt_http_listener::UserDecryptResponsePayloadJson),
         schemas(crate::http::input_http_listener::InputProofResponsePayloadJson),
         schemas(crate::http::public_decrypt_http_listener::PublicDecryptResponsePayloadJson),

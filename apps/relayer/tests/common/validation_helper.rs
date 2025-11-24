@@ -1,4 +1,4 @@
-use fhevm_relayer::http::utils::{validation_messages, ErrorCode, ErrorResponse};
+use fhevm_relayer::http::utils::{validation_messages, ErrorLabel, ErrorResponse};
 use serde_json::Value;
 
 #[allow(dead_code)]
@@ -49,7 +49,7 @@ pub fn expect_missing_field(
         Box::pin(async move {
             assert_eq!(res.status(), 400);
             let error: ErrorResponse = res.json().await.unwrap();
-            assert_eq!(error.error.code, ErrorCode::MissingFields);
+            assert_eq!(error.error.label, ErrorLabel::MissingFields);
             let details = error.error.clone().details.unwrap();
             assert!(
                 details.iter().any(|d| d.field == field),
@@ -84,7 +84,7 @@ pub fn expect_validation_issues(
         Box::pin(async move {
             assert_eq!(res.status(), 400);
             let error: ErrorResponse = res.json().await.unwrap();
-            assert_eq!(error.error.code, ErrorCode::ValidationFailed);
+            assert_eq!(error.error.label, ErrorLabel::ValidationFailed);
             let details = error.error.details.unwrap();
 
             for (field, issue_contains) in &issues {
@@ -154,7 +154,7 @@ pub fn expect_malformed_json(
         Box::pin(async move {
             assert_eq!(res.status(), 400);
             let error: ErrorResponse = res.json().await.unwrap();
-            assert_eq!(error.error.code, ErrorCode::MalformedJson);
+            assert_eq!(error.error.label, ErrorLabel::MalformedJson);
         })
     }
 }

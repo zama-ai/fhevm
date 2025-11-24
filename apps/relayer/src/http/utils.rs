@@ -512,20 +512,19 @@ where
 pub enum AppResponse<V: serde::Serialize> {
     Success(V),
     BadRequest {
-        code: ErrorCode,
+        label: ErrorLabel,
         message: String,
         details: Option<Vec<ErrorDetail>>,
         request_id: Option<String>,
     },
     InternalServerError {
-        code: ErrorCode,
+        label: ErrorLabel,
         message: String,
         request_id: Option<String>,
     },
     TooManyRequests {
-        code: ErrorCode,
+        label: ErrorLabel,
         message: String,
-        reason: String,
         retry_after: String,
         request_id: Option<String>,
     },
@@ -540,7 +539,7 @@ impl<V: serde::Serialize> AppResponse<V> {
     /// Creates a new malformed JSON response (for JSON syntax errors).
     pub fn malformed_json<S: Into<String>>(message: S) -> Self {
         AppResponse::BadRequest {
-            code: ErrorCode::MalformedJson,
+            label: ErrorLabel::MalformedJson,
             message: message.into(),
             details: None,
             request_id: None,
@@ -550,7 +549,7 @@ impl<V: serde::Serialize> AppResponse<V> {
     /// Creates a new request error response (for body read failures, etc.).
     pub fn request_error<S: Into<String>>(message: S) -> Self {
         AppResponse::BadRequest {
-            code: ErrorCode::RequestError,
+            label: ErrorLabel::RequestError,
             message: message.into(),
             details: None,
             request_id: None,
@@ -583,7 +582,7 @@ impl<V: serde::Serialize> AppResponse<V> {
         };
 
         AppResponse::BadRequest {
-            code: ErrorCode::MissingFields,
+            label: ErrorLabel::MissingFields,
             message,
             details: if details.is_empty() {
                 None
@@ -607,7 +606,7 @@ impl<V: serde::Serialize> AppResponse<V> {
         };
 
         AppResponse::BadRequest {
-            code: ErrorCode::ValidationFailed,
+            label: ErrorLabel::ValidationFailed,
             message,
             details: if details.is_empty() {
                 None
@@ -649,7 +648,7 @@ impl<V: serde::Serialize> AppResponse<V> {
     /// Creates a new internal server error response with the given message.
     pub fn internal_server_error<S: Into<String>>(message: S) -> Self {
         AppResponse::InternalServerError {
-            code: ErrorCode::InternalServerError,
+            label: ErrorLabel::InternalServerError,
             message: message.into(),
             request_id: None,
         }
@@ -659,7 +658,7 @@ impl<V: serde::Serialize> AppResponse<V> {
     pub fn internal_server_error_with_request_id<S: Into<String>>(request_id: S) -> Self {
         let request_id_str = request_id.into();
         AppResponse::InternalServerError {
-            code: ErrorCode::InternalServerError,
+            label: ErrorLabel::InternalServerError,
             message: format!("Internal server error. Request ID: {}", request_id_str),
             request_id: Some(request_id_str),
         }
@@ -667,10 +666,10 @@ impl<V: serde::Serialize> AppResponse<V> {
 
     /// Creates a new rate limited response.
     pub fn rate_limited<S: Into<String>>(reason: S, retry_after: S) -> Self {
+        let reason: String = reason.into();
         AppResponse::TooManyRequests {
-            code: ErrorCode::RateLimited,
-            message: "Rate limit exceeded".to_string(),
-            reason: reason.into(),
+            label: ErrorLabel::RateLimited,
+            message: format!("Rate limit exceeded: {}", reason).to_string(),
             retry_after: retry_after.into(),
             request_id: None,
         }
@@ -709,7 +708,7 @@ impl<V: serde::Serialize> AppResponse<V> {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[schema(example = "validation_failed")]
-pub enum ErrorCode {
+pub enum ErrorLabel {
     /// JSON syntax error or malformed JSON
     MalformedJson,
     /// Required fields are missing from the request
@@ -724,15 +723,15 @@ pub enum ErrorCode {
     InternalServerError,
 }
 
-impl ErrorCode {
+impl ErrorLabel {
     pub fn as_str(&self) -> &'static str {
         match self {
-            ErrorCode::MalformedJson => "malformed_json",
-            ErrorCode::MissingFields => "missing_fields",
-            ErrorCode::ValidationFailed => "validation_failed",
-            ErrorCode::RequestError => "request_error",
-            ErrorCode::RateLimited => "rate_limited",
-            ErrorCode::InternalServerError => "internal_server_error",
+            ErrorLabel::MalformedJson => "malformed_json",
+            ErrorLabel::MissingFields => "missing_fields",
+            ErrorLabel::ValidationFailed => "validation_failed",
+            ErrorLabel::RequestError => "request_error",
+            ErrorLabel::RateLimited => "rate_limited",
+            ErrorLabel::InternalServerError => "internal_server_error",
         }
     }
 }
@@ -745,7 +744,7 @@ pub struct ErrorDetail {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, utoipa::ToSchema)]
 pub struct ApiError {
-    pub code: ErrorCode,
+    pub label: ErrorLabel,
     pub message: String,
     pub request_id: Option<String>,
     /// RFC 7231 timestamp indicating when client should retry (e.g. "Wed, 21 Oct 2015 07:28:00 GMT").
@@ -753,8 +752,6 @@ pub struct ApiError {
     /// retry_after is only used in the case of Rate limit errors.
     #[schema(example = "Thu, 14 Nov 2024 15:30:00 GMT")]
     pub retry_after: Option<String>,
-    /// reason is only used in the case of Rate limit errors.
-    pub reason: Option<String>,
     /// Only used in Bad Requests
     pub details: Option<Vec<ErrorDetail>>,
 }
@@ -770,17 +767,16 @@ impl<V: serde::Serialize> IntoResponse for AppResponse<V> {
         match self {
             AppResponse::Success(data) => (StatusCode::OK, Json(data)).into_response(),
             AppResponse::BadRequest {
-                code,
+                label,
                 message,
                 details,
                 request_id,
             } => {
                 let api_error = ApiError {
-                    code,
+                    label,
                     message,
                     request_id,
                     retry_after: None,
-                    reason: None,
                     details,
                 };
 
@@ -791,16 +787,15 @@ impl<V: serde::Serialize> IntoResponse for AppResponse<V> {
                     .into_response()
             }
             AppResponse::InternalServerError {
-                code,
+                label,
                 message,
                 request_id,
             } => {
                 let api_error = ApiError {
-                    code,
+                    label,
                     message,
                     request_id,
                     retry_after: None,
-                    reason: None,
                     details: None,
                 };
 
@@ -811,18 +806,16 @@ impl<V: serde::Serialize> IntoResponse for AppResponse<V> {
                     .into_response()
             }
             AppResponse::TooManyRequests {
-                code,
+                label,
                 message,
-                reason,
                 retry_after,
                 request_id,
             } => {
                 let api_error = ApiError {
-                    code,
+                    label,
                     message,
                     request_id,
                     retry_after: Some(retry_after),
-                    reason: Some(reason),
                     details: None,
                 };
 
