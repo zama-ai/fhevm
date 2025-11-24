@@ -16,7 +16,7 @@ While building support for ERC-7984 confidential tokens in your wallet/app, you 
 - **Host chain**: The EVM network your users connect to in a wallet with confidential smart contracts. Example: Ethereum / Ethereum Sepolia.
 - **Gateway chain**: Zama’s Arbitrum L3 [Gateway chain](../protocol/architecture/gateway.md) that coordinates FHE encryptions/decryptions.
 - **Relayer**: Off‑chain [Relayer](../protocol/architecture/relayer_oracle.md) that registers encrypted inputs, coordinate decryptions, and return results to users or contracts. Wallets and dApps talk to the Relayer via the JavaScript SDK.
-- **ACL:** Access control for ciphertext handles. Contracts grant per‑address permissions so a user can re‑encrypt and read their own data.
+- **ACL:** Access control for ciphertext handles. Contracts grant per‑address permissions so a user can read data they should have access to.
 
 ## Wallet integration at a glance
 
