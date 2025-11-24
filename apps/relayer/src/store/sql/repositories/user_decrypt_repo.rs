@@ -14,7 +14,7 @@ use sqlx::types::Json;
 use sqlx::types::Uuid;
 
 // Import conversion functions privately within this repository
-use crate::store::sql::conversion::{u256_to_i32, u256_to_i64};
+use crate::store::sql::conversion::u256_to_i32;
 
 pub struct UserDecryptRepository {
     pool: PgClient,
@@ -82,6 +82,7 @@ impl UserDecryptRepository {
             )
             VALUES ($1, $2, $3)
             ON CONFLICT (int_indexer_id)
+            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status) 
             DO UPDATE SET updated_at = NOW() -- Dummy update to ensure RETURNING works
             RETURNING ext_reference_id
             "#,
@@ -149,8 +150,8 @@ impl UserDecryptRepository {
         gw_req_tx_hash: &str,
         gw_reference_id: U256,
     ) -> SqlResult<u64> {
-        let gw_reference_id = u256_to_i64(gw_reference_id)
-            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
+        let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
+        let gw_ref_id = id_as_bytes_array.to_vec();
         let result = sqlx::query!(
             r#"
             UPDATE user_decrypt_req
@@ -161,7 +162,7 @@ impl UserDecryptRepository {
             WHERE int_indexer_id = $3
             "#,
             gw_req_tx_hash,
-            gw_reference_id,
+            gw_ref_id,
             int_indexer_id_bytes
         )
         .execute(&self.pool.get_pool())
@@ -206,8 +207,8 @@ impl UserDecryptRepository {
         gw_reference_id: U256,
         gw_consensus_tx_hash: &str,
     ) -> SqlResult<Option<ConsensusReqState>> {
-        let gw_reference_id = u256_to_i64(gw_reference_id)
-            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
+        let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
+        let gw_ref_id = id_as_bytes_array.to_vec();
         let result = sqlx::query_as!(
             ConsensusReqState,
             r#"
@@ -243,7 +244,7 @@ impl UserDecryptRepository {
               AND NOT EXISTS (SELECT 1 FROM updated_row)
             "#,
             gw_consensus_tx_hash,
-            gw_reference_id
+            gw_ref_id
         )
         .fetch_optional(&self.pool.get_pool())
         .await?;
@@ -265,8 +266,8 @@ impl UserDecryptRepository {
         extra_data: Option<&str>,
         tx_hash: &str,
     ) -> SqlResult<i64> {
-        let gw_reference_id = u256_to_i64(gw_reference_id)
-            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
+        let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
+        let gw_ref_id = id_as_bytes_array.to_vec();
         let share_index = u256_to_i32(share_index)
             .map_err(|e| SqlError::conversion_error("share_index", share_index, e))?;
         // Use advisory locks to serialize share operations per gw_reference_id
@@ -274,10 +275,16 @@ impl UserDecryptRepository {
         let mut tx = self.pool.get_pool().begin().await?;
 
         // Acquire advisory lock - this WAITS for other transactions, doesn't fail
-        sqlx::query("SELECT pg_advisory_xact_lock($1::bigint)")
-            .bind(gw_reference_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            r#"
+                SELECT pg_advisory_xact_lock(
+                    ('x' || encode(substring(sha256($1), 1, 8), 'hex'))::bit(64)::bigint
+                )
+                "#,
+            &gw_ref_id
+        )
+        .execute(&mut *tx)
+        .await?;
 
         // First, do the INSERT
         sqlx::query!(
@@ -293,7 +300,7 @@ impl UserDecryptRepository {
             VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (gw_reference_id, share_index) DO NOTHING
             "#,
-            gw_reference_id,
+            gw_ref_id,
             tx_hash,
             share_index,
             share,
@@ -312,7 +319,7 @@ impl UserDecryptRepository {
             FROM user_decrypt_share
             WHERE gw_reference_id = $1
             "#,
-            gw_reference_id
+            gw_ref_id
         )
         .fetch_one(&mut *tx)
         .await?;
@@ -330,8 +337,8 @@ impl UserDecryptRepository {
         &self,
         gw_reference_id: U256,
     ) -> SqlResult<(ConsensusReqState, Vec<UserDecryptShare>)> {
-        let gw_reference_id = u256_to_i64(gw_reference_id)
-            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
+        let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
+        let gw_ref_id = id_as_bytes_array.to_vec();
         let records = sqlx::query!(
             r#"
             WITH updated_req AS (
@@ -361,7 +368,7 @@ impl UserDecryptRepository {
             WHERE s.gw_reference_id = $1
             ORDER BY s.share_index ASC
             "#,
-            gw_reference_id
+            gw_ref_id
         )
         .fetch_all(&self.pool.get_pool())
         .await?;

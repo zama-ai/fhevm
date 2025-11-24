@@ -10,9 +10,6 @@ use crate::store::sql::{
 use alloy::primitives::U256;
 use uuid::Uuid;
 
-// Import conversion functions privately within this repository
-use crate::store::sql::conversion::u256_to_i64;
-
 pub struct PublicDecryptRepository {
     pool: PgClient,
 }
@@ -84,7 +81,8 @@ impl PublicDecryptRepository {
                 updated_at
             )
             VALUES ($1, $2, $3, 'queued'::req_status, NOW(), NOW())
-            ON CONFLICT (int_indexer_id) 
+            ON CONFLICT (int_indexer_id)
+            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status) 
             DO UPDATE SET updated_at = public_decrypt_req.updated_at -- Dummy update, preserves existing timestamp
             RETURNING ext_reference_id
             "#,
@@ -151,8 +149,8 @@ impl PublicDecryptRepository {
         gw_req_tx_hash: &str,
         gw_reference_id: U256,
     ) -> SqlResult<u64> {
-        let gw_reference_id = u256_to_i64(gw_reference_id)
-            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
+        let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
+        let gw_ref_id = id_as_bytes_array.to_vec();
         let result = sqlx::query!(
             r#"
             UPDATE public_decrypt_req
@@ -163,7 +161,7 @@ impl PublicDecryptRepository {
             WHERE int_indexer_id = $3
             "#,
             gw_req_tx_hash,
-            gw_reference_id,
+            gw_ref_id,
             int_indexer_id_bytes
         )
         .execute(&self.pool.get_pool())
@@ -207,8 +205,8 @@ impl PublicDecryptRepository {
         response: PublicDecryptResponse,
         gw_response_tx_hash: &str,
     ) -> SqlResult<Option<PublicReqStateModel>> {
-        let gw_reference_id = u256_to_i64(gw_reference_id)
-            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
+        let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
+        let gw_ref_id = id_as_bytes_array.to_vec();
         let res = serde_json::to_value(&response).map_err(|e| {
             SqlError::conversion_error(
                 "response",
@@ -234,7 +232,7 @@ impl PublicDecryptRepository {
             "#,
             res,
             gw_response_tx_hash,
-            gw_reference_id
+            gw_ref_id,
         )
         .fetch_optional(&self.pool.get_pool())
         .await?;

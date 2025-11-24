@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT pg_advisory_xact_lock(\n                    ('x' || encode(substring(sha256($1), 1, 8), 'hex'))::bit(64)::bigint\n                )\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pg_advisory_xact_lock",
+        "type_info": "Void"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0c54b8386a73a509467281b20392dc3f7d24a96c45d507904057a04c29eff497"
+}

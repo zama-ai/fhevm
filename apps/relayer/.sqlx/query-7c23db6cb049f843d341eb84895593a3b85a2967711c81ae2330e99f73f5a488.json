@@ -13,7 +13,7 @@
       "Left": [
         "Jsonb",
         "Text",
-        "Int8"
+        "Bytea"
       ]
     },
     "nullable": [

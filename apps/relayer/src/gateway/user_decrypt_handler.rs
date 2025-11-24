@@ -549,7 +549,7 @@ fn assemble_final_response(shares: Vec<UserDecryptShare>) -> Result<UserDecryptR
     shares_vec.sort_by_key(|share| share.share_index);
 
     let first_share = &shares_vec[0];
-    let decryption_id = U256::from(first_share.gw_reference_id);
+    let decryption_id = U256::from_be_slice(&first_share.gw_reference_id);
 
     // Extract reencrypted_shares with hex decoding
     let mut reencrypted_shares = Vec::new();

@@ -20,7 +20,7 @@ CREATE TABLE user_decrypt_req(
     ext_reference_id UUID NOT NULL,
     -- int_indexer_id TEXT NOT NULL,
     int_indexer_id BYTEA NOT NULL,
-    gw_reference_id BIGINT,
+    gw_reference_id BYTEA,
     req JSONB NOT NULL,
     req_status req_status NOT NULL DEFAULT 'queued',
     gw_req_tx_hash TEXT,
@@ -33,7 +33,9 @@ CREATE TABLE user_decrypt_req(
 -- Indexes for user_decrypt_req
 CREATE INDEX idx_user_decrypt_req_ext_reference_id ON user_decrypt_req USING HASH (ext_reference_id);
 -- limit size with indexes.
-CREATE UNIQUE INDEX idx_user_decrypt_req_int_indexer_id ON user_decrypt_req (int_indexer_id);
+CREATE UNIQUE INDEX idx_user_decrypt_req_unique_int_indexer_id_partial
+ON user_decrypt_req (int_indexer_id)
+WHERE req_status NOT IN ('failure', 'timed_out');
 CREATE INDEX idx_user_decrypt_req_gw_reference_id ON user_decrypt_req (gw_reference_id);
 
 -- Trigger for updated at field.
@@ -45,7 +47,7 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 -- Table for user decryption shares.
 CREATE TABLE user_decrypt_share (
     id SERIAL PRIMARY KEY,
-    gw_reference_id BIGINT NOT NULL,
+    gw_reference_id BYTEA NOT NULL,
     tx_hash TEXT,
     share_index INTEGER NOT NULL,
     share TEXT NOT NULL,
@@ -73,7 +75,7 @@ CREATE TABLE public_decrypt_req(
     ext_reference_id UUID NOT NULL,
     -- int_indexer_id TEXT NOT NULL,
     int_indexer_id BYTEA NOT NULL,
-    gw_reference_id BIGINT,
+    gw_reference_id BYTEA,
     req JSONB NOT NULL,
     res JSONB,
     req_status req_status NOT NULL DEFAULT 'queued',
@@ -86,7 +88,9 @@ CREATE TABLE public_decrypt_req(
 
 CREATE INDEX idx_public_decrypt_req_ext_req_id ON public_decrypt_req USING HASH (ext_reference_id);
 -- [REQUIRED] Create this index to make the search fast and support future ON CONFLICT logic
-CREATE UNIQUE INDEX idx_public_decrypt_req_int_indexer_id ON public_decrypt_req (int_indexer_id);
+CREATE UNIQUE INDEX idx_public_decrypt_req_unique_int_indexer_id_partial
+ON public_decrypt_req (int_indexer_id)
+WHERE req_status NOT IN ('failure', 'timed_out');
 -- [REQUIRED] Needed for efficient updates by Gateway ID
 CREATE INDEX idx_public_decrypt_req_gw_reference_id ON public_decrypt_req (gw_reference_id);
 
@@ -101,7 +105,7 @@ CREATE TABLE input_proof_req(
     id SERIAL PRIMARY KEY,
     ext_reference_id UUID NOT NULL,
     int_request_id UUID NOT NULL, -- uuid v7 here. -- slight difference, we can have the same proof multiple times.
-    gw_reference_id BIGINT,
+    gw_reference_id BYTEA,
     accepted BOOLEAN DEFAULT null,
     req JSONB NOT NULL,
     res JSONB,

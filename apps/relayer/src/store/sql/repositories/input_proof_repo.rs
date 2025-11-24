@@ -8,9 +8,6 @@ use crate::store::sql::{
 use alloy::primitives::U256;
 use uuid::Uuid;
 
-// Import conversion functions privately within this repository
-use crate::store::sql::conversion::u256_to_i64;
-
 pub struct InputProofRepository {
     pool: PgClient,
 }
@@ -72,8 +69,8 @@ impl InputProofRepository {
         gw_req_tx_hash: &str,
         gw_reference_id: U256,
     ) -> SqlResult<u64> {
-        let gw_reference_id = u256_to_i64(gw_reference_id)
-            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
+        let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
+        let gw_ref_id = id_as_bytes_array.to_vec();
         let result = sqlx::query!(
             r#"
             UPDATE input_proof_req
@@ -84,7 +81,7 @@ impl InputProofRepository {
             WHERE int_request_id = $3
             "#,
             gw_req_tx_hash,
-            gw_reference_id,
+            gw_ref_id,
             int_request_id
         )
         .execute(&self.pool.get_pool())
@@ -129,8 +126,8 @@ impl InputProofRepository {
         response: InputProofResponse,
         gw_response_tx_hash: &str,
     ) -> SqlResult<Uuid> {
-        let gw_reference_id = u256_to_i64(gw_reference_id)
-            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
+        let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
+        let gw_ref_id = id_as_bytes_array.to_vec();
         let res = serde_json::to_value(&response).map_err(|e| {
             SqlError::conversion_error(
                 "response",
@@ -151,7 +148,7 @@ impl InputProofRepository {
             "#,
             res,
             gw_response_tx_hash,
-            gw_reference_id
+            gw_ref_id
         )
         .fetch_one(&self.pool.get_pool())
         .await?;
@@ -168,8 +165,8 @@ impl InputProofRepository {
         rejection_reason: String,
         gw_response_tx_hash: &str,
     ) -> SqlResult<Uuid> {
-        let gw_reference_id = u256_to_i64(gw_reference_id)
-            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
+        let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
+        let gw_ref_id = id_as_bytes_array.to_vec();
         let result = sqlx::query_scalar!(
             r#"
             UPDATE input_proof_req
@@ -183,7 +180,7 @@ impl InputProofRepository {
             "#,
             gw_response_tx_hash,
             rejection_reason,
-            gw_reference_id
+            gw_ref_id
         )
         .fetch_one(&self.pool.get_pool())
         .await?;

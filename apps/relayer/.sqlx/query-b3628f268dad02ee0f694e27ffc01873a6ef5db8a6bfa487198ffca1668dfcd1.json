@@ -13,7 +13,7 @@
       "Left": [
         "Text",
         "Text",
-        "Int8"
+        "Bytea"
       ]
     },
     "nullable": [

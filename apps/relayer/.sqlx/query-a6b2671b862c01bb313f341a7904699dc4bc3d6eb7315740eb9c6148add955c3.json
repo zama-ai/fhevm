@@ -45,7 +45,7 @@
       {
         "ordinal": 5,
         "name": "gw_reference_id",
-        "type_info": "Int8"
+        "type_info": "Bytea"
       },
       {
         "ordinal": 6,
@@ -80,7 +80,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Bytea"
       ]
     },
     "nullable": [
