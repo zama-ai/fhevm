@@ -140,7 +140,7 @@ async fn test_input_proof_response() {
     let proof_data = Bytes::from([1, 2, 3, 4]);
 
     FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_input_proof_success(USER_ADDRESS, proof_data.clone());
+        .on_input_proof_success(USER_ADDRESS, proof_data.clone(), 1);
 
     let handle = server.clone().start().await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -225,7 +225,7 @@ async fn test_input_proof_reject() {
     let proof_data = Bytes::from([1, 2, 3, 4]);
 
     FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_input_proof_error(USER_ADDRESS, proof_data.clone());
+        .on_input_proof_error(USER_ADDRESS, proof_data.clone(), 1);
 
     let handle = server.clone().start().await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

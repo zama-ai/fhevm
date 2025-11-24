@@ -60,7 +60,7 @@ async fn test_error_gateway_rejection() {
     let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
     setup
         .fhevm_mock
-        .on_input_proof_error(user_address, ciphertext_data);
+        .on_input_proof_error(user_address, ciphertext_data, 1);
 
     test_endpoint(
         &helpers::v1_input_proof_url(&setup),
@@ -88,7 +88,7 @@ async fn test_success_single_request() {
     let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
     setup
         .fhevm_mock
-        .on_input_proof_success(user_address, ciphertext_data);
+        .on_input_proof_success(user_address, ciphertext_data, 1);
 
     test_endpoint(
         &helpers::v1_input_proof_url(&setup),
@@ -103,14 +103,14 @@ async fn test_success_single_request() {
 async fn test_success_concurrent_requests() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
-    let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
-    setup
-        .fhevm_mock
-        .on_input_proof_success(user_address, ciphertext_data);
-
     // Send multiple concurrent requests using test_endpoint
     let mut tasks = tokio::task::JoinSet::new();
     let number_of_requests = 10;
+
+    let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
+    setup
+        .fhevm_mock
+        .on_input_proof_success(user_address, ciphertext_data, number_of_requests);
 
     for i in 1..=number_of_requests {
         let payload_clone = payload.clone();

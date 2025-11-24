@@ -190,21 +190,6 @@ impl FhevmMockWrapper {
         self.register_pattern(contract, selector, request_log, response_log);
     }
 
-    /// Generic registration method for input proof patterns
-    fn register_input_pattern<F>(&self, operation_type: &str, log_creator: F)
-    where
-        F: FnOnce(u64, Address) -> (Log, Log),
-    {
-        let id = self.next_zk_proof_id();
-        debug!(zk_proof_id = id, "Registering {} pattern", operation_type);
-        let (request_log, response_log) = log_creator(id, self.input_proof_contract);
-        self.register_pattern(
-            self.input_proof_contract,
-            InputVerification::verifyProofRequestCall::SELECTOR,
-            request_log,
-            response_log,
-        );
-    }
 
     // Public API methods
 
@@ -417,22 +402,48 @@ impl FhevmMockWrapper {
         );
     }
 
-    /// Register successful input proof verification
-    pub fn on_input_proof_success(&self, user: Address, data: Bytes) {
-        self.register_input_pattern("input proof success", |id, contract| {
-            let request_log = build_input_request(contract, id, user, data);
-            let response_log = build_input_success_response(contract, id, vec![]);
-            (request_log, response_log)
-        });
+    /// Register successful input proof verification with dynamic ID generation
+    pub fn on_input_proof_success(&self, user: Address, data: Bytes, count: usize) {
+        self.register_dynamic_input_proof_pattern(user, data, true, count);
     }
 
-    /// Register input proof rejection
-    pub fn on_input_proof_error(&self, user: Address, data: Bytes) {
-        self.register_input_pattern("input proof rejection", |id, contract| {
-            let request_log = build_input_request(contract, id, user, data);
-            let response_log = build_input_reject_response(contract, id);
-            (request_log, response_log)
-        });
+    /// Register input proof rejection with dynamic ID generation
+    pub fn on_input_proof_error(&self, user: Address, data: Bytes, count: usize) {
+        self.register_dynamic_input_proof_pattern(user, data, false, count);
+    }
+
+    /// Register unique input proof patterns, each generating a different zkProofId
+    fn register_dynamic_input_proof_pattern(&self, user: Address, data: Bytes, success: bool, count: usize) {
+        for _i in 0..count {
+            let id = self.next_zk_proof_id();
+            let request_log = build_input_request(self.input_proof_contract, id, user, data.clone());
+            let response_log = if success {
+                build_input_success_response(self.input_proof_contract, id, vec![])
+            } else {
+                build_input_reject_response(self.input_proof_contract, id)
+            };
+
+            let scheduled_tx = ScheduledTransaction::with_single_event(
+                Duration::from_millis(RESPONSE_DELAY_MS),
+                Some(self.input_proof_contract),
+                response_log,
+            );
+
+            let response = Response::Success {
+                hash: Some(random_hash()),
+                data: crate::mock_server::ResponseData::Logs(vec![request_log]),
+                scheduled_transactions: vec![scheduled_tx],
+            };
+
+            self.json_rpc_server.on_transaction(
+                matches_contract_and_selector_for_txn(
+                    self.input_proof_contract,
+                    InputVerification::verifyProofRequestCall::SELECTOR,
+                ),
+                response,
+                UsageLimit::Once,
+            );
+        }
     }
 
     /// Register input proof that reverts
@@ -847,8 +858,8 @@ mod tests {
         wrapper.on_public_decrypt_error(handles.clone());
         wrapper.on_public_decrypt_revert("test reason");
 
-        wrapper.on_input_proof_success(user, test_data.clone());
-        wrapper.on_input_proof_error(user, test_data);
+        wrapper.on_input_proof_success(user, test_data.clone(), 10);
+        wrapper.on_input_proof_error(user, test_data, 10);
         wrapper.on_input_proof_revert("test reason");
     }
 }
