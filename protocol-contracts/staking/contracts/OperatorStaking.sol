@@ -110,6 +110,7 @@ contract OperatorStaking is ERC20, Ownable, ReentrancyGuardTransient {
      * @param owner The owner of the shares.
      */
     function requestRedeem(uint208 shares, address controller, address owner) public virtual {
+        if (shares == 0) return;
         require(controller != address(0), InvalidController());
         if (msg.sender != owner) {
             _spendAllowance(owner, msg.sender, shares);
