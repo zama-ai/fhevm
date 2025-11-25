@@ -35,8 +35,8 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         uint256 _totalEligibleStakedWeight;
         // Stake - release
         uint48 _unstakeCooldownPeriod;
-        mapping(address recipient => Checkpoints.Trace208) _unstakeRequests;
-        mapping(address recipient => uint256) _released;
+        mapping(address account => Checkpoints.Trace208) _unstakeRequests;
+        mapping(address account => uint256) _released;
         // Reward - issuance curve
         uint256 _lastUpdateTimestamp;
         uint256 _lastUpdateReward;
@@ -58,7 +58,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     /// @dev Emitted when tokens are staked by an account.
     event TokensStaked(address indexed account, uint256 amount);
     /// @dev Emitted when tokens are unstaked by an account.
-    event TokensUnstaked(address indexed account, address indexed recipient, uint256 amount, uint48 releaseTime);
+    event TokensUnstaked(address indexed account, uint256 amount, uint48 releaseTime);
     /// @dev Emitted when tokens are released to a recipient after the unstaking cooldown period.
     event TokensReleased(address indexed recipient, uint256 amount);
     /// @dev Emitted when rewards of an account are claimed.
@@ -70,8 +70,6 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     /// @dev Emitted when the reward recipient of an account is updated.
     event RewardsRecipientSet(address indexed account, address indexed recipient);
 
-    /// @dev Emitted when an account unstakes to the zero address.
-    error InvalidUnstakeRecipient();
     /// @dev The account cannot be made eligible.
     error InvalidEligibleAccount(address account);
     /// @dev The tokens cannot be transferred.
@@ -117,34 +115,33 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     }
 
     /**
-     * @dev Unstake `amount` tokens from `msg.sender`'s staked balance to `recipient`.
-     * @param recipient The recipient where unstaked tokens should be sent.
-     * @param amount The amount of tokens to unstake.
-     * @return releaseTime The timestamp when the unstaked tokens can be released.
+     * @dev Unstake `amount` tokens from `msg.sender`'s staked balance to `msg.sender`.
      *
      * NOTE: Unstaked tokens are released by calling {release} after {unstakeCooldownPeriod}.
+     * WARNING: Unstake release times are strictly increasing per account even if the cooldown period
+     * is reduced. For a given account to fully realize the reduction in cooldown period, they may need
+     * to wait up to `OLD_COOLDOWN_PERIOD - NEW_COOLDOWN_PERIOD` seconds after the cooldown period is updated.
+     *
+     * @param amount The amount of tokens to unstake.
+     * @return releaseTime The timestamp when the unstaked tokens can be released.
      */
-    function unstake(address recipient, uint256 amount) public returns (uint48) {
-        require(recipient != address(0), InvalidUnstakeRecipient());
+    function unstake(uint256 amount) public returns (uint48) {
         _burn(msg.sender, amount);
 
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
         (, uint256 lastReleaseTime, uint256 totalRequestedToWithdraw) = $
-            ._unstakeRequests[recipient]
+            ._unstakeRequests[msg.sender]
             .latestCheckpoint();
         uint48 releaseTime = SafeCast.toUint48(Math.max(Time.timestamp() + $._unstakeCooldownPeriod, lastReleaseTime));
-        $._unstakeRequests[recipient].push(releaseTime, uint208(totalRequestedToWithdraw + amount));
+        $._unstakeRequests[msg.sender].push(releaseTime, uint208(totalRequestedToWithdraw + amount));
 
-        emit TokensUnstaked(msg.sender, recipient, amount, releaseTime);
+        emit TokensUnstaked(msg.sender, amount, releaseTime);
         return releaseTime;
     }
 
     /**
      * @dev Releases tokens requested for unstaking after the cooldown period to `account`.
      * @param account The account to release tokens to.
-     *
-     * WARNING: If this contract is upgraded to add slashing, the ability to withdraw to a
-     * different address should be reconsidered.
      */
     function release(address account) public virtual {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
@@ -206,7 +203,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
 
     /**
      * @dev Sets the {unstake} cooldown period in seconds to `unstakeCooldownPeriod`. Only callable
-     * by `MANAGER_ROLE` role.
+     * by `MANAGER_ROLE` role. See {unstake} for important notes regarding the cooldown period.
      * @param unstakeCooldownPeriod_ The new unstake cooldown period.
      */
     function setUnstakeCooldownPeriod(uint48 unstakeCooldownPeriod_) public onlyRole(MANAGER_ROLE) {
