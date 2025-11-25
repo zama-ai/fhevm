@@ -35,9 +35,9 @@ impl ZamaNonceManager {
 
     /// The primary logic for acquiring and locking the next valid nonce.
     ///
-    /// The logic prioritizes filling gaps from `available_nonces` before
-    /// incrementing the main `next_nonce` counter.
-    pub async fn get_increase_and_lock_nonce<P, N>(
+    /// The logic prioritizes filling gaps from `available_nonces` before incrementing the main
+    /// `next_nonce` counter.
+    pub async fn get_and_lock_nonce<P, N>(
         &self,
         provider: &P,
         address: Address,
@@ -80,6 +80,10 @@ impl ZamaNonceManager {
         let mut accounts = self.accounts.lock().await;
         if let Some(account) = accounts.get_mut(&address) {
             account.locked_nonces.remove(&nonce);
+
+            // Should not be required as a confirmed nonce should always be in a locked state, but
+            // it might be safer to remove it from the available nonces as well
+            account.available_nonces.remove(&nonce);
         }
     }
 
@@ -115,7 +119,7 @@ impl NonceManager for ZamaNonceManager {
         P: Provider<N>,
         N: Network,
     {
-        self.get_increase_and_lock_nonce(provider, address).await
+        self.get_and_lock_nonce(provider, address).await
     }
 }
 
@@ -247,7 +251,7 @@ mod tests {
         assert_eq!(
             details2.locked_nonces,
             BTreeSet::from([]),
-            "All locked nonce should be released."
+            "All locked nonces should be released."
         );
         assert_eq!(
             details2.next_nonce, 3,
@@ -425,7 +429,7 @@ mod tests {
         let details5 = manager.get_account_details(address).await.unwrap();
         assert_eq!(
             released, 4,
-            "Should have reused the available nonce 1 first"
+            "Should have reused the available nonce 4 first"
         );
         assert_eq!(details5.locked_nonces, BTreeSet::from([3, 4, 5]));
         assert_eq!(details5.next_nonce, 6);

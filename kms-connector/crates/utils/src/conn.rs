@@ -11,7 +11,7 @@ use alloy::{
             WalletFiller,
         },
     },
-    transports::http::reqwest::Url,
+    transports::http::reqwest::{self, Url},
 };
 use anyhow::anyhow;
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
@@ -23,6 +23,9 @@ pub const CONNECTION_RETRY_NUMBER: usize = 5;
 
 /// The delay between two connection attempts.
 pub const CONNECTION_RETRY_DELAY: Duration = Duration::from_secs(2);
+
+/// Timeout for requests to the Gateway's RPC node.
+const REQUEST_TIMEOUT: Duration = Duration::from_mins(1);
 
 /// Tries to establish the connection with Postgres database.
 pub async fn connect_to_db(db_url: &str, db_pool_size: u32) -> anyhow::Result<Pool<Postgres>> {
@@ -55,7 +58,8 @@ type DefaultFillers = JoinFill<
 pub type GatewayProvider = FillProvider<JoinFill<DefaultFillers, ChainIdFiller>, RootProvider>;
 
 /// The default `alloy::Provider` used to interact with the Gateway using a wallet.
-pub type WalletGatewayProvider = NonceManagedProvider<WalletGatewayProviderFillers, RootProvider>;
+pub type WalletGatewayProvider =
+    NonceManagedProvider<FillProvider<WalletGatewayProviderFillers, RootProvider>>;
 pub type WalletGatewayProviderFillers = JoinFill<
     JoinFill<JoinFill<Identity, ChainIdFiller>, FillersWithoutNonceManagement>,
     WalletFiller<EthereumWallet>,
@@ -107,7 +111,11 @@ where
 
     let gateway_url =
         Url::from_str(gateway_url).map_err(|e| anyhow!("Invalid Gateway URL: {e}"))?;
-    let provider = provider_builder_new().connect_http(gateway_url);
+    let client = reqwest::ClientBuilder::new()
+        .timeout(REQUEST_TIMEOUT)
+        .build()?;
+    let provider = provider_builder_new().connect_reqwest(client, gateway_url);
+
     info!("Connected to Gateway's RPC node successfully");
     Ok(provider)
 }
