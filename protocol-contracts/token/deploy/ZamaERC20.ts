@@ -23,7 +23,7 @@ const deploy: DeployFunction = async (hre) => {
     console.log(`Deployer: ${deployer}`)
 
     // Token configuration
-    const tokenName = 'ZAMAERC20'
+    const tokenName = 'Zama'
     const tokenSymbol = 'ZAMA'
 
     const numReceivers = parseInt(getRequiredEnvVar('NUM_INITIAL_RECEIVERS'))
