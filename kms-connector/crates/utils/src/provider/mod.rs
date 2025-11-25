@@ -3,8 +3,8 @@ mod nonce_manager;
 use crate::provider::nonce_manager::ZamaNonceManager;
 use alloy::{
     consensus::Account,
-    eips::{BlockId, BlockNumberOrTag, Encodable2718},
-    network::{Ethereum, Network, TransactionBuilder},
+    eips::{BlockId, BlockNumberOrTag},
+    network::{Network, TransactionBuilder},
     primitives::{
         Address, B256, BlockHash, BlockNumber, Bytes, StorageKey, StorageValue, TxHash, U64, U128,
         U256,
@@ -13,19 +13,19 @@ use alloy::{
         EthCall, EthCallMany, EthGetBlock, FilterPollerBuilder, PendingTransaction,
         PendingTransactionBuilder, PendingTransactionConfig, PendingTransactionError, Provider,
         ProviderCall, RootProvider, RpcWithBlock, SendableTx,
-        fillers::{BlobGasFiller, FillProvider, GasFiller, JoinFill, NonceManager, TxFiller},
+        fillers::{BlobGasFiller, GasFiller, JoinFill, NonceManager},
     },
     rpc::{
         client::NoParams,
         json_rpc::ErrorPayload,
         types::{
             AccessListResult, Bundle, EIP1186AccountProofResponse, EthCallResponse, FeeHistory,
-            Filter, FilterChanges, Index, Log, SyncStatus, TransactionReceipt, TransactionRequest,
+            Filter, FilterChanges, Index, Log, SyncStatus,
             erc4337::TransactionConditional,
             simulate::{SimulatePayload, SimulatedBlock},
         },
     },
-    transports::{RpcError, TransportError, TransportErrorKind, TransportResult},
+    transports::{RpcError, TransportErrorKind, TransportResult},
 };
 use serde_json::value::RawValue;
 use std::borrow::Cow;
@@ -37,74 +37,23 @@ pub type FillersWithoutNonceManagement = JoinFill<GasFiller, BlobGasFiller>;
 /// Note that the provider given by the user must not have nonce management enabled, as this
 /// is done by the `NonceManagedProvider` itself.
 /// Users can use the default `FillersWithoutNonceManagement` to create a provider.
-pub struct NonceManagedProvider<F, P, N = Ethereum>
-where
-    N: Network,
-    F: TxFiller<N>,
-    P: Provider<N>,
-{
-    inner: FillProvider<F, P, N>,
+pub struct NonceManagedProvider<P> {
+    inner: P,
     signer_address: Address,
     nonce_manager: ZamaNonceManager,
 }
 
-impl<F, P> NonceManagedProvider<F, P>
-where
-    F: TxFiller<Ethereum>,
-    P: Provider<Ethereum>,
-{
-    pub fn new(provider: FillProvider<F, P, Ethereum>, signer_address: Address) -> Self {
+impl<P> NonceManagedProvider<P> {
+    pub fn new(provider: P, signer_address: Address) -> Self {
         Self {
             inner: provider,
             signer_address,
             nonce_manager: ZamaNonceManager::new(),
         }
     }
-
-    pub async fn send_transaction_sync(
-        &self,
-        mut tx: TransactionRequest,
-    ) -> TransportResult<TransactionReceipt> {
-        let signer_addr = self.signer_address;
-        let nonce = self
-            .nonce_manager
-            .get_next_nonce(&self.inner, signer_addr)
-            .await?;
-        tx.set_nonce(nonce);
-
-        let mut tx_bytes = Vec::new();
-        self.inner
-            .fill(tx)
-            .await?
-            .try_into_envelope()
-            .map_err(|e| TransportError::LocalUsageError(Box::new(e)))?
-            .encode_2718(&mut tx_bytes);
-
-        let send_tx_result = self
-            .client()
-            .request("eth_sendRawTransactionSync", (Bytes::from(tx_bytes),))
-            .await;
-
-        match &send_tx_result {
-            Err(e) if is_nonce_too_low(e) => {
-                self.nonce_manager.confirm_nonce(signer_addr, nonce).await;
-            }
-            Err(_) => {
-                self.nonce_manager.release_nonce(signer_addr, nonce).await;
-            }
-            Ok(_) => self.nonce_manager.confirm_nonce(signer_addr, nonce).await,
-        }
-
-        send_tx_result
-    }
 }
 
-impl<F, P, N> Clone for NonceManagedProvider<F, P, N>
-where
-    N: Network,
-    F: TxFiller<N>,
-    P: Provider<N> + Clone,
-{
+impl<P: Clone> Clone for NonceManagedProvider<P> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -134,14 +83,37 @@ fn is_nonce_too_low(error: &RpcError<TransportErrorKind>) -> bool {
 }
 
 #[async_trait::async_trait]
-impl<F, P, N> Provider<N> for NonceManagedProvider<F, P, N>
+impl<N: Network, P> Provider<N> for NonceManagedProvider<P>
 where
-    N: Network,
-    F: TxFiller<N>,
     P: Provider<N>,
 {
     fn root(&self) -> &RootProvider<N> {
         self.inner.root()
+    }
+
+    async fn send_transaction_sync(
+        &self,
+        mut tx: N::TransactionRequest,
+    ) -> TransportResult<N::ReceiptResponse> {
+        let signer_addr = self.signer_address;
+        let nonce = self
+            .nonce_manager
+            .get_next_nonce(&self.inner, signer_addr)
+            .await?;
+        tx.set_nonce(nonce);
+
+        let send_tx_result = self.inner.send_transaction_sync(tx).await;
+        match &send_tx_result {
+            Err(e) if is_nonce_too_low(e) => {
+                self.nonce_manager.confirm_nonce(signer_addr, nonce).await;
+            }
+            Err(_) => {
+                self.nonce_manager.release_nonce(signer_addr, nonce).await;
+            }
+            Ok(_) => self.nonce_manager.confirm_nonce(signer_addr, nonce).await,
+        }
+
+        send_tx_result
     }
 
     async fn send_transaction(
