@@ -211,6 +211,8 @@ describe('Protocol Staking', function () {
       await expect(this.mock.connect(this.staker1).unstake(ethers.parseEther('50')))
         .to.emit(this.mock, 'Transfer')
         .withArgs(this.staker1, ethers.ZeroAddress, ethers.parseEther('50'))
+        .to.emit(this.mock, 'TokensUnstaked')
+        .withArgs(this.staker1, ethers.parseEther('50'), anyValue)
         .to.not.emit(this.token, 'Transfer');
     });
 

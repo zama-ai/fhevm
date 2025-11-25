@@ -58,7 +58,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     /// @dev Emitted when tokens are staked by an account.
     event TokensStaked(address indexed account, uint256 amount);
     /// @dev Emitted when tokens are unstaked by an account.
-    event TokensUnstaked(address indexed account, address indexed recipient, uint256 amount, uint48 releaseTime);
+    event TokensUnstaked(address indexed account, uint256 amount, uint48 releaseTime);
     /// @dev Emitted when tokens are released to a recipient after the unstaking cooldown period.
     event TokensReleased(address indexed recipient, uint256 amount);
     /// @dev Emitted when rewards of an account are claimed.
@@ -135,7 +135,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         uint48 releaseTime = SafeCast.toUint48(Math.max(Time.timestamp() + $._unstakeCooldownPeriod, lastReleaseTime));
         $._unstakeRequests[msg.sender].push(releaseTime, uint208(totalRequestedToWithdraw + amount));
 
-        emit TokensUnstaked(msg.sender, msg.sender, amount, releaseTime);
+        emit TokensUnstaked(msg.sender, amount, releaseTime);
         return releaseTime;
     }
 

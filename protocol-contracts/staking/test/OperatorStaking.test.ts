@@ -313,7 +313,7 @@ describe('OperatorStaking', function () {
 
       await expect(this.mock.connect(this.staker2).requestRedeem(ethers.parseEther('2'), this.staker2, this.staker2))
         .to.emit(this.protocolStaking, 'TokensUnstaked')
-        .withArgs(this.mock, this.mock, ethers.parseEther('0.5'), anyValue);
+        .withArgs(this.mock, ethers.parseEther('0.5'), anyValue);
     });
 
     it('take excess into account on requestRedeem after slashing fully covered', async function () {
@@ -327,7 +327,7 @@ describe('OperatorStaking', function () {
 
       await expect(this.mock.connect(this.staker2).requestRedeem(ethers.parseEther('1'), this.staker2, this.staker2))
         .to.emit(this.protocolStaking, 'TokensUnstaked')
-        .withArgs(this.mock, this.mock, 0, anyValue);
+        .withArgs(this.mock, 0, anyValue);
 
       await time.increase(30);
       await expect(this.mock.maxRedeem(this.staker2)).to.eventually.eq(0);
