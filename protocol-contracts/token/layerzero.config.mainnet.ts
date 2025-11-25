@@ -11,7 +11,6 @@ const ethereumContract: OmniPointHardhat = {
 }
 
 const zamaMainnetContract: OmniPointHardhat = {
-    // @ts-ignore: TODO: Remove TS ignore once LayerZero endpoint is deployed.
     eid: EndpointId.ZAMA_V2_MAINNET,
     contractName: 'ZamaOFT',
 }
