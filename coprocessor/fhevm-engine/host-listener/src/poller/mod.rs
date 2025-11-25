@@ -99,7 +99,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         DEFAULT_DEPENDENCE_CACHE_SIZE,
     )
     .await?;
-    db.tick.update();
 
     if chain_id != db.chain_id {
         error!(

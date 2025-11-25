@@ -6,18 +6,6 @@ use test_harness::instance::ImportMode;
 
 #[tokio::test]
 async fn poller_state_round_trip() -> Result<(), Box<dyn std::error::Error>> {
-    let allow_db = std::env::var("COPROCESSOR_TEST_LOCALHOST").is_ok()
-        || std::env::var("COPROCESSOR_TEST_LOCALHOST_RESET").is_ok()
-        || std::env::var("COPROCESSOR_TEST_WITH_DOCKER").is_ok();
-
-    if !allow_db {
-        eprintln!(
-            "skipping poller_state_round_trip: set COPROCESSOR_TEST_LOCALHOST \
-             or COPROCESSOR_TEST_WITH_DOCKER to run"
-        );
-        return Ok(());
-    }
-
     let db_instance =
         test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
             .await?;
