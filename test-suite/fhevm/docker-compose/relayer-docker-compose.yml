@@ -21,7 +21,7 @@ services:
     platform: linux/amd64
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: relayer
+      POSTGRES_DB: relayer_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     healthcheck:
