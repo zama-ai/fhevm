@@ -182,6 +182,11 @@ jobs:
         run: |
           ./fhevm-cli test public-decrypt-http-mixed
 
+      - name: Delegate User Decryption (partial test)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test delegate-user-decryption
+
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
         if: always()

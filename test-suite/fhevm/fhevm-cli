@@ -23,22 +23,22 @@ export CONNECTOR_KMS_WORKER_VERSION=${CONNECTOR_KMS_WORKER_VERSION:-"v0.10.0-2"}
 export CONNECTOR_TX_SENDER_VERSION=${CONNECTOR_TX_SENDER_VERSION:-"v0.10.0-2"}
 
 # Coprocessor services.
-export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.10.0-2"}
-export GW_LISTENER_VERSION=${GW_LISTENER_VERSION:-"v0.10.0-2"}
-export HOST_LISTENER_VERSION=${HOST_LISTENER_VERSION:-"v0.10.0-2"}
-export TX_SENDER_VERSION=${TX_SENDER_VERSION:-"v0.10.0-2"}
-export TFHE_WORKER_VERSION=${TFHE_WORKER_VERSION:-"v0.10.0-2"}
-export SNS_WORKER_VERSION=${SNS_WORKER_VERSION:-"v0.10.0-2"}
-export ZKPROOF_WORKER_VERSION=${ZKPROOF_WORKER_VERSION:-"v0.10.0-2"}
+export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"bd5dcc1"}
+export GW_LISTENER_VERSION=${GW_LISTENER_VERSION:-"v0.10.0-3"}
+export HOST_LISTENER_VERSION=${HOST_LISTENER_VERSION:-"bd5dcc1"}
+export TX_SENDER_VERSION=${TX_SENDER_VERSION:-"bd5dcc1"}
+export TFHE_WORKER_VERSION=${TFHE_WORKER_VERSION:-"v0.10.0-3"}
+export SNS_WORKER_VERSION=${SNS_WORKER_VERSION:-"v0.10.0-3"}
+export ZKPROOF_WORKER_VERSION=${ZKPROOF_WORKER_VERSION:-"v0.10.0-3"}
 
 # Gateway and Host contracts.
 export GATEWAY_VERSION=${GATEWAY_VERSION:-"37abee5"}
-export HOST_VERSION=${HOST_VERSION:-"v0.10.0-2"}
+export HOST_VERSION=${HOST_VERSION:-"v0.10.0-3"}
 
 # Other services.
 export CORE_VERSION=${CORE_VERSION:-"v0.12.4"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.6.0"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"770f756"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"bd5dcc1"}
 
 
 function print_logo() {
@@ -180,6 +180,21 @@ case $COMMAND in
         user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test user decrypt")
+          ;;
+        delegate-user-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
+          docker_args+=("-g" "test delegation and revocation propagation")
+          echo -e "${log_message}"
+          docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
+          echo Checking transaction-sender logs for DelegateUserDecryption
+          ./fhevm-cli logs coprocessor-transaction-sender | grep "DelegateUserDecryption txn succeeded"
+          echo Checking transaction-sender logs for RevokeUserDecryptionDelegation
+          ./fhevm-cli logs coprocessor-transaction-sender | grep "RevokeUserDecryptionDelegation txn succeeded"
+          exit 0 # the test has been called unlike other case branch
+          ;;
+        public-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
+          docker_args+=("-g" "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)")
           ;;
         erc20)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] ERC20${RESET}"
