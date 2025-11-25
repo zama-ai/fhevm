@@ -182,6 +182,11 @@ jobs:
         run: |
           ./fhevm-cli test delegate-user-decryption
 
+      - name: Random operators test (subset)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test random-subset
+
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
         if: always()
