@@ -1,6 +1,8 @@
 use fhevm_relayer::http::utils::{validation_messages, ErrorLabel, ErrorResponse};
 use serde_json::Value;
 
+const TESTS_MAX_RETRIES: i16 = 20;
+
 #[allow(dead_code)]
 pub async fn test_endpoint(
     url: &str,
@@ -13,16 +15,46 @@ pub async fn test_endpoint(
     let mut payload = base_payload.clone();
     modify(&mut payload);
 
-    let res = reqwest::Client::new()
-        .post(url)
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(10))
-        .json(&payload)
-        .send()
-        .await
-        .unwrap();
+    let client = reqwest::Client::new();
 
-    verify(res).await;
+    // Retry configuration
+    let retry_delay = std::time::Duration::from_millis(250);
+    let mut last_error = None;
+
+    for attempts in 0..TESTS_MAX_RETRIES {
+        let result = client
+            .post(url)
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(10))
+            .json(&payload)
+            .send()
+            .await;
+
+        match result {
+            Ok(res) => {
+                verify(res).await;
+                return;
+            }
+            Err(e) => {
+                if e.is_connect() || e.is_request() {
+                    // Log to CI so you know it's waiting
+                    println!(
+                        "Attempt {}/{} failed to connect to {}. Retrying...",
+                        attempts, TESTS_MAX_RETRIES, url
+                    );
+                    last_error = Some(e);
+                    tokio::time::sleep(retry_delay).await;
+                    continue;
+                }
+
+                panic!("Request failed with non-recoverable error: {:?}", e);
+            }
+        }
+    }
+    panic!(
+        "Test failed: Could not connect to {} after {} attempts. Is the server running? Last error: {:?}",
+        url, TESTS_MAX_RETRIES, last_error
+        );
 }
 
 // Verify functions
