@@ -81,6 +81,29 @@ jobs:
     strategy:
       matrix:
         folder: [apps/relayer]
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: relayer_db
+        ports:
+          - 5432:5432
+        # Health check ensures DB is ready before steps run
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # 2. Define Environment Variables
+    env:
+      SQLX_OFFLINE: true # Use cached queries for compilation (speeds up CI)
+      DATABASE_URL: postgres://postgres:password@localhost:5432/relayer_db
+      APP_STORAGE__SQL_DATABASE_URL: postgres://postgres:password@localhost:5432/relayer_db
+
     steps:
       - name: Checkout Project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -99,6 +122,21 @@ jobs:
         with:
           workspaces: ${{ matrix.folder }}
 
+      - name: Install SQLx CLI
+        run: |
+          if ! command -v sqlx &> /dev/null; then
+            echo "Installing sqlx-cli..."
+            cargo install sqlx-cli --no-default-features --features postgres
+          else
+            echo "sqlx-cli found in cache."
+          fi
+
+      # 4. Run Migrations (Initializes the DB schema)
+      - name: Migrate Database
+        working-directory: ${{ matrix.folder }}/relayer-migrate
+        run: sqlx migrate run
+
+
       - name: Run tests
         working-directory: ${{ matrix.folder }}
         run: |
@@ -108,3 +146,4 @@ jobs:
           RUST_BACKTRACE=full cargo test --test user_decrypt_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test public_decrypt_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test input_proof_test -- --test-threads=1
+          RUST_BACKTRACE=full cargo test --test http_rate_limiter_test -- --test-threads=1
