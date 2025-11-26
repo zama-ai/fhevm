@@ -63,7 +63,7 @@ struct Args {
 
     #[arg(
         long,
-        default_value_t = 10,
+        default_value_t = 45,
         help = "Maximum number of HTTP/RPC retry attempts (in addition to the initial attempt) before failing an operation"
     )]
     max_http_retries: u64,
