@@ -1,18 +1,28 @@
 name: kms-connector-tx-sender-docker-build
 
 on:
-  workflow_dispatch:
+  workflow_call:
+    secrets:
+      AWS_ACCESS_KEY_S3_USER:
+        required: true
+      AWS_SECRET_KEY_S3_USER:
+        required: true
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: true
+      CGR_USERNAME:
+        required: true
+      CGR_PASSWORD:
+        required: true
     inputs:
-      ref:
-        description: 'Branch/ref to build'
+      is_workflow_call:
+        description: 'To determine if the trigger was a workflow_call or a pull request'
+        type: boolean
         required: false
-        default: 'main'
-        type: string
-      trigger_source:
-        description: 'Source that triggered this workflow'
-        required: false
-        default: 'manual'
-        type: string
+        default: true
+    outputs:
+      build_result:
+        description: "Result of the build job of this workflow"
+        value: ${{ jobs.build.result }}
   pull_request:
   push:
     branches:
@@ -35,6 +45,9 @@ jobs:
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
+    if: |
+      inputs.is_workflow_call ||
+      (!inputs.is_workflow_call && !startsWith(github.head_ref, 'mergify/merge-queue/'))
     outputs:
       changes-kms-connector-tx-sender: ${{ steps.filter.outputs.kms-connector-tx-sender }}
     steps:
@@ -78,27 +91,3 @@ jobs:
       image-name: "fhevm/kms-connector/tx-sender"
       docker-file: "./kms-connector/crates/tx-sender/Dockerfile"
       app-cache-dir: "fhevm-kms-connector-tx-sender"
-  output-build-status:
-    name: kms-connector-tx-sender-docker-build/output-build-status
-    needs: [check-changes, build]
-    if: always()
-    permissions:
-      contents: 'read'
-    runs-on: ubuntu-latest
-    outputs:
-      image-built: ${{ steps.check-build.outputs.image-built }}
-      image-tag: ${{ steps.check-build.outputs.image-tag }}
-    steps:
-      - name: Check if image was built
-        id: check-build
-        run: |
-          # Check if docker build job ran and succeeded
-          if [[ "${{ needs.build.result }}" == "success" ]]; then
-            echo "image-built=true" >> "$GITHUB_OUTPUT"
-            echo "image-tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
-            echo "✅ Image was built successfully"
-          else
-            echo "image-built=false" >> "$GITHUB_OUTPUT"
-            echo "image-tag=" >> "$GITHUB_OUTPUT"
-            echo "⏭️ Image was not built (result: ${{ needs.build.result }})"
-          fi
