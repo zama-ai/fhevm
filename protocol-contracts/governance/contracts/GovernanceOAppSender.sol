@@ -57,7 +57,7 @@ contract GovernanceOAppSender is OAppSender, OAppOptionsType3 {
         uint256 chainID = block.chainid;
         if (chainID == 1) {
             // chainID of ethereum-mainnet i.e linked to gateway-mainnet.
-            revert("TODO: to fill with correct value, destEid unknown yet for Zama mainnet");
+            DESTINATION_EID = 30397;
         } else if (chainID == 11155111) {
             // chainID of ethereum-testnet i.e linked to gateway-testnet.
             DESTINATION_EID = 40424;
