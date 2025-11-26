@@ -1,5 +1,6 @@
 {
   "name": "@fhevm/e2e-suite",
+  "version": "0.9.0",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",

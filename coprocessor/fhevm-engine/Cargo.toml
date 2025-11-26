@@ -13,6 +13,7 @@ members = [
 ]
 
 [workspace.package]
+version = "0.10.0"
 authors = ["Zama"]
 edition = "2021"
 license = "BSD-3-Clause-Clear"
