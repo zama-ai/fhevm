@@ -175,7 +175,13 @@ task("task:verifyProtocolPayment")
     if (useInternalProxyAddress) {
       loadGatewayAddresses();
     }
-    const implementationAddress = getRequiredEnvVar("PROTOCOL_PAYMENT_ADDRESS");
+    const proxyAddress = getRequiredEnvVar("PROTOCOL_PAYMENT_ADDRESS");
+
+    const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await run("verify:verify", {
+      address: proxyAddress,
+      constructorArguments: [],
+    });
     await run("verify:verify", {
       address: implementationAddress,
       constructorArguments: [],
