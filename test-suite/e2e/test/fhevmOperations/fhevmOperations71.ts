@@ -134,7 +134,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "ne" overload (euint128, euint16) => ebool test 2 (42090, 42094)', async function () {
@@ -153,7 +153,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "ne" overload (euint128, euint16) => ebool test 3 (42094, 42094)', async function () {
@@ -172,7 +172,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "ne" overload (euint128, euint16) => ebool test 4 (42094, 42090)', async function () {
@@ -191,7 +191,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "not" overload (euint256) => euint256 test 1 (115792089237316195423570985008687907853269984665640564039457582667778252467021)', async function () {
@@ -205,7 +205,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 1340134877172914n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "shr" overload (euint32, euint8) => euint32 test 1 (3796021550, 7)', async function () {
@@ -224,7 +224,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 29656418n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "shr" overload (euint32, euint8) => euint32 test 2 (3, 7)', async function () {
@@ -243,7 +243,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "shr" overload (euint32, euint8) => euint32 test 3 (7, 7)', async function () {
@@ -262,7 +262,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "shr" overload (euint32, euint8) => euint32 test 4 (7, 3)', async function () {
@@ -281,7 +281,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "or" overload (uint64, euint64) => euint64 test 1 (18445392183738577967, 18437955621632859185)', async function () {
@@ -300,7 +300,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 18445608242225085503n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "or" overload (uint64, euint64) => euint64 test 2 (18442438487998006519, 18442438487998006523)', async function () {
@@ -319,7 +319,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 18442438487998006527n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "or" overload (uint64, euint64) => euint64 test 3 (18442438487998006523, 18442438487998006523)', async function () {
@@ -338,7 +338,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 18442438487998006523n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "or" overload (uint64, euint64) => euint64 test 4 (18442438487998006523, 18442438487998006519)', async function () {
@@ -357,7 +357,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 18442438487998006527n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "and" overload (euint64, euint64) => euint64 test 1 (18445649915025813613, 18443935695415273513)', async function () {
@@ -376,7 +376,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 18443371640966602793n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "and" overload (euint64, euint64) => euint64 test 2 (18443935695415273509, 18443935695415273513)', async function () {
@@ -395,7 +395,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 18443935695415273505n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "and" overload (euint64, euint64) => euint64 test 3 (18443935695415273513, 18443935695415273513)', async function () {
@@ -414,7 +414,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 18443935695415273513n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "and" overload (euint64, euint64) => euint64 test 4 (18443935695415273513, 18443935695415273509)', async function () {
@@ -433,7 +433,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: 18443935695415273505n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "ne" overload (euint16, euint256) => ebool test 1 (12594, 115792089237316195423570985008687907853269984665640564039457583629524059178847)', async function () {
@@ -452,7 +452,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "ne" overload (euint16, euint256) => ebool test 2 (12590, 12594)', async function () {
@@ -471,7 +471,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "ne" overload (euint16, euint256) => ebool test 3 (12594, 12594)', async function () {
@@ -490,7 +490,7 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "ne" overload (euint16, euint256) => ebool test 4 (12594, 12590)', async function () {
@@ -509,6 +509,6 @@ describe('FHEVM operations 71', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 });
