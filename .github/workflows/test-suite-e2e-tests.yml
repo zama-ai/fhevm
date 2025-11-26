@@ -192,7 +192,7 @@ jobs:
         run: |
           ./fhevm-cli test random-subset
 
-      - name: Poller test
+      - name: Host listener poller test
         working-directory: test-suite/fhevm
         run: |
           docker stop coprocessor-host-listener

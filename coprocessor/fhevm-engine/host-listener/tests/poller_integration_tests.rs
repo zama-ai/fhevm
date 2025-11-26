@@ -219,7 +219,7 @@ async fn poller_catches_up_to_safe_tip(
         if attempts > 100 {
             poller_handle.abort();
             panic!(
-                "poller did not reach safe tip {safe_tip} (latest block \
+                "host listener poller did not reach safe tip {safe_tip} (latest block \
                  {latest_block})"
             );
         }

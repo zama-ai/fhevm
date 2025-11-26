@@ -215,10 +215,10 @@ hostListener:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
-# Poller
+# Host Listener Poller
 # -----------------------------------------------------------------------------
 # Processes blockchain events from the host chain
-poller:
+hostListenerPoller:
   enabled: false
   nameOverride:
 
@@ -241,7 +241,7 @@ poller:
           name: coprocessor-api-key
           key: coprocessor-api-key
 
-  # Command line arguments for the poller
+  # Command line arguments for the host listener poller
   args:
     - --database-url=$(DATABASE_URL)
     - --coprocessor-api-key=$(TENANT_API_KEY)

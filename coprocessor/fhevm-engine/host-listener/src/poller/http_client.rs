@@ -30,8 +30,9 @@ impl HttpChainClient {
         retry_interval: Duration,
         max_retries: u64,
     ) -> Result<Self> {
-        let url = Url::parse(rpc_url)
-            .context("Invalid rpc_url provided to poller HTTP client")?;
+        let url = Url::parse(rpc_url).context(
+            "Invalid rpc_url provided to host listener poller HTTP client",
+        )?;
         let provider = ProviderBuilder::new().connect_http(url);
 
         let addresses = vec![acl_address, tfhe_address];
