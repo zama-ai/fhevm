@@ -156,6 +156,11 @@ async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> any
     )
     .await?;
 
+    // Record initial transaction count.
+    let initial_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
+
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     let tenant_id = insert_random_tenant(&env.db_pool).await?;
@@ -197,6 +202,13 @@ async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> any
         }
         sleep(Duration::from_millis(500)).await;
     }
+
+    let tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    assert_eq!(
+        tx_count, initial_tx_count,
+        "Expected no new transaction to be sent due to revert"
+    );
+
     sqlx::query!(
         "
         delete from tenants where tenant_id = $1",
