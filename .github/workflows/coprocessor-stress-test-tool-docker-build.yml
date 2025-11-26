@@ -17,7 +17,6 @@ concurrency:
 
 jobs:
   check-changes:
-    name: coprocessor-stress-test-tool-docker-build/check-changes
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
@@ -34,12 +33,12 @@ jobs:
         with:
           filters: |
             coprocessor-stress-test-tool:
-              - .github/workflows/coprocessor-docker-build-stress-test-tool.yml
+              - .github/workflows/coprocessor-stress-test-tool-docker-build.yml
               - coprocessor/fhevm-engine/stress-test-generator/**
               - coprocessor/fhevm-engine/Cargo.toml
               - coprocessor/fhevm-engine/Cargo.lock
+
   build:
-    name: coprocessor-stress-test-tool-docker-build/build
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-stress-test-tool == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
