@@ -1,67 +1,47 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use alloy::{
-    network::Ethereum,
+    network::{Ethereum, TransactionBuilder},
     primitives::Address,
     providers::{
         fillers::{
             BlobGasFiller, CachedNonceManager, ChainIdFiller, GasFiller, JoinFill, NonceManager,
         },
-        PendingTransactionBuilder,
+        PendingTransactionBuilder, Provider,
     },
-    rpc::types::TransactionRequest,
-    transports::{RpcError, TransportResult},
+    rpc::types::{TransactionReceipt, TransactionRequest},
+    transports::{TransportErrorKind, TransportResult},
 };
 use futures_util::lock::Mutex;
-use tracing::{error, warn};
+use tracing::{debug, warn};
+
+use crate::config::DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT;
 
 pub type FillersWithoutNonceManagement =
     JoinFill<GasFiller, JoinFill<BlobGasFiller, ChainIdFiller>>;
 
 /// A wrapper around an `alloy` provider that sends transactions with the correct nonce.
 /// Note that the given provider by the user must not have nonce management enabled, as this
-/// is done by the `NonceManagedProvider` itself. Users can use the default `FillersWithoutNonceManagement` to create a provider.
+/// is done by the `NonceManagedProvider` itself.
 #[derive(Clone)]
 pub struct NonceManagedProvider<P>
 where
-    P: alloy::providers::Provider<Ethereum> + Clone + 'static,
+    P: Provider<Ethereum>,
 {
     provider: P,
     nonce_manager: Arc<Mutex<CachedNonceManager>>,
     signer_address: Option<Address>,
-    retry_immediately_on_nonce_issue: u64,
 }
 
-pub fn is_nonce_error(err: &RpcError<impl std::fmt::Debug>) -> bool {
-    if let RpcError::ErrorResp(err) = err {
-        // server returned an error response: error code -32003: Nonce too high err
-        if err.code == -32003 && (err.message.contains("Nonce") || err.message.contains("nonce")) {
-            return true;
-        }
-    }
-    false
-}
-
-impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> NonceManagedProvider<P> {
+impl<P> NonceManagedProvider<P>
+where
+    P: Provider<Ethereum>,
+{
     pub fn new(provider: P, signer_address: Option<Address>) -> Self {
         Self {
             provider,
             nonce_manager: Default::default(),
             signer_address,
-            retry_immediately_on_nonce_issue: 0,
-        }
-    }
-
-    pub fn new_with_nonce_retry(
-        provider: P,
-        signer_address: Option<Address>,
-        retry_immediately_on_nonce_issue: u64,
-    ) -> Self {
-        Self {
-            provider,
-            nonce_manager: Default::default(),
-            signer_address,
-            retry_immediately_on_nonce_issue,
         }
     }
 
@@ -69,33 +49,97 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> NonceManagedProv
         &self,
         tx: impl Into<TransactionRequest>,
     ) -> TransportResult<PendingTransactionBuilder<Ethereum>> {
-        let mut res = Err(RpcError::UnsupportedFeature("Not reachable"));
-        // res cannot be returned non initialized
-        let tx_req = tx.into();
-        for _ in 0..=self.retry_immediately_on_nonce_issue {
-            let mut tx: TransactionRequest = tx_req.clone();
-            if let Some(signer_address) = self.signer_address {
-                let nonce_manager = self.nonce_manager.lock().await;
-                let nonce = nonce_manager
-                    .get_next_nonce(&self.provider, signer_address)
-                    .await?;
-                tx.nonce = Some(nonce);
-            }
-            res = self.provider.send_transaction(tx).await;
-            if let Err(err) = &res {
-                // Reset the nonce manager if the transaction sending failed.
-                *self.nonce_manager.lock().await = Default::default();
-                if is_nonce_error(err) {
-                    let msg = err.to_string();
-                    warn!(msg, "Transaction failed due to nonce, resetting nonce manager and retrying immediately");
-                    continue;
-                }
-                warn!(err = ?err, "Transaction failed, resetting nonce manager");
-            }
-            return res;
+        let mut tx = tx.into();
+        if let Some(signer_address) = self.signer_address {
+            let nonce_manager = self.nonce_manager.lock().await;
+            let nonce = nonce_manager
+                .get_next_nonce(&self.provider, signer_address)
+                .await?;
+            tx.nonce = Some(nonce);
         }
-        error!("Transaction failed multiple time due to nonce, aborting");
+        let res = self.provider.send_transaction(tx).await;
+        if res.is_err() {
+            // Reset the nonce manager if the transaction sending failed.
+            *self.nonce_manager.lock().await = Default::default();
+        }
         res
+    }
+
+    pub async fn send_transaction_sync(
+        &self,
+        tx: impl Into<TransactionRequest>,
+        timeout: Duration,
+    ) -> TransportResult<TransactionReceipt> {
+        let mut tx = tx.into();
+        if let Some(signer_address) = self.signer_address {
+            let nonce_manager = self.nonce_manager.lock().await;
+            let nonce = nonce_manager
+                .get_next_nonce(&self.provider, signer_address)
+                .await?;
+            tx.nonce = Some(nonce);
+        }
+        let res = tokio::time::timeout(timeout, self.provider.send_transaction_sync(tx))
+            .await
+            .map_err(|_| TransportErrorKind::custom_str("eth_sendRawTransactionSync timeout"))
+            .flatten();
+        if res.is_err() {
+            // Reset the nonce manager if the transaction sending failed.
+            *self.nonce_manager.lock().await = Default::default();
+        }
+        res
+    }
+
+    /// If `txn_request.gas` is set, overprovision it by the given percent.
+    /// If `txn_request.gas` is not set, estimate the gas limit and then overprovision it by the given percent.
+    /// If the percent is less than 100, DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT is used.
+    pub async fn overprovision_gas_limit(
+        &self,
+        txn_request: impl Into<TransactionRequest>,
+        percent: u32,
+    ) -> TransportResult<TransactionRequest> {
+        let percent = if percent < 100 {
+            warn!(
+                gas_limit_overprovision_percent = percent,
+                default_gas_limit_overprovision_percent = DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT,
+                "Overprovision percent is less than 100, using default value instead"
+            );
+            DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT
+        } else {
+            percent
+        };
+
+        let overprovision = |gas: u64| (gas as u128 * percent as u128 / 100) as u64;
+
+        let mut txn: TransactionRequest = txn_request.into();
+
+        let new_gas = match txn.gas {
+            Some(existing_gas) => Some(existing_gas),
+            None => Some(self.provider.estimate_gas(txn.clone()).await?),
+        }
+        .map(overprovision);
+
+        if let Some(gas) = new_gas {
+            debug!(
+                gas_limit = gas,
+                gas_limit_overprovision_percent = percent,
+                "Overprovisioned gas limit"
+            );
+            txn.set_gas_limit(gas);
+        }
+
+        Ok(txn)
+    }
+
+    // Ensure that if gas estimation fails due to a revert, the transaction is not sent and no nonce is consumed.
+    pub async fn send_sync_with_overprovision(
+        &self,
+        txn_request: impl Into<TransactionRequest>,
+        percent: u32,
+        send_sync_timeout: Duration,
+    ) -> TransportResult<alloy::rpc::types::TransactionReceipt> {
+        let overprovisioned_txn = self.overprovision_gas_limit(txn_request, percent).await?;
+        self.send_transaction_sync(overprovisioned_txn, send_sync_timeout)
+            .await
     }
 
     pub async fn get_chain_id(&self) -> TransportResult<u64> {

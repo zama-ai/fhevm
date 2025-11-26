@@ -9,7 +9,7 @@ members = [
     "transaction-sender",
     "zkproof-worker",
     "test-harness",
-    "stress-test-generator"
+    "stress-test-generator",
 ]
 
 [workspace.package]
@@ -18,7 +18,7 @@ edition = "2021"
 license = "BSD-3-Clause-Clear"
 
 [workspace.dependencies]
-alloy = { version = "1.0.41", default-features = false, features = [
+alloy = { version = "1.1.2", default-features = false, features = [
     "essentials",
     "std",
     "reqwest-rustls-tls",
@@ -26,7 +26,7 @@ alloy = { version = "1.0.41", default-features = false, features = [
     "provider-ws",
     "signer-aws",
 ] }
-alloy-provider = "1.0.41"
+alloy-provider = "1.1.2"
 alloy-primitives = "1.4.1"
 async-trait = "0.1.88"
 axum = "0.7"

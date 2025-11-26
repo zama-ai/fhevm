@@ -173,13 +173,19 @@ async fn allow_call(
     .execute(&env.db_pool)
     .await?;
 
+    let tx_count = provider.get_transaction_count(env.signer.address()).await?;
+
     // Verify that a transaction has been sent if not reverted during gas estimation.
     if !already_allowed_revert {
-        let tx_count = provider.get_transaction_count(env.signer.address()).await?;
         assert_eq!(
             tx_count,
             initial_tx_count + 1,
             "Expected a new transaction to be sent"
+        );
+    } else {
+        assert_eq!(
+            tx_count, initial_tx_count,
+            "Expected no new transaction to be sent due to revert"
         );
     }
 

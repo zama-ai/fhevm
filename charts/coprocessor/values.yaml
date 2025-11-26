@@ -742,9 +742,8 @@ txSender:
     - --allow-handle-max-retries=2147483647
     - --add-ciphertexts-max-retries=2147483647
     - --error-sleep-initial-secs=1
-    - --error-sleep-max-secs=300
-    - --txn-receipt-timeout-secs=10
-    - --required-txn-confirmations=0
+    - --error-sleep-max-secs=4
+    - --txn-receipt-timeout-secs=4
     - --review-after-unlimited-retries=30
     - --provider-max-retries=4294967295
     - --provider-retry-interval=4s
@@ -763,7 +762,7 @@ txSender:
     - --delegation-clear-after-n_blocks=648000  # ~3 months at 12s block time, only on successful delegations
     - --delegation-fallback-polling=30  # polling fallback in seconds when notification are not received
     - --delegation-max-retry=100000  # does not include immediate retry on transient error which are infinite
-    - --retry-immediately-on-nonce-error=2  # nonce error happens as error from one transaction can invalidate other nonce
+    - --retry-immediately-on-nonce-error=0  # Deprecated. To be removed in a future release.
 
   # Service ports configuration
   ports:

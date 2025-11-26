@@ -3,7 +3,6 @@ pub mod http_server;
 mod metrics;
 mod nonce_managed_provider;
 mod ops;
-pub mod overprovision_gas_limit;
 mod transaction_sender;
 
 use std::sync::Arc;
