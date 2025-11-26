@@ -43,8 +43,8 @@ services:
       coprocessor-db-migration:
         condition: service_completed_successfully
 
-  coprocessor-poller:
-    container_name: coprocessor-poller
+  coprocessor-host-listener-poller:
+    container_name: coprocessor-host-listener-poller
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${HOST_LISTENER_VERSION}
     build:
       context: ../../..

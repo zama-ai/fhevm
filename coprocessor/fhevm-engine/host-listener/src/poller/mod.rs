@@ -62,7 +62,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let blockchain_timeout_tick = HeartBeat::new();
 
     let rpc_url = Url::parse(&config.url)
-        .context("Invalid url provided to poller health check")?;
+        .context("Invalid url provided to host listener poller health check")?;
     let blockchain_provider = Arc::new(RwLock::new(Some(
         ProviderBuilder::new().connect_http(rpc_url.clone()),
     )));
@@ -310,7 +310,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             http_retries = http_retries,
             db_errors = db_errors,
             rpc_errors = rpc_errors,
-            "Poller iteration complete"
+            "Host listener poller iteration complete"
         );
 
         sleep(config.poll_interval).await;
