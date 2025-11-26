@@ -6,11 +6,7 @@ use crate::metrics::{
     DELEGATE_USER_DECRYPT_ERROR_BACKLOG, DELEGATE_USER_DECRYPT_FAIL_COUNTER,
     DELEGATE_USER_DECRYPT_SUCCESS_COUNTER,
 };
-use crate::nonce_managed_provider::is_nonce_error;
-use crate::{
-    nonce_managed_provider::NonceManagedProvider,
-    overprovision_gas_limit::try_overprovision_gas_limit,
-};
+use crate::nonce_managed_provider::NonceManagedProvider;
 
 use alloy::primitives::{Address, FixedBytes};
 use alloy::providers::Provider;
@@ -127,22 +123,21 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
         let src_transaction_id = delegation.transaction_id.clone();
         info!(key = ?delegation, "Processing transaction for DelegateUserDecryptOperation");
         let _t = telemetry::tracer("call_delegate_user_decript", &src_transaction_id);
-        let gateway_provider = &self.gateway_provider;
-        let transaction_request = try_overprovision_gas_limit(
-            txn_request,
-            gateway_provider.inner(),
-            self.conf.gas_limit_overprovision_percent,
-        )
-        .await;
-        let transaction = gateway_provider
-            .send_transaction(transaction_request.clone())
-            .await;
         let operation = if delegation.new_expiration_date == 0 {
             "RevokeUserDecryptionDelegation"
         } else {
             "DelegateUserDecryption"
         };
-        let transaction = match transaction {
+
+        let receipt = match self
+            .gateway_provider
+            .send_sync_with_overprovision(
+                txn_request,
+                self.conf.gas_limit_overprovision_percent,
+                Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
+            )
+            .await
+        {
             Ok(txn) => txn,
             Err(e) if self.idempotency_error(&e).is_some() => {
                 warn!(
@@ -152,19 +147,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                 );
                 return TxResult::IdemPotentError;
             }
-            // Consider nonce errors as transient and retryable infinitely.
-            Err(error @ RpcError::ErrorResp(_)) if is_nonce_error(&error) => {
-                warn!(
-                    ?transaction_request,
-                    %error,
-                    ?delegation,
-                    "{operation} sending with transient nonce error. Will retry indefinitively"
-                );
-                return TxResult::TransientError;
-            }
             Err(error) if is_transient_error(&error) => {
                 warn!(
-                    ?transaction_request,
                     %error,
                     ?delegation,
                     "{operation} sending with transient error. Will retry indefinitively"
@@ -173,29 +157,11 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
             }
             Err(error) => {
                 warn!(
-                    ?transaction_request,
                     %error,
                     ?delegation,
                     "{operation} sending failed with unexpected error"
                 );
                 return TxResult::OtherError(error.to_string());
-            }
-        };
-
-        // We assume that if we were able to send the transaction, we will be able to get a receipt, eventually. If there is a transport
-        // error in-between, we rely on the retry logic to handle it.
-        let receipt = transaction
-            .with_timeout(Some(Duration::from_secs(
-                self.conf.txn_receipt_timeout_secs as u64,
-            )))
-            .with_required_confirmations(self.conf.required_txn_confirmations as u64)
-            .get_receipt()
-            .await;
-        let receipt = match receipt {
-            Ok(receipt) => receipt,
-            Err(error) => {
-                error!(%error, "Getting receipt failed");
-                return TxResult::TransientError;
             }
         };
 

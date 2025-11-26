@@ -41,13 +41,19 @@ impl From<HealthStatus> for HealthResponse {
     }
 }
 
-pub struct HttpServer<P: Provider<Ethereum> + Clone + Send + Sync + 'static> {
+pub struct HttpServer<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     sender: Arc<TransactionSender<P>>,
     port: u16,
     cancel_token: CancellationToken,
 }
 
-impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
+impl<P> HttpServer<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     pub fn new(
         sender: Arc<TransactionSender<P>>,
         port: u16,
@@ -89,7 +95,7 @@ impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
 }
 
 // Health handler returns appropriate HTTP status code based on health
-async fn health_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>(
+async fn health_handler<P: Provider<Ethereum> + Clone + 'static>(
     State(sender): State<Arc<TransactionSender<P>>>,
 ) -> impl IntoResponse {
     let status = sender.health_check().await;
@@ -103,7 +109,7 @@ async fn health_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>(
     (http_status, Json(HealthResponse::from(status)))
 }
 
-async fn liveness_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>(
+async fn liveness_handler<P: Provider<Ethereum> + Clone + 'static>(
     State(_sender): State<Arc<TransactionSender<P>>>,
 ) -> impl IntoResponse {
     (

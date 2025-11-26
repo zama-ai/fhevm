@@ -17,8 +17,8 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
 use transaction_sender::{
-    get_chain_id, http_server::HttpServer, make_abstract_signer,
-    metrics::spawn_gauge_update_routine, AbstractSigner, ConfigSettings,
+    config::DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT, get_chain_id, http_server::HttpServer,
+    make_abstract_signer, metrics::spawn_gauge_update_routine, AbstractSigner, ConfigSettings,
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
@@ -108,13 +108,14 @@ struct Conf {
     #[arg(long, default_value_t = 1)]
     error_sleep_initial_secs: u16,
 
-    #[arg(long, default_value_t = 300)]
+    #[arg(long, default_value_t = 4)]
     error_sleep_max_secs: u16,
 
-    #[arg(long, default_value_t = 10)]
-    txn_receipt_timeout_secs: u16,
+    #[arg(long, default_value_t = 4, alias = "txn-receipt-timeout-secs")]
+    send_txn_sync_timeout_secs: u16,
 
-    #[arg(long, default_value_t = 0)]
+    #[deprecated(note = "no longer used and will be removed in future versions")]
+    #[arg(long, default_value_t = 0, hide = true)]
     required_txn_confirmations: u16,
 
     #[arg(long, default_value_t = 30)]
@@ -142,7 +143,7 @@ struct Conf {
         default_value_t = Level::INFO)]
     log_level: Level,
 
-    #[arg(long, default_value = "120", value_parser = clap::value_parser!(u32).range(100..))]
+    #[arg(long, default_value_t = DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT, value_parser = clap::value_parser!(u32).range(100..))]
     gas_limit_overprovision_percent: u32,
 
     #[arg(long, default_value = "8s", value_parser = parse_duration)]
@@ -191,10 +192,12 @@ struct Conf {
     )]
     pub delegation_max_retry: u64,
 
+    #[deprecated(note = "no longer used and will be removed in future versions")]
     #[arg(
         long,
-        default_value = "2",
-        help = "Number of immediate retry when concurrent transaction failed due to common nonce (0 to disable)"
+        default_value_t = 0,
+        help = "Number of immediate retries when concurrent transactions failed due to nonce errors (0 to disable)",
+        hide = true
     )]
     pub retry_immediately_on_nonce_error: u64,
 }
@@ -349,12 +352,8 @@ async fn main() -> anyhow::Result<()> {
         );
         return Ok(());
     };
-    let retry_immediately_on_nonce_error = conf.retry_immediately_on_nonce_error;
-    let gateway_provider = NonceManagedProvider::new_with_nonce_retry(
-        gateway_provider,
-        Some(wallet.default_signer().address()),
-        retry_immediately_on_nonce_error,
-    );
+    let gateway_provider =
+        NonceManagedProvider::new(gateway_provider, Some(wallet.default_signer().address()));
     let Ok(host_chain_provider) = get_provider(
         &conf,
         &conf.host_chain_url,
@@ -382,8 +381,7 @@ async fn main() -> anyhow::Result<()> {
         add_ciphertexts_max_retries: conf.add_ciphertexts_max_retries,
         allow_handle_batch_limit: conf.allow_handle_batch_limit,
         allow_handle_max_retries: conf.allow_handle_max_retries,
-        txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
-        required_txn_confirmations: conf.required_txn_confirmations,
+        send_txn_sync_timeout_secs: conf.send_txn_sync_timeout_secs,
         review_after_unlimited_retries: conf.review_after_unlimited_retries,
         health_check_port: conf.health_check_port,
         health_check_timeout: conf.health_check_timeout,

@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+pub const DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT: u32 = 120;
+
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {
     pub verify_proof_resp_db_channel: String,
@@ -25,9 +27,7 @@ pub struct ConfigSettings {
     pub error_sleep_initial_secs: u16,
     pub error_sleep_max_secs: u16,
 
-    pub txn_receipt_timeout_secs: u16,
-
-    pub required_txn_confirmations: u16,
+    pub send_txn_sync_timeout_secs: u16,
 
     pub review_after_unlimited_retries: u16,
 
@@ -56,17 +56,16 @@ impl Default for ConfigSettings {
             verify_proof_remove_after_max_retries: true,
             db_polling_interval_secs: 5,
             error_sleep_initial_secs: 1,
-            error_sleep_max_secs: 300,
+            error_sleep_max_secs: 4,
             add_ciphertexts_batch_limit: 10,
             add_ciphertexts_max_retries: i32::MAX,
             allow_handle_batch_limit: 10,
             allow_handle_max_retries: i32::MAX,
-            txn_receipt_timeout_secs: 10,
-            required_txn_confirmations: 0,
+            send_txn_sync_timeout_secs: 4,
             review_after_unlimited_retries: 30,
             health_check_port: 8080,
             health_check_timeout: Duration::from_secs(4),
-            gas_limit_overprovision_percent: 120,
+            gas_limit_overprovision_percent: DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT,
             graceful_shutdown_timeout: Duration::from_secs(8),
             delegation_block_delay: 10,
             delegation_clear_after_n_blocks: 7776000 / 12, // 3 months assuming 12s block time
