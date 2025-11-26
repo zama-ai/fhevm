@@ -114,7 +114,7 @@ pub struct Args {
     pub reorg_maximum_duration_in_blocks: u64,
 
     /// service name in OTLP traces
-    #[arg(long, default_value = "host-listener")]
+    #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "host-listener")]
     pub service_name: String,
 
     #[arg(
