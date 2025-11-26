@@ -37,7 +37,7 @@ jobs:
         # Changes to conf-trace affect multiple components
         filters: |
           connector:
-            - '.github/workflows/kms-connector-*'
+            - '.github/workflows/kms-connector-tests.yml'
             - 'kms-connector/config/**'
             - 'kms-connector/connector-db/**'
             - 'kms-connector/crates/**'
