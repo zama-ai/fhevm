@@ -58,8 +58,13 @@ pub struct Args {
     #[arg(long, default_value = None, help = "Can be negative from last block", allow_hyphen_values = true)]
     pub start_at_block: Option<i64>,
 
-    #[arg(long, default_value = None)]
-    pub end_at_block: Option<u64>,
+    #[arg(
+        long,
+        default_value = None,
+        help = "End catchup at this block (can be negative from last block)",
+        allow_hyphen_values = true
+    )]
+    pub end_at_block: Option<i64>,
 
     #[arg(long, help = "A Coprocessor API key is needed for database access")]
     pub coprocessor_api_key: Option<Uuid>,
@@ -118,6 +123,21 @@ pub struct Args {
         help = "Maximum number of blocks to wait before a block is finalized"
     )]
     pub catchup_finalization_in_blocks: u64,
+
+    #[arg(
+        long,
+        default_value_t = false,
+        requires = "end_at_block",
+        help = "Run only catchup loop without real-time subscription"
+    )]
+    pub only_catchup_loop: bool,
+
+    #[arg(
+        long,
+        default_value_t = 960u64,
+        help = "Sleep duration in seconds between catchup iterations (only with --only-catchup-loop)"
+    )]
+    pub catchup_sleep_secs: u64,
 }
 
 // TODO: to merge with Levent works
@@ -133,7 +153,7 @@ struct InfiniteLogIter {
     pub provider: Arc<RwLock<Option<BlockchainProvider>>>, // required to maintain the stream
     last_valid_block: Option<u64>,
     start_at_block: Option<i64>,
-    end_at_block: Option<u64>,
+    end_at_block: Option<i64>,
     catchup_margin: u64,
     catchup_paging: u64,
     pub tick_timeout: HeartBeat,
@@ -211,6 +231,21 @@ impl InfiniteLogIter {
         let ws = WsConnect::new(&self.url).with_config(config);
         let provider = ProviderBuilder::new().connect_ws(ws).await?;
         Ok(provider.get_chain_id().await?)
+    }
+
+    /// Resolves `end_at_block` to an absolute block number.
+    /// If `end_at_block` is negative, it is interpreted as relative to the current block.
+    async fn resolve_end_at_block(
+        &self,
+        provider: &BlockchainProvider,
+    ) -> Option<u64> {
+        match self.end_at_block? {
+            n if n >= 0 => Some(n as u64),
+            n => {
+                let last_block = provider.get_block_number().await.ok()?;
+                Some(last_block.saturating_sub(n.unsigned_abs()))
+            }
+        }
     }
 
     async fn catchup_block_from(
@@ -642,7 +677,7 @@ impl InfiniteLogIter {
                         self.catchup_block_from(&provider).await;
                     self.catchup_blocks = Some((
                         catch_up_from.as_number().unwrap_or(0),
-                        self.end_at_block,
+                        self.resolve_end_at_block(&provider).await,
                     ));
                     // note subscribing to real-time before reading catchup
                     // events to have the minimal gap between the two
@@ -738,6 +773,10 @@ impl InfiniteLogIter {
         let Some(end_at_block) = self.end_at_block else {
             return false;
         };
+        if end_at_block < 0 {
+            // Negative offsets are only supported in catchup-only mode.
+            return false;
+        }
         let current_block_number =
             if let Some(current_block) = self.block_history.tip() {
                 current_block.number
@@ -746,7 +785,7 @@ impl InfiniteLogIter {
             } else {
                 return false;
             };
-        current_block_number > end_at_block
+        current_block_number > end_at_block as u64
     }
 
     async fn next(&mut self) -> Option<BlockLogs<Log>> {
@@ -811,6 +850,90 @@ impl InfiniteLogIter {
         self.next_blocklogs.push_back(block_logs);
         self.next_blocklogs.pop_front()
     }
+
+    /// Setup catchup-only mode without real-time subscription.
+    /// Connects to the provider and initializes catchup range.
+    async fn setup_catchup_only(&mut self) -> anyhow::Result<()> {
+        let mut retry = 20;
+        loop {
+            let ws = WsConnect::new(&self.url).with_max_retries(0);
+
+            match ProviderBuilder::new().connect_ws(ws).await {
+                Ok(provider) => {
+                    let catch_up_from =
+                        self.catchup_block_from(&provider).await;
+                    let end_block =
+                        self.resolve_end_at_block(&provider).await;
+
+                    self.catchup_blocks = Some((
+                        catch_up_from.as_number().unwrap_or(0),
+                        end_block,
+                    ));
+
+                    // No stream subscription in catchup-only mode
+                    self.stream = None;
+                    let _ = self.provider.write().await.replace(provider);
+
+                    info!(
+                        contracts = ?self.contract_addresses,
+                        from_block = catch_up_from.as_number(),
+                        to_block = end_block,
+                        "Catchup-only mode: processing block range"
+                    );
+                    return Ok(());
+                }
+                Err(err) => {
+                    if retry == 0 {
+                        error!(error = %err, "Cannot connect after retries");
+                        return Err(anyhow!(
+                            "Cannot connect to provider: {err}"
+                        ));
+                    }
+                    warn!(
+                        error = %err,
+                        retry = retry,
+                        "Cannot connect. Will retry"
+                    );
+                    retry -= 1;
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            }
+        }
+    }
+
+    /// Get next block logs in catchup-only mode.
+    /// Returns None when catchup is complete.
+    async fn next_catchup_only(&mut self) -> Option<BlockLogs<Log>> {
+        // Consume catchup blocks
+        if self.next_blocklogs.is_empty() {
+            self.consume_catchup_blocks().await;
+        }
+
+        if !self.next_blocklogs.is_empty() {
+            return self.next_blocklogs.pop_front();
+        }
+
+        // Check if catchup is complete
+        if self.catchup_blocks.is_none() {
+            info!("Catchup-only mode: catchup complete");
+            return None;
+        }
+
+        // Still have blocks to process but they're not ready yet
+        // (e.g., waiting for finalization)
+        self.consume_catchup_blocks().await;
+        self.next_blocklogs.pop_front()
+    }
+
+    /// Reset state for the next catchup loop iteration.
+    fn reset_for_catchup_loop(&mut self) {
+        self.catchup_blocks = None;
+        self.next_blocklogs.clear();
+        self.last_valid_block = None;
+        self.block_history = BlockHistory::new(
+            self.reorg_maximum_duration_in_blocks as usize,
+        );
+    }
 }
 
 async fn db_insert_block(
@@ -861,6 +984,48 @@ async fn db_insert_block(
         retries -= 1;
         db.reconnect().await;
         tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+/// Runs the catchup-only loop mode **forever**.
+///
+/// This function processes blocks from `start_at_block` to `stop_at_block`,
+/// sleeps for `catchup_sleep_secs`, then repeats indefinitely.
+/// It only returns `Err` on connection failures; otherwise it loops forever.
+async fn run_catchup_only_loop(
+    args: &Args,
+    log_iter: &mut InfiniteLogIter,
+    db: &mut Database,
+    chain_id: ChainId,
+    acl_contract_address: &Option<Address>,
+    tfhe_contract_address: &Option<Address>,
+) -> anyhow::Result<()> {
+    info!("Starting catchup-only loop mode");
+
+    loop {
+        // Connect and setup catchup range
+        log_iter.setup_catchup_only().await?;
+
+        // Process all blocks in the catchup range
+        while let Some(block_logs) = log_iter.next_catchup_only().await {
+            let _ = db_insert_block(
+                chain_id,
+                db,
+                &block_logs,
+                acl_contract_address,
+                tfhe_contract_address,
+            )
+            .await;
+        }
+
+        info!(
+            sleep_secs = args.catchup_sleep_secs,
+            "Catchup loop iteration complete, sleeping"
+        );
+        tokio::time::sleep(Duration::from_secs(args.catchup_sleep_secs)).await;
+
+        // Reset state for next iteration
+        log_iter.reset_for_catchup_loop();
     }
 }
 
@@ -960,6 +1125,20 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             .map(|n| n - args.catchup_margin as i64);
     }
 
+    // Branch to catchup-only loop mode if enabled
+    if args.only_catchup_loop {
+        return run_catchup_only_loop(
+            &args,
+            &mut log_iter,
+            &mut db,
+            chain_id,
+            &acl_contract_address,
+            &tfhe_contract_address,
+        )
+        .await;
+    }
+
+    // Normal mode: real-time listener with catchup
     log_iter.new_log_stream(true).await;
 
     while let Some(block_logs) = log_iter.next().await {

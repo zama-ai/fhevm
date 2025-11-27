@@ -222,6 +222,8 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         coprocessor_api_key: Some(coprocessor_api_key),
         start_at_block: None,
         end_at_block: None,
+        only_catchup_loop: false,
+        catchup_sleep_secs: 960,
         catchup_margin: 5,
         catchup_paging: 3,
         log_level: Level::INFO,
@@ -498,7 +500,7 @@ async fn test_catchup_only() -> Result<(), anyhow::Error> {
 
     // Start listener in background task
     args.start_at_block = Some(-30 + 2 * nb_event_per_wallet);
-    args.end_at_block = Some(15 + 2 * nb_event_per_wallet as u64);
+    args.end_at_block = Some(15 + 2 * nb_event_per_wallet as i64);
     args.catchup_paging = 2;
     let listener_handle = tokio::spawn(main(args.clone()));
     assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
@@ -519,6 +521,127 @@ async fn test_catchup_only() -> Result<(), anyhow::Error> {
     assert_eq!(tfhe_events_count, nb_wallets * nb_event_per_wallet);
     assert_eq!(acl_events_count, nb_wallets * nb_event_per_wallet);
     assert!(listener_handle.is_finished(), "Listener should stop");
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_only_catchup_loop() -> Result<(), anyhow::Error> {
+    let setup = setup(None).await?;
+    let mut args = setup.args.clone();
+
+    // Emit first batch of events
+    let wallets_clone = setup.wallets.clone();
+    let url_clone = setup.args.url.clone();
+    let tfhe_contract_clone = setup.tfhe_contract.clone();
+    let acl_contract_clone = setup.acl_contract.clone();
+    let nb_event_per_wallet = 5;
+    emit_events(
+        &wallets_clone,
+        &url_clone,
+        tfhe_contract_clone,
+        acl_contract_clone,
+        false, // no reorg
+        nb_event_per_wallet,
+    )
+    .await;
+
+    // Start listener in catchup-only loop mode
+    args.start_at_block = Some(0);
+    args.end_at_block = Some(50); // end at block 50
+    args.only_catchup_loop = true;
+    args.catchup_sleep_secs = 5; // short sleep for testing
+    args.catchup_paging = 10;
+    let listener_handle = tokio::spawn(main(args.clone()));
+    assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
+    tokio::time::sleep(tokio::time::Duration::from_secs(15)).await; // time to catchup
+
+    let tfhe_events_count = sqlx::query!("SELECT COUNT(*) FROM computations")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    let acl_events_count = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    let nb_wallets = setup.wallets.len() as i64;
+    assert_eq!(tfhe_events_count, nb_wallets * nb_event_per_wallet);
+    assert_eq!(acl_events_count, nb_wallets * nb_event_per_wallet);
+
+    // Listener should still be running (it's in a loop, sleeping between iterations)
+    assert!(
+        !listener_handle.is_finished(),
+        "Listener should continue running in loop mode"
+    );
+
+    listener_handle.abort();
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_only_catchup_loop_with_negative_stop_at_block() -> Result<(), anyhow::Error> {
+    let setup = setup(None).await?;
+    let mut args = setup.args.clone();
+
+    // Emit first batch of events
+    let wallets_clone = setup.wallets.clone();
+    let url_clone = setup.args.url.clone();
+    let tfhe_contract_clone = setup.tfhe_contract.clone();
+    let acl_contract_clone = setup.acl_contract.clone();
+    let nb_event_per_wallet = 5;
+    emit_events(
+        &wallets_clone,
+        &url_clone,
+        tfhe_contract_clone,
+        acl_contract_clone,
+        false, // no reorg
+        nb_event_per_wallet,
+    )
+    .await;
+
+    // Start listener in catchup-only loop mode with negative indices
+    args.start_at_block = Some(-50); // 50 blocks from current
+    args.end_at_block = Some(-5); // 5 blocks from current (more recent)
+    args.only_catchup_loop = true;
+    args.catchup_sleep_secs = 5; // short sleep for testing
+    args.catchup_paging = 10;
+    let listener_handle = tokio::spawn(main(args.clone()));
+    assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
+    tokio::time::sleep(tokio::time::Duration::from_secs(15)).await; // time to catchup
+
+    let tfhe_events_count = sqlx::query!("SELECT COUNT(*) FROM computations")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    let acl_events_count = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    let nb_wallets = setup.wallets.len() as i64;
+    // Events should be captured (exact count may vary based on block timing)
+    assert!(tfhe_events_count > 0, "Should have captured some TFHE events");
+    assert!(acl_events_count > 0, "Should have captured some ACL events");
+    assert!(
+        tfhe_events_count <= nb_wallets * nb_event_per_wallet,
+        "Should not exceed emitted events"
+    );
+    assert!(
+        acl_events_count <= nb_wallets * nb_event_per_wallet,
+        "Should not exceed emitted events"
+    );
+
+    // Listener should still be running (it's in a loop)
+    assert!(
+        !listener_handle.is_finished(),
+        "Listener should continue running in loop mode"
+    );
+
+    listener_handle.abort();
     Ok(())
 }
 
