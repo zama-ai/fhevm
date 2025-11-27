@@ -1,22 +1,26 @@
-# directories
-.coverage_artifacts
-.coverage_cache
-.coverage_contracts
-abi
-artifacts
-build
-cache
-coverage
-dist
-rust_bindings/target
-node_modules
-types
+bracketSpacing: true
+plugins:
+  - "@trivago/prettier-plugin-sort-imports"
+  - "prettier-plugin-solidity"
+printWidth: 120
+proseWrap: "always"
+singleQuote: false
+tabWidth: 2
+trailingComma: "all"
 
-# files
-*.env
-*.log
-.DS_Store
-.pnp.*
-coverage.json
-package-lock.json
-yarn.lock
+overrides:
+  - files: "*.sol"
+    options:
+      compiler: "0.8.24"
+      parser: "solidity-parse"
+      tabWidth: 4
+  - files: "*.md"
+    options:
+      proseWrap: preserve
+  - files: "*.ts"
+    options:
+      importOrder: ["<THIRD_PARTY_MODULES>", "^[./]"]
+      importOrderParserPlugins: ["typescript"]
+      importOrderSeparation: true
+      importOrderSortSpecifiers: true
+      parser: "typescript"
