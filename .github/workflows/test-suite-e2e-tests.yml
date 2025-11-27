@@ -152,35 +152,10 @@ jobs:
         run: |
           ./fhevm-cli deploy
 
-      - name: Input proof test (uint64)
+      - name: Random operators test (subset)
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test input-proof
-
-      - name: User Decryption test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test user-decryption
-
-      - name: ERC20 test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test erc20
-
-      - name: Public Decryption HTTP endpoint test (ebool)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-ebool
-
-      - name: Public Decryption HTTP endpoint test (mixed)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-mixed
-
-      - name: Delegate User Decryption (partial test)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test delegate-user-decryption
+          ./fhevm-cli test random-subset
 
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
