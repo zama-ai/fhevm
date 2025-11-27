@@ -107,7 +107,7 @@ impl DbConnector {
 
         for reqs in requests.chunks(self.insertion_chunk_size) {
             let mut query_builder = QueryBuilder::new(
-                "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data) ",
+                "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, otlp_context) ",
             );
             query_builder.push_values(reqs, |mut bind, req| {
                 bind.push_bind(req.decryptionId.to_le_bytes_vec())
@@ -117,7 +117,8 @@ impl DbConnector {
                             .map(SnsCiphertextMaterialDbItem::from)
                             .collect::<Vec<_>>(),
                     )
-                    .push_bind(req.extraData.to_vec());
+                    .push_bind(req.extraData.to_vec())
+                    .push_bind(alloy::hex::decode(EMPTY_OTLP_CONTEXT_SERIALIZED_HEX).unwrap());
             });
             query_builder.push(" RETURNING decryption_id, created_at");
 
@@ -141,7 +142,7 @@ impl DbConnector {
 
         for reqs in requests.chunks(self.insertion_chunk_size) {
             let mut query_builder = QueryBuilder::new("
-                INSERT INTO user_decryption_requests(decryption_id, sns_ct_materials, user_address, public_key, extra_data)
+                INSERT INTO user_decryption_requests(decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context)
             ");
             query_builder.push_values(reqs, |mut bind, req| {
                 bind.push_bind(req.decryptionId.to_le_bytes_vec())
@@ -153,7 +154,8 @@ impl DbConnector {
                     )
                     .push_bind(req.userAddress.to_vec())
                     .push_bind(req.publicKey.to_vec())
-                    .push_bind(req.extraData.to_vec());
+                    .push_bind(req.extraData.to_vec())
+                    .push_bind(alloy::hex::decode(EMPTY_OTLP_CONTEXT_SERIALIZED_HEX).unwrap());
             });
             query_builder.push(" RETURNING decryption_id, created_at");
 
@@ -175,3 +177,5 @@ impl Display for DbConnector {
         write!(f, "DbConnector {}", self.name)
     }
 }
+
+const EMPTY_OTLP_CONTEXT_SERIALIZED_HEX: &str = "0000000000000000";
