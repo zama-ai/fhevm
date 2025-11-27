@@ -221,11 +221,10 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test user decrypt")
           ;;
-<<<<<<< HEAD
         paused-gateway-user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED USER DECRYPTION${RESET}"
           docker_args+=("-g" "test paused gateway user decrypt")
-=======
+          ;;
         delegate-user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test delegation and revocation propagation")
@@ -240,7 +239,6 @@ case $COMMAND in
         public-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
           docker_args+=("-g" "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)")
->>>>>>> main
           ;;
         erc20)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] ERC20${RESET}"
