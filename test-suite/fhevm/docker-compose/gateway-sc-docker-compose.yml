@@ -97,8 +97,11 @@ services:
         - type=gha,mode=max
     env_file:
       - ../env/staging/.env.gateway-sc.local
+    # Using test parameters (--params-type 1) is currently not possible for keygen (see above), and
+    # CRS parameters must be of the same type as the keygen parameters.
+    # See https://github.com/zama-ai/fhevm-internal/issues/685
     command:
-      - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048
+      - npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048
     depends_on:
       gateway-sc-trigger-keygen:
         condition: service_completed_successfully
