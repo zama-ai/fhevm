@@ -72,8 +72,11 @@ services:
         - type=gha,mode=max
     env_file:
       - ../env/staging/.env.gateway-sc.local
+    # Using test parameters (--params-type 1) is currently not possible at it can make the random
+    # tests fail with a high probability (1/2 chance), so we instead use default parameters (--params-type 0).
+    # See https://github.com/zama-ai/fhevm-internal/issues/685
     command:
-      - npx hardhat task:triggerKeygen --params-type 1
+      - npx hardhat task:triggerKeygen --params-type 0
     depends_on:
       gateway-sc-add-pausers:
         condition: service_completed_successfully
