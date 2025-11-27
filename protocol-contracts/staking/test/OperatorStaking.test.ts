@@ -78,6 +78,13 @@ describe('OperatorStaking', function () {
       await expect(this.token.balanceOf(this.mock)).to.eventually.be.eq(0);
     });
 
+    it('zero redemption should terminate early', async function () {
+      await expect(this.mock.connect(this.staker1).requestRedeem(0, this.staker1, this.staker1)).to.not.emit(
+        this.mock,
+        'RedeemRequest',
+      );
+    });
+
     it('should not redeem twice', async function () {
       await this.mock.connect(this.staker2).deposit(ethers.parseEther('5'), this.staker2);
       await this.mock.connect(this.staker1).deposit(ethers.parseEther('10'), this.staker1);
@@ -306,7 +313,7 @@ describe('OperatorStaking', function () {
 
       await expect(this.mock.connect(this.staker2).requestRedeem(ethers.parseEther('2'), this.staker2, this.staker2))
         .to.emit(this.protocolStaking, 'TokensUnstaked')
-        .withArgs(this.mock, this.mock, ethers.parseEther('0.5'), anyValue);
+        .withArgs(this.mock, ethers.parseEther('0.5'), anyValue);
     });
 
     it('take excess into account on requestRedeem after slashing fully covered', async function () {
@@ -320,7 +327,7 @@ describe('OperatorStaking', function () {
 
       await expect(this.mock.connect(this.staker2).requestRedeem(ethers.parseEther('1'), this.staker2, this.staker2))
         .to.emit(this.protocolStaking, 'TokensUnstaked')
-        .withArgs(this.mock, this.mock, 0, anyValue);
+        .withArgs(this.mock, 0, anyValue);
 
       await time.increase(30);
       await expect(this.mock.maxRedeem(this.staker2)).to.eventually.eq(0);

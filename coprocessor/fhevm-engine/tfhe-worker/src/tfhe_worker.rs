@@ -303,7 +303,19 @@ async fn query_for_work<'a>(
 WITH selected_computations AS (
   (
     SELECT DISTINCT
-      c.transaction_id
+      c_creation_order.transaction_id
+    FROM (
+      SELECT transaction_id
+      FROM computations 
+      WHERE is_completed = FALSE
+        AND is_error = FALSE
+        AND is_allowed = TRUE
+      ORDER BY created_at
+      LIMIT $1
+    ) as c_creation_order
+   UNION ALL
+    SELECT DISTINCT
+      c_schedule_order.transaction_id
     FROM (
       SELECT transaction_id
       FROM computations 
@@ -312,7 +324,7 @@ WITH selected_computations AS (
         AND is_allowed = TRUE
       ORDER BY schedule_order
       LIMIT $1
-    ) as c
+    ) as c_schedule_order
   )
 )
 -- Acquire all computations from this transaction set
@@ -548,6 +560,11 @@ async fn upload_transaction_graph_results<'a>(
                         CoprocessorError::SchedulerError(SchedulerError::MissingInputs)
                     ) {
                         uncomputable.push((result.handle.clone(), result.transaction_id.clone()));
+                        // Make sure we don't mark this as an error since this simply means that the
+                        // inputs weren't available when we tried scheduling these operations.
+                        // Setting them as uncomputable will postpone them with an exponential backoff
+                        // and they will be retried later.
+                        continue;
                     }
                 }
                 set_computation_error(

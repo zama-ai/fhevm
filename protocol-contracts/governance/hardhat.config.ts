@@ -66,7 +66,6 @@ const config: HardhatUserConfig = {
             accounts,
         },
         'gateway-mainnet': {
-            // @ts-ignore: TODO: Remove TS ignore once LayerZero endpoint is deployed.
             eid: EndpointId.ZAMA_V2_MAINNET,
             url: process.env.RPC_URL_ZAMA_GATEWAY_MAINNET || '',
             accounts,

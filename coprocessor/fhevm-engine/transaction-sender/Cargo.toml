@@ -12,6 +12,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 aws-config = { workspace = true }
 aws-sdk-kms = { workspace = true }
+bigdecimal = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
 prometheus = { workspace = true }
@@ -33,6 +34,7 @@ humantime = { workspace = true }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+fhevm_gateway_bindings = { path = "../../../gateway-contracts/rust_bindings" }
 
 [build-dependencies]
 foundry-compilers = { workspace = true }

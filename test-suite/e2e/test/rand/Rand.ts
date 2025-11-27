@@ -1,3 +1,4 @@
+import type { PublicDecryptResults } from '@zama-fhe/relayer-sdk/node';
 import { expect } from 'chai';
 import { ethers, network } from 'hardhat';
 
@@ -23,10 +24,11 @@ describe('Rand', function () {
     for (let i = 0; i < 15; i++) {
       const txn = await this.rand.generateBool();
       await txn.wait();
-      const valueHandle = await this.rand.valueb();
-      const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
-      values.push(value);
+      const valueHandle = (await this.rand.valueb()) as `0x${string}`;
+      const res: PublicDecryptResults = await this.instances.alice.publicDecrypt([valueHandle]);
+      const value = res.clearValues[valueHandle];
+      expect(typeof value).to.eq('boolean');
+      values.push(value as boolean);
     }
     // Expect at least two different generated values.
     const unique = new Set(values);
@@ -38,11 +40,13 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate8();
       await txn.wait();
-      const valueHandle = await this.rand.value8();
+      const valueHandle = (await this.rand.value8()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
-      expect(value).to.be.lessThanOrEqual(0xff);
-      values.push(value);
+      const value = res.clearValues[valueHandle];
+      expect(typeof value).to.eq('bigint');
+      const valueNum = Number(value);
+      expect(valueNum).to.be.lessThanOrEqual(0xff);
+      values.push(valueNum);
     }
     // Expect at least two different generated values.
     const unique = new Set(values);
@@ -54,11 +58,13 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate8UpperBound(128);
       await txn.wait();
-      const valueHandle = await this.rand.value8();
+      const valueHandle = (await this.rand.value8()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
-      expect(value).to.be.lessThanOrEqual(127);
-      values.push(value);
+      const value = res.clearValues[valueHandle];
+      expect(typeof value).to.eq('bigint');
+      const valueNum = Number(value);
+      expect(valueNum).to.be.lessThanOrEqual(127);
+      values.push(valueNum);
     }
     // Expect at least two different generated values.
     const unique = new Set(values);
@@ -71,14 +77,16 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate16();
       await txn.wait();
-      const valueHandle = await this.rand.value16();
+      const valueHandle = (await this.rand.value16()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
-      expect(value).to.be.lessThanOrEqual(0xffff);
-      if (value > 0xff) {
+      const value = res.clearValues[valueHandle];
+      expect(typeof value).to.eq('bigint');
+      const valueNum = Number(value);
+      expect(valueNum).to.be.lessThanOrEqual(0xffff);
+      if (valueNum > 0xff) {
         has16bit = true;
       }
-      values.push(value);
+      values.push(valueNum);
     }
     // Make sure we actually generate 16 bit integers.
     expect(has16bit).to.be.true;
@@ -92,11 +100,13 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate16UpperBound(8192);
       await txn.wait();
-      const valueHandle = await this.rand.value16();
+      const valueHandle = (await this.rand.value16()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
-      expect(value).to.be.lessThanOrEqual(8191);
-      values.push(value);
+      const value = res.clearValues[valueHandle];
+      expect(typeof value).to.eq('bigint');
+      const valueNum = Number(value);
+      expect(valueNum).to.be.lessThanOrEqual(8191);
+      values.push(valueNum);
     }
     // Expect at least two different generated values.
     const unique = new Set(values);
@@ -109,14 +119,16 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate32();
       await txn.wait();
-      const valueHandle = await this.rand.value32();
+      const valueHandle = (await this.rand.value32()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
-      expect(value).to.be.lessThanOrEqual(0xffffffff);
-      if (value > 0xffff) {
+      const value = res.clearValues[valueHandle];
+      expect(typeof value).to.eq('bigint');
+      const valueNum = Number(value);
+      expect(valueNum).to.be.lessThanOrEqual(0xffffffff);
+      if (valueNum > 0xffff) {
         has32bit = true;
       }
-      values.push(value);
+      values.push(valueNum);
     }
     // Make sure we actually generate 32 bit integers.
     expect(has32bit).to.be.true;
@@ -130,11 +142,13 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate32UpperBound(262144);
       await txn.wait();
-      const valueHandle = await this.rand.value32();
+      const valueHandle = (await this.rand.value32()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
-      expect(value).to.be.lessThanOrEqual(262141);
-      values.push(value);
+      const value = res.clearValues[valueHandle];
+      expect(typeof value).to.eq('bigint');
+      const valueNum = Number(value);
+      expect(valueNum).to.be.lessThanOrEqual(262141);
+      values.push(valueNum);
     }
     // Expect at least two different generated values.
     const unique = new Set(values);
@@ -147,9 +161,10 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate64();
       await txn.wait();
-      const valueHandle = await this.rand.value64();
+      const valueHandle = (await this.rand.value64()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
+      const value = res.clearValues[valueHandle] as bigint;
+      expect(typeof value).to.eq('bigint');
       expect(value).to.be.lessThanOrEqual(BigInt('0xffffffffffffffff'));
       if (value > BigInt('0xffffffff')) {
         has64bit = true;
@@ -169,9 +184,10 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate64UpperBound(262144);
       await txn.wait();
-      const valueHandle = await this.rand.value64();
+      const valueHandle = (await this.rand.value64()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
+      const value = res.clearValues[valueHandle] as bigint;
+      expect(typeof value).to.eq('bigint');
       expect(value).to.be.lessThanOrEqual(262141);
       values.push(value);
     }
@@ -186,9 +202,10 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate128();
       await txn.wait();
-      const valueHandle = await this.rand.value128();
+      const valueHandle = (await this.rand.value128()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
+      const value = res.clearValues[valueHandle] as bigint;
+      expect(typeof value).to.eq('bigint');
       expect(value).to.be.lessThanOrEqual(BigInt('0xffffffffffffffffffffffffffffffff'));
       if (value > BigInt('0xffffffffffffffff')) {
         has128bit = true;
@@ -207,9 +224,10 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate128UpperBound(2n ** 100n);
       await txn.wait();
-      const valueHandle = await this.rand.value128();
+      const valueHandle = (await this.rand.value128()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
+      const value = res.clearValues[valueHandle] as bigint;
+      expect(typeof value).to.eq('bigint');
       expect(value).to.be.lessThanOrEqual(2n ** 100n);
       values.push(value);
     }
@@ -224,9 +242,10 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate256();
       await txn.wait();
-      const valueHandle = await this.rand.value256();
+      const valueHandle = (await this.rand.value256()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
+      const value = res.clearValues[valueHandle] as bigint;
+      expect(typeof value).to.eq('bigint');
       expect(value).to.be.lessThanOrEqual(BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'));
       if (value > BigInt('0xffffffffffffffffffffffffffffffff')) {
         has256bit = true;
@@ -245,9 +264,10 @@ describe('Rand', function () {
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate256UpperBound(2n ** 200n);
       await txn.wait();
-      const valueHandle = await this.rand.value256();
+      const valueHandle = (await this.rand.value256()) as `0x${string}`;
       const res = await this.instances.alice.publicDecrypt([valueHandle]);
-      const value = res[valueHandle];
+      const value = res.clearValues[valueHandle] as bigint;
+      expect(typeof value).to.eq('bigint');
       expect(value).to.be.lessThanOrEqual(2n ** 200n);
       values.push(value);
     }
@@ -264,11 +284,13 @@ describe('Rand', function () {
       for (let i = 0; i < 5; i++) {
         const txn = await this.rand.generate8();
         await txn.wait();
-        const valueHandle = await this.rand.value8();
+        const valueHandle = (await this.rand.value8()) as `0x${string}`;
         const res = await this.instances.alice.publicDecrypt([valueHandle]);
-        const value = res[valueHandle];
-        expect(value).to.be.lessThanOrEqual(0xff);
-        values.push(value);
+        const value = res.clearValues[valueHandle] as bigint;
+        expect(typeof value).to.eq('bigint');
+        const valueNum = Number(value);
+        expect(valueNum).to.be.lessThanOrEqual(0xff);
+        values.push(valueNum);
       }
       // Expect at least two different generated values.
       const unique = new Set(values);
@@ -281,11 +303,13 @@ describe('Rand', function () {
       for (let i = 0; i < 5; i++) {
         const txn = await this.rand.generate8();
         await txn.wait();
-        const valueHandle = await this.rand.value8();
+        const valueHandle = (await this.rand.value8()) as `0x${string}`;
         const res = await this.instances.alice.publicDecrypt([valueHandle]);
-        const value = res[valueHandle];
-        expect(value).to.be.lessThanOrEqual(0xff);
-        values2.push(value);
+        const value = res.clearValues[valueHandle] as bigint;
+        expect(typeof value).to.eq('bigint');
+        const valueNum = Number(value);
+        expect(valueNum).to.be.lessThanOrEqual(0xff);
+        values2.push(valueNum);
       }
       // Expect at least two different generated values.
       const unique2 = new Set(values2);
@@ -297,14 +321,16 @@ describe('Rand', function () {
       for (let i = 0; i < 5; i++) {
         const txn = await this.rand.generate16();
         await txn.wait();
-        const valueHandle = await this.rand.value16();
+        const valueHandle = (await this.rand.value16()) as `0x${string}`;
         const res = await this.instances.alice.publicDecrypt([valueHandle]);
-        const value = res[valueHandle];
-        expect(value).to.be.lessThanOrEqual(0xffff);
-        if (value > 0xff) {
+        const value = res.clearValues[valueHandle] as bigint;
+        expect(typeof value).to.eq('bigint');
+        const valueNum = Number(value);
+        expect(valueNum).to.be.lessThanOrEqual(0xffff);
+        if (valueNum > 0xff) {
           has16bit = true;
         }
-        values3.push(value);
+        values3.push(valueNum);
       }
       // Make sure we actually generate 16 bit integers.
       expect(has16bit).to.be.true;
@@ -317,9 +343,11 @@ describe('Rand', function () {
   it('generating rand in reverting sub-call', async function () {
     const txn = await this.rand.generate64Reverting();
     await txn.wait();
-    const valueHandle = await this.rand.value64Bounded();
+    const valueHandle = (await this.rand.value64Bounded()) as `0x${string}`;
     const res = await this.instances.alice.publicDecrypt([valueHandle]);
-    const value = res[valueHandle];
-    expect(value).to.be.lessThan(1024);
+    const value = res.clearValues[valueHandle] as bigint;
+    expect(typeof value).to.eq('bigint');
+    const valueNum = Number(value);
+    expect(valueNum).to.be.lessThan(1024);
   });
 });

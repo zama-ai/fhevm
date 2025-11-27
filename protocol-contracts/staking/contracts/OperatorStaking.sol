@@ -110,6 +110,7 @@ contract OperatorStaking is ERC20, Ownable, ReentrancyGuardTransient {
      * @param owner The owner of the shares.
      */
     function requestRedeem(uint208 shares, address controller, address owner) public virtual {
+        if (shares == 0) return;
         require(controller != address(0), InvalidController());
         if (msg.sender != owner) {
             _spendAllowance(owner, msg.sender, shares);
@@ -126,10 +127,7 @@ contract OperatorStaking is ERC20, Ownable, ReentrancyGuardTransient {
             );
 
         (, uint48 lastReleaseTime, uint208 controllerSharesRedeemed) = _unstakeRequests[controller].latestCheckpoint();
-        uint48 releaseTime = protocolStaking_.unstake(
-            address(this),
-            SafeCast.toUint256(SignedMath.max(assetsToWithdraw, 0))
-        );
+        uint48 releaseTime = protocolStaking_.unstake(SafeCast.toUint256(SignedMath.max(assetsToWithdraw, 0)));
         assert(releaseTime >= lastReleaseTime); // should never happen
         _unstakeRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
 
