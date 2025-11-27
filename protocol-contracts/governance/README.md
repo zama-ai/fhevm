@@ -19,7 +19,12 @@ And select `gateway-testnet` network then enter the `GovernanceOAppReceiver` scr
 npx hardhat lz:oapp:wire --oapp-config layerzero.config.testnet.ts
 ```
 
-5/ Verify contracts: 
+5/ After the Safe and AdminModule have been deployed, run: 
+```bash
+npx hardhat task:setAdminSafeModule --module <ADMIN_MODULE_ADDRESS> --network gateway-testnet
+```
+
+6/ Verify contracts: 
 ```bash
 pnpm verify:etherscan:ethereum:testnet
 pnpm verify:etherscan:gateway:testnet
