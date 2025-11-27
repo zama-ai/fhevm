@@ -8,7 +8,6 @@ use crate::{
     metrics::{ALLOW_HANDLE_FAIL_COUNTER, ALLOW_HANDLE_SUCCESS_COUNTER},
     nonce_managed_provider::NonceManagedProvider,
     ops::common::try_into_array,
-    overprovision_gas_limit::try_overprovision_gas_limit,
     REVIEW,
 };
 
@@ -18,7 +17,6 @@ use alloy::{
     primitives::{Address, Bytes, FixedBytes},
     providers::Provider,
     rpc::types::TransactionRequest,
-    sol,
     transports::{RpcError, TransportErrorKind},
 };
 use anyhow::bail;
@@ -29,13 +27,9 @@ use fhevm_engine_common::{
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
-use MultichainACL::MultichainACLErrors;
 
-sol!(
-    #[sol(rpc)]
-    MultichainACL,
-    "artifacts/MultichainACL.sol/MultichainACL.json"
-);
+use fhevm_gateway_bindings::multichain_acl::MultichainACL;
+use fhevm_gateway_bindings::multichain_acl::MultichainACL::MultichainACLErrors;
 
 struct Key {
     handle: Vec<u8>,
@@ -58,7 +52,10 @@ impl Display for Key {
 }
 
 #[derive(Clone)]
-pub struct MultichainACLOperation<P: Provider<Ethereum> + Clone + 'static> {
+pub struct AllowHandleOperation<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     multichain_acl_address: Address,
     provider: NonceManagedProvider<P>,
     conf: crate::ConfigSettings,
@@ -66,7 +63,10 @@ pub struct MultichainACLOperation<P: Provider<Ethereum> + Clone + 'static> {
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
+impl<P> AllowHandleOperation<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
@@ -83,18 +83,16 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
         info!(handle = h, "Processing transaction");
         let _t = telemetry::tracer("call_allow_account", &src_transaction_id);
 
-        let overprovisioned_txn_req = try_overprovision_gas_limit(
-            txn_request,
-            self.provider.inner(),
-            self.conf.gas_limit_overprovision_percent,
-        )
-        .await;
-        let transaction = match self
+        let receipt = match self
             .provider
-            .send_transaction(overprovisioned_txn_req.clone())
+            .send_sync_with_overprovision(
+                txn_request,
+                self.conf.gas_limit_overprovision_percent,
+                Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
+            )
             .await
         {
-            Ok(txn) => txn,
+            Ok(receipt) => receipt,
             Err(e) if self.already_allowed_error(&e).is_some() => {
                 warn!(
                     address = ?self.already_allowed_error(&e),
@@ -113,7 +111,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
             {
                 ALLOW_HANDLE_FAIL_COUNTER.inc();
                 warn!(
-                    transaction_request = ?overprovisioned_txn_req,
                     error = %e,
                     handle = h,
                     "Transaction sending failed with unlimited retry error"
@@ -129,7 +126,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
             Err(e) => {
                 ALLOW_HANDLE_FAIL_COUNTER.inc();
                 warn!(
-                    transaction_request = ?overprovisioned_txn_req,
                     error = %e,
                     handle = h,
                     "Transaction sending failed"
@@ -141,30 +137,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
                 )
                 .await?;
                 bail!(e);
-            }
-        };
-
-        // We assume that if we were able to send the transaction, we will be able to get a receipt, eventually. If there is a transport
-        // error in-between, we rely on the retry logic to handle it.
-        let receipt = match transaction
-            .with_timeout(Some(Duration::from_secs(
-                self.conf.txn_receipt_timeout_secs as u64,
-            )))
-            .with_required_confirmations(self.conf.required_txn_confirmations as u64)
-            .get_receipt()
-            .await
-        {
-            Ok(receipt) => receipt,
-            Err(e) => {
-                ALLOW_HANDLE_FAIL_COUNTER.inc();
-                error!(error = %e, "Getting receipt failed");
-                self.increment_txn_limited_retries_count(
-                    key,
-                    &e.to_string(),
-                    current_limited_retries_count,
-                )
-                .await?;
-                return Err(anyhow::Error::new(e));
             }
         };
 
@@ -210,11 +182,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
     }
 
     fn already_allowed_error(&self, err: &RpcError<TransportErrorKind>) -> Option<Address> {
+        use MultichainACLErrors as E;
         err.as_error_resp()
             .and_then(|payload| payload.as_decoded_interface_error::<MultichainACLErrors>())
-            .map(|error| match error {
-                MultichainACLErrors::CoprocessorAlreadyAllowedAccount(c) => c.txSender, /* coprocessor address */
-                MultichainACLErrors::CoprocessorAlreadyAllowedPublicDecrypt(c) => c.txSender,
+            .and_then(|error| match error {
+                E::CoprocessorAlreadyAllowedAccount(c) => Some(c.txSender), /* coprocessor address */
+                E::CoprocessorAlreadyAllowedPublicDecrypt(c) => Some(c.txSender),
+                _ => None
             })
     }
 
@@ -250,7 +224,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
     }
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
+impl<P> AllowHandleOperation<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     pub fn new(
         multichain_acl_address: Address,
         provider: NonceManagedProvider<P>,
@@ -261,7 +238,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
         info!(
             gas = gas.unwrap_or(0),
             multichain_acl_address = %multichain_acl_address,
-            "Creating MultichainACLOperation"
+            "Creating AllowHandleOperation"
         );
 
         Self {
@@ -360,7 +337,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
 }
 
 #[async_trait]
-impl<P> TransactionOperation<P> for MultichainACLOperation<P>
+impl<P> TransactionOperation<P> for AllowHandleOperation<P>
 where
     P: alloy::providers::Provider<Ethereum> + Clone + 'static,
 {
@@ -456,7 +433,6 @@ where
                         );
                         continue;
                     };
-
                     match &self.gas {
                         Some(gas_limit) => multichain_acl
                             .allowAccount(handle_bytes32, address, extra_data)

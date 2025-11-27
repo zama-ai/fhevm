@@ -346,8 +346,8 @@ fn execute_partition(
         for (h, i) in tx_inputs.iter_mut() {
             if i.is_none() {
                 let Some(Ok(ct)) = res.get(h) else {
-                    warn!(target: "scheduler", {transaction_id = ?tid },
-                         "Missing input to compute transaction - skipping");
+                    warn!(target: "scheduler", {transaction_id = ?hex::encode(tid) },
+		       "Missing input to compute transaction - skipping");
                     for nidx in dfg.graph.node_identifiers() {
                         let Some(node) = dfg.graph.node_weight_mut(nidx) else {
                             error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
@@ -375,7 +375,7 @@ fn execute_partition(
             if let Err(e) =
                 re_randomise_transaction_inputs(tx_inputs, &tid, cid, gpu_idx, cpk.clone())
             {
-                error!(target: "scheduler", {transaction_id = ?tid, error = ?e },
+                error!(target: "scheduler", {transaction_id = ?hex::encode(tid), error = ?e },
 		       "Error while re-randomising inputs");
                 for nidx in dfg.graph.node_identifiers() {
                     let Some(node) = dfg.graph.node_weight_mut(nidx) else {
@@ -401,7 +401,7 @@ fn execute_partition(
             // If re-randomisation is not available (e.g., on GPU),
             // only decompress ciphertexts
             if let Err(e) = decompress_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
-                error!(target: "scheduler", {transaction_id = ?tid, error = ?e },
+                error!(target: "scheduler", {transaction_id = ?hex::encode(tid), error = ?e },
 		       "Error while decompressing inputs");
                 for nidx in dfg.graph.node_identifiers() {
                     let Some(node) = dfg.graph.node_weight_mut(nidx) else {
@@ -499,7 +499,7 @@ fn try_execute_node(
             cts.push(i);
         } else {
             // That should not be possible as we called the checker.
-            error!(target: "scheduler", { handle = ?node.result_handle }, "Computation missing inputs");
+            error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle) }, "Computation missing inputs");
             return Err(SchedulerError::MissingInputs.into());
         }
     }

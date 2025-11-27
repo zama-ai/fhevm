@@ -505,7 +505,7 @@ export function generateTypeScriptTestCode(
                     const expectedRes = {
                       [handle]: ${expectedOutput},
                     };
-                    assert.deepEqual(res, expectedRes);
+                    assert.deepEqual(res.clearValues, expectedRes);
                 });
             `);
         } else {

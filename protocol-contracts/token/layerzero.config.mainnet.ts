@@ -11,7 +11,6 @@ const ethereumContract: OmniPointHardhat = {
 }
 
 const zamaMainnetContract: OmniPointHardhat = {
-    // @ts-ignore: TODO: Remove TS ignore once LayerZero endpoint is deployed.
     eid: EndpointId.ZAMA_V2_MAINNET,
     contractName: 'ZamaOFT',
 }
@@ -38,7 +37,7 @@ const pathways: TwoWayConfig[] = [
         ethereumContract, // Chain A contract
         zamaMainnetContract, // Chain B contract
         // TODO: Add custom ZAMA DVN in next line?
-        [['LayerZero Labs'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
+        [['LayerZero Labs', 'Nethermind'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
         [15, 20], // [A to B confirmations, B to A confirmations]
         [EVM_ENFORCED_OPTIONS, EVM_ENFORCED_OPTIONS], // Chain B enforcedOptions, Chain A enforcedOptions
     ],
