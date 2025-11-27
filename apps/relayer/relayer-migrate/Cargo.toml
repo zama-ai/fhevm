@@ -1,0 +1,14 @@
+[package]
+name = "relayer-migrate"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+dotenvy = "0.15.7"
+envy = "0.4.2"
+serde = "1.0.228"
+sqlx = { version = "0.8.6", features = ["chrono", "macros", "postgres", "runtime-tokio", "uuid"] }
+tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "signal"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

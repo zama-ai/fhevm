@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Base from https://docs.docker.com/guides/rust/develop/
 ARG RUST_VERSION=1.90.0
-ARG APP_NAME=fhevm-relayer
+ARG APP_NAME=relayer-migrate
 
 FROM cgr.dev/zama.ai/rust:${RUST_VERSION}-dev AS build
 ARG APP_NAME
@@ -15,20 +15,13 @@ WORKDIR /app
 # source code into the container. Once built, copy the executable to an
 # output directory before the cache mounted /app/target is unmounted.
 USER root
-RUN --mount=type=bind,source=apps/relayer/Cargo.toml,target=Cargo.toml \
-    --mount=type=bind,source=apps/relayer/Cargo.lock,target=Cargo.lock \
-    --mount=type=bind,source=apps/relayer/build.rs,target=build.rs \
-    --mount=type=bind,source=apps/relayer/src,target=src \
-    --mount=type=bind,source=apps/relayer/test-support,target=test-support \
-    --mount=type=bind,source=.git/HEAD,target=.git/HEAD \
-    --mount=type=bind,source=.git/index,target=.git/index \
-    --mount=type=bind,source=.git/objects,target=.git/objects \
-    --mount=type=bind,source=.git/refs,target=.git/refs \
-    --mount=type=bind,source=apps/relayer/.sqlx,target=.sqlx \
-    # --mount=type=bind,source=apps/relayer/artifacts/contract-abis,target=artifacts/contract-abis \
+RUN --mount=type=bind,source=apps/relayer/relayer-migrate/Cargo.toml,target=Cargo.toml \
+    --mount=type=bind,source=apps/relayer/relayer-migrate/Cargo.lock,target=Cargo.lock \
+    --mount=type=bind,source=apps/relayer/relayer-migrate/src,target=src \
+    --mount=type=bind,source=apps/relayer/relayer-migrate/migrations,target=migrations \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
-    apk add --no-cache openssl-dev clang sqlite-dev && \
+    apk add --no-cache openssl-dev clang && \
     ls -R && cargo build --locked --release && \
     cp ./target/release/$APP_NAME /bin/server
 

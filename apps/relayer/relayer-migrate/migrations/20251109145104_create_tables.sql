@@ -61,7 +61,10 @@ CREATE TABLE user_decrypt_share (
 -- WE REMOVE THIS INDEX SINCE ITS REDUNDANT WITH THE UNIQUE INDEX BELOW
 -- CREATE INDEX idx_user_decrypt_share_gw_decryption_id ON user_decrypt_share(gw_reference_id);
 -- Uniqueness of shares index (in case of recieving same share twice++)
-CREATE UNIQUE INDEX idx_user_decrypt_share_unique_composite_gw_reference_id_share_index ON user_decrypt_share (gw_reference_id, share_index);
+-- NOTE: Be careful, this index naming is the length max - 1
+-- Name was before idx_user_decrypt_share_unique_composite_gw_reference_id_share_index and was truncated by PG
+-- to idx_user_decrypt_share_unique_composite_gw_reference_id_share_i
+CREATE UNIQUE INDEX idx_user_decrypt_share_unique_comp_gw_reference_id_share_index ON user_decrypt_share (gw_reference_id, share_index);
 
 -- Trigger for updated at field.
 CREATE TRIGGER set_user_decrypt_share_updated_at
