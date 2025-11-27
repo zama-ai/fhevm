@@ -13,7 +13,6 @@ default = []
 tracing-chrome = ["dep:tracing-chrome"]
 
 [dependencies]
-xxhash-rust = { version = "0.8.12", features = ["xxh3", "const_xxh3"] }
 alloy = { version = "1.0.22", features = ["consensus", "json-rpc", "provider-ws", "serde"] }
 alloy-dyn-abi = "1.4.1"
 dashmap = "6.1.0"
@@ -44,14 +43,9 @@ prometheus = "0.14"
 once_cell = "1.19"
 clap = { version = "4", features = ["derive"] }
 aws-config = { version = "1", features = ["behavior-version-latest"] }
-aws-sdk-sqs = { version = "1" }
 rustls = { version = "0.23", features = [
   "aws-lc-rs",
 ], default-features = false }
-rocksdb = { version = "0.23.0", default-features = false, features = [
-  "snappy",
-  "bindgen-runtime",
-] }
 fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "9c615a75a5467b70b405b72de2cab701df8a0116" }
 utoipa = { version = "5.4.0", features = ["axum_extras"] }
 utoipa-axum = { version = "0.2" }
@@ -73,13 +67,10 @@ built = { version = "0.8", features = [
 
 
 [dev-dependencies]
-ctor = { version = "0.4" }
 alloy-provider = { version = "1.0.22", features = ["anvil-node"] }
-nix = { version = "0.30.1", features = ["process", "signal"] }
 aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
 tempfile = "3.10.1"
 ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock" }
 tower = { version = "0.5.2", features = ["util"] }
-fake = "4.4.0"
 rstest = "0.21.0"
 serde_yaml = "0.9"
