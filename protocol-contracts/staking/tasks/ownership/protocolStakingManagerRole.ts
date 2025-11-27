@@ -7,7 +7,7 @@ import { HardhatRuntimeEnvironment } from 'hardhat/types';
 // Computed as `keccak256("MANAGER_ROLE")` as done in the ProtocolStaking contract
 const MANAGER_ROLE = '0x241ecf16d79d0f8dbfb92cbc07fe17840425976cf0667f022fe9877caa831b08';
 
-// Grant the manager role to the DAO for the protocol staking contracts using the deployer account
+// Grant the protocol staking contract's manager role to the DAO using the deployer account
 async function grantManagerRole(protocolStakingProxyAddress: string, hre: HardhatRuntimeEnvironment) {
   const { ethers, deployments, network, getNamedAccounts } = hre;
   const { log } = deployments;
@@ -23,7 +23,7 @@ async function grantManagerRole(protocolStakingProxyAddress: string, hre: Hardha
     deployerSigner,
   );
 
-  // Load the DAO address
+  // Get the DAO address
   const DAO_ADDRESS = getRequiredEnvVar('DAO_ADDRESS');
 
   // Grant the manager role to the DAO
@@ -33,7 +33,7 @@ async function grantManagerRole(protocolStakingProxyAddress: string, hre: Hardha
       granted to DAO address ${DAO_ADDRESS} on network ${network.name}`);
 }
 
-// Renounce the manager role from the deployer account for the protocol staking contracts
+// Renounce the protocol staking contract's manager role from the deployer account
 async function renounceManagerRole(protocolStakingProxyAddress: string, hre: HardhatRuntimeEnvironment) {
   const { ethers, deployments, network, getNamedAccounts } = hre;
   const { log } = deployments;
@@ -56,26 +56,26 @@ async function renounceManagerRole(protocolStakingProxyAddress: string, hre: Har
       renounced from deployer address ${deployer} on network ${network.name}`);
 }
 
-// Grant the manager role to the DAO for the protocol staking contracts
+// Grant all protocol staking contracts' manager roles to the DAO
 // Example usage:
 // npx hardhat task:grantProtocolStakingManagerRolesToDAO --network ethereum-testnet
 task('task:grantProtocolStakingManagerRolesToDAO').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   const { log } = hre.deployments;
 
-  log('Granting manager role to DAO for coprocessor protocol staking contract...');
+  log("Granting all coprocessor protocol staking contracts' manager roles to the DAO...");
 
   const protocolStakingCoproProxyAddress = await getProtocolStakingCoproProxyAddress(hre);
 
   grantManagerRole(protocolStakingCoproProxyAddress, hre);
 
-  log('Granting manager role to DAO for KMS protocol staking contract...');
+  log("Granting all KMS protocol staking contracts' manager roles to the DAO...");
 
   const protocolStakingKmsProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
 
   grantManagerRole(protocolStakingKmsProxyAddress, hre);
 });
 
-// Renounce the manager role from the deployer for the protocol staking contracts
+// Renounce all protocol staking contracts' manager roles from the deployer
 // Example usage:
 // npx hardhat task:renounceProtocolStakingManagerRolesFromDeployer --network ethereum-testnet
 task('task:renounceProtocolStakingManagerRolesFromDeployer').setAction(async function (
@@ -84,12 +84,12 @@ task('task:renounceProtocolStakingManagerRolesFromDeployer').setAction(async fun
 ) {
   const { log } = hre.deployments;
 
-  log('Renouncing manager role from deployer for coprocessor protocol staking contract...');
+  log("Renouncing all coprocessor protocol staking contracts' manager roles from the deployer...");
 
   const protocolStakingCoproProxyAddress = await getProtocolStakingCoproProxyAddress(hre);
   await renounceManagerRole(protocolStakingCoproProxyAddress, hre);
 
-  log('Renouncing manager role from deployer for KMS protocol staking contract...');
+  log("Renouncing all KMS protocol staking contracts' manager roles from the deployer...");
 
   const protocolStakingKmsProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
   await renounceManagerRole(protocolStakingKmsProxyAddress, hre);

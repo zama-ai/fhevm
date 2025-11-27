@@ -59,7 +59,7 @@ async function deployOperatorStaking(
 task('task:deployAllOperatorStakingCoproContracts').setAction(async function (_, hre) {
   const { log } = hre.deployments;
 
-  // Load the coprocessor protocol staking contract address
+  // Get the coprocessor protocol staking proxy address
   const protocolStakingCoproProxyAddress = await getProtocolStakingCoproProxyAddress(hre);
 
   // Get the number of operator staking contracts for coprocessors to deploy
@@ -90,7 +90,7 @@ task('task:deployAllOperatorStakingCoproContracts').setAction(async function (_,
 task('task:deployAllOperatorStakingKMSContracts').setAction(async function (_, hre) {
   const { log } = hre.deployments;
 
-  // Load the KMS protocol staking contract address
+  // Get the KMS protocol staking proxy address
   const protocolStakingKMSProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
 
   // Get the number of operator staking contracts for KMS to deploy

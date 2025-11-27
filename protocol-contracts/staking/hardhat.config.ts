@@ -1,7 +1,7 @@
 import './tasks/accounts';
-import './tasks/deployment/';
-import './tasks/ownership/';
-import './tasks/registerEligibleOperators';
+import './tasks/addEligibleAccount';
+import './tasks/deployment';
+import './tasks/ownership';
 import './tasks/setRewardRate';
 import './tasks/verify';
 import '@nomicfoundation/hardhat-chai-matchers';

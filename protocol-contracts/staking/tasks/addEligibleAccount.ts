@@ -8,22 +8,22 @@ import {
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-// Register an operator as eligible in the protocol staking contract
+// Add an operator as eligible in the protocol staking contract
 // Example usage:
-// npx hardhat task:registerOperatorInProtocolStaking \
+// npx hardhat task:addOperatorAsEligibleInProtocolStaking \
 //   --operatorStakingAddress 0x1234567890123456789012345678901234567890 \
 //   --protocolStakingProxyAddress 0x1234567890123456789012345678901234567890 \
 //   --network ethereum-testnet
-task('task:registerOperatorInProtocolStaking')
+task('task:addOperatorAsEligibleInProtocolStaking')
   .addParam(
     'operatorStakingAddress',
-    'The address of the operator staking contract to register as eligible',
+    'The address of the operator staking contract to add as eligible',
     '',
     types.string,
   )
   .addParam(
     'protocolStakingProxyAddress',
-    'The address of the protocol staking contract to register the eligible operator for',
+    'The address of the protocol staking contract to add the eligible operator to',
     '',
     types.string,
   )
@@ -42,60 +42,60 @@ task('task:registerOperatorInProtocolStaking')
       deployerSigner,
     );
 
-    // Register the eligible operator
+    // Add the operator as eligible
     await protocolStaking.addEligibleAccount(operatorStakingAddress);
 
-    log(`Eligible operator ${operatorStakingAddress} registered in protocol staking contract at 
+    log(`Operator ${operatorStakingAddress} added as eligible in protocol staking contract at 
         address ${protocolStakingProxyAddress} on network ${network.name}`);
   });
 
-// Register all coprocessor operators in the coprocessor protocol staking contract
+// Add all coprocessor operators as eligible in the coprocessor protocol staking contract
 // Example usage:
-// npx hardhat task:registerAllCoproOperatorsInProtocolStaking --network ethereum-testnet
-task('task:registerAllCoproOperatorsInProtocolStaking').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
+// npx hardhat task:addAllCoproOperatorsAsEligible --network ethereum-testnet
+task('task:addAllCoproOperatorsAsEligible').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   const { log } = hre.deployments;
 
-  log('Registering all coprocessor operators in the coprocessor protocol staking contract...');
+  log('Adding all coprocessor operators as eligible in the coprocessor protocol staking contract...');
 
   const operatorStakingAddresses = await getAllOperatorStakingCoproAddresses(hre);
   const protocolStakingCoproProxyAddress = await getProtocolStakingCoproProxyAddress(hre);
 
   for (let i = 0; i < operatorStakingAddresses.length; i++) {
     const operatorStakingAddress = operatorStakingAddresses[i];
-    await hre.run('task:registerOperatorInProtocolStaking', {
+    await hre.run('task:addOperatorAsEligibleInProtocolStaking', {
       operatorStakingAddress,
       protocolStakingProxyAddress: protocolStakingCoproProxyAddress,
     });
   }
 });
 
-// Register all KMS operators in the KMS protocol staking contract
+// Add all KMS operators as eligible in the KMS protocol staking contract
 // Example usage:
-// npx hardhat task:registerAllKMSOperatorsInProtocolStaking --network ethereum-testnet
-task('task:registerAllKMSOperatorsInProtocolStaking').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
+// npx hardhat task:addAllKMSOperatorsAsEligible --network ethereum-testnet
+task('task:addAllKMSOperatorsAsEligible').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   const { log } = hre.deployments;
 
-  log('Registering all KMS operators in the KMS protocol staking contract...');
+  log('Adding all KMS operators as eligible in the KMS protocol staking contract...');
 
   const operatorStakingAddresses = await getAllOperatorStakingKMSAddresses(hre);
   const protocolStakingKmsProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
   for (let i = 0; i < operatorStakingAddresses.length; i++) {
     const operatorStakingAddress = operatorStakingAddresses[i];
-    await hre.run('task:registerOperatorInProtocolStaking', {
+    await hre.run('task:addOperatorAsEligibleInProtocolStaking', {
       operatorStakingAddress,
       protocolStakingProxyAddress: protocolStakingKmsProxyAddress,
     });
   }
 });
 
-// Register all operators in the relevant protocol staking contracts (coprocessor and KMS)
+// Add all operators as eligible in the relevant protocol staking contracts (coprocessor and KMS)
 // Example usage:
-// npx hardhat task:registerAllOperatorsInProtocolStaking --network ethereum-testnet
-task('task:registerAllOperatorsInProtocolStaking').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
+// npx hardhat task:addAllOperatorsAsEligible --network ethereum-testnet
+task('task:addAllOperatorsAsEligible').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   const { log } = hre.deployments;
 
-  log('Registering all operators in the protocol staking contract...');
+  log('Adding all operators as eligible in the protocol staking contract...');
 
-  await hre.run('task:registerAllCoproOperatorsInProtocolStaking');
-  await hre.run('task:registerAllKMSOperatorsInProtocolStaking');
+  await hre.run('task:addAllCoproOperatorsAsEligible');
+  await hre.run('task:addAllKMSOperatorsAsEligible');
 });
