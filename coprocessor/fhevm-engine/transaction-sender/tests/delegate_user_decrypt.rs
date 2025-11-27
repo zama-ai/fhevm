@@ -66,14 +66,13 @@ async fn delegate_user_decrypt_life_cycle_aux(
         .wallet(env.wallet.clone())
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
-    let provider = NonceManagedProvider::new_with_nonce_retry(
+    let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
             .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
-        0, // disable immediate retry on nonce error
     );
     let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
 
@@ -169,23 +168,23 @@ async fn delegate_user_decrypt_life_cycle_aux(
                 .count
                 .unwrap_or(0);
         if i < config.delegation_block_delay {
-            assert!(present == 2);
-            assert!(reorg_out == 0);
-            assert!(on_gateway == 0);
+            assert_eq!(present, 2);
+            assert_eq!(reorg_out, 0);
+            assert_eq!(on_gateway, 0);
         } else if i == config.delegation_block_delay {
-            assert!(present == 2);
-            assert!(reorg_out == 0);
-            assert!(on_gateway == 1);
+            assert_eq!(present, 2);
+            assert_eq!(reorg_out, 0);
+            assert_eq!(on_gateway, 1);
         } else if i == config.delegation_block_delay + 1 {
-            assert!(present == 2);
-            assert!(reorg_out == 1);
-            assert!(on_gateway == 1);
+            assert_eq!(present, 2);
+            assert_eq!(reorg_out, 1);
+            assert_eq!(on_gateway, 1);
         } else if i > config.delegation_clear_after_n_blocks {
-            assert!(present == 0);
+            assert_eq!(present, 0);
         } else {
-            assert!(present == 2);
-            assert!(reorg_out == 1);
-            assert!(on_gateway == 1);
+            assert_eq!(present, 2);
+            assert_eq!(reorg_out, 1);
+            assert_eq!(on_gateway, 1);
         }
     }
     env.cancel_token.cancel();
@@ -201,7 +200,7 @@ async fn delegate_user_decrypt_idempotent_error(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let already_allowed_revert = false;
-    delegate_user_decrypt_idempotent_error_call(signer_type, already_allowed_revert, 3).await
+    delegate_user_decrypt_idempotent_error_call(signer_type, already_allowed_revert).await
 }
 
 #[rstest]
@@ -212,13 +211,12 @@ async fn delegate_user_decrypt_idempotent_error_no_nonce_retry(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let already_allowed_revert = false;
-    delegate_user_decrypt_idempotent_error_call(signer_type, already_allowed_revert, 0).await
+    delegate_user_decrypt_idempotent_error_call(signer_type, already_allowed_revert).await
 }
 
 async fn delegate_user_decrypt_idempotent_error_call(
     signer_type: SignerType,
     already_allowed_revert: bool,
-    nonce_retry_immediately: u64,
 ) -> anyhow::Result<()> {
     // simulate a host listener during catchup where some delegation are already part of gateway
     let env = TestEnvironment::new(signer_type).await?;
@@ -226,14 +224,13 @@ async fn delegate_user_decrypt_idempotent_error_call(
         .wallet(env.wallet.clone())
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
-    let provider = NonceManagedProvider::new_with_nonce_retry(
+    let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
             .connect_ws(WsConnect::new(env.ws_endpoint_url()))
             .await?,
         Some(env.wallet.default_signer().address()),
-        nonce_retry_immediately,
     );
     let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
 
@@ -270,6 +267,7 @@ async fn delegate_user_decrypt_idempotent_error_call(
     let start_block = block.number();
     for _ in 1..2 {
         // check deduplication based on unique constraint
+        // This insert is a revocation request.
         insert_delegate_user_decrypt(
             &env.db_pool,
             *multichain_acl.address(),
@@ -284,6 +282,7 @@ async fn delegate_user_decrypt_idempotent_error_call(
             None,
         )
         .await?;
+        // This one is a delegation request.
         insert_delegate_user_decrypt(
             &env.db_pool,
             *multichain_acl.address(),
@@ -336,43 +335,20 @@ async fn delegate_user_decrypt_idempotent_error_call(
         .count
         .unwrap_or(0);
         error!("{i} {present} {on_gateway} {reorg_out} {error}");
-        if nonce_retry_immediately > 0 {
-            // Nonce handler retry enable
-            if i < config.delegation_block_delay {
-                assert!(present == 2);
-                assert!(reorg_out == 0);
-                assert!(on_gateway == 0);
-            } else if i == config.delegation_block_delay {
-                assert!(present == 2);
-                assert!(reorg_out == 0);
-                assert!(on_gateway == 2);
-            } else if i > config.delegation_clear_after_n_blocks {
-                assert!(present == 0);
-            } else {
-                assert!(present == 2);
-                assert!(reorg_out == 0);
-                assert!(on_gateway == 2);
-            }
+        if i < config.delegation_block_delay {
+            assert_eq!(present, 2);
+            assert_eq!(reorg_out, 0);
+            assert_eq!(on_gateway, 0);
+        } else if i == config.delegation_block_delay {
+            assert_eq!(present, 2);
+            assert_eq!(reorg_out, 0);
+            assert_eq!(on_gateway, 2);
+        } else if i > config.delegation_clear_after_n_blocks {
+            assert_eq!(present, 0);
         } else {
-            // Nonce handler retry disable
-            if i < config.delegation_block_delay {
-                assert!(present == 2);
-                assert!(reorg_out == 0);
-                assert!(on_gateway == 0);
-                assert!(error == 0);
-            } else if i == config.delegation_block_delay {
-                assert!(present == 2);
-                assert!(reorg_out == 0);
-                assert!(on_gateway == 1); // 1 if no immediate retry on nonce error
-                assert!(error == 1);
-            } else if i > config.delegation_clear_after_n_blocks {
-                assert!(present == 0);
-            } else {
-                assert!(present == 2);
-                assert!(reorg_out == 0);
-                assert!(on_gateway == 2);
-                assert!(error == 1);
-            }
+            assert_eq!(present, 2);
+            assert_eq!(reorg_out, 0);
+            assert_eq!(on_gateway, 2);
         }
     }
     env.cancel_token.cancel();

@@ -12,7 +12,10 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
+pub struct TransactionSender<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     cancel_token: CancellationToken,
     conf: ConfigSettings,
     operations: Vec<Arc<dyn ops::TransactionOperation<P>>>,
@@ -23,7 +26,10 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
     gateway_provider: NonceManagedProvider<P>,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
+impl<P> TransactionSender<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     #[expect(clippy::too_many_arguments)]
     pub async fn new(
         input_verification_address: Address,
