@@ -101,8 +101,6 @@ pub struct MetricsConfig {
 
 #[derive(Deserialize, Clone)]
 pub struct StorageConfig {
-    /// Path on disk to store Rocks DB database for crash recovery
-    pub db_path_rocksdb: String,
     /// PostgreSQL database URL for SQL storage
     pub sql_database_url: String,
     /// Maximum number of connections in the SQL connection pool
@@ -112,7 +110,6 @@ pub struct StorageConfig {
 impl fmt::Debug for StorageConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StorageConfig")
-            .field("db_path_rocksdb", &self.db_path_rocksdb)
             .field("sql_database_url", &"[REDACTED]")
             .field("sql_max_connections", &self.sql_max_connections)
             .finish()
@@ -121,7 +118,11 @@ impl fmt::Debug for StorageConfig {
 
 impl fmt::Display for StorageConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "StorageConfig {{ db_path_rocksdb: {}, sql_database_url: [REDACTED], sql_max_connections: {} }}", self.db_path_rocksdb, self.sql_max_connections)
+        write!(
+            f,
+            "StorageConfig {{ sql_database_url: [REDACTED], sql_max_connections: {} }}",
+            self.sql_max_connections
+        )
     }
 }
 
@@ -313,7 +314,6 @@ http:
 metrics:
   endpoint: "0.0.0.0:9898"
 storage:
-  db_path_rocksdb: "/tmp/test_db"
   sql_database_url: "postgresql://postgres:postgres@localhost:5432/relayer_db"
   sql_max_connections: 10
 "#;
@@ -399,7 +399,6 @@ http:
 metrics:
   endpoint: "0.0.0.0:9898"
 storage:
-  db_path_rocksdb: "/tmp/test_db"
   sql_database_url: "postgresql://postgres:postgres@localhost:5432/relayer_db"
   sql_max_connections: 10
 "#;

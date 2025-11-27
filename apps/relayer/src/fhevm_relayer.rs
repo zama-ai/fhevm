@@ -30,7 +30,6 @@ use crate::gateway::{
 use crate::store::sql::repositories::block_number_repo::BlockNumberRepository;
 use alloy::primitives::Address;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::{str::FromStr, sync::Arc};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, span, Level};
@@ -51,21 +50,15 @@ use crate::{
     http::http_server::run_http_server,
     metrics,
     orchestrator::{
-        hooks::EventPersistenceHook,
-        traits::{EventHandler, HandlerRegistry, HookRegistry},
+        traits::{EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
-    store::{
-        key_value_db::RocksDBKVStore,
-        sql::{
-            client::PgClient,
-            repositories::{
-                input_proof_repo::InputProofRepository,
-                public_decrypt_repo::PublicDecryptRepository,
-                user_decrypt_repo::UserDecryptRepository,
-            },
+    store::sql::{
+        client::PgClient,
+        repositories::{
+            input_proof_repo::InputProofRepository, public_decrypt_repo::PublicDecryptRepository,
+            user_decrypt_repo::UserDecryptRepository,
         },
-        EventStore,
     },
 };
 use prometheus::Registry;
@@ -122,13 +115,6 @@ pub async fn run_fhevm_relayer(
     // === Intialize the orchestrator.
     let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::<RelayerEvent>::new()));
 
-    // Create root storage
-    let path_rocks_db = PathBuf::from(settings.storage.db_path_rocksdb);
-    let kv_store = RocksDBKVStore::open(path_rocks_db.clone())
-        .map_err(|e| eyre::eyre!("Failed to open RocksDB: {}", e))?;
-    info!("using rocks db databse at: {}", path_rocks_db.display());
-    let kv_store = Arc::new(kv_store);
-
     // Initialize PostgreSQL client and repositories
     let pg_client = PgClient::new(
         settings.storage.sql_database_url.clone(),
@@ -142,12 +128,6 @@ pub async fn run_fhevm_relayer(
     let input_proof_repo = Arc::new(InputProofRepository::new((*pg_client).clone()));
     let public_decrypt_repo = Arc::new(PublicDecryptRepository::new((*pg_client).clone()));
     let user_decrypt_repo = Arc::new(UserDecryptRepository::new((*pg_client).clone()));
-
-    // Init and register event persistence hook
-    let event_store = Arc::new(EventStore::<RelayerEvent>::new(kv_store.clone()));
-    orchestrator.register_pre_dispatch_hook(EventPersistenceHook::<RelayerEvent>::new(
-        event_store.clone(),
-    ));
 
     // let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
     let gateway_tx_helper = Arc::new(GatewayTransactionHelper::new(

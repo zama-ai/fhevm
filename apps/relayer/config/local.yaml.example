@@ -63,6 +63,5 @@ metrics:
   endpoint: "0.0.0.0:9898"
 
 storage:
-  db_path_rocksdb: "./.database"
   sql_database_url: "postgresql://postgres:postgres@localhost:5433/relayer_db"
   sql_max_connections: 10

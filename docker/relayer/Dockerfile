@@ -28,7 +28,7 @@ RUN --mount=type=bind,source=apps/relayer/Cargo.toml,target=Cargo.toml \
     # --mount=type=bind,source=apps/relayer/artifacts/contract-abis,target=artifacts/contract-abis \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
-    apk add --no-cache openssl-dev clang sqlite-dev && \
+    apk add --no-cache openssl-dev && \
     ls -R && cargo build --locked --release && \
     cp ./target/release/$APP_NAME /bin/server
 

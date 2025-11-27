@@ -7,6 +7,5 @@ pub use orchestrator::Orchestrator;
 mod tokio_event_dispatcher;
 pub use tokio_event_dispatcher::TokioEventDispatcher;
 
-pub mod hooks;
 mod ids;
 pub use ids::ContentHasher;

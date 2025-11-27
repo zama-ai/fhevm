@@ -22,7 +22,6 @@ pub struct TestSetup {
     pub http_port: u16,
     _host_handle: MockServerHandle,
     _gateway_handle: MockServerHandle,
-    _temp_db: TempDir,
     _cancellation_token: CancellationToken,
 }
 
@@ -62,10 +61,6 @@ impl TestSetup {
             http_port,
             metrics_port
         );
-
-        // Create temporary database directory
-        let temp_db = TempDir::new()?;
-        let temp_db_path = temp_db.path().to_string_lossy().to_string();
 
         // Create temporary config file from example
         let temp_config_dir = TempDir::new()?;
@@ -125,7 +120,6 @@ impl TestSetup {
         init_tracing_once(&settings.log);
 
         // Configure with isolated ports and database
-        settings.storage.db_path_rocksdb = temp_db_path;
         settings.http.endpoint = Some(format!("0.0.0.0:{}", http_port));
         settings.gateway.blockchain_rpc.http_url = format!("http://localhost:{}", gateway_port);
         settings.gateway.blockchain_rpc.ws_url = format!("ws://localhost:{}", gateway_port);
@@ -138,7 +132,6 @@ impl TestSetup {
         // Create a new settings instance for the relayer since Settings doesn't implement Clone
         let mut relayer_settings =
             Settings::new(config_path_str.clone()).expect("Failed to load configuration");
-        relayer_settings.storage.db_path_rocksdb = settings.storage.db_path_rocksdb.clone();
         relayer_settings.http.endpoint = settings.http.endpoint.clone();
         relayer_settings.gateway.blockchain_rpc.http_url =
             settings.gateway.blockchain_rpc.http_url.clone();
@@ -171,7 +164,6 @@ impl TestSetup {
             http_port,
             _host_handle: host_handle,
             _gateway_handle: gateway_handle,
-            _temp_db: temp_db,
             _cancellation_token: cancellation_token,
         })
     }
@@ -259,7 +251,7 @@ pub fn random_handle() -> String {
     format!("0x{}", hex)
 }
 
-/// Setup test database connection  
+/// Setup test database connection
 /// Note: Run `make migrate` before running tests that use SQL repositories
 #[allow(dead_code)]
 pub async fn setup_test_database(
