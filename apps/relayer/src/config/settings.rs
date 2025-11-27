@@ -152,7 +152,7 @@ pub struct KeyData {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 /// Top-level configuration structure.
 ///
 /// Contains all configuration settings for the relayer service.

@@ -44,7 +44,7 @@ async fn main() -> eyre::Result<()> {
         cancel_on_signal.cancel();
     });
 
-    let result = fhevm_relayer::run_fhevm_relayer(settings, cancellation_token).await;
+    let result = fhevm_relayer::run_fhevm_relayer(settings, cancellation_token, None).await;
 
     // Clean up tracing
     if let Some(guard) = chrome_tracing_guard {

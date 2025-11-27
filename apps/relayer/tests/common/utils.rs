@@ -1,5 +1,4 @@
 use std::net::TcpListener;
-use std::time::Duration;
 
 use ethereum_rpc_mock::{fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle};
 use fhevm_relayer::config::settings::Settings;
@@ -10,6 +9,7 @@ use fhevm_relayer::tracing::init_tracing_once;
 use alloy::primitives::Address;
 use rand::{rng, Rng};
 use tempfile::TempDir;
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 /// Per-test isolated setup with own ports, database, and mock servers
@@ -48,18 +48,14 @@ impl TestSetup {
 
     /// Create setup with optional custom config path
     async fn new_with_config_path(config_path: Option<std::path::PathBuf>) -> eyre::Result<Self> {
-        // Get free ports
+        // Get free ports for mock servers (they don't support :0 yet)
         let host_port = get_free_port()?;
         let gateway_port = get_free_port()?;
-        let http_port = get_free_port()?;
-        let metrics_port = get_free_port()?;
 
         tracing::info!(
-            "Setting up isolated test on ports {} (host), {} (gateway), {} (http), {} (metrics)",
+            "Setting up isolated test - mock servers on ports {} (host), {} (gateway)",
             host_port,
-            gateway_port,
-            http_port,
-            metrics_port
+            gateway_port
         );
 
         // Create temporary config file from example
@@ -119,11 +115,11 @@ impl TestSetup {
         // Initialize tracing once with settings
         init_tracing_once(&settings.log);
 
-        // Configure with isolated ports and database
-        settings.http.endpoint = Some(format!("0.0.0.0:{}", http_port));
+        // Configure with dynamic ports (use :0 for automatic allocation for relayer HTTP/metrics)
+        settings.http.endpoint = Some("0.0.0.0:0".to_string());
         settings.gateway.blockchain_rpc.http_url = format!("http://localhost:{}", gateway_port);
         settings.gateway.blockchain_rpc.ws_url = format!("ws://localhost:{}", gateway_port);
-        settings.metrics.endpoint = format!("0.0.0.0:{}", metrics_port);
+        settings.metrics.endpoint = "0.0.0.0:0".to_string();
 
         // Start relayer service with isolated settings
         let cancellation_token = CancellationToken::new();
@@ -139,24 +135,46 @@ impl TestSetup {
             settings.gateway.blockchain_rpc.ws_url.clone();
         relayer_settings.metrics.endpoint = settings.metrics.endpoint.clone();
 
+        // Create a channel to receive settings with actual ports
+        let (settings_tx, settings_rx) = oneshot::channel::<Settings>();
+
+        // Spawn relayer in background task - it will run until cancellation
         tokio::spawn(async move {
-            tracing::debug!("Starting isolated relayer service...");
-            match run_fhevm_relayer(relayer_settings, relayer_token).await {
+            match run_fhevm_relayer(relayer_settings, relayer_token, Some(settings_tx)).await {
                 Ok(()) => tracing::debug!("Relayer service exited normally"),
                 Err(e) => tracing::error!("Relayer service error: {}", e),
             }
         });
 
-        // Give time for servers to be fully ready
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        // Wait to receive settings with actual ports (this confirms servers are ready)
+        let updated_settings = settings_rx
+            .await
+            .map_err(|_| eyre::eyre!("Failed to receive settings from relayer"))?;
+
+        tracing::debug!("Relayer service started successfully with actual ports");
+
+        // Extract actual HTTP port from the updated settings
+        let http_port = updated_settings
+            .http
+            .endpoint
+            .as_ref()
+            .and_then(|endpoint| endpoint.rsplit(':').next())
+            .and_then(|port| port.parse::<u16>().ok())
+            .ok_or_else(|| eyre::eyre!("Failed to parse HTTP port from settings"))?;
 
         tracing::info!(
-            "Isolated test setup complete on ports {} (host), {} (gateway), {} (http), {} (metrics)",
-            host_port,
+            "Isolated test setup complete with actual ports - gateway: {}, http: {}, metrics: {}",
             gateway_port,
-            http_port,
-            metrics_port
+            updated_settings
+                .http
+                .endpoint
+                .as_ref()
+                .unwrap_or(&"none".to_string()),
+            updated_settings.metrics.endpoint
         );
+
+        // Update the settings with actual values
+        settings = updated_settings;
 
         Ok(TestSetup {
             fhevm_mock: fhevm_wrapper,
@@ -221,6 +239,7 @@ fn create_fast_readiness_config(temp_dir: &TempDir) -> eyre::Result<std::path::P
 }
 
 /// Get a free port by binding to port 0
+/// This is needed for mock servers that don't support dynamic port allocation yet
 #[allow(dead_code)]
 fn get_free_port() -> eyre::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")

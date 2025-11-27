@@ -107,7 +107,8 @@ pub async fn run_http_server<D>(
     input_proof_repo: Arc<InputProofRepository>,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
     user_decrypt_repo: Arc<UserDecryptRepository>,
-) where
+) -> SocketAddr
+where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
     let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
@@ -365,10 +366,16 @@ pub async fn run_http_server<D>(
             .layer(Extension(key_url))
             .merge(Redoc::with_url("/docs", ApiDoc::openapi()));
 
-    println!("Server listening on http://{http_endpoint}");
-
-    // Start the server with hyper underneath.
-
+    // The port in http_endpoint can either be explicitly specified or set to :0 (in which case
+    // listener will bind to free port assigned by OS). Fetch the actual address & return it.
     let listener = tokio::net::TcpListener::bind(http_endpoint).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let actual_addr = listener.local_addr().unwrap();
+
+    println!("Server listening on http://{actual_addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    actual_addr
 }

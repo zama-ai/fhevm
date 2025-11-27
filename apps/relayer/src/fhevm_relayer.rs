@@ -31,6 +31,7 @@ use crate::store::sql::repositories::block_number_repo::BlockNumberRepository;
 use alloy::primitives::Address;
 use std::net::SocketAddr;
 use std::{str::FromStr, sync::Arc};
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, span, Level};
 
@@ -78,8 +79,9 @@ static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 ///
 /// TODO: properly shutdown tasks
 pub async fn run_fhevm_relayer(
-    settings: Settings,
+    mut settings: Settings,
     shutdown_token: CancellationToken,
+    settings_sender: Option<oneshot::Sender<Settings>>,
 ) -> eyre::Result<()> {
     // 0. Print settings
     info!("Starting relayer with configuration: {:?}", settings);
@@ -217,35 +219,115 @@ pub async fn run_fhevm_relayer(
     ));
 
     // HTTP endpoint
-    if let Some(http_endpoint) = settings.http.endpoint {
+    if let Some(http_endpoint) = settings.http.endpoint.clone() {
         info!("Starting Relayer HTTP server");
         let addr: SocketAddr = http_endpoint
             .parse()
             .expect("Invalid http-endpoint address");
-        task_set.spawn(run_http_server(
+        let actual_http_addr = run_http_server(
             addr,
             Arc::clone(&orchestrator),
-            settings.keyurl,
-            settings.gateway.blockchain_rpc.http_url,
-            settings.http.rate_limit_post_endpoints,
+            settings.keyurl.clone(),
+            settings.gateway.blockchain_rpc.http_url.clone(),
+            settings.http.rate_limit_post_endpoints.clone(),
             input_proof_repo.clone(),
             public_decrypt_repo.clone(),
             user_decrypt_repo.clone(),
-        ));
+        )
+        .await;
+        // Update settings with the actual bound address
+        settings.http.endpoint = Some(actual_http_addr.to_string());
+        info!("HTTP server bound to actual address: {}", actual_http_addr);
     };
 
     // Run metrics server
-    task_set.spawn(async move {
+    let actual_metrics_addr =
         metrics::server::run_metrics_server(registry_clone, metrics_endpoint).await;
-    });
+    // Update settings with the actual bound address
+    settings.metrics.endpoint = actual_metrics_addr.to_string();
+    info!(
+        "Metrics server bound to actual address: {}",
+        actual_metrics_addr
+    );
 
     drop(setup_span);
+
+    // Perform self-check to ensure servers are ready
+    wait_for_servers_ready(
+        settings.http.endpoint.as_deref(),
+        &settings.metrics.endpoint,
+    )
+    .await?;
+    info!("All servers are ready and responding");
+
+    // Send settings through the channel if provided (for tests)
+    if let Some(sender) = settings_sender {
+        let _ = sender.send(settings.clone());
+        info!("Settings sent to test setup");
+    }
 
     // === Wait for shutdown signal via cancellation token
     shutdown_token.cancelled().await;
     task_set.shutdown().await;
 
     info!("Relayer shutdown complete");
+
+    Ok(())
+}
+
+/// Wait for servers to be ready by performing health checks
+async fn wait_for_servers_ready(
+    http_endpoint: Option<&str>,
+    metrics_endpoint: &str,
+) -> eyre::Result<()> {
+    use std::time::Duration;
+
+    const MAX_RETRIES: u32 = 10;
+    const RETRY_DELAY: Duration = Duration::from_millis(200);
+
+    // Check HTTP server if configured
+    if let Some(http_endpoint) = http_endpoint {
+        let url = format!("http://{}/liveness", http_endpoint);
+        let mut retries = 0;
+
+        loop {
+            match reqwest::get(&url).await {
+                Ok(response) if response.status().is_success() => {
+                    info!("HTTP server health check passed");
+                    break;
+                }
+                _ => {
+                    retries += 1;
+                    if retries >= MAX_RETRIES {
+                        return Err(eyre::eyre!("HTTP server failed to start within timeout"));
+                    }
+                    tokio::time::sleep(RETRY_DELAY).await;
+                }
+            }
+        }
+    }
+
+    // Check metrics server
+    {
+        let url = format!("http://{}/health", metrics_endpoint);
+        let mut retries = 0;
+
+        loop {
+            match reqwest::get(&url).await {
+                Ok(response) if response.status().is_success() => {
+                    info!("Metrics server health check passed");
+                    break;
+                }
+                _ => {
+                    retries += 1;
+                    if retries >= MAX_RETRIES {
+                        return Err(eyre::eyre!("Metrics server failed to start within timeout"));
+                    }
+                    tokio::time::sleep(RETRY_DELAY).await;
+                }
+            }
+        }
+    }
 
     Ok(())
 }

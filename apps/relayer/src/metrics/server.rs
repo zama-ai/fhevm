@@ -20,9 +20,16 @@ async fn health_handler() -> impl axum::response::IntoResponse {
     (axum::http::StatusCode::OK, "OK")
 }
 
-pub async fn run_metrics_server(registry: Registry, endpoint: String) {
+/// Initializes a http server for metrics endpoint and binds it to the given registry. The port in
+/// endpoint can either be explicitly specified or set to :0 (in which case listener will bind to
+/// free port assigned by OS). The actual socket address is returned.
+pub async fn run_metrics_server(registry: Registry, endpoint: String) -> SocketAddr {
     let addr: SocketAddr = endpoint.parse().expect("Invalid metrics endpoint address");
-    info!("metrics server listening at http://{}", addr);
+
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let actual_addr = listener.local_addr().unwrap();
+
+    info!("metrics server listening at http://{}", actual_addr);
 
     let app = Router::new()
         .route(
@@ -34,9 +41,12 @@ pub async fn run_metrics_server(registry: Registry, endpoint: String) {
         )
         .route("/health", get(health_handler));
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    // Spawn the server task
+    tokio::spawn(async move {
+        axum::serve(listener, app)
+            .await
+            .expect("metrics server failed");
+    });
 
-    axum::serve(listener, app)
-        .await
-        .expect("metrics server failed");
+    actual_addr
 }
