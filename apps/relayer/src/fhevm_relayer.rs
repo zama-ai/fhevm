@@ -27,7 +27,7 @@ use crate::gateway::{
     readiness_checker::ReadinessChecker, InputProofGatewayHandler, PublicDecryptGatewayHandler,
     UserDecryptGatewayHandler,
 };
-use crate::store::BlockNumberStore;
+use crate::store::sql::repositories::block_number_repo::BlockNumberRepository;
 use alloy::primitives::Address;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -211,16 +211,14 @@ pub async fn run_fhevm_relayer(
     // TODO: Pass the event_dispatcher to the event_listener
     let gateway_contract_addresses = vec![decryption_address, input_verification_address];
 
-    let gateway_block_store = Arc::new(BlockNumberStore::new(
-        kv_store.clone(),
-        "gateway".to_string(),
-    ));
+    let gateway_block_repo = Arc::new(BlockNumberRepository::new((*pg_client).clone()));
     let latest_block_gateway = match settings.gateway.listener.last_block_number {
         Some(block_number) => Some(block_number),
-        None => gateway_block_store
-            .get_last_block_number()
+        None => gateway_block_repo
+            .get_last_block_info()
             .await
-            .map_err(|e| eyre::eyre!("Error getting last block number: {}", e))?,
+            .map_err(|e| eyre::eyre!("Error getting last block number: {}", e))?
+            .map(|info| info.block_number),
     };
     info!(
         "start listening from block \"{}\" on gateway chain",
@@ -235,7 +233,7 @@ pub async fn run_fhevm_relayer(
     task_set.spawn(arbitrum_listener(
         subscription_gateway,
         Arc::clone(&orchestrator),
-        Arc::clone(&gateway_block_store),
+        Arc::clone(&gateway_block_repo),
     ));
 
     // HTTP endpoint

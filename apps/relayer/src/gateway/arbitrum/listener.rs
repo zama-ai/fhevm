@@ -6,7 +6,7 @@ use crate::core::event::{
 use crate::core::job_id::JobId;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
-use crate::store::BlockNumberStore;
+use crate::store::sql::repositories::block_number_repo::BlockNumberRepository;
 use alloy::rpc::types::Log;
 use futures::StreamExt;
 use std::sync::Arc;
@@ -19,7 +19,7 @@ pub async fn arbitrum_listener(
             RelayerEvent,
         >,
     >,
-    block_number_store: Arc<BlockNumberStore>,
+    block_number_repo: Arc<BlockNumberRepository>,
 ) {
     loop {
         tokio::select! {
@@ -45,12 +45,19 @@ pub async fn arbitrum_listener(
                     });
 
                     if let Some(block_number) = event_log.block_number {
-                        block_number_store.persist_last_block_number(block_number).await.unwrap_or_else(|e| {
-                            error!(
-                                error = %e,
-                                "persisting last block number"
-                            );
-                        });
+                        let block_hash = event_log.block_hash
+                            .map(|h| format!("{:#x}", h))
+                            .unwrap_or_else(|| "0x0".to_string());
+
+                        // Try to update first, if that fails (no row exists), insert
+                        if block_number_repo.update_block_info(block_number, block_hash.clone()).await.is_err() {
+                            block_number_repo.insert_initial_block_info(block_number, block_hash).await.unwrap_or_else(|e| {
+                                error!(
+                                    error = %e,
+                                    "inserting initial block info"
+                                );
+                            });
+                        }
                     }
                 }
                 None => {

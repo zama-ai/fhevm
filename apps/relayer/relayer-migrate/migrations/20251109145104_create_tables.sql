@@ -148,3 +148,18 @@ WHERE req_status = 'receipt_received';
 CREATE INDEX idx_input_proof_req_timeout_check
 ON input_proof_req (updated_at)
 WHERE req_status = 'receipt_received';
+
+-- Table for storing last processed block (single row)
+CREATE TABLE gateway_block_number_store (
+    id SERIAL PRIMARY KEY,
+    last_block_number BIGINT NOT NULL,
+    last_block_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Trigger for updated_at field
+CREATE TRIGGER set_gateway_block_number_store_updated_at
+BEFORE UPDATE ON gateway_block_number_store
+FOR EACH ROW
+EXECUTE PROCEDURE trigger_set_timestamp();
