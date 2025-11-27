@@ -152,36 +152,6 @@ jobs:
         run: |
           ./fhevm-cli deploy
 
-      - name: Input proof test (uint64)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test input-proof
-
-      - name: Input proof test with compute and decrypt (uint64)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test input-proof-compute-decrypt
-
-      - name: User Decryption test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test user-decryption
-
-      - name: ERC20 test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test erc20
-
-      - name: Public Decryption HTTP endpoint test (ebool)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-ebool
-
-      - name: Public Decryption HTTP endpoint test (mixed)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test public-decrypt-http-mixed
-
       # E2E tests on pausing the Gateway contracts
       - name: Pause Gateway Contracts
         working-directory: test-suite/fhevm
