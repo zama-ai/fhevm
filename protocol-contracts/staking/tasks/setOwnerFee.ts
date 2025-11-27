@@ -7,7 +7,7 @@ import { HardhatRuntimeEnvironment } from 'hardhat/types';
 // Set the owner fee for the operator rewarder contract
 // Note: The owner fee is in basis points (in 1/100th of a percent, so 10000 = 100.00%)
 // Example usage:
-// npx hardhat task:setOwnerFee --ownerFee 2000 --operatorRewarderAddress 0x1234567890123456789012345678901234567890 --network ethereum-testnet
+// npx hardhat task:setOwnerFee --ownerFee 2000 --operatorRewarderAddress 0x1234567890123456789012345678901234567890 --network testnet
 task('task:setOwnerFee')
   .addParam(
     'ownerFee',
@@ -48,7 +48,7 @@ task('task:setOwnerFee')
 
 // Set the owner fee for the all operator rewarder contracts
 // Example usage:
-// npx hardhat task:setAllOwnerFees --network ethereum-testnet
+// npx hardhat task:setAllOwnerFees --network testnet
 task('task:setAllOwnerFees').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   const { log } = hre.deployments;
 

@@ -58,7 +58,7 @@ async function renounceManagerRole(protocolStakingProxyAddress: string, hre: Har
 
 // Grant all protocol staking contracts' manager roles to the DAO
 // Example usage:
-// npx hardhat task:grantProtocolStakingManagerRolesToDAO --network ethereum-testnet
+// npx hardhat task:grantProtocolStakingManagerRolesToDAO --network testnet
 task('task:grantProtocolStakingManagerRolesToDAO').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   const { log } = hre.deployments;
 
@@ -77,7 +77,7 @@ task('task:grantProtocolStakingManagerRolesToDAO').setAction(async function (_, 
 
 // Renounce all protocol staking contracts' manager roles from the deployer
 // Example usage:
-// npx hardhat task:renounceProtocolStakingManagerRolesFromDeployer --network ethereum-testnet
+// npx hardhat task:renounceProtocolStakingManagerRolesFromDeployer --network testnet
 task('task:renounceProtocolStakingManagerRolesFromDeployer').setAction(async function (
   _,
   hre: HardhatRuntimeEnvironment,

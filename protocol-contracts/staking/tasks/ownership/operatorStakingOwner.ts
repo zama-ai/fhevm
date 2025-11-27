@@ -6,7 +6,7 @@ import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 // Transfer the operator staking contract's ownership from the deployer to the DAO
 // Example usage:
-// npx hardhat task:transferOperatorStakingOwnershipToDAO --network ethereum-testnet
+// npx hardhat task:transferOperatorStakingOwnershipToDAO --network testnet
 task('task:transferOperatorStakingOwnershipToDAO')
   .addParam(
     'operatorStakingAddress',
@@ -41,7 +41,7 @@ task('task:transferOperatorStakingOwnershipToDAO')
 
 // Transfer the operator rewarder contract's ownership from the deployer to the DAO
 // Example usage:
-// npx hardhat task:transferOperatorRewarderOwnershipToDAO --network ethereum-testnet
+// npx hardhat task:transferOperatorRewarderOwnershipToDAO --network testnet
 task('task:transferOperatorRewarderOwnershipToDAO')
   .addParam(
     'operatorRewarderAddress',
@@ -76,7 +76,7 @@ task('task:transferOperatorRewarderOwnershipToDAO')
 
 // Transfer the all operator staking and rewarder contracts' ownerships from the deployer to the DAO
 // Example usage:
-// npx hardhat task:transferAllOperatorStakingRewarderOwnershipsToDAO --network ethereum-testnet
+// npx hardhat task:transferAllOperatorStakingRewarderOwnershipsToDAO --network testnet
 task('task:transferAllOperatorStakingRewarderOwnershipsToDAO').setAction(async function (
   _,
   hre: HardhatRuntimeEnvironment,

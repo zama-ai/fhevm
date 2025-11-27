@@ -59,7 +59,7 @@ async function deployProtocolStaking(
 
 // Deploy the coprocessor ProtocolStaking contracts
 // Example usage:
-// npx hardhat task:deployProtocolStakingCopro --network ethereum-testnet
+// npx hardhat task:deployProtocolStakingCopro --network testnet
 task('task:deployProtocolStakingCopro').setAction(async function (_, hre) {
   const { log } = hre.deployments;
 
@@ -77,7 +77,7 @@ task('task:deployProtocolStakingCopro').setAction(async function (_, hre) {
 
 // Deploy the KMS ProtocolStaking contracts
 // Example usage:
-// npx hardhat task:deployProtocolStakingKMS --network ethereum-testnet
+// npx hardhat task:deployProtocolStakingKMS --network testnet
 task('task:deployProtocolStakingKMS').setAction(async function (_, hre) {
   const { log } = hre.deployments;
 
@@ -95,7 +95,7 @@ task('task:deployProtocolStakingKMS').setAction(async function (_, hre) {
 
 // Deploy the ProtocolStaking contracts
 // Example usage:
-// npx hardhat task:deployAllProtocolStakingContracts --network ethereum-testnet
+// npx hardhat task:deployAllProtocolStakingContracts --network testnet
 task('task:deployAllProtocolStakingContracts').setAction(async function (_, hre) {
   const { log } = hre.deployments;
 

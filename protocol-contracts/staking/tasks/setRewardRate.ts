@@ -44,7 +44,7 @@ task('task:setRewardRate')
 // Set the reward rate for the coprocessor protocol staking contract
 // Note: The reward rate is in tokens (using 18 decimals) per second
 // Example usage:
-// npx hardhat task:setCoprocessorRewardRate --rewardRate 1000000000000 --network ethereum-testnet
+// npx hardhat task:setCoprocessorRewardRate --rewardRate 1000000000000 --network testnet
 task('task:setCoprocessorRewardRate')
   .addParam(
     'rewardRate',
@@ -63,7 +63,7 @@ task('task:setCoprocessorRewardRate')
 
 // Set the reward rate for the KMS protocol staking contract
 // Example usage:
-// npx hardhat task:setKMSRewardRate --network ethereum-testnet
+// npx hardhat task:setKMSRewardRate --network testnet
 task('task:setKMSRewardRate').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   const { log } = hre.deployments;
 

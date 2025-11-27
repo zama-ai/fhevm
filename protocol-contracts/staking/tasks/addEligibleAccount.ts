@@ -13,7 +13,7 @@ import { HardhatRuntimeEnvironment } from 'hardhat/types';
 // npx hardhat task:addOperatorAsEligibleInProtocolStaking \
 //   --operatorStakingAddress 0x1234567890123456789012345678901234567890 \
 //   --protocolStakingProxyAddress 0x1234567890123456789012345678901234567890 \
-//   --network ethereum-testnet
+//   --network testnet
 task('task:addOperatorAsEligibleInProtocolStaking')
   .addParam(
     'operatorStakingAddress',
@@ -51,7 +51,7 @@ task('task:addOperatorAsEligibleInProtocolStaking')
 
 // Add all coprocessor operators as eligible in the coprocessor protocol staking contract
 // Example usage:
-// npx hardhat task:addAllCoproOperatorsAsEligible --network ethereum-testnet
+// npx hardhat task:addAllCoproOperatorsAsEligible --network testnet
 task('task:addAllCoproOperatorsAsEligible').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   const { log } = hre.deployments;
 
@@ -71,7 +71,7 @@ task('task:addAllCoproOperatorsAsEligible').setAction(async function (_, hre: Ha
 
 // Add all KMS operators as eligible in the KMS protocol staking contract
 // Example usage:
-// npx hardhat task:addAllKMSOperatorsAsEligible --network ethereum-testnet
+// npx hardhat task:addAllKMSOperatorsAsEligible --network testnet
 task('task:addAllKMSOperatorsAsEligible').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   const { log } = hre.deployments;
 
@@ -90,7 +90,7 @@ task('task:addAllKMSOperatorsAsEligible').setAction(async function (_, hre: Hard
 
 // Add all operators as eligible in the relevant protocol staking contracts (coprocessor and KMS)
 // Example usage:
-// npx hardhat task:addAllOperatorsAsEligible --network ethereum-testnet
+// npx hardhat task:addAllOperatorsAsEligible --network testnet
 task('task:addAllOperatorsAsEligible').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   const { log } = hre.deployments;
 

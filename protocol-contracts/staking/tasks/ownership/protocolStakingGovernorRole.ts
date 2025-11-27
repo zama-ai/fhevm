@@ -35,7 +35,7 @@ async function transferGovernorRole(protocolStakingProxyAddress: string, hre: Ha
 // The DAO then needs to accept the transfer by calling `acceptDefaultAdminTransfer()` function on
 // both protocol staking contracts
 // Example usage:
-// npx hardhat task:beginTransferProtocolStakingGovernorRolesToDAO --network ethereum-testnet
+// npx hardhat task:beginTransferProtocolStakingGovernorRolesToDAO --network testnet
 task('task:beginTransferProtocolStakingGovernorRolesToDAO').setAction(async function (
   _,
   hre: HardhatRuntimeEnvironment,

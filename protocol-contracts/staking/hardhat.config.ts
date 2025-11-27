@@ -56,11 +56,11 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
-    'ethereum-mainnet': {
+    'mainnet': {
       url: process.env.MAINNET_RPC_URL || '',
       accounts,
     },
-    'ethereum-testnet': {
+    'testnet': {
       url: process.env.SEPOLIA_RPC_URL || '',
       accounts,
     },

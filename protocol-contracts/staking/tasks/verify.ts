@@ -8,7 +8,7 @@ import { task } from 'hardhat/config';
 
 // Verify a protocol staking contract
 // Example usage:
-// npx hardhat task:verifyProtocolStaking --network ethereum-testnet
+// npx hardhat task:verifyProtocolStaking --network testnet
 task('task:verifyProtocolStaking').setAction(async function (_, hre) {
   const { upgrades, run } = hre;
 
@@ -32,7 +32,7 @@ task('task:verifyProtocolStaking').setAction(async function (_, hre) {
 
 // Verify a operator staking contract
 // Example usage:
-// npx hardhat task:verifyOperatorStaking --network ethereum-testnet
+// npx hardhat task:verifyOperatorStaking --network testnet
 task('task:verifyOperatorStaking').setAction(async function (_, hre) {
   const { run } = hre;
 
@@ -57,7 +57,7 @@ task('task:verifyOperatorStaking').setAction(async function (_, hre) {
 
 // Verify a operator rewarder contract
 // Example usage:
-// npx hardhat task:verifyOperatorRewarder --network ethereum-testnet
+// npx hardhat task:verifyOperatorRewarder --network testnet
 task('task:verifyOperatorRewarder').setAction(async function (_, hre) {
   const { run } = hre;
 

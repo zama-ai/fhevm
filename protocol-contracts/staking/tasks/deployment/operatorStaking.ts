@@ -55,7 +55,7 @@ async function deployOperatorStaking(
 
 // Deploy the coprocessor OperatorStaking contracts
 // Example usage:
-// npx hardhat task:deployAllOperatorStakingCoproContracts --network ethereum-testnet
+// npx hardhat task:deployAllOperatorStakingCoproContracts --network testnet
 task('task:deployAllOperatorStakingCoproContracts').setAction(async function (_, hre) {
   const { log } = hre.deployments;
 
@@ -86,7 +86,7 @@ task('task:deployAllOperatorStakingCoproContracts').setAction(async function (_,
 
 // Deploy the KMS OperatorStaking contracts
 // Example usage:
-// npx hardhat task:deployAllOperatorStakingKMSContracts --network ethereum-testnet
+// npx hardhat task:deployAllOperatorStakingKMSContracts --network testnet
 task('task:deployAllOperatorStakingKMSContracts').setAction(async function (_, hre) {
   const { log } = hre.deployments;
 
@@ -111,7 +111,7 @@ task('task:deployAllOperatorStakingKMSContracts').setAction(async function (_, h
 
 // Deploy the OperatorStaking contracts
 // Example usage:
-// npx hardhat task:deployAllOperatorStakingContracts --network ethereum-testnet
+// npx hardhat task:deployAllOperatorStakingContracts --network testnet
 task('task:deployAllOperatorStakingContracts').setAction(async function (_, hre) {
   const { log } = hre.deployments;
 
