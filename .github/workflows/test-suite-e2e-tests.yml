@@ -152,6 +152,12 @@ jobs:
         run: |
           ./fhevm-cli deploy
 
+      - name: Random operators test (subset)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test random-subset
+
+
       - name: Input proof test (uint64)
         working-directory: test-suite/fhevm
         run: |

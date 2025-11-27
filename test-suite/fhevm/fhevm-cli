@@ -75,7 +75,8 @@ function usage {
   echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
-  echo -e "  ${PURPLE}./fhevm-cli test public-decryption -n staging${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-ebool ${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-mixed -n staging${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test erc20${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli upgrade coprocessor${RESET}"
   echo -e "${BLUE}============================================================${RESET}"
@@ -168,6 +169,10 @@ case $COMMAND in
       docker_args+=("-g" "$GREP")
     else
       case $TEST_TYPE in
+        random-subset)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS (SUBSET)${RESET}"
+          docker_args+=("-g" "64 bits generate and decrypt")
+          ;;
         input-proof)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test user input uint64")
