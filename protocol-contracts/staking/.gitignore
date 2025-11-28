@@ -42,6 +42,7 @@ build/site
 # only used to package @openzeppelin/contracts
 contracts/build/
 contracts/README.md
+.openzeppelin
 
 # temporary artifact from solidity-coverage
 allFiredEvents
@@ -56,6 +57,7 @@ contracts-exposed
 /cache
 /artifacts
 /types
+/deployments
 
 # Foundry
 /out
