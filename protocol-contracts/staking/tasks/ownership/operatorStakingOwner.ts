@@ -1,6 +1,7 @@
 import { OPERATOR_STAKING_CONTRACT_NAME, OPERATOR_REWARDER_CONTRACT_NAME } from '../deployment';
 import { getAllOperatorStakingAddresses, getAllOperatorRewarderAddresses } from '../utils/getAddresses';
 import { getRequiredEnvVar } from '../utils/loadVariables';
+import { wait } from '../utils/time';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
@@ -15,8 +16,7 @@ task('task:transferOperatorStakingOwnershipToDAO')
     types.string,
   )
   .setAction(async function ({ operatorStakingAddress }, hre: HardhatRuntimeEnvironment) {
-    const { ethers, deployments, network, getNamedAccounts } = hre;
-    const { log } = deployments;
+    const { ethers, network, getNamedAccounts } = hre;
 
     // Get the deployer account
     const { deployer } = await getNamedAccounts();
@@ -35,8 +35,16 @@ task('task:transferOperatorStakingOwnershipToDAO')
     // Transfer the operator staking contract's ownership to the DAO
     await operatorStaking.transferOwnership(DAO_ADDRESS);
 
-    log(`Operator staking contract at address ${operatorStakingAddress} 
-      ownership transferred to DAO address ${DAO_ADDRESS} on network ${network.name}`);
+    console.log(
+      [
+        `🔑 Transferred ownership of OperatorStaking contract:`,
+        `  - Operator staking address:   ${operatorStakingAddress}`,
+        `  - New owner (DAO):        ${DAO_ADDRESS}`,
+        `  - Initiated by owner (deployer): ${deployer}`,
+        `  - Network:           ${network.name}`,
+        '',
+      ].join('\n'),
+    );
   });
 
 // Transfer the operator rewarder contract's ownership from the deployer to the DAO
@@ -50,8 +58,7 @@ task('task:transferOperatorRewarderOwnershipToDAO')
     types.string,
   )
   .setAction(async function ({ operatorRewarderAddress }, hre: HardhatRuntimeEnvironment) {
-    const { ethers, deployments, network, getNamedAccounts } = hre;
-    const { log } = deployments;
+    const { ethers, network, getNamedAccounts } = hre;
 
     // Get the deployer account
     const { deployer } = await getNamedAccounts();
@@ -70,8 +77,16 @@ task('task:transferOperatorRewarderOwnershipToDAO')
     // Transfer the operator rewarder contract's ownership to the DAO
     await operatorRewarder.transferOwnership(DAO_ADDRESS);
 
-    log(`Operator rewarder contract at address ${operatorRewarderAddress} 
-      ownership transferred to DAO address ${DAO_ADDRESS} on network ${network.name}`);
+    console.log(
+      [
+        `🔑 Transferred ownership of OperatorRewarder contract:`,
+        `  - Operator rewarder address: ${operatorRewarderAddress}`,
+        `  - New owner (DAO):  ${DAO_ADDRESS}`,
+        `  - Initiated by owner (deployer): ${deployer}`,
+        `  - Network: ${network.name}`,
+        '',
+      ].join('\n'),
+    );
   });
 
 // Transfer the all operator staking and rewarder contracts' ownerships from the deployer to the DAO
@@ -81,9 +96,7 @@ task('task:transferAllOperatorStakingRewarderOwnershipsToDAO').setAction(async f
   _,
   hre: HardhatRuntimeEnvironment,
 ) {
-  const { log } = hre.deployments;
-
-  log('Transferring ownership of all operator staking contracts to the DAO...');
+  console.log('Transferring ownership of all operator staking contracts to the DAO...\n');
 
   // Get the addresses of all operator staking contracts
   const operatorStakingAddresses = await getAllOperatorStakingAddresses(hre);
@@ -92,9 +105,14 @@ task('task:transferAllOperatorStakingRewarderOwnershipsToDAO').setAction(async f
     await hre.run('task:transferOperatorStakingOwnershipToDAO', {
       operatorStakingAddress: operatorStakingAddresses[i],
     });
+
+    if (i < operatorStakingAddresses.length - 1) {
+      // Wait for 5 seconds before transferring the next operator staking contract's ownership in order to avoid underpriced transaction issues
+      await wait(5);
+    }
   }
 
-  log('Transferring ownership of all operator rewarder contracts to the DAO...');
+  console.log('Transferring ownership of all operator rewarder contracts to the DAO...\n');
 
   // Get the addresses of all operator rewarder contracts
   const operatorRewarderAddresses = await getAllOperatorRewarderAddresses(hre);
@@ -103,7 +121,12 @@ task('task:transferAllOperatorStakingRewarderOwnershipsToDAO').setAction(async f
     await hre.run('task:transferOperatorRewarderOwnershipToDAO', {
       operatorRewarderAddress: operatorRewarderAddresses[i],
     });
+
+    if (i < operatorRewarderAddresses.length - 1) {
+      // Wait for 5 seconds before transferring the next operator rewarder contract's ownership in order to avoid underpriced transaction issues
+      await wait(5);
+    }
   }
 
-  log('Ownership of all operator staking and rewarder contracts have been transferred to the DAO');
+  console.log('Ownership of all operator staking and rewarder contracts have been transferred to the DAO');
 });

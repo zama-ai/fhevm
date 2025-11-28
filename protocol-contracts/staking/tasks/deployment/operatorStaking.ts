@@ -1,6 +1,7 @@
 import { getProtocolStakingCoproProxyAddress, getProtocolStakingKMSProxyAddress } from '../utils/getAddresses';
 import { getRequiredEnvVar } from '../utils/loadVariables';
-import { task } from 'hardhat/config';
+import { wait } from '../utils/time';
+import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 export const OPERATOR_STAKING_CONTRACT_NAME = 'OperatorStaking';
@@ -25,7 +26,7 @@ async function deployOperatorStaking(
   hre: HardhatRuntimeEnvironment,
 ) {
   const { getNamedAccounts, ethers, deployments, network } = hre;
-  const { log, save, getArtifact } = deployments;
+  const { save, getArtifact } = deployments;
 
   // Get the deployer account
   const { deployer } = await getNamedAccounts();
@@ -40,8 +41,16 @@ async function deployOperatorStaking(
   const operatorStakingAddress = await operatorStaking.getAddress();
   const operatorRewarderAddress = await operatorStaking.rewarder();
 
-  log(`${tokenName} operator staking deployed at address ${operatorStakingAddress} on network ${network.name}`);
-  log(`${tokenName} operator rewarder deployed at address ${operatorRewarderAddress} on network ${network.name}`);
+  console.log(
+    [
+      `✅ Deployed ${tokenName} OperatorStaking:`,
+      `  - Operator staking address:  ${operatorStakingAddress}`,
+      `  - Operator rewarder address: ${operatorRewarderAddress}`,
+      `  - Deployed by deployer account: ${deployer}`,
+      `  - Network: ${network.name}`,
+      '',
+    ].join('\n'),
+  );
 
   // Save the OperatorStaking and OperatorRewarder contract artifacts
   const operatorStakingArtifact = await getArtifact(OPERATOR_STAKING_CONTRACT_NAME);
@@ -53,25 +62,29 @@ async function deployOperatorStaking(
   });
 }
 
-// Deploy the coprocessor OperatorStaking contracts
+// Deploy a coprocessor OperatorStaking contracts
 // Example usage:
-// npx hardhat task:deployAllOperatorStakingCoproContracts --network testnet
-task('task:deployAllOperatorStakingCoproContracts').setAction(async function (_, hre) {
-  const { log } = hre.deployments;
+// npx hardhat task:deployOperatorStakingCopro --index 0 --network testnet
+task('task:deployOperatorStakingCopro')
+  .addParam('index', 'The index of the coprocessor operator staking contract to deploy', 0, types.int)
+  .setAction(async function ({ index }, hre) {
+    // Get the number of operator staking contracts for coprocessors and check if the index is in bounds
+    const numOperatorStakingCopro = parseInt(getRequiredEnvVar('NUM_OPERATOR_STAKING_COPRO'));
 
-  // Get the coprocessor protocol staking proxy address
-  const protocolStakingCoproProxyAddress = await getProtocolStakingCoproProxyAddress(hre);
+    if (index >= numOperatorStakingCopro || index < 0) {
+      throw new Error(
+        `Index ${index} is out of bounds for the number of coprocessor operator staking contracts: ${numOperatorStakingCopro}`,
+      );
+    }
 
-  // Get the number of operator staking contracts for coprocessors to deploy
-  const numOperatorStakingCopro = parseInt(getRequiredEnvVar('NUM_OPERATOR_STAKING_COPRO'));
+    // Get the coprocessor protocol staking proxy address
+    const protocolStakingCoproProxyAddress = await getProtocolStakingCoproProxyAddress(hre);
 
-  log('Deploying coprocessor operator staking contracts...');
-
-  for (let i = 0; i < numOperatorStakingCopro; i++) {
     // Get the env vars for the coprocessor operator staking contract
-    const coproTokenName = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_TOKEN_NAME_${i}`);
-    const coproTokenSymbol = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_TOKEN_SYMBOL_${i}`);
-    const coproOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_OWNER_ADDRESS_${i}`);
+    const coproTokenName = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_TOKEN_NAME_${index}`);
+    const coproTokenSymbol = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_TOKEN_SYMBOL_${index}`);
+    const coproOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_OWNER_ADDRESS_${index}`);
+
     await deployOperatorStaking(
       coproTokenName,
       coproTokenSymbol,
@@ -79,46 +92,87 @@ task('task:deployAllOperatorStakingCoproContracts').setAction(async function (_,
       coproOwnerAddress,
       hre,
     );
+  });
+
+// Deploy a KMS OperatorStaking contracts
+// Example usage:
+// npx hardhat task:deployOperatorStakingKMS --index 0 --network testnet
+task('task:deployOperatorStakingKMS')
+  .addParam('index', 'The index of the KMS operator staking contract to deploy', 0, types.int)
+  .setAction(async function ({ index }, hre) {
+    // Get the number of operator staking contracts for KMS and check if the index is in bounds
+    const numOperatorStakingKms = parseInt(getRequiredEnvVar('NUM_OPERATOR_STAKING_KMS'));
+
+    if (index >= numOperatorStakingKms || index < 0) {
+      throw new Error(
+        `Index ${index} is out of bounds for the number of KMS operator staking contracts: ${numOperatorStakingKms}`,
+      );
+    }
+
+    // Get the KMS protocol staking proxy address
+    const protocolStakingKMSProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
+
+    // Get the env vars for the KMS operator staking contract
+    const kmsTokenName = getRequiredEnvVar(`OPERATOR_STAKING_KMS_TOKEN_NAME_${index}`);
+    const kmsTokenSymbol = getRequiredEnvVar(`OPERATOR_STAKING_KMS_TOKEN_SYMBOL_${index}`);
+    const kmsOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_KMS_OWNER_ADDRESS_${index}`);
+
+    await deployOperatorStaking(kmsTokenName, kmsTokenSymbol, protocolStakingKMSProxyAddress, kmsOwnerAddress, hre);
+  });
+
+// Deploy the coprocessor OperatorStaking contracts
+// Example usage:
+// npx hardhat task:deployAllOperatorStakingCoproContracts --network testnet
+task('task:deployAllOperatorStakingCoproContracts').setAction(async function (_, hre) {
+  console.log('Deploying coprocessor operator staking contracts...\n');
+
+  // Get the number of operator staking contracts for coprocessors to deploy
+  const numOperatorStakingCopro = parseInt(getRequiredEnvVar('NUM_OPERATOR_STAKING_COPRO'));
+
+  for (let i = 0; i < numOperatorStakingCopro; i++) {
+    await hre.run('task:deployOperatorStakingCopro', { index: i });
+
+    if (i < numOperatorStakingCopro - 1) {
+      // Wait for 5 seconds before deploying the next operator staking contract in order to avoid underpriced transaction issues
+      await wait(5);
+    }
   }
 
-  log('All coprocessor operator staking contracts deployed');
+  console.log('All coprocessor operator staking contracts deployed');
 });
 
 // Deploy the KMS OperatorStaking contracts
 // Example usage:
 // npx hardhat task:deployAllOperatorStakingKMSContracts --network testnet
 task('task:deployAllOperatorStakingKMSContracts').setAction(async function (_, hre) {
-  const { log } = hre.deployments;
-
-  // Get the KMS protocol staking proxy address
-  const protocolStakingKMSProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
+  console.log('Deploying KMS operator staking contracts...');
 
   // Get the number of operator staking contracts for KMS to deploy
   const numOperatorStakingKms = parseInt(getRequiredEnvVar('NUM_OPERATOR_STAKING_KMS'));
 
-  log('Deploying KMS operator staking contracts...');
-
   for (let i = 0; i < numOperatorStakingKms; i++) {
-    // Get the env vars for the KMS operator staking contract
-    const kmsTokenName = getRequiredEnvVar(`OPERATOR_STAKING_KMS_TOKEN_NAME_${i}`);
-    const kmsTokenSymbol = getRequiredEnvVar(`OPERATOR_STAKING_KMS_TOKEN_SYMBOL_${i}`);
-    const kmsOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_KMS_OWNER_ADDRESS_${i}`);
-    await deployOperatorStaking(kmsTokenName, kmsTokenSymbol, protocolStakingKMSProxyAddress, kmsOwnerAddress, hre);
+    await hre.run('task:deployOperatorStakingKMS', { index: i });
+
+    if (i < numOperatorStakingKms - 1) {
+      // Wait for 5 seconds before deploying the next operator staking contract in order to avoid underpriced transaction issues
+      await wait(5);
+    }
   }
 
-  log('All KMS operator staking contracts deployed');
+  console.log('All KMS operator staking contracts deployed');
 });
 
 // Deploy the OperatorStaking contracts
 // Example usage:
 // npx hardhat task:deployAllOperatorStakingContracts --network testnet
 task('task:deployAllOperatorStakingContracts').setAction(async function (_, hre) {
-  const { log } = hre.deployments;
+  console.log('Deploying operator staking contracts...');
 
-  log('Deploying operator staking contracts...');
+  await hre.run('task:deployAllOperatorStakingCoproContracts');
 
-  hre.run('task:deployAllOperatorStakingCoproContracts');
-  hre.run('task:deployAllOperatorStakingKMSContracts');
+  await wait(5);
 
-  log('All operator staking contracts deployed');
+  await hre.run('task:deployAllOperatorStakingKMSContracts');
+
+  console.log('All operator staking contracts deployed');
 });

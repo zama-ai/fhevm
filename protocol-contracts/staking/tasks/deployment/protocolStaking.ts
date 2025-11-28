@@ -1,4 +1,5 @@
 import { getRequiredEnvVar } from '../utils/loadVariables';
+import { wait } from '../utils/time';
 import { task } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
@@ -23,7 +24,7 @@ async function deployProtocolStaking(
   hre: HardhatRuntimeEnvironment,
 ) {
   const { getNamedAccounts, ethers, deployments, upgrades, network } = hre;
-  const { log, save, getArtifact } = deployments;
+  const { save, getArtifact } = deployments;
 
   // Get the deployer account
   const { deployer } = await getNamedAccounts();
@@ -46,8 +47,14 @@ async function deployProtocolStaking(
 
   // Get the proxy address
   const proxyAddress = await proxy.getAddress();
-  log(
-    `${tokenName} protocol staking proxy deployed with its implementation at address ${proxyAddress} on network ${network.name}`,
+  console.log(
+    [
+      `✅ Deployed ${tokenName} ProtocolStaking:`,
+      `  - Protocol staking proxy address: ${proxyAddress}`,
+      `  - Deployed by deployer account: ${deployer}`,
+      `  - Network: ${network.name}`,
+      '',
+    ].join('\n'),
   );
 
   // Save the proxy and implementation contract artifacts
@@ -61,9 +68,7 @@ async function deployProtocolStaking(
 // Example usage:
 // npx hardhat task:deployProtocolStakingCopro --network testnet
 task('task:deployProtocolStakingCopro').setAction(async function (_, hre) {
-  const { log } = hre.deployments;
-
-  log('Deploying coprocessor protocol staking contracts...');
+  console.log('Deploying coprocessor protocol staking contracts...\n');
 
   // Get the env vars for the coprocessor protocol staking contract
   const coproTokenName = getRequiredEnvVar('PROTOCOL_STAKING_COPRO_TOKEN_NAME');
@@ -79,9 +84,7 @@ task('task:deployProtocolStakingCopro').setAction(async function (_, hre) {
 // Example usage:
 // npx hardhat task:deployProtocolStakingKMS --network testnet
 task('task:deployProtocolStakingKMS').setAction(async function (_, hre) {
-  const { log } = hre.deployments;
-
-  log('Deploying KMS protocol staking contracts...');
+  console.log('Deploying KMS protocol staking contracts...');
 
   // Get the env vars for the KMS protocol staking contract
   const kmsTokenName = getRequiredEnvVar('PROTOCOL_STAKING_KMS_TOKEN_NAME');
@@ -97,12 +100,13 @@ task('task:deployProtocolStakingKMS').setAction(async function (_, hre) {
 // Example usage:
 // npx hardhat task:deployAllProtocolStakingContracts --network testnet
 task('task:deployAllProtocolStakingContracts').setAction(async function (_, hre) {
-  const { log } = hre.deployments;
+  console.log('Deploying protocol staking contracts...');
 
-  log('Deploying protocol staking contracts...');
+  await hre.run('task:deployProtocolStakingCopro');
 
-  hre.run('task:deployProtocolStakingCopro');
-  hre.run('task:deployProtocolStakingKMS');
+  await wait(5);
 
-  log('All protocol staking contracts deployed');
+  await hre.run('task:deployProtocolStakingKMS');
+
+  console.log('All protocol staking contracts deployed');
 });

@@ -1,7 +1,9 @@
 import './tasks/accounts';
 import './tasks/addEligibleAccount';
 import './tasks/deployment';
+import './tasks/deposit';
 import './tasks/ownership';
+import './tasks/setOwnerFee';
 import './tasks/setRewardRate';
 import './tasks/verify';
 import '@nomicfoundation/hardhat-chai-matchers';
@@ -46,7 +48,7 @@ if (accounts == null) {
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: '0.8.29',
+    version: '0.8.27',
     settings: {
       optimizer: {
         enabled: true,
@@ -56,11 +58,11 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
-    'mainnet': {
+    mainnet: {
       url: process.env.MAINNET_RPC_URL || '',
       accounts,
     },
-    'testnet': {
+    testnet: {
       url: process.env.SEPOLIA_RPC_URL || '',
       accounts,
     },
