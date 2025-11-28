@@ -248,6 +248,10 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
           docker_args+=("--parallel" "-g" "test operator|FHEVM manual operations")
           ;;
+        paused-host-operators)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED OPERATORS${RESET}"
+          docker_args+=("--parallel" "-g" "test paused host operator")
+          ;;
         random)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
           docker_args+=("-g" "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt")

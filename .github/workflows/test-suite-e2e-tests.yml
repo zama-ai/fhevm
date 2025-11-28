@@ -168,6 +168,11 @@ jobs:
         run: |
           ./fhevm-cli test paused-host-public-decrypt-http
 
+      - name: Paused Host operators test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test paused-host-operators
+
       - name: Unpause Host Contracts
         working-directory: test-suite/fhevm
         run: |
