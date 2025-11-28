@@ -24,7 +24,6 @@ jobs:
       - name: actionlint
         uses: raven-actions/actionlint@3a24062651993d40fed1019b58ac6fbdfbf276cc # v2.0.1
         with:
-            flags: "-ignore SC2001"
             version: ${{ env.ACTIONLINT_VERSION }}
 
       - name: Ensure SHA pinned actions
@@ -48,4 +47,4 @@ jobs:
         uses: zizmorcore/zizmor-action@e673c3917a1aef3c65c972347ed84ccd013ecda4 # v0.2.0
         with:
           persona: pedantic
-          version: 1.14.2
+          version: 1.17.0

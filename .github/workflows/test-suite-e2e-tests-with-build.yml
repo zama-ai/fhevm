@@ -11,8 +11,6 @@ on:
         description: "Relayer Image Version"
         default: ""
         type: string
-  # WIP: still not working - skipped for now
-  # pull_request:
 
 permissions: {}
 

@@ -14,3 +14,12 @@ self-hosted-runner:
     - m1mac
     - 4090-desktop
     - aws-mac1-metal
+
+# Path-specific configurations
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      - SC2001 # https://www.shellcheck.net/wiki/SC2129
+      - 'property "result" is not defined in object type.*'
+      - '".*" section is alias node but mapping node is expected'
+      - 'secret ".*" is required by ".*" reusable workflow.*'
