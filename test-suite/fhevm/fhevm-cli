@@ -38,7 +38,7 @@ export HOST_VERSION=${HOST_VERSION:-"v0.10.0-3"}
 # Other services.
 export CORE_VERSION=${CORE_VERSION:-"v0.12.4"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.6.0"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"c4f4979"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"4f54cc7"}
 
 
 function print_logo() {
@@ -217,6 +217,10 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test paused gateway user input uint64")
           ;;
+        paused-host-input-proof)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED HOST INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test paused host user input uint64")
+          ;;
         user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test user decrypt")
@@ -256,9 +260,17 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED PUBLIC DECRYPTION OVER HTTP${RESET}"
           docker_args+=("-g" "test paused gateway HTTPPublicDecrypt")
           ;;
+        paused-host-public-decrypt-http)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED HOST PUBLIC DECRYPTION OVER HTTP${RESET}"
+          docker_args+=("-g" "test paused host HTTPPublicDecrypt")
+          ;;
         operators)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
           docker_args+=("--parallel" "-g" "test operator|FHEVM manual operations")
+          ;;
+        paused-host-operators)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED OPERATORS${RESET}"
+          docker_args+=("--parallel" "-g" "test paused host operator")
           ;;
         random)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
