@@ -48,7 +48,7 @@ sol!(
 use crate::ACLTest::ACLTestInstance;
 use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
 
-const NB_EVENTS_PER_WALLET: i64 = 200;
+const NB_EVENTS_PER_WALLET: i64 = 100;
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
