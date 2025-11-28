@@ -31,6 +31,28 @@ describe('Paused host', function () {
     ).to.be.rejectedWith(new RegExp(ENFORCED_PAUSE_SELECTOR));
   });
 
+  // ACL.allowTransient test.
+  it('test paused host operator "sub"', async function () {
+    const fhevmTestSuite1ContractFactory = await ethers.getContractFactory('FHEVMTestSuite1');
+    const fhevmTestSuite1Contract = await fhevmTestSuite1ContractFactory.connect(this.signers.alice).deploy();
+    const fhevmTestSuite1ContractAddress = await fhevmTestSuite1Contract.getAddress();
+    await fhevmTestSuite1Contract.waitForDeployment();
+
+    const input = this.instances.alice.createEncryptedInput(fhevmTestSuite1ContractAddress, this.signers.alice.address);
+    input.add32(1488611147n);
+    input.add64(1488611147n);
+    const encryptedAmount = await input.encrypt();
+
+    // The sub_euint32_euint64 call should fail because it calls to ACL.allowTransient() which should be paused.
+    await expect(
+      fhevmTestSuite1Contract.sub_euint32_euint64(
+        encryptedAmount.handles[0],
+        encryptedAmount.handles[1],
+        encryptedAmount.inputProof,
+      ),
+    ).to.be.rejectedWith(new RegExp(ENFORCED_PAUSE_SELECTOR));
+  });
+
   // ACL.allowForDecryption test.
   it('test paused host HTTPPublicDecrypt', async function () {
     // Initialize HTTPPublicDecrypt contract.
