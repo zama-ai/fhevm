@@ -371,9 +371,19 @@ impl DFComponentGraph {
                 // The error case here should not happen as we've
                 // already covered it by testing for SCCs in the graph
                 // first
-                self.graph
-                    .add_edge(*producer, *consumer, ())
-                    .map_err(|_| SchedulerError::CyclicDependence)?;
+                if self.graph.add_edge(*producer, *consumer, ()).is_err() {
+                    let prod = self
+                        .graph
+                        .node_weight(*producer)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
+                    let cons = self
+                        .graph
+                        .node_weight(*consumer)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
+                    error!(target: "scheduler", { producer_id = ?hex::encode(prod.transaction_id.clone()), consumer_id = ?hex::encode(cons.transaction_id.clone()) },
+		       "Dependence cycle when adding dependence - initial cycle detection failed");
+                    return Err(SchedulerError::CyclicDependence.into());
+                }
             }
         }
         Ok(())
