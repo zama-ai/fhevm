@@ -10,7 +10,7 @@ pub struct UserDecryptShare {
     pub share_index: i32,
     pub share: String,
     pub kms_signature: String,
-    pub extra_data: Option<String>,
+    pub extra_data: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

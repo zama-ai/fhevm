@@ -251,7 +251,7 @@ impl GatewayHandler {
                 user_decrypt_response.indexShare,
                 &hex::encode(&user_decrypt_response.userDecryptedShare),
                 &hex::encode(&user_decrypt_response.signature),
-                Some(&hex::encode(&user_decrypt_response.extraData)),
+                &hex::encode(&user_decrypt_response.extraData),
                 &tx_hash_str,
             )
             .await
@@ -570,12 +570,9 @@ fn assemble_final_response(shares: Vec<UserDecryptShare>) -> Result<UserDecryptR
     }
 
     // Use extra_data from first share with hex decoding
-    let extra_data = match &first_share.extra_data {
-        Some(hex_str) => match hex::decode(hex_str) {
-            Ok(decoded) => Bytes::from(decoded),
-            Err(e) => return Err(format!("Failed to decode extra_data hex: {}", e)),
-        },
-        None => Bytes::new(),
+    let extra_data = match hex::decode(&first_share.extra_data) {
+        Ok(decoded) => Bytes::from(decoded),
+        Err(e) => return Err(format!("Failed to decode extra_data hex: {}", e)),
     };
 
     Ok(UserDecryptResponse {

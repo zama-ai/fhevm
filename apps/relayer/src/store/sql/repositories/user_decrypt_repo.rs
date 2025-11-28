@@ -82,7 +82,7 @@ impl UserDecryptRepository {
             )
             VALUES ($1, $2, $3)
             ON CONFLICT (int_indexer_id)
-            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status) 
+            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             DO UPDATE SET updated_at = NOW() -- Dummy update to ensure RETURNING works
             RETURNING ext_reference_id
             "#,
@@ -263,7 +263,7 @@ impl UserDecryptRepository {
         share_index: U256,
         share: &str,
         kms_signature: &str,
-        extra_data: Option<&str>,
+        extra_data: &str,
         tx_hash: &str,
     ) -> SqlResult<i64> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();

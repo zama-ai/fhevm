@@ -52,7 +52,7 @@ CREATE TABLE user_decrypt_share (
     share_index INTEGER NOT NULL,
     share TEXT NOT NULL,
     kms_signature TEXT NOT NULL,
-    extra_data TEXT,
+    extra_data TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
