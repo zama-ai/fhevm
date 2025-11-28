@@ -8,6 +8,7 @@ use alloy::transports::ws::WebSocketConfig;
 use anyhow::{anyhow, Result};
 use fhevm_engine_common::telemetry;
 use futures_util::stream::StreamExt;
+use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use sqlx::types::Uuid;
 
 use std::collections::{HashSet, VecDeque};
@@ -836,6 +837,18 @@ async fn db_insert_block_no_retry(
     let mut tx = db.new_transaction().await?;
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
+    let block_timestamp = OffsetDateTime::from_unix_timestamp(
+        block_logs.summary.timestamp as i64,
+    )
+    .unwrap_or_else(|_| {
+        error!(
+            timestamp = block_logs.summary.timestamp,
+            "Invalid block timestamp, using now",
+        );
+        OffsetDateTime::now_utc()
+    });
+    let block_timestamp =
+        PrimitiveDateTime::new(block_timestamp.date(), block_timestamp.time());
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
@@ -868,6 +881,7 @@ async fn db_insert_block_no_retry(
                     transaction_hash: log.transaction_hash,
                     is_allowed: false, // updated in the next loop
                     block_number: log.block_number,
+                    block_timestamp,
                 };
                 tfhe_event_log.push(log);
                 continue;
