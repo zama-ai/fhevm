@@ -5,24 +5,22 @@ use alloy::pubsub::SubscriptionStream;
 use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
 use alloy::sol_types::SolEventInterface;
 use anyhow::{anyhow, Result};
-use fhevm_engine_common::telemetry;
+use clap::Parser;
 use futures_util::stream::StreamExt;
+use rustls;
+use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use sqlx::types::Uuid;
+use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info, warn, Level};
 
 use std::collections::{HashSet, VecDeque};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
-use tracing::{error, info, warn, Level};
-
-use clap::Parser;
-
-use rustls;
-
-use tokio_util::sync::CancellationToken;
 
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{BlockchainProvider, Handle};
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
@@ -878,6 +876,18 @@ async fn db_insert_block_no_retry(
     let block_hash = block_logs.summary.hash;
     let block_number = block_logs.summary.number;
     let mut catchup_insertion = 0;
+    let block_timestamp = OffsetDateTime::from_unix_timestamp(
+        block_logs.summary.timestamp as i64,
+    )
+    .unwrap_or_else(|_| {
+        error!(
+            timestamp = block_logs.summary.timestamp,
+            "Invalid block timestamp, using now",
+        );
+        OffsetDateTime::now_utc()
+    });
+    let block_timestamp =
+        PrimitiveDateTime::new(block_timestamp.date(), block_timestamp.time());
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
@@ -919,6 +929,7 @@ async fn db_insert_block_no_retry(
                     transaction_hash: log.transaction_hash,
                     is_allowed: false, // updated in the next loop
                     block_number,
+                    block_timestamp,
                 };
                 tfhe_event_log.push(log);
                 continue;
