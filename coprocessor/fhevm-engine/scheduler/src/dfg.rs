@@ -284,7 +284,17 @@ impl DFTxGraph {
             .graph
             .node_weight_mut(tx_node_index)
             .ok_or(SchedulerError::DataflowGraphError)?;
+        if tx_node.is_uncomputable {
+            return Ok(());
+        }
         tx_node.is_uncomputable = true;
+        for (_idx, op) in tx_node.graph.graph.node_references() {
+            self.results.push(DFGTxResult {
+                transaction_id: tx_node.transaction_id.clone(),
+                handle: op.result_handle.to_vec(),
+                compressed_ct: Err(SchedulerError::MissingInputs.into()),
+            });
+        }
         for edge in edges.edges_directed(tx_node_index, Direction::Outgoing) {
             let dependent_tx_index = edge.target();
             self.set_uncomputable(dependent_tx_index, edges)?;
