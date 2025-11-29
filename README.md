@@ -1,4 +1,5 @@
 <p align="center">
+  > 🔒 This project is licensed under the BSD-3-Clause-Clear license. See the LICENSE file for full details.
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/.gitbook/assets/fhevm-header-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/.gitbook/assets/fhevm-header-light.png">
