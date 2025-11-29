@@ -174,6 +174,10 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 </a>
 
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
+- For bugs or feature requests, open an issue in this repository.
+- For general questions and integration help, use the Zama community link above.
+- For commercial usage or partnership inquiries, contact hello@zama.ai.
+
 
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
