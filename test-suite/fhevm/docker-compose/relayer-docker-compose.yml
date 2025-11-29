@@ -15,6 +15,22 @@ services:
     depends_on:
       relayer-db:
         condition: service_healthy
+      relayer-migrate:
+        condition: service_started
+
+  relayer-migrate:
+    container_name: relayer-migrate
+    platform: linux/amd64
+    image: ghcr.io/zama-ai/console/relayer-migrate:${RELAYER_MIGRATE_VERSION}
+    env_file:
+      - ../env/staging/.env.relayer-migrate.local
+    command:
+    - /bin/server
+    ports:
+      - "3001:3001"
+    depends_on:
+      relayer-db:
+        condition: service_healthy
 
   relayer-db:
     container_name: fhevm-relayer-db
@@ -32,7 +48,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - relayer_postgres_data:/var/lib/postgresql/data
 
 volumes:
-  postgres_data:
+  relayer_postgres_data:
