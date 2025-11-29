@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ use sqlx::{query, Postgres};
 
 #[cfg(feature = "gpu")]
 use tfhe::core_crypto::gpu::get_number_of_gpus;
+use tracing::warn;
 
 /// Returns tenant id upon valid authorization request
 pub async fn check_if_api_key_is_valid<T>(
@@ -184,6 +186,13 @@ where
 
         let mut key_cache = tenant_key_cache.write().await;
 
+        if keys.len() > key_cache.cap().into() {
+            warn!(target: "tfhe_worker",
+                  { key_cache_size = key_cache.cap(), fetched_keys = keys.len()},
+                "TFHE worker key cache size insufficient, increasing"
+            );
+            key_cache.resize(NonZeroUsize::new(keys.len()).unwrap());
+        }
         for key in keys {
             key_cache.put(key.tenant_id, key);
         }
