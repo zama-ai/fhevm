@@ -13,7 +13,7 @@ use crate::http::userdecrypt_http_listener::{
     UserDecryptErrorResponseJson, UserDecryptHandler, UserDecryptRequestJson,
     UserDecryptResponseJson,
 };
-use crate::http::AppResponse;
+use crate::http::with_rate_limiting;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
@@ -21,9 +21,6 @@ use crate::store::sql::repositories::{
     input_proof_repo::InputProofRepository, public_decrypt_repo::PublicDecryptRepository,
     user_decrypt_repo::UserDecryptRepository,
 };
-use chrono::Utc;
-use rand::Rng;
-use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
 use std::str::FromStr;
@@ -37,10 +34,6 @@ use axum::{
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tower_governor::{
-    governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor, GovernorError,
-    GovernorLayer,
-};
 use utoipa::{OpenApi, ToSchema};
 use utoipa_redoc::{Redoc, Servable};
 
@@ -63,36 +56,6 @@ impl FromStr for HTTPApiVersion {
             "v1" => Ok(HTTPApiVersion::V1),
             _ => Err(()),
         }
-    }
-}
-
-/// Custom error handler for rate limiting that returns structured JSON responses.
-fn create_rate_limit_error_handler(
-    config: &RateLimitConfig,
-) -> impl Fn(GovernorError) -> axum::response::Response + Clone {
-    let base_retry_after_seconds = config.retry_after_seconds;
-    let jitter_max_ms = config.jitter_max_ms;
-
-    move |_err: GovernorError| {
-        // Calculate retry-after with millisecond precision jitter
-        let base_ms = base_retry_after_seconds * 1000;
-        let total_ms = if jitter_max_ms > 0 {
-            let jitter = rand::rng().random_range(0..=jitter_max_ms);
-            base_ms + jitter
-        } else {
-            base_ms
-        };
-
-        // Generate RFC 7231 timestamp indicating when client should retry
-        // Uses absolute timestamp instead of relative seconds for cache-safety
-        let retry_time = Utc::now() + chrono::Duration::milliseconds(total_ms as i64);
-        let retry_after_timestamp = retry_time.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
-
-        AppResponse::<()>::rate_limited(
-            "Too many requests at relayer HTTP server",
-            &retry_after_timestamp,
-        )
-        .into_response()
     }
 }
 
@@ -323,48 +286,36 @@ where
 )]
     struct ApiDoc;
 
-    // Configure rate limiting using settings (configurable via rate_limit_on_post_endpoints config section)
-    // Convert RPS to milliseconds per token: 1000ms / RPS = ms per token
-    let ms_per_token = 1000 / rate_limit_on_post_endpoints.requests_per_second;
-    let governor_conf = GovernorConfigBuilder::default()
-        .per_millisecond(ms_per_token as u64)
-        .burst_size(rate_limit_on_post_endpoints.burst_size)
-        .methods([Method::POST].to_vec())
-        .key_extractor(GlobalKeyExtractor)
-        .finish()
-        .unwrap();
+    let app = Router::new()
+        .route("/liveness", get(liveness_handler))
+        .route(
+            "/healthz",
+            get(move || async move { health_handler(health_checker).await }),
+        )
+        .route("/version", get(version_handler))
+        // Apply rate limiting to POST endpoints
+        .route(
+            "/{api_version}/input-proof",
+            post(input_proof_documented::<D>),
+        )
+        .route(
+            "/{api_version}/public-decrypt",
+            post(public_decrypt_documented::<D>),
+        )
+        .route(
+            "/{api_version}/user-decrypt",
+            post(user_decrypt_documented::<D>),
+        );
 
-    let app =
-        Router::new()
-            .route("/liveness", get(liveness_handler))
-            .route(
-                "/healthz",
-                get(move || async move { health_handler(health_checker).await }),
-            )
-            .route("/version", get(version_handler))
-            // Apply rate limiting to POST endpoints
-            .route(
-                "/{api_version}/input-proof",
-                post(input_proof_documented::<D>),
-            )
-            .route(
-                "/{api_version}/public-decrypt",
-                post(public_decrypt_documented::<D>),
-            )
-            .route(
-                "/{api_version}/user-decrypt",
-                post(user_decrypt_documented::<D>),
-            )
-            .layer(GovernorLayer::new(governor_conf).error_handler(
-                create_rate_limit_error_handler(&rate_limit_on_post_endpoints),
-            ))
-            .layer(Extension(input_proof_handler))
-            .layer(Extension(public_decrypt_handler))
-            .layer(Extension(user_decrypt_handler))
-            // GET endpoint without rate limiting
-            .route("/{api_version}/keyurl", get(keyurl_documented))
-            .layer(Extension(key_url))
-            .merge(Redoc::with_url("/docs", ApiDoc::openapi()));
+    // Apply rate limiting using middleware
+    let app = with_rate_limiting(app, &rate_limit_on_post_endpoints)
+        .layer(Extension(input_proof_handler))
+        .layer(Extension(public_decrypt_handler))
+        .layer(Extension(user_decrypt_handler))
+        // GET endpoint without rate limiting
+        .route("/{api_version}/keyurl", get(keyurl_documented))
+        .layer(Extension(key_url))
+        .merge(Redoc::with_url("/docs", ApiDoc::openapi()));
 
     // The port in http_endpoint can either be explicitly specified or set to :0 (in which case
     // listener will bind to free port assigned by OS). Fetch the actual address & return it.
