@@ -1,4 +1,5 @@
 pub mod docs;
+pub mod health_endpoints;
 pub mod http_server;
 pub mod input_http_listener;
 pub mod keyurl_http_listener;
@@ -8,11 +9,17 @@ pub mod userdecrypt_http_listener;
 pub mod utils;
 
 // Re-export key types and functions for direct access
+pub use health_endpoints::{
+    health_handler, liveness_handler, version_handler, HealthResponse, LivenessResponse, VersionResponse
+};
+
 pub use utils::{
-    // OpenAPI types
-    ChainId,
+    // Health utilities
+    HealthCheck, HealthChecker,
     // Middleware helpers
     with_rate_limiting,
+    // OpenAPI types
+    ChainId,
     // Other utilities
     de_string_or_number,
     // Parsing utilities

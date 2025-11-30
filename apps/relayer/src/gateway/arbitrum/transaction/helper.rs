@@ -1,9 +1,10 @@
 use crate::gateway::arbitrum::transaction::engine::{CustomFillers, TransactionEngine};
+use crate::http::HealthCheck;
 use crate::{core::errors::EventProcessingError, metrics};
 use alloy::network::AnyTransactionReceipt;
 use alloy::network::Ethereum;
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
-use alloy::providers::RootProvider;
+use alloy::providers::{Provider, RootProvider};
 use alloy::sol_types::SolEvent;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -143,6 +144,19 @@ impl TransactionHelper {
             "{} event not found in transaction logs",
             T::SIGNATURE
         )))
+    }
+}
+
+#[async_trait::async_trait]
+impl HealthCheck for TransactionHelper {
+    async fn check(&self) -> anyhow::Result<()> {
+        self.tx_engine
+            .provider
+            .inner
+            .get_block_number()
+            .await
+            .map_err(|e| anyhow::anyhow!("Gateway RPC health check failed: {}", e))?;
+        Ok(())
     }
 }
 

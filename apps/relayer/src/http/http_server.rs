@@ -1,6 +1,5 @@
 use crate::config::settings::{KeyUrl, RateLimitConfig};
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
-use crate::http::health::{health_handler, liveness_handler, version_handler, HealthChecker};
 use crate::http::input_http_listener::{
     InputProofErrorResponseJson, InputProofHandler, InputProofRequestJson, InputProofResponseJson,
 };
@@ -14,6 +13,7 @@ use crate::http::userdecrypt_http_listener::{
     UserDecryptResponseJson,
 };
 use crate::http::with_rate_limiting;
+use crate::http::{health_handler, liveness_handler, version_handler, HealthChecker};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
@@ -64,8 +64,8 @@ impl FromStr for HTTPApiVersion {
 pub async fn run_http_server<D>(
     http_endpoint: SocketAddr,
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
-    key_url: KeyUrl,         // TODO: move else where to reduce argument bloat
-    gateway_rpc_url: String, // TOOD: Move health checker to individual components. to reduce argument bloat.
+    key_url: KeyUrl, // TODO: move else where to reduce argument bloat
+    health_checker: Arc<HealthChecker>,
     rate_limit_on_post_endpoints: RateLimitConfig,
     input_proof_repo: Arc<InputProofRepository>,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
@@ -75,9 +75,6 @@ where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
     let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
-
-    // Initialize health checker
-    let health_checker = Arc::new(HealthChecker::new(gateway_rpc_url));
 
     // Build our application with the POST endpoint '/input-proof'
     let input_proof_handler = Arc::new(InputProofHandler::new(

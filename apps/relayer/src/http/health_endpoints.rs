@@ -1,4 +1,4 @@
-use alloy::providers::{Provider, ProviderBuilder};
+use crate::http::utils::HealthChecker;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -24,65 +24,6 @@ pub struct VersionResponse {
     name: String,
     version: String,
     build: String,
-}
-
-// Health check trait for dependency checking
-#[async_trait::async_trait]
-pub trait HealthCheck: Send + Sync {
-    async fn check(&self) -> anyhow::Result<()>;
-}
-
-pub struct GatewayChainHealthCheck {
-    rpc_url: String,
-}
-
-#[async_trait::async_trait]
-impl HealthCheck for GatewayChainHealthCheck {
-    async fn check(&self) -> anyhow::Result<()> {
-        let provider = ProviderBuilder::new()
-            .connect(self.rpc_url.as_str())
-            .await?;
-        provider.get_block_number().await?;
-        Ok(())
-    }
-}
-
-// Health checker to manage all dependency checks
-pub struct HealthChecker {
-    checks: HashMap<String, Arc<dyn HealthCheck>>,
-}
-
-impl HealthChecker {
-    pub fn new(gateway_rpc_url: String) -> Self {
-        let mut checks: HashMap<String, Arc<dyn HealthCheck>> = HashMap::new();
-
-        checks.insert(
-            "gateway".to_string(),
-            Arc::new(GatewayChainHealthCheck {
-                rpc_url: gateway_rpc_url,
-            }),
-        );
-        Self { checks }
-    }
-
-    pub async fn check_all(&self) -> (bool, HashMap<String, String>) {
-        let mut results = HashMap::new();
-        let mut all_healthy = true;
-
-        for (name, check) in &self.checks {
-            match check.check().await {
-                Ok(_) => {
-                    results.insert(name.clone(), "ok".to_string());
-                }
-                Err(_) => {
-                    results.insert(name.clone(), "fail".to_string());
-                    all_healthy = false;
-                }
-            }
-        }
-
-        (all_healthy, results)
-    }
 }
 
 #[utoipa::path(

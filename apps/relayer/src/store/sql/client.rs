@@ -1,3 +1,4 @@
+use crate::http::HealthCheck;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::time::Duration;
 use tokio::time::sleep;
@@ -29,5 +30,16 @@ impl PgClient {
 
     pub fn get_pool(&self) -> PgPool {
         self.pool.clone()
+    }
+}
+
+#[async_trait::async_trait]
+impl HealthCheck for PgClient {
+    async fn check(&self) -> anyhow::Result<()> {
+        sqlx::query("SELECT 1")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("Database health check failed: {}", e))?;
+        Ok(())
     }
 }

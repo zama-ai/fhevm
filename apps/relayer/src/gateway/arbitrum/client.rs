@@ -1,4 +1,5 @@
 use crate::core::errors::Error;
+use crate::http::HealthCheck;
 use alloy::{
     network::AnyNetwork,
     primitives::Address,
@@ -68,5 +69,16 @@ impl ArbitrumJsonRPCWsClient {
         info!("Subscription to gateway chain is successful. Listening for logs...",);
         let stream = sub.into_stream();
         Ok(stream)
+    }
+}
+
+#[async_trait::async_trait]
+impl HealthCheck for ArbitrumJsonRPCWsClient {
+    async fn check(&self) -> anyhow::Result<()> {
+        self.provider
+            .get_block_number()
+            .await
+            .map_err(|e| anyhow::anyhow!("Gateway WebSocket health check failed: {}", e))?;
+        Ok(())
     }
 }

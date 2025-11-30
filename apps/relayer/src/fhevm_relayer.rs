@@ -48,7 +48,7 @@ use crate::{
         },
         ArbitrumJsonRPCWsClient,
     },
-    http::http_server::run_http_server,
+    http::{http_server::run_http_server, HealthCheck, HealthChecker},
     metrics,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
@@ -221,6 +221,30 @@ pub async fn run_fhevm_relayer(
     // HTTP endpoint
     if let Some(http_endpoint) = settings.http.endpoint.clone() {
         info!("Starting Relayer HTTP server");
+
+        // Set up health checker with composable health checks
+        let mut health_checker = HealthChecker::new();
+
+        // Add Gateway RPC health check (using transaction helper directly)
+        health_checker.add_health_check(
+            "gateway_rpc".to_string(),
+            gateway_tx_helper.clone() as Arc<dyn HealthCheck>,
+        );
+
+        // Add Gateway WebSocket health check (using WebSocket client directly)
+        health_checker.add_health_check(
+            "gateway_websocket".to_string(),
+            listener_client_ws.clone() as Arc<dyn HealthCheck>,
+        );
+
+        // Add Database health check (using PgClient directly)
+        health_checker.add_health_check(
+            "database".to_string(),
+            pg_client.clone() as Arc<dyn HealthCheck>,
+        );
+
+        let health_checker = Arc::new(health_checker);
+
         let addr: SocketAddr = http_endpoint
             .parse()
             .expect("Invalid http-endpoint address");
@@ -228,7 +252,7 @@ pub async fn run_fhevm_relayer(
             addr,
             Arc::clone(&orchestrator),
             settings.keyurl.clone(),
-            settings.gateway.blockchain_rpc.http_url.clone(),
+            health_checker,
             settings.http.rate_limit_post_endpoints.clone(),
             input_proof_repo.clone(),
             public_decrypt_repo.clone(),
