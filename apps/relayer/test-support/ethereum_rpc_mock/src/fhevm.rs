@@ -106,8 +106,12 @@ impl FhevmMockWrapper {
 
         Self {
             json_rpc_server,
-            next_decryption_id: Arc::new(AtomicU64::new(1)),
-            next_zk_proof_id: Arc::new(AtomicU64::new(1)),
+            next_decryption_id: Arc::new(AtomicU64::new(
+                rand::rng().random_range(0..u16::MAX) as u64, // Use u16 max, so that incrementing by 1 will not hit u32 max anytime.
+            )),
+            next_zk_proof_id: Arc::new(
+                AtomicU64::new(rand::rng().random_range(0..u16::MAX) as u64), // Use u16 max, so that incrementing by 1 will not hit u32 max anytime.
+            ),
             decryption_contract,
             input_proof_contract,
         }
