@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT last_block_number, last_block_hash, updated_at\n            FROM gateway_block_number_store\n            WHERE id = 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_block_hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bf70ad66458c0ddd238fdc2cb72517a6617d8bb14ca60ea39ef62a2a7e057f14"
+}

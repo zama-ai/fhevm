@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO gateway_block_number_store (id, last_block_number, last_block_hash)\n            VALUES (1, $1, $2)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "46b0dccd8ef5747b4626f6a96230280d5c7fe5074a65c442d7c3a1c6004c1ff0"
+}
