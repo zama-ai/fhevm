@@ -118,11 +118,7 @@ pub async fn run_fhevm_relayer(
     let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::<RelayerEvent>::new()));
 
     // Initialize PostgreSQL client and repositories
-    let pg_client = PgClient::new(
-        settings.storage.sql_database_url.clone(),
-        settings.storage.sql_max_connections,
-    )
-    .await;
+    let pg_client = PgClient::new(settings.storage.clone()).await;
     let pg_client = Arc::new(pg_client);
     info!("Initialized PostgreSQL client");
 
@@ -133,8 +129,8 @@ pub async fn run_fhevm_relayer(
 
     // let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
     let gateway_tx_helper = Arc::new(GatewayTransactionHelper::new(
+        settings.gateway.clone(),
         tx_engine_gateway.clone().into(),
-        settings.gateway.blockchain_rpc.chain_id,
     ));
 
     // Create ReadinessChecker once to be shared by both decrypt handlers
@@ -170,7 +166,7 @@ pub async fn run_fhevm_relayer(
 
     // === Initialize gateway listener with reconnection configuration
     let listener_client_ws = ArbitrumJsonRPCWsClient::new(
-        &settings.gateway.blockchain_rpc.ws_url,
+        settings.gateway.blockchain_rpc.clone(),
         settings.gateway.listener.ws_reconnect_config.max_attempts,
         settings
             .gateway

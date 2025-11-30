@@ -1,3 +1,4 @@
+use crate::config::settings::StorageConfig;
 use crate::http::HealthCheck;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::time::Duration;
@@ -7,14 +8,15 @@ use tracing::error;
 #[derive(Debug, Clone)]
 pub struct PgClient {
     pool: PgPool,
+    health_timeout: Duration,
 }
 
 impl PgClient {
-    pub async fn new(db_url: String, max_connections: u32) -> Self {
+    pub async fn new(config: StorageConfig) -> Self {
         let pool = loop {
             match PgPoolOptions::new()
-                .max_connections(max_connections)
-                .connect(&db_url)
+                .max_connections(config.sql_max_connections)
+                .connect(&config.sql_database_url)
                 .await
             {
                 Ok(pool) => break pool,
@@ -25,7 +27,10 @@ impl PgClient {
             }
         };
 
-        PgClient { pool }
+        PgClient {
+            pool,
+            health_timeout: Duration::from_secs(config.health_check_timeout_secs),
+        }
     }
 
     pub fn get_pool(&self) -> PgPool {
@@ -36,10 +41,18 @@ impl PgClient {
 #[async_trait::async_trait]
 impl HealthCheck for PgClient {
     async fn check(&self) -> anyhow::Result<()> {
-        sqlx::query("SELECT 1")
-            .execute(&self.pool)
-            .await
-            .map_err(|e| anyhow::anyhow!("Database health check failed: {}", e))?;
-        Ok(())
+        match tokio::time::timeout(
+            self.health_timeout,
+            sqlx::query("SELECT 1").execute(&self.pool),
+        )
+        .await
+        {
+            Err(_) => Err(anyhow::anyhow!(
+                "Database health check timed out after {:?}",
+                self.health_timeout
+            )),
+            Ok(Err(e)) => Err(anyhow::anyhow!("Database health check failed: {}", e)),
+            Ok(Ok(_)) => Ok(()),
+        }
     }
 }

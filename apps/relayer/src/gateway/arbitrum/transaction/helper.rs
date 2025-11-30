@@ -1,3 +1,4 @@
+use crate::config::settings::GatewayConfig;
 use crate::gateway::arbitrum::transaction::engine::{CustomFillers, TransactionEngine};
 use crate::http::HealthCheck;
 use crate::{core::errors::EventProcessingError, metrics};
@@ -9,6 +10,7 @@ use alloy::sol_types::SolEvent;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::info;
 
 pub type TxResult = AnyTransactionReceipt;
@@ -19,6 +21,7 @@ pub type GatewayTransactionEngine = TransactionEngine<CustomFillers, RootProvide
 pub struct TransactionHelper {
     tx_engine: Arc<GatewayTransactionEngine>,
     pub chain_id: u64,
+    health_timeout: Duration,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -65,10 +68,11 @@ impl fmt::Display for TransactionType {
 }
 
 impl TransactionHelper {
-    pub fn new(tx_engine: Arc<GatewayTransactionEngine>, chain_id: u64) -> Self {
+    pub fn new(config: GatewayConfig, tx_engine: Arc<GatewayTransactionEngine>) -> Self {
         Self {
             tx_engine,
-            chain_id,
+            chain_id: config.blockchain_rpc.chain_id,
+            health_timeout: Duration::from_secs(config.health_check_timeout_secs),
         }
     }
 
@@ -150,13 +154,19 @@ impl TransactionHelper {
 #[async_trait::async_trait]
 impl HealthCheck for TransactionHelper {
     async fn check(&self) -> anyhow::Result<()> {
-        self.tx_engine
-            .provider
-            .inner
-            .get_block_number()
-            .await
-            .map_err(|e| anyhow::anyhow!("Gateway RPC health check failed: {}", e))?;
-        Ok(())
+        match tokio::time::timeout(
+            self.health_timeout,
+            self.tx_engine.provider.inner.get_block_number(),
+        )
+        .await
+        {
+            Err(_) => Err(anyhow::anyhow!(
+                "Gateway RPC health check timed out after {:?}",
+                self.health_timeout
+            )),
+            Ok(Err(e)) => Err(anyhow::anyhow!("Gateway RPC health check failed: {}", e)),
+            Ok(Ok(_)) => Ok(()),
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 use std::net::TcpListener;
 
 use ethereum_rpc_mock::{fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle};
-use fhevm_relayer::config::settings::Settings;
+use fhevm_relayer::config::settings::{Settings, StorageConfig};
 use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::client::PgClient;
 use fhevm_relayer::tracing::init_tracing_once;
@@ -273,11 +273,8 @@ pub fn random_handle() -> String {
 /// Setup test database connection
 /// Note: Run `make migrate` before running tests that use SQL repositories
 #[allow(dead_code)]
-pub async fn setup_test_database(
-    database_url: &str,
-    max_connections: u32,
-) -> eyre::Result<PgClient> {
-    let pg_client = PgClient::new(database_url.to_string(), max_connections).await;
+pub async fn setup_test_database(config: StorageConfig) -> eyre::Result<PgClient> {
+    let pg_client = PgClient::new(config).await;
     Ok(pg_client)
 }
 

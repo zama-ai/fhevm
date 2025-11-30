@@ -1,3 +1,4 @@
+use crate::config::settings::BlockchainRpcConfig;
 use crate::core::errors::Error;
 use crate::http::HealthCheck;
 use alloy::{
@@ -19,6 +20,7 @@ pub enum ChainName {
 
 pub struct ArbitrumJsonRPCWsClient {
     provider: Arc<dyn Provider<AnyNetwork> + Send + Sync>,
+    health_timeout: Duration,
 }
 
 unsafe impl Send for ArbitrumJsonRPCWsClient {}
@@ -27,12 +29,12 @@ unsafe impl Sync for ArbitrumJsonRPCWsClient {}
 impl ArbitrumJsonRPCWsClient {
     #[instrument(skip_all)]
     pub async fn new(
-        ws_url: &str,
+        config: BlockchainRpcConfig,
         max_retries: u32,
         retry_interval_ms: u64,
     ) -> Result<Self, Error> {
         // Configure WebSocket with reconnection parameters
-        let ws = WsConnect::new(ws_url)
+        let ws = WsConnect::new(&config.ws_url)
             .with_max_retries(max_retries)
             .with_retry_interval(Duration::from_millis(retry_interval_ms));
 
@@ -44,7 +46,10 @@ impl ArbitrumJsonRPCWsClient {
 
         let provider = Arc::new(provider);
 
-        Ok(ArbitrumJsonRPCWsClient { provider })
+        Ok(ArbitrumJsonRPCWsClient {
+            provider,
+            health_timeout: Duration::from_secs(config.health_check_timeout_secs),
+        })
     }
 
     pub async fn new_subscription(
@@ -75,10 +80,16 @@ impl ArbitrumJsonRPCWsClient {
 #[async_trait::async_trait]
 impl HealthCheck for ArbitrumJsonRPCWsClient {
     async fn check(&self) -> anyhow::Result<()> {
-        self.provider
-            .get_block_number()
-            .await
-            .map_err(|e| anyhow::anyhow!("Gateway WebSocket health check failed: {}", e))?;
-        Ok(())
+        match tokio::time::timeout(self.health_timeout, self.provider.get_block_number()).await {
+            Err(_) => Err(anyhow::anyhow!(
+                "Gateway WebSocket health check timed out after {:?}",
+                self.health_timeout
+            )),
+            Ok(Err(e)) => Err(anyhow::anyhow!(
+                "Gateway WebSocket health check failed: {}",
+                e
+            )),
+            Ok(Ok(_)) => Ok(()),
+        }
     }
 }

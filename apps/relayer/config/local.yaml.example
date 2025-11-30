@@ -12,6 +12,7 @@ gateway:
     ws_url: "ws://localhost:8757"
     http_url: "http://localhost:8757"
     chain_id: 654321
+    health_check_timeout_secs: 5
   listener:
     # Optional: set the starting block number for event subscriptions
     # last_block_number: null
@@ -33,6 +34,7 @@ gateway:
     decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
     input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
     user_decrypt_shares_threshold: 9
+  health_check_timeout_secs: 5
 log:
 
   format: "pretty"          # compact, pretty, or json
@@ -65,3 +67,4 @@ metrics:
 storage:
   sql_database_url: "postgresql://postgres:postgres@localhost:5433/relayer_db"
   sql_max_connections: 10
+  health_check_timeout_secs: 5
