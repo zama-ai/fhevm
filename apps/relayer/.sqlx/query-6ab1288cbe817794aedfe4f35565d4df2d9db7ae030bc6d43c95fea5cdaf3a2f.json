@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT \n                req_status as \"req_status!: ReqStatus\",\n                res,\n                err_reason,\n                accepted,\n                updated_at\n            FROM input_proof_req\n            WHERE ext_reference_id = $1\n            ",
+  "query": "\n            SELECT\n                req_status as \"req_status!: ReqStatus\",\n                res,\n                err_reason,\n                accepted,\n                updated_at\n            FROM input_proof_req\n            WHERE ext_reference_id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -56,5 +56,5 @@
       false
     ]
   },
-  "hash": "73d86c55c5950864544890ea5a803566abbf9405320c77447f962bed2394b7ae"
+  "hash": "6ab1288cbe817794aedfe4f35565d4df2d9db7ae030bc6d43c95fea5cdaf3a2f"
 }

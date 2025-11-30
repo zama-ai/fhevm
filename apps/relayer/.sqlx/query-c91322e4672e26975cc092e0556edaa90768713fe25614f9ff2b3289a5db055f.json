@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE input_proof_req\n            SET\n                req_status = 'receipt_received'::req_status,\n                gw_req_tx_hash = $1,\n                gw_reference_id = $2\n            WHERE int_request_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c91322e4672e26975cc092e0556edaa90768713fe25614f9ff2b3289a5db055f"
+}

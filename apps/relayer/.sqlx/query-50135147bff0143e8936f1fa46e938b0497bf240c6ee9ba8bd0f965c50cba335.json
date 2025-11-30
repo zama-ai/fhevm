@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE user_decrypt_req\n            SET\n                req_status = 'receipt_received'::req_status,\n                gw_req_tx_hash = $1,\n                gw_reference_id = $2\n            WHERE int_indexer_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "50135147bff0143e8936f1fa46e938b0497bf240c6ee9ba8bd0f965c50cba335"
+}

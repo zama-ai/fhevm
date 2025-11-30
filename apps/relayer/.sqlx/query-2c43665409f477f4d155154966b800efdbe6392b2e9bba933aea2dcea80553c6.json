@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_decrypt_req (\n                ext_reference_id,\n                int_indexer_id,\n                req\n            )\n            VALUES ($1, $2, $3)\n            ON CONFLICT (int_indexer_id)\n            DO UPDATE SET updated_at = NOW() -- Dummy update to ensure RETURNING works\n            RETURNING ext_reference_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ext_reference_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2c43665409f477f4d155154966b800efdbe6392b2e9bba933aea2dcea80553c6"
+}

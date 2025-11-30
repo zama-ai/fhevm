@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE user_decrypt_req\n            SET\n                req_status = 'timed_out'::req_status,\n                err_reason = $1\n            WHERE int_indexer_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aa8cdc3ef4be7dcd583c86aa4c7743ea890f971fe4e003f13f66a39ef1fa7e92"
+}

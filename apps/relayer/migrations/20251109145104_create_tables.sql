@@ -46,6 +46,7 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 CREATE TABLE user_decrypt_share (
     id SERIAL PRIMARY KEY,
     gw_reference_id BIGINT NOT NULL,
+    tx_hash TEXT,
     share_index INTEGER NOT NULL,
     share TEXT NOT NULL,
     kms_signature TEXT NOT NULL,
@@ -127,16 +128,16 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 -- Relative indexes for crons.
 -- Indexes are required even if we comes from internals jobs...
 -- 1. User Decrypt Timeout Index
-CREATE INDEX idx_user_decrypt_req_timeout_check 
-ON user_decrypt_req (updated_at) 
+CREATE INDEX idx_user_decrypt_req_timeout_check
+ON user_decrypt_req (updated_at)
 WHERE req_status = 'receipt_received';
 
 -- 2. Public Decrypt Timeout Index
-CREATE INDEX idx_public_decrypt_req_timeout_check 
-ON public_decrypt_req (updated_at) 
+CREATE INDEX idx_public_decrypt_req_timeout_check
+ON public_decrypt_req (updated_at)
 WHERE req_status = 'receipt_received';
 
 -- 3. Input Proof Timeout Index
-CREATE INDEX idx_input_proof_req_timeout_check 
-ON input_proof_req (updated_at) 
+CREATE INDEX idx_input_proof_req_timeout_check
+ON input_proof_req (updated_at)
 WHERE req_status = 'receipt_received';

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO public_decrypt_req (\n                ext_reference_id,\n                int_indexer_id,\n                req,\n                req_status,\n                created_at,\n                updated_at\n            )\n            VALUES ($1, $2, $3, 'queued'::req_status, NOW(), NOW())\n            ON CONFLICT (int_indexer_id) \n            DO UPDATE SET updated_at = public_decrypt_req.updated_at -- Dummy update, preserves existing timestamp\n            RETURNING ext_reference_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ext_reference_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "237e900bb8e7bb78fadd7e290e08264371f9f9258dd717fb999724cf89a10d33"
+}

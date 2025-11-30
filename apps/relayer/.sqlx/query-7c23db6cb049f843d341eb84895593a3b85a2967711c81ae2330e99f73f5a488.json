@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE input_proof_req\n            SET\n                res = $1,\n                req_status = 'completed'::req_status,\n                gw_response_tx_hash = $2,\n                accepted = true\n            WHERE gw_reference_id = $3\n            RETURNING int_request_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "int_request_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7c23db6cb049f843d341eb84895593a3b85a2967711c81ae2330e99f73f5a488"
+}
