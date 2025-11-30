@@ -1,4 +1,4 @@
-use fhevm_relayer::http::utils::{validation_messages, ErrorLabel, ErrorResponse};
+use fhevm_relayer::http::{validation_messages, ErrorLabel, ErrorResponse};
 use serde_json::Value;
 
 const TESTS_MAX_RETRIES: i16 = 20;

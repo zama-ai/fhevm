@@ -14,7 +14,7 @@ mod constants {
     pub const EXTRA_DATA: &str = "0x00";
 
     // Validation error messages (directly from source code)
-    pub use fhevm_relayer::http::utils::validation_messages::*;
+    pub use fhevm_relayer::http::validation_messages::*;
 }
 
 mod helpers {

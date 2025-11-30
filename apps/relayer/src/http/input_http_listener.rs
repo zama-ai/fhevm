@@ -3,9 +3,10 @@ use crate::core::event::{
     RelayerEventData,
 };
 use crate::core::job_id::JobId;
-use crate::http::docs_utils::ChainId;
-use crate::http::utils::{de_string_or_number, parse_and_validate, AppResponse, OnceHandler};
+use crate::http::ChainId;
+use crate::http::{de_string_or_number, parse_and_validate, AppResponse};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
+use crate::orchestrator::OnceHandler;
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::input_proof_repo::InputProofRepository;
 use axum::{body::Bytes, extract::FromRequest, http::Request, response::IntoResponse};
@@ -23,21 +24,21 @@ pub struct InputProofRequestJson {
     /// Contract's chain id
     #[serde(deserialize_with = "de_string_or_number")]
     #[schema(value_type = ChainId)]
-    #[validate(custom(function = "crate::http::utils::validate_chain_id_string"))]
+    #[validate(custom(function = "crate::http::validate_chain_id_string"))]
     pub contract_chain_id: String,
     /// Contract's address
-    #[validate(custom(function = "crate::http::utils::validate_blockchain_address"))]
+    #[validate(custom(function = "crate::http::validate_blockchain_address"))]
     pub contract_address: String, // Hex encoded address with 0x prefix.
     /// User's wallet address
-    #[validate(custom(function = "crate::http::utils::validate_blockchain_address"))]
+    #[validate(custom(function = "crate::http::validate_blockchain_address"))]
     pub user_address: String, // Hex encoded address with 0x prefix.
     #[validate(
         length(min = 1, message = "Must not be empty"),
-        custom(function = "crate::http::utils::validate_no_0x_hex")
+        custom(function = "crate::http::validate_no_0x_hex")
     )]
     pub ciphertext_with_input_verification: String,
     /// Extra data field, always set to 0x00
-    #[validate(custom(function = "crate::http::utils::validate_extra_data_field"))]
+    #[validate(custom(function = "crate::http::validate_extra_data_field"))]
     #[schema(example = "0x00")]
     pub extra_data: String, // Hex encoded Bytes array with 0x prefix.
 }

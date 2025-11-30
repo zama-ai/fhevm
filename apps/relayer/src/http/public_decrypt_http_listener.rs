@@ -3,8 +3,9 @@ use crate::core::event::{
     RelayerEventData,
 };
 use crate::core::job_id::JobId;
-use crate::http::utils::{parse_and_validate, AppResponse, OnceHandler};
+use crate::http::{parse_and_validate, AppResponse};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
+use crate::orchestrator::OnceHandler;
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository;
 use alloy::primitives::Bytes;
@@ -28,12 +29,12 @@ use validator::Validate;
 pub struct PublicDecryptRequestJson {
     #[validate(
         length(min = 1, message = "Must not be empty"),
-        custom(function = "crate::http::utils::validate_0x_hexs")
+        custom(function = "crate::http::validate_0x_hexs")
     )]
     pub ciphertext_handles: Vec<String>,
     /// Extra data field, always set to 0x00
     #[schema(value_type = String, example = "0x00")]
-    #[validate(custom(function = "crate::http::utils::validate_extra_data_field"))]
+    #[validate(custom(function = "crate::http::validate_extra_data_field"))]
     pub extra_data: String,
 }
 

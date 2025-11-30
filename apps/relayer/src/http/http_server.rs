@@ -13,7 +13,7 @@ use crate::http::userdecrypt_http_listener::{
     UserDecryptErrorResponseJson, UserDecryptHandler, UserDecryptRequestJson,
     UserDecryptResponseJson,
 };
-use crate::http::utils::AppResponse;
+use crate::http::AppResponse;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
@@ -133,9 +133,9 @@ where
     responses(
         (status = 200, description = "Successfully verified input proof", body = InputProofResponseJson),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
-        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
-        (status = 429, description = "Too many requests", body = crate::http::utils::ErrorResponse),
-        (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
+        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::ErrorResponse),
+        (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::http::ErrorResponse),
     ),
 )]
     async fn input_proof_documented<D>(
@@ -179,9 +179,9 @@ where
     responses(
         (status = 200, description = "Successfully decrypted", body = UserDecryptResponseJson),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
-        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
-        (status = 429, description = "Too many requests", body = crate::http::utils::ErrorResponse),
-        (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
+        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::ErrorResponse),
+        (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::http::ErrorResponse),
     ),
 )]
     async fn user_decrypt_documented<D>(
@@ -227,9 +227,9 @@ where
     responses(
         (status = 200, description = "Successfully decrypted", body = PublicDecryptResponseJson),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
-        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::utils::ErrorResponse),
-        (status = 429, description = "Too many requests", body = crate::http::utils::ErrorResponse),
-        (status = 500, description = "Internal server error", body = crate::http::utils::ErrorResponse),
+        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::ErrorResponse),
+        (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::http::ErrorResponse),
     ),
 )]
     async fn public_decrypt_documented<D>(
@@ -311,11 +311,11 @@ where
         schemas(KeyUrlResponseJson),
         schemas(crate::http::keyurl_http_listener::Response, crate::http::keyurl_http_listener::FheKeyInfo, crate::http::keyurl_http_listener::KeyData),
         schemas(VersionErrorResponseJson),
-        schemas(crate::http::utils::ErrorResponse, crate::http::utils::ApiError, crate::http::utils::ErrorDetail, crate::http::utils::ErrorLabel),
+        schemas(crate::http::ErrorResponse, crate::http::ApiError, crate::http::ErrorDetail, crate::http::ErrorLabel),
         schemas(crate::http::userdecrypt_http_listener::HandleContractPairJson, crate::http::userdecrypt_http_listener::RequestValidityJson, crate::http::userdecrypt_http_listener::UserDecryptResponsePayloadJson),
         schemas(crate::http::input_http_listener::InputProofResponsePayloadJson),
         schemas(crate::http::public_decrypt_http_listener::PublicDecryptResponsePayloadJson),
-        schemas(crate::http::docs_utils::ChainId),
+        schemas(crate::http::ChainId),
     ),
     tags(
         (name = "FHEVM Relayer API", description = "FHEVM Relayer API")

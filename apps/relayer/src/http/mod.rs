@@ -1,8 +1,45 @@
-mod docs_utils;
-pub mod health;
+pub mod docs;
 pub mod http_server;
 pub mod input_http_listener;
 pub mod keyurl_http_listener;
 pub mod public_decrypt_http_listener;
 pub mod userdecrypt_http_listener;
 pub mod utils;
+
+// Re-export key types and functions for direct access
+pub use utils::{
+    // OpenAPI types
+    ChainId,
+    // Other utilities
+    de_string_or_number,
+    // Parsing utilities
+    parse_and_validate,
+    // Serialization helpers
+    serialize_ct_handle_as_hex,
+    serialize_ct_handles_as_hex,
+    serialize_vec_as_hex,
+    to_camel_case,
+    validate_0x_hex,
+    validate_0x_hexs,
+    // Validation functions (most commonly used)
+    validate_blockchain_address,
+    validate_blockchain_addresses,
+    validate_chain_id_string,
+    validate_extra_data_field,
+    validate_handle_contract_pairs,
+    validate_no_0x_hex,
+    validate_request_validity,
+    validate_timestamp,
+    validate_u32_string,
+    validate_u64_string,
+    // Validation messages
+    validation_messages,
+    ApiError,
+    // Core response types
+    AppResponse,
+    ErrorDetail,
+    ErrorLabel,
+    ErrorResponse,
+    ParseError,
+    ValidatedJson,
+};

@@ -3,11 +3,10 @@ use crate::core::event::{
     UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
-use crate::http::docs_utils::ChainId;
-use crate::http::utils::{
-    de_string_or_number, parse_and_validate, serialize_vec_as_hex, AppResponse, OnceHandler,
-};
+use crate::http::ChainId;
+use crate::http::{de_string_or_number, parse_and_validate, serialize_vec_as_hex, AppResponse};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
+use crate::orchestrator::OnceHandler;
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::store::sql::repositories::user_decrypt_repo::UserDecryptRepository;
 use alloy::primitives::Bytes;
@@ -27,35 +26,35 @@ use validator::Validate;
 pub struct UserDecryptRequestJson {
     #[validate(
         length(min = 1, message = "Must not be empty"),
-        custom(function = "crate::http::utils::validate_handle_contract_pairs")
+        custom(function = "crate::http::validate_handle_contract_pairs")
     )]
     pub handle_contract_pairs: Vec<HandleContractPairJson>,
-    #[validate(custom(function = "crate::http::utils::validate_request_validity"))]
+    #[validate(custom(function = "crate::http::validate_request_validity"))]
     pub request_validity: RequestValidityJson,
     #[serde(deserialize_with = "de_string_or_number")]
     #[schema(value_type = ChainId)]
-    #[validate(custom(function = "crate::http::utils::validate_chain_id_string"))]
+    #[validate(custom(function = "crate::http::validate_chain_id_string"))]
     pub contracts_chain_id: String,
 
     /// Array of contract addresses
     #[validate(length(min = 1, message = "Must not be empty"))]
-    #[validate(custom(function = "crate::http::utils::validate_blockchain_addresses"))]
+    #[validate(custom(function = "crate::http::validate_blockchain_addresses"))]
     pub contract_addresses: Vec<String>,
     /// User's wallet address
-    #[validate(custom(function = "crate::http::utils::validate_blockchain_address"))]
+    #[validate(custom(function = "crate::http::validate_blockchain_address"))]
     pub user_address: String,
     // TODO: change validator function here for checking the rights signatures.
     #[validate(
         length(equal = 130, message = "Must be 130 characters long"),
-        custom(function = "crate::http::utils::validate_no_0x_hex")
+        custom(function = "crate::http::validate_no_0x_hex")
     )]
     pub signature: String,
     /// Public key
     #[validate(length(min = 2, message = "Must not be empty"))]
-    #[validate(custom(function = "crate::http::utils::validate_no_0x_hex"))]
+    #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
     pub public_key: String,
     /// Extra data field, always set to 0x00
-    #[validate(custom(function = "crate::http::utils::validate_extra_data_field"))]
+    #[validate(custom(function = "crate::http::validate_extra_data_field"))]
     #[schema(example = "0x00")]
     pub extra_data: String,
 }

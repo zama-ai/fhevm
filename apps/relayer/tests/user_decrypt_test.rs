@@ -19,7 +19,7 @@ mod constants {
     pub const REQUEST_VALIDITY_DAYS: &str = "10";
 
     // Validation error messages (directly from source code)
-    pub use fhevm_relayer::http::utils::validation_messages::*;
+    pub use fhevm_relayer::http::validation_messages::*;
 }
 
 mod helpers {
