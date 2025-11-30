@@ -1,4 +1,3 @@
-pub mod docs;
 pub mod health_endpoints;
 pub mod http_server;
 pub mod input_http_listener;
@@ -10,16 +9,11 @@ pub mod utils;
 
 // Re-export key types and functions for direct access
 pub use health_endpoints::{
-    health_handler, liveness_handler, version_handler, HealthResponse, LivenessResponse, VersionResponse
+    health_handler, liveness_handler, version_handler, HealthResponse, LivenessResponse,
+    VersionResponse,
 };
 
 pub use utils::{
-    // Health utilities
-    HealthCheck, HealthChecker,
-    // Middleware helpers
-    with_rate_limiting,
-    // OpenAPI types
-    ChainId,
     // Other utilities
     de_string_or_number,
     // Parsing utilities
@@ -44,12 +38,19 @@ pub use utils::{
     validate_u64_string,
     // Validation messages
     validation_messages,
+    // Middleware helpers
+    with_rate_limiting,
     ApiError,
     // Core response types
     AppResponse,
+    // OpenAPI types
+    ChainId,
     ErrorDetail,
     ErrorLabel,
     ErrorResponse,
+    // Health utilities
+    HealthCheck,
+    HealthChecker,
     ParseError,
     ValidatedJson,
 };
