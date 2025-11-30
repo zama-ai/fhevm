@@ -70,9 +70,10 @@ async fn test_error_gateway_rejection() {
             Box::pin(async move {
                 assert_eq!(res.status(), 400);
                 let response_text = res.text().await.unwrap();
+                println!("{}", response_text);
                 assert!(
-                    response_text.contains("Transaction rejected")
-                        && response_text.contains("Rejected")
+                    response_text.contains("Proof Rejected")
+                        && response_text.contains("Proof Rejected")
                 );
             })
         },

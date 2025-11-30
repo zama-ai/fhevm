@@ -12,7 +12,7 @@ use axum::{body::Bytes, extract::FromRequest, http::Request, response::IntoRespo
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
-use tracing::{info, instrument, span, Level};
+use tracing::{error, info, instrument, span, Level};
 use utoipa::ToSchema;
 use validator::Validate;
 
@@ -150,6 +150,19 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             error_handler,
         );
         info!("Registered once handler for handling input proof failure");
+
+        let ext_reference_id = self.orchestrator.new_ext_reference_id();
+        if let Err(e) = self
+            .input_proof_repo
+            .insert_new_input_proof(ext_reference_id, request_id, request_data.clone())
+            .await
+        {
+            error!("Failed to insert input proof into database: {}", e);
+            return AppResponse::<()>::internal_server_error_with_request_id(
+                request_id.to_string(),
+            )
+            .into_response();
+        }
 
         let event_data = InputProofEventData::ReqRcvdFromUser {
             input_proof_request: request_data,

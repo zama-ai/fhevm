@@ -131,7 +131,7 @@ impl FhevmMockWrapper {
         self.register_readiness_patterns(false);
     }
 
-    /// Configure readiness checks to return true (simulating ready state)  
+    /// Configure readiness checks to return true (simulating ready state)
     pub fn set_readiness_success(&self) {
         debug!("Configuring readiness checks to return true");
         self.register_readiness_patterns(true);

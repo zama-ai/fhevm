@@ -5,6 +5,6 @@ pub mod readiness_checker;
 pub mod user_decrypt_handler;
 pub mod utils;
 
-pub use input_handlers::GatewayHandler as InputProofGatewayHandler;
+pub use input_handlers::InputProofGatewayHandler;
 pub use public_decrypt_handler::GatewayHandler as PublicDecryptGatewayHandler;
 pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;

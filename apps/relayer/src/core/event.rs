@@ -226,11 +226,35 @@ impl IntoResponse for RelayerEvent {
             },
             RelayerEventData::InputProof(input_event) => match input_event {
                 InputProofEventData::RespRcvdFromGw {
+                    accepted,
                     input_proof_response,
                 } => {
-                    let response_json = InputProofResponseJson::from(input_proof_response.clone());
-                    (StatusCode::OK, Json(response_json)).into_response()
+                    if *accepted {
+                        if let Some(response) = input_proof_response {
+                            let response_json = InputProofResponseJson::from(response.clone());
+                            (StatusCode::OK, Json(response_json)).into_response()
+                        } else {
+                            // This should not happen if accepted=true
+                            (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(InputProofErrorResponseJson {
+                                    message: "Internal error: accepted proof with no response data"
+                                        .to_string(),
+                                }),
+                            )
+                                .into_response()
+                        }
+                    } else {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            Json(InputProofErrorResponseJson {
+                                message: "Proof Rejected".to_string(),
+                            }),
+                        )
+                            .into_response()
+                    }
                 }
+
                 InputProofEventData::Failed { error } => match error {
                     EventProcessingError::RequestReverted(fhevm_error) => (
                         StatusCode::BAD_REQUEST,
@@ -705,10 +729,12 @@ pub enum InputProofEventData {
     /// received later to the request.
     ReqSentToGw { gw_req_reference_id: U256 },
 
-    /// Event representing the success response received from gateway for input
-    /// proof verification request sent from this instance of gateway.
+    /// Event representing the response received from gateway for input
+    /// proof verification request. Contains whether the proof was accepted
+    /// and the response data if accepted.
     RespRcvdFromGw {
-        input_proof_response: InputProofResponse,
+        accepted: bool,
+        input_proof_response: Option<InputProofResponse>,
     },
 
     /// Event representing the failure in processing the input proof
