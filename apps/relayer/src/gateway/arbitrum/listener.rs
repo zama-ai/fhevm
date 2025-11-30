@@ -25,13 +25,17 @@ pub async fn arbitrum_listener(
         tokio::select! {
             event = subscription.next() => match event {
                 Some(event_log) => {
+                    let tx_hash = event_log.transaction_hash.expect("Event log must have transaction hash");
                     let event = RelayerEvent::new(
                         JobId::from_uuid_v7(orchestrator.new_internal_request_id()),
                         ApiVersion {
                             category: ApiCategory::PRODUCTION,
                             number: 1,
                         },
-                        RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { log: event_log.clone() }),
+                        RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd { 
+                            log: event_log.clone(), 
+                            tx_hash 
+                        }),
                     );
                     orchestrator.dispatch_event(event).await.unwrap_or_else(|e| {
                         error!(

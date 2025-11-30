@@ -13,7 +13,7 @@ use crate::http::userdecrypt_http_listener::{
     UserDecryptResponsePayloadJson,
 };
 use crate::orchestrator::traits::Event;
-use alloy::primitives::{Address, Bytes, FixedBytes};
+use alloy::primitives::{Address, Bytes, FixedBytes, TxHash};
 use alloy::{primitives::U256, rpc::types::Log};
 use axum::{
     extract::Json,
@@ -388,7 +388,7 @@ impl AsRef<str> for RelayerEventData {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum GatewayChainEventData {
     /// Event representing a raw blockchain event log received from gateway chain.
-    EventLogRcvd { log: Log },
+    EventLogRcvd { log: Log, tx_hash: TxHash },
 }
 
 impl GatewayChainEventData {

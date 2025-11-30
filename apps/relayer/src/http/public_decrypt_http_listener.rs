@@ -152,23 +152,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         info!("Registered once handler for error");
 
         let ext_reference_id = self.orchestrator.new_ext_reference_id();
-        let request_json = match serde_json::to_value(request.clone()) {
-            Ok(json) => json,
-            Err(e) => {
-                error!("Failed to serialize request data to JSON: {}", e);
-                return AppResponse::<()>::internal_server_error_with_request_id(
-                    request_id.to_string(),
-                )
-                .into_response();
-            }
-        };
-
         if let Err(e) = self
             .public_decrypt_repo
             .insert_data_on_conflict_and_get_ext_reference_id(
                 ext_reference_id,
                 &int_indexer_id[..],
-                request_json,
+                request.clone(),
             )
             .await
         {

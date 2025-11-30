@@ -1,34 +1,17 @@
 use crate::gateway::arbitrum::transaction::engine::{CustomFillers, TransactionEngine};
 use crate::{core::errors::EventProcessingError, metrics};
-use alloy::network::{AnyTransactionReceipt, Ethereum};
-use alloy::primitives::{Address, Bytes};
+use alloy::network::Ethereum;
+use alloy::primitives::{Address, Bytes, FixedBytes, U256};
+use alloy::network::AnyTransactionReceipt;
+use alloy::sol_types::SolEvent;
 use alloy::providers::RootProvider;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
 use tracing::info;
 
-pub trait ReceiptProcessor {
-    type Output;
-    fn process(
-        &self,
-        receipt: &AnyTransactionReceipt,
-    ) -> Result<Self::Output, EventProcessingError>;
-}
+pub type TxResult = AnyTransactionReceipt;
 
-// Default processor that just returns the receipt
-pub struct DefaultProcessor;
-
-impl ReceiptProcessor for DefaultProcessor {
-    type Output = AnyTransactionReceipt;
-
-    fn process(
-        &self,
-        receipt: &AnyTransactionReceipt,
-    ) -> Result<Self::Output, EventProcessingError> {
-        Ok(receipt.clone())
-    }
-}
 
 pub type GatewayTransactionEngine = TransactionEngine<CustomFillers, RootProvider, Ethereum>;
 
@@ -89,17 +72,14 @@ impl TransactionHelper {
         }
     }
 
-    pub async fn send_raw_transaction_sync<F, P>(
+    pub async fn send_raw_transaction_sync<F>(
         &self,
         transaction_type: TransactionType,
         target: Address,
         prepare_calldata: F,
-        // NOTE: add error manager? -> something  to  allow for retries
-        receipt_processor: &P,
-    ) -> Result<P::Output, EventProcessingError>
+    ) -> Result<TxResult, EventProcessingError>
     where
         F: Fn() -> Result<Bytes, EventProcessingError>,
-        P: ReceiptProcessor,
     {
         let calldata = prepare_calldata()?;
 
@@ -123,7 +103,6 @@ impl TransactionHelper {
 
         metrics::transaction::transaction_confirmed(tx_metric_type);
 
-        // Process receipt with provided processor
         info!(
             operation = %transaction_type,
             tx_hash = ?receipt.transaction_hash,
@@ -132,7 +111,36 @@ impl TransactionHelper {
             "Transaction confirmed"
         );
 
-        receipt_processor.process(&receipt)
+        Ok(receipt)
+    }
+
+    /// Extract gateway reference ID from receipt by finding and decoding the specified event
+    pub fn extract_gateway_id_from_receipt<T: SolEvent>(
+        receipt: &AnyTransactionReceipt,
+        expected_signature: FixedBytes<32>,
+        extract_id_fn: impl Fn(&T) -> U256,
+    ) -> Result<U256, EventProcessingError> {
+        for log in receipt.inner.logs() {
+            if let Some(topic_0) = log.topics().first() {
+                if *topic_0 == expected_signature {
+                    match T::decode_log_data(log.data()) {
+                        Ok(decoded_event) => {
+                            let gw_reference_id = extract_id_fn(&decoded_event);
+                            return Ok(gw_reference_id);
+                        }
+                        Err(e) => {
+                            return Err(EventProcessingError::HandlerError(
+                                format!("Failed to decode {} event: {}", T::SIGNATURE, e)
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(EventProcessingError::HandlerError(
+            format!("{} event not found in transaction logs", T::SIGNATURE),
+        ))
     }
 }
 

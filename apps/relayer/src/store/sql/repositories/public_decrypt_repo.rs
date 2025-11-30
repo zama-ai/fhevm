@@ -1,11 +1,17 @@
+use crate::core::event::{PublicDecryptRequest, PublicDecryptResponse};
 use crate::store::sql::models::public_decrypt_req_model::{
     PublicDecryptResponseModel, PublicReqStateModel,
 };
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
-use anyhow::Result;
+use crate::store::sql::{
+    client::PgClient,
+    error::{SqlError, SqlResult},
+};
+use alloy::primitives::U256;
 use uuid::Uuid;
 
-use crate::store::sql::client::PgClient;
+// Import conversion functions privately within this repository
+use crate::store::sql::conversion::u256_to_i64;
 
 pub struct PublicDecryptRepository {
     pool: PgClient,
@@ -34,7 +40,7 @@ impl PublicDecryptRepository {
     pub async fn find_ext_ref_by_int_indexer_id(
         &self,
         int_indexer_id_bytes: &[u8],
-    ) -> Result<Option<Uuid>> {
+    ) -> SqlResult<Option<Uuid>> {
         let result = sqlx::query_scalar!(
             r#"
             SELECT ext_reference_id
@@ -58,8 +64,10 @@ impl PublicDecryptRepository {
         &self,
         ext_reference_id: Uuid,
         int_indexer_id_bytes: &[u8],
-        req: serde_json::Value,
-    ) -> Result<Uuid> {
+        request: PublicDecryptRequest,
+    ) -> SqlResult<Uuid> {
+        let req = serde_json::to_value(&request)
+            .map_err(|e| SqlError::conversion_error("request", "PublicDecryptRequest", format!("Failed to serialize: {}", e)))?;
         let result = sqlx::query_scalar!(
             r#"
             INSERT INTO public_decrypt_req (
@@ -89,7 +97,7 @@ impl PublicDecryptRepository {
     /// update public_decrypt_req by int_indexer_id for to req_status processing
     /// Update req_status to 'processing' by int_indexer_id.
     /// Returns the number of rows affected (1 if found, 0 if not).
-    pub async fn update_status_to_processing(&self, int_indexer_id_bytes: &[u8]) -> Result<u64> {
+    pub async fn update_status_to_processing(&self, int_indexer_id_bytes: &[u8]) -> SqlResult<u64> {
         let result = sqlx::query!(
             r#"
             UPDATE public_decrypt_req
@@ -111,7 +119,7 @@ impl PublicDecryptRepository {
         &self,
         int_indexer_id_bytes: &[u8],
         err_reason: &str,
-    ) -> Result<u64> {
+    ) -> SqlResult<u64> {
         let result = sqlx::query!(
             r#"
             UPDATE public_decrypt_req
@@ -136,8 +144,10 @@ impl PublicDecryptRepository {
         &self,
         int_indexer_id_bytes: &[u8],
         gw_req_tx_hash: &str,
-        gw_reference_id: i64,
-    ) -> Result<u64> {
+        gw_reference_id: U256,
+    ) -> SqlResult<u64> {
+        let gw_reference_id = u256_to_i64(gw_reference_id)
+            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
         let result = sqlx::query!(
             r#"
             UPDATE public_decrypt_req
@@ -162,7 +172,7 @@ impl PublicDecryptRepository {
         &self,
         int_indexer_id_bytes: &[u8],
         err_reason: &str,
-    ) -> Result<u64> {
+    ) -> SqlResult<u64> {
         let result = sqlx::query!(
             r#"
             UPDATE public_decrypt_req
@@ -188,10 +198,14 @@ impl PublicDecryptRepository {
     /// Returns: (int_indexer_id, req_status, updated_at, err_reason).
     pub async fn complete_req_with_res(
         &self,
-        gw_reference_id: i64,
-        res: serde_json::Value,
+        gw_reference_id: U256,
+        response: PublicDecryptResponse,
         gw_response_tx_hash: &str,
-    ) -> Result<Option<PublicReqStateModel>> {
+    ) -> SqlResult<Option<PublicReqStateModel>> {
+        let gw_reference_id = u256_to_i64(gw_reference_id)
+            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
+        let res = serde_json::to_value(&response)
+            .map_err(|e| SqlError::conversion_error("response", "PublicDecryptResponse", format!("Failed to serialize: {}", e)))?;
         let result = sqlx::query_as!(
             PublicReqStateModel,
             r#"
@@ -223,7 +237,7 @@ impl PublicDecryptRepository {
     pub async fn find_status_and_res_by_ext_id(
         &self,
         ext_reference_id: Uuid,
-    ) -> Result<Option<PublicDecryptResponseModel>> {
+    ) -> SqlResult<Option<PublicDecryptResponseModel>> {
         let result = sqlx::query_as!(
             PublicDecryptResponseModel,
             r#"

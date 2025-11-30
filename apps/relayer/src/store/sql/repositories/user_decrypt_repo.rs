@@ -1,16 +1,20 @@
+use crate::core::event::UserDecryptRequest;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::models::user_decrypt_req_model::ConsensusReqState;
 use crate::store::sql::{
     client::PgClient,
+    error::{SqlError, SqlResult},
     models::{
         user_decrypt_req_model::UserDecryptResponseModel,
         user_decrypt_share_model::UserDecryptShare,
     },
 };
-use anyhow::Result;
+use alloy::primitives::U256;
 use sqlx::types::Json;
 use sqlx::types::Uuid;
-use sqlx::Row;
+
+// Import conversion functions privately within this repository
+use crate::store::sql::conversion::{u256_to_i32, u256_to_i64};
 
 pub struct UserDecryptRepository {
     pool: PgClient,
@@ -37,7 +41,7 @@ impl UserDecryptRepository {
     pub async fn find_ext_reference_id_by_int_indexer_id(
         &self,
         int_indexer_id_bytes: &[u8],
-    ) -> Result<Option<Uuid>> {
+    ) -> SqlResult<Option<Uuid>> {
         let result = sqlx::query_scalar!(
             r#"
             SELECT ext_reference_id
@@ -60,8 +64,15 @@ impl UserDecryptRepository {
         &self,
         ext_reference_id: Uuid,
         int_indexer_id_bytes: &[u8],
-        req: serde_json::Value,
-    ) -> Result<Uuid> {
+        request: UserDecryptRequest,
+    ) -> SqlResult<Uuid> {
+        let req = serde_json::to_value(&request).map_err(|e| {
+            SqlError::conversion_error(
+                "request",
+                "UserDecryptRequest",
+                format!("Failed to serialize: {}", e),
+            )
+        })?;
         let result = sqlx::query_scalar!(
             r#"
             INSERT INTO user_decrypt_req (
@@ -70,7 +81,7 @@ impl UserDecryptRepository {
                 req
             )
             VALUES ($1, $2, $3)
-            ON CONFLICT (int_indexer_id) 
+            ON CONFLICT (int_indexer_id)
             DO UPDATE SET updated_at = NOW() -- Dummy update to ensure RETURNING works
             RETURNING ext_reference_id
             "#,
@@ -88,7 +99,7 @@ impl UserDecryptRepository {
     /// update user_decrypt_req by int_indexer_id for to req_status processing
     /// Update req_status to 'processing' by int_indexer_id.
     /// Returns the number of rows affected (1 if found, 0 if not).
-    pub async fn update_status_to_processing(&self, int_indexer_id_bytes: &[u8]) -> Result<u64> {
+    pub async fn update_status_to_processing(&self, int_indexer_id_bytes: &[u8]) -> SqlResult<u64> {
         let result = sqlx::query!(
             r#"
             UPDATE user_decrypt_req
@@ -110,11 +121,11 @@ impl UserDecryptRepository {
         &self,
         int_indexer_id_bytes: &[u8],
         err_reason: &str,
-    ) -> Result<u64> {
+    ) -> SqlResult<u64> {
         let result = sqlx::query!(
             r#"
             UPDATE user_decrypt_req
-            SET 
+            SET
                 req_status = 'timed_out'::req_status,
                 err_reason = $1
             WHERE int_indexer_id = $2
@@ -136,12 +147,14 @@ impl UserDecryptRepository {
         &self,
         int_indexer_id_bytes: &[u8],
         gw_req_tx_hash: &str,
-        gw_reference_id: i64,
-    ) -> Result<u64> {
+        gw_reference_id: U256,
+    ) -> SqlResult<u64> {
+        let gw_reference_id = u256_to_i64(gw_reference_id)
+            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
         let result = sqlx::query!(
             r#"
             UPDATE user_decrypt_req
-            SET 
+            SET
                 req_status = 'receipt_received'::req_status,
                 gw_req_tx_hash = $1,
                 gw_reference_id = $2
@@ -162,11 +175,11 @@ impl UserDecryptRepository {
         &self,
         int_indexer_id_bytes: &[u8],
         err_reason: &str,
-    ) -> Result<u64> {
+    ) -> SqlResult<u64> {
         let result = sqlx::query!(
             r#"
             UPDATE user_decrypt_req
-            SET 
+            SET
                 req_status = 'failure'::req_status,
                 err_reason = $1
             WHERE int_indexer_id = $2
@@ -190,9 +203,11 @@ impl UserDecryptRepository {
     /// Step 6: Handle Consensus Tx.
     pub async fn update_consensus_hash_and_return_state(
         &self,
-        gw_reference_id: i64,
+        gw_reference_id: U256,
         gw_consensus_tx_hash: &str,
-    ) -> Result<Option<ConsensusReqState>> {
+    ) -> SqlResult<Option<ConsensusReqState>> {
+        let gw_reference_id = u256_to_i64(gw_reference_id)
+            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
         let result = sqlx::query_as!(
             ConsensusReqState,
             r#"
@@ -208,20 +223,20 @@ impl UserDecryptRepository {
                 RETURNING req_status, updated_at, err_reason, int_indexer_id
             )
             -- 1. Select from updated_row
-            SELECT 
-                req_status as "req_status!: ReqStatus", 
+            SELECT
+                req_status as "req_status!: ReqStatus",
                 updated_at as "updated_at!",
                 err_reason,
                 int_indexer_id as "int_indexer_id!"
             FROM updated_row
-            
+
             UNION ALL
-            
+
             -- 2. Select from original table
-            SELECT 
-                req_status as "req_status!: ReqStatus", 
+            SELECT
+                req_status as "req_status!: ReqStatus",
                 updated_at as "updated_at!",
-                err_reason, 
+                err_reason,
                 int_indexer_id as "int_indexer_id!"
             FROM user_decrypt_req
             WHERE id = (SELECT id FROM target)
@@ -243,16 +258,21 @@ impl UserDecryptRepository {
     // TODO(xyz): return status here to detect timedout
     pub async fn insert_share_and_return_count(
         &self,
-        gw_reference_id: i64,
-        share_index: i32,
+        gw_reference_id: U256,
+        share_index: U256,
         share: &str,
         kms_signature: &str,
         extra_data: Option<&str>,
-    ) -> Result<i64> {
+        tx_hash: &str,
+    ) -> SqlResult<i64> {
+        let gw_reference_id = u256_to_i64(gw_reference_id)
+            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
+        let share_index = u256_to_i32(share_index)
+            .map_err(|e| SqlError::conversion_error("share_index", share_index, e))?;
         // Use advisory locks to serialize share operations per gw_reference_id
         // Advisory locks block and wait instead of failing like SERIALIZABLE
         let mut tx = self.pool.get_pool().begin().await?;
-        
+
         // Acquire advisory lock - this WAITS for other transactions, doesn't fail
         sqlx::query("SELECT pg_advisory_xact_lock($1::bigint)")
             .bind(gw_reference_id)
@@ -264,15 +284,17 @@ impl UserDecryptRepository {
             r#"
             INSERT INTO user_decrypt_share (
                 gw_reference_id,
+                tx_hash,
                 share_index,
                 share,
                 kms_signature,
                 extra_data
             )
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (gw_reference_id, share_index) DO NOTHING
             "#,
             gw_reference_id,
+            tx_hash,
             share_index,
             share,
             kms_signature,
@@ -280,9 +302,10 @@ impl UserDecryptRepository {
         )
         .execute(&mut *tx)
         .await?;
-        
-        // Then do the COUNT as a separate query within the same transaction
-        // This WILL see the INSERT because it's a separate statement
+
+        // Count in a separate query within the same transaction so that
+        // it includes inserted row.
+        // count! ensures non-null return value. i.e i64 and not Option<i64>.
         let count = sqlx::query_scalar!(
             r#"
             SELECT COUNT(*) as "count!"
@@ -305,8 +328,10 @@ impl UserDecryptRepository {
     /// Fails if the request is 'timed_out' or does not exist.
     pub async fn complete_req_and_get_shares_metadata(
         &self,
-        gw_reference_id: i64,
-    ) -> Result<(ConsensusReqState, Vec<UserDecryptShare>)> {
+        gw_reference_id: U256,
+    ) -> SqlResult<(ConsensusReqState, Vec<UserDecryptShare>)> {
+        let gw_reference_id = u256_to_i64(gw_reference_id)
+            .map_err(|e| SqlError::conversion_error("gw_reference_id", gw_reference_id, e))?;
         let records = sqlx::query!(
             r#"
             WITH updated_req AS (
@@ -316,13 +341,13 @@ impl UserDecryptRepository {
                   AND req_status != 'timed_out'::req_status -- Prevent updating if already timed out
                 RETURNING int_indexer_id, req_status, updated_at, err_reason
             )
-            SELECT 
+            SELECT
                 -- Metadata from the Update (Force non-null types for SQLx)
                 u.int_indexer_id as "int_indexer_id!",
                 u.req_status as "req_status!: ReqStatus",
                 u.updated_at as "updated_at!",
                 u.err_reason,
-                
+
                 -- Share Data
                 s.id as share_id,
                 s.gw_reference_id,
@@ -346,10 +371,7 @@ impl UserDecryptRepository {
         // 2. The request was 'timed_out' (so the UPDATE returned 0 rows).
         // 3. There are no shares (unlikely if we reached threshold logic).
         if records.is_empty() {
-            return Err(anyhow::anyhow!(
-                "Request not found, timed out, or no shares available for gw_ref_id: {}",
-                gw_reference_id
-            ));
+            return Err(SqlError::Execution(sqlx::Error::RowNotFound));
         }
 
         // 1. Extract Metadata from the first row (it's identical for all rows)
@@ -385,22 +407,22 @@ impl UserDecryptRepository {
     pub async fn find_req_and_shares_by_ext_reference_id(
         &self,
         ext_reference_id: Uuid,
-    ) -> Result<Option<UserDecryptResponseModel>> {
+    ) -> SqlResult<Option<UserDecryptResponseModel>> {
         let result = sqlx::query_as!(
             UserDecryptResponseModel,
             r#"
-            SELECT 
+            SELECT
                 r.ext_reference_id,
                 r.req_status as "req_status!: ReqStatus", -- Force non-null Enum type
                 r.updated_at,
                 r.err_reason,
                 r.gw_req_tx_hash,
                 r.gw_consensus_tx_hash,
-                -- Aggregate shares into a JSON List. 
+                -- Aggregate shares into a JSON List.
                 -- If no shares exist, return an empty JSON array '[]'
                 COALESCE(
-                    jsonb_agg(to_jsonb(s.*) ORDER BY s.share_index) 
-                    FILTER (WHERE s.id IS NOT NULL), 
+                    jsonb_agg(to_jsonb(s.*) ORDER BY s.share_index)
+                    FILTER (WHERE s.id IS NOT NULL),
                     '[]'::jsonb
                 ) as "shares!: Json<Vec<UserDecryptShare>>"
             FROM user_decrypt_req r
