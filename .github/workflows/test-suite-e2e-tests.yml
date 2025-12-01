@@ -158,20 +158,10 @@ jobs:
         run: |
           ./fhevm-cli pause host
 
-      - name: Paused Host input proof test (uint64)
+      - name: Paused Host requests test
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test paused-host-input-proof
-
-      - name: Paused Host public decryption HTTP endpoint test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test paused-host-public-decrypt-http
-
-      - name: Paused Host operators test
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test paused-host-operators
+          ./fhevm-cli test paused-host-requests
 
       - name: Unpause Host Contracts
         working-directory: test-suite/fhevm

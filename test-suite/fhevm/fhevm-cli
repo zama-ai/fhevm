@@ -248,10 +248,6 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
           docker_args+=("--parallel" "-g" "test operator|FHEVM manual operations")
           ;;
-        paused-host-operators)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED OPERATORS${RESET}"
-          docker_args+=("--parallel" "-g" "test paused host operator")
-          ;;
         random)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
           docker_args+=("-g" "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt")
@@ -266,7 +262,7 @@ case $COMMAND in
           ;;
         paused-host-requests)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED HOST INPUT PROOF (uint64)${RESET}"
-          docker_args+=("-g" "test paused host user input uint64|paused host HTTPPublicDecrypt")
+          docker_args+=("-g" "test paused host user input uint64|paused host HTTPPublicDecrypt|test paused host operator")
           ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
