@@ -66,9 +66,7 @@
     "solhint": "^4.1.1",
     "solidity-bytes-utils": "^0.8.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.4",
-    "@safe-global/safe-core-sdk-types": "npm:@safe-global/types-kit@^1.0.0",
-    "@safe-global/types-kit": "^1.0.0"
+    "typescript": "^5.4.4"
   },
   "engines": {
     "node": ">=18.16.0"

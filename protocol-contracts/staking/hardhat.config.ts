@@ -1,7 +1,6 @@
 import './tasks/accounts';
 import './tasks/addEligibleAccount';
 import './tasks/deployment';
-import './tasks/deposit';
 import './tasks/ownership';
 import './tasks/setOwnerFee';
 import './tasks/setRewardRate';
