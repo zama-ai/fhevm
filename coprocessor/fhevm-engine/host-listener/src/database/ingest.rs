@@ -62,10 +62,13 @@ pub async fn ingest_block_logs(
             if let Ok(event) =
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
-                let timestamp = log.block_timestamp.unwrap_or(block_logs.summary.timestamp);
-                let offset_dt = OffsetDateTime::from_unix_timestamp(timestamp as i64)
-                    .unwrap_or(OffsetDateTime::UNIX_EPOCH);
-                let block_timestamp = PrimitiveDateTime::new(offset_dt.date(), offset_dt.time());
+                let timestamp =
+                    log.block_timestamp.unwrap_or(block_logs.summary.timestamp);
+                let offset_dt =
+                    OffsetDateTime::from_unix_timestamp(timestamp as i64)
+                        .unwrap_or(OffsetDateTime::UNIX_EPOCH);
+                let block_timestamp =
+                    PrimitiveDateTime::new(offset_dt.date(), offset_dt.time());
                 let log = LogTfhe {
                     event,
                     block_timestamp,
