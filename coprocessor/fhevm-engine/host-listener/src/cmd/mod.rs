@@ -134,7 +134,7 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value_t = 960u64,
+        default_value_t = 60u64,
         help = "Sleep duration in seconds between catchup iterations (only with --only-catchup-loop)"
     )]
     pub catchup_sleep_secs: u64,
@@ -1032,6 +1032,29 @@ async fn run_catchup_only_loop(
 pub async fn main(args: Args) -> anyhow::Result<()> {
     info!("Starting main");
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    // Validate catchup-only mode arguments
+    if args.only_catchup_loop {
+        if let Some(start) = args.start_at_block {
+            if start >= 0 {
+                return Err(anyhow!(
+                    "--only-catchup-loop requires negative --start-at-block (e.g., -40)"
+                ));
+            }
+
+            let blocks_during_sleep =
+                args.catchup_sleep_secs / args.initial_block_time;
+            let lookback_blocks = (-start) as u64;
+
+            if blocks_during_sleep > lookback_blocks {
+                return Err(anyhow!(
+                    "--catchup-sleep-secs {} too large for --start-at-block {}",
+                    args.catchup_sleep_secs,
+                    start
+                ));
+            }
+        }
+    }
 
     let acl_contract_address = if args.acl_contract_address.is_empty() {
         error!("--acl-contract-address cannot be empty");
