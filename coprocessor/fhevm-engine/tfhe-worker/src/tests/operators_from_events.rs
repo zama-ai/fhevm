@@ -1,5 +1,6 @@
 use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
+use sqlx::types::time::PrimitiveDateTime;
 
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract;
@@ -36,12 +37,13 @@ async fn insert_tfhe_event(
     tx: &mut Transaction<'_>,
     log: alloy::rpc::types::Log<TfheContractEvents>,
     is_allowed: bool,
-) -> Result<(), sqlx::Error> {
+) -> Result<bool, sqlx::Error> {
     let event = LogTfhe {
         event: log.inner,
         transaction_hash: log.transaction_hash,
         is_allowed,
         block_number: log.block_number.unwrap_or(0),
+        block_timestamp: PrimitiveDateTime::MAX,
     };
     db.insert_tfhe_event(tx, &event).await
 }
@@ -50,7 +52,7 @@ pub async fn allow_handle(
     db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
     handle: &[u8],
-) -> Result<(), sqlx::Error> {
+) -> Result<bool, sqlx::Error> {
     let account_address = String::new();
     let event_type = AllowEvents::AllowedForDecryption;
     db.insert_allowed_handle(tx, handle.to_owned(), account_address, event_type, None)
