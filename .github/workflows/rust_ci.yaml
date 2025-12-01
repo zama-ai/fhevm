@@ -151,6 +151,7 @@ jobs:
           cargo test --test user_decrypt_test --no-run
           cargo test --test public_decrypt_test --no-run
           cargo test --test input_proof_test --no-run
+          cargo test --test health_tests --no-run
 
       # Run the already-built test binaries
       - name: Run tests
@@ -164,3 +165,4 @@ jobs:
           RUST_BACKTRACE=full cargo test --test public_decrypt_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test input_proof_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test http_rate_limiter_test -- --test-threads=1
+          RUST_BACKTRACE=full cargo test --test health_tests -- --test-threads=1
