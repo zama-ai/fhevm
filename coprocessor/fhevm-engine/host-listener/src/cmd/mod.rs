@@ -4,6 +4,7 @@ use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::pubsub::SubscriptionStream;
 use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
 use alloy::sol_types::SolEventInterface;
+use alloy::transports::ws::WebSocketConfig;
 use anyhow::{anyhow, Result};
 use fhevm_engine_common::telemetry;
 use futures_util::stream::StreamExt;
@@ -214,7 +215,9 @@ impl InfiniteLogIter {
     }
 
     async fn get_chain_id(&self) -> anyhow::Result<ChainId> {
-        let ws = WsConnect::new(&self.url);
+        let config = WebSocketConfig::default()
+            .max_message_size(Some(256 * 1024 * 1024)); // 256MB
+        let ws = WsConnect::new(&self.url).with_config(config);
         let provider = ProviderBuilder::new().connect_ws(ws).await?;
         Ok(provider.get_chain_id().await?)
     }
@@ -634,8 +637,13 @@ impl InfiniteLogIter {
 
     async fn new_log_stream(&mut self, not_initialized: bool) {
         let mut retry = 20;
+        let config = WebSocketConfig::default()
+            .max_message_size(Some(256 * 1024 * 1024)); // 256MB
+
         loop {
-            let ws = WsConnect::new(&self.url).with_max_retries(0); // disabled, alloy skips events
+            let ws = WsConnect::new(&self.url)
+                .with_max_retries(0)
+                .with_config(config); // disabled, alloy skips events
 
             match ProviderBuilder::new().connect_ws(ws).await {
                 Ok(provider) => {
