@@ -36,6 +36,8 @@ FHEVM ensures both confidentiality and composability, with the following guarant
 - **Composability and data availability on-chain:** States are updated while remaining encrypted at all times.
 - **No impact on existing dApps and state:** Encrypted state co-exists alongside public one, and doesn't impact existing dApps.
 <br></br>
+For more information about Concrete ML itself, see the [Concrete ML documentation](https://docs.zama.ai/concrete-ml).
+
 
 ### Table of contents
 
