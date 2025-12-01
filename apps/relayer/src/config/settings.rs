@@ -271,66 +271,82 @@ mod tests {
     use super::*;
     use config::{Config, File, FileFormat};
     use std::io::Write;
+    use std::path::PathBuf;
     use tempfile::NamedTempFile;
+
+    /// Composable configuration builder for tests
+    /// Starts with local.yaml.example and allows targeted modifications
+    struct ConfigBuilder {
+        config: serde_yaml::Value,
+    }
+
+    impl ConfigBuilder {
+        /// Load configuration from local.yaml.example
+        fn from_example() -> Result<Self, Box<dyn std::error::Error>> {
+            let config_content = std::fs::read_to_string("config/local.yaml.example")?;
+            let config = serde_yaml::from_str(&config_content)?;
+            Ok(ConfigBuilder { config })
+        }
+
+        /// Remove a field using dot notation (e.g., "gateway.contracts.user_decrypt_shares_threshold")
+        fn remove_field(mut self, path: &str) -> Self {
+            let parts: Vec<&str> = path.split('.').collect();
+            if let Some(parent) = self.get_parent_mut(&parts[..parts.len() - 1]) {
+                if let Some(field_name) = parts.last() {
+                    if let Some(mapping) = parent.as_mapping_mut() {
+                        mapping.remove(field_name);
+                    }
+                }
+            }
+            self
+        }
+
+        /// Set a field value using dot notation
+        #[allow(dead_code)]
+        fn set_field(mut self, path: &str, value: serde_yaml::Value) -> Self {
+            let parts: Vec<&str> = path.split('.').collect();
+            if let Some(parent) = self.get_parent_mut(&parts[..parts.len() - 1]) {
+                if let Some(field_name) = parts.last() {
+                    if let Some(mapping) = parent.as_mapping_mut() {
+                        mapping.insert(serde_yaml::Value::String(field_name.to_string()), value);
+                    }
+                }
+            }
+            self
+        }
+
+        /// Write configuration to a temporary file and return the path
+        #[allow(clippy::wrong_self_convention)]
+        fn to_temp_file(self) -> Result<PathBuf, Box<dyn std::error::Error>> {
+            let content = serde_yaml::to_string(&self.config)?;
+            let mut temp_file = NamedTempFile::new()?;
+            temp_file.write_all(content.as_bytes())?;
+            let path = temp_file.into_temp_path().keep()?;
+            Ok(path)
+        }
+
+        /// Helper to navigate to parent object in the YAML tree
+        fn get_parent_mut(&mut self, path: &[&str]) -> Option<&mut serde_yaml::Value> {
+            let mut current = &mut self.config;
+            for part in path {
+                current = current.get_mut(part)?;
+            }
+            Some(current)
+        }
+    }
 
     #[test]
     fn test_user_decrypt_shares_threshold_is_required() {
-        let config_content = r#"
-gateway:
-  blockchain_rpc:
-    ws_url: "wss://test-gateway.example.com"
-    http_url: "https://test-gateway.example.com"
-    chain_id: 8009
-  listener: {}
-  tx_engine:
-    private_key: "0x1234567890123456789012345678901234567890123456789012345678901234"
-    max_concurrency: 100
-  readiness_checker:
-    max_concurrency: 100
-    retry:
-      max_attempts: 3
-      retry_interval_ms: 2000
-  contracts:
-    decryption_address: "0x1234567890123456789012345678901234567890"
-    input_verification_address: "0x1234567890123456789012345678901234567890"
-    # Note: user_decrypt_shares_threshold is missing here
-log:
-  format: "compact"
-  show_file_line: false
-  show_thread_ids: false
-  show_timestamp: true
-  show_target: true
-keyurl:
-  fhe_public_key:
-    data_id: "test-key"
-    url: "https://test.example.com/key"
-  crs:
-    data_id: "test-crs"
-    url: "https://test.example.com/crs"
-http:
-  rate_limit_on_post_endpoints:
-    requests_per_second: 30
-    burst_size: 30
-    retry_after_seconds: 3
-    jitter_max_ms: 2000
-  metrics:
-    histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
-metrics:
-  endpoint: "0.0.0.0:9898"
-storage:
-  sql_database_url: "postgresql://postgres:postgres@localhost:5432/relayer_db"
-  sql_max_connections: 10
-"#;
-
-        // Create a temporary config file
-        let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
-        temp_file
-            .write_all(config_content.as_bytes())
-            .expect("Failed to write config");
+        // Create config without user_decrypt_shares_threshold field
+        let config_path = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .remove_field("gateway.contracts.user_decrypt_shares_threshold")
+            .to_temp_file()
+            .expect("Failed to create temp config file");
 
         // Try to build config - should fail because user_decrypt_shares_threshold is missing
         let config = Config::builder()
-            .add_source(File::from(temp_file.path()).format(FileFormat::Yaml))
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
             .build()
             .expect("Failed to build config");
 
@@ -354,76 +370,23 @@ storage:
 
     #[test]
     fn test_user_decrypt_shares_threshold_works_when_present() {
-        let config_content = r#"
-gateway:
-  blockchain_rpc:
-    ws_url: "wss://test-gateway.example.com"
-    http_url: "https://test-gateway.example.com"
-    chain_id: 8009
-  listener:
-    ws_reconnect_config:
-      max_attempts: 30
-      retry_interval_ms: 1000
-  tx_engine:
-    retry:
-      max_attempts: 100
-      retry_interval_ms: 500
-    private_key: "0x1234567890123456789012345678901234567890123456789012345678901234"
-    max_concurrency: 100
-  readiness_checker:
-    max_concurrency: 100
-    retry:
-      max_attempts: 3
-      retry_interval_ms: 2000
-  contracts:
-    decryption_address: "0x1234567890123456789012345678901234567890"
-    input_verification_address: "0x1234567890123456789012345678901234567890"
-    user_decrypt_shares_threshold: 9
-log:
-  format: "compact"
-  show_file_line: false
-  show_thread_ids: false
-  show_timestamp: true
-  show_target: true
-keyurl:
-  fhe_public_key:
-    data_id: "test-key"
-    url: "https://test.example.com/key"
-  crs:
-    data_id: "test-crs"
-    url: "https://test.example.com/crs"
-http:
-  rate_limit_post_endpoints:
-    requests_per_second: 30
-    burst_size: 30
-    retry_after_seconds: 3
-    jitter_max_ms: 2000
-  metrics:
-    histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
-metrics:
-  endpoint: "0.0.0.0:9898"
-storage:
-  sql_database_url: "postgresql://postgres:postgres@localhost:5432/relayer_db"
-  sql_max_connections: 10
-"#;
-
-        // Create a temporary config file
-        let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
-        temp_file
-            .write_all(config_content.as_bytes())
-            .expect("Failed to write config");
+        // Create config with valid configuration (using example as-is)
+        let config_path = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .to_temp_file()
+            .expect("Failed to create temp config file");
 
         // Try to build config - should succeed
         let config = Config::builder()
-            .add_source(File::from(temp_file.path()).format(FileFormat::Yaml))
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
             .build()
             .expect("Failed to build config");
 
-        let settings: Settings = config
-            .try_deserialize()
-            .expect("Configuration parsing should succeed when expected_share_count is present");
+        let settings: Settings = config.try_deserialize().expect(
+            "Configuration parsing should succeed when user_decrypt_shares_threshold is present",
+        );
 
-        // Verify the value was parsed correctly
+        // Verify the value was parsed correctly (value from local.yaml.example)
         assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 9);
     }
 }
