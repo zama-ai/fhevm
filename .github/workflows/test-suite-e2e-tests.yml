@@ -158,10 +158,10 @@ jobs:
         run: |
           ./fhevm-cli pause host
 
-      - name: Paused Host requests test
+      - name: Paused Host contracts test
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test paused-host-requests
+          ./fhevm-cli test paused-host-contracts
 
       - name: Unpause Host Contracts
         working-directory: test-suite/fhevm

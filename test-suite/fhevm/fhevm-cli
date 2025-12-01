@@ -256,13 +256,13 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS (SUBSET)${RESET}"
           docker_args+=("-g" "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt")
           ;;
+        paused-host-contracts)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED HOST CONTRACTS${RESET}"
+          docker_args+=("-g" "test paused host.*")
+          ;;
         paused-gateway-contracts)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED GATEWAY CONTRACTS${RESET}"
           docker_args+=("-g" "test paused gateway.*")
-          ;;
-        paused-host-requests)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED HOST INPUT PROOF (uint64)${RESET}"
-          docker_args+=("-g" "test paused host.*")
           ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
