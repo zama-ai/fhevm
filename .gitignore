@@ -85,3 +85,5 @@ apps/back/config/compose.yaml
 
 .obsidian
 .vscode
+.vercel
+.env*.local

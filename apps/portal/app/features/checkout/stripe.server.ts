@@ -7,6 +7,13 @@ if (!stripeSecretKey) {
   throw new Error("Missing STRIPE_SECRET_KEY in environment variables");
 }
 
+const PORTAL_APP_URL = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : process.env.PORTAL_APP_URL;
+if (!PORTAL_APP_URL) {
+  throw new Error("Missing PORTAL_APP_URL in environment variables");
+}
+
 const stripe = new Stripe(stripeSecretKey, { apiVersion: "2025-09-30.clover" });
 
 export function verifyStripeSession(
@@ -95,7 +102,7 @@ export async function createStripeCheckoutSession({
     ],
     customer: customer.id,
     mode: "subscription",
-    return_url: `${process.env.PORTAL_APP_URL}/return?session_id={CHECKOUT_SESSION_ID}&price_id=${priceId}`,
+    return_url: `${PORTAL_APP_URL}/return?session_id={CHECKOUT_SESSION_ID}&price_id=${priceId}`,
   });
 
   return session;
