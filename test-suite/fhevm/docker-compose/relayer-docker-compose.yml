@@ -35,7 +35,9 @@ services:
   relayer-db:
     container_name: fhevm-relayer-db
     platform: linux/amd64
-    image: postgres:17-alpine
+    build: 
+      context: .
+      dockerfile: Dockerfile.relayer-database.dev
     environment:
       POSTGRES_DB: relayer_db
       POSTGRES_USER: postgres
