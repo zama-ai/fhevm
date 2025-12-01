@@ -64,6 +64,10 @@ jobs:
               - 'apps/relayer/**'
               - 'docker/relayer/**'
               - '.github/workflows/docker.yaml'
+            relayer-migrate:
+              - 'apps/relayer/relayer-migrate/**'
+              - 'docker/relayer-migrate/**'
+              - '.github/workflows/docker.yaml'
             oracle:
               - 'apps/oracle/**'
               - 'docker/oracle/**'
@@ -82,6 +86,7 @@ jobs:
             "back": {"name": "back", "context": ".", "dockerfile": "docker/back/Dockerfile", "target": "runtime"},
             "front": {"name": "front", "context": ".", "dockerfile": "docker/front/Dockerfile", "target": "runtime"},
             "relayer": {"name": "relayer", "context": ".", "dockerfile": "docker/relayer/Dockerfile", "target": "runtime"},
+            "relayer-migrate": {"name": "relayer-migrate", "context": ".", "dockerfile": "docker/relayer-migrate/Dockerfile", "target": "runtime"},
             "oracle": {"name": "oracle", "context": ".", "dockerfile": "docker/oracle/Dockerfile", "target": "prod"}
           }'
           if [ -z "$CHANGES_JSON" ]; then
