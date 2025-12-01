@@ -430,7 +430,13 @@ async fn build_transaction_graph_and_execute<'a>(
     loop_ctx: &opentelemetry::Context,
 ) -> Result<DFTxGraph, Box<dyn std::error::Error + Send + Sync>> {
     let mut tx_graph = DFTxGraph::default();
-    tx_graph.build(tenant_txs)?;
+    if let Err(e) = tx_graph.build(tenant_txs) {
+        // If we had an error while building the graph, we don't
+        // execute anything and return to allow any set results
+        // (essentially errors) to be set in DB.
+        warn!(target: "tfhe_worker", { error = %e }, "error while building transaction graph");
+        return Ok(tx_graph);
+    }
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
     let ciphertext_map =
         query_ciphertexts(&cts_to_query, *tenant_id, trx, tracer, loop_ctx).await?;
