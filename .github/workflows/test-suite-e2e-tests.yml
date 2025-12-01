@@ -161,7 +161,7 @@ jobs:
       - name: Paused Gateway requests test
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test paused-gateway-requests
+          ./fhevm-cli test paused-gateway-contracts
 
       - name: Unpause Gateway Contracts
         working-directory: test-suite/fhevm
