@@ -258,7 +258,7 @@ case $COMMAND in
           ;;
         paused-gateway-requests)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED INPUT PROOF (uint64)${RESET}"
-          docker_args+=("-g" "test paused gateway user input.*|paused gateway user decrypt.*|paused gateway HTTP public decrypt.*")
+          docker_args+=("-g" "test paused gateway.*")
           ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"

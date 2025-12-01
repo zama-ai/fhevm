@@ -29,7 +29,7 @@ describe('Paused gateway', function () {
     await this.httpPublicDecryptContract.waitForDeployment();
   });
 
-  // InputVerification tests.
+  // The following test case should cover the InputVerification.verifyProofRequest method calling.
   it('test paused gateway user input (input verification request)', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(
       this.testInputContractAddress,
@@ -40,7 +40,7 @@ describe('Paused gateway', function () {
     await expect(inputAlice.encrypt()).to.be.rejectedWith(new RegExp('Input request failed'));
   });
 
-  // UserDecryption tests.
+  // The following test case should cover the Decryption.userDecryptionRequest method calling.
   it('test paused gateway user decrypt (user decryption request)', async function () {
     const handle = await this.userDecryptContract.xBool();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
@@ -56,7 +56,7 @@ describe('Paused gateway', function () {
     ).to.be.rejectedWith(new RegExp('User decrypt failed'));
   });
 
-  // PublicDecryption tests.
+  // The following test case should cover the Decryption.publicDecryptionRequest method calling.
   it('test paused gateway HTTP public decrypt (public decryption request)', async function () {
     const handleBool = await this.httpPublicDecryptContract.xBool();
     const handleAddress = await this.httpPublicDecryptContract.xAddress();
