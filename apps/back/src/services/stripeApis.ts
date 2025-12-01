@@ -49,7 +49,7 @@ export const getStripeCustomer = withSpan(
     logger.debug(`fetching customer by email`);
     const response = await stripe.customers.search({
       // Note: latest version of Stripe requires not UriEncoded email
-      query: `email:"${email.replace(/\\/g, '\\\\').replace(/\"/g, '\\"')}"`,
+      query: `email:"${email.replace(/\\/g, "\\\\").replace(/\"/g, '\\"')}"`,
     });
     if (!response.data.length) {
       logger.warn(`no customer found with email=${email}`);
