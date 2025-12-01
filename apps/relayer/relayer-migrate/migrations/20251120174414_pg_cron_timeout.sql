@@ -51,12 +51,12 @@ SELECT cron.schedule(
 );
 
 
-TEST REQUESTS for the jobs:
-Check status of executed jobs
-SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 10;
+-- TEST REQUESTS for the jobs:
+-- Check status of executed jobs
+-- SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 10;
 
 -- List currently scheduled jobs
-SELECT * FROM cron.job;
+-- SELECT * FROM cron.job;
 
 -- To unschedule/delete a job if you made a mistake:
-SELECT cron.unschedule('user_decrypt_timeout_job');
+-- SELECT cron.unschedule('user_decrypt_timeout_job');

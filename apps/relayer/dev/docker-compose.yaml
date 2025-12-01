@@ -3,7 +3,7 @@ services:
   postgres:
     build: 
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.postgres.dev
     environment:
       POSTGRES_DB: relayer_db
       POSTGRES_USER: postgres

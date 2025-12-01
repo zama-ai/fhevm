@@ -1,5 +1,5 @@
 # Dockerfile
-FROM postgres:17-alpine
+FROM postgres:17
 
 # Update package list and install pg_cron
 RUN apt-get update && apt-get install -y postgresql-17-cron \
