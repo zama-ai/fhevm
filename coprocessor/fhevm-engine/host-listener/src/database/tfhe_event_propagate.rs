@@ -84,6 +84,7 @@ pub struct LogTfhe {
     pub transaction_hash: Option<TransactionHash>,
     pub is_allowed: bool,
     pub block_number: Option<u64>,
+    pub block_timestamp: sqlx::types::time::PrimitiveDateTime,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -282,9 +283,11 @@ impl Database {
                 is_scalar,
                 dependence_chain_id,
                 transaction_id,
-                is_allowed
+                is_allowed,
+                created_at,
+                schedule_order
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
             ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
             "#,
             tenant_id as i32,
@@ -295,6 +298,7 @@ impl Database {
             bucket.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()),
             log.is_allowed,
+            log.block_timestamp,
         );
         query.execute(tx.deref_mut()).await.map(|_| ())
     }
