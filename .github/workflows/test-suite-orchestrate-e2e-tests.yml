@@ -1,0 +1,168 @@
+name: test-suite-orchestrate-e2e-tests
+
+on:
+  pull_request:
+    branches:
+      - mergify/merge-queue/**
+
+permissions: {}
+
+concurrency:
+  group: test-suite-orchestrate-e2e-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  coprocessor-db-migration-docker-build:
+    uses: ./.github/workflows/coprocessor-db-migration-docker-build.yml
+    permissions: &docker_permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    secrets: &docker_secrets
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+  coprocessor-gw-listener-docker-build:
+    uses: ./.github/workflows/coprocessor-gw-listener-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  coprocessor-host-listener-docker-build:
+    uses: ./.github/workflows/coprocessor-host-listener-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  coprocessor-sns-worker-docker-build:
+    uses: ./.github/workflows/coprocessor-sns-worker-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  coprocessor-tfhe-worker-docker-build:
+    uses: ./.github/workflows/coprocessor-tfhe-worker-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  coprocessor-tx-sender-docker-build:
+    uses: ./.github/workflows/coprocessor-tx-sender-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  coprocessor-zkproof-worker-docker-build:
+    uses: ./.github/workflows/coprocessor-zkproof-worker-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  gateway-contracts-docker-build:
+    uses: ./.github/workflows/gateway-contracts-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  host-contracts-docker-build:
+    uses: ./.github/workflows/host-contracts-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  kms-connector-db-migration-docker-build:
+    uses: ./.github/workflows/kms-connector-db-migration-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  kms-connector-gw-listener-docker-build:
+    uses: ./.github/workflows/kms-connector-gw-listener-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  kms-connector-kms-worker-docker-build:
+    uses: ./.github/workflows/kms-connector-kms-worker-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  kms-connector-tx-sender-docker-build:
+    uses: ./.github/workflows/kms-connector-tx-sender-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+  test-suite-docker-build:
+    uses: ./.github/workflows/test-suite-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+
+  create-e2e-tests-input:
+    name: test-suite-orchestrate-e2e-tests/create-e2e-tests-input
+    needs:
+      - coprocessor-db-migration-docker-build
+      - coprocessor-gw-listener-docker-build
+      - coprocessor-host-listener-docker-build
+      - coprocessor-sns-worker-docker-build
+      - coprocessor-tfhe-worker-docker-build
+      - coprocessor-tx-sender-docker-build
+      - coprocessor-zkproof-worker-docker-build
+      - gateway-contracts-docker-build
+      - host-contracts-docker-build
+      - kms-connector-db-migration-docker-build
+      - kms-connector-gw-listener-docker-build
+      - kms-connector-kms-worker-docker-build
+      - kms-connector-tx-sender-docker-build
+      - test-suite-docker-build
+    if: ${{ success() || failure() }}
+    env:
+      COMMIT_HASH: ${{ github.event.pull_request.head.sha || github.sha }}
+      DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
+    runs-on: ubuntu-latest
+    outputs:
+      coprocessor: ${{ steps.create-e2e-tests-input.outputs.coprocessor }}
+      connector: ${{ steps.create-e2e-tests-input.outputs.connector }}
+      gateway: ${{ steps.create-e2e-tests-input.outputs.gateway }}
+      host: ${{ steps.create-e2e-tests-input.outputs.host }}
+      test-suite: ${{ steps.create-e2e-tests-input.outputs.test-suite }}
+    steps:
+      - id: create-e2e-tests-input
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v0.8.0
+        with:
+          script: |
+            const commitHash = process.env.COMMIT_HASH;
+            console.log(`Commit hash: ${commitHash}`)
+            console.log(`Docker build results: ${process.env.DOCKER_BUILD_RESULTS}`)
+
+            const dockerBuildResults = JSON.parse(process.env.DOCKER_BUILD_RESULTS);
+            function getImageTagIfBuilt(key) {
+              let imageTag = dockerBuildResults[key].outputs.build_result === 'success' ? commitHash : '';
+              console.log(`Assigning image tag '${imageTag}' for ${key}`);
+              return imageTag;
+            }
+
+            const coprocessor = [
+              getImageTagIfBuilt('coprocessor-db-migration-docker-build'),
+              getImageTagIfBuilt('coprocessor-gw-listener-docker-build'),
+              getImageTagIfBuilt('coprocessor-host-listener-docker-build'),
+              getImageTagIfBuilt('coprocessor-sns-worker-docker-build'),
+              getImageTagIfBuilt('coprocessor-tfhe-worker-docker-build'),
+              getImageTagIfBuilt('coprocessor-tx-sender-docker-build'),
+              getImageTagIfBuilt('coprocessor-zkproof-worker-docker-build'),
+            ];
+
+            const connector = [
+              getImageTagIfBuilt('kms-connector-db-migration-docker-build'),
+              getImageTagIfBuilt('kms-connector-gw-listener-docker-build'),
+              getImageTagIfBuilt('kms-connector-kms-worker-docker-build'),
+              getImageTagIfBuilt('kms-connector-tx-sender-docker-build'),
+            ];
+
+            core.setOutput('coprocessor', coprocessor);
+            core.setOutput('gateway', getImageTagIfBuilt('gateway-contracts-docker-build'));
+            core.setOutput('host', getImageTagIfBuilt('host-contracts-docker-build'));
+            core.setOutput('connector', connector);
+            core.setOutput('test-suite', getImageTagIfBuilt('test-suite-docker-build'));
+
+  run-e2e-tests:
+    name: test-suite-orchestrate-e2e-tests/run-e2e-tests
+    needs: [create-e2e-tests-input]
+    uses:
+      ./.github/workflows/test-suite-e2e-tests-mq.yml
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC authentication
+      packages: 'read' # Required to read GitHub packages/container registry
+    secrets:
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    with:
+      coprocessor: ${{ needs.create-e2e-tests-input.outputs.coprocessor }}
+      gateway: ${{ needs.create-e2e-tests-input.outputs.gateway }}
+      host: ${{ needs.create-e2e-tests-input.outputs.host }}
+      connector: ${{ needs.create-e2e-tests-input.outputs.connector }}
+      test-suite: ${{ needs.create-e2e-tests-input.outputs.test-suite }}
