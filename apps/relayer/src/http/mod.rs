@@ -13,6 +13,8 @@ pub use health_endpoints::{
     VersionResponse,
 };
 
+pub use middleware::with_rate_limiting;
+
 pub use utils::{
     // Other utilities
     de_string_or_number,
@@ -38,8 +40,6 @@ pub use utils::{
     validate_u64_string,
     // Validation messages
     validation_messages,
-    // Middleware helpers
-    with_rate_limiting,
     ApiError,
     // Core response types
     AppResponse,
