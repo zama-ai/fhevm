@@ -851,9 +851,8 @@ impl InfiniteLogIter {
         self.catchup_blocks = None;
         self.next_blocklogs.clear();
         self.last_valid_block = None;
-        self.block_history = BlockHistory::new(
-            self.reorg_maximum_duration_in_blocks as usize,
-        );
+        self.block_history =
+            BlockHistory::new(self.reorg_maximum_duration_in_blocks as usize);
     }
 }
 

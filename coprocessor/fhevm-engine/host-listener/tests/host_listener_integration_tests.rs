@@ -500,7 +500,7 @@ async fn test_catchup_only() -> Result<(), anyhow::Error> {
 
     // Start listener in background task
     args.start_at_block = Some(-30 + 2 * nb_event_per_wallet);
-    args.end_at_block = Some(15 + 2 * nb_event_per_wallet as i64);
+    args.end_at_block = Some(15 + 2 * nb_event_per_wallet);
     args.catchup_paging = 2;
     let listener_handle = tokio::spawn(main(args.clone()));
     assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
@@ -582,7 +582,8 @@ async fn test_only_catchup_loop() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 #[serial(db)]
-async fn test_only_catchup_loop_with_negative_stop_at_block() -> Result<(), anyhow::Error> {
+async fn test_only_catchup_loop_with_negative_stop_at_block(
+) -> Result<(), anyhow::Error> {
     let setup = setup(None).await?;
     let mut args = setup.args.clone();
 
@@ -624,7 +625,10 @@ async fn test_only_catchup_loop_with_negative_stop_at_block() -> Result<(), anyh
         .unwrap_or(0);
     let nb_wallets = setup.wallets.len() as i64;
     // Events should be captured (exact count may vary based on block timing)
-    assert!(tfhe_events_count > 0, "Should have captured some TFHE events");
+    assert!(
+        tfhe_events_count > 0,
+        "Should have captured some TFHE events"
+    );
     assert!(acl_events_count > 0, "Should have captured some ACL events");
     assert!(
         tfhe_events_count <= nb_wallets * nb_event_per_wallet,
