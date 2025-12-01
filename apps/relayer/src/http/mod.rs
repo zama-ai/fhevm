@@ -1,16 +1,21 @@
-pub mod health_endpoints;
+pub mod handlers;
 pub mod http_server;
-pub mod input_http_listener;
-pub mod keyurl_http_listener;
 pub mod middleware;
-pub mod public_decrypt_http_listener;
-pub mod userdecrypt_http_listener;
+pub mod types;
 pub mod utils;
 
 // Re-export key types and functions for direct access
-pub use health_endpoints::{
-    health_handler, liveness_handler, version_handler, HealthResponse, LivenessResponse,
-    VersionResponse,
+pub use handlers::{
+    health_handler, liveness_handler, version_handler, HealthResponse, InputProofHandler,
+    InputProofResponse, LivenessResponse, PublicDecryptHandler, PublicDecryptResponse,
+    UserDecryptHandler, UserDecryptResponse, VersionResponse,
+};
+
+pub use types::{
+    HandleContractPairJson, InputProofErrorResponseJson, InputProofRequestJson,
+    InputProofResponseJson, KeyUrlResponseJson, PublicDecryptErrorResponseJson,
+    PublicDecryptRequestJson, PublicDecryptResponseJson, RequestValidityJson,
+    UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
 };
 
 pub use middleware::with_rate_limiting;

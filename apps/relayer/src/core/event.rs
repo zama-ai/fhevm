@@ -1,16 +1,10 @@
 use crate::core::errors::EventProcessingError;
 use crate::core::job_id::JobId;
-use crate::http::input_http_listener::{
+use crate::http::types::{
     InputProofErrorResponseJson, InputProofRequestJson, InputProofResponseJson,
-    InputProofResponsePayloadJson,
-};
-use crate::http::public_decrypt_http_listener::{
-    PublicDecryptErrorResponseJson, PublicDecryptRequestJson, PublicDecryptResponseJson,
-    PublicDecryptResponsePayloadJson,
-};
-use crate::http::userdecrypt_http_listener::{
-    UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
-    UserDecryptResponsePayloadJson,
+    InputProofResponsePayloadJson, PublicDecryptErrorResponseJson, PublicDecryptRequestJson,
+    PublicDecryptResponseJson, PublicDecryptResponsePayloadJson, UserDecryptErrorResponseJson,
+    UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptResponsePayloadJson,
 };
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes, TxHash};
@@ -935,7 +929,7 @@ mod tests {
     }
 
     use super::UserDecryptResponse;
-    use crate::http::userdecrypt_http_listener::UserDecryptResponseJson;
+    use crate::http::types::user_decrypt::UserDecryptResponseJson;
     use alloy::primitives::Bytes;
 
     #[test]

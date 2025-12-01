@@ -1,16 +1,10 @@
 use crate::config::settings::{KeyUrl, RateLimitConfig};
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
-use crate::http::input_http_listener::{
-    InputProofErrorResponseJson, InputProofHandler, InputProofRequestJson, InputProofResponseJson,
-};
-use crate::http::keyurl_http_listener::KeyUrlResponseJson;
-use crate::http::public_decrypt_http_listener::{
-    PublicDecryptErrorResponseJson, PublicDecryptHandler, PublicDecryptRequestJson,
-    PublicDecryptResponseJson,
-};
-use crate::http::userdecrypt_http_listener::{
-    UserDecryptErrorResponseJson, UserDecryptHandler, UserDecryptRequestJson,
-    UserDecryptResponseJson,
+use crate::http::handlers::{InputProofHandler, PublicDecryptHandler, UserDecryptHandler};
+use crate::http::types::{
+    InputProofErrorResponseJson, InputProofRequestJson, InputProofResponseJson, KeyUrlResponseJson,
+    PublicDecryptErrorResponseJson, PublicDecryptRequestJson, PublicDecryptResponseJson,
+    UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
 };
 use crate::http::with_rate_limiting;
 use crate::http::{health_handler, liveness_handler, version_handler, HealthChecker};
@@ -269,12 +263,12 @@ where
         schemas(UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptErrorResponseJson),
         schemas(InputProofRequestJson, InputProofResponseJson, InputProofErrorResponseJson),
         schemas(KeyUrlResponseJson),
-        schemas(crate::http::keyurl_http_listener::Response, crate::http::keyurl_http_listener::FheKeyInfo, crate::http::keyurl_http_listener::KeyData),
+        schemas(crate::http::types::keyurl::Response, crate::http::types::keyurl::FheKeyInfo, crate::http::types::keyurl::KeyData),
         schemas(VersionErrorResponseJson),
         schemas(crate::http::ErrorResponse, crate::http::ApiError, crate::http::ErrorDetail, crate::http::ErrorLabel),
-        schemas(crate::http::userdecrypt_http_listener::HandleContractPairJson, crate::http::userdecrypt_http_listener::RequestValidityJson, crate::http::userdecrypt_http_listener::UserDecryptResponsePayloadJson),
-        schemas(crate::http::input_http_listener::InputProofResponsePayloadJson),
-        schemas(crate::http::public_decrypt_http_listener::PublicDecryptResponsePayloadJson),
+        schemas(crate::http::types::user_decrypt::HandleContractPairJson, crate::http::types::user_decrypt::RequestValidityJson, crate::http::types::user_decrypt::UserDecryptResponsePayloadJson),
+        schemas(crate::http::types::input_proof::InputProofResponsePayloadJson),
+        schemas(crate::http::types::public_decrypt::PublicDecryptResponsePayloadJson),
         schemas(crate::http::ChainId),
     ),
     tags(
