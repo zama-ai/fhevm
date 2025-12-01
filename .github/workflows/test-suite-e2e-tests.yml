@@ -158,7 +158,7 @@ jobs:
         run: |
           ./fhevm-cli pause gateway
 
-      - name: Paused Gateway requests test
+      - name: Paused Gateway contracts test
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test paused-gateway-contracts
