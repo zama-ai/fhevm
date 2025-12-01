@@ -1,5 +1,6 @@
 use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
+use sqlx::types::time::PrimitiveDateTime;
 
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract;
@@ -42,6 +43,7 @@ async fn insert_tfhe_event(
         transaction_hash: log.transaction_hash,
         is_allowed,
         block_number: log.block_number.unwrap_or(0),
+        block_timestamp: PrimitiveDateTime::MAX,
     };
     db.insert_tfhe_event(tx, &event).await
 }
