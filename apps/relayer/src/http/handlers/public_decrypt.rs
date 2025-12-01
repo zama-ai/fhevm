@@ -7,6 +7,7 @@ use crate::http::types::public_decrypt::{
     PublicDecryptErrorResponseJson, PublicDecryptRequestJson, PublicDecryptResponseJson,
 };
 use crate::http::{parse_and_validate, AppResponse};
+use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::OnceHandler;
 use crate::orchestrator::{ContentHasher, Orchestrator};
@@ -33,7 +34,9 @@ where
     public_decrypt_repo: Arc<PublicDecryptRepository>,
 }
 
-impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDecryptHandler<D> {
+impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
+    PublicDecryptHandler<D>
+{
     pub fn new(
         orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
         api_version: ApiVersion,
@@ -44,6 +47,25 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
             api_version,
             public_decrypt_repo,
         }
+    }
+
+    /// Create router with public decrypt routes
+    pub fn routes(self: Arc<Self>) -> axum::Router {
+        axum::Router::new().route(
+            "/v1/public-decrypt",
+            axum::routing::post({
+                let handler = self.clone();
+                move |req| async move { handler.public_decrypt_v1(req).await }
+            }),
+        )
+    }
+
+    pub async fn public_decrypt_v1(&self, req: Request<axum::body::Body>) -> impl IntoResponse {
+        http_metrics::with_http_metrics(HttpEndpoint::PublicDecrypt, HttpMethod::Post, async move {
+            self.handle(req, &()).await
+        })
+        .await
+        .into_response()
     }
 
     #[instrument(name = "handle-public-decrypt", skip_all, fields(request_id))]
@@ -193,4 +215,26 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
             }
         }
     }
+}
+
+/// Public decryption v1 endpoint - Requests public decryption
+#[utoipa::path(
+post,
+path = "/v1/public-decrypt",
+request_body = PublicDecryptRequestJson,
+responses(
+    (status = 200, description = "Successfully decrypted", body = PublicDecryptResponseJson),
+    (status = 400, description = "Malformed JSON or validation failed", body = crate::http::ErrorResponse),
+    (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
+    (status = 500, description = "Internal server error", body = crate::http::ErrorResponse),
+),
+)]
+pub async fn public_decrypt_v1<D>(
+    handler: Arc<PublicDecryptHandler<D>>,
+    req: Request<axum::body::Body>,
+) -> impl IntoResponse
+where
+    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
+{
+    handler.public_decrypt_v1(req).await
 }

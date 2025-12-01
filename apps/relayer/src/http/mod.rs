@@ -1,6 +1,6 @@
 pub mod handlers;
-pub mod http_server;
 pub mod middleware;
+pub mod server;
 pub mod types;
 pub mod utils;
 
@@ -18,7 +18,7 @@ pub use types::{
     UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
 };
 
-pub use middleware::with_rate_limiting;
+pub use middleware::{openapi_middleware, with_rate_limiting};
 
 pub use utils::{
     // Other utilities

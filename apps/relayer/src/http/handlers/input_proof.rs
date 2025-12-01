@@ -3,8 +3,9 @@ use crate::core::event::{
     RelayerEventData,
 };
 use crate::core::job_id::JobId;
-use crate::http::types::input_proof::InputProofRequestJson;
+use crate::http::types::input_proof::{InputProofRequestJson, InputProofResponseJson};
 use crate::http::{parse_and_validate, AppResponse};
+use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::OnceHandler;
 use crate::orchestrator::Orchestrator;
@@ -25,7 +26,9 @@ where
     input_proof_repo: Arc<InputProofRepository>,
 }
 
-impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProofHandler<D> {
+impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
+    InputProofHandler<D>
+{
     pub fn new(
         orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
         api_version: ApiVersion,
@@ -36,6 +39,25 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             api_version,
             input_proof_repo,
         }
+    }
+
+    /// Create router with input proof routes
+    pub fn routes(self: Arc<Self>) -> axum::Router {
+        axum::Router::new().route(
+            "/v1/input-proof",
+            axum::routing::post({
+                let handler = self.clone();
+                move |req| async move { handler.input_proof_v1(req).await }
+            }),
+        )
+    }
+
+    pub async fn input_proof_v1(&self, req: Request<axum::body::Body>) -> impl IntoResponse {
+        http_metrics::with_http_metrics(HttpEndpoint::InputProof, HttpMethod::Post, async move {
+            self.handle(req, &()).await
+        })
+        .await
+        .into_response()
     }
 
     #[instrument(name = "handle-input", skip_all, fields(request_id))]
@@ -158,4 +180,26 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             }
         }
     }
+}
+
+/// Input proof v1 endpoint - Requests input proof verification  
+#[utoipa::path(
+post,
+path = "/v1/input-proof",
+request_body = InputProofRequestJson,
+responses(
+    (status = 200, description = "Successfully verified input proof", body = InputProofResponseJson),
+    (status = 400, description = "Malformed JSON or validation failed", body = crate::http::ErrorResponse),
+    (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
+    (status = 500, description = "Internal server error", body = crate::http::ErrorResponse),
+),
+)]
+pub async fn input_proof_v1<D>(
+    handler: Arc<InputProofHandler<D>>,
+    req: Request<axum::body::Body>,
+) -> impl IntoResponse
+where
+    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
+{
+    handler.input_proof_v1(req).await
 }

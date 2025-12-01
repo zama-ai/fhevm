@@ -48,7 +48,7 @@ use crate::{
         },
         ArbitrumJsonRPCWsClient,
     },
-    http::{http_server::run_http_server, HealthCheck, HealthChecker},
+    http::{server::run_http_server, HealthCheck, HealthChecker},
     metrics,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},

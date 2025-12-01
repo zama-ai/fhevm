@@ -3,8 +3,9 @@ use crate::core::event::{
     UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
-use crate::http::types::user_decrypt::UserDecryptRequestJson;
+use crate::http::types::user_decrypt::{UserDecryptRequestJson, UserDecryptResponseJson};
 use crate::http::{parse_and_validate, AppResponse};
+use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::OnceHandler;
 use crate::orchestrator::{ContentHasher, Orchestrator};
@@ -17,6 +18,34 @@ use tracing::{error, info, instrument, span, Level};
 pub type UserDecryptResponse =
     AppResponse<crate::http::types::user_decrypt::UserDecryptResponseJson>;
 
+/// User decryption v1 endpoint
+///
+/// Requests a Private decryption
+#[utoipa::path(
+    post,
+    path = "/v1/user-decrypt",
+    request_body = UserDecryptRequestJson,
+    responses(
+        (status = 200, description = "Successfully decrypted", body = UserDecryptResponseJson),
+        (status = 400, description = "Malformed JSON or validation failed", body = crate::http::ErrorResponse),
+        (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::http::ErrorResponse),
+    ),
+    )]
+pub async fn user_decrypt_v1<D>(
+    handler: Arc<UserDecryptHandler<D>>,
+    req: Request<axum::body::Body>,
+) -> impl IntoResponse
+where
+    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
+{
+    http_metrics::with_http_metrics(HttpEndpoint::UserDecrypt, HttpMethod::Post, async move {
+        handler.handle(req, &()).await
+    })
+    .await
+    .into_response()
+}
+
 pub struct UserDecryptHandler<D>
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
@@ -26,7 +55,9 @@ where
     user_decrypt_repo: Arc<UserDecryptRepository>,
 }
 
-impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecryptHandler<D> {
+impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
+    UserDecryptHandler<D>
+{
     pub fn new(
         orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
         api_version: ApiVersion,
@@ -37,6 +68,25 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             api_version,
             user_decrypt_repo,
         }
+    }
+
+    /// Create router with user decrypt routes
+    pub fn routes(self: Arc<Self>) -> axum::Router {
+        axum::Router::new().route(
+            "/v1/user-decrypt",
+            axum::routing::post({
+                let handler = self.clone();
+                move |req| async move { handler.user_decrypt_v1(req).await }
+            }),
+        )
+    }
+
+    pub async fn user_decrypt_v1(&self, req: Request<axum::body::Body>) -> impl IntoResponse {
+        http_metrics::with_http_metrics(HttpEndpoint::UserDecrypt, HttpMethod::Post, async move {
+            self.handle(req, &()).await
+        })
+        .await
+        .into_response()
     }
 
     #[instrument(name = "handle-user-decrypt", skip_all, fields(request_id))]
