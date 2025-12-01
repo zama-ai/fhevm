@@ -30,7 +30,7 @@ describe('Paused gateway', function () {
   });
 
   // InputVerification tests.
-  it('test paused gateway user input uint64 (non-trivial)', async function () {
+  it('test paused gateway user input (input verification request)', async function () {
     const inputAlice = this.instances.alice.createEncryptedInput(
       this.testInputContractAddress,
       this.signers.alice.address,
@@ -41,7 +41,7 @@ describe('Paused gateway', function () {
   });
 
   // UserDecryption tests.
-  it('test paused gateway user decrypt', async function () {
+  it('test paused gateway user decrypt (user decryption request)', async function () {
     const handle = await this.userDecryptContract.xBool();
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     await expect(
@@ -57,7 +57,7 @@ describe('Paused gateway', function () {
   });
 
   // PublicDecryption tests.
-  it('test paused gateway HTTPPublicDecrypt', async function () {
+  it('test paused gateway HTTP public decrypt (public decryption request)', async function () {
     const handleBool = await this.httpPublicDecryptContract.xBool();
     const handleAddress = await this.httpPublicDecryptContract.xAddress();
     const handle32 = await this.httpPublicDecryptContract.xUint32();

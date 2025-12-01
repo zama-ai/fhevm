@@ -213,17 +213,9 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] INPUT PROOF (uint64)${RESET}"
           docker_args+=("-g" "test add 42 to uint64 input and decrypt")
           ;;
-        paused-gateway-input-proof)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED INPUT PROOF (uint64)${RESET}"
-          docker_args+=("-g" "test paused gateway user input uint64")
-          ;;
         user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test user decrypt")
-          ;;
-        paused-gateway-user-decryption)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED USER DECRYPTION${RESET}"
-          docker_args+=("-g" "test paused gateway user decrypt")
           ;;
         delegate-user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
@@ -252,10 +244,6 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION OVER HTTP FOR MIXED${RESET}"
           docker_args+=("-g" "test HTTPPublicDecrypt mixed")
           ;;
-        paused-gateway-public-decrypt-http)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED PUBLIC DECRYPTION OVER HTTP${RESET}"
-          docker_args+=("-g" "test paused gateway HTTPPublicDecrypt")
-          ;;
         operators)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
           docker_args+=("--parallel" "-g" "test operator|FHEVM manual operations")
@@ -267,6 +255,10 @@ case $COMMAND in
         random-subset)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS (SUBSET)${RESET}"
           docker_args+=("-g" "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt")
+          ;;
+        paused-gateway-requests)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED INPUT PROOF (uint64)${RESET}"
+          docker_args+=("-g" "test paused gateway user input uint64|paused gateway user decrypt|paused gateway HTTPPublicDecrypt")
           ;;
         debug)
           echo -e "${LIGHT_BLUE}${BOLD}[DEBUG] Starting debug session...${RESET}"
