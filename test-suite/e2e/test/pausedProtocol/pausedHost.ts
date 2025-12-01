@@ -13,8 +13,8 @@ describe('Paused host', function () {
     this.instances = await createInstances(this.signers);
   });
 
-  // ACL.allow test.
-  it('test paused host user input uint64 (non-trivial)', async function () {
+  // The following test case should cover the ACL.allow method call.
+  it('test paused host user input (allow)', async function () {
     // Initialize TestInput contract.
     const testInputContractFactory = await ethers.getContractFactory('TestInput');
     const testInputContract = await testInputContractFactory.connect(this.signers.alice).deploy();
@@ -31,8 +31,20 @@ describe('Paused host', function () {
     ).to.be.rejectedWith(new RegExp(ENFORCED_PAUSE_SELECTOR));
   });
 
-  // ACL.allowTransient test.
-  it('test paused host operator "sub"', async function () {
+  // The following test case should cover the ACL.allowForDecryption method call.
+  it('test paused host HTTP public decrypt (allow for decryption)', async function () {
+    // Initialize HTTPPublicDecrypt contract.
+    const httpPublicDecryptContractFactory = await ethers.getContractFactory('HTTPPublicDecrypt');
+
+    // The HTTPPublicDecrypt contract deployment should fail because its constructor
+    // makes a call to ACL.allowForDecryption() which should be paused.
+    await expect(httpPublicDecryptContractFactory.connect(this.signers.alice).deploy()).to.be.rejectedWith(
+      new RegExp(ENFORCED_PAUSE_SELECTOR),
+    );
+  });
+
+  // The following test case should cover the ACL.allowTransient method call.
+  it('test paused host operators (allow transient)', async function () {
     const fhevmTestSuite1ContractFactory = await ethers.getContractFactory('FHEVMTestSuite1');
     const fhevmTestSuite1Contract = await fhevmTestSuite1ContractFactory.connect(this.signers.alice).deploy();
     const fhevmTestSuite1ContractAddress = await fhevmTestSuite1Contract.getAddress();
@@ -51,17 +63,5 @@ describe('Paused host', function () {
         encryptedAmount.inputProof,
       ),
     ).to.be.rejectedWith(new RegExp(ENFORCED_PAUSE_SELECTOR));
-  });
-
-  // ACL.allowForDecryption test.
-  it('test paused host HTTPPublicDecrypt', async function () {
-    // Initialize HTTPPublicDecrypt contract.
-    const httpPublicDecryptContractFactory = await ethers.getContractFactory('HTTPPublicDecrypt');
-
-    // The HTTPPublicDecrypt contract deployment should fail because its constructor
-    // makes a call to ACL.allowForDecryption() which should be paused.
-    await expect(httpPublicDecryptContractFactory.connect(this.signers.alice).deploy()).to.be.rejectedWith(
-      new RegExp(ENFORCED_PAUSE_SELECTOR),
-    );
   });
 });
