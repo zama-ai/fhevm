@@ -1,6 +1,28 @@
 name: coprocessor-zkproof-worker-docker-build
 
 on:
+  workflow_call:
+    secrets:
+      AWS_ACCESS_KEY_S3_USER:
+        required: true
+      AWS_SECRET_KEY_S3_USER:
+        required: true
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: true
+      CGR_USERNAME:
+        required: true
+      CGR_PASSWORD:
+        required: true
+    inputs:
+      is_workflow_call:
+        description: 'To determine if the trigger was a workflow_call or a pull request'
+        type: boolean
+        required: false
+        default: true
+    outputs:
+      build_result:
+        description: "Result of the build job of this workflow"
+        value: ${{ jobs.build.result }}
   pull_request:
   push:
     branches:
@@ -23,6 +45,9 @@ jobs:
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
+    if: |
+      inputs.is_workflow_call ||
+      (!inputs.is_workflow_call && !startsWith(github.head_ref, 'mergify/merge-queue/'))
     outputs:
       changes-coprocessor-zkproof-worker: ${{ steps.filter.outputs.coprocessor-zkproof-worker }}
     steps:
