@@ -57,25 +57,28 @@ impl ZkData {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_proof(
     pool: &sqlx::PgPool,
     request_id: i64,
-    zk_pok: &[u8],
-    aux: &ZkData,
+    zk_pok: Vec<u8>,
+    aux: ZkData,
     db_notify_channel: &str,
     transaction_id: Handle,
+    retry_count: i32,
     _block_number: u64,
 ) -> Result<(), sqlx::Error> {
     //  Insert ZkPok into database
     sqlx::query(
-            "INSERT INTO verify_proofs (zk_proof_id, input, chain_id, contract_address, user_address, verified, transaction_id)
-            VALUES ($1, $2, $3, $4, $5, NULL, $6)" 
+            "INSERT INTO verify_proofs (zk_proof_id, input, chain_id, contract_address, user_address, verified, transaction_id, retry_count)
+            VALUES ($1, $2, $3, $4, $5, NULL, $6, $7)" 
         ).bind(request_id)
         .bind(zk_pok)
         .bind(aux.chain_id)
         .bind(aux.contract_address.clone())
         .bind(aux.user_address.clone())
         .bind(transaction_id.to_vec())
+        .bind(retry_count)
         .execute(pool).await?;
     sqlx::query("SELECT pg_notify($1, '')")
         .bind(db_notify_channel)
@@ -190,10 +193,11 @@ pub async fn generate_random_handle_vec(
     insert_proof(
         &pool,
         zk_id,
-        &zk_pok,
-        &zk_data,
+        zk_pok,
+        zk_data,
         &ctx.args.zkproof_notify_channel,
         transaction_id,
+        0,
         0,
     )
     .await?;
@@ -203,6 +207,67 @@ pub async fn generate_random_handle_vec(
     info!(handles = ?handles.iter().map(hex::encode), count = handles.len(), "received handles");
 
     Ok(handles)
+}
+
+pub async fn generate_and_insert_inputs_batch(
+    ctx: &Context,
+    batch_size: usize,
+    inputs_count: u8,
+    contract_address: &String,
+    user_address: &String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    assert!(inputs_count <= 254);
+    let ecfg = EnvConfig::new();
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(20)
+        .connect(&ecfg.evgen_db_url)
+        .await
+        .unwrap();
+
+    let (pks, public_params) = query_and_save_pks(ecfg.tenant_id, &pool).await?;
+    let mut db_inserts = vec![];
+
+    // Generate a batch of zkpoks
+    for idx in 0..batch_size {
+        let transaction_id = next_random_handle(DEF_TYPE);
+
+        let zk_data = ZkData {
+            contract_address: contract_address.to_owned(),
+            user_address: user_address.to_owned(),
+            acl_contract_address: ecfg.acl_contract_address.clone(),
+            chain_id: ecfg.chain_id,
+        };
+        let aux_data = zk_data.to_owned().assemble()?;
+
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&pks);
+        for _ in 0..inputs_count {
+            builder.push(rand::rng().random::<u64>());
+        }
+        let zk_id = ZK_PROOF_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        info!(target: "tool", "zkpok id: {}, count = {:?}, seq_num = {} of {} , txn: {:?}, ", zk_id, inputs_count, idx, batch_size, transaction_id );
+        let the_list = builder
+            .build_with_proof_packed(&public_params, &aux_data, tfhe::zk::ZkComputeLoad::Proof)
+            .unwrap();
+
+        let zk_pok = fhevm_engine_common::utils::safe_serialize(&the_list);
+
+        // retry_count = 100 to ensure the txn-sender will delete it after first try
+        // If not deleted, txn-sender will report too many VerifyProofNotRequested errors
+        db_inserts.push(insert_proof(
+            &pool,
+            zk_id,
+            zk_pok.clone(),
+            zk_data,
+            &ctx.args.zkproof_notify_channel,
+            transaction_id,
+            100,
+            0,
+        ));
+    }
+
+    futures::future::try_join_all(db_inserts).await?;
+
+    Ok(())
 }
 
 pub async fn get_inputs_vector(

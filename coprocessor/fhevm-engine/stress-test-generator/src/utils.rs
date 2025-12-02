@@ -101,6 +101,7 @@ pub enum Transaction {
     GenUsrDecHandles,
     BatchAllowHandles,
     BatchSubmitEncryptedBids,
+    BatchInputProofs,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize, Eq, PartialEq, Clone)]
