@@ -19,6 +19,25 @@ pub struct BlockLogs<T> {
     pub catchup: bool,
 }
 
+/// Converts a block timestamp to a UTC `PrimitiveDateTime`.
+///
+/// # Parameters
+/// - `timestamp`: Seconds since Unix epoch.
+///
+/// # Returns
+/// A UTC `PrimitiveDateTime` suitable for database writes.
+fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
+    let offset = OffsetDateTime::from_unix_timestamp(timestamp as i64)
+        .unwrap_or_else(|_| {
+            error!(
+                timestamp,
+                "Invalid block timestamp, using now",
+            );
+            OffsetDateTime::now_utc()
+        });
+    PrimitiveDateTime::new(offset.date(), offset.time())
+}
+
 pub async fn ingest_block_logs(
     chain_id: u64,
     db: &mut Database,
@@ -32,20 +51,7 @@ pub async fn ingest_block_logs(
     let block_hash = block_logs.summary.hash;
     let block_number = block_logs.summary.number;
     let mut catchup_insertion = 0;
-    let summary_offset_dt = OffsetDateTime::from_unix_timestamp(
-        block_logs.summary.timestamp as i64,
-    )
-    .unwrap_or_else(|_| {
-        error!(
-            timestamp = block_logs.summary.timestamp,
-            "Invalid block timestamp, using now",
-        );
-        OffsetDateTime::now_utc()
-    });
-    let block_timestamp = PrimitiveDateTime::new(
-        summary_offset_dt.date(),
-        summary_offset_dt.time(),
-    );
+    let block_timestamp = block_date_time_utc(block_logs.summary.timestamp);
 
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
