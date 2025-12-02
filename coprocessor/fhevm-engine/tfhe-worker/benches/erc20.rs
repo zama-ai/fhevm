@@ -185,6 +185,8 @@ async fn schedule_erc20_whitepaper(
     assert_eq!(resp.upload_responses.len(), 1);
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 3);
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
 
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
@@ -218,6 +220,8 @@ async fn schedule_erc20_whitepaper(
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
@@ -225,6 +229,8 @@ async fn schedule_erc20_whitepaper(
             output_handle: new_to_amount_target_handle.clone(),
             inputs: vec![bald.clone(), trxa.clone()],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -240,6 +246,8 @@ async fn schedule_erc20_whitepaper(
                 bald.clone(),
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
@@ -247,6 +255,8 @@ async fn schedule_erc20_whitepaper(
             output_handle: new_from_amount_target_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -262,6 +272,8 @@ async fn schedule_erc20_whitepaper(
                 bals.clone(),
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
     }
 
@@ -373,6 +385,8 @@ async fn schedule_erc20_no_cmux(
     assert_eq!(resp.upload_responses.len(), 1);
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 3);
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
 
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
@@ -406,6 +420,8 @@ async fn schedule_erc20_no_cmux(
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
@@ -420,6 +436,8 @@ async fn schedule_erc20_no_cmux(
                 },
             ],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
@@ -432,6 +450,8 @@ async fn schedule_erc20_no_cmux(
                 },
             ],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
@@ -444,6 +464,8 @@ async fn schedule_erc20_no_cmux(
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
@@ -456,6 +478,8 @@ async fn schedule_erc20_no_cmux(
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
     }
 
@@ -593,6 +617,8 @@ async fn schedule_dependent_erc20_whitepaper(
     assert_eq!(resp.upload_responses.len(), 1);
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 2);
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
 
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
@@ -622,6 +648,8 @@ async fn schedule_dependent_erc20_whitepaper(
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
@@ -629,6 +657,8 @@ async fn schedule_dependent_erc20_whitepaper(
             output_handle: new_to_amount_target_handle.clone(),
             inputs: vec![bald.clone(), trxa.clone()],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -644,6 +674,8 @@ async fn schedule_dependent_erc20_whitepaper(
                 bald.clone(),
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
@@ -651,6 +683,8 @@ async fn schedule_dependent_erc20_whitepaper(
             output_handle: new_from_amount_target_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -666,6 +700,8 @@ async fn schedule_dependent_erc20_whitepaper(
                 bals.clone(),
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
 
         bald = AsyncComputationInput {
@@ -808,6 +844,8 @@ async fn schedule_dependent_erc20_no_cmux(
     assert_eq!(resp.upload_responses.len(), 1);
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 2);
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
 
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
@@ -837,6 +875,8 @@ async fn schedule_dependent_erc20_no_cmux(
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
@@ -851,6 +891,8 @@ async fn schedule_dependent_erc20_no_cmux(
                 },
             ],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
@@ -863,6 +905,8 @@ async fn schedule_dependent_erc20_no_cmux(
                 },
             ],
             is_allowed: false,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
@@ -875,6 +919,8 @@ async fn schedule_dependent_erc20_no_cmux(
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
@@ -887,6 +933,8 @@ async fn schedule_dependent_erc20_no_cmux(
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
 
         bald = AsyncComputationInput {

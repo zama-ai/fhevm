@@ -99,6 +99,8 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let mut output_handles = Vec::with_capacity(ops.len());
     let mut enc_request_payload = Vec::with_capacity(ops.len() * 2);
     let mut async_computations = Vec::with_capacity(ops.len());
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
     for op in &ops {
         let transaction_id = next_handle();
         let lhs_handle = next_handle();
@@ -153,6 +155,8 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
             output_handle: output_handle.clone(),
             inputs,
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
     }
 
@@ -234,6 +238,8 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
     let mut output_handles = Vec::with_capacity(ops.len());
     let mut enc_request_payload = Vec::with_capacity(ops.len() * 2);
     let mut async_computations = Vec::with_capacity(ops.len());
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
     for op in &ops {
         let transaction_id = next_handle();
         let input_handle = next_handle();
@@ -264,6 +270,8 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
                 input: Some(Input::InputHandle(input_handle)),
             }],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
     }
 
@@ -353,6 +361,8 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
     let mut enc_request_payload = Vec::new();
     let mut async_computations = Vec::new();
     let mut cast_outputs: Vec<CastOutput> = Vec::new();
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
     for type_from in supported_types() {
         for type_to in supported_types() {
             let transaction_id = next_handle();
@@ -401,6 +411,8 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 ],
                 is_allowed: true,
+                block_hash: block_hash.clone(),
+                block_number,
             });
         }
     }
@@ -502,6 +514,8 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut async_computations = Vec::new();
     let mut output_handles = Vec::new();
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
     for case in &test_cases {
         let transaction_id = next_handle();
         let output_handle = next_handle();
@@ -520,6 +534,8 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
     }
 
@@ -621,6 +637,9 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let fhe_bool_type = 0;
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
+
     for input_types in supported_types() {
         let left_handle = next_handle();
         let right_handle = next_handle();
@@ -674,6 +693,8 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 ],
                 is_allowed: true,
+                block_hash: block_hash.clone(),
+                block_number,
             });
         }
     }

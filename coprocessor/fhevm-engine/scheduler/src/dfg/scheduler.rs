@@ -183,7 +183,7 @@ impl<'a> Scheduler<'a> {
                     args.push((
                         std::mem::take(&mut tx.graph),
                         std::mem::take(&mut tx.inputs),
-                        tx.transaction_id.clone(),
+                        tx.transaction.clone(),
                         tx.component_id,
                     ));
                 }
@@ -232,7 +232,7 @@ impl<'a> Scheduler<'a> {
                         args.push((
                             std::mem::take(&mut tx.graph),
                             std::mem::take(&mut tx.inputs),
-                            tx.transaction_id.clone(),
+                            tx.transaction.clone(),
                             tx.component_id,
                         ));
                     }
@@ -250,14 +250,15 @@ impl<'a> Scheduler<'a> {
 
 fn re_randomise_transaction_inputs(
     inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
-    transaction_id: &Handle,
+    transaction: &Transaction,
     component_id: usize,
     gpu_idx: usize,
     cpk: tfhe::CompactPublicKey,
 ) -> Result<()> {
+    let tx_id = transaction.transaction_id.as_slice();
     let mut re_rand_context = ReRandomizationContext::new(
         TRANSACTION_RERANDOMISATION_DOMAIN_SEPARATOR,
-        [transaction_id.as_slice(), &component_id.to_be_bytes()],
+        [tx_id, &component_id.to_be_bytes()],
         COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
     );
     for txinput in inputs.values_mut() {
@@ -272,7 +273,7 @@ fn re_randomise_transaction_inputs(
                 *txinput = Some(DFGTxInput::Value((decomp, *allowed)));
             }
             None => {
-                error!(target: "scheduler", { transaction_id = ?hex::encode(transaction_id) },
+                error!(target: "scheduler", ?transaction,
 		       "Missing transaction input while trying to re-randomise");
                 return Err(SchedulerError::MissingInputs.into());
             }
@@ -286,12 +287,12 @@ fn re_randomise_transaction_inputs(
             }
             Some(DFGTxInput::Value((_, false))) => {}
             Some(DFGTxInput::Compressed(_)) => {
-                error!(target: "scheduler", { transaction_id = ?hex::encode(transaction_id) },
+                error!(target: "scheduler",  ?transaction,
 		       "Failed to re-randomise inputs for transaction");
                 return Err(SchedulerError::ReRandomisationError.into());
             }
             None => {
-                error!(target: "scheduler", { transaction_id = ?hex::encode(transaction_id) },
+                error!(target: "scheduler",  ?transaction,
 		       "Failed to re-randomise inputs for transaction");
                 return Err(SchedulerError::ReRandomisationError.into());
             }
@@ -301,7 +302,7 @@ fn re_randomise_transaction_inputs(
 }
 fn decompress_transaction_inputs(
     inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
-    transaction_id: &Handle,
+    transaction: &Transaction,
     gpu_idx: usize,
     _cpk: tfhe::CompactPublicKey,
 ) -> Result<()> {
@@ -314,7 +315,7 @@ fn decompress_transaction_inputs(
                 *txinput = Some(DFGTxInput::Value((decomp, *allowed)));
             }
             None => {
-                error!(target: "scheduler", { transaction_id = ?hex::encode(transaction_id) },
+                error!(target: "scheduler",  ?transaction,
 		       "Missing transaction input while trying to decompress");
                 return Err(SchedulerError::MissingInputs.into());
             }
@@ -323,7 +324,12 @@ fn decompress_transaction_inputs(
     Ok(())
 }
 
-type ComponentSet = Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle, usize)>;
+type ComponentSet = Vec<(
+    DFGraph,
+    HashMap<Handle, Option<DFGTxInput>>,
+    Transaction,
+    usize,
+)>;
 fn execute_partition(
     transactions: ComponentSet,
     task_id: NodeIndex,
@@ -338,7 +344,7 @@ fn execute_partition(
     let tracer = opentelemetry::global::tracer("tfhe_worker");
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
-    'tx: for (ref mut dfg, ref mut tx_inputs, tid, cid) in transactions {
+    'tx: for (ref mut dfg, ref mut tx_inputs, tx, cid) in transactions {
         // Update the transaction inputs based on allowed handles so
         // far. If any input is still missing, and we cannot fill it
         // (e.g., error in the producer transaction) we cannot execute
@@ -346,7 +352,7 @@ fn execute_partition(
         for (h, i) in tx_inputs.iter_mut() {
             if i.is_none() {
                 let Some(Ok(ct)) = res.get(h) else {
-                    warn!(target: "scheduler", {transaction_id = ?hex::encode(tid) },
+                    warn!(target: "scheduler", ?tx,
 		       "Missing input to compute transaction - skipping");
                     for nidx in dfg.graph.node_identifiers() {
                         let Some(node) = dfg.graph.node_weight_mut(nidx) else {
@@ -368,14 +374,14 @@ fn execute_partition(
 
         if !cfg!(feature = "gpu") {
             let mut s = tracer.start_with_context("rerandomise_inputs", &loop_ctx);
-            telemetry::set_txn_id(&mut s, &tid);
+            telemetry::set_txn_id(&mut s, &tx.transaction_id);
             let started_at = std::time::Instant::now();
             // Re-randomise inputs of the transaction - this also
             // decompresses ciphertexts
-            if let Err(e) =
-                re_randomise_transaction_inputs(tx_inputs, &tid, cid, gpu_idx, cpk.clone())
+            if let Err(_e) =
+                re_randomise_transaction_inputs(tx_inputs, &tx, cid, gpu_idx, cpk.clone())
             {
-                error!(target: "scheduler", {transaction_id = ?hex::encode(tid), error = ?e },
+                error!(target: "scheduler", ?tx,
 		       "Error while re-randomising inputs");
                 for nidx in dfg.graph.node_identifiers() {
                     let Some(node) = dfg.graph.node_weight_mut(nidx) else {
@@ -397,11 +403,11 @@ fn execute_partition(
             drop(s);
         } else {
             let mut s = tracer.start_with_context("decompress_transaction_inputs", &loop_ctx);
-            telemetry::set_txn_id(&mut s, &tid);
+            telemetry::set_txn_id(&mut s, &tx.transaction_id);
             // If re-randomisation is not available (e.g., on GPU),
             // only decompress ciphertexts
-            if let Err(e) = decompress_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
-                error!(target: "scheduler", {transaction_id = ?hex::encode(tid), error = ?e },
+            if let Err(e) = decompress_transaction_inputs(tx_inputs, &tx, gpu_idx, cpk.clone()) {
+                error!(target: "scheduler", ?tx, error = ?e,
 		       "Error while decompressing inputs");
                 for nidx in dfg.graph.node_identifiers() {
                     let Some(node) = dfg.graph.node_weight_mut(nidx) else {
@@ -422,11 +428,11 @@ fn execute_partition(
 
         // Prime the scheduler with ready ops from the transaction's subgraph
         let mut s = tracer.start_with_context("execute_transaction", &loop_ctx);
-        telemetry::set_txn_id(&mut s, &tid);
+        telemetry::set_txn_id(&mut s, &tx.transaction_id);
         let started_at = std::time::Instant::now();
 
         let Ok(ts) = daggy::petgraph::algo::toposort(&dfg.graph, None) else {
-            error!(target: "scheduler", {transaction_id = ?tid },
+            error!(target: "scheduler", ?tx,
 		       "Cyclical dependence error in transaction");
             for nidx in dfg.graph.node_identifiers() {
                 let Some(node) = dfg.graph.node_weight_mut(nidx) else {

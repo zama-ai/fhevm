@@ -44,6 +44,7 @@ async fn insert_tfhe_event(
         is_allowed,
         block_number: log.block_number.unwrap_or(0),
         block_timestamp: PrimitiveDateTime::MAX,
+        block_hash: log.block_hash.unwrap_or(as_handle(&BigInt::from(1))),
     };
     db.insert_tfhe_event(tx, &event).await
 }
@@ -292,6 +293,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         let rhs_handle = next_handle();
         let output_handle = next_handle();
         let transaction_id = next_handle();
+        let block_hash = next_handle();
 
         let lhs_bytes = as_scalar_uint(&op.lhs);
         let rhs_bytes = as_scalar_uint(&op.rhs);
@@ -312,9 +314,9 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
                     result: lhs_handle,
                 },
             )),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
+            block_hash: Some(block_hash),
+            block_number: Some(0),
+            block_timestamp: Some(0),
             transaction_hash: Some(transaction_id),
             transaction_index: Some(0),
             log_index: None,
@@ -333,9 +335,9 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
                         result: rhs_handle,
                     },
                 )),
-                block_hash: None,
-                block_number: None,
-                block_timestamp: None,
+                block_hash: Some(block_hash),
+                block_number: Some(0),
+                block_timestamp: Some(0),
                 transaction_hash: Some(transaction_id),
                 transaction_index: Some(0),
                 log_index: None,
@@ -347,9 +349,9 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         eprintln!("op_event: {:?}", &op_event);
         let log = alloy::rpc::types::Log {
             inner: tfhe_event(op_event),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
+            block_hash: Some(block_hash),
+            block_number: Some(0),
+            block_timestamp: Some(0),
             transaction_hash: Some(transaction_id),
             transaction_index: Some(0),
             log_index: None,

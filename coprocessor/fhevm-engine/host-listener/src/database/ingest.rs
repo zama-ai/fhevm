@@ -103,6 +103,7 @@ pub async fn ingest_block_logs(
                     is_allowed: false, // updated in the next loop
                     block_number,
                     block_timestamp,
+                    block_hash,
                 };
                 tfhe_event_log.push(log);
                 continue;

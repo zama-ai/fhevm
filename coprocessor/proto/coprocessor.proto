@@ -52,6 +52,8 @@ message AsyncComputation {
   bytes output_handle = 3;
   repeated AsyncComputationInput inputs = 4;
   bool is_allowed = 5;
+  bytes block_hash = 6;
+  uint64 block_number = 7;
 }
 
 message AsyncComputationInput {

@@ -183,6 +183,8 @@ fn test_invalid_handle_too_short() {
             },
         ],
         is_allowed: true,
+        block_hash: vec![],
+        block_number: 0,
     }];
 
     match sort_computations_by_dependencies(&comp) {
@@ -210,6 +212,8 @@ fn test_invalid_handle_too_long() {
             },
         ],
         is_allowed: true,
+        block_hash: vec![],
+        block_number: 0,
     }];
 
     match sort_computations_by_dependencies(&comp) {
@@ -236,6 +240,8 @@ fn test_simple_circular_dependency_detection() {
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         },
         AsyncComputation {
             operation: 1,
@@ -250,6 +256,8 @@ fn test_simple_circular_dependency_detection() {
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         },
     ];
 
@@ -284,6 +292,8 @@ fn test_multi_level_circular_dependency_detection() {
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         },
         AsyncComputation {
             operation: 1,
@@ -298,6 +308,8 @@ fn test_multi_level_circular_dependency_detection() {
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         },
         AsyncComputation {
             operation: 1,
@@ -312,6 +324,8 @@ fn test_multi_level_circular_dependency_detection() {
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         },
     ];
 

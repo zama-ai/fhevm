@@ -55,7 +55,8 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
             e
         })?;
     let keys = &keys[0];
-
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
@@ -116,6 +117,8 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
@@ -123,6 +126,8 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
             output_handle: new_to_amount_target_handle.clone(),
             inputs: vec![bald.clone(), trxa.clone()],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -138,6 +143,8 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
                 bald.clone(),
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
@@ -145,6 +152,8 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
             output_handle: new_from_amount_target_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
@@ -160,6 +169,8 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
                 bals.clone(),
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
     }
 
@@ -230,6 +241,9 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
         })?;
     let keys = &keys[0];
 
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
+
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
@@ -290,6 +304,8 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
@@ -304,6 +320,8 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
@@ -316,6 +334,8 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
@@ -328,6 +348,8 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
@@ -340,6 +362,8 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
     }
 
@@ -438,6 +462,9 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         input: Some(Input::InputHandle(handle_bald.clone())),
     };
 
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
+
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
@@ -493,6 +520,8 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
@@ -507,6 +536,8 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
@@ -519,6 +550,8 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
@@ -531,6 +564,8 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
@@ -543,6 +578,8 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
 
         bald = AsyncComputationInput {
@@ -645,7 +682,8 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
     let mut counter = AsyncComputationInput {
         input: Some(Input::InputHandle(handle_counter.clone())),
     };
-
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         let new_counter = next_handle();
@@ -663,6 +701,8 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
 
         counter = AsyncComputationInput {
@@ -736,7 +776,8 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
     let target = num_comps_at_level * 2;
     let mut level_inputs = vec![];
     let mut level_outputs = vec![];
-
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
     for _ in 0..num_comps_at_level {
         let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
         let the_list = builder
@@ -785,6 +826,8 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
                 output_handle: output_handle.clone(),
                 inputs: vec![level_inputs[2 * i].clone(), level_inputs[2 * i + 1].clone()],
                 is_allowed: true,
+                block_hash: block_hash.clone(),
+                block_number,
             });
         }
         num_comps_at_level /= 2;

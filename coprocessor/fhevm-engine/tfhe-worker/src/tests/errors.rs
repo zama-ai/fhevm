@@ -343,6 +343,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                     },
                 ],
                 is_allowed: true,
+                block_hash: vec![],
+                block_number: 0,
             },
             AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
@@ -357,6 +359,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                     },
                 ],
                 is_allowed: true,
+                block_hash: vec![],
+                block_number: 0,
             },
             AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
@@ -371,6 +375,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                     },
                 ],
                 is_allowed: true,
+                block_hash: vec![],
+                block_number: 0,
             },
         ];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
@@ -410,6 +416,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -441,6 +449,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -477,6 +487,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -518,6 +530,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -556,6 +570,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -594,6 +610,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -632,6 +650,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                 },
             ],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -658,6 +678,8 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                 input: Some(Input::InputHandle(test_bool.handle.clone())),
             }],
             is_allowed: true,
+            block_hash: vec![],
+            block_number: 0,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,

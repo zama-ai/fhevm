@@ -162,6 +162,8 @@ async fn counter_increment(
     };
 
     let transaction_id = next_handle();
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
     for i in 0..num_samples {
         let new_counter = next_handle();
         output_handles.push(new_counter.clone());
@@ -178,6 +180,8 @@ async fn counter_increment(
                 },
             ],
             is_allowed: i == (num_samples - 1),
+            block_hash: block_hash.clone(),
+            block_number,
         });
 
         counter = AsyncComputationInput {
@@ -308,6 +312,8 @@ async fn tree_reduction(
     }
     let mut output_handle = next_handle();
     let transaction_id = next_handle();
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
     for _ in 0..num_levels {
         for i in 0..num_comps_at_level {
             output_handle = next_handle();
@@ -320,6 +326,8 @@ async fn tree_reduction(
                 output_handle: output_handle.clone(),
                 inputs: vec![level_inputs[2 * i].clone(), level_inputs[2 * i + 1].clone()],
                 is_allowed: true,
+                block_hash: block_hash.clone(),
+                block_number,
             });
         }
         num_comps_at_level /= 2;

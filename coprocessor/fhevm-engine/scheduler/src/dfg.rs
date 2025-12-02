@@ -5,6 +5,7 @@ use std::{collections::HashMap, sync::atomic::AtomicUsize};
 use tracing::{error, warn};
 
 use crate::dfg::types::*;
+
 use anyhow::Result;
 use daggy::{
     petgraph::{
@@ -68,7 +69,7 @@ pub struct ComponentNode {
     pub inputs: HashMap<Handle, Option<DFGTxInput>>,
     pub results: Vec<Handle>,
     pub unneeded: Vec<Handle>,
-    pub transaction_id: Handle,
+    pub transaction: Transaction,
     pub is_uncomputable: bool,
     pub component_id: usize,
 }
@@ -137,10 +138,10 @@ pub fn finalize(graph: &mut Dag<(bool, usize), OpEdge>) -> Vec<usize> {
     unneeded_nodes
 }
 
-type ComponentNodes = Result<(Vec<ComponentNode>, Vec<(Handle, Handle)>)>;
+type ComponentNodes = Result<(Vec<ComponentNode>, Vec<(Handle, Transaction)>)>;
 pub fn build_component_nodes(
     mut operations: Vec<DFGOp>,
-    transaction_id: &Handle,
+    transaction: &Transaction,
 ) -> ComponentNodes {
     operations.sort_by_key(|o| o.output_handle.clone());
     let mut graph: Dag<(bool, usize), OpEdge> = Dag::default();
@@ -176,9 +177,9 @@ pub fn build_component_nodes(
             .map_err(|_| SchedulerError::CyclicDependence)?;
     }
     // Prune unneeded branches from the graph
-    let unneeded: Vec<(Handle, Handle)> = finalize(&mut graph)
+    let unneeded: Vec<(Handle, Transaction)> = finalize(&mut graph)
         .into_iter()
-        .map(|i| (operations[i].output_handle.clone(), transaction_id.clone()))
+        .map(|i| (operations[i].output_handle.clone(), transaction.clone()))
         .collect();
     // Partition the graph and extract sequential components
     let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
@@ -196,7 +197,7 @@ pub fn build_component_nodes(
                 .ok_or(SchedulerError::DataflowGraphError)?;
             component_ops.push(std::mem::take(&mut operations[op_node.1]));
         }
-        component.build(component_ops, transaction_id, idx)?;
+        component.build(component_ops, transaction, idx)?;
         components.push(component);
     }
     Ok((components, unneeded))
@@ -206,10 +207,10 @@ impl ComponentNode {
     pub fn build(
         &mut self,
         mut operations: Vec<DFGOp>,
-        transaction_id: &Handle,
+        transaction: &Transaction,
         component_id: usize,
     ) -> Result<()> {
-        self.transaction_id = transaction_id.clone();
+        self.transaction = transaction.clone();
         self.component_id = component_id;
         self.is_uncomputable = false;
         // Gather all handles produced within the transaction
@@ -264,7 +265,7 @@ impl ComponentNode {
 }
 impl std::fmt::Debug for ComponentNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let _ = writeln!(f, "Transaction: [{:?}]", self.transaction_id);
+        let _ = writeln!(f, "Transaction: [{:?}]", self.transaction);
         let _ = writeln!(
             f,
             "{:?}",
@@ -352,11 +353,11 @@ impl DFComponentGraph {
                     // and mark as completed operations that are in
                     // error.
                     tx.is_uncomputable = true;
-                    error!(target: "scheduler", { transaction_id = ?hex::encode(tx.transaction_id.clone()) },
+                    error!(target: "scheduler", transaction = ?tx.transaction,
 		       "Transaction is part of a dependence cycle");
                     for (_, op) in tx.graph.graph.node_references() {
                         self.results.push(DFGTxResult {
-                            transaction_id: tx.transaction_id.clone(),
+                            transaction: tx.transaction.clone(),
                             handle: op.result_handle.to_vec(),
                             compressed_ct: Err(SchedulerError::CyclicDependence.into()),
                         });
@@ -380,7 +381,7 @@ impl DFComponentGraph {
                         .graph
                         .node_weight(*consumer)
                         .ok_or(SchedulerError::DataflowGraphError)?;
-                    error!(target: "scheduler", { producer_id = ?hex::encode(prod.transaction_id.clone()), consumer_id = ?hex::encode(cons.transaction_id.clone()) },
+                    error!(target: "scheduler", producer_id = ?prod.transaction, consumer_id = ?cons.transaction,
 		       "Dependence cycle when adding dependence - initial cycle detection failed");
                     return Err(SchedulerError::CyclicDependence.into());
                 }
@@ -442,7 +443,7 @@ impl DFComponentGraph {
                     }
                 }
                 self.results.push(DFGTxResult {
-                    transaction_id: producer_tx.transaction_id.clone(),
+                    transaction: producer_tx.transaction.clone(),
                     handle: handle.to_vec(),
                     compressed_ct: result.map(|rok| {
                         // Safe to unwrap as this is checked above
@@ -471,7 +472,7 @@ impl DFComponentGraph {
         tx_node.is_uncomputable = true;
         for (_idx, op) in tx_node.graph.graph.node_references() {
             self.results.push(DFGTxResult {
-                transaction_id: tx_node.transaction_id.clone(),
+                transaction: tx_node.transaction.clone(),
                 handle: op.result_handle.to_vec(),
                 compressed_ct: Err(SchedulerError::MissingInputs.into()),
             });
@@ -485,14 +486,14 @@ impl DFComponentGraph {
     pub fn get_results(&mut self) -> Vec<DFGTxResult> {
         std::mem::take(&mut self.results)
     }
-    pub fn get_handles(&mut self) -> Vec<(Handle, Handle)> {
+    pub fn get_handles(&mut self) -> Vec<(Handle, Transaction)> {
         let mut res = vec![];
         for tx in self.graph.node_weights_mut() {
             if !tx.is_uncomputable {
                 res.append(
                     &mut (std::mem::take(&mut tx.results))
                         .into_iter()
-                        .map(|h| (h, tx.transaction_id.clone()))
+                        .map(|h| (h, tx.transaction.clone()))
                         .collect::<Vec<_>>(),
                 );
             }

@@ -8,16 +8,12 @@ pub struct TaskResult {
 }
 pub struct DFGTxResult {
     pub handle: Handle,
-    pub transaction_id: Handle,
+    pub transaction: Transaction,
     pub compressed_ct: Result<(i16, Vec<u8>)>,
 }
 impl std::fmt::Debug for DFGTxResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let _ = writeln!(
-            f,
-            "Result: [{:?}] - tid [{:?}]",
-            self.handle, self.transaction_id
-        );
+        let _ = writeln!(f, "Result: [{:?}] - {:?}", self.handle, self.transaction);
         if self.compressed_ct.is_err() {
             let _ = write!(f, "\t ERROR");
         } else {
@@ -86,5 +82,25 @@ impl std::fmt::Display for SchedulerError {
                 write!(f, "Generic scheduler error")
             }
         }
+    }
+}
+
+pub type TransactionId = Vec<u8>;
+pub type BlockHash = Vec<u8>;
+
+#[derive(Clone, Default, Hash, PartialEq, Eq)]
+pub struct Transaction {
+    pub transaction_id: TransactionId,
+    pub block_hash: BlockHash,
+}
+
+impl std::fmt::Debug for Transaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Transaction: Tx[{:?}]:Block[{:?}]",
+            hex::encode(&self.transaction_id),
+            hex::encode(&self.block_hash)
+        )
     }
 }
