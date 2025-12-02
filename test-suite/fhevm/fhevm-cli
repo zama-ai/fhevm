@@ -38,7 +38,7 @@ export HOST_VERSION=${HOST_VERSION:-"v0.10.0-3"}
 # Other services.
 export CORE_VERSION=${CORE_VERSION:-"v0.12.4"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.6.0"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"316ce8d"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"fa59c8c"}
 
 
 function print_logo() {
@@ -255,6 +255,10 @@ case $COMMAND in
         random-subset)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS (SUBSET)${RESET}"
           docker_args+=("-g" "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt")
+          ;;
+        paused-host-contracts)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED HOST CONTRACTS${RESET}"
+          docker_args+=("-g" "test paused host.*")
           ;;
         paused-gateway-contracts)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PAUSED GATEWAY CONTRACTS${RESET}"
