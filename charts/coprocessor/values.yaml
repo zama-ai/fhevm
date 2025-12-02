@@ -215,6 +215,91 @@ hostListener:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
+# Host Listener Poller
+# -----------------------------------------------------------------------------
+# Processes blockchain events from the host chain
+hostListenerPoller:
+  enabled: false
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.10.0
+
+  replicas: 1
+
+  # Environment variables
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+
+  # Command line arguments for the host listener poller
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --coprocessor-api-key=$(TENANT_API_KEY)
+    - --url=$(ETHEREUM_RPC_HTTP_URL)
+    - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+    - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+    - --log-level=INFO
+    - --health-port=8080
+
+  # Service ports configuration
+  ports:
+    metrics: 9100
+    healthcheck: 8080
+
+  serviceMonitor:
+    enabled: false
+
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Health check probes
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  affinity:
+    enabled: false
+
+  tolerations:
+    enabled: false
+    items: []
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
 # Gateway Listener
 # -----------------------------------------------------------------------------
 # Processes events from the gateway chain

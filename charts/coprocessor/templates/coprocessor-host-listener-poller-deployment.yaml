@@ -1,0 +1,74 @@
+{{- if .Values.hostListenerPoller.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-host-listener-poller
+    app.kubernetes.io/name: {{ include "hostListenerPollerName" . }}
+  name: {{ include "hostListenerPollerName" . }}
+spec:
+  replicas: {{ .Values.hostListenerPoller.replicas }}
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener-poller
+  {{- if .Values.hostListenerPoller.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.hostListenerPoller.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-host-listener-poller
+        app.kubernetes.io/name: {{ include "hostListenerPollerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- if and .Values.hostListenerPoller.affinity .Values.hostListenerPoller.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.hostListenerPoller.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.hostListenerPoller.tolerations .Values.hostListenerPoller.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.hostListenerPoller.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.hostListenerPoller.serviceAccountName }}
+      serviceAccountName: {{ .Values.hostListenerPoller.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: coprocessor-host-listener-poller
+          image: {{ .Values.hostListenerPoller.image.name }}:{{ .Values.hostListenerPoller.image.tag }}
+          command: ["host_listener_poller"]
+          args:
+{{ toYaml .Values.hostListenerPoller.args | nindent 12 }}
+          env:
+{{ toYaml .Values.hostListenerPoller.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.hostListenerPoller.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.hostListenerPoller.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.hostListenerPoller.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.hostListenerPoller.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.hostListenerPoller.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.hostListenerPoller.probes .Values.hostListenerPoller.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.hostListenerPoller.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.hostListenerPoller.probes .Values.hostListenerPoller.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.hostListenerPoller.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end -}}

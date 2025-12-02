@@ -187,6 +187,13 @@ jobs:
         run: |
           ./fhevm-cli test random-subset
 
+      - name: Host listener poller test
+        working-directory: test-suite/fhevm
+        run: |
+          docker stop coprocessor-host-listener
+          ./fhevm-cli test erc20
+          docker start coprocessor-host-listener
+
       - name: Show logs on test failure
         working-directory: test-suite/fhevm
         if: always()

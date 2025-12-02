@@ -474,7 +474,47 @@ impl Database {
         Ok(())
     }
 
-    pub async fn read_last_valid_block(&mut self) -> Option<i64> {
+    pub async fn poller_get_last_caught_up_block(
+        &self,
+        chain_id: i64,
+    ) -> Result<Option<i64>, SqlxError> {
+        let pool = self.pool.read().await.clone();
+        sqlx::query_scalar(
+            r#"
+            SELECT last_caught_up_block
+            FROM host_listener_poller_state
+            WHERE chain_id = $1
+            "#,
+        )
+        .bind(chain_id)
+        .fetch_optional(&pool)
+        .await
+    }
+
+    pub async fn poller_set_last_caught_up_block(
+        &self,
+        chain_id: i64,
+        block: i64,
+    ) -> Result<(), SqlxError> {
+        let pool = self.pool.read().await.clone();
+        sqlx::query(
+            r#"
+            INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
+            VALUES ($1, $2)
+            ON CONFLICT (chain_id) DO UPDATE
+            SET last_caught_up_block = EXCLUDED.last_caught_up_block,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(chain_id)
+        .bind(block)
+        .execute(&pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn read_last_valid_block(&self) -> Option<i64> {
         let query = sqlx::query!(
             r#"
             SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
