@@ -66,7 +66,14 @@ struct Args {
         default_value_t = 45,
         help = "Maximum number of HTTP/RPC retry attempts (in addition to the initial attempt) before failing an operation"
     )]
-    max_http_retries: u64,
+    max_http_retries: u32,
+
+    #[arg(
+        long,
+        default_value_t = 1000,
+        help = "Rate limiting budget for RPC calls during block catchup (compute units per second). Higher values = less throttling"
+    )]
+    rpc_compute_units_per_second: u64,
 
     #[arg(
         long,
@@ -122,6 +129,7 @@ async fn main() -> anyhow::Result<()> {
         retry_interval: Duration::from_millis(args.retry_interval_ms),
         service_name: args.service_name,
         max_http_retries: args.max_http_retries,
+        rpc_compute_units_per_second: args.rpc_compute_units_per_second,
         health_port: args.health_port,
     };
 

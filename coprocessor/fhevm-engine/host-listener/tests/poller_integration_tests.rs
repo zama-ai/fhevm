@@ -195,6 +195,7 @@ async fn poller_catches_up_to_safe_tip(
         retry_interval: Duration::from_millis(200),
         service_name: String::new(),
         max_http_retries: 0,
+        rpc_compute_units_per_second: 1000,
         health_port: 18081,
     };
 

@@ -25,11 +25,46 @@ use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
 use crate::poller::http_client::HttpChainClient;
 use crate::poller::metrics::{
-    inc_blocks_processed, inc_db_errors, inc_http_retries, inc_rpc_errors,
+    inc_blocks_processed, inc_db_errors, inc_rpc_errors,
 };
 
 const DEFAULT_DEPENDENCE_CACHE_SIZE: u16 = 128;
 const MAX_DB_RETRIES: u64 = 10;
+/// Exit after this many consecutive RPC failures (after retries exhausted).
+/// Orchestrator will restart with fresh state.
+const MAX_CONSECUTIVE_RPC_FAILURES: u64 = 3;
+
+fn handle_rpc_failure<E: std::fmt::Display>(
+    consecutive_rpc_failures: &mut u64,
+    block: Option<u64>,
+    error: &E,
+    message: &str,
+) -> Result<()> {
+    *consecutive_rpc_failures += 1;
+    match block {
+        Some(block) => error!(
+            block = block,
+            error = %error,
+            consecutive_failures = *consecutive_rpc_failures,
+            max_consecutive_failures = MAX_CONSECUTIVE_RPC_FAILURES,
+            "{message}"
+        ),
+        None => error!(
+            error = %error,
+            consecutive_failures = *consecutive_rpc_failures,
+            max_consecutive_failures = MAX_CONSECUTIVE_RPC_FAILURES,
+            "{message}"
+        ),
+    };
+    if *consecutive_rpc_failures >= MAX_CONSECUTIVE_RPC_FAILURES {
+        Err(anyhow!(
+            "Persistent RPC failure: {} consecutive failures, exiting for orchestrator restart",
+            *consecutive_rpc_failures
+        ))
+    } else {
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct PollerConfig {
@@ -44,7 +79,10 @@ pub struct PollerConfig {
     pub retry_interval: Duration,
     pub service_name: String,
     /// Maximum number of HTTP/RPC retries after the initial attempt.
-    pub max_http_retries: u64,
+    pub max_http_retries: u32,
+    /// Rate limiting budget for RPC calls (compute units per second).
+    /// Higher values = less throttling.
+    pub rpc_compute_units_per_second: u64,
     pub health_port: u16,
 }
 
@@ -73,24 +111,23 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         tfhe_address,
         config.retry_interval,
         config.max_http_retries,
+        config.rpc_compute_units_per_second,
     )?;
 
-    let (chain_id, http_retries) = match client.chain_id().await {
-        Ok(res) => res,
+    let chain_id = match client.chain_id().await {
+        Ok(id) => id,
         Err(err) => {
             error!(
-                error = %err.error,
-                retries = err.retries,
+                error = %err,
                 "Failed to fetch chain id after retries"
             );
-            sleep(config.retry_interval).await;
-            return Ok(());
+            return Err(anyhow!(
+                "Failed to fetch chain id on startup: {}",
+                err
+            ));
         }
     };
     let chain_id_str = chain_id.to_string();
-    if http_retries > 0 {
-        inc_http_retries(&chain_id_str, http_retries);
-    }
     blockchain_timeout_tick.update();
 
     let mut db = Database::new(
@@ -159,31 +196,35 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         batch_size = config.batch_size,
         poll_interval_ms = config.poll_interval.as_millis(),
         retry_interval_ms = config.retry_interval.as_millis(),
+        max_http_retries = config.max_http_retries,
+        max_consecutive_rpc_failures = MAX_CONSECUTIVE_RPC_FAILURES,
         "Starting host-listener poller"
     );
 
+    // Track consecutive RPC failures to exit on persistent issues.
+    let mut consecutive_rpc_failures: u64 = 0;
+
     loop {
-        let (latest, latest_retries) = match client.latest_block_number().await
-        {
-            Ok(res) => res,
+        let latest = match client.latest_block_number().await {
+            Ok(block) => {
+                consecutive_rpc_failures = 0;
+                block
+            }
             Err(err) => {
-                error!(
-                    error = %err.error,
-                    retries = err.retries,
-                    "Failed to fetch latest block number after retries"
-                );
+                handle_rpc_failure(
+                    &mut consecutive_rpc_failures,
+                    None,
+                    &err,
+                    "Failed to fetch latest block number after retries",
+                )?;
                 sleep(config.retry_interval).await;
                 continue;
             }
         };
         blockchain_timeout_tick.update();
-        let mut http_retries = latest_retries;
 
         let safe_tip = latest.saturating_sub(config.finality_lag);
         if safe_tip <= last_caught_up_block {
-            if http_retries > 0 {
-                inc_http_retries(&chain_id_str, http_retries);
-            }
             info!(
                 chain_id = chain_id,
                 latest_block = latest,
@@ -204,39 +245,39 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         let mut rpc_errors = 0;
 
         for block in (last_caught_up_block + 1)..=target {
-            let (logs, log_retries) = match client.logs_for_block(block).await {
-                Ok(res) => res,
+            let logs = match client.logs_for_block(block).await {
+                Ok(logs) => {
+                    consecutive_rpc_failures = 0;
+                    logs
+                }
                 Err(err) => {
-                    http_retries += err.retries;
-                    error!(
-                        block = block,
-                        retries = err.retries,
-                        error = %err.error,
-                        "Failed to fetch logs for block after retries"
-                    );
-                    // block will be retried in the next loop
+                    handle_rpc_failure(
+                        &mut consecutive_rpc_failures,
+                        Some(block),
+                        &err,
+                        "Failed to fetch logs for block after retries",
+                    )?;
                     rpc_errors += 1;
                     break;
                 }
             };
-            http_retries += log_retries;
-            let (header, header_retries) =
-                match client.header_for_block(block).await {
-                    Ok(res) => res,
-                    Err(err) => {
-                        http_retries += err.retries;
-                        error!(
-                            block = block,
-                            retries = err.retries,
-                            error = %err.error,
-                            "Failed to fetch header for block after retries"
-                        );
-                        // block will be retried in the next loop
-                        rpc_errors += 1;
-                        break;
-                    }
-                };
-            http_retries += header_retries;
+
+            let header = match client.header_for_block(block).await {
+                Ok(header) => {
+                    consecutive_rpc_failures = 0;
+                    header
+                }
+                Err(err) => {
+                    handle_rpc_failure(
+                        &mut consecutive_rpc_failures,
+                        Some(block),
+                        &err,
+                        "Failed to fetch header for block after retries",
+                    )?;
+                    rpc_errors += 1;
+                    break;
+                }
+            };
 
             let summary: BlockSummary = header.into();
             let block_logs = BlockLogs {
@@ -291,9 +332,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         }
 
         inc_blocks_processed(&chain_id_str, processed_blocks);
-        if http_retries > 0 {
-            inc_http_retries(&chain_id_str, http_retries);
-        }
         if db_errors > 0 {
             inc_db_errors(&chain_id_str, db_errors);
         }
@@ -309,7 +347,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             last_caught_up_block_after = last_caught_up_block,
             blocks_processed = processed_blocks,
             blocks_failed = blocks_failed,
-            http_retries = http_retries,
             db_errors = db_errors,
             rpc_errors = rpc_errors,
             "Host listener poller iteration complete"
