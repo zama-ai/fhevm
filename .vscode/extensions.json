@@ -1,0 +1,7 @@
+{
+    "recommendations": [
+        "nomicfoundation.hardhat-solidity",
+        "juanblanco.solidity",
+        "rust-lang.rust-analyzer"
+    ]
+}
