@@ -31,28 +31,60 @@ pub async fn ingest_block_logs(
     let mut tfhe_event_log = vec![];
     let block_hash = block_logs.summary.hash;
     let block_number = block_logs.summary.number;
+    let mut catchup_insertion = 0;
+    let summary_offset_dt = OffsetDateTime::from_unix_timestamp(
+        block_logs.summary.timestamp as i64,
+    )
+    .unwrap_or_else(|_| {
+        error!(
+            timestamp = block_logs.summary.timestamp,
+            "Invalid block timestamp, using now",
+        );
+        OffsetDateTime::now_utc()
+    });
+    let block_timestamp = PrimitiveDateTime::new(
+        summary_offset_dt.date(),
+        summary_offset_dt.time(),
+    );
 
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
+        let transaction_hash = log.transaction_hash;
         if acl_contract_address.is_none() || is_acl_address {
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
-                info!(acl_event = ?event, "ACL event");
                 let handles = acl_result_handles(&event);
                 for handle in handles {
                     is_allowed.insert(handle.to_vec());
                 }
-                db.handle_acl_event(
-                    &mut tx,
-                    &event,
-                    &log.transaction_hash,
-                    chain_id,
-                    block_hash.as_ref(),
-                    block_number,
-                )
-                .await?;
+                let inserted = db
+                    .handle_acl_event(
+                        &mut tx,
+                        &event,
+                        &log.transaction_hash,
+                        chain_id,
+                        block_hash.as_ref(),
+                        block_number,
+                    )
+                    .await?;
+                if block_logs.catchup && inserted {
+                    info!(
+                        acl_event = ?event,
+                        ?transaction_hash,
+                        ?block_number,
+                        "ACL event missed before"
+                    );
+                    catchup_insertion += 1;
+                } else {
+                    info!(
+                        acl_event = ?event,
+                        ?transaction_hash,
+                        ?block_number,
+                        "ACL event"
+                    );
+                }
                 continue;
             }
         }
@@ -62,19 +94,12 @@ pub async fn ingest_block_logs(
             if let Ok(event) =
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
-                let timestamp =
-                    log.block_timestamp.unwrap_or(block_logs.summary.timestamp);
-                let offset_dt =
-                    OffsetDateTime::from_unix_timestamp(timestamp as i64)
-                        .unwrap_or(OffsetDateTime::UNIX_EPOCH);
-                let block_timestamp =
-                    PrimitiveDateTime::new(offset_dt.date(), offset_dt.time());
                 let log = LogTfhe {
                     event,
-                    block_timestamp,
                     transaction_hash: log.transaction_hash,
                     is_allowed: false, // updated in the next loop
                     block_number,
+                    block_timestamp,
                 };
                 tfhe_event_log.push(log);
                 continue;
@@ -93,7 +118,6 @@ pub async fn ingest_block_logs(
     }
 
     for tfhe_log in tfhe_event_log {
-        info!(tfhe_log = ?tfhe_log, "TFHE event");
         let is_allowed =
             if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
                 is_allowed.contains(&result_handle.to_vec())
@@ -104,7 +128,19 @@ pub async fn ingest_block_logs(
             is_allowed,
             ..tfhe_log
         };
-        db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
+        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
+        if block_logs.catchup && inserted {
+            info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
+            catchup_insertion += 1;
+        } else {
+            info!(tfhe_log = ?tfhe_log, "TFHE event");
+        }
+    }
+
+    if catchup_insertion == block_logs.logs.len() {
+        info!(block_number, catchup_insertion, "Catchup inserted a block");
+    } else if catchup_insertion > 0 {
+        info!(block_number, catchup_insertion, "Catchup inserted events");
     }
 
     db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
