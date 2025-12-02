@@ -29,10 +29,7 @@ pub struct BlockLogs<T> {
 fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
     let offset = OffsetDateTime::from_unix_timestamp(timestamp as i64)
         .unwrap_or_else(|_| {
-            error!(
-                timestamp,
-                "Invalid block timestamp, using now",
-            );
+            error!(timestamp, "Invalid block timestamp, using now",);
             OffsetDateTime::now_utc()
         });
     PrimitiveDateTime::new(offset.date(), offset.time())
