@@ -50,7 +50,7 @@ struct Conf {
     #[arg(short, long)]
     gateway_url: Url,
 
-    #[arg(short, long)]
+    #[arg(long)]
     host_chain_url: Url,
 
     #[arg(short, long, value_enum, default_value = "private-key")]
