@@ -10,11 +10,11 @@ pub struct CompressedCiphertext {
 pub struct TaskResult {
     pub compressed_ct: CompressedCiphertext,
     pub is_allowed: bool,
-    pub transaction_id: Handle,
+    pub transaction: Transaction,
 }
 pub struct DFGTxResult {
     pub handle: Handle,
-    pub transaction_id: Handle,
+    pub transaction: Transaction,
     pub compressed_ct: Result<CompressedCiphertext>,
 }
 impl std::fmt::Debug for DFGTxResult {
@@ -22,7 +22,7 @@ impl std::fmt::Debug for DFGTxResult {
         let _ = writeln!(
             f,
             "Result: [{:?}] - tid [{:?}]",
-            self.handle, self.transaction_id
+            self.handle, self.transaction
         );
         if self.compressed_ct.is_err() {
             let _ = write!(f, "\t ERROR");
@@ -100,5 +100,25 @@ impl std::fmt::Display for SchedulerError {
                 write!(f, "Panic during execution of operation: {}", s)
             }
         }
+    }
+}
+
+pub type TransactionId = Vec<u8>;
+pub type BlockHash = Vec<u8>;
+
+#[derive(Clone, Default, Hash, PartialEq, Eq)]
+pub struct Transaction {
+    pub transaction_id: TransactionId,
+    pub block_hash: BlockHash,
+}
+
+impl std::fmt::Debug for Transaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Transaction: Tx[{:?}]:Block[{:?}]",
+            hex::encode(&self.transaction_id),
+            hex::encode(&self.block_hash)
+        )
     }
 }
