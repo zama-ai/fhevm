@@ -209,6 +209,7 @@ pub async fn ingest_block_logs(
                     transaction_hash: log.transaction_hash,
                     block_number,
                     block_timestamp,
+                    block_hash,
                     // updated in the next loop and dependence_chains
                     is_allowed: false,
                     dependence_chain: Default::default(),

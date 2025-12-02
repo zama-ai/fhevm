@@ -474,7 +474,9 @@ mod tests {
     use crate::contracts::TfheContract as C;
     use crate::contracts::TfheContract::TfheContractEvents as E;
     use crate::database::dependence_chains::dependence_chains;
-    use crate::database::tfhe_event_propagate::{Chain, ChainCache, LogTfhe};
+    use crate::database::tfhe_event_propagate::{
+        Chain, ChainCache, ChainHash, LogTfhe,
+    };
     use crate::database::tfhe_event_propagate::{
         ClearConst, Handle, TransactionHash,
     };
@@ -502,6 +504,7 @@ mod tests {
             event: tfhe_event(e),
             is_allowed,
             block_number: 0,
+            block_hash: ChainHash::ZERO,
             block_timestamp: sqlx::types::time::PrimitiveDateTime::MIN,
             transaction_hash: Some(tx),
             dependence_chain: TransactionHash::ZERO,
