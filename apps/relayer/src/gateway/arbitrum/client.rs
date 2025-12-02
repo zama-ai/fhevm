@@ -6,6 +6,7 @@ use alloy::{
     primitives::Address,
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::{BlockNumberOrTag, Filter, Log as RpcLog},
+    transports::ws::WebSocketConfig,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -33,8 +34,11 @@ impl ArbitrumJsonRPCWsClient {
         max_retries: u32,
         retry_interval_ms: u64,
     ) -> Result<Self, Error> {
+        // 256MB instead of 64MB max for websocket size (copro bug with payload over 64MB)
+        let ws_config = WebSocketConfig::default().max_message_size(Some(256 * 1024 * 1024));
         // Configure WebSocket with reconnection parameters
         let ws = WsConnect::new(&config.ws_url)
+            .with_config(ws_config)
             .with_max_retries(max_retries)
             .with_retry_interval(Duration::from_millis(retry_interval_ms));
 
