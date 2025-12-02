@@ -63,12 +63,26 @@ pub fn next_random_handle(ct_type: FheType) -> Handle {
     handle_hash.update(rand::rng().random::<u64>().to_be_bytes());
     let mut handle = handle_hash.finalize().to_vec();
     assert_eq!(handle.len(), 32);
+
+    // Mark it as a mocked handle
+    handle[0..3].copy_from_slice(&[0u8; 3]);
+
     // Handle from computation
     handle[21] = 255u8;
     handle[22..30].copy_from_slice(&ecfg.chain_id.to_be_bytes());
     handle[30] = ct_type as u8;
     handle[31] = 0u8;
     Handle::from_slice(&handle)
+}
+
+pub fn new_transaction_id() -> Handle {
+    let mut handle_hash = Keccak256::new();
+    handle_hash.update(rand::rng().random::<u64>().to_be_bytes());
+    let mut txn_id = handle_hash.finalize().to_vec();
+    assert_eq!(txn_id.len(), 32);
+    // Mark it as a mocked transaction id
+    txn_id[0..11].copy_from_slice(&[0u8; 11]);
+    Handle::from_slice(&txn_id)
 }
 pub fn default_dependence_cache_size() -> u16 {
     128
@@ -77,6 +91,7 @@ pub fn default_dependence_cache_size() -> u16 {
 #[derive(Debug, serde::Deserialize, serde::Serialize, Eq, PartialEq, Clone)]
 pub enum Transaction {
     ERC20Transfer,
+    ERC7984Transfer,
     DEXSwapRequest,
     DEXSwapClaim,
     MULChain,
@@ -84,7 +99,10 @@ pub enum Transaction {
     InputVerif,
     GenPubDecHandles,
     GenUsrDecHandles,
+    BatchAllowHandles,
+    BatchSubmitEncryptedBids,
 }
+
 #[derive(Debug, serde::Deserialize, serde::Serialize, Eq, PartialEq, Clone)]
 pub enum ERCTransferVariant {
     Whitepaper,
@@ -118,6 +136,7 @@ pub struct Scenario {
     pub contract_address: String,
     pub user_address: String,
     pub scenario: Vec<(f64, u64)>,
+    pub batch_size: Option<usize>,
 }
 
 pub struct Job {
@@ -131,6 +150,8 @@ pub struct Context {
     pub args: Args,
     pub ecfg: EnvConfig,
     pub cancel_token: tokio_util::sync::CancellationToken,
+    // Pre-generated inputs pool
+    pub inputs_pool: Vec<Option<Handle>>,
 }
 
 #[allow(dead_code)]
@@ -174,6 +195,7 @@ pub async fn allow_handles(
     event_type: AllowEvents,
     account_address: String,
     pool: &sqlx::Pool<Postgres>,
+    disable_pbs_computations: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
     let tenant_id = vec![ecfg.tenant_id; handles.len()];
@@ -190,6 +212,10 @@ pub async fn allow_handles(
     )
     .execute(pool)
     .await?;
+
+    if disable_pbs_computations {
+        return Ok(());
+    }
     let _query = sqlx::query!(
         "INSERT INTO pbs_computations(tenant_id, handle)
                  SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[]) 
@@ -422,4 +448,8 @@ pub async fn insert_tfhe_event(
     tx.commit().await?;
     tracing::debug!(target: "tool", duration = ?started_at.elapsed(), "TFHE event, db_query");
     Ok(())
+}
+
+pub async fn pool(listener_event_to_db: &ListenerDatabase) -> sqlx::Pool<Postgres> {
+    listener_event_to_db.pool.clone().read().await.clone()
 }

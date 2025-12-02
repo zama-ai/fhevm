@@ -9,7 +9,7 @@ use fhevm_engine_common::utils::DatabaseURL;
 use host_listener::database::tfhe_event_propagate::{Database as ListenerDatabase, Handle};
 
 use sqlx::Postgres;
-use std::io::Write;
+use std::{cmp::min, io::Write};
 use std::{collections::HashMap, fmt, sync::atomic::AtomicU64};
 use std::{
     ops::{Add, Sub},
@@ -19,15 +19,24 @@ use std::{
     sync::atomic::Ordering,
     time::{Duration, SystemTime},
 };
-use stress_test_generator::utils::{
-    default_dependence_cache_size, get_ciphertext_digests, Dependence, GeneratorKind, Transaction,
+use stress_test_generator::{
+    args::parse_args, dex::dex_swap_claim_transaction, utils::new_transaction_id,
 };
-use stress_test_generator::zk_gen::{generate_input_verification_transaction, get_inputs_vector};
-use stress_test_generator::{args::parse_args, dex::dex_swap_claim_transaction};
+use stress_test_generator::{
+    auction::batch_submit_encrypted_bids,
+    zk_gen::{generate_input_verification_transaction, get_inputs_vector},
+};
 use stress_test_generator::{
     dex::dex_swap_request_transaction,
     erc20::erc20_transaction,
     utils::{EnvConfig, Job, Scenario},
+};
+use stress_test_generator::{
+    erc7984,
+    utils::{
+        allow_handles, default_dependence_cache_size, get_ciphertext_digests, next_random_handle,
+        Dependence, GeneratorKind, Transaction, DEF_TYPE,
+    },
 };
 use stress_test_generator::{
     synthetics::{
@@ -41,6 +50,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 const MAX_RETRIES: usize = 500;
+const MAX_NUMBER_OF_BIDS: usize = 10;
 
 #[tokio::main]
 async fn main() {
@@ -56,6 +66,7 @@ async fn main() {
         args: args.clone(),
         ecfg: EnvConfig::new(),
         cancel_token: CancellationToken::new(),
+        inputs_pool: vec![],
     };
 
     if args.run_server {
@@ -584,7 +595,52 @@ async fn generate_transaction(
         },
     };
 
+    let mut new_ctx = ctx.clone();
+    new_ctx.inputs_pool = inputs.clone();
+    let ctx = &new_ctx;
+
     match scenario.transaction {
+        Transaction::BatchSubmitEncryptedBids => {
+            let batch_size = min(MAX_NUMBER_OF_BIDS, scenario.batch_size.unwrap_or(1));
+
+            // reuse the existing inputs as bids
+            let bids = inputs
+                .iter()
+                .take(batch_size)
+                .copied()
+                .collect::<Vec<Option<Handle>>>();
+
+            let e_total_payment = batch_submit_encrypted_bids(
+                ctx,
+                listener_event_to_db,
+                None, // Transaction ID
+                &scenario.contract_address,
+                &scenario.user_address,
+                &bids,
+            )
+            .await?;
+
+            // TODO: how to make dependent if needed?
+            Ok((e_total_payment, e_total_payment)) // TODO: return meaningful second handle
+        }
+        Transaction::BatchAllowHandles => {
+            let mut handles = Vec::new();
+            for _ in 0..scenario.batch_size.unwrap_or(1) {
+                handles.push(next_random_handle(DEF_TYPE).to_vec());
+            }
+
+            info!(target: "tool", batch_size = handles.len(), "Batch allowing handles");
+
+            allow_handles(
+                &handles,
+                fhevm_engine_common::types::AllowEvents::AllowedAccount,
+                scenario.user_address.to_string(),
+                pool,
+                true,
+            )
+            .await?;
+            Ok((Handle::default(), Handle::default()))
+        }
         Transaction::ERC20Transfer => {
             let (_, output_dependence) = erc20_transaction(
                 ctx,
@@ -711,6 +767,25 @@ async fn generate_transaction(
             )
             .await?;
             Ok((output_dependence1, output_dependence2))
+        }
+        Transaction::ERC7984Transfer => {
+            let transaction_id = new_transaction_id();
+            let e_amount = inputs
+                .first()
+                .unwrap()
+                .expect("should be at least one input available");
+
+            info!(target: "tool", "ERC7984 Transaction: tx_id: {:?}", transaction_id);
+            let e_total_paid = erc7984::confidential_transfer_from(
+                ctx,
+                transaction_id,
+                listener_event_to_db,
+                e_amount,
+                scenario.user_address.as_str(),
+            )
+            .await?;
+
+            Ok((e_total_paid, e_total_paid))
         }
     }
 }
