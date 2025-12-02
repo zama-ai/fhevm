@@ -1,4 +1,4 @@
-use alloy_primitives::Keccak256;
+use alloy_primitives::{BlockHash, Keccak256};
 use bigdecimal::num_bigint::BigInt;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::CrsCache;
@@ -265,6 +265,7 @@ pub async fn generate_trivial_encrypt(
         dependence_chain: transaction_hash,
         tx_depth_size: 0,
         log_index: None,
+        block_hash: BlockHash::ZERO,
     };
     listener_event_to_db.insert_tfhe_event(tx, &log).await?;
     Ok(handle)
@@ -429,6 +430,7 @@ pub async fn insert_tfhe_event(
         dependence_chain: transaction_hash,
         tx_depth_size: 0,
         log_index: None,
+        block_hash: BlockHash::ZERO,
     };
     listener_event_to_db.insert_tfhe_event(tx, &log).await?;
 

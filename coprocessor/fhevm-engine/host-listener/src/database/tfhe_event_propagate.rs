@@ -122,6 +122,7 @@ pub struct LogTfhe {
     pub transaction_hash: Option<TransactionHash>,
     pub is_allowed: bool,
     pub block_number: u64,
+    pub block_hash: BlockHash,
     pub block_timestamp: PrimitiveDateTime,
     pub tx_depth_size: u64,
     pub dependence_chain: TransactionHash,
@@ -375,10 +376,11 @@ impl Database {
                 schedule_order,
                 is_completed,
                 host_chain_id,
+                block_hash,
                 block_number
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11)
-            ON CONFLICT (output_handle, transaction_id) DO NOTHING
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12)
+            ON CONFLICT (output_handle, transaction_id, block_hash) DO NOTHING
             "#,
             output_handle,
             &dependencies,
@@ -393,7 +395,8 @@ impl Database {
                 )),
             !log.is_allowed,
             self.chain_id.as_i64(),
-            log.block_number as i64
+            log.block_hash.as_slice(),
+            log.block_number as i64,
         );
         query
             .execute(tx.deref_mut())
