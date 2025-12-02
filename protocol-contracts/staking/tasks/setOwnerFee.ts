@@ -5,7 +5,8 @@ import { wait } from './utils/time';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-// Set the owner fee for the operator rewarder contract
+// Set the owner fee for the operator rewarder contract using the deployer account
+// This task only works if the deployer account is the owner of the operator rewarder contract
 // Note: The owner fee is in basis points (in 1/100th of a percent, so 10000 = 100.00%)
 // Example usage:
 // npx hardhat task:setOwnerFee --ownerFee 2000 --operatorRewarderAddress 0x1234567890123456789012345678901234567890 --network testnet
@@ -54,7 +55,8 @@ task('task:setOwnerFee')
     );
   });
 
-// Set the owner fees for the all coprocessor operator rewarder contracts
+// Set the owner fees for the all coprocessor operator rewarder contracts using the deployer account
+// This task only works if the deployer account is the owner of all the coprocessor operator rewarder contracts
 // Example usage:
 // npx hardhat task:setAllCoprocessorOwnerFees --network testnet
 task('task:setAllCoprocessorOwnerFees').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
@@ -80,12 +82,13 @@ task('task:setAllCoprocessorOwnerFees').setAction(async function (_, hre: Hardha
 
     if (i < operatorRewarderAddresses.length - 1) {
       // Wait for 5 seconds before setting the next owner fee in order to avoid underpriced transaction issues
-      await wait(5);
+      await wait(5, hre.network.name);
     }
   }
 });
 
-// Set the owner fees for the all KMS operator rewarder contracts
+// Set the owner fees for the all KMS operator rewarder contracts using the deployer account
+// This task only works if the deployer account is the owner of all the KMS operator rewarder contracts
 // Example usage:
 // npx hardhat task:setAllKMSOwnerFees --network testnet
 task('task:setAllKMSOwnerFees').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
@@ -111,12 +114,13 @@ task('task:setAllKMSOwnerFees').setAction(async function (_, hre: HardhatRuntime
 
     if (i < operatorRewarderAddresses.length - 1) {
       // Wait for 5 seconds before setting the next owner fee in order to avoid underpriced transaction issues
-      await wait(5);
+      await wait(5, hre.network.name);
     }
   }
 });
 
-// Set the owner fee for the all operator rewarder contracts
+// Set the owner fee for the all operator rewarder contracts using the deployer account
+// This task only works if the deployer account is the owner of all the operator rewarder contracts
 // Example usage:
 // npx hardhat task:setAllOwnerFees --network testnet
 task('task:setAllOwnerFees').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
@@ -124,9 +128,9 @@ task('task:setAllOwnerFees').setAction(async function (_, hre: HardhatRuntimeEnv
 
   await hre.run('task:setAllCoprocessorOwnerFees');
 
-  await wait(5);
+  await wait(5, hre.network.name);
 
   await hre.run('task:setAllKMSOwnerFees');
 
-  console.log('Owner fees for all operator rewarder contracts have been set');
+  console.log('Owner fees for all operator rewarder contracts have been set\n');
 });

@@ -75,7 +75,7 @@ task('task:addAllCoproOperatorsAsEligible').setAction(async function (_, hre: Ha
 
     if (i < operatorStakingAddresses.length - 1) {
       // Wait for 5 seconds before adding the next operator as eligible in order to avoid underpriced transaction issues
-      await wait(5);
+      await wait(5, hre.network.name);
     }
   }
 });
@@ -97,7 +97,7 @@ task('task:addAllKMSOperatorsAsEligible').setAction(async function (_, hre: Hard
 
     if (i < operatorStakingAddresses.length - 1) {
       // Wait for 5 seconds before adding the next operator as eligible in order to avoid underpriced transaction issues
-      await wait(5);
+      await wait(5, hre.network.name);
     }
   }
 });
@@ -110,7 +110,9 @@ task('task:addAllOperatorsAsEligible').setAction(async function (_, hre: Hardhat
 
   await hre.run('task:addAllCoproOperatorsAsEligible');
 
-  await wait(5);
+  await wait(5, hre.network.name);
 
   await hre.run('task:addAllKMSOperatorsAsEligible');
+
+  console.log('All operators have been added as eligible in the protocol staking contract\n');
 });

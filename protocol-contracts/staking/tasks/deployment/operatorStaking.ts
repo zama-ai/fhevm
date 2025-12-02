@@ -134,7 +134,7 @@ task('task:deployAllOperatorStakingCoproContracts').setAction(async function (_,
 
     if (i < numOperatorStakingCopro - 1) {
       // Wait for 5 seconds before deploying the next operator staking contract in order to avoid underpriced transaction issues
-      await wait(5);
+      await wait(5, hre.network.name);
     }
   }
 
@@ -155,7 +155,7 @@ task('task:deployAllOperatorStakingKMSContracts').setAction(async function (_, h
 
     if (i < numOperatorStakingKms - 1) {
       // Wait for 5 seconds before deploying the next operator staking contract in order to avoid underpriced transaction issues
-      await wait(5);
+      await wait(5, hre.network.name);
     }
   }
 
@@ -170,9 +170,9 @@ task('task:deployAllOperatorStakingContracts').setAction(async function (_, hre)
 
   await hre.run('task:deployAllOperatorStakingCoproContracts');
 
-  await wait(5);
+  await wait(5, hre.network.name);
 
   await hre.run('task:deployAllOperatorStakingKMSContracts');
 
-  console.log('All operator staking contracts deployed');
+  console.log('All operator staking contracts deployed\n');
 });

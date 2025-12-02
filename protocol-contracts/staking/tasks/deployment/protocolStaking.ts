@@ -104,9 +104,9 @@ task('task:deployAllProtocolStakingContracts').setAction(async function (_, hre)
 
   await hre.run('task:deployProtocolStakingCopro');
 
-  await wait(5);
+  await wait(5, hre.network.name);
 
   await hre.run('task:deployProtocolStakingKMS');
 
-  console.log('All protocol staking contracts deployed');
+  console.log('All protocol staking contracts deployed\n');
 });

@@ -108,7 +108,7 @@ task('task:transferAllOperatorStakingRewarderOwnershipsToDAO').setAction(async f
 
     if (i < operatorStakingAddresses.length - 1) {
       // Wait for 5 seconds before transferring the next operator staking contract's ownership in order to avoid underpriced transaction issues
-      await wait(5);
+      await wait(5, hre.network.name);
     }
   }
 
@@ -124,7 +124,7 @@ task('task:transferAllOperatorStakingRewarderOwnershipsToDAO').setAction(async f
 
     if (i < operatorRewarderAddresses.length - 1) {
       // Wait for 5 seconds before transferring the next operator rewarder contract's ownership in order to avoid underpriced transaction issues
-      await wait(5);
+      await wait(5, hre.network.name);
     }
   }
 

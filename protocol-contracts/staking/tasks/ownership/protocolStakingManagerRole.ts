@@ -6,7 +6,7 @@ import { task } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 // Computed as `keccak256("MANAGER_ROLE")` as done in the ProtocolStaking contract
-const MANAGER_ROLE = '0x241ecf16d79d0f8dbfb92cbc07fe17840425976cf0667f022fe9877caa831b08';
+export const MANAGER_ROLE = '0x241ecf16d79d0f8dbfb92cbc07fe17840425976cf0667f022fe9877caa831b08';
 
 // Grant the protocol staking contract's manager role to the DAO using the deployer account
 async function grantManagerRole(protocolStakingProxyAddress: string, hre: HardhatRuntimeEnvironment) {
@@ -57,7 +57,7 @@ async function renounceManagerRole(protocolStakingProxyAddress: string, hre: Har
   );
 
   // Renounce the manager role from the deployer
-  await protocolStaking.grantRole(MANAGER_ROLE, deployerSigner);
+  await protocolStaking.renounceRole(MANAGER_ROLE, deployerSigner);
 
   console.log(
     [
@@ -78,13 +78,15 @@ task('task:grantProtocolStakingManagerRolesToDAO').setAction(async function (_, 
 
   const protocolStakingCoproProxyAddress = await getProtocolStakingCoproProxyAddress(hre);
 
-  grantManagerRole(protocolStakingCoproProxyAddress, hre);
+  await grantManagerRole(protocolStakingCoproProxyAddress, hre);
+
+  await wait(5, hre.network.name);
 
   console.log("Granting all KMS protocol staking contracts' manager roles to the DAO...\n");
 
   const protocolStakingKmsProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
 
-  grantManagerRole(protocolStakingKmsProxyAddress, hre);
+  await grantManagerRole(protocolStakingKmsProxyAddress, hre);
 });
 
 // Renounce all protocol staking contracts' manager roles from the deployer
@@ -100,7 +102,7 @@ task('task:renounceProtocolStakingManagerRolesFromDeployer').setAction(async fun
 
   await renounceManagerRole(protocolStakingCoproProxyAddress, hre);
 
-  await wait(5);
+  await wait(5, hre.network.name);
 
   console.log("Renouncing all KMS protocol staking contracts' manager roles from the deployer...\n");
 

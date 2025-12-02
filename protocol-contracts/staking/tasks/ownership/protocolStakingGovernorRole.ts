@@ -52,13 +52,13 @@ task('task:beginTransferProtocolStakingGovernorRolesToDAO').setAction(async func
 
   const protocolStakingCoproProxyAddress = await getProtocolStakingCoproProxyAddress(hre);
 
-  transferGovernorRole(protocolStakingCoproProxyAddress, hre);
+  await transferGovernorRole(protocolStakingCoproProxyAddress, hre);
 
-  await wait(5);
+  await wait(5, hre.network.name);
 
   console.log("Begin a transfer of all KMS protocol staking contracts' governor roles to the DAO...\n");
 
   const protocolStakingKmsProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
 
-  transferGovernorRole(protocolStakingKmsProxyAddress, hre);
+  await transferGovernorRole(protocolStakingKmsProxyAddress, hre);
 });

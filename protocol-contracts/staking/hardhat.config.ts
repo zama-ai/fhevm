@@ -10,13 +10,44 @@ import '@nomicfoundation/hardhat-ethers';
 import '@nomicfoundation/hardhat-verify';
 import '@openzeppelin/hardhat-upgrades';
 import '@typechain/hardhat';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { existsSync } from 'fs';
 import 'hardhat-deploy';
 import 'hardhat-exposed';
 import 'hardhat-gas-reporter';
 import 'hardhat-ignore-warnings';
+import { task, types } from 'hardhat/config';
 import { HardhatUserConfig, HttpNetworkAccountsUserConfig } from 'hardhat/types';
+import { resolve } from 'path';
 import 'solidity-coverage';
+
+// Run the test with environment variables from `.env.example`
+task('test', 'Runs the test suite with environment variables from .env.example')
+  .addOptionalParam('skipSetup', 'Set to true to skip setup tasks', false, types.boolean)
+  .setAction(async (taskArgs, hre, runSuper) => {
+    // Load `.env.example`
+    const envExamplePath = resolve(__dirname, '.env.example');
+    if (existsSync(envExamplePath)) {
+      dotenv.config({ path: envExamplePath, override: true });
+    }
+
+    if (!taskArgs.skipSetup) {
+      // Compile the contracts
+      await hre.run('compile');
+
+      // Deploy mocked ERC20 Zama token
+      await hre.run('task:deployERC20Mock');
+
+      // Deploy all protocol staking contracts
+      await hre.run('task:deployAllProtocolStakingContracts');
+
+      // Deploy all operator staking contracts
+      await hre.run('task:deployAllOperatorStakingContracts');
+    } else {
+      console.log('Skipping contracts setup.');
+    }
+    await runSuper(taskArgs);
+  });
 
 // Get the environment configuration from .env file
 //
