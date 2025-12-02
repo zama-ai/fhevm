@@ -51,6 +51,7 @@ services:
       - "5433:5432"
     volumes:
       - relayer_postgres_data:/var/lib/postgresql/data
+    command: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "cron.database_name=relayer_db"]
 
 volumes:
   relayer_postgres_data:
