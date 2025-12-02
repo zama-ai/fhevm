@@ -12,7 +12,7 @@ pub use handlers::{
 };
 
 pub use types::{
-    HandleContractPairJson, InputProofErrorResponseJson, InputProofRequestJson,
+    ChainId, HandleContractPairJson, InputProofErrorResponseJson, InputProofRequestJson,
     InputProofResponseJson, KeyUrlResponseJson, PublicDecryptErrorResponseJson,
     PublicDecryptRequestJson, PublicDecryptResponseJson, RequestValidityJson,
     UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
@@ -48,8 +48,6 @@ pub use utils::{
     ApiError,
     // Core response types
     AppResponse,
-    // OpenAPI types
-    ChainId,
     ErrorDetail,
     ErrorLabel,
     ErrorResponse,

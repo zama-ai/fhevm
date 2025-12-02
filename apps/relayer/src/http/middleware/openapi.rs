@@ -33,7 +33,7 @@ components(
     schemas(crate::http::types::user_decrypt::HandleContractPairJson, crate::http::types::user_decrypt::RequestValidityJson, crate::http::types::user_decrypt::UserDecryptResponsePayloadJson),
     schemas(crate::http::types::input_proof::InputProofResponsePayloadJson),
     schemas(crate::http::types::public_decrypt::PublicDecryptResponsePayloadJson),
-    schemas(crate::http::ChainId),
+    schemas(crate::http::types::ChainId),
 ),
 tags(
     (name = "FHEVM Relayer API", description = "FHEVM Relayer API")

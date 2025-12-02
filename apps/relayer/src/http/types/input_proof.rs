@@ -1,5 +1,5 @@
 use crate::http::de_string_or_number;
-use crate::http::ChainId;
+use crate::http::types::ChainId;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
