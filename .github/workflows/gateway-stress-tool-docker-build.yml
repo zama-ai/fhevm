@@ -11,7 +11,6 @@ concurrency:
 
 jobs:
   build:
-    name: gateway-stress-tool-docker-build/build
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
