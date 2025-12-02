@@ -21,6 +21,7 @@ use std::{
 };
 use stress_test_generator::{
     args::parse_args, dex::dex_swap_claim_transaction, utils::new_transaction_id,
+    zk_gen::generate_and_insert_inputs_batch,
 };
 use stress_test_generator::{
     auction::batch_submit_encrypted_bids,
@@ -600,6 +601,19 @@ async fn generate_transaction(
     let ctx = &new_ctx;
 
     match scenario.transaction {
+        Transaction::BatchInputProofs => {
+            let batch_size = scenario.batch_size.unwrap_or(1);
+            generate_and_insert_inputs_batch(
+                ctx,
+                batch_size,
+                MAX_NUMBER_OF_BIDS as u8,
+                &scenario.contract_address,
+                &scenario.user_address,
+            )
+            .await?;
+
+            Ok((Handle::default(), Handle::default()))
+        }
         Transaction::BatchSubmitEncryptedBids => {
             let batch_size = min(MAX_NUMBER_OF_BIDS, scenario.batch_size.unwrap_or(1));
 
@@ -620,8 +634,7 @@ async fn generate_transaction(
             )
             .await?;
 
-            // TODO: how to make dependent if needed?
-            Ok((e_total_payment, e_total_payment)) // TODO: return meaningful second handle
+            Ok((e_total_payment, e_total_payment))
         }
         Transaction::BatchAllowHandles => {
             let mut handles = Vec::new();
