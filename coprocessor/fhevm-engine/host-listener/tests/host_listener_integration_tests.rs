@@ -263,6 +263,43 @@ async fn test_bad_chain_id() {
 }
 
 #[tokio::test]
+async fn test_only_catchup_loop_requires_negative_start_at_block(
+) -> Result<(), anyhow::Error> {
+    let args = Args {
+        url: "ws://127.0.0.1:8545".to_string(),
+        acl_contract_address: "".to_string(),
+        tfhe_contract_address: "".to_string(),
+        database_url: fhevm_engine_common::utils::DatabaseURL::default(),
+        start_at_block: Some(0),
+        end_at_block: None,
+        coprocessor_api_key: None,
+        catchup_margin: 5,
+        catchup_paging: 10,
+        initial_block_time: 12,
+        log_level: Level::INFO,
+        health_port: 0,
+        dependence_cache_size: 128,
+        reorg_maximum_duration_in_blocks: 50,
+        service_name: String::new(),
+        catchup_finalization_in_blocks: 20,
+        only_catchup_loop: true,
+        catchup_sleep_secs: 60,
+    };
+
+    let result = main(args).await;
+    assert!(
+        result.is_err(),
+        "Expected error for non-negative start_at_block"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("--only-catchup-loop requires negative --start-at-block"),
+        "Unexpected error message: {err}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 #[serial(db)]
 async fn test_listener_restart_and_chain_reorg() -> Result<(), anyhow::Error> {
     test_listener_no_event_loss(true, true).await
@@ -524,37 +561,46 @@ async fn test_catchup_only() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-#[tokio::test]
-#[serial(db)]
-async fn test_only_catchup_loop() -> Result<(), anyhow::Error> {
+struct CatchupOutcome {
+    // Keep setup alive so the Anvil node and DB instance outlive the test body
+    _setup: Setup,
+    listener_handle: tokio::task::JoinHandle<anyhow::Result<()>>,
+    tfhe_events_count: i64,
+    acl_events_count: i64,
+    nb_wallets: i64,
+}
+
+async fn run_catchup_only_scenario<F>(
+    nb_event_per_wallet: i64,
+    sleep_secs: u64,
+    configure_args: F,
+) -> Result<CatchupOutcome, anyhow::Error>
+where
+    F: FnOnce(&mut Args),
+{
     let setup = setup(None).await?;
     let mut args = setup.args.clone();
 
-    // Emit first batch of events
     let wallets_clone = setup.wallets.clone();
     let url_clone = setup.args.url.clone();
     let tfhe_contract_clone = setup.tfhe_contract.clone();
     let acl_contract_clone = setup.acl_contract.clone();
-    let nb_event_per_wallet = 5;
     emit_events(
         &wallets_clone,
         &url_clone,
         tfhe_contract_clone,
         acl_contract_clone,
-        false, // no reorg
+        false,
         nb_event_per_wallet,
     )
     .await;
 
-    // Start listener in catchup-only loop mode
-    args.start_at_block = Some(0);
-    args.end_at_block = Some(50); // end at block 50
+    configure_args(&mut args);
     args.only_catchup_loop = true;
-    args.catchup_sleep_secs = 5; // short sleep for testing
-    args.catchup_paging = 10;
+
     let listener_handle = tokio::spawn(main(args.clone()));
     assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
-    tokio::time::sleep(tokio::time::Duration::from_secs(15)).await; // time to catchup
+    tokio::time::sleep(tokio::time::Duration::from_secs(sleep_secs)).await;
 
     let tfhe_events_count = sqlx::query!("SELECT COUNT(*) FROM computations")
         .fetch_one(&setup.db_pool)
@@ -567,85 +613,84 @@ async fn test_only_catchup_loop() -> Result<(), anyhow::Error> {
         .count
         .unwrap_or(0);
     let nb_wallets = setup.wallets.len() as i64;
-    assert_eq!(tfhe_events_count, nb_wallets * nb_event_per_wallet);
-    assert_eq!(acl_events_count, nb_wallets * nb_event_per_wallet);
+
+    Ok(CatchupOutcome {
+        _setup: setup,
+        listener_handle,
+        tfhe_events_count,
+        acl_events_count,
+        nb_wallets,
+    })
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_catchup_only_absolute_end() -> Result<(), anyhow::Error> {
+    let nb_event_per_wallet = 5;
+    let outcome = run_catchup_only_scenario(nb_event_per_wallet, 15, |args| {
+        args.start_at_block = Some(-50);
+        args.end_at_block = Some(50);
+        args.catchup_sleep_secs = 5;
+        args.catchup_paging = 10;
+    })
+    .await?;
+
+    assert_eq!(
+        outcome.tfhe_events_count,
+        outcome.nb_wallets * nb_event_per_wallet
+    );
+    assert_eq!(
+        outcome.acl_events_count,
+        outcome.nb_wallets * nb_event_per_wallet
+    );
 
     // Listener should still be running (it's in a loop, sleeping between iterations)
     assert!(
-        !listener_handle.is_finished(),
+        !outcome.listener_handle.is_finished(),
         "Listener should continue running in loop mode"
     );
 
-    listener_handle.abort();
+    outcome.listener_handle.abort();
     Ok(())
 }
 
 #[tokio::test]
 #[serial(db)]
-async fn test_only_catchup_loop_with_negative_stop_at_block(
-) -> Result<(), anyhow::Error> {
-    let setup = setup(None).await?;
-    let mut args = setup.args.clone();
-
-    // Emit first batch of events
-    let wallets_clone = setup.wallets.clone();
-    let url_clone = setup.args.url.clone();
-    let tfhe_contract_clone = setup.tfhe_contract.clone();
-    let acl_contract_clone = setup.acl_contract.clone();
+async fn test_catchup_only_relative_end() -> Result<(), anyhow::Error> {
     let nb_event_per_wallet = 5;
-    emit_events(
-        &wallets_clone,
-        &url_clone,
-        tfhe_contract_clone,
-        acl_contract_clone,
-        false, // no reorg
-        nb_event_per_wallet,
-    )
-    .await;
+    let outcome = run_catchup_only_scenario(nb_event_per_wallet, 15, |args| {
+        args.start_at_block = Some(-50); // 50 blocks from current
+        args.end_at_block = Some(-5); // 5 blocks from current (more recent)
+        args.catchup_sleep_secs = 5; // short sleep for testing
+        args.catchup_paging = 10;
+    })
+    .await?;
 
-    // Start listener in catchup-only loop mode with negative indices
-    args.start_at_block = Some(-50); // 50 blocks from current
-    args.end_at_block = Some(-5); // 5 blocks from current (more recent)
-    args.only_catchup_loop = true;
-    args.catchup_sleep_secs = 5; // short sleep for testing
-    args.catchup_paging = 10;
-    let listener_handle = tokio::spawn(main(args.clone()));
-    assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
-    tokio::time::sleep(tokio::time::Duration::from_secs(15)).await; // time to catchup
-
-    let tfhe_events_count = sqlx::query!("SELECT COUNT(*) FROM computations")
-        .fetch_one(&setup.db_pool)
-        .await?
-        .count
-        .unwrap_or(0);
-    let acl_events_count = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
-        .fetch_one(&setup.db_pool)
-        .await?
-        .count
-        .unwrap_or(0);
-    let nb_wallets = setup.wallets.len() as i64;
     // Events should be captured (exact count may vary based on block timing)
     assert!(
-        tfhe_events_count > 0,
+        outcome.tfhe_events_count > 0,
         "Should have captured some TFHE events"
     );
-    assert!(acl_events_count > 0, "Should have captured some ACL events");
     assert!(
-        tfhe_events_count <= nb_wallets * nb_event_per_wallet,
+        outcome.acl_events_count > 0,
+        "Should have captured some ACL events"
+    );
+    assert!(
+        outcome.tfhe_events_count <= outcome.nb_wallets * nb_event_per_wallet,
         "Should not exceed emitted events"
     );
     assert!(
-        acl_events_count <= nb_wallets * nb_event_per_wallet,
+        outcome.acl_events_count <= outcome.nb_wallets * nb_event_per_wallet,
         "Should not exceed emitted events"
     );
 
     // Listener should still be running (it's in a loop)
     assert!(
-        !listener_handle.is_finished(),
+        !outcome.listener_handle.is_finished(),
         "Listener should continue running in loop mode"
     );
 
-    listener_handle.abort();
+    outcome.listener_handle.abort();
     Ok(())
 }
 
