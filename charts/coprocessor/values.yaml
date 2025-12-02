@@ -245,7 +245,7 @@ hostListenerPoller:
   args:
     - --database-url=$(DATABASE_URL)
     - --coprocessor-api-key=$(TENANT_API_KEY)
-    - --url=$(ETHEREUM_RPC_URL)
+    - --url=$(ETHEREUM_RPC_HTTP_URL)
     - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
     - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
     - --log-level=INFO

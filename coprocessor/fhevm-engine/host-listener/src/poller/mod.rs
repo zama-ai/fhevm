@@ -214,6 +214,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                         error = %err.error,
                         "Failed to fetch logs for block after retries"
                     );
+                    // block will be retried in the next loop
                     rpc_errors += 1;
                     break;
                 }
@@ -230,6 +231,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                             error = %err.error,
                             "Failed to fetch header for block after retries"
                         );
+                        // block will be retried in the next loop
                         rpc_errors += 1;
                         break;
                     }
