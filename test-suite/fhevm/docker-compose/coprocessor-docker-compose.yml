@@ -37,8 +37,31 @@ services:
       - --coprocessor-api-key=${TENANT_API_KEY}
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
-      - --url=${RPC_URL}
+      - --url=${RPC_WS_URL}
       - --initial-block-time=1
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
+  coprocessor-host-listener-poller:
+    container_name: coprocessor-host-listener-poller
+    image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${HOST_LISTENER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
+    env_file:
+      - ../env/staging/.env.coprocessor.local
+    command:
+      - host_listener_poller
+      - --database-url=${DATABASE_URL}
+      - --coprocessor-api-key=${TENANT_API_KEY}
+      - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
+      - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
+      - --url=${RPC_HTTP_URL}
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
@@ -189,7 +212,7 @@ services:
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
-      - --host-chain-url=${RPC_URL}
+      - --host-chain-url=${RPC_WS_URL}
       - --delegation-block-delay=10
       - --delegation-clear-after-n-blocks=648000
       - --delegation-fallback-polling=30

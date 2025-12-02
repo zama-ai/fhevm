@@ -26,7 +26,12 @@ alloy = { version = "1.1.2", default-features = false, features = [
     "provider-ws",
     "signer-aws",
 ] }
-alloy-provider = "1.1.2"
+alloy-provider = { version = "1.1.2", default-features = false, features = [
+    "reqwest",
+    "reqwest-rustls-tls",
+    "ws",
+    "anvil-node",
+] }
 alloy-primitives = "1.4.1"
 async-trait = "0.1.88"
 axum = "0.7"
@@ -52,7 +57,7 @@ prometheus = "0.14.0"
 prost = "0.13.5"
 rand = "0.9.1"
 rayon = "1.11.0"
-reqwest = "0.12.20"
+reqwest = { version = "0.12.20", default-features = false, features = ["rustls-tls"] }
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
 semver = "1.0.26"
 serde = "1.0.225"
