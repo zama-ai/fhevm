@@ -9,10 +9,10 @@ CREATE INDEX idx_public_decrypt_req_created_at ON public_decrypt_req (created_at
 -- 3. Index for Input Proof Retention
 CREATE INDEX idx_input_proof_req_created_at ON input_proof_req (created_at);
 
--- JOB 4: Clean Public Decrypt Requests (Older than 365 days, Runs Daily at 03:00 AM)
+-- JOB 4: Clean Public Decrypt Requests (Older than 365 days, Runs Daily at 02:00 PM france winter timezone and 03:00 PM france summer timezone)
 SELECT cron.schedule(
     'clean_public_decrypt_job',
-    '0 3 * * *', 
+    '0 13 * * *', 
     $$
     DELETE FROM public_decrypt_req 
     WHERE created_at < NOW() - INTERVAL '365 days';
