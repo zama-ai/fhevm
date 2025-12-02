@@ -1,6 +1,28 @@
 name: coprocessor-zkproof-worker-docker-build
 
 on:
+  workflow_call:
+    secrets:
+      AWS_ACCESS_KEY_S3_USER:
+        required: true
+      AWS_SECRET_KEY_S3_USER:
+        required: true
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: true
+      CGR_USERNAME:
+        required: true
+      CGR_PASSWORD:
+        required: true
+    inputs:
+      is_workflow_call:
+        description: 'To determine if the trigger was a workflow_call or a pull request'
+        type: boolean
+        required: false
+        default: true
+    outputs:
+      build_result:
+        description: "Result of the build job of this workflow"
+        value: ${{ jobs.build.result }}
   pull_request:
   push:
     branches:
@@ -17,12 +39,14 @@ concurrency:
 
 jobs:
   check-changes:
-    name: coprocessor-zkproof-worker-docker-build/check-changes
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
+    if: |
+      inputs.is_workflow_call ||
+      (!inputs.is_workflow_call && !startsWith(github.head_ref, 'mergify/merge-queue/'))
     outputs:
       changes-coprocessor-zkproof-worker: ${{ steps.filter.outputs.coprocessor-zkproof-worker }}
     steps:
@@ -39,7 +63,6 @@ jobs:
               - coprocessor/fhevm-engine/Cargo.toml
               - coprocessor/fhevm-engine/Cargo.lock
   build:
-    name: coprocessor-zkproof-worker-docker-build/build
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-zkproof-worker == 'true' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
