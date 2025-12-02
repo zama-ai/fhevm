@@ -7,8 +7,8 @@ use sqlx::Postgres;
 use tracing::{error, info};
 
 use crate::utils::{
-    allow_handle, insert_tfhe_event, next_random_handle, tfhe_event, Context, ERCTransferVariant,
-    FheType, DEF_TYPE,
+    allow_handle, insert_tfhe_event, new_transaction_id, next_random_handle, tfhe_event, Context,
+    ERCTransferVariant, FheType, DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
 
@@ -26,7 +26,7 @@ pub async fn erc20_transaction(
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
-    let transaction_id = transaction_id.unwrap_or(next_random_handle(DEF_TYPE));
+    let transaction_id = transaction_id.unwrap_or(new_transaction_id());
 
     info!(target: "tool", "ERC20 Transaction: tx_id: {:?}", transaction_id);
 
