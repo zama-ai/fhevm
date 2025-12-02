@@ -1,3 +1,4 @@
+use crate::core::errors::EventProcessingError;
 use crate::core::event::{
     ApiVersion, PublicDecryptEventData, PublicDecryptEventId, PublicDecryptRequest, RelayerEvent,
     RelayerEventData,
@@ -12,13 +13,8 @@ use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::OnceHandler;
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository;
-use axum::{
-    body::Bytes as AxumBytes,
-    extract::FromRequest,
-    http::{Request, StatusCode},
-    response::IntoResponse,
-    Json,
-};
+use axum::{body::Bytes as AxumBytes, extract::FromRequest, http::Request, response::IntoResponse};
+use axum::{http::StatusCode, Json};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::{error, info, instrument, span, Level};
@@ -179,15 +175,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
                                 decrypt_response,
                             }) => {
-                                let response_json = PublicDecryptResponseJson::from(decrypt_response);
-                                info!("Sending success response to public");
-                                PublicDecryptResponse::success(response_json).into_response()
-                            },
-                            _ => {
-                                let msg = "Unexpected event data type received";
-                                error!(msg);
-                                PublicDecryptResponse::internal_server_error(msg).into_response()
+                                let response_json = PublicDecryptResponseJson::from(decrypt_response.clone());
+                                (StatusCode::OK, Json(response_json)).into_response()
                             }
+                            _ => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL CONVERSION ERROR")
+                                .into_response(),
                         }
                     }
                     Err(_) => {
@@ -202,7 +194,35 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             res = &mut error_rx => {
                 match res {
                     Ok(event) => {
-                        event.into_response()
+                        match event.data {
+                            RelayerEventData::PublicDecrypt(PublicDecryptEventData::Failed { error }) => {
+                                match error {
+                                    EventProcessingError::RequestReverted(fhevm_error) => (
+                                        StatusCode::BAD_REQUEST,
+                                        Json(PublicDecryptErrorResponseJson {
+                                            message: format!("Request reverted: {fhevm_error:?}"),
+                                        }),
+                                    )
+                                        .into_response(),
+                                    EventProcessingError::ReadinessCheckFailed => (
+                                        StatusCode::GATEWAY_TIMEOUT,
+                                        Json(PublicDecryptErrorResponseJson {
+                                            message: "Ciphertext not ready for decryption".to_string(),
+                                        }),
+                                    )
+                                        .into_response(),
+                                    _ => (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        Json(PublicDecryptErrorResponseJson {
+                                            message: format!("{error:?}"),
+                                        }),
+                                    )
+                                        .into_response(),
+                                }
+                            }
+                            _ => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL CONVERSION ERROR")
+                                .into_response(),
+                        }
                     }
                     Err(_) => {
                         info!("Received error while waiting for error event on error_rx");

@@ -1,19 +1,13 @@
 use crate::core::errors::EventProcessingError;
 use crate::core::job_id::JobId;
 use crate::http::types::{
-    InputProofErrorResponseJson, InputProofRequestJson, InputProofResponseJson,
-    InputProofResponsePayloadJson, PublicDecryptErrorResponseJson, PublicDecryptRequestJson,
-    PublicDecryptResponseJson, PublicDecryptResponsePayloadJson, UserDecryptErrorResponseJson,
+    InputProofRequestJson, InputProofResponseJson, InputProofResponsePayloadJson,
+    PublicDecryptRequestJson, PublicDecryptResponseJson, PublicDecryptResponsePayloadJson,
     UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptResponsePayloadJson,
 };
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes, TxHash};
 use alloy::{primitives::U256, rpc::types::Log};
-use axum::{
-    extract::Json,
-    response::{IntoResponse, Response},
-};
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::hash::Hash;
@@ -138,148 +132,6 @@ impl RelayerEvent {
             api_version: self.api_version,
             data: next_event_data,
             timestamp,
-        }
-    }
-}
-
-const BAD_CONVERSION_BODY: &str = "INTERNAL CONVERSION ERROR";
-const BAD_CONVERSION_STATUS_CODE: StatusCode = StatusCode::INTERNAL_SERVER_ERROR;
-
-// TODO: remove all this conversion. RelayerEvent is a core type, while IntoResponse is an http concern.
-// So this conversion should be done in the http listener only, not in the core type itself.
-impl IntoResponse for RelayerEvent {
-    fn into_response(self) -> Response {
-        match &self.data {
-            RelayerEventData::GatewayChain(_) => {
-                (BAD_CONVERSION_STATUS_CODE, BAD_CONVERSION_BODY).into_response()
-            }
-            RelayerEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
-                PublicDecryptEventData::RespRcvdFromGw { decrypt_response } => {
-                    let response_json = PublicDecryptResponseJson::from(decrypt_response.clone());
-                    (StatusCode::OK, Json(response_json)).into_response()
-                }
-                PublicDecryptEventData::Failed { error } => match error {
-                    EventProcessingError::RequestReverted(fhevm_error) => (
-                        StatusCode::BAD_REQUEST,
-                        Json(PublicDecryptErrorResponseJson {
-                            message: format!("Request reverted: {fhevm_error:?}"),
-                        }),
-                    )
-                        .into_response(),
-                    EventProcessingError::ReadinessCheckFailed => (
-                        StatusCode::GATEWAY_TIMEOUT,
-                        Json(PublicDecryptErrorResponseJson {
-                            message: "Ciphertext not ready for decryption".to_string(),
-                        }),
-                    )
-                        .into_response(),
-                    _ => (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(PublicDecryptErrorResponseJson {
-                            message: format!("{error:?}"),
-                        }),
-                    )
-                        .into_response(),
-                },
-                _ => (BAD_CONVERSION_STATUS_CODE, BAD_CONVERSION_BODY).into_response(),
-            },
-            RelayerEventData::UserDecrypt(decrypt_event) => match decrypt_event {
-                UserDecryptEventData::RespRcvdFromGw { decrypt_response } => {
-                    let response_json = UserDecryptResponseJson::from(decrypt_response.clone());
-                    (StatusCode::OK, Json(response_json)).into_response()
-                }
-                UserDecryptEventData::Failed { error } => match error {
-                    EventProcessingError::RequestReverted(fhevm_error) => {
-                        let error_response = UserDecryptErrorResponseJson {
-                            message: format!("Request reverted on gateway chain: {fhevm_error:?}"),
-                        };
-                        (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
-                    }
-                    EventProcessingError::ReadinessCheckFailed => (
-                        StatusCode::GATEWAY_TIMEOUT,
-                        Json(UserDecryptErrorResponseJson {
-                            message: "Ciphertext not ready for decryption".to_string(),
-                        }),
-                    )
-                        .into_response(),
-                    _ => (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(UserDecryptErrorResponseJson {
-                            message: format!("{error:?}"),
-                        }),
-                    )
-                        .into_response(),
-                },
-                _ => (
-                    BAD_CONVERSION_STATUS_CODE,
-                    Json(UserDecryptErrorResponseJson {
-                        message: BAD_CONVERSION_BODY.to_string(),
-                    }),
-                )
-                    .into_response(),
-            },
-            RelayerEventData::InputProof(input_event) => match input_event {
-                InputProofEventData::RespRcvdFromGw {
-                    accepted,
-                    input_proof_response,
-                } => {
-                    if *accepted {
-                        if let Some(response) = input_proof_response {
-                            let response_json = InputProofResponseJson::from(response.clone());
-                            (StatusCode::OK, Json(response_json)).into_response()
-                        } else {
-                            // This should not happen if accepted=true
-                            (
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                Json(InputProofErrorResponseJson {
-                                    message: "Internal error: accepted proof with no response data"
-                                        .to_string(),
-                                }),
-                            )
-                                .into_response()
-                        }
-                    } else {
-                        (
-                            StatusCode::BAD_REQUEST,
-                            Json(InputProofErrorResponseJson {
-                                message: "Proof Rejected".to_string(),
-                            }),
-                        )
-                            .into_response()
-                    }
-                }
-
-                InputProofEventData::Failed { error } => match error {
-                    EventProcessingError::RequestReverted(fhevm_error) => (
-                        StatusCode::BAD_REQUEST,
-                        Json(InputProofErrorResponseJson {
-                            message: format!("Request reverted: {fhevm_error:?}"),
-                        }),
-                    )
-                        .into_response(),
-                    EventProcessingError::TransactionError(error) => (
-                        StatusCode::BAD_REQUEST,
-                        Json(InputProofErrorResponseJson {
-                            message: format!("Transaction rejected: {error:?}"),
-                        }),
-                    )
-                        .into_response(),
-                    _ => (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(InputProofErrorResponseJson {
-                            message: format!("{error:?}"),
-                        }),
-                    )
-                        .into_response(),
-                },
-                _ => (
-                    BAD_CONVERSION_STATUS_CODE,
-                    Json(InputProofErrorResponseJson {
-                        message: BAD_CONVERSION_BODY.to_string(),
-                    }),
-                )
-                    .into_response(),
-            },
         }
     }
 }

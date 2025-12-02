@@ -1,9 +1,12 @@
+use crate::core::errors::EventProcessingError;
 use crate::core::event::{
     ApiVersion, InputProofEventData, InputProofEventId, InputProofRequest, RelayerEvent,
     RelayerEventData,
 };
 use crate::core::job_id::JobId;
-use crate::http::types::input_proof::{InputProofRequestJson, InputProofResponseJson};
+use crate::http::types::input_proof::{
+    InputProofErrorResponseJson, InputProofRequestJson, InputProofResponseJson,
+};
 use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -11,6 +14,7 @@ use crate::orchestrator::OnceHandler;
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::input_proof_repo::InputProofRepository;
 use axum::{body::Bytes, extract::FromRequest, http::Request, response::IntoResponse};
+use axum::{http::StatusCode, Json};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::{error, info, instrument, span, Level};
@@ -158,7 +162,43 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 match res {
                     Ok(event) => {
                         info!("Response event type {:?}", event.data);
-                        event.into_response()
+                        match event.data {
+                            RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
+                                accepted,
+                                input_proof_response,
+                            }) => {
+                                if accepted {
+                                    if let Some(response) = input_proof_response {
+                                        let response_json = InputProofResponseJson::from(response.clone());
+                                        (StatusCode::OK, Json(response_json)).into_response()
+                                    } else {
+                                        (
+                                            StatusCode::INTERNAL_SERVER_ERROR,
+                                            Json(InputProofErrorResponseJson {
+                                                message: "Internal error: accepted proof with no response data"
+                                                    .to_string(),
+                                            }),
+                                        )
+                                            .into_response()
+                                    }
+                                } else {
+                                    (
+                                        StatusCode::BAD_REQUEST,
+                                        Json(InputProofErrorResponseJson {
+                                            message: "Proof Rejected".to_string(),
+                                        }),
+                                    )
+                                        .into_response()
+                                }
+                            }
+                            _ => (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(InputProofErrorResponseJson {
+                                    message: "INTERNAL CONVERSION ERROR".to_string(),
+                                }),
+                            )
+                                .into_response(),
+                        }
                     }
                     Err(_) => {
                         info!("received error while waiting for response event");
@@ -170,7 +210,40 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 match res {
                     Ok(event) => {
                         info!("received error event on error_rx");
-                        event.into_response()
+                        match event.data {
+                            RelayerEventData::InputProof(InputProofEventData::Failed { error }) => {
+                                match error {
+                                    EventProcessingError::RequestReverted(fhevm_error) => (
+                                        StatusCode::BAD_REQUEST,
+                                        Json(InputProofErrorResponseJson {
+                                            message: format!("Request reverted: {fhevm_error:?}"),
+                                        }),
+                                    )
+                                        .into_response(),
+                                    EventProcessingError::TransactionError(error) => (
+                                        StatusCode::BAD_REQUEST,
+                                        Json(InputProofErrorResponseJson {
+                                            message: format!("Transaction rejected: {error:?}"),
+                                        }),
+                                    )
+                                        .into_response(),
+                                    _ => (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        Json(InputProofErrorResponseJson {
+                                            message: format!("{error:?}"),
+                                        }),
+                                    )
+                                        .into_response(),
+                                }
+                            }
+                            _ => (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(InputProofErrorResponseJson {
+                                    message: "INTERNAL CONVERSION ERROR".to_string(),
+                                }),
+                            )
+                                .into_response(),
+                        }
                     }
                     Err(_) => {
                         info!("received error while waiting for error event on error_rx");
