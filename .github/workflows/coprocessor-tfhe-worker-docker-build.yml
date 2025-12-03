@@ -13,23 +13,14 @@ on:
         required: true
       CGR_PASSWORD:
         required: true
-    inputs:
-      is_workflow_call:
-        description: 'To determine if the trigger was a workflow_call or a pull request'
-        type: boolean
-        required: false
-        default: true
     outputs:
       build_result:
         description: "Result of the build job of this workflow"
         value: ${{ jobs.build.result }}
-  pull_request:
-  push:
-    branches:
-      - main
   release:
     types:
       - published
+  workflow_dispatch:
 
 permissions: {}
 
@@ -44,9 +35,6 @@ jobs:
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
-    if: |
-      inputs.is_workflow_call ||
-      (!inputs.is_workflow_call && !startsWith(github.head_ref, 'mergify/merge-queue/'))
     outputs:
       changes-coprocessor-tfhe-worker: ${{ steps.filter.outputs.coprocessor-tfhe-worker }}
     steps:
@@ -65,7 +53,10 @@ jobs:
 
   build:
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-coprocessor-tfhe-worker == 'true' || github.event_name == 'release' }}
+    if: |
+      needs.check-changes.outputs.changes-coprocessor-tfhe-worker == 'true'
+      || github.event_name == 'release'
+      || github.event_name == 'workflow_dispatch'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
