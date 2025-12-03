@@ -152,6 +152,39 @@ jobs:
         run: |
           ./fhevm-cli deploy
 
+      # E2E tests on pausing the Host contracts
+      - name: Pause Host Contracts
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli pause host
+
+      - name: Paused Host contracts test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test paused-host-contracts
+
+      - name: Unpause Host Contracts
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli unpause host
+
+      # E2E tests on pausing the Gateway contracts
+      - name: Pause Gateway Contracts
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli pause gateway
+
+      - name: Paused Gateway contracts test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test paused-gateway-contracts
+
+      - name: Unpause Gateway Contracts
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli unpause gateway
+
+      # E2E tests after unpausing the Host and Gateway contracts
       - name: Input proof test (uint64)
         working-directory: test-suite/fhevm
         run: |
