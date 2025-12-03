@@ -677,14 +677,58 @@ async fn test_catchup_only_relative_end() -> Result<(), anyhow::Error> {
     );
     assert!(
         outcome.tfhe_events_count <= outcome.nb_wallets * nb_event_per_wallet,
-        "Should not exceed emitted events"
+        "Should not exceed emitted events in first catchup"
     );
     assert!(
         outcome.acl_events_count <= outcome.nb_wallets * nb_event_per_wallet,
-        "Should not exceed emitted events"
+        "Should not exceed emitted events in first catchup"
     );
 
-    // Listener should still be running (it's in a loop)
+    let first_tfhe_events_count = outcome.tfhe_events_count;
+    let first_acl_events_count = outcome.acl_events_count;
+
+    // Emit a second batch of events to be picked up
+    let setup = &outcome._setup;
+    let wallets_clone = setup.wallets.clone();
+    let url_clone = setup.args.url.clone();
+    let tfhe_contract_clone = setup.tfhe_contract.clone();
+    let acl_contract_clone = setup.acl_contract.clone();
+    emit_events(
+        &wallets_clone,
+        &url_clone,
+        tfhe_contract_clone,
+        acl_contract_clone,
+        false,
+        nb_event_per_wallet,
+    )
+    .await;
+
+    // Wait enough time for another catchup iteration to complete
+    tokio::time::sleep(tokio::time::Duration::from_secs(20)).await;
+
+    let tfhe_events_count_after =
+        sqlx::query!("SELECT COUNT(*) FROM computations")
+            .fetch_one(&setup.db_pool)
+            .await?
+            .count
+            .unwrap_or(0);
+    let acl_events_count_after =
+        sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
+            .fetch_one(&setup.db_pool)
+            .await?
+            .count
+            .unwrap_or(0);
+
+    assert!(
+        tfhe_events_count_after > first_tfhe_events_count,
+        "Second catchup iteration should ingest additional TFHE events"
+    );
+    assert!(
+        acl_events_count_after > first_acl_events_count,
+        "Second catchup iteration should ingest additional ACL events"
+    );
+
+    // Listener should still be running
     assert!(
         !outcome.listener_handle.is_finished(),
         "Listener should continue running in loop mode"

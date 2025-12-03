@@ -154,6 +154,7 @@ struct InfiniteLogIter {
     last_valid_block: Option<u64>,
     start_at_block: Option<i64>,
     end_at_block: Option<i64>,
+    absolute_end_at_block: Option<u64>,
     catchup_margin: u64,
     catchup_paging: u64,
     pub tick_timeout: HeartBeat,
@@ -213,6 +214,7 @@ impl InfiniteLogIter {
             last_valid_block: None,
             start_at_block: args.start_at_block,
             end_at_block: args.end_at_block,
+            absolute_end_at_block: None,
             catchup_paging: args.catchup_paging.max(1),
             catchup_margin: args.catchup_margin,
             tick_timeout: HeartBeat::default(),
@@ -674,9 +676,12 @@ impl InfiniteLogIter {
                 Ok(provider) => {
                     let catch_up_from =
                         self.catchup_block_from(&provider).await;
+                    let end_at_block =
+                        self.resolve_end_at_block(&provider).await;
+                    self.absolute_end_at_block = end_at_block;
                     self.catchup_blocks = Some((
                         catch_up_from.as_number().unwrap_or(0),
-                        self.resolve_end_at_block(&provider).await,
+                        end_at_block,
                     ));
                     // note subscribing to real-time before reading catchup
                     // events to have the minimal gap between the two
@@ -769,7 +774,7 @@ impl InfiniteLogIter {
     }
 
     async fn end_at_block_reached(&self) -> bool {
-        let Some(end_at_block) = self.end_at_block else {
+        let Some(end_at_block) = self.absolute_end_at_block else {
             return false;
         };
         let current_block_number =
@@ -780,7 +785,7 @@ impl InfiniteLogIter {
             } else {
                 return false;
             };
-        current_block_number > end_at_block as u64
+        current_block_number > end_at_block
     }
 
     async fn next(&mut self) -> Option<BlockLogs<Log>> {
@@ -851,6 +856,7 @@ impl InfiniteLogIter {
         self.catchup_blocks = None;
         self.next_blocklogs.clear();
         self.last_valid_block = None;
+        self.absolute_end_at_block = None;
         self.block_history =
             BlockHistory::new(self.reorg_maximum_duration_in_blocks as usize);
     }
@@ -904,47 +910,6 @@ async fn db_insert_block(
         retries -= 1;
         db.reconnect().await;
         tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-}
-
-/// Runs the catchup-only loop mode **forever**.
-///
-/// This function processes blocks from `start_at_block` to `stop_at_block`,
-/// sleeps for `catchup_sleep_secs`, then repeats indefinitely.
-/// It only returns `Err` on connection failures; otherwise it loops forever.
-async fn run_catchup_only_loop(
-    args: &Args,
-    log_iter: &mut InfiniteLogIter,
-    db: &mut Database,
-    chain_id: ChainId,
-    acl_contract_address: &Option<Address>,
-    tfhe_contract_address: &Option<Address>,
-) -> anyhow::Result<()> {
-    info!("Starting catchup-only loop mode");
-
-    loop {
-        log_iter.new_log_stream(true).await;
-
-        // Process blocks until end_at_block is reached
-        while let Some(block_logs) = log_iter.next().await {
-            let _ = db_insert_block(
-                chain_id,
-                db,
-                &block_logs,
-                acl_contract_address,
-                tfhe_contract_address,
-            )
-            .await;
-        }
-
-        info!(
-            sleep_secs = args.catchup_sleep_secs,
-            "Catchup loop iteration complete, sleeping"
-        );
-        tokio::time::sleep(Duration::from_secs(args.catchup_sleep_secs)).await;
-
-        // Reset state for next iteration
-        log_iter.reset_for_catchup_loop();
     }
 }
 
@@ -1067,32 +1032,36 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             .map(|n| n - args.catchup_margin as i64);
     }
 
-    // Branch to catchup-only loop mode if enabled
-    if args.only_catchup_loop {
-        return run_catchup_only_loop(
-            &args,
-            &mut log_iter,
-            &mut db,
-            chain_id,
-            &acl_contract_address,
-            &tfhe_contract_address,
-        )
-        .await;
-    }
+    loop {
+        log_iter.new_log_stream(true).await;
 
-    // Normal mode: real-time listener with catchup
-    log_iter.new_log_stream(true).await;
+        while let Some(block_logs) = log_iter.next().await {
+            if args.only_catchup_loop && !block_logs.catchup {
+                break;
+            }
+            let _ = db_insert_block(
+                chain_id,
+                &mut db,
+                &block_logs,
+                &acl_contract_address,
+                &tfhe_contract_address,
+            )
+            .await;
+            // logging & retry on error is already done in db_insert_block
+        }
 
-    while let Some(block_logs) = log_iter.next().await {
-        let _ = db_insert_block(
-            chain_id,
-            &mut db,
-            &block_logs,
-            &acl_contract_address,
-            &tfhe_contract_address,
-        )
-        .await;
-        // logging & retry on error is already done in db_insert_block
+        if !args.only_catchup_loop {
+            break;
+        }
+
+        info!(
+            sleep_secs = args.catchup_sleep_secs,
+            "Catchup loop iteration complete, sleeping"
+        );
+        tokio::time::sleep(Duration::from_secs(args.catchup_sleep_secs)).await;
+
+        // Reset state for next iteration
+        log_iter.reset_for_catchup_loop();
     }
     cancel_token.cancel();
     anyhow::Result::Ok(())
