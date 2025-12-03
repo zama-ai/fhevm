@@ -3,7 +3,6 @@ use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::pubsub::SubscriptionStream;
 use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
-use alloy::sol_types::SolEventInterface;
 use alloy::transports::ws::WebSocketConfig;
 use anyhow::{anyhow, Result};
 use clap::Parser;
@@ -168,6 +167,10 @@ mod eth_rpc_err {
     }
 }
 
+fn websocket_config() -> WebSocketConfig {
+    WebSocketConfig::default().max_message_size(Some(256 * 1024 * 1024)) // 256MB
+}
+
 impl InfiniteLogIter {
     fn new(args: &Args) -> Self {
         let mut contract_addresses = vec![];
@@ -204,8 +207,7 @@ impl InfiniteLogIter {
     }
 
     async fn get_chain_id(&self) -> anyhow::Result<ChainId> {
-        let config = WebSocketConfig::default()
-            .max_message_size(Some(256 * 1024 * 1024)); // 256MB
+        let config = websocket_config();
         let ws = WsConnect::new(&self.url).with_config(config);
         let provider = ProviderBuilder::new().connect_ws(ws).await?;
         Ok(provider.get_chain_id().await?)
@@ -249,7 +251,10 @@ impl InfiniteLogIter {
             filter = filter.address(self.contract_addresses.clone())
         }
         // we use a specific provider to not disturb the real-time one (no buffer shared)
-        let ws = WsConnect::new(&self.url).with_max_retries(0); // disabled, alloy skips events
+        let config = websocket_config();
+        let ws = WsConnect::new(&self.url)
+            .with_config(config)
+            .with_max_retries(0); // disabled, alloy skips events
         let provider = match ProviderBuilder::new().connect_ws(ws).await {
             Ok(provider) => provider,
             Err(_) => anyhow::bail!("Cannot get a provider"),
@@ -626,14 +631,11 @@ impl InfiniteLogIter {
 
     async fn new_log_stream(&mut self, not_initialized: bool) {
         let mut retry = 20;
-        let config = WebSocketConfig::default()
-            .max_message_size(Some(256 * 1024 * 1024)); // 256MB
-
+        let config = websocket_config();
         loop {
             let ws = WsConnect::new(&self.url)
-                .with_max_retries(0)
-                .with_config(config); // disabled, alloy skips events
-
+                .with_config(config)
+                .with_max_retries(0); // disabled, alloy skips events
             match ProviderBuilder::new().connect_ws(ws).await {
                 Ok(provider) => {
                     let catch_up_from =
