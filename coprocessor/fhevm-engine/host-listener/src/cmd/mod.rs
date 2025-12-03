@@ -258,7 +258,11 @@ impl InfiniteLogIter {
             filter = filter.address(self.contract_addresses.clone())
         }
         // we use a specific provider to not disturb the real-time one (no buffer shared)
-        let ws = WsConnect::new(&self.url).with_max_retries(0); // disabled, alloy skips events
+        let config = WebSocketConfig::default()
+            .max_message_size(Some(256 * 1024 * 1024)); // 256MB
+        let ws = WsConnect::new(&self.url)
+            .with_config(config)
+            .with_max_retries(0); // disabled, alloy skips events
         let provider = match ProviderBuilder::new().connect_ws(ws).await {
             Ok(provider) => provider,
             Err(_) => anyhow::bail!("Cannot get a provider"),
