@@ -58,6 +58,18 @@ Note that recommendations assume a smoke test that runs transactions/requests at
  - **Alarm**: If the gauge value exceeds a predefined threshold.
     - **Recommendation**: more than 100 unsent over 2 minutes, i.e. `min_over_time(gauge[2m]) > 100`.
 
+#### Metric Name: `coprocessor_verify_proof_resp_unsent_txn_gauge`
+ - **Type**: Gauge
+ - **Description**: Tracks the number of unsent verify proof response transactions in the transaction-sender.
+ - **Alarm**: If the gauge value exceeds a predefined threshold.
+    - **Recommendation**: more than 100 unsent over 2 minutes, i.e. `min_over_time(gauge[2m]) > 100`.
+
+#### Metric Name: `coprocessor_verify_proof_pending_gauge`
+ - **Type**: Gauge
+ - **Description**: Tracks the number of pending verify proofs (pending on the zkproof-worker).
+ - **Alarm**: If the gauge value exceeds a predefined threshold.
+    - **Recommendation**: more than 100 pending over 2 minutes, i.e. `min_over_time(gauge[2m]) > 100`.
+
 ### gw-listener
 
 #### Metric Name: `coprocessor_gw_listener_verify_proof_success_counter`
@@ -125,7 +137,7 @@ Note that recommendations assume a smoke test that runs transactions/requests at
 
 ### zkproof-worker
 
-Metrics for zkproof-worker are to be added in future releases.
+Metrics for zkproof-worker are to be added in future releases, if/when needed. Currently, the transaction-sender handles ZK proof related metrics, please see its section.
 
 ### sns-worker
 
