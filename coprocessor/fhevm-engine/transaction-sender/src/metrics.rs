@@ -94,6 +94,22 @@ pub(crate) static ADD_CIPHERTEXT_MATERIAL_UNSENT: LazyLock<IntGauge> = LazyLock:
     .unwrap()
 });
 
+pub(crate) static VERIFY_PROOF_RESP_UNSENT_TXN: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "coprocessor_verify_proof_resp_unsent_txn_gauge",
+        "Number of unsent verify proof response transactions"
+    )
+    .unwrap()
+});
+
+pub(crate) static VERIFY_PROOF_PENDING: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "coprocessor_verify_proof_pending_gauge",
+        "Number of pending verify proof requests"
+    )
+    .unwrap()
+});
+
 pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
@@ -124,6 +140,34 @@ pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) 
                 }
                 Err(e) => {
                     error!(error = %e, "Failed to fetch unsent add ciphertext material count");
+                }
+            }
+
+            match sqlx::query_scalar("SELECT COUNT(*) FROM verify_proofs WHERE verified IS NULL")
+                .fetch_one(&db_pool)
+                .await
+            {
+                Ok(count) => {
+                    info!(verify_proof_pending = %count, "Fetched pending verify proofs count");
+                    VERIFY_PROOF_PENDING.set(count);
+                }
+                Err(e) => {
+                    error!(error = %e, "Failed to fetch pending verify proofs count");
+                }
+            }
+
+            match sqlx::query_scalar(
+                "SELECT COUNT(*) FROM verify_proofs WHERE verified IS NOT NULL",
+            )
+            .fetch_one(&db_pool)
+            .await
+            {
+                Ok(count) => {
+                    info!(verify_proof_resp_unsent_txn = %count, "Fetched unsent verify proof response count");
+                    VERIFY_PROOF_RESP_UNSENT_TXN.set(count);
+                }
+                Err(e) => {
+                    error!(error = %e, "Failed to fetch unsent verify proof response count");
                 }
             }
 
