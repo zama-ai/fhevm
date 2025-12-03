@@ -212,15 +212,39 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
 
 ### gw-listener
 
-#### Metric Name: `kms_connector_gw_listener_event_received_counter`
+#### Metric Name: `kms_connector_gw_listener_public_decryption_success_counter`
  - **Type**: Counter
- - **Description**: Counts the number of events received by the GW listener.
+ - **Description**: Counts the number of successful public decryption request events in GW listener.
  - **Alarm**: If the counter is a flat line over a period of time.
     - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
 
-#### Metric Name: `kms_connector_gw_listener_event_received_errors`
+#### Metric Name: `kms_connector_gw_listener_public_decryption_fail_counter`
  - **Type**: Counter
- - **Description**: Counts the number of errors encountered by the GW listener while receiving events.
+ - **Description**: Counts the number of failed public decryption request events in GW listener.
+ - **Alarm**: If the counter increases over a period of time.
+    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
+
+#### Metric Name: `kms_connector_gw_listener_user_decryption_success_counter`
+ - **Type**: Counter
+ - **Description**: Counts the number of successful user decryption request events in GW listener.
+ - **Alarm**: If the counter is a flat line over a period of time.
+    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+
+#### Metric Name: `kms_connector_gw_listener_user_decryption_fail_counter`
+ - **Type**: Counter
+ - **Description**: Counts the number of failed user decryption request events in GW listener.
+ - **Alarm**: If the counter increases over a period of time.
+    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
+
+#### Metric Name: `kms_connector_gw_listener_keys_generation_success_counter`
+ - **Type**: Counter
+ - **Description**: Counts the number of successful key and CRS generation request events in GW listener.
+ - **Alarm**: If the counter is a flat line over a period of time.
+    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+
+#### Metric Name: `kms_connector_gw_listener_keys_generation_fail_counter`
+ - **Type**: Counter
+ - **Description**: Counts the number of failed key and CRS generation request events in GW listener.
  - **Alarm**: If the counter increases over a period of time.
     - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
 
@@ -321,14 +345,38 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Alarm**: If the counter increases over a period of time.
     - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
 
-#### Metric Name: `kms_connector_tx_sender_gateway_tx_sent_counter`
+#### Metric Name: `kms_connector_tx_sender_public_decryption_success_counter`
  - **Type**: Counter
- - **Description**: Counts the number of transactions sent to the Gateway by the TX sender.
+ - **Description**: Counts the number of successful public decryption response transactions sent to the Gateway by the TX sender.
  - **Alarm**: If the counter is a flat line over a period of time.
     - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
 
-#### Metric Name: `kms_connector_tx_sender_gateway_tx_sent_errors`
+#### Metric Name: `kms_connector_tx_sender_public_decryption_fail_counter`
  - **Type**: Counter
- - **Description**: Counts the number of errors encountered by the TX sender while sending transactions to the Gateway.
+ - **Description**: Counts the number of failed public decryption response transactions in the TX sender.
+ - **Alarm**: If the counter increases over a period of time.
+    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
+
+#### Metric Name: `kms_connector_tx_sender_user_decryption_success_counter`
+ - **Type**: Counter
+ - **Description**: Counts the number of successful user decryption response transactions sent to the Gateway by the TX sender.
+ - **Alarm**: If the counter is a flat line over a period of time.
+    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+
+#### Metric Name: `kms_connector_tx_sender_user_decryption_fail_counter`
+ - **Type**: Counter
+ - **Description**: Counts the number of failed user decryption response transactions in the TX sender.
+ - **Alarm**: If the counter increases over a period of time.
+    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
+
+#### Metric Name: `kms_connector_tx_sender_keys_generation_success_counter`
+ - **Type**: Counter
+ - **Description**: Counts the number of successful key and CRS generation response transactions sent to the Gateway by the TX sender.
+ - **Alarm**: If the counter is a flat line over a period of time.
+    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+
+#### Metric Name: `kms_connector_tx_sender_keys_generation_fail_counter`
+ - **Type**: Counter
+ - **Description**: Counts the number of failed key and CRS generation response transactions in the TX sender.
  - **Alarm**: If the counter increases over a period of time.
     - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
