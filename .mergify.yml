@@ -6,7 +6,7 @@ queue_rules:
     merge_method: squash
     update_method: rebase
     merge_conditions:
-      - check-success = test-suite-orchestrate-e2e-tests/run-e2e-tests
+      - check-success = run-e2e-tests / fhevm-e2e-test
     queue_conditions:
       - base = main
       - label!=do-not-merge

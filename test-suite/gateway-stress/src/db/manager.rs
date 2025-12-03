@@ -175,9 +175,11 @@ impl DatabaseTestManager {
                 for result in results.iter() {
                     w.serialize(result)?;
                 }
+                w.flush()?;
             }
             let bench_result = BenchAverageResult::new(bench_record, results);
             average_results_writer.serialize(bench_result)?;
+            average_results_writer.flush()?;
         }
 
         if !args.skip_clear_db {

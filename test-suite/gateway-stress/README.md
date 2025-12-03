@@ -13,6 +13,7 @@ decrypts at the time of writing), at a given frequency and for a specified durat
   - [Stress testing](#stress-testing)
   - [Benchmarking](#benchmarking)
 - [Tracing](#tracing)
+- [Local e2e setup](#local-e2e-setup)
 - [Bonus: Generating handles via coprocessor stress-test-generator](#bonus-generating-handles-via-coprocessor-stress-test-generator)
 
 ## Build
@@ -118,6 +119,20 @@ RUST_LOG="gateway_stress=debug,alloy=debug" ./gateway-stress -c config/config.to
 # Enabling "DEBUG" traces for all crates used by the stress test tool
 RUST_LOG="debug" ./gateway-stress -c config/config.toml gw -t public
 ```
+
+## Local e2e setup
+
+To play with the tool in a local e2e setup, follow these steps:
+- from the root of the `fehvm` repo: `cd test-suite/fhevm`
+- deploy the e2e setup using the `./fhevm-cli deploy` command
+- if using `fhevm` version > 0.10.0, fund the account the tool is using with ERC20 token (use the same private key as in [gateway-stress config](../gateway-stress/config/config.toml)):
+  - `docker run --env-file env/staging/.env.gateway-mocked-payment.local -e TX_SENDER_PRIVATE_KEY="0x24af7cb5f6cd0f29df22c6f3e2f18ee5b3949f5a489a14b0674bef8fd89bfe91" -it --rm --network fhevm_default ghcr.io/zama-ai/fhevm/gateway-contracts:v0.10.0-4 "npx hardhat task:setTxSenderMockedPayment"`
+- generate ciphertext handles
+  - `cd ../../coprocessor/fhevm-engine/stress-test-generator; rm -f data/handles_for*; EVGEN_SCENARIO=data/minitest_003_generate_handles_for_decryption.csv make run; cd -` (see [this section](#bonus-generating-handles-via-coprocessor-stress-test-generator) for more details)
+- update the `[[public_ct]]` and `[[user_ct]]` sections of the [gateway-stress config](../gateway-stress/config/config.toml) with one of the value of the `../../coprocessor/fhevm-engine/stress-test-generator/data/handles_for_pub_decryption` and `../../coprocessor/fhevm-engine/stress-test-generator/data/handles_for_usr_decryption` files
+- run the tool. Ex:
+  - `cd ../gateway_stress`
+  - `cargo run -- -c config/config.toml -p 1 -d "1s" gw -t user`
 
 ## Bonus: Generating handles via coprocessor stress-test-generator
 
