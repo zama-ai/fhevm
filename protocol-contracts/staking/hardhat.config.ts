@@ -22,34 +22,6 @@ import { HardhatUserConfig, HttpNetworkAccountsUserConfig } from 'hardhat/types'
 import { resolve } from 'path';
 import 'solidity-coverage';
 
-// Run the test with environment variables from `.env.example`
-task('test', 'Runs the test suite with environment variables from .env.example')
-  .addOptionalParam('skipSetup', 'Set to true to skip setup tasks', false, types.boolean)
-  .setAction(async (taskArgs, hre, runSuper) => {
-    // Load `.env.example`
-    const envExamplePath = resolve(__dirname, '.env.example');
-    if (existsSync(envExamplePath)) {
-      dotenv.config({ path: envExamplePath, override: true });
-    }
-
-    if (!taskArgs.skipSetup) {
-      // Compile the contracts
-      await hre.run('compile');
-
-      // Deploy mocked ERC20 Zama token and mint the deployer account with tokens
-      await hre.run('task:deployERC20MockAndMintDeployer');
-
-      // Deploy all protocol staking contracts
-      await hre.run('task:deployAllProtocolStakingContracts');
-
-      // Deploy all operator staking contracts
-      await hre.run('task:deployAllOperatorStakingContracts');
-    } else {
-      console.log('Skipping contracts setup.');
-    }
-    await runSuper(taskArgs);
-  });
-
 // Get the environment configuration from .env file
 //
 // To make use of automatic environment setup:
@@ -76,6 +48,34 @@ if (accounts == null) {
     'Could not find MNEMONIC or PRIVATE_KEY environment variables. It will not be possible to execute transactions in your example.',
   );
 }
+
+// Run the test suite for tasks with environment variables from `.env.example`
+task('test:tasks', 'Runs the test suite for tasks with environment variables from .env.example')
+  .addOptionalParam('skipSetup', 'Set to true to skip setup tasks', false, types.boolean)
+  .setAction(async (taskArgs, hre) => {
+    // Load `.env.example`
+    const envExamplePath = resolve(__dirname, '.env.example');
+    if (existsSync(envExamplePath)) {
+      dotenv.config({ path: envExamplePath, override: true });
+    }
+
+    if (!taskArgs.skipSetup) {
+      // Compile the contracts
+      await hre.run('compile');
+
+      // Deploy mocked ERC20 Zama token
+      await hre.run('task:deployERC20MockAndMintDeployer');
+
+      // Deploy all protocol staking contracts
+      await hre.run('task:deployAllProtocolStakingContracts');
+
+      // Deploy all operator staking contracts
+      await hre.run('task:deployAllOperatorStakingContracts');
+    } else {
+      console.log('Skipping contracts setup.');
+    }
+    await hre.run('test', ['test-tasks/**/*.test.ts']);
+  });
 
 const config: HardhatUserConfig = {
   solidity: {

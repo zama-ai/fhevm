@@ -3,7 +3,7 @@ import {
   getAllOperatorStakingKMSAddresses,
   getProtocolStakingCoproProxyAddress,
   getProtocolStakingKMSProxyAddress,
-} from '../../../tasks/utils/getAddresses';
+} from '../../tasks/utils/getAddresses';
 import { getProtocolStakingContractsFixture } from '../utils';
 import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from 'chai';

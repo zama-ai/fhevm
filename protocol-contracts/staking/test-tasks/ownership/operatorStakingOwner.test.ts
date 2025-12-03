@@ -1,6 +1,6 @@
-import { OPERATOR_STAKING_CONTRACT_NAME, OPERATOR_REWARDER_CONTRACT_NAME } from '../../../tasks/deployment';
-import { getAllOperatorStakingAddresses, getAllOperatorRewarderAddresses } from '../../../tasks/utils/getAddresses';
-import { getRequiredEnvVar } from '../../../tasks/utils/loadVariables';
+import { OPERATOR_STAKING_CONTRACT_NAME, OPERATOR_REWARDER_CONTRACT_NAME } from '../../tasks/deployment';
+import { getAllOperatorStakingAddresses, getAllOperatorRewarderAddresses } from '../../tasks/utils/getAddresses';
+import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import { getOperatorStakingContractsFixture, getOperatorRewarderContractsFixture } from '../utils';
 import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from 'chai';

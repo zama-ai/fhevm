@@ -1,4 +1,4 @@
-import { getRequiredEnvVar } from '../../../tasks/utils/loadVariables';
+import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import { getProtocolStakingContractsFixture } from '../utils';
 import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from 'chai';

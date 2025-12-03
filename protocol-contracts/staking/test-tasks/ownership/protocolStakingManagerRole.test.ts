@@ -1,5 +1,5 @@
-import { MANAGER_ROLE } from '../../../tasks/ownership/protocolStakingManagerRole';
-import { getRequiredEnvVar } from '../../../tasks/utils/loadVariables';
+import { MANAGER_ROLE } from '../../tasks/ownership/protocolStakingManagerRole';
+import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import { getProtocolStakingContractsFixture } from '../utils';
 import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from 'chai';

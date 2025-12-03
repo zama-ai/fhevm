@@ -2,7 +2,7 @@ import {
   OPERATOR_REWARDER_CONTRACT_NAME,
   OPERATOR_STAKING_CONTRACT_NAME,
   PROTOCOL_STAKING_CONTRACT_NAME,
-} from '../../tasks/deployment';
+} from '../tasks/deployment';
 import {
   getProtocolStakingCoproProxyAddress,
   getProtocolStakingKMSProxyAddress,
@@ -10,8 +10,17 @@ import {
   getAllOperatorRewarderKMSAddresses,
   getAllOperatorStakingCoproAddresses,
   getAllOperatorStakingKMSAddresses,
-} from '../../tasks/utils/getAddresses';
+} from '../tasks/utils/getAddresses';
+import { expect } from 'chai';
 import hre from 'hardhat';
+
+// Helper function to verify that a contract is deployed at the given address.
+// Checks both that the address is valid and that bytecode exists at that address.
+export async function expectContractDeployed(address: string) {
+  expect(address).to.be.properAddress;
+  const code = await hre.ethers.provider.getCode(address);
+  expect(code).to.not.equal('0x');
+}
 
 export async function getProtocolStakingContractsFixture() {
   // Get the protocol staking addresses

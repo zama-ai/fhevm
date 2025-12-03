@@ -1,10 +1,6 @@
-import {
-  getOperatorRewarderName,
-  getOperatorStakingName,
-  getProtocolStakingProxyName,
-} from '../../../tasks/deployment';
-import { getRequiredEnvVar } from '../../../tasks/utils/loadVariables';
-import { expectContractDeployed } from '../../helpers/addressCheck';
+import { getOperatorRewarderName, getOperatorStakingName, getProtocolStakingProxyName } from '../../tasks/deployment';
+import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
+import { expectContractDeployed } from '../utils';
 import { expect } from 'chai';
 import hre from 'hardhat';
 
