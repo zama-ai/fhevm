@@ -117,8 +117,7 @@ task('task:setAllOwnerFees').setAction(async function (_, hre: HardhatRuntimeEnv
   console.log('Setting owner fee for all operator rewarder contracts...\n');
 
   await hre.run('task:setAllCoprocessorOwnerFees');
-
   await hre.run('task:setAllKMSOwnerFees');
 
-  console.log('Owner fees for all operator rewarder contracts have been set\n');
+  console.log('✅ Owner fees for all operator rewarder contracts have been set\n');
 });

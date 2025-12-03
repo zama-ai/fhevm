@@ -1,6 +1,7 @@
 import './tasks/accounts';
 import './tasks/addEligibleAccount';
 import './tasks/deployment';
+import './tasks/deposit';
 import './tasks/ownership';
 import './tasks/setOwnerFee';
 import './tasks/setRewardRate';
@@ -35,8 +36,8 @@ task('test', 'Runs the test suite with environment variables from .env.example')
       // Compile the contracts
       await hre.run('compile');
 
-      // Deploy mocked ERC20 Zama token
-      await hre.run('task:deployERC20Mock');
+      // Deploy mocked ERC20 Zama token and mint the deployer account with tokens
+      await hre.run('task:deployERC20MockAndMintDeployer');
 
       // Deploy all protocol staking contracts
       await hre.run('task:deployAllProtocolStakingContracts');

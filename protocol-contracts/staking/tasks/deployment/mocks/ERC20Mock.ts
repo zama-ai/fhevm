@@ -2,7 +2,12 @@ import { task } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 // Deploy an ERC20Mock contract
-async function deployERC20Mock(tokenName: string, symbol: string, decimals: number, hre: HardhatRuntimeEnvironment) {
+async function deployERC20MockAndMint(
+  tokenName: string,
+  symbol: string,
+  decimals: number,
+  hre: HardhatRuntimeEnvironment,
+) {
   const { getNamedAccounts, ethers, deployments, network } = hre;
   const { save, getArtifact } = deployments;
 
@@ -33,6 +38,12 @@ async function deployERC20Mock(tokenName: string, symbol: string, decimals: numb
     ].join('\n'),
   );
 
+  // Mint the deployer account with 1 billion tokens
+  const amount = BigInt(10 ** 9) * BigInt(10 ** decimals);
+  await erc20Mock.connect(deployerSigner).mint(deployer, amount);
+
+  console.log(`👉 Minted ${amount} tokens to deployer account ${deployer}`);
+
   // Save the ERC20Mock contract artifact
   const artifact = await getArtifact(contractName);
   await save(contractName, { address: erc20MockAddress, abi: artifact.abi });
@@ -42,15 +53,15 @@ async function deployERC20Mock(tokenName: string, symbol: string, decimals: numb
 
 // Deploy an ERC20Mock contract
 // Example usage:
-// npx hardhat task:deployERC20Mock --network testnet
-task('task:deployERC20Mock').setAction(async function (_, hre) {
+// npx hardhat task:deployERC20MockAndMintDeployer --network testnet
+task('task:deployERC20MockAndMintDeployer').setAction(async function (_, hre) {
   const name = 'ZamaMock';
   const symbol = 'ZAMAMock';
   const decimals = 18;
 
   console.log(`Deploying mocked ERC20 Zama token: ${name} (${symbol})...\n`);
 
-  await deployERC20Mock(name, symbol, decimals, hre);
+  await deployERC20MockAndMint(name, symbol, decimals, hre);
 
   console.log('Mocked ERC20 Zama token deployment complete\n');
 });

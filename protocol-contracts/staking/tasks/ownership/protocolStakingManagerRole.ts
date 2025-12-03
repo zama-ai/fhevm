@@ -105,4 +105,6 @@ task('task:renounceProtocolStakingManagerRolesFromDeployer').setAction(async fun
 
   const protocolStakingKmsProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
   await renounceManagerRole(protocolStakingKmsProxyAddress, hre);
+
+  console.log("✅ All protocol staking contracts' manager roles have been renounced from the deployer\n");
 });

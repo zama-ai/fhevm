@@ -36,7 +36,7 @@ export async function getOperatorStakingContractsFixture() {
   // Load all coprocessor operator staking contracts
   const coproOperatorStakings = await Promise.all(
     coproOperatorStakingAddresses.map((address: string) =>
-      hre.ethers.getContractAt(OPERATOR_REWARDER_CONTRACT_NAME, address),
+      hre.ethers.getContractAt(OPERATOR_STAKING_CONTRACT_NAME, address),
     ),
   );
 

@@ -158,8 +158,7 @@ task('task:deployAllOperatorStakingContracts').setAction(async function (_, hre)
   console.log('Deploying operator staking contracts...');
 
   await hre.run('task:deployAllOperatorStakingCoproContracts');
-
   await hre.run('task:deployAllOperatorStakingKMSContracts');
 
-  console.log('All operator staking contracts deployed\n');
+  console.log('✅ All operator staking contracts deployed\n');
 });

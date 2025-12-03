@@ -59,4 +59,6 @@ task('task:beginTransferProtocolStakingGovernorRolesToDAO').setAction(async func
   const protocolStakingKmsProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
 
   await transferGovernorRole(protocolStakingKmsProxyAddress, hre);
+
+  console.log("✅ All protocol staking contracts' governor roles have been transferred to the DAO\n");
 });

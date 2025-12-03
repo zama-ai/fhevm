@@ -99,8 +99,7 @@ task('task:addAllOperatorsAsEligible').setAction(async function (_, hre: Hardhat
   console.log('Adding all operators as eligible in the protocol staking contract...\n');
 
   await hre.run('task:addAllCoproOperatorsAsEligible');
-
   await hre.run('task:addAllKMSOperatorsAsEligible');
 
-  console.log('All operators have been added as eligible in the protocol staking contract\n');
+  console.log('✅ All operators have been added as eligible in the protocol staking contract\n');
 });

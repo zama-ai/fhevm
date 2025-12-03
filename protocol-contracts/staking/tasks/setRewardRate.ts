@@ -84,8 +84,7 @@ task('task:setAllRewardRates').setAction(async function (_, hre: HardhatRuntimeE
   console.log('Setting reward rate for all protocol staking contracts...\n');
 
   await hre.run('task:setCoprocessorRewardRate');
-
   await hre.run('task:setKMSRewardRate');
 
-  console.log('Reward rates for all protocol staking contracts have been set\n');
+  console.log('✅ Reward rates for all protocol staking contracts have been set\n');
 });

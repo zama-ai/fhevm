@@ -119,5 +119,5 @@ task('task:transferAllOperatorStakingRewarderOwnershipsToDAO').setAction(async f
     });
   }
 
-  console.log('Ownership of all operator staking and rewarder contracts have been transferred to the DAO');
+  console.log('✅ Ownership of all operator staking and rewarder contracts have been transferred to the DAO');
 });
