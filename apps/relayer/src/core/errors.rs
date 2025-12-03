@@ -35,18 +35,17 @@ pub enum EventProcessingError {
     #[error("Failed to aggregate decryption shares: {0}")]
     ShareAggregationFailed(String),
 
-    #[error("Transaction failed: {0}")]
-    TransactionError(String),
-
-    #[error("Configuration error: {0}")]
-    ConfigError(#[from] AppConfigError),
     #[error("Contract call failed: {0}")]
     ContractCallFailed(String),
 
     #[error("Validation failed for {field}: {reason}")]
     ValidationFailed { field: String, reason: String },
 
+    #[error("Transaction failed: {0:?}")]
+    TransactionError(Box<GatewayTxnError>),
 
+    #[error("Configuration error: {0}")]
+    ConfigError(#[from] AppConfigError),
 
     #[error("Ciphertext not ready for decryption")]
     ReadinessCheckFailed,
@@ -54,7 +53,7 @@ pub enum EventProcessingError {
 
 impl From<GatewayTxnError> for EventProcessingError {
     fn from(e: GatewayTxnError) -> Self {
-        EventProcessingError::TransactionError(e.to_string())
+        EventProcessingError::TransactionError(Box::new(e))
     }
 }
 

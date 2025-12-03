@@ -34,7 +34,7 @@ pub trait SignerCombined: TxSigner<Signature> + Signer + Send + Sync + Debug {}
 impl<T: TxSigner<Signature> + Signer + Send + Sync + Debug> SignerCombined for T {}
 
 // TODO: Rework this, with a clean triage.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum GatewayTxnError {
     #[error("Invalid contract address: {0}")]
     InvalidAddress(String),
@@ -56,7 +56,7 @@ pub enum GatewayTxnError {
     // TODO: After max retries, we report the service unhealthy, and expect human intervention.
     // Special status retry later, and all tx sender (in-flight and pending should not be send)
     #[error("Transport error: {0}")]
-    TransportError(#[from] alloy::transports::TransportError),
+    TransportError(String),
 }
 
 impl From<eyre::Report> for GatewayTxnError {

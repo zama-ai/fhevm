@@ -143,9 +143,7 @@ impl InputProofGatewayHandler {
 
         let error_event =
             event.derive_next_event(RelayerEventData::InputProof(InputProofEventData::Failed {
-                error: EventProcessingError::TransactionError(format!(
-                    "Input request failed: {error}"
-                )),
+                error,
             }));
 
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
