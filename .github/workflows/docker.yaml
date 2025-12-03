@@ -103,7 +103,7 @@ jobs:
               service="${REF_NAME%%@*}"
               if [ -n "$service" ] && [ "$service" != "$REF_NAME" ]; then
                 case "$service" in
-                  back|front|relayer|oracle)
+                  back|front|relayer|relayer-migrate|oracle)
                     TO_RUN=$(jq -nc \
                       --arg svc "$service" \
                       --argjson service_map "$SERVICE_MAP" \
@@ -123,6 +123,7 @@ jobs:
                 --argjson service_map "$SERVICE_MAP" \
                 '[
                   $service_map.relayer,
+                  $service_map.relayer-migrate,
                   $service_map.back,
                   $service_map.front,
                   $service_map["oracle"]
