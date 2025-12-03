@@ -66,7 +66,7 @@ kmsConnectorDbMigration:
 
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/db-migration
-    tag: v0.9.0
+    tag: v0.10.0
 
   # Command to run database migrations
   command:
@@ -124,7 +124,7 @@ kmsConnectorGwListener:
 
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener
-    tag: v0.9.0
+    tag: v0.10.0
 
   replicas: 1
 
@@ -195,7 +195,7 @@ kmsConnectorKmsWorker:
 
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker
-    tag: v0.9.0
+    tag: v0.10.0
 
   replicas: 1
 
@@ -269,7 +269,7 @@ kmsConnectorTxSender:
 
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender
-    tag: v0.9.0
+    tag: v0.10.0
 
   replicas: 1
 
