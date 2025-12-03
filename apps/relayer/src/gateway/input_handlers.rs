@@ -265,7 +265,15 @@ impl InputProofGatewayHandler {
                 }
             }
             Err(err) => {
-                error!(?err, "Failed to decode InputRequest event");
+                error!(?err, "Failed to decode VerifyProofResponse event");
+                self.notify_failed(
+                    event,
+                    EventProcessingError::EventDecodingFailed {
+                        event_type: "VerifyProofResponse".to_string(),
+                        reason: err.to_string(),
+                    },
+                )
+                .await;
             }
         }
     }
@@ -302,13 +310,27 @@ impl InputProofGatewayHandler {
 
                         let _ = self.dispatcher.dispatch_event(next_event).await;
                     }
-                    Err(_e) => {
-                        // TODO(xyz): Dispatch error event
+                    Err(e) => {
+                        sql_errors::input_proof_sql_error(
+                            &self.dispatcher,
+                            event,
+                            "input_proof.reject_and_complete_input_proof_req",
+                            &e,
+                        )
+                        .await;
                     }
                 };
             }
             Err(err) => {
-                error!(?err, "Failed to decode InputRequest event");
+                error!(?err, "Failed to decode RejectProofResponse event");
+                self.notify_failed(
+                    event,
+                    EventProcessingError::EventDecodingFailed {
+                        event_type: "RejectProofResponse".to_string(),
+                        reason: err.to_string(),
+                    },
+                )
+                .await;
             }
         }
     }

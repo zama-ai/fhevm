@@ -231,6 +231,14 @@ impl GatewayHandler {
             }
             Err(e) => {
                 error!("Failed to decode UserDecryptionResponse event data: {}", e);
+                self.notify_failed(
+                    event,
+                    EventProcessingError::EventDecodingFailed {
+                        event_type: "UserDecryptionResponse".to_string(),
+                        reason: e.to_string(),
+                    },
+                )
+                .await;
             }
         }
     }
