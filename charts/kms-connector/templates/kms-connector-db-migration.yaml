@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ .Release.Name }}-kms-connector-db-migration-{{ .Values.kmsConnectorDbMigration.image.tag }}
+  name: {{ .Release.Name }}-kms-connector-db-migration-{{ printf "%s" .Values.kmsConnectorDbMigration.image.tag }}
   labels:
     app: kms-connector-db-migration
     app.kubernetes.io/name: {{ .Release.Name }}-kms-connector-db-migration
