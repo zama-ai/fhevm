@@ -310,6 +310,7 @@ where
             AND ciphertext IS NOT NULL
             AND ciphertext128 IS NOT NULL
             AND txn_limited_retries_count < $1
+            ORDER BY created_at ASC
             LIMIT $2",
             self.conf.add_ciphertexts_max_retries,
             self.conf.add_ciphertexts_batch_limit as i64,
