@@ -45,7 +45,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 4n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('Select works returning if true', async function () {
@@ -66,7 +66,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 3n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('Select ebool', async function () {
@@ -81,7 +81,7 @@ describe('FHEVM manual operations', function () {
       [handle]: false,
       [handle2]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('Select works for eaddress returning if false', async function () {
@@ -102,7 +102,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: ethers.getAddress('0x8881f109551bd432803012645ac136ddd64dba72'),
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('Select works for eaddress returning if true', async function () {
@@ -123,7 +123,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: ethers.getAddress('0x8ba1f109551bd432803012645ac136ddd64dba72'),
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool eq ebool', async function () {
@@ -146,7 +146,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: false,
       [handle4]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool eq ebool - ScalarL', async function () {
@@ -169,7 +169,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: true,
       [handle4]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool eq ebool - ScalarR', async function () {
@@ -192,7 +192,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: true,
       [handle4]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool ne ebool', async function () {
@@ -215,7 +215,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: true,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool ne ebool - ScalarL', async function () {
@@ -238,7 +238,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: false,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool ne ebool - ScalarR', async function () {
@@ -261,7 +261,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: false,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress eq eaddress,eaddress true', async function () {
@@ -280,7 +280,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress eq eaddress,eaddress false', async function () {
@@ -299,7 +299,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress eq scalar eaddress,address true', async function () {
@@ -314,7 +314,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress eq scalar eaddress,address false', async function () {
@@ -329,7 +329,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress eq scalar address,eaddress true', async function () {
@@ -344,7 +344,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress eq scalar address,eaddress false', async function () {
@@ -359,7 +359,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress ne eaddress,eaddress false', async function () {
@@ -378,7 +378,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress ne eaddress,eaddress true', async function () {
@@ -397,7 +397,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress ne scalar eaddress,address false', async function () {
@@ -412,7 +412,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress ne scalar eaddress,address true', async function () {
@@ -427,7 +427,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress ne scalar address,eaddress false', async function () {
@@ -442,7 +442,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('eaddress ne scalar address,eaddress true', async function () {
@@ -457,7 +457,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint8 casting works with true', async function () {
@@ -468,7 +468,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 1n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint8 casting works with false', async function () {
@@ -479,7 +479,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint16 casting works with true', async function () {
@@ -490,7 +490,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 1n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint16 casting works with false', async function () {
@@ -501,7 +501,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint32 casting works with true', async function () {
@@ -512,7 +512,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 1n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint32 casting works with false', async function () {
@@ -523,7 +523,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint64 casting works with true', async function () {
@@ -534,7 +534,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 1n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint64 casting works with false', async function () {
@@ -545,7 +545,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint128 casting works with true', async function () {
@@ -556,7 +556,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 1n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint128 casting works with false', async function () {
@@ -567,7 +567,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint256 casting works with true', async function () {
@@ -578,7 +578,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 1n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool to euint256 casting works with false', async function () {
@@ -589,7 +589,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('euint128 to euint8 casting works', async function () {
@@ -600,7 +600,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: 224n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool not for false is true', async function () {
@@ -611,7 +611,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool not for true is false', async function () {
@@ -622,7 +622,7 @@ describe('FHEVM manual operations', function () {
     const expectedRes = {
       [handle]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool and', async function () {
@@ -649,7 +649,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: false,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool or', async function () {
@@ -676,7 +676,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: true,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool xor', async function () {
@@ -703,7 +703,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: true,
       [handle4]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool xor scalarL', async function () {
@@ -730,7 +730,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: true,
       [handle4]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool xor scalarR', async function () {
@@ -757,7 +757,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: true,
       [handle4]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool or scalarL', async function () {
@@ -784,7 +784,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: true,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool or scalarR', async function () {
@@ -811,7 +811,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: true,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool and scalarL', async function () {
@@ -838,7 +838,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: false,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool and scalarR', async function () {
@@ -865,7 +865,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: false,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool ne ebool', async function () {
@@ -888,7 +888,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: true,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool ne ebool - ScalarL', async function () {
@@ -911,7 +911,7 @@ describe('FHEVM manual operations', function () {
       [handle3]: false,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('ebool ne ebool - ScalarR', async function () {
@@ -934,6 +934,6 @@ describe('FHEVM manual operations', function () {
       [handle3]: false,
       [handle4]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 });
