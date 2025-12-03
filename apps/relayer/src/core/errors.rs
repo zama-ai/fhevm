@@ -26,17 +26,25 @@ pub enum EventProcessingError {
     #[error("Request reverted: {0:?}")]
     RequestReverted(Box<FhevmError>),
 
+    #[error("Failed to decode event {event_type}: {reason}")]
+    EventDecodingFailed { event_type: String, reason: String },
 
-    #[error("Handler failed: {0}")]
-    HandlerError(String),
+    #[error("SQL operation '{operation}' failed: {reason}")]
+    SqlOperationFailed { operation: String, reason: String },
 
+    #[error("Failed to aggregate decryption shares: {0}")]
+    ShareAggregationFailed(String),
 
     #[error("Transaction failed: {0}")]
     TransactionError(String),
 
     #[error("Configuration error: {0}")]
     ConfigError(#[from] AppConfigError),
+    #[error("Contract call failed: {0}")]
+    ContractCallFailed(String),
 
+    #[error("Validation failed for {field}: {reason}")]
+    ValidationFailed { field: String, reason: String },
 
 
 
@@ -55,7 +63,7 @@ impl From<ReadinessCheckError> for EventProcessingError {
         match e {
             ReadinessCheckError::Timeout => EventProcessingError::ReadinessCheckFailed,
             ReadinessCheckError::ContractError(err) => {
-                EventProcessingError::HandlerError(err.to_string())
+                EventProcessingError::ContractCallFailed(err.to_string())
             }
         }
     }

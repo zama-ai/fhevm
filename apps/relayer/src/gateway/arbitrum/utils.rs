@@ -10,7 +10,10 @@ pub fn extract_event_signature(log: &Log) -> Result<&FixedBytes<32>, EventProces
         .data
         .topics()
         .first()
-        .ok_or(EventProcessingError::MissingTopic)
+        .ok_or(EventProcessingError::ValidationFailed {
+            field: "log_topics".to_string(),
+            reason: "event signature topic missing".to_string(),
+        })
 }
 
 /// Parse a private key string, handling 0x prefix

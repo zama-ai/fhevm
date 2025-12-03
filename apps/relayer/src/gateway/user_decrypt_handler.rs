@@ -103,7 +103,7 @@ impl GatewayHandler {
             }
             Err(ReadinessCheckError::ContractError(err)) => {
                 error!("User readiness check contract error: {}", err);
-                Err(EventProcessingError::HandlerError(err.to_string()))
+                Err(EventProcessingError::ContractCallFailed(err.to_string()))
             }
         }
     }
@@ -313,9 +313,10 @@ impl GatewayHandler {
                         );
                         self.notify_failed(
                             event,
-                            EventProcessingError::HandlerError(
-                                "User decrypt request timed out (response timed out)".to_string(),
-                            ),
+                            EventProcessingError::ValidationFailed {
+                                field: "request_status".to_string(),
+                                reason: "request timed out waiting for response".to_string(),
+                            },
                         )
                         .await;
                     }
@@ -327,9 +328,10 @@ impl GatewayHandler {
                         );
                         self.notify_failed(
                             event,
-                            EventProcessingError::HandlerError(
-                                "Unexpected state of requests".to_string(),
-                            ),
+                            EventProcessingError::ValidationFailed {
+                                field: "request_status".to_string(),
+                                reason: "unexpected request state".to_string(),
+                            },
                         )
                         .await;
                     }
@@ -371,8 +373,8 @@ impl GatewayHandler {
             }
             self.notify_failed(
                 event,
-                EventProcessingError::HandlerError(
-                    "Number of shares not matching count".to_string(),
+                EventProcessingError::ShareAggregationFailed(
+                    "number of shares does not match expected count".to_string(),
                 ),
             )
             .await;
@@ -420,8 +422,8 @@ impl GatewayHandler {
                 );
                 self.notify_failed(
                     event,
-                    EventProcessingError::HandlerError(format!(
-                        "Failed to decode share data: {}",
+                    EventProcessingError::ShareAggregationFailed(format!(
+                        "failed to decode hex data in shares: {}",
                         hex_error
                     )),
                 )

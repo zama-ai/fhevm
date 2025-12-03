@@ -82,7 +82,7 @@ impl GatewayHandler {
             }
             Err(ReadinessCheckError::ContractError(err)) => {
                 error!("Readiness check contract error: {}", err);
-                Err(EventProcessingError::HandlerError(err.to_string()))
+                Err(EventProcessingError::ContractCallFailed(err.to_string()))
             }
         }
     }
@@ -258,9 +258,11 @@ impl GatewayHandler {
                                     // Forward simple message to HTTP handler for 500
                                     self.notify_failed(
                                         event,
-                                        EventProcessingError::HandlerError(
-                                            "Failed SQL operation".to_string(),
-                                        ),
+                                        EventProcessingError::SqlOperationFailed {
+                                            operation: "public_decrypt.complete_req_with_res"
+                                                .to_string(),
+                                            reason: e.to_string(),
+                                        },
                                     )
                                     .await;
                                     return;

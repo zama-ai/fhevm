@@ -133,21 +133,20 @@ impl TransactionHelper {
                             return Ok(gw_reference_id);
                         }
                         Err(e) => {
-                            return Err(EventProcessingError::HandlerError(format!(
-                                "Failed to decode {} event: {}",
-                                T::SIGNATURE,
-                                e
-                            )));
+                            return Err(EventProcessingError::EventDecodingFailed {
+                                event_type: T::SIGNATURE.to_string(),
+                                reason: e.to_string(),
+                            });
                         }
                     }
                 }
             }
         }
 
-        Err(EventProcessingError::HandlerError(format!(
-            "{} event not found in transaction logs",
-            T::SIGNATURE
-        )))
+        Err(EventProcessingError::ValidationFailed {
+            field: "transaction_logs".to_string(),
+            reason: format!("{} event not found", T::SIGNATURE),
+        })
     }
 }
 

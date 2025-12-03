@@ -71,9 +71,10 @@ impl InputProofGatewayHandler {
                         return self
                             .notify_failed(
                                 event,
-                                EventProcessingError::HandlerError(
-                                    "job_id is not uuid".to_string(),
-                                ),
+                                EventProcessingError::ValidationFailed {
+                                    field: "job_id".to_string(),
+                                    reason: "not a valid UUID".to_string(),
+                                },
                             )
                             .await;
                     }
@@ -115,7 +116,10 @@ impl InputProofGatewayHandler {
                 );
                 self.notify_failed(
                     event,
-                    EventProcessingError::HandlerError("job_id is not uuid".to_string()),
+                    EventProcessingError::ValidationFailed {
+                        field: "job_id".to_string(),
+                        reason: "not a valid UUID".to_string(),
+                    },
                 )
                 .await;
                 return;
@@ -231,9 +235,10 @@ impl InputProofGatewayHandler {
                         );
                         self.notify_failed(
                             event,
-                            EventProcessingError::HandlerError(
-                                "Decryption ID too large".to_string(),
-                            ),
+                            EventProcessingError::ValidationFailed {
+                                field: "zkproof_id".to_string(),
+                                reason: "value too large for i64".to_string(),
+                            },
                         )
                         .await;
                         return;

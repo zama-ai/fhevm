@@ -41,7 +41,10 @@ pub mod sql_errors {
         let error_event =
             event.derive_next_event(crate::core::event::RelayerEventData::UserDecrypt(
                 crate::core::event::UserDecryptEventData::Failed {
-                    error: EventProcessingError::HandlerError("Failed SQL operation".to_string()),
+                    error: EventProcessingError::SqlOperationFailed {
+                        operation: operation.to_string(),
+                        reason: sql_error.to_string(),
+                    },
                 },
             ));
 
@@ -86,7 +89,10 @@ pub mod sql_errors {
         let error_event =
             event.derive_next_event(crate::core::event::RelayerEventData::PublicDecrypt(
                 crate::core::event::PublicDecryptEventData::Failed {
-                    error: EventProcessingError::HandlerError("Failed SQL operation".to_string()),
+                    error: EventProcessingError::SqlOperationFailed {
+                        operation: operation.to_string(),
+                        reason: sql_error.to_string(),
+                    },
                 },
             ));
 
@@ -115,7 +121,10 @@ pub mod sql_errors {
         let error_event =
             event.derive_next_event(crate::core::event::RelayerEventData::InputProof(
                 crate::core::event::InputProofEventData::Failed {
-                    error: EventProcessingError::HandlerError("Failed SQL operation".to_string()),
+                    error: EventProcessingError::SqlOperationFailed {
+                        operation: operation.to_string(),
+                        reason: sql_error.to_string(),
+                    },
                 },
             ));
 
