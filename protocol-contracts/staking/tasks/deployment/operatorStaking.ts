@@ -1,6 +1,5 @@
 import { getProtocolStakingCoproProxyAddress, getProtocolStakingKMSProxyAddress } from '../utils/getAddresses';
 import { getRequiredEnvVar } from '../utils/loadVariables';
-import { wait } from '../utils/time';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
@@ -131,11 +130,6 @@ task('task:deployAllOperatorStakingCoproContracts').setAction(async function (_,
 
   for (let i = 0; i < numOperatorStakingCopro; i++) {
     await hre.run('task:deployOperatorStakingCopro', { index: i });
-
-    if (i < numOperatorStakingCopro - 1) {
-      // Wait for 5 seconds before deploying the next operator staking contract in order to avoid underpriced transaction issues
-      await wait(5, hre.network.name);
-    }
   }
 
   console.log('All coprocessor operator staking contracts deployed');
@@ -152,11 +146,6 @@ task('task:deployAllOperatorStakingKMSContracts').setAction(async function (_, h
 
   for (let i = 0; i < numOperatorStakingKms; i++) {
     await hre.run('task:deployOperatorStakingKMS', { index: i });
-
-    if (i < numOperatorStakingKms - 1) {
-      // Wait for 5 seconds before deploying the next operator staking contract in order to avoid underpriced transaction issues
-      await wait(5, hre.network.name);
-    }
   }
 
   console.log('All KMS operator staking contracts deployed');
@@ -169,8 +158,6 @@ task('task:deployAllOperatorStakingContracts').setAction(async function (_, hre)
   console.log('Deploying operator staking contracts...');
 
   await hre.run('task:deployAllOperatorStakingCoproContracts');
-
-  await wait(5, hre.network.name);
 
   await hre.run('task:deployAllOperatorStakingKMSContracts');
 

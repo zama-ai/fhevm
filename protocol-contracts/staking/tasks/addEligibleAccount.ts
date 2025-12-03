@@ -5,7 +5,6 @@ import {
   getProtocolStakingKMSProxyAddress,
   getAllOperatorStakingKMSAddresses,
 } from './utils/getAddresses';
-import { wait } from './utils/time';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
@@ -43,7 +42,8 @@ task('task:addOperatorAsEligibleInProtocolStaking')
     );
 
     // Add the operator as eligible
-    await protocolStaking.addEligibleAccount(operatorStakingAddress);
+    const tx = await protocolStaking.addEligibleAccount(operatorStakingAddress);
+    await tx.wait();
 
     console.log(
       [
@@ -72,11 +72,6 @@ task('task:addAllCoproOperatorsAsEligible').setAction(async function (_, hre: Ha
       operatorStakingAddress,
       protocolStakingProxyAddress: protocolStakingCoproProxyAddress,
     });
-
-    if (i < operatorStakingAddresses.length - 1) {
-      // Wait for 5 seconds before adding the next operator as eligible in order to avoid underpriced transaction issues
-      await wait(5, hre.network.name);
-    }
   }
 });
 
@@ -94,11 +89,6 @@ task('task:addAllKMSOperatorsAsEligible').setAction(async function (_, hre: Hard
       operatorStakingAddress,
       protocolStakingProxyAddress: protocolStakingKmsProxyAddress,
     });
-
-    if (i < operatorStakingAddresses.length - 1) {
-      // Wait for 5 seconds before adding the next operator as eligible in order to avoid underpriced transaction issues
-      await wait(5, hre.network.name);
-    }
   }
 });
 
@@ -109,8 +99,6 @@ task('task:addAllOperatorsAsEligible').setAction(async function (_, hre: Hardhat
   console.log('Adding all operators as eligible in the protocol staking contract...\n');
 
   await hre.run('task:addAllCoproOperatorsAsEligible');
-
-  await wait(5, hre.network.name);
 
   await hre.run('task:addAllKMSOperatorsAsEligible');
 

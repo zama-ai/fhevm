@@ -1,7 +1,6 @@
 import { OPERATOR_STAKING_CONTRACT_NAME, OPERATOR_REWARDER_CONTRACT_NAME } from '../deployment';
 import { getAllOperatorStakingAddresses, getAllOperatorRewarderAddresses } from '../utils/getAddresses';
 import { getRequiredEnvVar } from '../utils/loadVariables';
-import { wait } from '../utils/time';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
@@ -33,7 +32,8 @@ task('task:transferOperatorStakingOwnershipToDAO')
     const DAO_ADDRESS = getRequiredEnvVar('DAO_ADDRESS');
 
     // Transfer the operator staking contract's ownership to the DAO
-    await operatorStaking.transferOwnership(DAO_ADDRESS);
+    const tx = await operatorStaking.transferOwnership(DAO_ADDRESS);
+    await tx.wait();
 
     console.log(
       [
@@ -75,7 +75,8 @@ task('task:transferOperatorRewarderOwnershipToDAO')
     const DAO_ADDRESS = getRequiredEnvVar('DAO_ADDRESS');
 
     // Transfer the operator rewarder contract's ownership to the DAO
-    await operatorRewarder.transferOwnership(DAO_ADDRESS);
+    const tx = await operatorRewarder.transferOwnership(DAO_ADDRESS);
+    await tx.wait();
 
     console.log(
       [
@@ -105,11 +106,6 @@ task('task:transferAllOperatorStakingRewarderOwnershipsToDAO').setAction(async f
     await hre.run('task:transferOperatorStakingOwnershipToDAO', {
       operatorStakingAddress: operatorStakingAddresses[i],
     });
-
-    if (i < operatorStakingAddresses.length - 1) {
-      // Wait for 5 seconds before transferring the next operator staking contract's ownership in order to avoid underpriced transaction issues
-      await wait(5, hre.network.name);
-    }
   }
 
   console.log('Transferring ownership of all operator rewarder contracts to the DAO...\n');
@@ -121,11 +117,6 @@ task('task:transferAllOperatorStakingRewarderOwnershipsToDAO').setAction(async f
     await hre.run('task:transferOperatorRewarderOwnershipToDAO', {
       operatorRewarderAddress: operatorRewarderAddresses[i],
     });
-
-    if (i < operatorRewarderAddresses.length - 1) {
-      // Wait for 5 seconds before transferring the next operator rewarder contract's ownership in order to avoid underpriced transaction issues
-      await wait(5, hre.network.name);
-    }
   }
 
   console.log('Ownership of all operator staking and rewarder contracts have been transferred to the DAO');

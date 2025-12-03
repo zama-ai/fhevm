@@ -1,5 +1,4 @@
 import { getRequiredEnvVar } from '../utils/loadVariables';
-import { wait } from '../utils/time';
 import { task } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
@@ -103,8 +102,6 @@ task('task:deployAllProtocolStakingContracts').setAction(async function (_, hre)
   console.log('Deploying protocol staking contracts...');
 
   await hre.run('task:deployProtocolStakingCopro');
-
-  await wait(5, hre.network.name);
 
   await hre.run('task:deployProtocolStakingKMS');
 

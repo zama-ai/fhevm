@@ -1,7 +1,6 @@
 import { PROTOCOL_STAKING_CONTRACT_NAME } from '../deployment';
 import { getProtocolStakingCoproProxyAddress, getProtocolStakingKMSProxyAddress } from '../utils/getAddresses';
 import { getRequiredEnvVar } from '../utils/loadVariables';
-import { wait } from '../utils/time';
 import { task } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
@@ -24,7 +23,8 @@ async function transferGovernorRole(protocolStakingProxyAddress: string, hre: Ha
   const DAO_ADDRESS = getRequiredEnvVar('DAO_ADDRESS');
 
   // Begin the transfer of the governor role to the DAO
-  await protocolStaking.beginDefaultAdminTransfer(DAO_ADDRESS);
+  const tx = await protocolStaking.beginDefaultAdminTransfer(DAO_ADDRESS);
+  await tx.wait();
 
   console.log(
     [
@@ -53,8 +53,6 @@ task('task:beginTransferProtocolStakingGovernorRolesToDAO').setAction(async func
   const protocolStakingCoproProxyAddress = await getProtocolStakingCoproProxyAddress(hre);
 
   await transferGovernorRole(protocolStakingCoproProxyAddress, hre);
-
-  await wait(5, hre.network.name);
 
   console.log("Begin a transfer of all KMS protocol staking contracts' governor roles to the DAO...\n");
 

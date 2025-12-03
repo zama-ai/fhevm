@@ -1,7 +1,6 @@
 import { OPERATOR_REWARDER_CONTRACT_NAME } from './deployment';
 import { getAllOperatorRewarderCoproAddresses, getAllOperatorRewarderKMSAddresses } from './utils/getAddresses';
 import { getRequiredEnvVar } from './utils/loadVariables';
-import { wait } from './utils/time';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
@@ -41,7 +40,8 @@ task('task:setOwnerFee')
     );
 
     // Set the owner fee
-    await operatorRewarder.setOwnerFee(ownerFee);
+    const tx = await operatorRewarder.setOwnerFee(ownerFee);
+    await tx.wait();
 
     console.log(
       [
@@ -79,11 +79,6 @@ task('task:setAllCoprocessorOwnerFees').setAction(async function (_, hre: Hardha
     // Get the owner fee for the operator rewarder contracts
     const ownerFee = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_OWNER_FEE_${i}`)));
     await hre.run('task:setOwnerFee', { ownerFee, operatorRewarderAddress: operatorRewarderAddresses[i] });
-
-    if (i < operatorRewarderAddresses.length - 1) {
-      // Wait for 5 seconds before setting the next owner fee in order to avoid underpriced transaction issues
-      await wait(5, hre.network.name);
-    }
   }
 });
 
@@ -111,11 +106,6 @@ task('task:setAllKMSOwnerFees').setAction(async function (_, hre: HardhatRuntime
     // Get the owner fee for the operator rewarder contracts
     const ownerFee = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_OWNER_FEE_${i}`)));
     await hre.run('task:setOwnerFee', { ownerFee, operatorRewarderAddress: operatorRewarderAddresses[i] });
-
-    if (i < operatorRewarderAddresses.length - 1) {
-      // Wait for 5 seconds before setting the next owner fee in order to avoid underpriced transaction issues
-      await wait(5, hre.network.name);
-    }
   }
 });
 
@@ -127,8 +117,6 @@ task('task:setAllOwnerFees').setAction(async function (_, hre: HardhatRuntimeEnv
   console.log('Setting owner fee for all operator rewarder contracts...\n');
 
   await hre.run('task:setAllCoprocessorOwnerFees');
-
-  await wait(5, hre.network.name);
 
   await hre.run('task:setAllKMSOwnerFees');
 

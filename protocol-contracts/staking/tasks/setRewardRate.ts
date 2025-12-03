@@ -1,7 +1,6 @@
 import { PROTOCOL_STAKING_CONTRACT_NAME } from './deployment';
 import { getProtocolStakingCoproProxyAddress, getProtocolStakingKMSProxyAddress } from './utils/getAddresses';
 import { getRequiredEnvVar } from './utils/loadVariables';
-import { wait } from './utils/time';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
@@ -35,7 +34,8 @@ task('task:setRewardRate')
     );
 
     // Set the reward rate
-    await protocolStaking.setRewardRate(rewardRate);
+    const tx = await protocolStaking.setRewardRate(rewardRate);
+    await tx.wait();
 
     console.log(
       [
@@ -84,8 +84,6 @@ task('task:setAllRewardRates').setAction(async function (_, hre: HardhatRuntimeE
   console.log('Setting reward rate for all protocol staking contracts...\n');
 
   await hre.run('task:setCoprocessorRewardRate');
-
-  await wait(5, hre.network.name);
 
   await hre.run('task:setKMSRewardRate');
 
