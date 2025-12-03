@@ -223,7 +223,7 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         start_at_block: None,
         end_at_block: None,
         only_catchup_loop: false,
-        catchup_sleep_secs: 960,
+        catchup_loop_sleep_secs: 60,
         catchup_margin: 5,
         catchup_paging: 3,
         log_level: Level::INFO,
@@ -283,7 +283,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         service_name: String::new(),
         catchup_finalization_in_blocks: 20,
         only_catchup_loop: true,
-        catchup_sleep_secs: 60,
+        catchup_loop_sleep_secs: 60,
     };
 
     let result = main(args).await;
@@ -630,7 +630,7 @@ async fn test_catchup_only_absolute_end() -> Result<(), anyhow::Error> {
     let outcome = run_catchup_only_scenario(nb_event_per_wallet, 15, |args| {
         args.start_at_block = Some(-50);
         args.end_at_block = Some(50);
-        args.catchup_sleep_secs = 5;
+        args.catchup_loop_sleep_secs = 5;
         args.catchup_paging = 10;
     })
     .await?;
@@ -661,7 +661,7 @@ async fn test_catchup_only_relative_end() -> Result<(), anyhow::Error> {
     let outcome = run_catchup_only_scenario(nb_event_per_wallet, 15, |args| {
         args.start_at_block = Some(-50); // 50 blocks from current
         args.end_at_block = Some(-5); // 5 blocks from current (more recent)
-        args.catchup_sleep_secs = 5; // short sleep for testing
+        args.catchup_loop_sleep_secs = 5; // short sleep for testing
         args.catchup_paging = 10;
     })
     .await?;

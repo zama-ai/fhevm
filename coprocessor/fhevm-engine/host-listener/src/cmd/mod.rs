@@ -135,9 +135,10 @@ pub struct Args {
     #[arg(
         long,
         default_value_t = 60u64,
-        help = "Sleep duration in seconds between catchup iterations (only with --only-catchup-loop)"
+        requires = "only_catchup_loop",
+        help = "Sleep duration in seconds between catchup loop iterations"
     )]
-    pub catchup_sleep_secs: u64,
+    pub catchup_loop_sleep_secs: u64,
 }
 
 // TODO: to merge with Levent works
@@ -927,13 +928,13 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             }
 
             let blocks_during_sleep =
-                args.catchup_sleep_secs / args.initial_block_time;
+                args.catchup_loop_sleep_secs / args.initial_block_time;
             let lookback_blocks = (-start) as u64;
 
             if blocks_during_sleep > lookback_blocks {
                 return Err(anyhow!(
-                    "--catchup-sleep-secs {} too large for --start-at-block {}",
-                    args.catchup_sleep_secs,
+                    "--catchup-loop-sleep-secs {} too large for --start-at-block {}",
+                    args.catchup_loop_sleep_secs,
                     start
                 ));
             }
@@ -1055,10 +1056,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         }
 
         info!(
-            sleep_secs = args.catchup_sleep_secs,
+            sleep_secs = args.catchup_loop_sleep_secs,
             "Catchup loop iteration complete, sleeping"
         );
-        tokio::time::sleep(Duration::from_secs(args.catchup_sleep_secs)).await;
+        tokio::time::sleep(Duration::from_secs(args.catchup_loop_sleep_secs))
+            .await;
 
         // Reset state for next iteration
         log_iter.reset_for_catchup_loop();
