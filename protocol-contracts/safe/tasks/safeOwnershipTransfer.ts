@@ -209,3 +209,54 @@ task("task:removeDeployerFromSafeOwnersAndUpdateThreshold").setAction(
     await safeKitDeployer.executeTransaction(batch);
   },
 );
+
+// Just update the threshold, use this task instead of previous one if you want deployer to stay as an owner
+// Example usage:
+// npx hardhat task:updateSafeThreshold
+task("task:updateSafeThreshold").setAction(async function (
+  _,
+  { getNamedAccounts, ethers, network },
+) {
+  // Get the deployer
+  const { deployer } = await getNamedAccounts();
+
+  // Get the Safe proxy and address
+  const { safeProxy, safeProxyAddress } = await getSafeProxyAddress(ethers);
+
+  // Make sure the deployer is an owner of the SafeL2Proxy contract
+  const safeOwners = await safeProxy.getOwners();
+  if (!safeOwners.includes(deployer)) {
+    throw new Error(
+      `Deployer should be an owner of the SafeL2Proxy contract.
+        Current owners: ${safeOwners.join(", ")}, expected: ${deployer}`,
+    );
+  }
+
+  // Make sure the threshold is 1
+  const threshold = await safeProxy.getThreshold();
+  if (threshold !== BigInt(1)) {
+    throw new Error(`Threshold should be 1. Current threshold: ${threshold}`);
+  }
+
+  // Get the SafeKit deployer
+  const safeKitDeployer = await getSafeKitDeployer(
+    deployer,
+    safeProxyAddress,
+    network,
+    ethers,
+  );
+
+  // Get the new threshold
+  const newThreshold = Number(getRequiredEnvVar("SAFE_NEW_THRESHOLD"));
+
+  // Generate the transaction to update the threshold
+  const changeThresholdTx =
+    await safeKitDeployer.createChangeThresholdTx(newThreshold);
+
+  // Create, sign and execute the transaction using the deployer (the Safe's current only owner)
+  const batch = await safeKitDeployer.createTransaction({
+    transactions: [changeThresholdTx.data],
+  });
+  await safeKitDeployer.signTransaction(batch);
+  await safeKitDeployer.executeTransaction(batch);
+});
