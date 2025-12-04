@@ -1,3 +1,5 @@
+![npm version](https://img.shields.io/npm/v/fhevm.svg)
+
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/.gitbook/assets/fhevm-header-dark.png">
