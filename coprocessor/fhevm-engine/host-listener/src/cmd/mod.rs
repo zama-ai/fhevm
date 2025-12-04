@@ -808,7 +808,10 @@ impl InfiniteLogIter {
                         "End at block reached: {:?} (from {})",
                         self.absolute_end_at_block, n
                     ),
-                    _ => eprintln!("End at block reached: {:?}", self.absolute_end_at_block),
+                    _ => eprintln!(
+                        "End at block reached: {:?}",
+                        self.absolute_end_at_block
+                    ),
                 }
                 warn!("Stopping due to --end-at-block");
                 return None;
