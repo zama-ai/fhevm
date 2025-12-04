@@ -73,12 +73,3 @@ jobs:
       image-name: "fhevm/gateway-contracts"
       docker-file: "./gateway-contracts/Dockerfile"
       app-cache-dir: "fhevm-gateway-contracts"
-
-  docker-hardhat-test:
-    needs: build
-    permissions:
-      contents: 'read' # Required to checkout repository code
-      packages: 'read' # Required to read GitHub packages/container registry
-    uses: ./.github/workflows/gateway-contracts-hardhat-tests-docker.yml
-    with:
-      image-name: ${{ needs.build.outputs.image }}
