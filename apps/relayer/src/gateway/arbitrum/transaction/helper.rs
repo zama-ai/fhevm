@@ -29,10 +29,6 @@ pub enum TransactionType {
     UserDecryptRequest,
     InputRequest,
     PublicDecryptRequest,
-    UserDecryptResponse,
-    InputResponse,
-    PublicDecryptResponse,
-    PublicDecryptCallback,
 }
 
 impl TransactionType {
@@ -41,14 +37,6 @@ impl TransactionType {
             TransactionType::UserDecryptRequest => metrics::TransactionType::UserDecryptRequest,
             TransactionType::InputRequest => metrics::TransactionType::InputRequest,
             TransactionType::PublicDecryptRequest => metrics::TransactionType::PublicDecryptRequest,
-            TransactionType::UserDecryptResponse => metrics::TransactionType::UserDecryptResponse,
-            TransactionType::InputResponse => metrics::TransactionType::InputResponse,
-            TransactionType::PublicDecryptResponse => {
-                metrics::TransactionType::PublicDecryptResponse
-            }
-            TransactionType::PublicDecryptCallback => {
-                metrics::TransactionType::PublicDecryptCallback(chain_id)
-            }
         }
     }
 }
@@ -59,10 +47,6 @@ impl fmt::Display for TransactionType {
             TransactionType::InputRequest => write!(f, "input_request"),
             TransactionType::UserDecryptRequest => write!(f, "user_decrypt_request"),
             TransactionType::PublicDecryptRequest => write!(f, "public_decrypt_request"),
-            TransactionType::InputResponse => write!(f, "input_response"),
-            TransactionType::UserDecryptResponse => write!(f, "user_decrypt_response"),
-            TransactionType::PublicDecryptResponse => write!(f, "public_decrypt_response"),
-            TransactionType::PublicDecryptCallback => write!(f, "public_decrypt_callback"),
         }
     }
 }

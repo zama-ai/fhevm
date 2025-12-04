@@ -6,8 +6,11 @@ use prometheus::{
 };
 use std::fmt;
 
+// 1.TODO: Track latency of the transaction sending (histogram buckets with 100ms ... up to 1000ms, 1200, ... 1500ms, 2000ms..)
+// 2. track number of success resp, track nimber of responses (failed) and label them (Counters).
 #[derive(Debug)]
 struct TransactionMetrics {
+    // change pending name to in-flight..
     pending_transactions_gauge: GaugeVec,
     transactions_counter: CounterVec,
 }
@@ -41,10 +44,6 @@ pub enum TransactionType {
     UserDecryptRequest,
     InputRequest,
     PublicDecryptRequest,
-    UserDecryptResponse,
-    InputResponse,
-    PublicDecryptResponse,
-    PublicDecryptCallback(u64),
 }
 
 impl fmt::Display for TransactionType {
@@ -53,12 +52,6 @@ impl fmt::Display for TransactionType {
             TransactionType::InputRequest => write!(f, "input_request"),
             TransactionType::UserDecryptRequest => write!(f, "user_decrypt_request"),
             TransactionType::PublicDecryptRequest => write!(f, "public_decrypt_request"),
-            TransactionType::InputResponse => write!(f, "input_response"),
-            TransactionType::UserDecryptResponse => write!(f, "user_decrypt_response"),
-            TransactionType::PublicDecryptResponse => write!(f, "public_decrypt_response"),
-            TransactionType::PublicDecryptCallback(chain_id) => {
-                write!(f, "public_decrypt_callback_{chain_id}")
-            }
         }
     }
 }

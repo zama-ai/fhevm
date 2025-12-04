@@ -90,6 +90,7 @@ pub enum HttpEndpoint {
     Unknown,
 }
 
+// TODO: Add a tag with version. option v1 or v2, to support new routes.
 impl HttpEndpoint {
     pub fn as_str(&self) -> &'static str {
         match self {

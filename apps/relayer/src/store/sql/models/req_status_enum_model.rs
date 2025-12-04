@@ -15,3 +15,30 @@ pub enum ReqStatus {
     TimedOut,
     Failure,
 }
+
+impl ReqStatus {
+    /// Helper to get all variants for iterating over metrics
+    pub fn all_statuses() -> &'static [ReqStatus] {
+        &[
+            ReqStatus::Queued,
+            ReqStatus::Processing,
+            ReqStatus::ReceiptReceived,
+            ReqStatus::Completed,
+            ReqStatus::TimedOut,
+            ReqStatus::Failure,
+        ]
+    }
+
+    /// Returns the string representation of the status (snake_case).
+    /// Used for Prometheus labels and logging.  
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ReqStatus::Queued => "queued",
+            ReqStatus::Processing => "processing",
+            ReqStatus::ReceiptReceived => "receipt_received",
+            ReqStatus::Completed => "completed",
+            ReqStatus::TimedOut => "timed_out",
+            ReqStatus::Failure => "failure",
+        }
+    }
+}

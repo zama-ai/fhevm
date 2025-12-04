@@ -1,10 +1,8 @@
-pub mod blockchain;
-pub mod cache;
 pub mod http;
 pub mod server;
+pub mod status;
 pub mod transaction;
 
-pub use blockchain::{gateway, init_blockchain_metrics};
-pub use cache::*;
 pub use http::*;
+pub use status::*;
 pub use transaction::*;

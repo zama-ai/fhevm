@@ -169,9 +169,7 @@ fn ensure_global_init(settings: &Settings) -> eyre::Result<&'static Registry> {
             .expect("Failed to install AWS-LC crypto provider");
 
         let registry = Registry::new();
-        metrics::init_blockchain_metrics(&registry);
         metrics::init_http_metrics(&registry, &settings.http.metrics);
-        metrics::init_cache_metrics(&registry);
         metrics::init_transaction_metrics(&registry);
 
         registry
