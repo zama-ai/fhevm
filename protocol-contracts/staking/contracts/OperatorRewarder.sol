@@ -186,6 +186,11 @@ contract OperatorRewarder is Ownable {
         return SafeCast.toUint256(SignedMath.max(0, allocation - _rewardsPaid[account]));
     }
 
+    function historicalReward() public view virtual returns (uint256) {
+        uint256 totalAssetsPlusPaidRewards = _totalAssetsPlusPaidRewards();
+        return totalAssetsPlusPaidRewards - _unpaidOwnerFee(totalAssetsPlusPaidRewards);
+    }
+
     /**
      * @notice Returns unpaid owner fee.
      * @return Amount of unpaid owner fee.
@@ -209,11 +214,6 @@ contract OperatorRewarder is Ownable {
             _totalRewardsPaid;
     }
 
-    function _historicalReward() internal view returns (uint256) {
-        uint256 totalAssetsPlusPaidRewards = _totalAssetsPlusPaidRewards();
-        return totalAssetsPlusPaidRewards - _unpaidOwnerFee(totalAssetsPlusPaidRewards);
-    }
-
     function _unpaidOwnerFee(uint256 totalAssetsPlusPaidRewards) internal view returns (uint256) {
         uint256 totalAssetsPlusPaidRewardsDelta = totalAssetsPlusPaidRewards - _lastClaimTotalAssetsPlusPaidRewards;
         return (totalAssetsPlusPaidRewardsDelta * ownerFeeBasisPoints()) / 10_000;
@@ -222,6 +222,6 @@ contract OperatorRewarder is Ownable {
     /// @dev Compute total allocation based on number of shares and total shares. Must take paid rewards into account after.
     function _allocation(uint256 share, uint256 total) private view returns (uint256) {
         return
-            SafeCast.toUint256(SafeCast.toInt256(_historicalReward()) + _totalVirtualRewardsPaid).mulDiv(share, total);
+            SafeCast.toUint256(SafeCast.toInt256(historicalReward()) + _totalVirtualRewardsPaid).mulDiv(share, total);
     }
 }
