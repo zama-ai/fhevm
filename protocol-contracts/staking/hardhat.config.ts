@@ -27,6 +27,7 @@ import 'solidity-coverage';
 // To make use of automatic environment setup:
 // - Duplicate .env.example file and name it .env
 // - Fill in the environment variables
+dotenv.config();
 
 // Set your preferred authentication method
 //
@@ -108,15 +109,6 @@ const config: HardhatUserConfig = {
     },
     alice: {
       default: 1, // wallet address of index[1], of the mnemonic in .env
-    },
-    bob: {
-      default: 2, // wallet address of index[2], of the mnemonic in .env
-    },
-    charlie: {
-      default: 3, // wallet address of index[3], of the mnemonic in .env
-    },
-    dave: {
-      default: 4, // wallet address of index[4], of the mnemonic in .env
     },
   },
   gasReporter: {
