@@ -32,7 +32,7 @@ pub enum TransactionType {
 }
 
 impl TransactionType {
-    fn as_metrics_type(&self, chain_id: u64) -> metrics::TransactionType {
+    fn as_metrics_type(&self) -> metrics::TransactionType {
         match self {
             TransactionType::UserDecryptRequest => metrics::TransactionType::UserDecryptRequest,
             TransactionType::InputRequest => metrics::TransactionType::InputRequest,
@@ -79,7 +79,7 @@ impl TransactionHelper {
             "Preparing transaction"
         );
 
-        let tx_metric_type = transaction_type.as_metrics_type(self.chain_id);
+        let tx_metric_type = transaction_type.as_metrics_type();
         metrics::transaction::transaction_broadcast(tx_metric_type);
 
         let receipt = self

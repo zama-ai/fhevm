@@ -1,4 +1,5 @@
 use crate::core::event::{InputProofRequest, InputProofResponse};
+use crate::metrics;
 use crate::store::sql::models::input_proof_req_model::InputProofResponseModel;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::{
@@ -57,6 +58,8 @@ impl InputProofRepository {
         .fetch_one(&self.pool.get_pool())
         .await?;
 
+        metrics::increment_req_status_count(metrics::Table::InputProofReq, ReqStatus::Processing);
+
         Ok(result)
     }
 
@@ -71,23 +74,41 @@ impl InputProofRepository {
     ) -> SqlResult<u64> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
-        let result = sqlx::query!(
+        let record = sqlx::query!(
             r#"
-            UPDATE input_proof_req
-            SET
-                req_status = 'receipt_received'::req_status,
-                gw_req_tx_hash = $1,
-                gw_reference_id = $2
-            WHERE int_request_id = $3
+            WITH old AS (
+                SELECT req_status FROM input_proof_req WHERE int_request_id = $3
+            ),
+            upd AS (
+                UPDATE input_proof_req
+                SET
+                    req_status = 'receipt_received'::req_status,
+                    gw_req_tx_hash = $1,
+                    gw_reference_id = $2
+                WHERE int_request_id = $3
+                RETURNING req_status -- dummy return to ensure CTE execution
+            )
+            SELECT old.req_status as "old_status!: ReqStatus" 
+            FROM old, upd
             "#,
             gw_req_tx_hash,
             gw_ref_id,
             int_request_id
         )
-        .execute(&self.pool.get_pool())
+        .fetch_optional(&self.pool.get_pool())
         .await?;
 
-        Ok(result.rows_affected())
+        if let Some(r) = record {
+            // Update Metrics: Decrement Old, Increment New
+            metrics::decrement_req_status_count(metrics::Table::InputProofReq, r.old_status);
+            metrics::increment_req_status_count(
+                metrics::Table::InputProofReq,
+                ReqStatus::ReceiptReceived,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
     }
 
     // update status to failure and err_reason, by 'int_request_id'
@@ -98,21 +119,35 @@ impl InputProofRepository {
         int_request_id: Uuid,
         err_reason: &str,
     ) -> SqlResult<u64> {
-        let result = sqlx::query!(
+        let record = sqlx::query!(
             r#"
-            UPDATE input_proof_req
-            SET
-                req_status = 'failure'::req_status,
-                err_reason = $1
-            WHERE int_request_id = $2
+            WITH old AS (
+                SELECT req_status FROM input_proof_req WHERE int_request_id = $2
+            ),
+            upd AS (
+                UPDATE input_proof_req
+                SET
+                    req_status = 'failure'::req_status,
+                    err_reason = $1
+                WHERE int_request_id = $2
+                RETURNING req_status
+            )
+            SELECT old.req_status as "old_status!: ReqStatus"
+            FROM old, upd
             "#,
             err_reason,
             int_request_id
         )
-        .execute(&self.pool.get_pool())
+        .fetch_optional(&self.pool.get_pool())
         .await?;
 
-        Ok(result.rows_affected())
+        if let Some(r) = record {
+            metrics::decrement_req_status_count(metrics::Table::InputProofReq, r.old_status);
+            metrics::increment_req_status_count(metrics::Table::InputProofReq, ReqStatus::Failure);
+            Ok(1)
+        } else {
+            Ok(0)
+        }
     }
 
     // LISTENER
@@ -135,16 +170,25 @@ impl InputProofRepository {
                 format!("Failed to serialize: {}", e),
             )
         })?;
-        let result = sqlx::query_scalar!(
+        let record = sqlx::query!(
             r#"
-            UPDATE input_proof_req
-            SET
-                res = $1,
-                req_status = 'completed'::req_status,
-                gw_response_tx_hash = $2,
-                accepted = true
-            WHERE gw_reference_id = $3
-            RETURNING int_request_id
+            WITH old AS (
+                SELECT req_status FROM input_proof_req WHERE gw_reference_id = $3
+            ),
+            upd AS (
+                UPDATE input_proof_req
+                SET
+                    res = $1,
+                    req_status = 'completed'::req_status,
+                    gw_response_tx_hash = $2,
+                    accepted = true
+                WHERE gw_reference_id = $3
+                RETURNING int_request_id
+            )
+            SELECT 
+                old.req_status as "old_status!: ReqStatus", 
+                upd.int_request_id as "int_request_id!"
+            FROM old, upd
             "#,
             res,
             gw_response_tx_hash,
@@ -153,7 +197,10 @@ impl InputProofRepository {
         .fetch_one(&self.pool.get_pool())
         .await?;
 
-        Ok(result)
+        metrics::decrement_req_status_count(metrics::Table::InputProofReq, record.old_status);
+        metrics::increment_req_status_count(metrics::Table::InputProofReq, ReqStatus::Completed);
+
+        Ok(record.int_request_id)
     }
 
     // update accepted to false , req_status=completed, gw_response_tx_hash, and res, return int_request_id
@@ -167,16 +214,25 @@ impl InputProofRepository {
     ) -> SqlResult<Uuid> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
-        let result = sqlx::query_scalar!(
+        let record = sqlx::query!(
             r#"
-            UPDATE input_proof_req
-            SET
-                accepted = false,
-                req_status = 'completed'::req_status,
-                gw_response_tx_hash = $1,
-                err_reason = $2
-            WHERE gw_reference_id = $3
-            RETURNING int_request_id
+            WITH old AS (
+                SELECT req_status FROM input_proof_req WHERE gw_reference_id = $3
+            ),
+            upd AS (
+                UPDATE input_proof_req
+                SET
+                    accepted = false,
+                    req_status = 'completed'::req_status,
+                    gw_response_tx_hash = $1,
+                    err_reason = $2
+                WHERE gw_reference_id = $3
+                RETURNING int_request_id
+            )
+            SELECT 
+                old.req_status as "old_status!: ReqStatus",
+                upd.int_request_id as "int_request_id!"
+            FROM old, upd
             "#,
             gw_response_tx_hash,
             rejection_reason,
@@ -185,7 +241,10 @@ impl InputProofRepository {
         .fetch_one(&self.pool.get_pool())
         .await?;
 
-        Ok(result)
+        metrics::decrement_req_status_count(metrics::Table::InputProofReq, record.old_status);
+        metrics::increment_req_status_count(metrics::Table::InputProofReq, ReqStatus::Completed);
+
+        Ok(record.int_request_id)
     }
 
     // GET REQUEST.
