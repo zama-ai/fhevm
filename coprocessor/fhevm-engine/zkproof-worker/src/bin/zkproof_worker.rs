@@ -48,7 +48,7 @@ pub struct Args {
     pub worker_thread_count: u32,
 
     /// Zkproof-worker service name in OTLP traces
-    #[arg(long, default_value = "zkproof-worker")]
+    #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "zkproof-worker")]
     pub service_name: String,
 
     /// Log level for the worker

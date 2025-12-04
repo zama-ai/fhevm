@@ -73,7 +73,7 @@ struct Conf {
     get_logs_block_batch_size: u64,
 
     /// gw-listener service name in OTLP traces
-    #[arg(long, default_value = "gw-listener")]
+    #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "gw-listener")]
     pub service_name: String,
 
     #[arg(long, default_value = None, help = "Can be negative from last processed block", allow_hyphen_values = true)]

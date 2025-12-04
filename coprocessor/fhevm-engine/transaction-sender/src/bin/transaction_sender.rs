@@ -150,7 +150,7 @@ struct Conf {
     graceful_shutdown_timeout: Duration,
 
     /// service name in OTLP traces
-    #[arg(long, default_value = "txn-sender")]
+    #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "txn-sender")]
     pub service_name: String,
 
     /// Prometheus metrics: coprocessor_host_txn_latency_seconds
