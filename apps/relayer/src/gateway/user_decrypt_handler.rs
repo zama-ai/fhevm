@@ -138,49 +138,67 @@ impl GatewayHandler {
         match self.send_to_gateway(decrypt_request.clone()).await {
             Ok((user_decryption_id, tx_hash)) => {
                 info!("User decrypt request sent to gateway for {}", event.job_id);
-
-                // Update status to receipt received (no event dispatching)
-                let job_id_hash = decrypt_request.content_hash();
-                let tx_hash_str = format!("{:?}", tx_hash);
-                if let Err(e) = self
-                    .user_decrypt_repo
-                    .update_status_to_receipt_received_on_tx_success(
-                        &job_id_hash[..],
-                        &tx_hash_str,
-                        user_decryption_id,
-                    )
-                    .await
-                {
-                    sql_errors::user_decrypt_sql_error(
-                        &self.dispatcher,
-                        event,
-                        "user_decrypt.update_status_to_receipt_received_on_tx_success",
-                        &e,
-                        Some(&job_id_hash),
-                    )
+                self.store_request_receipt(event, decrypt_request, user_decryption_id, tx_hash)
                     .await;
-                }
             }
             Err(e) => {
-                // Update database status to failure for transaction errors
-                let job_id_hash = decrypt_request.content_hash();
-                let err_reason = format!("Transaction Failed: {}", e);
-                if let Err(sql_error) = self
-                    .user_decrypt_repo
-                    .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
-                    .await
-                {
-                    error!(
-                        job_id = %event.job_id,
-                        job_id_hash = %hex::encode(job_id_hash),
-                        sql_error = %sql_error,
-                        "Failed to update transaction failure status in database"
-                    );
-                }
-
-                self.notify_failed(event, e).await;
+                self.handle_transaction_failure(event, decrypt_request, e)
+                    .await;
             }
         }
+    }
+
+    async fn store_request_receipt(
+        &self,
+        event: RelayerEvent,
+        decrypt_request: UserDecryptRequest,
+        user_decryption_id: U256,
+        tx_hash: TxHash,
+    ) {
+        let job_id_hash = decrypt_request.content_hash();
+        let tx_hash_str = format!("{:?}", tx_hash);
+        if let Err(e) = self
+            .user_decrypt_repo
+            .update_status_to_receipt_received_on_tx_success(
+                &job_id_hash[..],
+                &tx_hash_str,
+                user_decryption_id,
+            )
+            .await
+        {
+            sql_errors::user_decrypt_sql_error(
+                &self.dispatcher,
+                event,
+                "user_decrypt.update_status_to_receipt_received_on_tx_success",
+                &e,
+                Some(&job_id_hash),
+            )
+            .await;
+        }
+    }
+
+    async fn handle_transaction_failure(
+        &self,
+        event: RelayerEvent,
+        decrypt_request: UserDecryptRequest,
+        error: EventProcessingError,
+    ) {
+        let job_id_hash = decrypt_request.content_hash();
+        let err_reason = format!("Transaction Failed: {}", error);
+        if let Err(sql_error) = self
+            .user_decrypt_repo
+            .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
+            .await
+        {
+            error!(
+                job_id = %event.job_id,
+                job_id_hash = %hex::encode(job_id_hash),
+                sql_error = %sql_error,
+                "Failed to update transaction failure status in database"
+            );
+        }
+
+        self.notify_failed(event, error).await;
     }
 
     // Transaction operations

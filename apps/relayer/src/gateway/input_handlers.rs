@@ -62,47 +62,56 @@ impl InputProofGatewayHandler {
         match self.send_to_gateway(&input_proof_request).await {
             Ok((input_verification_id, tx_hash)) => {
                 info!("Input proof request sent to gateway for {}", event.job_id);
-
-                // Update status to receipt received (no event dispatching)
-                let int_request_id = match event.job_id.as_uuid_v7() {
-                    Some(uuid) => uuid,
-                    None => {
-                        error!(job_id = %event.job_id, "job_id is not uuid");
-                        return self
-                            .notify_failed(
-                                event,
-                                EventProcessingError::ValidationFailed {
-                                    field: "job_id".to_string(),
-                                    reason: "not a valid UUID".to_string(),
-                                },
-                            )
-                            .await;
-                    }
-                };
-
-                let tx_hash_str = format!("{:?}", tx_hash);
-                if self
-                    .input_proof_repo
-                    .update_input_proof_status_to_receipt_received(
-                        int_request_id,
-                        &tx_hash_str,
-                        input_verification_id,
-                    )
-                    .await
-                    .is_err()
-                {
-                    sql_errors::input_proof_sql_error(
-                        &self.dispatcher,
-                        event,
-                        "input_proof.update_input_proof_status_to_receipt_received",
-                        &"SQL update failed",
-                    )
+                self.store_request_receipt(event, input_verification_id, tx_hash)
                     .await;
-                }
             }
             Err(e) => {
                 self.mark_failed_and_notify(event, e).await;
             }
+        }
+    }
+
+    async fn store_request_receipt(
+        &self,
+        event: RelayerEvent,
+        input_verification_id: U256,
+        tx_hash: TxHash,
+    ) {
+        let int_request_id = match event.job_id.as_uuid_v7() {
+            Some(uuid) => uuid,
+            None => {
+                error!(job_id = %event.job_id, "job_id is not uuid");
+                return self
+                    .notify_failed(
+                        event,
+                        EventProcessingError::ValidationFailed {
+                            field: "job_id".to_string(),
+                            reason: "not a valid UUID".to_string(),
+                        },
+                    )
+                    .await;
+            }
+        };
+
+        let tx_hash_str = format!("{:?}", tx_hash);
+        if self
+            .input_proof_repo
+            .update_input_proof_status_to_receipt_received(
+                int_request_id,
+                &tx_hash_str,
+                input_verification_id,
+            )
+            .await
+            .is_err()
+        {
+            sql_errors::input_proof_sql_error(
+                &self.dispatcher,
+                event,
+                "input_proof.update_input_proof_status_to_receipt_received",
+                &"SQL update failed",
+            )
+            .await;
+            return;
         }
     }
 
