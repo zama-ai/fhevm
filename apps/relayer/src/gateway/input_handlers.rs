@@ -10,7 +10,6 @@ use crate::{
     },
     gateway::arbitrum::transaction::helper::{TransactionHelper, TransactionType},
     gateway::arbitrum::{bindings::InputVerification, ComputeCalldata},
-    gateway::utils::sql_errors,
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
@@ -54,17 +53,18 @@ impl InputProofGatewayHandler {
 impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
     #[instrument(skip_all, fields(event_type=%event.event_name(), job_id=%event.job_id()))]
     async fn handle_event(&self, event: RelayerEvent) {
-        match &event.data {
+        let result = match &event.data {
             RelayerEventData::InputProof(input_event) => match input_event {
                 InputProofEventData::ReqRcvdFromUser {
                     input_proof_request,
                 } => {
                     info!("Processing input proof request {}", event.job_id);
                     self.send_input_proof_request(event.clone(), input_proof_request.clone())
-                        .await;
+                        .await
                 }
                 _ => {
-                    warn!("unexpected event received in input handler")
+                    warn!("unexpected event received in input handler");
+                    return;
                 }
             },
 
@@ -82,7 +82,7 @@ impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
                                 event.job_id
                             );
                             self.complete_proof_verification(event.clone(), log, *tx_hash)
-                                .await;
+                                .await
                         }
                         InputVerification::RejectProofResponse::SIGNATURE_HASH => {
                             info!(
@@ -90,40 +90,50 @@ impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
                                 event.job_id
                             );
                             self.reject_proof_verification(event.clone(), log, *tx_hash)
-                                .await;
+                                .await
                         }
-                        _ => {}
+                        _ => return,
                     }
-                };
+                } else {
+                    return;
+                }
             }
-            _ => {}
+            _ => return,
+        };
+
+        if let Err(e) = result {
+            self.handle_error(event, e).await;
         }
     }
 }
 
 impl InputProofGatewayHandler {
+    /// Processes user input proof request by sending it to the Gateway blockchain.
+    ///
+    /// Steps:
+    /// 1. Send transaction to Gateway InputVerification contract
+    /// 2. Extract input_verification_id from receipt
+    /// 3. Store receipt in database
     async fn send_input_proof_request(
         &self,
         event: RelayerEvent,
         input_proof_request: InputProofRequest,
-    ) {
+    ) -> Result<(), EventProcessingError> {
         info!(
             "Sending input proof request to gateway for {}",
             event.job_id
         );
 
-        match self.send_to_gateway(&input_proof_request).await {
-            Ok((input_verification_id, tx_hash)) => {
-                info!("Input proof request sent to gateway for {}", event.job_id);
-                self.store_request_receipt(event, input_verification_id, tx_hash)
-                    .await;
-            }
-            Err(e) => {
-                self.mark_failed_and_notify(event, e).await;
-            }
-        }
+        let (input_verification_id, tx_hash) = self.send_to_gateway(&input_proof_request).await?;
+        info!("Input proof request sent to gateway for {}", event.job_id);
+        self.store_request_receipt(event, input_verification_id, tx_hash)
+            .await?;
+        Ok(())
     }
 
+    /// Sends input proof verification transaction to Gateway InputVerification contract.
+    ///
+    /// Returns the gateway reference ID (zkProofId) and transaction hash.
     async fn send_to_gateway(
         &self,
         input_proof_request: &InputProofRequest,
@@ -169,225 +179,221 @@ impl InputProofGatewayHandler {
         Ok((gw_reference_id, receipt.transaction_hash))
     }
 
+    /// Processes accepted input proof response from Gateway.
+    ///
+    /// Steps:
+    /// 1. Decode VerifyProofResponse event from log
+    /// 2. Update database with handles and signatures
+    /// 3. Dispatch response event to notify HTTP handler
     async fn complete_proof_verification(
         &self,
         event: RelayerEvent,
         log: &alloy::rpc::types::Log,
         tx_hash: TxHash,
-    ) {
-        match InputVerification::VerifyProofResponse::decode_log_data(log.data()) {
-            Ok(request_event) => {
-                info!(
-                    input_verification_id = ?request_event.zkProofId,
-                    handles = ?request_event.ctHandles,
-                    signatures = ?request_event.signatures,
-                    "Processing InputResponse event"
-                );
-
-                let input_proof_response = InputProofResponse {
-                    handles: request_event.ctHandles,
-                    signatures: request_event.signatures,
-                };
-
-                let tx_hash_str = format!("{:?}", tx_hash);
-                let int_request_id = match self
-                    .input_proof_repo
-                    .accept_and_complete_input_proof_req(
-                        request_event.zkProofId,
-                        input_proof_response.clone(),
-                        &tx_hash_str,
-                    )
-                    .await
-                {
-                    Ok(int_request_id) => int_request_id,
-                    Err(e) => {
-                        error!(
-                            conversion_error = %e,
-                            "Failed to convert U256 zkproof ID to i64"
-                        );
-                        self.notify_failed(
-                            event,
-                            EventProcessingError::ValidationFailed {
-                                field: "zkproof_id".to_string(),
-                                reason: "value too large for i64".to_string(),
-                            },
-                        )
-                        .await;
-                        return;
-                    }
-                };
-
-                let next_event_data: RelayerEventData =
-                    RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
-                        accepted: true,
-                        input_proof_response: Some(input_proof_response),
-                    });
-
-                let next_event = RelayerEvent::new(
-                    JobId::from_uuid_v7(int_request_id),
-                    event.api_version,
-                    next_event_data,
-                );
-
-                if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
-                    error!(?e, "Failed to dispatch input proof response event");
-                } else {
-                    info!(
-                        "Input proof response successfully sent for {}",
-                        event.job_id
-                    );
-                }
-            }
-            Err(err) => {
+    ) -> Result<(), EventProcessingError> {
+        let request_event = InputVerification::VerifyProofResponse::decode_log_data(log.data())
+            .map_err(|err| {
                 error!(?err, "Failed to decode VerifyProofResponse event");
-                self.notify_failed(
-                    event,
-                    EventProcessingError::EventDecodingFailed {
-                        event_type: "VerifyProofResponse".to_string(),
-                        reason: err.to_string(),
-                    },
-                )
-                .await;
-            }
+                EventProcessingError::EventDecodingFailed {
+                    event_type: "VerifyProofResponse".to_string(),
+                    reason: err.to_string(),
+                }
+            })?;
+
+        info!(
+            input_verification_id = ?request_event.zkProofId,
+            handles = ?request_event.ctHandles,
+            signatures = ?request_event.signatures,
+            "Processing InputResponse event"
+        );
+
+        let input_proof_response = InputProofResponse {
+            handles: request_event.ctHandles,
+            signatures: request_event.signatures,
+        };
+
+        let tx_hash_str = format!("{:?}", tx_hash);
+        let int_request_id = self
+            .input_proof_repo
+            .accept_and_complete_input_proof_req(
+                request_event.zkProofId,
+                input_proof_response.clone(),
+                &tx_hash_str,
+            )
+            .await
+            .map_err(|e| {
+                error!(
+                    conversion_error = %e,
+                    "Failed to convert U256 zkproof ID to i64"
+                );
+                EventProcessingError::ValidationFailed {
+                    field: "zkproof_id".to_string(),
+                    reason: "value too large for i64".to_string(),
+                }
+            })?;
+
+        let next_event_data: RelayerEventData =
+            RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
+                accepted: true,
+                input_proof_response: Some(input_proof_response),
+            });
+
+        let next_event = RelayerEvent::new(
+            JobId::from_uuid_v7(int_request_id),
+            event.api_version,
+            next_event_data,
+        );
+
+        if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+            error!(?e, "Failed to dispatch input proof response event");
+        } else {
+            info!(
+                "Input proof response successfully sent for {}",
+                event.job_id
+            );
         }
+
+        Ok(())
     }
 
+    /// Processes rejected input proof response from Gateway.
+    ///
+    /// Steps:
+    /// 1. Decode RejectProofResponse event from log
+    /// 2. Update database with rejection status
+    /// 3. Dispatch rejection event to notify HTTP handler
     async fn reject_proof_verification(
         &self,
         event: RelayerEvent,
         log: &alloy::rpc::types::Log,
         tx_hash: TxHash,
-    ) {
-        match InputVerification::RejectProofResponse::decode_log_data(log.data()) {
-            Ok(reject_proof_response) => {
-                match self
-                    .input_proof_repo
-                    .reject_and_complete_input_proof_req(
-                        reject_proof_response.zkProofId,
-                        "Proof Rejected".to_string(),
-                        &format!("{:?}", tx_hash),
-                    )
-                    .await
-                {
-                    Ok(int_request_id) => {
-                        let next_event_data: RelayerEventData =
-                            RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
-                                accepted: false,
-                                input_proof_response: None,
-                            });
-
-                        let next_event = RelayerEvent::new(
-                            JobId::from_uuid_v7(int_request_id),
-                            event.api_version,
-                            next_event_data,
-                        );
-
-                        let _ = self.dispatcher.dispatch_event(next_event).await;
-                    }
-                    Err(e) => {
-                        sql_errors::input_proof_sql_error(
-                            &self.dispatcher,
-                            event,
-                            "input_proof.reject_and_complete_input_proof_req",
-                            &e,
-                        )
-                        .await;
-                    }
-                };
-            }
-            Err(err) => {
+    ) -> Result<(), EventProcessingError> {
+        let reject_proof_response =
+            InputVerification::RejectProofResponse::decode_log_data(log.data()).map_err(|err| {
                 error!(?err, "Failed to decode RejectProofResponse event");
-                self.notify_failed(
-                    event,
-                    EventProcessingError::EventDecodingFailed {
-                        event_type: "RejectProofResponse".to_string(),
-                        reason: err.to_string(),
-                    },
-                )
-                .await;
-            }
-        }
+                EventProcessingError::EventDecodingFailed {
+                    event_type: "RejectProofResponse".to_string(),
+                    reason: err.to_string(),
+                }
+            })?;
+
+        let int_request_id = self
+            .input_proof_repo
+            .reject_and_complete_input_proof_req(
+                reject_proof_response.zkProofId,
+                "Proof Rejected".to_string(),
+                &format!("{:?}", tx_hash),
+            )
+            .await
+            .map_err(|e| EventProcessingError::SqlOperationFailed {
+                operation: "input_proof.reject_and_complete_input_proof_req".to_string(),
+                reason: e.to_string(),
+            })?;
+
+        let next_event_data: RelayerEventData =
+            RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
+                accepted: false,
+                input_proof_response: None,
+            });
+
+        let next_event = RelayerEvent::new(
+            JobId::from_uuid_v7(int_request_id),
+            event.api_version,
+            next_event_data,
+        );
+
+        let _ = self.dispatcher.dispatch_event(next_event).await;
+
+        Ok(())
     }
 
+    /// Stores transaction receipt in database after successful Gateway submission.
+    ///
+    /// Updates request status to "receipt_received" with gateway reference ID.
     async fn store_request_receipt(
         &self,
         event: RelayerEvent,
         input_verification_id: U256,
         tx_hash: TxHash,
-    ) {
-        let int_request_id = match event.job_id.as_uuid_v7() {
-            Some(uuid) => uuid,
-            None => {
-                error!(job_id = %event.job_id, "job_id is not uuid");
-                return self
-                    .notify_failed(
-                        event,
-                        EventProcessingError::ValidationFailed {
-                            field: "job_id".to_string(),
-                            reason: "not a valid UUID".to_string(),
-                        },
-                    )
-                    .await;
+    ) -> Result<(), EventProcessingError> {
+        let int_request_id = event.job_id.as_uuid_v7().ok_or_else(|| {
+            error!(job_id = %event.job_id, "job_id is not uuid");
+            EventProcessingError::ValidationFailed {
+                field: "job_id".to_string(),
+                reason: "not a valid UUID".to_string(),
             }
-        };
+        })?;
 
         let tx_hash_str = format!("{:?}", tx_hash);
-        if self
-            .input_proof_repo
+        self.input_proof_repo
             .update_input_proof_status_to_receipt_received(
                 int_request_id,
                 &tx_hash_str,
                 input_verification_id,
             )
             .await
-            .is_err()
-        {
-            sql_errors::input_proof_sql_error(
-                &self.dispatcher,
-                event,
-                "input_proof.update_input_proof_status_to_receipt_received",
-                &"SQL update failed",
-            )
-            .await;
-            return;
-        }
+            .map_err(|e| EventProcessingError::SqlOperationFailed {
+                operation: "input_proof.update_input_proof_status_to_receipt_received".to_string(),
+                reason: e.to_string(),
+            })?;
+
+        Ok(())
     }
 
-    async fn mark_failed_and_notify(&self, event: RelayerEvent, error: EventProcessingError) {
-        let int_request_id = match event.job_id.as_uuid_v7() {
-            Some(uuid) => uuid,
-            None => {
+    /// Handles errors during input proof processing.
+    ///
+    /// - SqlOperationFailed: Log + notify user
+    /// - TransactionError: Update database status + notify user
+    /// - Other errors: Update database status + notify user
+    async fn handle_error(&self, event: RelayerEvent, error: EventProcessingError) {
+        match &error {
+            EventProcessingError::SqlOperationFailed { operation, reason } => {
                 error!(
                     job_id = %event.job_id,
-                    "job_id is not uuid"
+                    operation = %operation,
+                    reason = %reason,
+                    handler_type = "input_proof",
+                    "SQL operation failed"
                 );
-                self.notify_failed(
-                    event,
-                    EventProcessingError::ValidationFailed {
-                        field: "job_id".to_string(),
-                        reason: "not a valid UUID".to_string(),
-                    },
-                )
-                .await;
-                return;
             }
-        };
 
-        // TODO(xyz): Handle error
-        let _result = self
-            .input_proof_repo
-            .update_status_to_failure(int_request_id, &error.to_string())
-            .await;
+            EventProcessingError::TransactionError(tx_error) => {
+                error!(
+                    job_id = %event.job_id,
+                    error = ?tx_error,
+                    "Transaction failed - updating database and notifying user"
+                );
+
+                if let Some(uuid) = event.job_id.as_uuid_v7() {
+                    let _ = self
+                        .input_proof_repo
+                        .update_status_to_failure(uuid, &error.to_string())
+                        .await;
+                }
+            }
+
+            _ => {
+                error!(
+                    job_id = %event.job_id,
+                    error = ?error,
+                    "Request processing failed - notifying user"
+                );
+
+                if let Some(uuid) = event.job_id.as_uuid_v7() {
+                    let _ = self
+                        .input_proof_repo
+                        .update_status_to_failure(uuid, &error.to_string())
+                        .await;
+                }
+            }
+        }
+
         self.notify_failed(event, error).await;
     }
 
+    /// Dispatches failure event to notify waiting HTTP handlers.
     #[instrument(skip_all, fields(event_type=%event.event_name(), job_id=%event.job_id()))]
     async fn notify_failed(&self, event: RelayerEvent, error: EventProcessingError) {
-        error!(
-            error = ?error,
-            "Failed to process input request"
-        );
-
         let error_event =
             event.derive_next_event(RelayerEventData::InputProof(InputProofEventData::Failed {
                 error,
