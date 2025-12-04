@@ -803,15 +803,12 @@ impl InfiniteLogIter {
                 return self.next_blocklogs.pop_front();
             };
             if self.end_at_block_reached().await {
-                let absolute = self.absolute_end_at_block.unwrap();
-                let original = self.end_at_block.unwrap();
-                if original < 0 {
-                    eprintln!(
-                        "End at block reached: {} (from {})",
-                        absolute, original
-                    );
-                } else {
-                    eprintln!("End at block reached: {}", absolute);
+                match self.end_at_block {
+                    Some(n) if n < 0 => eprintln!(
+                        "End at block reached: {:?} (from {})",
+                        self.absolute_end_at_block, n
+                    ),
+                    _ => eprintln!("End at block reached: {:?}", self.absolute_end_at_block),
                 }
                 warn!("Stopping due to --end-at-block");
                 return None;
