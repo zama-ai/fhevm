@@ -677,12 +677,11 @@ impl InfiniteLogIter {
                 Ok(provider) => {
                     let catch_up_from =
                         self.catchup_block_from(&provider).await;
-                    let end_at_block =
+                    self.absolute_end_at_block =
                         self.resolve_end_at_block(&provider).await;
-                    self.absolute_end_at_block = end_at_block;
                     self.catchup_blocks = Some((
                         catch_up_from.as_number().unwrap_or(0),
-                        end_at_block,
+                        self.absolute_end_at_block,
                     ));
                     // note subscribing to real-time before reading catchup
                     // events to have the minimal gap between the two
@@ -804,10 +803,16 @@ impl InfiniteLogIter {
                 return self.next_blocklogs.pop_front();
             };
             if self.end_at_block_reached().await {
-                eprintln!(
-                    "End at block reached: {}",
-                    self.end_at_block.unwrap()
-                );
+                let absolute = self.absolute_end_at_block.unwrap();
+                let original = self.end_at_block.unwrap();
+                if original < 0 {
+                    eprintln!(
+                        "End at block reached: {} (from {})",
+                        absolute, original
+                    );
+                } else {
+                    eprintln!("End at block reached: {}", absolute);
+                }
                 warn!("Stopping due to --end-at-block");
                 return None;
             }
