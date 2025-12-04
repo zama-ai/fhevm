@@ -71,9 +71,77 @@ impl GatewayHandler {
             user_decrypt_shares_threshold: user_decrypt_shares_threshold as i64,
         }
     }
+}
 
-    // Request handlers
+#[async_trait]
+impl EventHandler<RelayerEvent> for GatewayHandler {
+    async fn handle_event(&self, event: RelayerEvent) {
+        match event.data {
+            RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
+                ref decrypt_request,
+                ..
+            }) => {
+                info!("Processing user decrypt request {}", event.job_id);
+                let job_id_hash = decrypt_request.content_hash();
+                let decrypt_request_clone = decrypt_request.clone();
 
+                // Stage 1: Check readiness (ReadinessChecker component)
+                match self.check_readiness(&decrypt_request_clone).await {
+                    Ok(()) => {
+                        info!("Readiness validation passed for {}", event.job_id);
+
+                        // Stage 2: Update SQL status to processing
+                        self.mark_processing(event.clone(), job_id_hash).await;
+
+                        // Stage 3: Send to gateway (pure transaction execution)
+                        self.send_user_decrypt_request(event, decrypt_request_clone)
+                            .await;
+                    }
+                    Err(readiness_error) => {
+                        error!(
+                            "Readiness validation failed for {}: {:?}",
+                            event.job_id, readiness_error
+                        );
+                        self.notify_failed(event, readiness_error).await;
+                    }
+                }
+            }
+            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+                ref log,
+                tx_hash,
+            }) => {
+                if let Some(topic0) = log.topic0() {
+                    let topic0_fixed = FixedBytes::<32>::from_slice(topic0.as_slice());
+                    let individual_response_topic =
+                        Decryption::UserDecryptionResponse::SIGNATURE_HASH;
+                    let consensus_topic = self.get_consensus_event_topic();
+
+                    match topic0_fixed {
+                        topic if topic == individual_response_topic => {
+                            info!("Processing share response for request {}", event.job_id);
+                            self.decode_share_from_log(log, event.clone(), tx_hash)
+                                .await;
+                        }
+                        topic if topic == consensus_topic => {
+                            info!("Processing consensus response for request {}", event.job_id);
+                            self.update_consensus_hash(log, event.clone(), tx_hash)
+                                .await;
+                        }
+                        _ => {
+                            debug!(
+                                "Ignoring event: received topic {:?}, expected individual {:?} or consensus {:?}",
+                                topic0_fixed, individual_response_topic, consensus_topic
+                            );
+                        }
+                    }
+                };
+            }
+            _ => {}
+        }
+    }
+}
+
+impl GatewayHandler {
     async fn check_readiness(
         &self,
         user_decrypt_request: &UserDecryptRequest,
@@ -108,23 +176,6 @@ impl GatewayHandler {
         }
     }
 
-    async fn mark_processing(&self, event: RelayerEvent, job_id_hash: [u8; 32]) {
-        if let Err(e) = self
-            .user_decrypt_repo
-            .update_status_to_processing(&job_id_hash[..])
-            .await
-        {
-            sql_errors::user_decrypt_sql_error(
-                &self.dispatcher,
-                event,
-                "user_decrypt.update_status_to_processing",
-                &e,
-                Some(&job_id_hash),
-            )
-            .await;
-        }
-    }
-
     async fn send_user_decrypt_request(
         &self,
         event: RelayerEvent,
@@ -147,61 +198,6 @@ impl GatewayHandler {
             }
         }
     }
-
-    async fn store_request_receipt(
-        &self,
-        event: RelayerEvent,
-        decrypt_request: UserDecryptRequest,
-        user_decryption_id: U256,
-        tx_hash: TxHash,
-    ) {
-        let job_id_hash = decrypt_request.content_hash();
-        let tx_hash_str = format!("{:?}", tx_hash);
-        if let Err(e) = self
-            .user_decrypt_repo
-            .update_status_to_receipt_received_on_tx_success(
-                &job_id_hash[..],
-                &tx_hash_str,
-                user_decryption_id,
-            )
-            .await
-        {
-            sql_errors::user_decrypt_sql_error(
-                &self.dispatcher,
-                event,
-                "user_decrypt.update_status_to_receipt_received_on_tx_success",
-                &e,
-                Some(&job_id_hash),
-            )
-            .await;
-        }
-    }
-
-    async fn handle_transaction_failure(
-        &self,
-        event: RelayerEvent,
-        decrypt_request: UserDecryptRequest,
-        error: EventProcessingError,
-    ) {
-        let job_id_hash = decrypt_request.content_hash();
-        let err_reason = format!("Transaction Failed: {}", error);
-        if let Err(sql_error) = self
-            .user_decrypt_repo
-            .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
-            .await
-        {
-            error!(
-                job_id = %event.job_id,
-                job_id_hash = %hex::encode(job_id_hash),
-                sql_error = %sql_error,
-                "Failed to update transaction failure status in database"
-            );
-        }
-
-        self.notify_failed(event, error).await;
-    }
-
-    // Transaction operations
 
     async fn send_to_gateway(
         &self,
@@ -490,7 +486,75 @@ impl GatewayHandler {
         Decryption::UserDecryptionResponseThresholdReached::SIGNATURE_HASH
     }
 
-    // Event dispatching
+    async fn mark_processing(&self, event: RelayerEvent, job_id_hash: [u8; 32]) {
+        if let Err(e) = self
+            .user_decrypt_repo
+            .update_status_to_processing(&job_id_hash[..])
+            .await
+        {
+            sql_errors::user_decrypt_sql_error(
+                &self.dispatcher,
+                event,
+                "user_decrypt.update_status_to_processing",
+                &e,
+                Some(&job_id_hash),
+            )
+            .await;
+        }
+    }
+
+    async fn store_request_receipt(
+        &self,
+        event: RelayerEvent,
+        decrypt_request: UserDecryptRequest,
+        user_decryption_id: U256,
+        tx_hash: TxHash,
+    ) {
+        let job_id_hash = decrypt_request.content_hash();
+        let tx_hash_str = format!("{:?}", tx_hash);
+        if let Err(e) = self
+            .user_decrypt_repo
+            .update_status_to_receipt_received_on_tx_success(
+                &job_id_hash[..],
+                &tx_hash_str,
+                user_decryption_id,
+            )
+            .await
+        {
+            sql_errors::user_decrypt_sql_error(
+                &self.dispatcher,
+                event,
+                "user_decrypt.update_status_to_receipt_received_on_tx_success",
+                &e,
+                Some(&job_id_hash),
+            )
+            .await;
+        }
+    }
+
+    async fn handle_transaction_failure(
+        &self,
+        event: RelayerEvent,
+        decrypt_request: UserDecryptRequest,
+        error: EventProcessingError,
+    ) {
+        let job_id_hash = decrypt_request.content_hash();
+        let err_reason = format!("Transaction Failed: {}", error);
+        if let Err(sql_error) = self
+            .user_decrypt_repo
+            .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
+            .await
+        {
+            error!(
+                job_id = %event.job_id,
+                job_id_hash = %hex::encode(job_id_hash),
+                sql_error = %sql_error,
+                "Failed to update transaction failure status in database"
+            );
+        }
+
+        self.notify_failed(event, error).await;
+    }
 
     async fn notify_failed(&self, event: RelayerEvent, error: EventProcessingError) {
         let error_event = event.derive_next_event(RelayerEventData::UserDecrypt(
@@ -499,74 +563,6 @@ impl GatewayHandler {
 
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
             error!(?e, "Failed to dispatch error event");
-        }
-    }
-}
-
-#[async_trait]
-impl EventHandler<RelayerEvent> for GatewayHandler {
-    async fn handle_event(&self, event: RelayerEvent) {
-        match event.data {
-            RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
-                ref decrypt_request,
-                ..
-            }) => {
-                info!("Processing user decrypt request {}", event.job_id);
-                let job_id_hash = decrypt_request.content_hash();
-                let decrypt_request_clone = decrypt_request.clone();
-
-                // Stage 1: Check readiness (ReadinessChecker component)
-                match self.check_readiness(&decrypt_request_clone).await {
-                    Ok(()) => {
-                        info!("Readiness validation passed for {}", event.job_id);
-
-                        // Stage 2: Update SQL status to processing
-                        self.mark_processing(event.clone(), job_id_hash).await;
-
-                        // Stage 3: Send to gateway (pure transaction execution)
-                        self.send_user_decrypt_request(event, decrypt_request_clone)
-                            .await;
-                    }
-                    Err(readiness_error) => {
-                        error!(
-                            "Readiness validation failed for {}: {:?}",
-                            event.job_id, readiness_error
-                        );
-                        self.notify_failed(event, readiness_error).await;
-                    }
-                }
-            }
-            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
-                ref log,
-                tx_hash,
-            }) => {
-                if let Some(topic0) = log.topic0() {
-                    let topic0_fixed = FixedBytes::<32>::from_slice(topic0.as_slice());
-                    let individual_response_topic =
-                        Decryption::UserDecryptionResponse::SIGNATURE_HASH;
-                    let consensus_topic = self.get_consensus_event_topic();
-
-                    match topic0_fixed {
-                        topic if topic == individual_response_topic => {
-                            info!("Processing share response for request {}", event.job_id);
-                            self.decode_share_from_log(log, event.clone(), tx_hash)
-                                .await;
-                        }
-                        topic if topic == consensus_topic => {
-                            info!("Processing consensus response for request {}", event.job_id);
-                            self.update_consensus_hash(log, event.clone(), tx_hash)
-                                .await;
-                        }
-                        _ => {
-                            debug!(
-                                "Ignoring event: received topic {:?}, expected individual {:?} or consensus {:?}",
-                                topic0_fixed, individual_response_topic, consensus_topic
-                            );
-                        }
-                    }
-                };
-            }
-            _ => {}
         }
     }
 }
