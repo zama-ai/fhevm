@@ -20,7 +20,7 @@ test: clean
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test --network hardhat $(if $(GREP),--grep '$(GREP)',)
 
 test-tasks: clean
-	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test-tasks --network hardhat $(if $(GREP),--grep '$(GREP)',)
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test:tasks --network hardhat $(if $(GREP),--grep '$(GREP)',)
 
 
 # Conform to pre-commit checks
