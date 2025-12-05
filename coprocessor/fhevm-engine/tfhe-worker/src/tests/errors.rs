@@ -696,3 +696,243 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
 
     Ok(())
 }
+
+
+#[tokio::test]
+async fn test_coprocessor_reorb_tx_id_collision_errors() -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+     tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .compact()
+        .try_init()
+        .ok();
+    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
+    let api_key_header = format!("bearer {}", default_api_key());
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(app.db_url())
+        .await?;
+
+    let keys = query_tenant_keys(vec![default_tenant_id()], &pool)
+        .await
+        .map_err(|e| {
+            let e: Box<dyn std::error::Error> = e;
+            e
+        })?;
+    let keys = &keys[0];
+
+    let mut handle_counter = 0;
+    let mut next_handle = || {
+        let out: i32 = handle_counter;
+        handle_counter += 1;
+        out.to_be_bytes().to_vec()
+    };
+
+    let initial_inputs_resp = {
+        // not provided api key
+        let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+        let the_list = builder
+            .push(1u8)
+            .push(2u8)
+            .build_with_proof_packed(&keys.public_params, &[], tfhe::zk::ZkComputeLoad::Proof)
+            .unwrap();
+
+        let serialized = safe_serialize(&the_list);
+
+        let input_ciphertexts = vec![InputToUpload {
+            input_payload: serialized,
+            signatures: Vec::new(),
+            user_address: test_random_user_address(),
+            contract_address: test_random_contract_address(),
+        }];
+
+        println!("Encrypting inputs...");
+        let mut input_request = tonic::Request::new(InputUploadBatch { input_ciphertexts });
+        input_request.metadata_mut().append(
+            "authorization",
+            MetadataValue::from_str(&api_key_header).unwrap(),
+        );
+        client.upload_inputs(input_request).await?
+    };
+
+    let ct_vec = &initial_inputs_resp.get_ref().upload_responses;
+    assert_eq!(ct_vec.len(), 1);
+    let handles = &ct_vec[0].input_handles;
+    assert_eq!(handles.len(), 2);
+    let test_1_u8 = &handles[0];
+    let test_2_u8 = &handles[1];
+
+    let transaction_a_1 = next_handle();
+    let transaction_b_1 = next_handle();
+    let transaction_a_2 = transaction_b_1.clone(); // tx id swapped in reorg
+    let transaction_b_2 = transaction_a_1.clone(); // tx id swapped in reorg
+    let block_1 = next_handle();
+    let block_2 = next_handle();
+    let result_a_1 = next_handle();
+    let result_b_1 = next_handle();
+    let result_a_2 = next_handle();
+    let result_b_2 = next_handle();
+    //  test with 4 transaction without seeing block difference
+    // create transaction_A_1 -> transaction_B_1
+    // and    transaction_A_2 -> transaction_B_2
+    let async_computations_1;
+    {
+        // without block hash difference it's considered as a cycle
+        async_computations_1 = vec![
+            // Before reorg
+            AsyncComputation {
+                operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_a_1.clone(),
+                output_handle: result_a_1.clone(),
+                inputs: vec![
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(test_1_u8.handle.clone())),
+                    },
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(test_2_u8.handle.clone())),
+                    },
+                ],
+                is_allowed: true,
+                block_hash: block_1.clone(),
+                block_number: 0,
+            },
+            AsyncComputation {
+                operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_b_1.clone(),
+                output_handle: result_b_1.clone(),
+                inputs: vec![
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(result_a_1.clone())),
+                    },
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(result_a_1.clone())),
+                    },
+                ],
+                is_allowed: true,
+                block_hash:  block_1.clone(),
+                block_number: 0,
+            },
+            // After reorg
+            AsyncComputation {
+                operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_a_2.clone(),
+                output_handle: result_a_2.clone(),
+                inputs: vec![
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(test_1_u8.handle.clone())),
+                    },
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(test_2_u8.handle.clone())),
+                    },
+                ],
+                is_allowed: true,
+                block_hash: block_1.clone(), // simulate block hash not used to distinguish
+                block_number: 0,
+            },
+            AsyncComputation {
+                operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_b_2.clone(),
+                output_handle: result_b_2.clone(),
+                inputs: vec![
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(result_a_2.clone())),
+                    },
+                    AsyncComputationInput {
+                        input: Some(Input::InputHandle(result_a_2.clone())),
+                    },
+                ],
+                is_allowed: true,
+                block_hash:  block_1.clone(),  // simulate block hash not used to distinguish
+                block_number: 0,
+            },
+        ];
+        let mut input_request = tonic::Request::new(AsyncComputeRequest {
+            computations: async_computations_1.clone(),
+        });
+        input_request.metadata_mut().append(
+            "authorization",
+            MetadataValue::from_str(&api_key_header).unwrap(),
+        );
+        client.async_compute(input_request).await?; // detected but silently ignored
+        tracing::warn!("Waiting for computations to be processed...");
+        for _ in 1..10 {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await; // wait for processing
+            let not_completed = sqlx::query!(
+                "SELECT output_handle, fhe_operation, block_hash, block_number, is_completed FROM computations WHERE (transaction_id = $1 OR transaction_id = $2) AND is_completed = false",
+                transaction_a_1,
+                transaction_b_1
+                )
+                .fetch_all(&pool)
+                .await?;
+            eprintln!("Not completed:");
+            for r in &not_completed {
+                eprintln!("\tNot completed {:?}", r);
+            }
+            assert!(!not_completed.is_empty(), "Expected not completed computations");
+        }
+        tracing::warn!("Waiting finished");
+    }
+    tracing::warn!("Cleaning");
+    sqlx::query!(
+        r#"
+        DELETE FROM computations
+        WHERE transaction_id = $1 OR transaction_id = $2
+        "#,
+        transaction_a_1,
+        transaction_b_1
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query!(
+        r#"
+        DELETE FROM ciphertexts
+        WHERE handle = $1 OR handle = $2 OR handle = $3 OR handle = $4
+        "#,
+        result_a_1,
+        result_b_1,
+        result_a_2,
+        result_b_2,
+    )
+    .execute(&pool)
+    .await?;
+    // with block hash difference it's ok
+    let mut async_computations_2 = async_computations_1.clone();
+    async_computations_2[2].block_hash = block_2.clone();
+    async_computations_2[3].block_hash = block_2.clone();
+    {
+        tracing::warn!("Retest");
+        // with block hash difference it's ok
+        let mut input_request = tonic::Request::new(AsyncComputeRequest {
+            computations: async_computations_2,
+        });
+        input_request.metadata_mut().append(
+            "authorization",
+            MetadataValue::from_str(&api_key_header).unwrap(),
+        );
+        client.async_compute(input_request).await?;
+        tracing::warn!("Waiting for computations to be processed...");
+        for i in 1..=10 {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await; // wait for processing
+            let not_completed = sqlx::query!(
+                "SELECT output_handle, fhe_operation, block_hash, block_number, is_completed FROM computations WHERE (transaction_id = $1 OR transaction_id = $2) AND is_completed = false",
+                transaction_a_1,
+                transaction_b_1
+                )
+                .fetch_all(&pool)
+                .await?;
+            eprintln!("Not completed:");
+            for r in &not_completed {
+                eprintln!("\tNot completed {:?}", r);
+            }
+            tracing::warn!("Not completed {:?}", not_completed);
+            if not_completed.is_empty() {
+                break;
+            }
+            if i == 10 {
+                assert!(not_completed.is_empty(), "Expected completed computations");
+            }
+        }
+        tracing::warn!("Waiting finished");
+    }
+    Ok(())
+}
