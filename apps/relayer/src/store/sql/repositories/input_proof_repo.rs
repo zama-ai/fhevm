@@ -77,7 +77,7 @@ impl InputProofRepository {
         let record = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status FROM input_proof_req WHERE int_request_id = $3
+                SELECT req_status, updated_at FROM input_proof_req WHERE int_request_id = $3
             ),
             upd AS (
                 UPDATE input_proof_req
@@ -86,9 +86,12 @@ impl InputProofRepository {
                     gw_req_tx_hash = $1,
                     gw_reference_id = $2
                 WHERE int_request_id = $3
-                RETURNING req_status -- dummy return to ensure CTE execution
+                RETURNING req_status, updated_at
             )
-            SELECT old.req_status as "old_status!: ReqStatus" 
+            SELECT 
+                old.req_status as "old_status!: ReqStatus", 
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             gw_req_tx_hash,
@@ -99,11 +102,12 @@ impl InputProofRepository {
         .await?;
 
         if let Some(r) = record {
-            // Update Metrics: Decrement Old, Increment New
-            metrics::decrement_req_status_count(metrics::Table::InputProofReq, r.old_status);
-            metrics::increment_req_status_count(
+            metrics::record_status_transition(
                 metrics::Table::InputProofReq,
+                r.old_status,
                 ReqStatus::ReceiptReceived,
+                r.old_updated_at,
+                r.new_updated_at,
             );
             Ok(1)
         } else {
@@ -122,7 +126,7 @@ impl InputProofRepository {
         let record = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status FROM input_proof_req WHERE int_request_id = $2
+                SELECT req_status, updated_at FROM input_proof_req WHERE int_request_id = $2
             ),
             upd AS (
                 UPDATE input_proof_req
@@ -130,9 +134,12 @@ impl InputProofRepository {
                     req_status = 'failure'::req_status,
                     err_reason = $1
                 WHERE int_request_id = $2
-                RETURNING req_status
+                RETURNING req_status, updated_at
             )
-            SELECT old.req_status as "old_status!: ReqStatus"
+            SELECT 
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             err_reason,
@@ -142,8 +149,13 @@ impl InputProofRepository {
         .await?;
 
         if let Some(r) = record {
-            metrics::decrement_req_status_count(metrics::Table::InputProofReq, r.old_status);
-            metrics::increment_req_status_count(metrics::Table::InputProofReq, ReqStatus::Failure);
+            metrics::record_status_transition(
+                metrics::Table::InputProofReq,
+                r.old_status,
+                ReqStatus::Failure,
+                r.old_updated_at,
+                r.new_updated_at,
+            );
             Ok(1)
         } else {
             Ok(0)
@@ -170,10 +182,11 @@ impl InputProofRepository {
                 format!("Failed to serialize: {}", e),
             )
         })?;
+
         let record = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status FROM input_proof_req WHERE gw_reference_id = $3
+                SELECT req_status, updated_at FROM input_proof_req WHERE gw_reference_id = $3
             ),
             upd AS (
                 UPDATE input_proof_req
@@ -183,11 +196,13 @@ impl InputProofRepository {
                     gw_response_tx_hash = $2,
                     accepted = true
                 WHERE gw_reference_id = $3
-                RETURNING int_request_id
+                RETURNING int_request_id, updated_at
             )
             SELECT 
                 old.req_status as "old_status!: ReqStatus", 
-                upd.int_request_id as "int_request_id!"
+                old.updated_at as "old_updated_at!",
+                upd.int_request_id as "int_request_id!",
+                upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             res,
@@ -197,8 +212,13 @@ impl InputProofRepository {
         .fetch_one(&self.pool.get_pool())
         .await?;
 
-        metrics::decrement_req_status_count(metrics::Table::InputProofReq, record.old_status);
-        metrics::increment_req_status_count(metrics::Table::InputProofReq, ReqStatus::Completed);
+        metrics::record_status_transition(
+            metrics::Table::InputProofReq,
+            record.old_status,
+            ReqStatus::Completed,
+            record.old_updated_at,
+            record.new_updated_at,
+        );
 
         Ok(record.int_request_id)
     }
@@ -217,7 +237,7 @@ impl InputProofRepository {
         let record = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status FROM input_proof_req WHERE gw_reference_id = $3
+                SELECT req_status, updated_at FROM input_proof_req WHERE gw_reference_id = $3
             ),
             upd AS (
                 UPDATE input_proof_req
@@ -227,11 +247,13 @@ impl InputProofRepository {
                     gw_response_tx_hash = $1,
                     err_reason = $2
                 WHERE gw_reference_id = $3
-                RETURNING int_request_id
+                RETURNING int_request_id, updated_at
             )
             SELECT 
                 old.req_status as "old_status!: ReqStatus",
-                upd.int_request_id as "int_request_id!"
+                old.updated_at as "old_updated_at!",
+                upd.int_request_id as "int_request_id!",
+                upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             gw_response_tx_hash,
@@ -241,8 +263,13 @@ impl InputProofRepository {
         .fetch_one(&self.pool.get_pool())
         .await?;
 
-        metrics::decrement_req_status_count(metrics::Table::InputProofReq, record.old_status);
-        metrics::increment_req_status_count(metrics::Table::InputProofReq, ReqStatus::Completed);
+        metrics::record_status_transition(
+            metrics::Table::InputProofReq,
+            record.old_status,
+            ReqStatus::Completed,
+            record.old_updated_at,
+            record.new_updated_at,
+        );
 
         Ok(record.int_request_id)
     }

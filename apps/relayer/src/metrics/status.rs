@@ -1,5 +1,8 @@
 use once_cell::sync::OnceCell;
-use prometheus::{register_gauge_vec_with_registry, GaugeVec, Opts, Registry};
+use prometheus::{
+    register_gauge_vec_with_registry, register_histogram_vec_with_registry, GaugeVec,
+    HistogramOpts, HistogramVec, Opts, Registry,
+};
 
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 
@@ -7,6 +10,8 @@ use crate::store::sql::models::req_status_enum_model::ReqStatus;
 struct InternalMetrics {
     // Count how many requests are in each statuses.
     pub request_status_count: GaugeVec,
+    // Histogram for duration.
+    pub request_status_duration: HistogramVec,
 }
 
 static STATUS_METRICS: OnceCell<InternalMetrics> = OnceCell::new();
@@ -19,6 +24,17 @@ pub fn init_internal_metrics(registry: &Registry) {
                 "Number of request by table and statuses"
             ),
             &["table", "status"],
+            registry,
+        )
+        .unwrap(),
+        // TODO: Setup the histogram bucket properly
+        // TODO: Change to ms ?
+        request_status_duration: register_histogram_vec_with_registry!(
+            HistogramOpts::new(
+                "relayer_request_status_duration_seconds",
+                "Time spent in a status before transitioning to the next"
+            ), // .buckets(buckets)
+            &["table", "previous_status"], // We track the status we are LEAVING
             registry,
         )
         .unwrap(),
@@ -59,4 +75,39 @@ pub fn decrement_req_status_count(table: Table, status: ReqStatus) {
         .request_status_count
         .with_label_values(&[table.as_str(), status.as_str()])
         .dec();
+}
+
+// Helper to handle the logic in one place.
+// TODO: verify the seconds logic, and create the subsequent histogram bucket.
+pub fn record_status_transition(
+    table: Table,
+    old_status: ReqStatus,
+    new_status: ReqStatus,
+    old_updated_at: chrono::DateTime<chrono::Utc>,
+    new_updated_at: chrono::DateTime<chrono::Utc>,
+) {
+    let metrics = STATUS_METRICS.get().expect("Metrics not initialized");
+
+    // 1. Update Counters
+    metrics
+        .request_status_count
+        .with_label_values(&[table.as_str(), old_status.as_str()])
+        .dec();
+    metrics
+        .request_status_count
+        .with_label_values(&[table.as_str(), new_status.as_str()])
+        .inc();
+
+    // 2. Record Duration
+    // Calculate how long it was in the old_status
+    let duration = new_updated_at.signed_duration_since(old_updated_at);
+    // Ensure we don't record negative time (clock skew protection), convert to seconds (f64)
+    let seconds = duration.num_milliseconds() as f64 / 1000.0;
+
+    if seconds >= 0.0 {
+        metrics
+            .request_status_duration
+            .with_label_values(&[table.as_str(), old_status.as_str()])
+            .observe(seconds);
+    }
 }
