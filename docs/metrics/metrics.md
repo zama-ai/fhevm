@@ -214,121 +214,126 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
 
 #### Metric Name: `kms_connector_gw_listener_event_received_counter`
  - **Type**: Counter
+ - **Labels**:
+   - `event_type`: can be used to filter by event type (public_decryption_request, user_decryption_request, crsgen_request, ...).
  - **Description**: Counts the number of events received by the GW listener.
- - **Alarm**: If the counter is a flat line over a period of time.
-    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+ - **Alarm**: If the counter is a flat line over a period of time, only for `event_type` `public_decryption_request` and `user_decryption_request`.
+   - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter{event_type="..."}[1m]) == 0`.
 
 #### Metric Name: `kms_connector_gw_listener_event_received_errors`
  - **Type**: Counter
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
  - **Description**: Counts the number of errors encountered by the GW listener while receiving events.
  - **Alarm**: If the counter increases over a period of time.
-    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
-
-#### Metric Name: `kms_connector_gw_listener_event_stored_counter`
- - **Type**: Counter
- - **Description**: Counts the number of events successfully stored in the DB by the GW listener.
- - **Alarm**: If the counter is a flat line over a period of time.
-    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
-
-#### Metric Name: `kms_connector_gw_listener_event_storage_errors`
- - **Type**: Counter
- - **Description**: Counts the number of errors encountered by the GW listener while storing events in the DB.
- - **Alarm**: If the counter increases over a period of time.
-    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
+   - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 
 ### kms-worker
 
 #### Metric Name: `kms_connector_worker_event_received_counter`
  - **Type**: Counter
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
  - **Description**: Counts the number of events received by the KMS worker.
- - **Alarm**: If the counter is a flat line over a period of time.
-    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+ - **Alarm**: If the counter is a flat line over a period of time, only for `event_type` `public_decryption_request` and `user_decryption_request`.
+   - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter{event_type="..."}[1m]) == 0`.
 
 #### Metric Name: `kms_connector_worker_event_received_errors`
  - **Type**: Counter
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
  - **Description**: Counts the number of errors encountered while listening for events in the KMS worker.
  - **Alarm**: If the counter increases over a period of time.
-    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
+   - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 
-#### Metric Name: `kms_connector_worker_decryption_request_sent_counter`
+#### Metric Name: `kms_connector_worker_grpc_request_sent_counter`
  - **Type**: Counter
- - **Description**: Counts the number of decryption requests sent by the KMS worker to the KMS core.
- - **Alarm**: If the counter is a flat line over a period of time.
-    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
+ - **Description**: Number of successful GRPC requests sent by the KMS worker to the KMS Core,
+ - **Alarm**: If the counter is a flat line over a period of time, only for `event_type` `public_decryption_request` and `user_decryption_request`.
+   - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter{event_type="..."}[1m]) == 0`.
 
-#### Metric Name: `kms_connector_worker_decryption_request_sent_errors`
+#### Metric Name: `kms_connector_worker_grpc_request_sent_errors`
  - **Type**: Counter
- - **Description**: Counts the number of errors encountered by the KMS worker while sending decryption requests to the KMS core.
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
+ - **Description**: Counts the number of errors encountered by the KMS worker while sending grpc requests to the KMS Core.
  - **Alarm**: If the counter increases over a period of time.
-    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
+   - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 
-#### Metric Name: `kms_connector_worker_decryption_response_counter`
+#### Metric Name: `kms_connector_worker_grpc_response_polled_counter`
  - **Type**: Counter
- - **Description**: Counts the number of decryption responses received by the KMS worker from the KMS core.
- - **Alarm**: If the counter is a flat line over a period of time.
-    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
+ - **Description**: Counts the number of responses successfully polled from the KMS Core via GRPC.
+ - **Alarm**: If the counter is a flat line over a period of time, only for `event_type` `public_decryption_request` and `user_decryption_request`.
+   - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter{event_type="..."}[1m]) == 0`.
 
-#### Metric Name: `kms_connector_worker_decryption_response_errors`
+#### Metric Name: `kms_connector_worker_grpc_response_polled_errors`
  - **Type**: Counter
- - **Description**: Counts the number of errors encountered by the KMS worker while receiving decryption responses from the KMS core.
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
+ - **Description**: Counts the number of errors encountered by the KMS worker while polling responses from the KMS Core.
  - **Alarm**: If the counter increases over a period of time.
-    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
-
-#### Metric Name: `kms_connector_worker_key_management_request_sent_counter`
- - **Type**: Counter
- - **Description**: Counts the number of key management requests sent by the KMS worker to the KMS core.
- - **Alarm**: N/A - key management requests are infrequent events.
-
-#### Metric Name: `kms_connector_worker_key_management_request_sent_errors`
- - **Type**: Counter
- - **Description**: Counts the number of errors encountered by the KMS worker while sending key management requests to the KMS core.
- - **Alarm**: If the counter increases from 0. Key management is an important event that should not fail.
-    - **Recommendation**: alarm on any failures over a 1 minute period, i.e. `increase(counter[1m]) > 0`.
-
-#### Metric Name: `kms_connector_worker_key_management_response_counter`
- - **Type**: Counter
- - **Description**: Counts the number of key management responses received by the KMS worker from the KMS core.
- - **Alarm**: N/A - key management responses are infrequent events.
-
-#### Metric Name: `kms_connector_worker_key_management_response_errors`
- - **Type**: Counter
- - **Description**: Counts the number of errors encountered by the KMS worker while receiving key management responses from the KMS core.
- - **Alarm**: If the counter increases from 0. Key management is an important event that should not fail.
-    - **Recommendation**: alarm on any failures over a 1 minute period, i.e. `increase(counter[1m]) > 0`.
+   - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 
 #### Metric Name: `kms_connector_worker_s3_ciphertext_retrieval_counter`
  - **Type**: Counter
  - **Description**: Counts the number of ciphertexts retrieved by the KMS worker from S3.
- - **Alarm**: N/A - key management events are infrequent.
+ - **Alarm**: If the counter is a flat line over a period of time.
+   - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
 
 #### Metric Name: `kms_connector_worker_s3_ciphertext_retrieval_errors`
  - **Type**: Counter
  - **Description**: Counts the number of errors encountered by the KMS worker while retrieving ciphertexts from S3.
  - **Alarm**: If the counter increases over a period of time.
-    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
+   - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 
 ### tx-sender
 
 #### Metric Name: `kms_connector_tx_sender_response_received_counter`
  - **Type**: Counter
+ - **Labels**:
+   - `response_type`: can be used to filter by response type (public_decryption_response, user_decryption_response, crsgen_response, ...).
  - **Description**: Counts the number of responses received by the TX sender.
- - **Alarm**: If the counter is a flat line over a period of time.
-    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+ - **Alarm**: If the counter is a flat line over a period of time, only for `response_type` `public_decryption_response` and `user_decryption_response`.
+   - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter{response_type = "..."}[1m]) == 0`.
 
 #### Metric Name: `kms_connector_tx_sender_response_received_errors`
  - **Type**: Counter
+ - **Labels**:
+   - `response_type`: see [description](#metric-name-kms_connector_tx_sender_response_received_counter)
  - **Description**: Counts the number of errors encountered by the TX sender while listening for responses.
  - **Alarm**: If the counter increases over a period of time.
-    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
+   - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 
 #### Metric Name: `kms_connector_tx_sender_gateway_tx_sent_counter`
  - **Type**: Counter
+ - **Labels**:
+   - `response_type`: see [description](#metric-name-kms_connector_tx_sender_response_received_counter)
  - **Description**: Counts the number of transactions sent to the Gateway by the TX sender.
- - **Alarm**: If the counter is a flat line over a period of time.
-    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
+ - **Alarm**: If the counter is a flat line over a period of time, only for `response_type` `public_decryption_response` and `user_decryption_response`.
+   - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter{response_type = "..."}[1m]) == 0`.
 
 #### Metric Name: `kms_connector_tx_sender_gateway_tx_sent_errors`
  - **Type**: Counter
+ - **Labels**:
+   - `response_type`: see [description](#metric-name-kms_connector_tx_sender_response_received_counter)
  - **Description**: Counts the number of errors encountered by the TX sender while sending transactions to the Gateway.
  - **Alarm**: If the counter increases over a period of time.
-    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
+   - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
+
+#### Metric Name: `kms_connector_pending_events`
+ - **Type**: Gauge
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter) (only available for decryption right now!)
+ - **Description**: Tracks the number of Gateway events not yet processed in the kms-connector's DB.
+ - **Alarm**: Need more experience with this metric first.
+
+#### Metric Name: `kms_connector_pending_responses`
+ - **Type**: Gauge
+ - **Labels**:
+   - `response_type`: see [description](#metric-name-kms_connector_tx_sender_response_received_counter) (only available for decryption right now!)
+ - **Description**: Tracks the number of KMS responses not yet sent to the Gateway in the kms-connector's DB.
+ - **Alarm**: Need more experience with this metric first.
