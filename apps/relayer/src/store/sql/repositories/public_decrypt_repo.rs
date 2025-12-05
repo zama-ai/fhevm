@@ -1,6 +1,7 @@
 use crate::core::event::{PublicDecryptRequest, PublicDecryptResponse};
+use crate::metrics;
 use crate::store::sql::models::public_decrypt_req_model::{
-    PublicDecryptResponseModel, PublicReqStateModel,
+    PublicDecryptResponseModel, PublicReqStateModel, PublicReqStateModelWithOldStatus,
 };
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::{
@@ -70,7 +71,7 @@ impl PublicDecryptRepository {
                 format!("Failed to serialize: {}", e),
             )
         })?;
-        let result = sqlx::query_scalar!(
+        let record = sqlx::query!(
             r#"
             INSERT INTO public_decrypt_req (
                 ext_job_id,
@@ -82,9 +83,9 @@ impl PublicDecryptRepository {
             )
             VALUES ($1, $2, $3, 'queued'::req_status, NOW(), NOW())
             ON CONFLICT (int_job_id)
-            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
-            DO UPDATE SET updated_at = public_decrypt_req.updated_at -- Dummy update, preserves existing timestamp
-            RETURNING ext_job_id
+            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status) 
+            DO UPDATE SET updated_at = public_decrypt_req.updated_at
+            RETURNING ext_job_id, (xmax = 0) AS "is_inserted!"
             "#,
             ext_job_id,
             int_job_id_bytes,
@@ -93,7 +94,14 @@ impl PublicDecryptRepository {
         .fetch_one(&self.pool.get_pool())
         .await?;
 
-        Ok(result)
+        if record.is_inserted {
+            metrics::increment_req_status_count(
+                metrics::Table::PublicDecryptReq,
+                ReqStatus::Queued,
+            );
+        }
+
+        Ok(record.ext_job_id)
     }
 
     // GATEWAY READINESS CHECK.
@@ -101,18 +109,35 @@ impl PublicDecryptRepository {
     /// Update req_status to 'processing' by int_job_id.
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_processing(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
-        let result = sqlx::query!(
+        let record = sqlx::query!(
             r#"
-            UPDATE public_decrypt_req
-            SET req_status = 'processing'::req_status
-            WHERE int_job_id = $1
+            WITH old AS (
+                SELECT req_status FROM public_decrypt_req WHERE int_job_id = $1
+            ),
+            upd AS (
+                UPDATE public_decrypt_req
+                SET req_status = 'processing'::req_status
+                WHERE int_job_id = $1
+                RETURNING req_status -- ensure execution
+            )
+            SELECT old.req_status as "old_status!: ReqStatus"
+            FROM old, upd
             "#,
             int_job_id_bytes
         )
-        .execute(&self.pool.get_pool())
+        .fetch_optional(&self.pool.get_pool())
         .await?;
 
-        Ok(result.rows_affected())
+        if let Some(r) = record {
+            metrics::decrement_req_status_count(metrics::Table::PublicDecryptReq, r.old_status);
+            metrics::increment_req_status_count(
+                metrics::Table::PublicDecryptReq,
+                ReqStatus::Processing,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
     }
 
     // if not ready after 30min..
@@ -123,21 +148,38 @@ impl PublicDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
-        let result = sqlx::query!(
+        let record = sqlx::query!(
             r#"
-            UPDATE public_decrypt_req
-            SET
-                req_status = 'timed_out'::req_status,
-                err_reason = $1
-            WHERE int_job_id = $2
+            WITH old AS (
+                SELECT req_status FROM public_decrypt_req WHERE int_job_id = $2
+            ),
+            upd AS (
+                UPDATE public_decrypt_req
+                SET 
+                    req_status = 'timed_out'::req_status,
+                    err_reason = $1
+                WHERE int_job_id = $2
+                RETURNING req_status
+            )
+            SELECT old.req_status as "old_status!: ReqStatus"
+            FROM old, upd
             "#,
             err_reason,
             int_job_id_bytes
         )
-        .execute(&self.pool.get_pool())
+        .fetch_optional(&self.pool.get_pool())
         .await?;
 
-        Ok(result.rows_affected())
+        if let Some(r) = record {
+            metrics::decrement_req_status_count(metrics::Table::PublicDecryptReq, r.old_status);
+            metrics::increment_req_status_count(
+                metrics::Table::PublicDecryptReq,
+                ReqStatus::TimedOut,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
     }
 
     // TRANSACTION REQUESTS.
@@ -151,23 +193,40 @@ impl PublicDecryptRepository {
     ) -> SqlResult<u64> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
-        let result = sqlx::query!(
+        let record = sqlx::query!(
             r#"
-            UPDATE public_decrypt_req
-            SET
-                req_status = 'receipt_received'::req_status,
-                gw_req_tx_hash = $1,
-                gw_reference_id = $2
-            WHERE int_job_id = $3
+            WITH old AS (
+                SELECT req_status FROM public_decrypt_req WHERE int_job_id = $3
+            ),
+            upd AS (
+                UPDATE public_decrypt_req
+                SET 
+                    req_status = 'receipt_received'::req_status,
+                    gw_req_tx_hash = $1,
+                    gw_reference_id = $2
+                WHERE int_job_id = $3
+                RETURNING req_status
+            )
+            SELECT old.req_status as "old_status!: ReqStatus"
+            FROM old, upd
             "#,
             gw_req_tx_hash,
             gw_ref_id,
             int_job_id_bytes
         )
-        .execute(&self.pool.get_pool())
+        .fetch_optional(&self.pool.get_pool())
         .await?;
 
-        Ok(result.rows_affected())
+        if let Some(r) = record {
+            metrics::decrement_req_status_count(metrics::Table::PublicDecryptReq, r.old_status);
+            metrics::increment_req_status_count(
+                metrics::Table::PublicDecryptReq,
+                ReqStatus::ReceiptReceived,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
     }
 
     /// update req_status to failure and apply err_reason by internal_indexer_id
@@ -176,21 +235,38 @@ impl PublicDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
-        let result = sqlx::query!(
+        let record = sqlx::query!(
             r#"
-            UPDATE public_decrypt_req
-            SET
-                req_status = 'failure'::req_status,
-                err_reason = $1
-            WHERE int_job_id = $2
+            WITH old AS (
+                SELECT req_status FROM public_decrypt_req WHERE int_job_id = $2
+            ),
+            upd AS (
+                UPDATE public_decrypt_req
+                SET 
+                    req_status = 'failure'::req_status,
+                    err_reason = $1
+                WHERE int_job_id = $2
+                RETURNING req_status
+            )
+            SELECT old.req_status as "old_status!: ReqStatus"
+            FROM old, upd
             "#,
             err_reason,
             int_job_id_bytes
         )
-        .execute(&self.pool.get_pool())
+        .fetch_optional(&self.pool.get_pool())
         .await?;
 
-        Ok(result.rows_affected())
+        if let Some(r) = record {
+            metrics::decrement_req_status_count(metrics::Table::PublicDecryptReq, r.old_status);
+            metrics::increment_req_status_count(
+                metrics::Table::PublicDecryptReq,
+                ReqStatus::Failure,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
     }
 
     // LISTENER QUERIES:
@@ -214,21 +290,36 @@ impl PublicDecryptRepository {
                 format!("Failed to serialize: {}", e),
             )
         })?;
-        let result = sqlx::query_as!(
-            PublicReqStateModel,
+
+        let record = sqlx::query_as!(
+            PublicReqStateModelWithOldStatus,
             r#"
-            UPDATE public_decrypt_req
-            SET
-                res = $1,
-                req_status = 'completed'::req_status,
-                gw_response_tx_hash = $2
-            WHERE gw_reference_id = $3
-              AND req_status NOT IN ('timed_out'::req_status, 'failure'::req_status)
-            RETURNING
-                int_job_id as "int_job_id!", -- Force Non-Null
-                req_status as "req_status!: ReqStatus",
-                updated_at as "updated_at!",         -- Force Non-Null
-                err_reason
+            WITH old AS (
+                SELECT req_status FROM public_decrypt_req 
+                WHERE gw_reference_id = $3
+                AND req_status NOT IN ('timed_out'::req_status, 'failure'::req_status)
+            ),
+            upd AS (
+                UPDATE public_decrypt_req
+                SET 
+                    res = $1,
+                    req_status = 'completed'::req_status,
+                    gw_response_tx_hash = $2
+                WHERE gw_reference_id = $3
+                  AND req_status NOT IN ('timed_out'::req_status, 'failure'::req_status)
+                RETURNING 
+                    int_job_id, 
+                    req_status, 
+                    updated_at,
+                    err_reason
+            )
+            SELECT 
+                old.req_status as "old_status!: ReqStatus", -- Helper for metrics
+                upd.int_job_id as "int_job_id!",
+                upd.req_status as "req_status!: ReqStatus",
+                upd.updated_at as "updated_at!",
+                upd.err_reason
+            FROM old, upd
             "#,
             res,
             gw_response_tx_hash,
@@ -237,7 +328,24 @@ impl PublicDecryptRepository {
         .fetch_optional(&self.pool.get_pool())
         .await?;
 
-        Ok(result)
+        if let Some(r) = record {
+            // Update Metrics
+            metrics::decrement_req_status_count(metrics::Table::PublicDecryptReq, r.old_status);
+            metrics::increment_req_status_count(
+                metrics::Table::PublicDecryptReq,
+                ReqStatus::Completed,
+            );
+
+            // Construct return object without the extra column
+            Ok(Some(PublicReqStateModel {
+                int_job_id: r.int_job_id,
+                req_status: r.req_status,
+                updated_at: r.updated_at,
+                err_reason: r.err_reason,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     // select in `public_decrypt_req` by `ext_job_id` (need status `res` and `err_reason` and `updated_at` and `ext_request_id`)

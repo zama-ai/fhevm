@@ -31,6 +31,15 @@ pub struct PublicReqStateModel {
     pub err_reason: Option<String>,
 }
 
+#[derive(Debug, FromRow)]
+pub struct PublicReqStateModelWithOldStatus {
+    pub int_job_id: Vec<u8>,
+    pub req_status: ReqStatus,
+    pub updated_at: DateTime<Utc>,
+    pub err_reason: Option<String>,
+    pub old_status: ReqStatus,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PublicDecryptResponseModel {
     pub ext_job_id: Uuid,
