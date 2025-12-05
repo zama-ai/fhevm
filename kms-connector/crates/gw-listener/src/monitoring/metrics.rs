@@ -13,7 +13,7 @@ pub static EVENT_RECEIVED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
 pub static EVENT_RECEIVED_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "kms_connector_gw_listener_event_received_errors",
-        "Number of errors encountered by the GatewayListener while listening for Gateway events",
+        "Number of errors encountered by the GatewayListener while receiving events",
         &["event_type"]
     )
     .unwrap()
