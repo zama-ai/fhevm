@@ -215,6 +215,106 @@ hostListener:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
+# Host Listener Poller
+# -----------------------------------------------------------------------------
+# Processes blockchain events from the host chain
+hostListenerPoller:
+  enabled: false
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.10.0
+
+  replicas: 1
+
+  # Environment variables
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+
+  # Command line arguments for the host listener poller
+  args:
+    ### Required parameters
+    - --database-url=$(DATABASE_URL)
+    - --coprocessor-api-key=$(TENANT_API_KEY)
+    - --url=$(ETHEREUM_RPC_HTTP_URL)
+    - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+    - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+
+    ### Polling and block processing parameters
+    - --finality-lag=3
+    - --batch-size=100  # Maximum number of blocks to process per iteration
+    - --poll-interval-ms=6000  # Sleep duration between iterations in milliseconds (half block time ~6s for Ethereum)
+    - --retry-interval-ms=1000  # Backoff between retry attempts for RPC/DB failures in milliseconds
+    - --max-http-retries=45  # Maximum number of HTTP/RPC retry attempts before failing an operation
+    - --rpc-compute-units-per-second=1000  # Rate limiting budget for RPC calls during block catchup (compute units per second)
+
+    ### Observability parameters
+    - --log-level=INFO
+    - --health-port=8080
+    - --service-name=host-listener-poller
+
+    ### Prometheus metrics
+    - --metrics-addr=0.0.0.0:9100  # Address for Prometheus metrics HTTP server
+
+  # Service ports configuration
+  ports:
+    metrics: 9100
+    healthcheck: 8080
+
+  serviceMonitor:
+    enabled: false
+
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Health check probes
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  affinity:
+    enabled: false
+
+  tolerations:
+    enabled: false
+    items: []
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
 # Gateway Listener
 # -----------------------------------------------------------------------------
 # Processes events from the gateway chain
