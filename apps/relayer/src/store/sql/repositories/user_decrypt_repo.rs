@@ -1,4 +1,5 @@
 use crate::core::event::UserDecryptRequest;
+use crate::metrics;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::models::user_decrypt_req_model::ConsensusReqState;
 use crate::store::sql::{
@@ -73,7 +74,9 @@ impl UserDecryptRepository {
                 format!("Failed to serialize: {}", e),
             )
         })?;
-        let result = sqlx::query_scalar!(
+
+        // Logic: Use (xmax=0) to detect if this was a true INSERT or an ON CONFLICT update.
+        let record = sqlx::query!(
             r#"
             INSERT INTO user_decrypt_req (
                 ext_job_id,
@@ -83,8 +86,8 @@ impl UserDecryptRepository {
             VALUES ($1, $2, $3)
             ON CONFLICT (int_job_id)
             WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
-            DO UPDATE SET updated_at = NOW() -- Dummy update to ensure RETURNING works
-            RETURNING ext_job_id
+            DO UPDATE SET updated_at = NOW() 
+            RETURNING ext_job_id, (xmax = 0) AS "is_inserted!"
             "#,
             ext_job_id,
             int_job_id_bytes,
@@ -93,7 +96,12 @@ impl UserDecryptRepository {
         .fetch_one(&self.pool.get_pool())
         .await?;
 
-        Ok(result)
+        // Only increment metrics if a new row was actually created
+        if record.is_inserted {
+            metrics::increment_req_status_count(metrics::Table::UserDecryptReq, ReqStatus::Queued);
+        }
+
+        Ok(record.ext_job_id)
     }
 
     // GW READINESS LOGIC CHECK.
@@ -101,18 +109,40 @@ impl UserDecryptRepository {
     /// Update req_status to 'processing' by int_job_id.
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_processing(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
-        let result = sqlx::query!(
+        let record = sqlx::query!(
             r#"
-            UPDATE user_decrypt_req
-            SET req_status = 'processing'::req_status
-            WHERE int_job_id = $1
+            WITH old AS (
+                SELECT req_status, updated_at FROM user_decrypt_req WHERE int_job_id = $1
+            ),
+            upd AS (
+                UPDATE user_decrypt_req
+                SET req_status = 'processing'::req_status
+                WHERE int_job_id = $1
+                RETURNING req_status, updated_at
+            )
+            SELECT 
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
+            FROM old, upd
             "#,
             int_job_id_bytes
         )
-        .execute(&self.pool.get_pool()) // Using execute() since we don't need to return data
+        .fetch_optional(&self.pool.get_pool())
         .await?;
 
-        Ok(result.rows_affected())
+        if let Some(r) = record {
+            metrics::record_status_transition(
+                metrics::Table::UserDecryptReq,
+                r.old_status,
+                ReqStatus::Processing,
+                r.old_updated_at,
+                r.new_updated_at,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
     }
 
     // if not ready after 30min..
@@ -123,21 +153,43 @@ impl UserDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
-        let result = sqlx::query!(
+        let record = sqlx::query!(
             r#"
-            UPDATE user_decrypt_req
-            SET
-                req_status = 'timed_out'::req_status,
-                err_reason = $1
-            WHERE int_job_id = $2
+            WITH old AS (
+                SELECT req_status, updated_at FROM user_decrypt_req WHERE int_job_id = $2
+            ),
+            upd AS (
+                UPDATE user_decrypt_req
+                SET
+                    req_status = 'timed_out'::req_status,
+                    err_reason = $1
+                WHERE int_job_id = $2
+                RETURNING req_status, updated_at
+            )
+            SELECT 
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
+            FROM old, upd
             "#,
             err_reason,
             int_job_id_bytes
         )
-        .execute(&self.pool.get_pool())
+        .fetch_optional(&self.pool.get_pool())
         .await?;
 
-        Ok(result.rows_affected())
+        if let Some(r) = record {
+            metrics::record_status_transition(
+                metrics::Table::UserDecryptReq,
+                r.old_status,
+                ReqStatus::TimedOut,
+                r.old_updated_at,
+                r.new_updated_at,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
     }
 
     // TRANSACTION REQUESTS.
@@ -152,23 +204,45 @@ impl UserDecryptRepository {
     ) -> SqlResult<u64> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
-        let result = sqlx::query!(
+        let record = sqlx::query!(
             r#"
-            UPDATE user_decrypt_req
-            SET
-                req_status = 'receipt_received'::req_status,
-                gw_req_tx_hash = $1,
-                gw_reference_id = $2
-            WHERE int_job_id = $3
+            WITH old AS (
+                SELECT req_status, updated_at FROM user_decrypt_req WHERE int_job_id = $3
+            ),
+            upd AS (
+                UPDATE user_decrypt_req
+                SET
+                    req_status = 'receipt_received'::req_status,
+                    gw_req_tx_hash = $1,
+                    gw_reference_id = $2
+                WHERE int_job_id = $3
+                RETURNING req_status, updated_at
+            )
+            SELECT 
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
+            FROM old, upd
             "#,
             gw_req_tx_hash,
             gw_ref_id,
             int_job_id_bytes
         )
-        .execute(&self.pool.get_pool())
+        .fetch_optional(&self.pool.get_pool())
         .await?;
 
-        Ok(result.rows_affected())
+        if let Some(r) = record {
+            metrics::record_status_transition(
+                metrics::Table::UserDecryptReq,
+                r.old_status,
+                ReqStatus::ReceiptReceived,
+                r.old_updated_at,
+                r.new_updated_at,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
     }
 
     /// update req_status to failure and apply err_reason by internal_indexer_id
@@ -177,21 +251,43 @@ impl UserDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
-        let result = sqlx::query!(
+        let record = sqlx::query!(
             r#"
-            UPDATE user_decrypt_req
-            SET
-                req_status = 'failure'::req_status,
-                err_reason = $1
-            WHERE int_job_id = $2
+            WITH old AS (
+                SELECT req_status, updated_at FROM user_decrypt_req WHERE int_job_id = $2
+            ),
+            upd AS (
+                UPDATE user_decrypt_req
+                SET
+                    req_status = 'failure'::req_status,
+                    err_reason = $1
+                WHERE int_job_id = $2
+                RETURNING req_status, updated_at
+            )
+            SELECT 
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
+            FROM old, upd
             "#,
             err_reason,
             int_job_id_bytes
         )
-        .execute(&self.pool.get_pool())
+        .fetch_optional(&self.pool.get_pool())
         .await?;
 
-        Ok(result.rows_affected())
+        if let Some(r) = record {
+            metrics::record_status_transition(
+                metrics::Table::UserDecryptReq,
+                r.old_status,
+                ReqStatus::Failure,
+                r.old_updated_at,
+                r.new_updated_at,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
     }
 
     // LISTENER REQUESTS.
