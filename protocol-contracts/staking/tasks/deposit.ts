@@ -14,7 +14,7 @@ import { HardhatRuntimeEnvironment } from 'hardhat/types';
 // --network testnet
 task('task:depositOperatorStakingFromDeployer')
   .addParam('assets', 'The amount of assets to deposit into the operator staking contract', 0n, types.bigint)
-  .addParam('receiver', 'The address of the operator rewarder contract to set the owner fee for', '', types.string)
+  .addParam('receiver', 'The address of the operator rewarder contract to set the fee for', '', types.string)
   .addParam(
     'operatorStakingAddress',
     'The address of the operator staking contract to deposit assets into',
