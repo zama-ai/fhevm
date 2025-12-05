@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM computations\n        WHERE transaction_id = $1 OR transaction_id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "efa1249f8dd6793bbd808c0b89aed73a7af129f51b372b66c3e60756aabe2996"
+}

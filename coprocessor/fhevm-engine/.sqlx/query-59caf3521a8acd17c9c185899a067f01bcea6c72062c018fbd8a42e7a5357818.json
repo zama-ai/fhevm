@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT output_handle, fhe_operation, block_hash, block_number, is_completed FROM computations WHERE (transaction_id = $1 OR transaction_id = $2) AND is_completed = false",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "output_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "fhe_operation",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_completed",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "59caf3521a8acd17c9c185899a067f01bcea6c72062c018fbd8a42e7a5357818"
+}

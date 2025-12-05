@@ -54,6 +54,8 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     let random_test_types = random_test_supported_types();
 
     let deterministic_seed = 123u8;
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
     for the_type in random_test_types {
         let transaction_id = next_handle();
         let output_handle = next_handle();
@@ -72,6 +74,8 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
     }
 
@@ -93,6 +97,8 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
     }
 
@@ -115,6 +121,8 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
     }
     println!("Scheduling computations...");
@@ -273,7 +281,8 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
         "131020531556991694414230573229138275160567853866",
         "2972409412398590319234166868940218748864587370013358645802893111142926529322",
     ];
-
+    let block_hash = next_handle();
+    let block_number = 12345_u64;
     for (idx, the_type) in random_test_supported_types().iter().enumerate() {
         let transaction_id = next_handle();
         let output_handle = next_handle();
@@ -295,6 +304,8 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
             is_allowed: true,
+            block_hash: block_hash.clone(),
+            block_number,
         });
     }
 

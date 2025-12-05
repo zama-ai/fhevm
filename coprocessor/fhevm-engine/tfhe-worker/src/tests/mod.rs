@@ -84,6 +84,8 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
                         },
                     ],
                     is_allowed: true,
+                    block_hash: vec![],
+                    block_number: 0,
                 },
                 AsyncComputation {
                     operation: FheOperation::FheAdd.into(),
@@ -98,6 +100,8 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
                         },
                     ],
                     is_allowed: true,
+                    block_hash: vec![],
+                    block_number: 0,
                 },
             ],
         });

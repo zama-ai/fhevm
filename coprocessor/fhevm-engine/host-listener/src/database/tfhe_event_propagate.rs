@@ -29,6 +29,7 @@ use crate::contracts::TfheContract::TfheContractEvents;
 
 type CoprocessorApiKey = Uuid;
 type FheOperation = i32;
+pub type BlockHash = FixedBytes<32>;
 pub type Handle = FixedBytes<32>;
 pub type TransactionHash = FixedBytes<32>;
 pub type TenantId = i32;
@@ -88,6 +89,7 @@ pub struct LogTfhe {
     pub is_allowed: bool,
     pub block_number: u64,
     pub block_timestamp: sqlx::types::time::PrimitiveDateTime,
+    pub block_hash: BlockHash,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -292,10 +294,12 @@ impl Database {
                 transaction_id,
                 is_allowed,
                 created_at,
-                schedule_order
+                schedule_order,
+                block_hash,
+                block_number
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
-            ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11)
+            ON CONFLICT (tenant_id, output_handle, transaction_id, block_hash) DO NOTHING
             "#,
             tenant_id as i32,
             output_handle,
@@ -306,6 +310,8 @@ impl Database {
             log.transaction_hash.map(|txh| txh.to_vec()),
             log.is_allowed,
             log.block_timestamp,
+            log.block_hash.to_vec(),
+            log.block_number as i64,
         );
         query
             .execute(tx.deref_mut())
