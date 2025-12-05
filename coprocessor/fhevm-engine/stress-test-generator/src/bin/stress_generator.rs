@@ -481,7 +481,6 @@ async fn generate_transactions_at_rate(
                 dependence_handle1,
                 dependence_handle2,
                 &mut listener_event_to_db,
-                &pool,
             )
             .await?;
 
@@ -543,7 +542,6 @@ async fn generate_transactions_count(
                 dependence_handle1,
                 dependence_handle2,
                 &mut listener_event_to_db,
-                &pool,
             )
             .await?;
             if scenario.is_dependent == Dependence::Dependent {
@@ -561,7 +559,6 @@ async fn generate_transaction(
     dependence1: Option<Handle>,
     dependence2: Option<Handle>,
     listener_event_to_db: &mut ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
     let inputs = get_inputs_vector(
@@ -600,11 +597,21 @@ async fn generate_transaction(
     new_ctx.inputs_pool = inputs.clone();
     let ctx = &new_ctx;
 
+    let pool = &sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&ecfg.evgen_db_url)
+        .await
+        .unwrap(); // TODO: remove this
+
+    let mut tx: sqlx::Transaction<'_, Postgres> = listener_event_to_db.new_transaction().await?;
+
     match scenario.transaction {
         Transaction::BatchInputProofs => {
             let batch_size = scenario.batch_size.unwrap_or(1);
             generate_and_insert_inputs_batch(
                 ctx,
+                &mut tx,
+                listener_event_to_db,
                 batch_size,
                 MAX_NUMBER_OF_BIDS as u8,
                 &scenario.contract_address,
@@ -626,6 +633,7 @@ async fn generate_transaction(
 
             let e_total_payment = batch_submit_encrypted_bids(
                 ctx,
+                &mut tx,
                 listener_event_to_db,
                 None, // Transaction ID
                 &scenario.contract_address,
@@ -633,6 +641,8 @@ async fn generate_transaction(
                 &bids,
             )
             .await?;
+
+            tx.commit().await?;
 
             Ok((e_total_payment, e_total_payment))
         }
@@ -645,34 +655,39 @@ async fn generate_transaction(
             info!(target: "tool", batch_size = handles.len(), "Batch allowing handles");
 
             allow_handles(
+                &mut tx,
                 &handles,
                 fhevm_engine_common::types::AllowEvents::AllowedAccount,
                 scenario.user_address.to_string(),
-                pool,
                 true,
             )
             .await?;
+
+            tx.commit().await?;
+
             Ok((Handle::default(), Handle::default()))
         }
         Transaction::ERC20Transfer => {
             let (_, output_dependence) = erc20_transaction(
                 ctx,
+                &mut tx,
                 inputs[0],
                 dependence1,
                 inputs[1],
                 None, // Transaction ID
                 listener_event_to_db,
-                pool,
                 scenario.variant.to_owned(),
                 &scenario.contract_address,
                 &scenario.user_address,
             )
             .await?;
+            tx.commit().await?;
             Ok((output_dependence, output_dependence))
         }
         Transaction::DEXSwapRequest => {
             let (new_current_balance_0, new_current_balance_1) = dex_swap_request_transaction(
                 ctx,
+                &mut tx,
                 inputs[0],
                 inputs[1],
                 dependence1,
@@ -690,11 +705,13 @@ async fn generate_transaction(
                 &scenario.user_address,
             )
             .await?;
+            tx.commit().await?;
             Ok((new_current_balance_0, new_current_balance_1))
         }
         Transaction::DEXSwapClaim => {
             let (new_current_balance_0, new_current_balance_1) = dex_swap_claim_transaction(
                 ctx,
+                &mut tx,
                 inputs[0],
                 inputs[1],
                 rand::random::<u64>(),
@@ -712,26 +729,29 @@ async fn generate_transaction(
                 &scenario.user_address,
             )
             .await?;
+            tx.commit().await?;
             Ok((new_current_balance_0, new_current_balance_1))
         }
         Transaction::ADDChain => {
             let (output_dependence1, output_dependence2) = add_chain_transaction(
                 ctx,
+                &mut tx,
                 dependence1,
                 inputs[1],
                 ecfg.synthetic_chain_length,
                 None, // Transaction ID
                 listener_event_to_db,
-                pool,
                 &scenario.contract_address,
                 &scenario.user_address,
             )
             .await?;
+            tx.commit().await?;
             Ok((output_dependence1, output_dependence2))
         }
         Transaction::MULChain => {
             let (output_dependence1, output_dependence2) = mul_chain_transaction(
                 ctx,
+                &mut tx,
                 dependence1,
                 inputs[1],
                 ecfg.synthetic_chain_length,
@@ -742,6 +762,7 @@ async fn generate_transaction(
                 &scenario.user_address,
             )
             .await?;
+            tx.commit().await?;
             Ok((output_dependence1, output_dependence2))
         }
         Transaction::InputVerif => {
@@ -757,6 +778,7 @@ async fn generate_transaction(
         }
         Transaction::GenPubDecHandles => {
             let (output_dependence1, output_dependence2) = generate_pub_decrypt_handles_types(
+                &mut tx,
                 ecfg.min_decryption_type,
                 ecfg.max_decryption_type,
                 None, // Transaction ID
@@ -770,6 +792,7 @@ async fn generate_transaction(
         }
         Transaction::GenUsrDecHandles => {
             let (output_dependence1, output_dependence2) = generate_user_decrypt_handles_types(
+                &mut tx,
                 ecfg.min_decryption_type,
                 ecfg.max_decryption_type,
                 None, // Transaction ID
@@ -779,6 +802,7 @@ async fn generate_transaction(
                 &scenario.user_address,
             )
             .await?;
+            tx.commit().await?;
             Ok((output_dependence1, output_dependence2))
         }
         Transaction::ERC7984Transfer => {
@@ -791,12 +815,15 @@ async fn generate_transaction(
             info!(target: "tool", "ERC7984 Transaction: tx_id: {:?}", transaction_id);
             let e_total_paid = erc7984::confidential_transfer_from(
                 ctx,
+                &mut tx,
                 transaction_id,
                 listener_event_to_db,
                 e_amount,
                 scenario.user_address.as_str(),
             )
             .await?;
+
+            tx.commit().await?;
 
             Ok((e_total_paid, e_total_paid))
         }
