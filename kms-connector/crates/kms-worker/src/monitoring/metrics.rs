@@ -1,82 +1,56 @@
-use prometheus::{IntCounter, register_int_counter};
+use prometheus::{IntCounter, IntCounterVec, register_int_counter, register_int_counter_vec};
 use std::sync::LazyLock;
 
-pub static EVENT_RECEIVED_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(
+pub static EVENT_RECEIVED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
         "kms_connector_worker_event_received_counter",
-        "Number of events received by the KmsWorker"
+        "Number of events received by the KmsWorker",
+        &["event_type"]
     )
     .unwrap()
 });
 
-pub static EVENT_RECEIVED_ERRORS: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(
+pub static EVENT_RECEIVED_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
         "kms_connector_worker_event_received_errors",
-        "Number of errors encountered by the KmsWorker while listening for events"
+        "Number of errors encountered by the KmsWorker while listening for events",
+        &["event_type"]
     )
     .unwrap()
 });
 
-pub static DECRYPTION_REQUEST_SENT_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(
-        "kms_connector_worker_decryption_request_sent_counter",
-        "Number of decryption requests sent by the KmsWorker to the KMS Core"
+pub static GRPC_REQUEST_SENT_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "kms_connector_worker_grpc_request_sent_counter",
+        "Number of successful GRPC requests sent by the KmsWorker to the KMS Core",
+        &["event_type"]
     )
     .unwrap()
 });
 
-pub static DECRYPTION_REQUEST_SENT_ERRORS: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(
-        "kms_connector_worker_decryption_request_sent_errors",
-        "Number of errors encountered by the KmsWorker while sending decryption requests to the KMS Core"
+pub static GRPC_REQUEST_SENT_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "kms_connector_worker_grpc_request_sent_errors",
+        "Number of errors encountered by the KmsWorker while sending grpc requests to the KMS Core",
+        &["event_type"]
     )
     .unwrap()
 });
 
-pub static DECRYPTION_RESPONSE_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(
-        "kms_connector_worker_decryption_response_counter",
-        "Number of decryption responses received by the KmsWorker from the KMS Core"
+pub static GRPC_RESPONSE_POLLED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "kms_connector_worker_grpc_response_polled_counter",
+        "Number of responses successfully polled from the KMS Core via GRPC",
+        &["event_type"]
     )
     .unwrap()
 });
 
-pub static DECRYPTION_RESPONSE_ERRORS: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(
-        "kms_connector_worker_decryption_response_errors",
-        "Number of errors encountered by the KmsWorker while receiving decryption responses from the KMS Core"
-    )
-    .unwrap()
-});
-
-pub static KEY_MANAGEMENT_REQUEST_SENT_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(
-        "kms_connector_worker_key_management_request_sent_counter",
-        "Number of key management requests sent by the KmsWorker to the KMS Core"
-    )
-    .unwrap()
-});
-
-pub static KEY_MANAGEMENT_REQUEST_SENT_ERRORS: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(
-        "kms_connector_worker_key_management_request_sent_errors",
-        "Number of errors encountered by the KmsWorker while sending key management requests to the KMS Core"
-    )
-    .unwrap()
-});
-
-pub static KEY_MANAGEMENT_RESPONSE_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(
-        "kms_connector_worker_key_management_response_counter",
-        "Number of key management responses received by the KmsWorker from the KMS Core"
-    )
-    .unwrap()
-});
-
-pub static KEY_MANAGEMENT_RESPONSE_ERRORS: LazyLock<IntCounter> = LazyLock::new(|| {
-    register_int_counter!(
-        "kms_connector_worker_key_management_response_errors",
-        "Number of errors encountered by the KmsWorker while receiving key management responses from the KMS Core"
+pub static GRPC_RESPONSE_POLLED_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "kms_connector_worker_grpc_response_polled_errors",
+        "Number of errors encountered by the KmsWorker while polling responses from the KMS Core",
+        &["event_type"]
     )
     .unwrap()
 });

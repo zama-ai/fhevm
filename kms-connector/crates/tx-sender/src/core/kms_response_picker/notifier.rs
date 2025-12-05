@@ -1,10 +1,14 @@
 use crate::core::Config;
 use anyhow::anyhow;
+use connector_utils::types::kms_response::{
+    CRSGEN_RESPONSE_STR, KEYGEN_RESPONSE_STR, PREP_KEYGEN_RESPONSE_STR,
+    PUBLIC_DECRYPTION_RESPONSE_STR, USER_DECRYPTION_RESPONSE_STR,
+};
 use sqlx::{
     Pool, Postgres,
     postgres::{PgListener, PgNotification},
 };
-use std::{str::FromStr, time::Duration};
+use std::{fmt::Display, str::FromStr, time::Duration};
 use tokio::{
     select,
     sync::mpsc::Sender,
@@ -168,11 +172,23 @@ impl KmsResponseNotification {
 
     pub fn response_str(&self) -> &'static str {
         match self {
-            KmsResponseNotification::PublicDecryption => "PublicDecryptionResponse",
-            KmsResponseNotification::UserDecryption => "UserDecryptionResponse",
-            KmsResponseNotification::PrepKeygen => "PrepKeygenResponse",
-            KmsResponseNotification::Keygen => "KeygenResponse",
-            KmsResponseNotification::Crsgen => "CrsgenResponse",
+            KmsResponseNotification::PublicDecryption => PUBLIC_DECRYPTION_RESPONSE_STR,
+            KmsResponseNotification::UserDecryption => USER_DECRYPTION_RESPONSE_STR,
+            KmsResponseNotification::PrepKeygen => PREP_KEYGEN_RESPONSE_STR,
+            KmsResponseNotification::Keygen => KEYGEN_RESPONSE_STR,
+            KmsResponseNotification::Crsgen => CRSGEN_RESPONSE_STR,
+        }
+    }
+}
+
+impl Display for KmsResponseNotification {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KmsResponseNotification::PublicDecryption => write!(f, "PublicDecryptionResponse"),
+            KmsResponseNotification::UserDecryption => write!(f, "UserDecryptionResponse"),
+            KmsResponseNotification::PrepKeygen => write!(f, "PrepKeygenResponse"),
+            KmsResponseNotification::Keygen => write!(f, "KeygenResponse"),
+            KmsResponseNotification::Crsgen => write!(f, "CrsgenResponse"),
         }
     }
 }

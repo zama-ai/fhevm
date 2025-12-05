@@ -309,3 +309,22 @@ impl Display for KmsResponseKind {
         }
     }
 }
+
+impl KmsResponseKind {
+    /// Converts the `KmsResponseKind` in a `&str` format.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            KmsResponseKind::PublicDecryption(_) => PUBLIC_DECRYPTION_RESPONSE_STR,
+            KmsResponseKind::UserDecryption(_) => USER_DECRYPTION_RESPONSE_STR,
+            KmsResponseKind::PrepKeygen(_) => PREP_KEYGEN_RESPONSE_STR,
+            KmsResponseKind::Keygen(_) => KEYGEN_RESPONSE_STR,
+            KmsResponseKind::Crsgen(_) => CRSGEN_RESPONSE_STR,
+        }
+    }
+}
+
+pub const PUBLIC_DECRYPTION_RESPONSE_STR: &str = "public_decryption_response";
+pub const USER_DECRYPTION_RESPONSE_STR: &str = "user_decryption_response";
+pub const PREP_KEYGEN_RESPONSE_STR: &str = "prep_keygen_response";
+pub const KEYGEN_RESPONSE_STR: &str = "keygen_response";
+pub const CRSGEN_RESPONSE_STR: &str = "crsgen_response";
