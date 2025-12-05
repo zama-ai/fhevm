@@ -243,13 +243,28 @@ hostListenerPoller:
 
   # Command line arguments for the host listener poller
   args:
+    ### Required parameters
     - --database-url=$(DATABASE_URL)
     - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=$(ETHEREUM_RPC_HTTP_URL)
     - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
     - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+
+    ### Polling and block processing parameters
+    - --finality-lag=3
+    - --batch-size=100  # Maximum number of blocks to process per iteration
+    - --poll-interval-ms=6000  # Sleep duration between iterations in milliseconds (half block time ~6s for Ethereum)
+    - --retry-interval-ms=1000  # Backoff between retry attempts for RPC/DB failures in milliseconds
+    - --max-http-retries=45  # Maximum number of HTTP/RPC retry attempts before failing an operation
+    - --rpc-compute-units-per-second=1000  # Rate limiting budget for RPC calls during block catchup (compute units per second)
+
+    ### Observability parameters
     - --log-level=INFO
     - --health-port=8080
+    - --service-name=host-listener-poller
+
+    ### Prometheus metrics
+    - --metrics-addr=0.0.0.0:9100  # Address for Prometheus metrics HTTP server
 
   # Service ports configuration
   ports:

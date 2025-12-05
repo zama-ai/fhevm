@@ -49,7 +49,7 @@ struct Args {
 
     #[arg(
         long,
-        default_value_t = 1000,
+        default_value_t = 6000, // half block time ~6s for Ethereum
         help = "Sleep duration between iterations in milliseconds"
     )]
     poll_interval_ms: u64,
