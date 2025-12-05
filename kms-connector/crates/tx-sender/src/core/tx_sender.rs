@@ -223,6 +223,7 @@ where
     #[tracing::instrument(skip_all)]
     async fn send_to_gateway(&self, response: KmsResponseKind) -> Result<(), Error> {
         info!("Sending response to the Gateway: {response:?}");
+        let response_str = response.as_str();
         let tx_result = match response {
             KmsResponseKind::PublicDecryption(response) => {
                 self.send_public_decryption_response(response).await
@@ -236,12 +237,16 @@ where
         };
 
         let receipt = tx_result.inspect_err(|e| {
-            GATEWAY_TX_SENT_ERRORS.inc();
+            GATEWAY_TX_SENT_ERRORS
+                .with_label_values(&[response_str])
+                .inc();
             error!("Failed to send response to the Gateway: {e}");
         })?;
 
         debug!("Transaction receipt: {:?}", receipt);
-        GATEWAY_TX_SENT_COUNTER.inc();
+        GATEWAY_TX_SENT_COUNTER
+            .with_label_values(&[response_str])
+            .inc();
         info!(
             tx_hash = hex::encode(receipt.transaction_hash),
             block_hash = receipt.block_hash.map(hex::encode),

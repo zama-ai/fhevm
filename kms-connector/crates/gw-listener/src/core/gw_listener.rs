@@ -3,7 +3,7 @@ use crate::{
     core::{publish::update_last_block_polled, publish_event},
     monitoring::{
         health::State,
-        metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS, EVENT_STORAGE_ERRORS},
+        metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
     },
 };
 use alloy::{
@@ -198,14 +198,19 @@ where
             match events.next().await {
                 Some(Ok((event, log))) => {
                     *last_block = log.block_number;
-                    EVENT_RECEIVED_COUNTER.inc();
+                    EVENT_RECEIVED_COUNTER
+                        .with_label_values(&[event_type.as_str()])
+                        .inc();
+
                     let db = self.db_pool.clone();
                     spawn_with_limit(handle_gateway_event(db, event.into(), log.block_number))
                         .await;
                 }
                 Some(Err(err)) => {
                     error!("Error while listening for {event_type} events: {err}");
-                    EVENT_RECEIVED_ERRORS.inc();
+                    EVENT_RECEIVED_ERRORS
+                        .with_label_values(&[event_type.as_str()])
+                        .inc();
                     continue;
                 }
                 None => break error!("Alloy Provider was dropped for {event_type}"),
@@ -274,7 +279,6 @@ async fn handle_gateway_event(
     );
     if let Err(err) = publish_event(&db_pool, event, block_number).await {
         error!("Failed to publish event: {err}");
-        EVENT_STORAGE_ERRORS.inc();
     }
 }
 

@@ -39,6 +39,8 @@ pub struct RawConfig {
     pub task_limit: usize,
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: String,
+    #[serde(default = "default_gauge_update_interval_secs")]
+    pub gauge_update_interval_secs: u64,
     #[serde(default = "default_healthcheck_timeout_secs")]
     pub healthcheck_timeout_secs: u64,
 }
@@ -69,6 +71,10 @@ fn default_responses_batch_size() -> u8 {
 
 fn default_gas_multiplier_percent() -> usize {
     115 // 115% gas increase by default
+}
+
+fn default_gauge_update_interval_secs() -> u64 {
+    10
 }
 
 impl DeserializeRawConfig for RawConfig {}
@@ -104,6 +110,7 @@ impl Default for RawConfig {
             gas_multiplier_percent: default_gas_multiplier_percent(),
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
+            gauge_update_interval_secs: default_gauge_update_interval_secs(),
             healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
         }
     }
