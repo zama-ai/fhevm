@@ -37,7 +37,7 @@ const pathways: TwoWayConfig[] = [
         ethereumContract, // Chain A contract
         zamaMainnetContract, // Chain B contract
         // TODO: Add custom ZAMA DVN in next line?
-        [['LayerZero Labs', 'Nethermind'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
+        [['LayerZero Labs'], [['Nethermind', 'Luganodes', 'P2P'], 2]], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
         [15, 20], // [A to B confirmations, B to A confirmations]
         [EVM_ENFORCED_OPTIONS, EVM_ENFORCED_OPTIONS], // Chain B enforcedOptions, Chain A enforcedOptions
     ],
