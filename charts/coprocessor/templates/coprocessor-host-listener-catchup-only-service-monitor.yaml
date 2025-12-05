@@ -1,0 +1,16 @@
+{{- if .Values.hostListenerCatchupOnly.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-host-listener-catchup-only
+    app.kubernetes.io/name: {{ include "hostListenerCatchupOnlyName" . }}
+  name: {{ include "hostListenerCatchupOnlyName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener-catchup-only
+      app.kubernetes.io/name: {{ include "hostListenerCatchupOnlyName" . }}
+  endpoints:
+  - port: metrics
+{{- end -}}
