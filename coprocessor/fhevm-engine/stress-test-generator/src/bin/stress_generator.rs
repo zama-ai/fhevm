@@ -437,11 +437,7 @@ async fn generate_transactions_at_rate(
         default_dependence_cache_size(),
     )
     .await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(database_url.as_str())
-        .await
-        .unwrap();
+
     let mut dependence_handle1: Option<Handle> = None;
     let mut dependence_handle2: Option<Handle> = None;
     for (target_throughput, duration_seconds) in scenario.scenario.iter() {
@@ -518,11 +514,6 @@ async fn generate_transactions_count(
         default_dependence_cache_size(),
     )
     .await?;
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(database_url.as_str())
-        .await
-        .unwrap();
 
     let mut dependence_handle1: Option<Handle> = None;
     let mut dependence_handle2: Option<Handle> = None;
@@ -596,12 +587,6 @@ async fn generate_transaction(
     let mut new_ctx = ctx.clone();
     new_ctx.inputs_pool = inputs.clone();
     let ctx = &new_ctx;
-
-    let pool = &sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&ecfg.evgen_db_url)
-        .await
-        .unwrap(); // TODO: remove this
 
     let mut tx: sqlx::Transaction<'_, Postgres> = listener_event_to_db.new_transaction().await?;
 
@@ -699,7 +684,6 @@ async fn generate_transaction(
                 inputs[6],
                 inputs[7],
                 listener_event_to_db,
-                pool,
                 scenario.variant.to_owned(),
                 &scenario.contract_address,
                 &scenario.user_address,
@@ -723,7 +707,6 @@ async fn generate_transaction(
                 dependence1,
                 dependence2,
                 listener_event_to_db,
-                pool,
                 scenario.variant.to_owned(),
                 &scenario.contract_address,
                 &scenario.user_address,
@@ -757,7 +740,6 @@ async fn generate_transaction(
                 ecfg.synthetic_chain_length,
                 None, // Transaction ID
                 listener_event_to_db,
-                pool,
                 &scenario.contract_address,
                 &scenario.user_address,
             )
@@ -783,7 +765,6 @@ async fn generate_transaction(
                 ecfg.max_decryption_type,
                 None, // Transaction ID
                 listener_event_to_db,
-                pool,
                 &scenario.contract_address,
                 &scenario.user_address,
             )
@@ -797,7 +778,6 @@ async fn generate_transaction(
                 ecfg.max_decryption_type,
                 None, // Transaction ID
                 listener_event_to_db,
-                pool,
                 &scenario.contract_address,
                 &scenario.user_address,
             )

@@ -1,17 +1,15 @@
-use alloy_primitives::Address;
-use fhevm_engine_common::types::AllowEvents;
-use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
-use host_listener::database::tfhe_event_propagate::{
-    Database as ListenerDatabase, Handle, ScalarByte,
-};
-use sqlx::Postgres;
-
 use crate::erc20::erc20_transaction;
 use crate::utils::{
     allow_handle, generate_trivial_encrypt, insert_tfhe_event, next_random_handle, tfhe_event,
     Context, ERCTransferVariant, DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
+use alloy_primitives::Address;
+use fhevm_engine_common::types::AllowEvents;
+use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
+use host_listener::database::tfhe_event_propagate::{
+    Database as ListenerDatabase, Handle, ScalarByte,
+};
 
 #[allow(clippy::too_many_arguments)]
 async fn dex_swap_request_update_dex_balance(
@@ -22,7 +20,6 @@ async fn dex_swap_request_update_dex_balance(
     amount: Option<Handle>,
     transaction_id: Handle,
     listener_event_to_db: &ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
     variant: ERCTransferVariant,
     contract_address: &String,
     user_address: &String,
@@ -74,7 +71,6 @@ async fn dex_swap_request_finalize(
     sent: Option<Handle>,
     transaction_id: Handle,
     listener_event_to_db: &ListenerDatabase,
-    _pool: &sqlx::Pool<Postgres>,
     contract_address: &String,
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
@@ -127,7 +123,6 @@ pub async fn dex_swap_request_transaction(
     amount_0: Option<Handle>,
     amount_1: Option<Handle>,
     listener_event_to_db: &ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
     variant: ERCTransferVariant,
     contract_address: &String,
     user_address: &String,
@@ -180,7 +175,6 @@ pub async fn dex_swap_request_transaction(
         Some(amount_0),
         transaction_id,
         listener_event_to_db,
-        pool,
         variant.to_owned(),
         contract_address,
         user_address,
@@ -194,7 +188,6 @@ pub async fn dex_swap_request_transaction(
         Some(amount_1),
         transaction_id,
         listener_event_to_db,
-        pool,
         variant.to_owned(),
         contract_address,
         user_address,
@@ -209,7 +202,6 @@ pub async fn dex_swap_request_transaction(
         Some(sent_0),
         transaction_id,
         listener_event_to_db,
-        pool,
         contract_address,
         user_address,
     )
@@ -222,7 +214,6 @@ pub async fn dex_swap_request_transaction(
         Some(sent_1),
         transaction_id,
         listener_event_to_db,
-        pool,
         contract_address,
         user_address,
     )
@@ -290,7 +281,6 @@ async fn dex_swap_claim_prepare(
     total_dex_token_1_out: u64,
     transaction_id: Handle,
     listener_event_to_db: &ListenerDatabase,
-    _pool: &sqlx::Pool<Postgres>,
     _variant: ERCTransferVariant,
     contract_address: &String,
     user_address: &String,
@@ -433,7 +423,6 @@ async fn dex_swap_claim_update_dex_balance(
     current_dex_balance: Option<Handle>,
     transaction_id: Handle,
     listener_event_to_db: &ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
     variant: ERCTransferVariant,
     contract_address: &String,
     user_address: &String,
@@ -486,7 +475,6 @@ pub async fn dex_swap_claim_transaction(
     current_balance_0: Option<Handle>,
     current_balance_1: Option<Handle>,
     listener_event_to_db: &ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
     variant: ERCTransferVariant,
     contract_address: &String,
     user_address: &String,
@@ -530,7 +518,6 @@ pub async fn dex_swap_claim_transaction(
         total_token_1_out,
         transaction_id,
         listener_event_to_db,
-        pool,
         variant.to_owned(),
         contract_address,
         user_address,
@@ -546,7 +533,6 @@ pub async fn dex_swap_claim_transaction(
         Some(current_balance_0),
         transaction_id,
         listener_event_to_db,
-        pool,
         variant.to_owned(),
         contract_address,
         user_address,
@@ -561,7 +547,6 @@ pub async fn dex_swap_claim_transaction(
         Some(current_balance_1),
         transaction_id,
         listener_event_to_db,
-        pool,
         variant.to_owned(),
         contract_address,
         user_address,

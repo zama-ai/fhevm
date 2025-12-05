@@ -11,7 +11,7 @@ use tracing::info;
 
 use crate::utils::{
     allow_handle, generate_trivial_encrypt, insert_tfhe_event, new_transaction_id,
-    next_random_handle, pool, tfhe_event, Context, FheType, DEF_TYPE,
+    next_random_handle, tfhe_event, Context, FheType, DEF_TYPE,
 };
 
 #[derive(Clone, Copy)]
@@ -244,8 +244,6 @@ pub async fn process_batch_payment(
     let caller = user_address.parse().unwrap();
     info!(target: "tool", "Process Batch Payment: tx_id: {:?}", transaction_id);
 
-    let pool = listener_event_to_db.pool.clone().read().await.clone();
-
     let e_total_paid = crate::erc7984::confidential_transfer_from(
         ctx,
         tx,
@@ -289,7 +287,6 @@ pub async fn confirm_and_finalize_bid(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut bid_entry = *bid_entry;
     let caller = user_address.parse().unwrap();
-    let pool = &pool(listener_event_to_db).await;
     info!(target: "tool", "Confirm and Finalize Bid: tx_id: {:?}", transaction_id);
 
     let zero = generate_trivial_encrypt(

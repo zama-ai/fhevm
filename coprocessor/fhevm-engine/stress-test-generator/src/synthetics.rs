@@ -8,7 +8,6 @@ use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
 use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, ScalarByte,
 };
-use sqlx::Postgres;
 
 use std::io::prelude::*;
 
@@ -85,7 +84,6 @@ pub async fn mul_chain_transaction(
     length: u32,
     transaction_id: Option<Handle>,
     listener_event_to_db: &ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
     contract_address: &String,
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
@@ -148,7 +146,6 @@ pub async fn generate_pub_decrypt_handles_types(
     max_type: u8,
     transaction_id: Option<Handle>,
     listener_event_to_db: &ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
     contract_address: &str,
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
@@ -192,7 +189,6 @@ pub async fn generate_user_decrypt_handles_types(
     max_type: u8,
     transaction_id: Option<Handle>,
     listener_event_to_db: &ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
     contract_address: &str,
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
