@@ -61,6 +61,9 @@ describe('OperatorRewarder', function () {
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.staker1, ethers.parseEther('5'));
       await expect(this.mock.earned(this.staker1)).to.eventually.eq(0);
+
+      // Historical reward: 10 (seconds) * 0.5 (reward rate) = 5
+      await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('5'));
     });
 
     it('should split between two equal stakers', async function () {
@@ -83,6 +86,9 @@ describe('OperatorRewarder', function () {
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.staker2, ethers.parseEther('2.25'));
       await expect(this.mock.earned(this.staker2)).to.eventually.eq(0);
+
+      // Historical reward: (1+9) (seconds) * 0.5 (reward rate) = 5
+      await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('5'));
     });
 
     it('should not claim past reward after receiving new shares on transfer', async function () {
@@ -95,6 +101,9 @@ describe('OperatorRewarder', function () {
       await expect(this.mock.earned(this.staker1)).to.eventually.eq(0);
       // staker2 cannot claim any reward
       await expect(this.mock.earned(this.staker2)).to.eventually.eq(0);
+
+      // Historical reward: 10 (seconds) * 0.5 (reward rate) = 5
+      await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('5'));
     });
 
     it('should decrease rewards appropriately for owner fee', async function () {
@@ -116,6 +125,9 @@ describe('OperatorRewarder', function () {
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.admin, ethers.parseEther('0.5'));
       await expect(this.mock.unpaidOwnerFee()).to.eventually.eq(0);
+
+      // Historical reward: 10 (seconds) * 0.5 (reward rate) - 0.5 (10% fee) = 4.5
+      await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('4.5'));
     });
 
     it('should not trigger payment if no staker reward', async function () {
@@ -124,6 +136,9 @@ describe('OperatorRewarder', function () {
       await time.increase(9);
 
       await expect(this.mock.claimRewards(this.staker1)).to.not.emit(this.token, 'Transfer');
+
+      // Historical reward: 0 (no reward rate)
+      await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('0'));
     });
 
     it('should calculate properly after full removal then restake', async function () {
@@ -159,6 +174,9 @@ describe('OperatorRewarder', function () {
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.staker1, ethers.parseEther('5.5'));
       await expect(this.mock.earned(this.staker1)).to.eventually.eq(0);
+
+      // Historical reward: (1+10+10+1) (seconds) * 0.5 (reward rate) = 11
+      await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('11'));
     });
 
     it("should properly count rewards after pending withdrawal that's not yet redeemed", async function () {
@@ -175,6 +193,9 @@ describe('OperatorRewarder', function () {
 
       expect(await this.mock.earned(this.staker1)).to.be.closeTo(ethers.parseEther('6.75'), 1n);
       await expect(this.mock.earned(this.staker2)).to.eventually.eq(ethers.parseEther('3.75'));
+
+      // Historical reward: (1+10) (seconds) * 0.5 (reward rate) = 10.5
+      await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('10.5'));
     });
   });
 
@@ -195,6 +216,9 @@ describe('OperatorRewarder', function () {
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.admin, ethers.parseEther('1.05'));
       await expect(this.mock.unpaidOwnerFee()).to.eventually.eq(0);
+
+      // Historical reward: (20+1) (seconds) * 0.5 (reward rate) - 1.05 (10% fee) = 9.45
+      await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('9.45'));
     });
 
     it('should reset pending owner fee', async function () {
@@ -209,6 +233,13 @@ describe('OperatorRewarder', function () {
       await this.mock.connect(this.admin).claimOwnerFee();
 
       await expect(this.mock.earned(this.staker1)).to.eventually.eq(ethers.parseEther('4.5'));
+    });
+
+    it('should not effect historical reward', async function () {
+      await timeIncreaseNoMine(10);
+      await this.mock.connect(this.admin).claimOwnerFee();
+
+      await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('4.5'));
     });
 
     it('should process second claim accurately', async function () {
