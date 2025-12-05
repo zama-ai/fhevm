@@ -20,6 +20,7 @@ async function deployProtocolStaking(
   symbol: string,
   version: string,
   cooldown: number,
+  rewardRate: bigint,
   hre: HardhatRuntimeEnvironment,
 ) {
   const { getNamedAccounts, ethers, deployments, upgrades, network } = hre;
@@ -39,7 +40,7 @@ async function deployProtocolStaking(
   const protocolStakingFactory = await ethers.getContractFactory(PROTOCOL_STAKING_CONTRACT_NAME, deployerSigner);
   const proxy = await upgrades.deployProxy(
     protocolStakingFactory,
-    [tokenName, symbol, version, zamaTokenAddress, deployer, daoAddress, deployer, cooldown],
+    [tokenName, symbol, version, zamaTokenAddress, deployer, daoAddress, deployer, cooldown, rewardRate],
     { kind: 'uups', initializer: 'initialize' },
   );
   await proxy.waitForDeployment();
@@ -74,9 +75,10 @@ task('task:deployProtocolStakingCopro').setAction(async function (_, hre) {
   const coproTokenSymbol = getRequiredEnvVar('PROTOCOL_STAKING_COPRO_TOKEN_SYMBOL');
   const coproVersion = getRequiredEnvVar('PROTOCOL_STAKING_COPRO_VERSION');
   const coproCooldown = parseInt(getRequiredEnvVar('PROTOCOL_STAKING_COPRO_COOLDOWN_PERIOD'));
+  const coproRewardRate = BigInt(parseInt(getRequiredEnvVar('PROTOCOL_STAKING_COPRO_REWARD_RATE')));
 
   // Deploy the coprocessor protocol staking contract
-  await deployProtocolStaking(coproTokenName, coproTokenSymbol, coproVersion, coproCooldown, hre);
+  await deployProtocolStaking(coproTokenName, coproTokenSymbol, coproVersion, coproCooldown, coproRewardRate, hre);
 });
 
 // Deploy the KMS ProtocolStaking contracts
@@ -90,9 +92,10 @@ task('task:deployProtocolStakingKMS').setAction(async function (_, hre) {
   const kmsTokenSymbol = getRequiredEnvVar('PROTOCOL_STAKING_KMS_TOKEN_SYMBOL');
   const kmsVersion = getRequiredEnvVar('PROTOCOL_STAKING_KMS_VERSION');
   const kmsCooldown = parseInt(getRequiredEnvVar('PROTOCOL_STAKING_KMS_COOLDOWN_PERIOD'));
+  const kmsRewardRate = BigInt(parseInt(getRequiredEnvVar('PROTOCOL_STAKING_KMS_REWARD_RATE')));
 
   // Deploy the KMS protocol staking contract
-  await deployProtocolStaking(kmsTokenName, kmsTokenSymbol, kmsVersion, kmsCooldown, hre);
+  await deployProtocolStaking(kmsTokenName, kmsTokenSymbol, kmsVersion, kmsCooldown, kmsRewardRate, hre);
 });
 
 // Deploy the ProtocolStaking contracts

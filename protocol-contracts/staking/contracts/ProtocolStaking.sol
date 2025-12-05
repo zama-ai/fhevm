@@ -19,7 +19,7 @@ interface IERC20Mintable is IERC20 {
 
 /**
  * @dev Staking contract that distributes newly minted tokens to eligible accounts at a configurable flow rate.
- * 
+ *
  * NOTE: This staking contract does not support non-standard ERC-20 tokens such as fee-on-transfer or rebasing tokens.
  * @custom:security-contact security@zama.ai
  */
@@ -91,7 +91,8 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         address governor,
         address upgrader,
         address manager,
-        uint48 initialUnstakeCooldownPeriod
+        uint48 initialUnstakeCooldownPeriod,
+        uint256 initialRewardRate
     ) public initializer {
         __AccessControlDefaultAdminRules_init(0, governor);
         _grantRole(UPGRADER_ROLE, upgrader);
@@ -101,6 +102,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         __EIP712_init(name, version);
         _getProtocolStakingStorage()._stakingToken = stakingToken_;
         _setUnstakeCooldownPeriod(initialUnstakeCooldownPeriod);
+        _setRewardRate(initialRewardRate);
     }
 
     /**
@@ -173,12 +175,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @param rewardRate_ The new reward rate in tokens per second.
      */
     function setRewardRate(uint256 rewardRate_) public onlyRole(MANAGER_ROLE) {
-        ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
-        $._lastUpdateReward = _historicalReward();
-        $._lastUpdateTimestamp = Time.timestamp();
-        $._rewardRate = rewardRate_;
-
-        emit RewardRateSet(rewardRate_);
+        _setRewardRate(rewardRate_);
     }
 
     /**
@@ -320,6 +317,19 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         _getProtocolStakingStorage()._unstakeCooldownPeriod = unstakeCooldownPeriod_;
 
         emit UnstakeCooldownPeriodSet(unstakeCooldownPeriod_);
+    }
+
+    /**
+     * @dev Sets the reward rate in tokens per second.
+     * @param rewardRate_ The new reward rate in tokens per second.
+     */
+    function _setRewardRate(uint256 rewardRate_) internal {
+        ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
+        $._lastUpdateReward = _historicalReward();
+        $._lastUpdateTimestamp = Time.timestamp();
+        $._rewardRate = rewardRate_;
+
+        emit RewardRateSet(rewardRate_);
     }
 
     function _updateRewards(address user, uint256 weightBefore, uint256 weightAfter) internal {

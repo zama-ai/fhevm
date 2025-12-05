@@ -12,20 +12,19 @@ describe('OperatorRewarder', function () {
     const [staker1, staker2, admin, anyone, ...accounts] = await ethers.getSigners();
 
     const token = await ethers.deployContract('$ERC20Mock', ['StakingToken', 'ST', 18]);
-    const protocolStaking = await ethers
-      .getContractFactory('ProtocolStakingSlashingMock')
-      .then(factory =>
-        upgrades.deployProxy(factory, [
-          'StakedToken',
-          'SST',
-          '1',
-          token.target,
-          admin.address,
-          admin.address,
-          admin.address,
-          60 /* 1 min */,
-        ]),
-      );
+    const protocolStaking = await ethers.getContractFactory('ProtocolStakingSlashingMock').then(factory =>
+      upgrades.deployProxy(factory, [
+        'StakedToken',
+        'SST',
+        '1',
+        token.target,
+        admin.address,
+        admin.address,
+        admin.address,
+        60 /* 1 min */, // unstake cooldown period
+        ethers.parseEther('0.5'), // reward rate
+      ]),
+    );
     const operatorStaking = await ethers.deployContract('$OperatorStaking', [
       'OPStake',
       'OP',
@@ -43,7 +42,6 @@ describe('OperatorRewarder', function () {
     );
 
     await protocolStaking.connect(admin).addEligibleAccount(operatorStaking);
-    await protocolStaking.connect(admin).setRewardRate(ethers.parseEther('0.5'));
 
     Object.assign(this, { staker1, staker2, admin, anyone, accounts, token, operatorStaking, protocolStaking, mock });
   });
