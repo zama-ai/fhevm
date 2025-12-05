@@ -22,7 +22,7 @@ describe('OperatorRewarder', function () {
         admin.address,
         admin.address,
         60 /* 1 min */, // unstake cooldown period
-        0n, // reward rate
+        ethers.parseEther('0.5'), // reward rate
       ]),
     );
     const operatorStaking = await ethers.deployContract('$OperatorStaking', [
@@ -42,7 +42,6 @@ describe('OperatorRewarder', function () {
     );
 
     await protocolStaking.connect(admin).addEligibleAccount(operatorStaking);
-    await protocolStaking.connect(admin).setRewardRate(ethers.parseEther('0.5'));
 
     Object.assign(this, { staker1, staker2, admin, anyone, accounts, token, operatorStaking, protocolStaking, mock });
   });
