@@ -109,6 +109,7 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/protocol/ex
 - [Documentation](https://docs.zama.ai/protocol) — Official documentation of FHEVM.
 - [Whitepaper](./fhevm-whitepaper.pdf) — Technical overview of FHEVM's cryptographic design.
 - [Examples](https://docs.zama.ai/protocol/examples) — Examples of building confidential smart contracts.
+- [Hardhat setup guide](https://docs.zama.ai/protocol/solidity-guides/v0.7/getting-started/setup) — Step-by-step guide for setting up an FHEVM Hardhat development environment using the official template.
 - [Awesome Zama – FHEVM](https://github.com/zama-ai/awesome-zama?tab=readme-ov-file#fhevm) — Curated articles, talks, and ecosystem projects.
 
 <p align="right">
