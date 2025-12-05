@@ -1,6 +1,6 @@
 use crate::utils::{
-    allow_handle, generate_trivial_encrypt, insert_tfhe_event, next_random_handle, pool,
-    tfhe_event, Context, FheType, DEF_TYPE,
+    allow_handle, generate_trivial_encrypt, insert_tfhe_event, next_random_handle, tfhe_event,
+    Context, FheType, DEF_TYPE,
 };
 use alloy_primitives::Address;
 use fhevm_engine_common::types::AllowEvents;

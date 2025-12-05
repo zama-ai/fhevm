@@ -235,6 +235,7 @@ pub fn as_scalar_uint(big_int: &BigInt) -> ClearConst {
     ClearConst::from_be_slice(&bytes)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn generate_trivial_encrypt(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     _contract_address: &str,
