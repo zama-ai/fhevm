@@ -10,7 +10,7 @@ use std::time::Duration;
 #[derive(Clone)]
 /// The struct used to monitor the state of the `TransactionSender`.
 pub struct State {
-    db_pool: Pool<Postgres>,
+    pub db_pool: Pool<Postgres>,
     provider: WalletGatewayProvider,
     healthcheck_timeout: Duration,
 }

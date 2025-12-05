@@ -70,7 +70,9 @@ impl KmsResponsePicker for DbKmsResponsePicker {
             match self.pick_notified_responses(&notification).await {
                 Err(e) => {
                     warn!("Error while picking responses: {e}");
-                    RESPONSE_RECEIVED_ERRORS.inc();
+                    RESPONSE_RECEIVED_ERRORS
+                        .with_label_values(&[notification.response_str()])
+                        .inc();
                     continue;
                 }
                 Ok(responses) if responses.is_empty() => {
@@ -78,12 +80,10 @@ impl KmsResponsePicker for DbKmsResponsePicker {
                     continue;
                 }
                 Ok(responses) => {
-                    info!(
-                        "Picked {} {} successfully",
-                        responses.len(),
-                        notification.response_str()
-                    );
-                    RESPONSE_RECEIVED_COUNTER.inc_by(responses.len() as u64);
+                    info!("Picked {} {} successfully", responses.len(), notification);
+                    RESPONSE_RECEIVED_COUNTER
+                        .with_label_values(&[notification.response_str()])
+                        .inc_by(responses.len() as u64);
                     return Ok(responses);
                 }
             }

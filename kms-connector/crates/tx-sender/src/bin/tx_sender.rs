@@ -1,6 +1,6 @@
 use tx_sender::{
     core::{Config, TransactionSender},
-    monitoring::health::HealthStatus,
+    monitoring::{health::HealthStatus, metrics::spawn_gauge_update_routine},
 };
 
 use connector_utils::{
@@ -42,9 +42,15 @@ async fn run() -> anyhow::Result<()> {
             set_task_limit(config.task_limit);
             install_signal_handlers(cancel_token.clone())?;
             let monitoring_endpoint = config.monitoring_endpoint;
+            let gauge_update_interval = config.gauge_update_interval;
 
             info!("Starting TransactionSender");
             let (tx_sender, state) = TransactionSender::from_config(config).await?;
+            spawn_gauge_update_routine(
+                gauge_update_interval,
+                state.db_pool.clone(),
+                cancel_token.clone(),
+            );
             start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
             tx_sender.start(cancel_token).await;
         }

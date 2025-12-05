@@ -1,10 +1,8 @@
 use crate::{
     core::{Config, event_processor::processor::ProcessingError},
     monitoring::metrics::{
-        DECRYPTION_REQUEST_SENT_COUNTER, DECRYPTION_REQUEST_SENT_ERRORS,
-        DECRYPTION_RESPONSE_COUNTER, DECRYPTION_RESPONSE_ERRORS,
-        KEY_MANAGEMENT_REQUEST_SENT_COUNTER, KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
-        KEY_MANAGEMENT_RESPONSE_COUNTER, KEY_MANAGEMENT_RESPONSE_ERRORS,
+        GRPC_REQUEST_SENT_COUNTER, GRPC_REQUEST_SENT_ERRORS, GRPC_RESPONSE_POLLED_COUNTER,
+        GRPC_RESPONSE_POLLED_ERRORS,
     },
 };
 use alloy::{hex, primitives::U256};
@@ -12,7 +10,8 @@ use anyhow::anyhow;
 use connector_utils::{
     conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
     types::{
-        KmsGrpcRequest, KmsGrpcResponse, decode_request_id, gw_event::PRSS_INIT_ID, u256_to_u32,
+        KmsGrpcRequest, KmsGrpcResponse, db::EventType, decode_request_id, gw_event::PRSS_INIT_ID,
+        u256_to_u32,
     },
 };
 use kms_grpc::{
@@ -22,8 +21,6 @@ use kms_grpc::{
     },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
-use prometheus::IntCounter;
-use std::sync::LazyLock;
 use tonic::{Code, Request, Response, Status, transport::Channel};
 use tracing::{info, warn};
 
@@ -149,8 +146,7 @@ impl KmsClient {
                 let request = request.clone();
                 async move { client.public_decrypt(request).await }
             },
-            &DECRYPTION_REQUEST_SENT_COUNTER,
-            &DECRYPTION_REQUEST_SENT_ERRORS,
+            EventType::PublicDecryptionRequest,
         )
         .await
     }
@@ -175,8 +171,7 @@ impl KmsClient {
                 let request = request.clone();
                 async move { client.user_decrypt(request).await }
             },
-            &DECRYPTION_REQUEST_SENT_COUNTER,
-            &DECRYPTION_REQUEST_SENT_ERRORS,
+            EventType::UserDecryptionRequest,
         )
         .await
     }
@@ -202,8 +197,7 @@ impl KmsClient {
                 let request = request.clone();
                 async move { client.key_gen_preproc(request).await }
             },
-            &KEY_MANAGEMENT_REQUEST_SENT_COUNTER,
-            &KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
+            EventType::PrepKeygenRequest,
         )
         .await
     }
@@ -226,8 +220,7 @@ impl KmsClient {
                 let request = request.clone();
                 async move { client.key_gen(request).await }
             },
-            &KEY_MANAGEMENT_REQUEST_SENT_COUNTER,
-            &KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
+            EventType::KeygenRequest,
         )
         .await
     }
@@ -250,8 +243,7 @@ impl KmsClient {
                 let request = request.clone();
                 async move { client.crs_gen(request).await }
             },
-            &KEY_MANAGEMENT_REQUEST_SENT_COUNTER,
-            &KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
+            EventType::CrsgenRequest,
         )
         .await
     }
@@ -267,8 +259,7 @@ impl KmsClient {
                 let request = request.clone();
                 async move { client.init(request).await }
             },
-            &KEY_MANAGEMENT_REQUEST_SENT_COUNTER,
-            &KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
+            EventType::PrssInit,
         )
         .await
     }
@@ -294,8 +285,7 @@ impl KmsClient {
                 let request = request.clone();
                 async move { client.initiate_resharing(request).await }
             },
-            &KEY_MANAGEMENT_REQUEST_SENT_COUNTER,
-            &KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
+            EventType::KeyReshareSameSet,
         )
         .await
     }
@@ -321,8 +311,7 @@ impl KmsClient {
                 let mut client = inner_client.clone();
                 async move { client.get_public_decryption_result(request).await }
             },
-            &DECRYPTION_RESPONSE_COUNTER,
-            &DECRYPTION_RESPONSE_ERRORS,
+            EventType::PublicDecryptionRequest,
         )
         .await;
 
@@ -357,8 +346,7 @@ impl KmsClient {
                 let request = Request::new(request_id.clone());
                 async move { client.get_user_decryption_result(request).await }
             },
-            &DECRYPTION_RESPONSE_COUNTER,
-            &DECRYPTION_RESPONSE_ERRORS,
+            EventType::UserDecryptionRequest,
         )
         .await;
 
@@ -393,8 +381,7 @@ impl KmsClient {
                 let request = Request::new(request_id.clone());
                 async move { client.get_key_gen_preproc_result(request).await }
             },
-            &KEY_MANAGEMENT_RESPONSE_COUNTER,
-            &KEY_MANAGEMENT_RESPONSE_ERRORS,
+            EventType::PrepKeygenRequest,
         )
         .await;
 
@@ -428,8 +415,7 @@ impl KmsClient {
                 let request = Request::new(request_id.clone());
                 async move { client.get_key_gen_result(request).await }
             },
-            &KEY_MANAGEMENT_RESPONSE_COUNTER,
-            &KEY_MANAGEMENT_RESPONSE_ERRORS,
+            EventType::KeygenRequest,
         )
         .await;
 
@@ -463,8 +449,7 @@ impl KmsClient {
                 let request = Request::new(request_id.clone());
                 async move { client.get_crs_gen_result(request).await }
             },
-            &KEY_MANAGEMENT_RESPONSE_COUNTER,
-            &KEY_MANAGEMENT_RESPONSE_ERRORS,
+            EventType::CrsgenRequest,
         )
         .await;
 
@@ -504,8 +489,7 @@ const RETRYABLE_GRPC_CODE: [Code; 4] = [
 async fn send_request_with_retries<F, Fut, R>(
     retries: u8,
     mut request_fn: F,
-    success_counter: &LazyLock<IntCounter>,
-    error_counter: &LazyLock<IntCounter>,
+    event_type: EventType,
 ) -> (i16, Result<(), ProcessingError>)
 where
     F: FnMut() -> Fut,
@@ -514,7 +498,9 @@ where
     for i in 1..=retries as i16 {
         match request_fn().await {
             Ok(_) => {
-                success_counter.inc();
+                GRPC_REQUEST_SENT_COUNTER
+                    .with_label_values(&[event_type.as_str()])
+                    .inc();
                 info!("GRPC request successfully sent to the KMS!");
                 return (i - 1, Ok(())); // Don't count last successful attempt
             }
@@ -523,11 +509,15 @@ where
                 return (i - 1, Ok(())); // Don't count last successful attempt
             }
             Err(e) if RETRYABLE_GRPC_CODE.contains(&e.code()) => {
-                error_counter.inc();
+                GRPC_REQUEST_SENT_ERRORS
+                    .with_label_values(&[event_type.as_str()])
+                    .inc();
                 warn!("#{i}/{retries} GRPC request attempt failed: {e}");
             }
             Err(e) => {
-                error_counter.inc();
+                GRPC_REQUEST_SENT_ERRORS
+                    .with_label_values(&[event_type.as_str()])
+                    .inc();
                 return (i, Err(ProcessingError::Irrecoverable(e.into())));
             }
         }
@@ -546,8 +536,7 @@ where
 async fn poll_for_result<T, F, Fut>(
     retries: u8,
     mut poll_fn: F,
-    success_counter: &LazyLock<IntCounter>,
-    error_counter: &LazyLock<IntCounter>,
+    event_type: EventType,
 ) -> (i16, Result<Response<T>, Status>)
 where
     F: FnMut() -> Fut,
@@ -557,7 +546,9 @@ where
         info!("#{i}/{retries} Trying to retrieve result from KMS Core...");
         match poll_fn().await {
             Ok(response) => {
-                success_counter.inc();
+                GRPC_RESPONSE_POLLED_COUNTER
+                    .with_label_values(&[event_type.as_str()])
+                    .inc();
                 info!("Result successfully retrieved from KMS Core!");
                 return (i - 1, Ok(response)); // Don't count last successful attempt
             }
@@ -566,13 +557,17 @@ where
                     info!("#{i}/{retries} Failed to poll result from KMS: {status}");
                 } else {
                     // Any other error is returned immediately
-                    error_counter.inc();
+                    GRPC_RESPONSE_POLLED_ERRORS
+                        .with_label_values(&[event_type.as_str()])
+                        .inc();
                     return (i, Err(status));
                 }
             }
         }
     }
-    error_counter.inc();
+    GRPC_RESPONSE_POLLED_ERRORS
+        .with_label_values(&[event_type.as_str()])
+        .inc();
     (
         retries as i16,
         Err(Status::unavailable("all result polling attempts failed")),
