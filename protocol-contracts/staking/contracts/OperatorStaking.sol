@@ -47,7 +47,8 @@ contract OperatorStaking is ERC20, Ownable, ReentrancyGuardTransient {
         address indexed owner,
         uint256 indexed requestId,
         address sender,
-        uint256 shares
+        uint256 shares,
+        uint48 releaseTime
     );
 
     /// @dev Emitted when the rewarder contract is set.
@@ -131,7 +132,7 @@ contract OperatorStaking is ERC20, Ownable, ReentrancyGuardTransient {
         assert(releaseTime >= lastReleaseTime); // should never happen
         _unstakeRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
 
-        emit RedeemRequest(controller, owner, 0, msg.sender, shares);
+        emit RedeemRequest(controller, owner, 0, msg.sender, shares, releaseTime);
     }
 
     /**
