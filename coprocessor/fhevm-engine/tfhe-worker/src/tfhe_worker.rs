@@ -116,6 +116,7 @@ async fn tfhe_worker_cycle(
         let mut trx = conn.begin().await?;
         s.end();
 
+        info!("Fetch work");
         // Query for transactions to execute, and if relevant the associated keys
         let (mut transactions, mut unneeded_handles) =
             query_for_work(args, &health_check, &mut trx, &tracer, &loop_ctx).await?;
@@ -126,6 +127,7 @@ async fn tfhe_worker_cycle(
             // for a notification after this cycle.
             immedially_poll_more_work = true;
         }
+        info!("Fetch keys");
         query_tenants_and_keys(
             &transactions,
             &tenant_key_cache,
@@ -135,9 +137,11 @@ async fn tfhe_worker_cycle(
         )
         .await?;
 
+        info!("Start compute");
         // Execute transactions segregated by tenant
         for (tenant_id, ref mut tenant_txs) in transactions.iter_mut() {
-            let mut tx_graph = build_transaction_graph_and_execute(
+            info!("Tenant {}", tenant_id);
+            let tx_graph= match build_transaction_graph_and_execute(
                 tenant_id,
                 tenant_txs,
                 &tenant_key_cache,
@@ -145,8 +149,15 @@ async fn tfhe_worker_cycle(
                 &mut trx,
                 &tracer,
                 &loop_ctx,
-            )
-            .await?;
+            ).await {
+                Ok(tx_graph) => tx_graph,
+                Err(err) => {
+                    trx.rollback().await?;
+                    info!("Scheduling failed");
+                    return Err(err)
+                }
+            };
+            let mut tx_graph = tx_graph;
             upload_transaction_graph_results(
                 tenant_id,
                 &mut tx_graph,
@@ -159,6 +170,7 @@ async fn tfhe_worker_cycle(
         }
         s.end();
         trx.commit().await?;
+        info!("Db commit");
         let _guard = loop_ctx.attach();
         #[cfg(feature = "bench")]
         {
@@ -196,8 +208,10 @@ async fn query_tenants_and_keys<'a>(
         "tenants_to_query",
         tenants_to_query.len() as i64,
     ));
+    info!("Fetch keys");
     populate_cache_with_tenant_keys(keys_to_query, trx.as_mut(), tenant_key_cache).await?;
     s.end();
+    info!("Keys ready");
     Ok(())
 }
 
@@ -446,6 +460,7 @@ FOR UPDATE SKIP LOCKED            ",
                     is_allowed: w.is_allowed,
                 });
             }
+            info!(target: "tfhe_worker transaction", { unneeded_handles = unneeded_handles.len(), ops = ops.len() }, "Transaction work items");
             let (mut components, mut unneeded) = build_component_nodes(ops, transaction)?;
             tenant_transactions.append(&mut components);
             unneeded_handles.append(&mut unneeded);
@@ -453,6 +468,7 @@ FOR UPDATE SKIP LOCKED            ",
         transactions.push((*tenant_id, tenant_transactions));
     }
     s_prep.end();
+    info!(target: "tfhe_worker", { unneeded_handles = unneeded_handles.len(), transactions = transactions.len() }, "Work items");
     Ok((transactions, unneeded_handles))
 }
 
@@ -474,6 +490,7 @@ async fn build_transaction_graph_and_execute<'a>(
         return Ok(tx_graph);
     }
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
+    info!("query ciphetext");
     let ciphertext_map =
         query_ciphertexts(&cts_to_query, *tenant_id, trx, tracer, loop_ctx).await?;
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
@@ -485,6 +502,7 @@ async fn build_transaction_graph_and_execute<'a>(
     // Execute the DFG with the current tenant's keys
     let mut s_compute = tracer.start_with_context("compute_fhe_ops", loop_ctx);
     {
+        info!("execute 1");
         let mut rk = tenant_key_cache.write().await;
         let keys = match rk.get(tenant_id) {
             Some(k) => k,
@@ -502,7 +520,7 @@ async fn build_transaction_graph_and_execute<'a>(
                 return Err(err.into());
             }
         };
-
+        info!("execute 2");
         // Schedule computations in parallel as dependences allow
         tfhe::set_server_key(keys.sks.clone());
         let mut sched = Scheduler::new(
@@ -513,7 +531,9 @@ async fn build_transaction_graph_and_execute<'a>(
             keys.gpu_sks.clone(),
             health_check.activity_heartbeat.clone(),
         );
+        info!("execute 3");
         sched.schedule(loop_ctx).await?;
+        info!("execute finished");
     }
     s_compute.end();
     Ok(tx_graph)
@@ -539,6 +559,7 @@ async fn upload_transaction_graph_results<'a>(
     for result in graph_results.into_iter() {
         match result.compressed_ct {
             Ok((db_type, db_bytes)) => {
+                info!(target: "tfhe_worker", { tenant_id = tenant_id, output_handle = format!("0x{}", hex::encode(&result.handle)) }, "computation completed successfully");
                 cts_to_insert.push((
                     *tenant_id,
                     (
@@ -549,6 +570,7 @@ async fn upload_transaction_graph_results<'a>(
                 WORK_ITEMS_PROCESSED_COUNTER.inc();
             }
             Err(mut err) => {
+                info!(target: "tfhe_worker", { err = ?err, tenant_id = tenant_id, output_handle = format!("0x{}", hex::encode(&result.handle)) }, "computation failed");
                 let cerr: Box<dyn std::error::Error + Send + Sync> =
                     if let Some(fhevm_error) = err.downcast_mut::<FhevmError>() {
                         let mut swap_val = FhevmError::BadInputs;

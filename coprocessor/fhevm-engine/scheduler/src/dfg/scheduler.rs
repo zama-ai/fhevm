@@ -77,6 +77,7 @@ impl<'a> Scheduler<'a> {
     }
 
     pub async fn schedule(&mut self, loop_ctx: &'a opentelemetry::Context) -> Result<()> {
+        info!("schedule");
         let schedule_type = std::env::var("FHEVM_DF_SCHEDULE");
         match schedule_type {
             Ok(val) => match val.as_str() {
@@ -155,6 +156,7 @@ impl<'a> Scheduler<'a> {
         strategy: PartitionStrategy,
         loop_ctx: &'a opentelemetry::Context,
     ) -> Result<()> {
+        info!("schedule_coarse_grain");
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
         match strategy {
             PartitionStrategy::MaxLocality => {
@@ -173,6 +175,7 @@ impl<'a> Scheduler<'a> {
                 .node_weight_mut(index)
                 .ok_or(SchedulerError::DataflowGraphError)?;
             if self.is_ready_task(node) {
+                info!("task is ready");
                 let mut args = Vec::with_capacity(node.df_nodes.len());
                 for nidx in node.df_nodes.iter() {
                     let tx = self
@@ -189,10 +192,19 @@ impl<'a> Scheduler<'a> {
                 }
                 let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
                 let loop_ctx = loop_ctx.clone();
+                info!("task is spawn");
                 set.spawn_blocking(move || execute_partition(args, index, 0, sks, cpk, loop_ctx));
+            } else {
+                info!("task not ready");
             }
         }
+        if set.is_empty() {
+            warn!(target: "scheduler", "No ready tasks to schedule - possible cyclic dependence in graph");
+            return Ok(());
+        }
+        info!("wait result {}", set.len());
         while let Some(result) = set.join_next().await {
+            info!("has result {}", result.is_ok());
             self.activity_heartbeat.update();
             // The result contains all outputs (allowed handles)
             // computed within the finished partition. Now check the
@@ -238,12 +250,16 @@ impl<'a> Scheduler<'a> {
                     }
                     let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
                     let loop_ctx = loop_ctx.clone();
+                    info!("add compute");
                     set.spawn_blocking(move || {
                         execute_partition(args, dependent_task_index, 0, sks, cpk, loop_ctx)
                     });
+                }else {
+                    info!("dependent task not ready");
                 }
             }
         }
+        info!("all result done");
         Ok(())
     }
 }

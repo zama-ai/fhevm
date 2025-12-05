@@ -422,7 +422,7 @@ fn unary_op_to_event(
 }
 
 #[tokio::test]
-async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_fhe_unary_NO_operands_events() -> Result<(), Box<dyn std::error::Error>> {
     let ops = generate_unary_test_cases();
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()

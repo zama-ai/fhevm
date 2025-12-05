@@ -709,7 +709,7 @@ async fn test_coprocessor_reorb_tx_id_collision_errors() -> Result<(), Box<dyn s
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
     let api_key_header = format!("bearer {}", default_api_key());
     let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
+        .max_connections(16)
         .connect(app.db_url())
         .await?;
 
@@ -855,8 +855,9 @@ async fn test_coprocessor_reorb_tx_id_collision_errors() -> Result<(), Box<dyn s
         );
         client.async_compute(input_request).await?; // detected but silently ignored
         tracing::warn!("Waiting for computations to be processed...");
-        for _ in 1..10 {
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await; // wait for processing
+        tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+        for _ in 1..40 {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await; // wait for processing
             let not_completed = sqlx::query!(
                 "SELECT output_handle, fhe_operation, block_hash, block_number, is_completed FROM computations WHERE (transaction_id = $1 OR transaction_id = $2) AND is_completed = false",
                 transaction_a_1,
@@ -897,8 +898,13 @@ async fn test_coprocessor_reorb_tx_id_collision_errors() -> Result<(), Box<dyn s
     .await?;
     // with block hash difference it's ok
     let mut async_computations_2 = async_computations_1.clone();
+    assert!(async_computations_2[2].block_hash == block_1);
+    assert!(async_computations_2[3].block_hash == block_1);
     async_computations_2[2].block_hash = block_2.clone();
     async_computations_2[3].block_hash = block_2.clone();
+    assert!(async_computations_2[2].block_hash == block_2);
+    assert!(async_computations_2[3].block_hash == block_2);
+
     {
         tracing::warn!("Retest");
         // with block hash difference it's ok
@@ -911,8 +917,8 @@ async fn test_coprocessor_reorb_tx_id_collision_errors() -> Result<(), Box<dyn s
         );
         client.async_compute(input_request).await?;
         tracing::warn!("Waiting for computations to be processed...");
-        for i in 1..=10 {
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await; // wait for processing
+        for i in 1..=20 {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await; // wait for processing
             let not_completed = sqlx::query!(
                 "SELECT output_handle, fhe_operation, block_hash, block_number, is_completed FROM computations WHERE (transaction_id = $1 OR transaction_id = $2) AND is_completed = false",
                 transaction_a_1,

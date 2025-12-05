@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM ciphertexts\n        WHERE handle = $1 OR handle = $2 OR handle = $3 OR handle = $4\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0984f8a1c0a5a54c58cdecde5f950a094f9b21225c087ac21f355b5949eb1d55"
+}
