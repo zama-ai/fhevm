@@ -8,7 +8,7 @@ const timeIncreaseNoMine = (duration: number) =>
 
 describe('OperatorStaking', function () {
   beforeEach(async function () {
-    const [staker1, staker2, admin, ...accounts] = await ethers.getSigners();
+    const [staker1, staker2, admin, beneficiary, ...accounts] = await ethers.getSigners();
 
     const token = await ethers.deployContract('$ERC20Mock', ['StakingToken', 'ST', 18]);
     const protocolStaking = await ethers.getContractFactory('ProtocolStakingSlashingMock').then(factory =>
@@ -24,7 +24,15 @@ describe('OperatorStaking', function () {
         0n, // reward rate
       ]),
     );
-    const mock = await ethers.deployContract('$OperatorStaking', ['OPStake', 'OP', protocolStaking, admin.address]);
+    const mock = await ethers.deployContract('$OperatorStaking', [
+      'OPStake',
+      'OP',
+      protocolStaking,
+      admin.address,
+      beneficiary.address,
+      10000, // 100% maximum fee
+      0,
+    ]);
 
     await Promise.all(
       [staker1, staker2].flatMap(account => [
@@ -33,7 +41,7 @@ describe('OperatorStaking', function () {
       ]),
     );
 
-    Object.assign(this, { staker1, staker2, admin, accounts, token, protocolStaking, mock });
+    Object.assign(this, { staker1, staker2, admin, beneficiary, accounts, token, protocolStaking, mock });
   });
 
   describe('deposit', async function () {
@@ -381,8 +389,11 @@ describe('OperatorStaking', function () {
       beforeEach(async function () {
         const newRewarder = await ethers.deployContract('OperatorRewarder', [
           this.admin,
+          this.beneficiary,
           this.protocolStaking,
           this.mock,
+          10000, // 100% maximum fee
+          0,
         ]);
         const oldRewarder = await ethers.getContractAt('OperatorRewarder', await this.mock.rewarder());
 
@@ -408,7 +419,7 @@ describe('OperatorStaking', function () {
 
         await expect(this.newRewarder.earned(this.staker1)).to.eventually.eq(ethers.parseEther('1.25'));
         await expect(this.newRewarder.earned(this.staker2)).to.eventually.eq(ethers.parseEther('3.75'));
-        await expect(this.newRewarder.unpaidOwnerFee()).to.eventually.eq(0);
+        await expect(this.newRewarder.unpaidFee()).to.eventually.eq(0);
 
         await expect(this.newRewarder.claimRewards(this.staker1))
           .to.emit(this.token, 'Transfer')
