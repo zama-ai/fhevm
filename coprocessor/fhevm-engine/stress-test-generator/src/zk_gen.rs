@@ -1,11 +1,13 @@
-use crate::utils::{next_random_handle, query_and_save_pks, EnvConfig, Inputs, DEF_TYPE};
+use crate::utils::{
+    new_transaction_id, next_random_handle, pool, query_and_save_pks, EnvConfig, Inputs, DEF_TYPE,
+};
 use fhevm_engine_common::utils::to_hex;
-use host_listener::database::tfhe_event_propagate::Handle;
+use host_listener::database::tfhe_event_propagate::{Database as ListenerDatabase, Handle};
 use rand::Rng;
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{collections::HashMap, ops::DerefMut};
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
@@ -59,7 +61,7 @@ impl ZkData {
 
 #[allow(clippy::too_many_arguments)]
 async fn insert_proof(
-    pool: &sqlx::PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     request_id: i64,
     zk_pok: Vec<u8>,
     aux: ZkData,
@@ -79,10 +81,10 @@ async fn insert_proof(
         .bind(aux.user_address.clone())
         .bind(transaction_id.to_vec())
         .bind(retry_count)
-        .execute(pool).await?;
+        .execute(tx.deref_mut()).await?;
     sqlx::query("SELECT pg_notify($1, '')")
         .bind(db_notify_channel)
-        .execute(pool)
+        .execute(tx.deref_mut())
         .await
         .unwrap();
 
@@ -190,8 +192,10 @@ pub async fn generate_random_handle_vec(
     let zk_pok = fhevm_engine_common::utils::safe_serialize(&the_list);
     let zk_id = ZK_PROOF_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
+    let mut db_tx = pool.begin().await?;
+
     insert_proof(
-        &pool,
+        &mut db_tx,
         zk_id,
         zk_pok,
         zk_data,
@@ -202,6 +206,8 @@ pub async fn generate_random_handle_vec(
     )
     .await?;
 
+    db_tx.commit().await?;
+
     info!(zk_id, count, "waiting for verification...");
     let handles = wait_for_verification_and_handle(&pool, zk_id, 5000).await?;
     info!(handles = ?handles.iter().map(hex::encode), count = handles.len(), "received handles");
@@ -211,6 +217,8 @@ pub async fn generate_random_handle_vec(
 
 pub async fn generate_and_insert_inputs_batch(
     ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    listener_event_to_db: &ListenerDatabase,
     batch_size: usize,
     inputs_count: u8,
     contract_address: &String,
@@ -218,18 +226,13 @@ pub async fn generate_and_insert_inputs_batch(
 ) -> Result<(), Box<dyn std::error::Error>> {
     assert!(inputs_count <= 254);
     let ecfg = EnvConfig::new();
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(20)
-        .connect(&ecfg.evgen_db_url)
-        .await
-        .unwrap();
+    let pool = pool(listener_event_to_db).await;
 
     let (pks, public_params) = query_and_save_pks(ecfg.tenant_id, &pool).await?;
-    let mut db_inserts = vec![];
 
     // Generate a batch of zkpoks
     for idx in 0..batch_size {
-        let transaction_id = next_random_handle(DEF_TYPE);
+        let transaction_id = new_transaction_id();
 
         let zk_data = ZkData {
             contract_address: contract_address.to_owned(),
@@ -251,21 +254,22 @@ pub async fn generate_and_insert_inputs_batch(
 
         let zk_pok = fhevm_engine_common::utils::safe_serialize(&the_list);
 
-        // retry_count = 100 to ensure the txn-sender will delete it after first try
+        let retry_count = 5;
+        // retry_count = 5 to ensure the txn-sender will delete it after first try
         // If not deleted, txn-sender will report too many VerifyProofNotRequested errors
-        db_inserts.push(insert_proof(
-            &pool,
+        // In devnet, verify_proof_resp_max_retries: 6,
+        insert_proof(
+            tx,
             zk_id,
             zk_pok.clone(),
             zk_data,
             &ctx.args.zkproof_notify_channel,
             transaction_id,
-            100,
+            retry_count,
             0,
-        ));
+        )
+        .await?;
     }
-
-    futures::future::try_join_all(db_inserts).await?;
 
     Ok(())
 }

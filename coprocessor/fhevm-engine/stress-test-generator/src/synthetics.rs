@@ -8,19 +8,19 @@ use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
 use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, ScalarByte,
 };
-
 use sqlx::Postgres;
+
 use std::io::prelude::*;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn add_chain_transaction(
     ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     counter: Option<Handle>,
     amount: Option<Handle>,
     length: u32,
     transaction_id: Option<Handle>,
-    listener_event_to_db: &mut ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
+    listener_event_to_db: &ListenerDatabase,
     contract_address: &String,
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
@@ -33,6 +33,7 @@ pub async fn add_chain_transaction(
         Some(amount) => amount,
         None => {
             generate_trivial_encrypt(
+                tx,
                 contract_address,
                 contract_address,
                 transaction_id,
@@ -54,15 +55,22 @@ pub async fn add_chain_transaction(
             result: new_counter,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event, i == length - 1).await?;
+        insert_tfhe_event(
+            tx,
+            listener_event_to_db,
+            transaction_id,
+            event,
+            i == length - 1,
+        )
+        .await?;
         counter = new_counter;
     }
     allow_handle(
+        tx,
         &counter.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     Ok((counter, counter))
@@ -71,11 +79,12 @@ pub async fn add_chain_transaction(
 #[allow(clippy::too_many_arguments)]
 pub async fn mul_chain_transaction(
     ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     counter: Option<Handle>,
     amount: Option<Handle>,
     length: u32,
     transaction_id: Option<Handle>,
-    listener_event_to_db: &mut ListenerDatabase,
+    listener_event_to_db: &ListenerDatabase,
     pool: &sqlx::Pool<Postgres>,
     contract_address: &String,
     user_address: &String,
@@ -89,6 +98,7 @@ pub async fn mul_chain_transaction(
         Some(amount) => amount,
         None => {
             generate_trivial_encrypt(
+                tx,
                 contract_address,
                 contract_address,
                 transaction_id,
@@ -110,15 +120,22 @@ pub async fn mul_chain_transaction(
             result: new_counter,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event, i == length - 1).await?;
+        insert_tfhe_event(
+            tx,
+            listener_event_to_db,
+            transaction_id,
+            event,
+            i == length - 1,
+        )
+        .await?;
         counter = new_counter;
     }
     allow_handle(
+        tx,
         &counter.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     Ok((counter, counter))
@@ -126,10 +143,11 @@ pub async fn mul_chain_transaction(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn generate_pub_decrypt_handles_types(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     min_type: u8,
     max_type: u8,
     transaction_id: Option<Handle>,
-    listener_event_to_db: &mut ListenerDatabase,
+    listener_event_to_db: &ListenerDatabase,
     pool: &sqlx::Pool<Postgres>,
     contract_address: &str,
     user_address: &String,
@@ -144,6 +162,7 @@ pub async fn generate_pub_decrypt_handles_types(
     let mut handle = next_random_handle(DEF_TYPE);
     for type_num in min_type..=max_type {
         handle = generate_trivial_encrypt(
+            tx,
             contract_address,
             user_address,
             transaction_id,
@@ -154,11 +173,11 @@ pub async fn generate_pub_decrypt_handles_types(
         )
         .await?;
         allow_handle(
+            tx,
             &handle.to_vec(),
             AllowEvents::AllowedForDecryption,
             user_address.to_string(),
             transaction_id,
-            pool,
         )
         .await?;
         writeln!(out_file, "{}", "0x".to_owned() + &hex::encode(handle))?;
@@ -168,10 +187,11 @@ pub async fn generate_pub_decrypt_handles_types(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn generate_user_decrypt_handles_types(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     min_type: u8,
     max_type: u8,
     transaction_id: Option<Handle>,
-    listener_event_to_db: &mut ListenerDatabase,
+    listener_event_to_db: &ListenerDatabase,
     pool: &sqlx::Pool<Postgres>,
     contract_address: &str,
     user_address: &String,
@@ -186,6 +206,7 @@ pub async fn generate_user_decrypt_handles_types(
     let mut handle = next_random_handle(DEF_TYPE);
     for type_num in min_type..=max_type {
         handle = generate_trivial_encrypt(
+            tx,
             contract_address,
             user_address,
             transaction_id,
@@ -196,19 +217,19 @@ pub async fn generate_user_decrypt_handles_types(
         )
         .await?;
         allow_handle(
+            tx,
             &handle.to_vec(),
             AllowEvents::AllowedAccount,
             contract_address.to_string(),
             transaction_id,
-            pool,
         )
         .await?;
         allow_handle(
+            tx,
             &handle.to_vec(),
             AllowEvents::AllowedAccount,
             user_address.to_string(),
             transaction_id,
-            pool,
         )
         .await?;
         writeln!(out_file, "{}", "0x".to_owned() + &hex::encode(handle))?;

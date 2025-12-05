@@ -32,7 +32,8 @@ pub static CONTRACT_STATE: OnceLock<Arc<RwLock<ContractState>>> = OnceLock::new(
 #[allow(clippy::too_many_arguments)]
 pub async fn batch_submit_encrypted_bids(
     ctx: &Context,
-    listener_event_to_db: &mut ListenerDatabase,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    listener_event_to_db: &ListenerDatabase,
     transaction_id: Option<Handle>,
     user_address: &str,
     payment_token_address: &str,
@@ -51,6 +52,7 @@ pub async fn batch_submit_encrypted_bids(
 
     // euint64 eTotalPaymentValue = FHE.asEuint64(0);
     let mut e_total_payment_value = generate_trivial_encrypt(
+        tx,
         user_address,
         user_address,
         transaction_id,
@@ -68,6 +70,7 @@ pub async fn batch_submit_encrypted_bids(
 
         let (e_paid, e_amount, price) = process_bid_entry(
             ctx,
+            tx,
             e_amount.expect("should be a valid bid"),
             bid_price,
             transaction_id,
@@ -90,7 +93,7 @@ pub async fn batch_submit_encrypted_bids(
             result: result_handle,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+        insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
         e_total_payment_value = result_handle;
 
         user_submitted_bids.push(BidEntry {
@@ -102,6 +105,7 @@ pub async fn batch_submit_encrypted_bids(
 
     let e_is_payment_confirmed = process_batch_payment(
         ctx,
+        tx,
         transaction_id,
         listener_event_to_db,
         user_address,
@@ -113,6 +117,7 @@ pub async fn batch_submit_encrypted_bids(
     // Confirm and finalize each bid based on the payment result
     for bid_entry in user_submitted_bids.iter() {
         confirm_and_finalize_bid(
+            tx,
             transaction_id,
             listener_event_to_db,
             bid_entry,
@@ -136,16 +141,18 @@ pub async fn batch_submit_encrypted_bids(
 #[allow(clippy::too_many_arguments)]
 pub async fn process_bid_entry(
     _ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     mut e_amount: Handle,
     price: u64,
     transaction_id: Handle,
-    listener_event_to_db: &mut ListenerDatabase,
+    listener_event_to_db: &ListenerDatabase,
     user_address: &str,
 ) -> Result<(Handle, Handle, u64), Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     info!(target: "tool", "Process Bid Entry: tx_id: {:?}", transaction_id);
 
     let total_supply = generate_trivial_encrypt(
+        tx,
         user_address,
         user_address,
         transaction_id,
@@ -164,9 +171,10 @@ pub async fn process_bid_entry(
         result: less_than_total_supply,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
 
     let zero = generate_trivial_encrypt(
+        tx,
         user_address,
         user_address,
         transaction_id,
@@ -188,10 +196,11 @@ pub async fn process_bid_entry(
         },
     ));
 
-    insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
     e_amount = result_handle;
 
     let e_price = generate_trivial_encrypt(
+        tx,
         user_address,
         user_address,
         transaction_id,
@@ -211,7 +220,7 @@ pub async fn process_bid_entry(
         result: e_paid,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
 
     Ok((e_paid, e_amount, price))
 }
@@ -225,8 +234,9 @@ pub async fn process_bid_entry(
 //     eIsPaymentConfirmed = FHE.eq(eTotalPaid, eTotalValue);
 pub async fn process_batch_payment(
     ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     transaction_id: Handle,
-    listener_event_to_db: &mut ListenerDatabase,
+    listener_event_to_db: &ListenerDatabase,
     user_address: &str,
     payment_token_address: &str,
     e_total_value: Handle,
@@ -238,6 +248,7 @@ pub async fn process_batch_payment(
 
     let e_total_paid = crate::erc7984::confidential_transfer_from(
         ctx,
+        tx,
         transaction_id,
         listener_event_to_db,
         e_total_value,
@@ -246,11 +257,11 @@ pub async fn process_batch_payment(
     .await?;
 
     allow_handle(
+        tx,
         &e_total_paid.to_vec(),
         AllowEvents::AllowedAccount,
         payment_token_address.to_string(),
         transaction_id,
-        &pool,
     )
     .await?;
 
@@ -262,14 +273,15 @@ pub async fn process_batch_payment(
         result: e_is_payment_confirmed,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
 
     Ok(e_is_payment_confirmed)
 }
 
 pub async fn confirm_and_finalize_bid(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     transaction_id: Handle,
-    listener_event_to_db: &mut ListenerDatabase,
+    listener_event_to_db: &ListenerDatabase,
     bid_entry: &BidEntry,
     user_address: &str,
     e_is_payment_confirmed: Handle,
@@ -281,6 +293,7 @@ pub async fn confirm_and_finalize_bid(
     info!(target: "tool", "Confirm and Finalize Bid: tx_id: {:?}", transaction_id);
 
     let zero = generate_trivial_encrypt(
+        tx,
         user_address,
         user_address,
         transaction_id,
@@ -307,7 +320,7 @@ pub async fn confirm_and_finalize_bid(
             result: result_handle,
         },
     ));
-    insert_tfhe_event(listener_event_to_db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true).await?;
     bid_entry.e_amount = result_handle;
 
     let result_handle = next_random_handle(DEF_TYPE);
@@ -320,7 +333,7 @@ pub async fn confirm_and_finalize_bid(
             result: result_handle,
         },
     ));
-    insert_tfhe_event(listener_event_to_db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true).await?;
     bid_entry.e_paid = result_handle;
 
     // Update contract state
@@ -358,7 +371,7 @@ pub async fn confirm_and_finalize_bid(
             .or_insert_with(|| bid_entry.e_amount);
 
         if let Some(event) = event {
-            insert_tfhe_event(listener_event_to_db, transaction_id, event, true)
+            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true)
                 .await
                 .unwrap();
         }
@@ -371,11 +384,11 @@ pub async fn confirm_and_finalize_bid(
 
         //    FHE.allowThis(updatedTotalAmount);
         allow_handle(
+            tx,
             &updated_total_amount,
             AllowEvents::AllowedAccount,
             user_address.to_string(),
             transaction_id,
-            pool,
         )
         .await?;
 
@@ -409,7 +422,7 @@ pub async fn confirm_and_finalize_bid(
             .or_insert_with(|| bid_entry.e_amount);
 
         if let Some(event) = event {
-            insert_tfhe_event(listener_event_to_db, transaction_id, event, true)
+            insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true)
                 .await
                 .unwrap();
         }
@@ -422,11 +435,11 @@ pub async fn confirm_and_finalize_bid(
 
         // FHE.allowThis(updatedTotalAmountByTokenPrice);
         allow_handle(
+            tx,
             &updated_total_amount_by_token_price,
             AllowEvents::AllowedAccount,
             user_address.to_string(),
             transaction_id,
-            pool,
         )
         .await?;
     }
@@ -438,20 +451,20 @@ pub async fn confirm_and_finalize_bid(
        FHE.allow(_bid.ePaid, auctionConfig.complianceAddress);
     */
     allow_handle(
+        tx,
         bid_entry.e_amount.to_vec().as_ref(),
         AllowEvents::AllowedAccount,
         user_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
 
     allow_handle(
+        tx,
         bid_entry.e_paid.to_vec().as_ref(),
         AllowEvents::AllowedAccount,
         user_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
 

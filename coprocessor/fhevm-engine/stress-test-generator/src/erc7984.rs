@@ -13,13 +13,13 @@ use host_listener::{
 /// see also: github.com/OpenZeppelin/openzeppelin-confidential-contracts/blob/master/contracts/token/ERC7984/ERC7984.sol
 pub async fn confidential_transfer_from(
     ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     transaction_id: Handle,
-    db: &mut ListenerDatabase,
+    db: &ListenerDatabase,
     e_amount: Handle,
     user_address: &str,
 ) -> Result<Handle, Box<dyn std::error::Error>> {
     let caller: Address = user_address.parse().unwrap();
-    let pool = pool(db).await;
 
     let balance_from = ctx
         .inputs_pool
@@ -42,18 +42,20 @@ pub async fn confidential_transfer_from(
        _balances[from] = ptr;
     */
 
-    let (success, ptr) = try_decrease(db, caller, transaction_id, balance_from, e_amount).await?;
+    let (success, ptr) =
+        try_decrease(tx, db, caller, transaction_id, balance_from, e_amount).await?;
 
     allow_handle(
+        tx,
         &ptr.to_vec(),
         AllowEvents::AllowedAccount,
         user_address.to_string(),
         transaction_id,
-        &pool,
     )
     .await?;
 
     let zero = generate_trivial_encrypt(
+        tx,
         user_address,
         user_address,
         transaction_id,
@@ -76,7 +78,7 @@ pub async fn confidential_transfer_from(
             result: transferred,
         },
     ));
-    insert_tfhe_event(db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, db, transaction_id, event, true).await?;
 
     /*
 
@@ -94,14 +96,14 @@ pub async fn confidential_transfer_from(
         result: ptr,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, db, transaction_id, event, true).await?;
 
     allow_handle(
+        tx,
         &ptr.to_vec(),
         AllowEvents::AllowedForDecryption,
         user_address.to_string(),
         transaction_id,
-        &pool,
     )
     .await?;
 
@@ -113,11 +115,11 @@ pub async fn confidential_transfer_from(
     */
 
     allow_handle(
+        tx,
         &transferred.to_vec(),
         AllowEvents::AllowedAccount,
         user_address.to_string(),
         transaction_id,
-        &pool,
     )
     .await?;
 
@@ -137,7 +139,8 @@ pub async fn confidential_transfer_from(
 }
 */
 pub async fn try_decrease(
-    db: &mut ListenerDatabase,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    db: &ListenerDatabase,
     caller: Address,
     transaction_id: Handle,
     old_value: Handle,
@@ -151,7 +154,7 @@ pub async fn try_decrease(
         result: success,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(db, transaction_id, event, false).await?;
+    insert_tfhe_event(tx, db, transaction_id, event, false).await?;
 
     let result_handle = next_random_handle(DEF_TYPE);
 
@@ -162,7 +165,7 @@ pub async fn try_decrease(
         result: result_handle,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(db, transaction_id, event, false).await?;
+    insert_tfhe_event(tx, db, transaction_id, event, false).await?;
 
     let updated = next_random_handle(DEF_TYPE);
     let event = tfhe_event(TfheContractEvents::FheIfThenElse(
@@ -174,7 +177,7 @@ pub async fn try_decrease(
             result: updated,
         },
     ));
-    insert_tfhe_event(db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, db, transaction_id, event, true).await?;
 
     Ok((success, updated))
 }
