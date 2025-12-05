@@ -32,12 +32,13 @@ pub struct PublicReqStateModel {
 }
 
 #[derive(Debug, FromRow)]
-pub struct PublicReqStateModelWithOldStatus {
+pub struct PublicReqStateModelWithOldStatusAndTimestamp {
     pub int_job_id: Vec<u8>,
     pub req_status: ReqStatus,
     pub updated_at: DateTime<Utc>,
     pub err_reason: Option<String>,
     pub old_status: ReqStatus,
+    pub old_updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

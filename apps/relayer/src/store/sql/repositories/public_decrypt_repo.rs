@@ -1,7 +1,7 @@
 use crate::core::event::{PublicDecryptRequest, PublicDecryptResponse};
 use crate::metrics;
 use crate::store::sql::models::public_decrypt_req_model::{
-    PublicDecryptResponseModel, PublicReqStateModel, PublicReqStateModelWithOldStatus,
+    PublicDecryptResponseModel, PublicReqStateModel, PublicReqStateModelWithOldStatusAndTimestamp,
 };
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::{
@@ -112,15 +112,18 @@ impl PublicDecryptRepository {
         let record = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status FROM public_decrypt_req WHERE int_job_id = $1
+                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $1
             ),
             upd AS (
                 UPDATE public_decrypt_req
                 SET req_status = 'processing'::req_status
                 WHERE int_job_id = $1
-                RETURNING req_status -- ensure execution
+                RETURNING req_status, updated_at
             )
-            SELECT old.req_status as "old_status!: ReqStatus"
+            SELECT 
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             int_job_id_bytes
@@ -129,10 +132,12 @@ impl PublicDecryptRepository {
         .await?;
 
         if let Some(r) = record {
-            metrics::decrement_req_status_count(metrics::Table::PublicDecryptReq, r.old_status);
-            metrics::increment_req_status_count(
+            metrics::record_status_transition(
                 metrics::Table::PublicDecryptReq,
+                r.old_status,
                 ReqStatus::Processing,
+                r.old_updated_at,
+                r.new_updated_at,
             );
             Ok(1)
         } else {
@@ -151,7 +156,7 @@ impl PublicDecryptRepository {
         let record = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status FROM public_decrypt_req WHERE int_job_id = $2
+                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $2
             ),
             upd AS (
                 UPDATE public_decrypt_req
@@ -159,9 +164,12 @@ impl PublicDecryptRepository {
                     req_status = 'timed_out'::req_status,
                     err_reason = $1
                 WHERE int_job_id = $2
-                RETURNING req_status
+                RETURNING req_status, updated_at
             )
-            SELECT old.req_status as "old_status!: ReqStatus"
+            SELECT 
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             err_reason,
@@ -171,10 +179,12 @@ impl PublicDecryptRepository {
         .await?;
 
         if let Some(r) = record {
-            metrics::decrement_req_status_count(metrics::Table::PublicDecryptReq, r.old_status);
-            metrics::increment_req_status_count(
+            metrics::record_status_transition(
                 metrics::Table::PublicDecryptReq,
+                r.old_status,
                 ReqStatus::TimedOut,
+                r.old_updated_at,
+                r.new_updated_at,
             );
             Ok(1)
         } else {
@@ -196,7 +206,7 @@ impl PublicDecryptRepository {
         let record = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status FROM public_decrypt_req WHERE int_job_id = $3
+                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $3
             ),
             upd AS (
                 UPDATE public_decrypt_req
@@ -205,9 +215,12 @@ impl PublicDecryptRepository {
                     gw_req_tx_hash = $1,
                     gw_reference_id = $2
                 WHERE int_job_id = $3
-                RETURNING req_status
+                RETURNING req_status, updated_at
             )
-            SELECT old.req_status as "old_status!: ReqStatus"
+            SELECT 
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             gw_req_tx_hash,
@@ -218,10 +231,12 @@ impl PublicDecryptRepository {
         .await?;
 
         if let Some(r) = record {
-            metrics::decrement_req_status_count(metrics::Table::PublicDecryptReq, r.old_status);
-            metrics::increment_req_status_count(
+            metrics::record_status_transition(
                 metrics::Table::PublicDecryptReq,
+                r.old_status,
                 ReqStatus::ReceiptReceived,
+                r.old_updated_at,
+                r.new_updated_at,
             );
             Ok(1)
         } else {
@@ -238,7 +253,7 @@ impl PublicDecryptRepository {
         let record = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status FROM public_decrypt_req WHERE int_job_id = $2
+                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $2
             ),
             upd AS (
                 UPDATE public_decrypt_req
@@ -246,9 +261,12 @@ impl PublicDecryptRepository {
                     req_status = 'failure'::req_status,
                     err_reason = $1
                 WHERE int_job_id = $2
-                RETURNING req_status
+                RETURNING req_status, updated_at
             )
-            SELECT old.req_status as "old_status!: ReqStatus"
+            SELECT 
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
             FROM old, upd
             "#,
             err_reason,
@@ -258,10 +276,12 @@ impl PublicDecryptRepository {
         .await?;
 
         if let Some(r) = record {
-            metrics::decrement_req_status_count(metrics::Table::PublicDecryptReq, r.old_status);
-            metrics::increment_req_status_count(
+            metrics::record_status_transition(
                 metrics::Table::PublicDecryptReq,
+                r.old_status,
                 ReqStatus::Failure,
+                r.old_updated_at,
+                r.new_updated_at,
             );
             Ok(1)
         } else {
@@ -292,10 +312,10 @@ impl PublicDecryptRepository {
         })?;
 
         let record = sqlx::query_as!(
-            PublicReqStateModelWithOldStatus,
+            PublicReqStateModelWithOldStatusAndTimestamp,
             r#"
             WITH old AS (
-                SELECT req_status FROM public_decrypt_req 
+                SELECT req_status, updated_at FROM public_decrypt_req 
                 WHERE gw_reference_id = $3
                 AND req_status NOT IN ('timed_out'::req_status, 'failure'::req_status)
             ),
@@ -314,7 +334,8 @@ impl PublicDecryptRepository {
                     err_reason
             )
             SELECT 
-                old.req_status as "old_status!: ReqStatus", -- Helper for metrics
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
                 upd.int_job_id as "int_job_id!",
                 upd.req_status as "req_status!: ReqStatus",
                 upd.updated_at as "updated_at!",
@@ -329,14 +350,14 @@ impl PublicDecryptRepository {
         .await?;
 
         if let Some(r) = record {
-            // Update Metrics
-            metrics::decrement_req_status_count(metrics::Table::PublicDecryptReq, r.old_status);
-            metrics::increment_req_status_count(
+            metrics::record_status_transition(
                 metrics::Table::PublicDecryptReq,
+                r.old_status,
                 ReqStatus::Completed,
+                r.old_updated_at,
+                r.updated_at,
             );
 
-            // Construct return object without the extra column
             Ok(Some(PublicReqStateModel {
                 int_job_id: r.int_job_id,
                 req_status: r.req_status,
