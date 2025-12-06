@@ -25,6 +25,10 @@ const handles = [
 const values = instance.publicDecrypt(handles);
 ```
 
+{% hint style="info" %}
+The total bit length of all ciphertexts being decrypted in a single request must not exceed 2048 bits. Each encrypted type has a specific bit length, for instance `euint8` uses 8 bits and `euint16` uses 16 bits. For the full list of encrypted types and their corresponding bit lengths, refer to the [encrypted types documentation](../solidity-guides/types.md#list-of-encrypted-types).
+{% endhint %}
+
 ## Onchain Public Decrypt
 
 For more details please refer to the on [onchain Oracle public decryption page](https://docs.zama.ai/protocol/solidity-guides/smart-contract/oracle).
