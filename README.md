@@ -100,7 +100,7 @@ FHEVM is built for developers to write confidential smart contracts without the 
 - **On-chain games**: Keep moves, selections, cards, or items hidden until ready to reveal.
 - **Confidential voting**: Prevents bribery and blackmailing by keeping votes private.
 - **Encrypted DIDs**: Store identities on-chain and generate attestations without ZK.
-
+To explore these use cases in practice, check out the FHEVM examples in the official documentation and sample repositories.
 _Learn more use cases in the [list of examples](https://docs.zama.ai/protocol/examples)._
 <br></br>
 
