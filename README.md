@@ -111,6 +111,17 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/protocol/ex
 - [Examples](https://docs.zama.ai/protocol/examples) — Examples of building confidential smart contracts.
 - [Awesome Zama – FHEVM](https://github.com/zama-ai/awesome-zama?tab=readme-ov-file#fhevm) — Curated articles, talks, and ecosystem projects.
 
+## Quick start checklist
+
+If you want to get hands-on with FHEVM as quickly as possible:
+
+1. Read the introductory section of the FHEVM documentation.
+2. Clone this repository and follow the local setup instructions for your environment (Docker, Rust, Node.js).
+3. Deploy the demo stack using the provided Helm charts or docker-compose files in the `charts/` and `test-suite/` directories.
+4. Explore one of the starter examples from the docs (for example, a confidential counter or auction) and try to modify it.
+
+This checklist is not a replacement for the full documentation, but it gives you a concrete path to go from “reading about FHEVM” to “running something locally”.
+
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
