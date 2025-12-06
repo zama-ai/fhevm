@@ -104,6 +104,15 @@ FHEVM is built for developers to write confidential smart contracts without the 
 _Learn more use cases in the [list of examples](https://docs.zama.ai/protocol/examples)._
 <br></br>
 
+#### Who is FHEVM for?
+
+FHEVM is designed for:
+
+- Smart contract developers who want to add data confidentiality without redesigning their entire stack.
+- Protocol and rollup teams looking for a reusable, production-grade privacy layer.
+- Researchers and builders experimenting with new applications of fully homomorphic encryption on EVM-compatible chains.
+
+If you are already comfortable with Solidity, you can think of FHEVM as an additional privacy toolbox rather than a completely new programming model.
 
 ## Resources
 - [Documentation](https://docs.zama.ai/protocol) — Official documentation of FHEVM.
