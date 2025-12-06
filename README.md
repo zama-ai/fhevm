@@ -175,6 +175,20 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
 
+## Troubleshooting
+
+If you encounter issues while working with FHEVM:
+
+- Ensure you are using the recommended Node.js and package versions  
+- Reinstall dependencies with `rm -rf node_modules && npm install`  
+- Verify that your environment variables are set correctly  
+- Check open issues: https://github.com/zama-ai/fhevm/issues  
+
+These steps resolve most common setup and runtime problems.
+
+
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+
