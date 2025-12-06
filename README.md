@@ -175,6 +175,17 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
 
+## FAQ
+
+**Q: What is FHEVM?**  
+A: It is a confidential smart contract environment built using fully homomorphic encryption.
+
+**Q: Do I need Noir to build contracts?**  
+A: Yes — contract logic is written in Noir and deployed to the FHEVM.
+
+**Q: Where can I report bugs?**  
+A: Use the issue tracker: https://github.com/zama-ai/fhevm/issues
+
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
