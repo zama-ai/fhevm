@@ -116,6 +116,18 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/protocol/ex
 </p>
 
 ## Working with FHEVM
+
+### Quick start (local stack)
+
+For a local development setup using Docker, you can run a minimal FHEVM stack with:
+
+```bash
+git clone https://github.com/zama-ai/fhevm.git
+cd fhevm
+```
+
+# Start the core services (coprocessor, gateway, host contracts etc.)
+docker compose -f charts/docker-compose.yml up
 ### Citations
 
 To cite FHEVM or the whitepaper in academic papers, please use the following entries:
