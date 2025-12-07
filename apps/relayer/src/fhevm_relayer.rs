@@ -24,8 +24,8 @@
 //! See [`Settings`] for detailed configuration options.
 
 use crate::gateway::{
-    readiness_checker::ReadinessChecker, InputProofGatewayHandler, PublicDecryptGatewayHandler,
-    UserDecryptGatewayHandler,
+    readiness_checker::ReadinessChecker, InputProofGatewayHandler, KeyUrlGatewayHandler,
+    PublicDecryptGatewayHandler, UserDecryptGatewayHandler,
 };
 use crate::store::sql::repositories::block_number_repo::BlockNumberRepository;
 use alloy::primitives::Address;
@@ -48,7 +48,10 @@ use crate::{
         },
         ArbitrumJsonRPCWsClient,
     },
-    http::{server::run_http_server, HealthCheck, HealthChecker},
+    http::{
+        server::run_http_server, HealthCheck,
+        HealthChecker,
+    },
     metrics,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
@@ -214,6 +217,13 @@ pub async fn run_fhevm_relayer(
         Arc::clone(&gateway_block_repo),
     ));
 
+    // Setup KeyUrl gateway handler
+    let keyurl_gateway_handler =
+        setup_keyurl_gateway_handler(&orchestrator, settings.keyurl.clone())?;
+
+    // Initialize KeyUrl cache with config data
+    keyurl_gateway_handler.initialize().await;
+
     // HTTP endpoint
     if let Some(http_endpoint) = settings.http.endpoint.clone() {
         info!("Starting Relayer HTTP server");
@@ -244,10 +254,10 @@ pub async fn run_fhevm_relayer(
         let addr: SocketAddr = http_endpoint
             .parse()
             .expect("Invalid http-endpoint address");
+        
         let actual_http_addr = run_http_server(
             addr,
             Arc::clone(&orchestrator),
-            settings.keyurl.clone(),
             health_checker,
             settings.http.rate_limit_post_endpoints.clone(),
             input_proof_repo.clone(),
@@ -269,6 +279,10 @@ pub async fn run_fhevm_relayer(
         "Metrics server bound to actual address: {}",
         actual_metrics_addr
     );
+
+    // Initialize KeyUrl handler with config data
+    // Must be after http server init, so that http handler can catch the event.
+    keyurl_gateway_handler.initialize().await;
 
     drop(setup_span);
 
@@ -461,4 +475,15 @@ fn setup_user_decrypt_gateway_handler(
 
     register_handler_for_events(orchestrator, handler, &event_ids);
     Ok(())
+}
+
+/// Setup KeyUrl gateway handler - emits events through orchestrator.
+fn setup_keyurl_gateway_handler(
+    orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    config: crate::config::settings::KeyUrl,
+) -> eyre::Result<KeyUrlGatewayHandler> {
+
+    let handler = KeyUrlGatewayHandler::new(Arc::clone(orchestrator), config);
+    
+    Ok(handler)
 }

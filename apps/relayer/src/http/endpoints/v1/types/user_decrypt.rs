@@ -37,7 +37,6 @@ pub struct UserDecryptRequestJson {
     pub extra_data: String,
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct UserDecryptResponseJson {
     pub response: Vec<UserDecryptResponsePayloadJson>,

@@ -1,8 +1,10 @@
-use crate::config::settings::{KeyUrl, RateLimitConfig};
+use crate::config::settings::RateLimitConfig;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::http::endpoints::{
     health_handler, liveness_handler,
-    v1::handlers::{keyurl, InputProofHandler, PublicDecryptHandler, UserDecryptHandler},
+    v1::{
+        handlers::{InputProofHandler, KeyUrlHandler, PublicDecryptHandler, UserDecryptHandler},
+    },
     version_handler,
 };
 use crate::http::{openapi_middleware, with_rate_limiting, HealthChecker};
@@ -21,7 +23,6 @@ use std::sync::Arc;
 pub async fn run_http_server<D>(
     http_endpoint: SocketAddr,
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
-    key_url: KeyUrl,
     health_checker: Arc<HealthChecker>,
     rate_limit_on_post_endpoints: RateLimitConfig,
     input_proof_repo: Arc<InputProofRepository>,
@@ -41,16 +42,19 @@ where
     ));
 
     let user_decrypt_handler = Arc::new(UserDecryptHandler::new(
-        Arc::clone(&orchestrator),
+        orchestrator.clone(),
         api_version,
         user_decrypt_repo,
     ));
 
     let public_decrypt_handler = Arc::new(PublicDecryptHandler::new(
-        orchestrator,
+        orchestrator.clone(),
         api_version,
         public_decrypt_repo,
     ));
+
+    // Create KeyUrlHandler - it self-registers with orchestrator
+    let keyurl_handler = KeyUrlHandler::new(orchestrator);
 
     // Create the router by merging all handler routers
     let app = Router::new()
@@ -70,7 +74,7 @@ where
             &rate_limit_on_post_endpoints,
         ))
         // Add keyurl route (no rate limiting for GET)
-        .merge(keyurl::routes(key_url))
+        .merge(keyurl_handler.routes())
         // Add OpenAPI documentation
         .merge(openapi_middleware());
 

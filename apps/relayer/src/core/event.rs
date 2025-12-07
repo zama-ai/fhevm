@@ -84,6 +84,19 @@ impl From<InputProofEventId> for u8 {
     }
 }
 
+#[repr(u8)]
+#[derive(Debug)]
+/// Event Ids corresponding to KeyUrl events.
+pub enum KeyUrlEventId {
+    KeyDataUpdated = 40,
+}
+
+impl From<KeyUrlEventId> for u8 {
+    fn from(e: KeyUrlEventId) -> u8 {
+        e as u8
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// Relayer event represents a single step in one of the different flows of the
 /// relayer (such as public decryption, input proof verification and so on).
@@ -190,6 +203,9 @@ impl Event for RelayerEvent {
                 }
                 InputProofEventData::Failed { .. } => InputProofEventId::Failed.into(),
             },
+            RelayerEventData::KeyUrl(keyurl_event) => match keyurl_event {
+                KeyUrlEventData::KeyDataUpdated { .. } => KeyUrlEventId::KeyDataUpdated.into(),
+            },
         }
     }
 
@@ -242,6 +258,7 @@ pub enum RelayerEventData {
     PublicDecrypt(PublicDecryptEventData),
     UserDecrypt(UserDecryptEventData),
     InputProof(InputProofEventData),
+    KeyUrl(KeyUrlEventData),
 }
 
 impl AsRef<str> for RelayerEventData {
@@ -251,6 +268,7 @@ impl AsRef<str> for RelayerEventData {
             RelayerEventData::PublicDecrypt(decrypt_event) => decrypt_event.event_name(),
             RelayerEventData::UserDecrypt(decrypt_event) => decrypt_event.event_name(),
             RelayerEventData::InputProof(input_event) => input_event.event_name(),
+            RelayerEventData::KeyUrl(keyurl_event) => keyurl_event.event_name(),
         }
     }
 }
@@ -597,6 +615,32 @@ impl InputProofEventData {
             InputProofEventData::Failed { .. } => "Input::Failed",
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum KeyUrlEventData {
+    /// Event representing updated key data.
+    KeyDataUpdated { key_data: KeyUrlData },
+}
+
+impl KeyUrlEventData {
+    pub fn event_name(&self) -> &'static str {
+        match self {
+            KeyUrlEventData::KeyDataUpdated { .. } => "KeyUrl::KeyDataUpdated",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KeyUrlData {
+    pub fhe_public_key: KeyData,
+    pub crs: KeyData,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KeyData {
+    pub data_id: String,
+    pub url: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -10,4 +10,6 @@ pub use public_decrypt::*;
 pub use user_decrypt::*;
 
 // Re-export common types for convenience
-pub use crate::http::endpoints::common::types::{ChainId, HandleContractPairJson, RequestValidityJson};
+pub use crate::http::endpoints::common::types::{
+    ChainId, HandleContractPairJson, RequestValidityJson,
+};
