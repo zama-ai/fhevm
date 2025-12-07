@@ -175,6 +175,15 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
 
+
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Development
+
+To set up the repository for local development:
+
+```bash
+pnpm install
+
