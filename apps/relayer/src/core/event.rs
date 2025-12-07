@@ -1,6 +1,6 @@
 use crate::core::errors::EventProcessingError;
 use crate::core::job_id::JobId;
-use crate::http::types::{
+use crate::http::endpoints::v1::types::{
     InputProofRequestJson, InputProofResponseJson, InputProofResponsePayloadJson,
     PublicDecryptRequestJson, PublicDecryptResponseJson, PublicDecryptResponsePayloadJson,
     UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptResponsePayloadJson,
@@ -781,7 +781,6 @@ mod tests {
     }
 
     use super::UserDecryptResponse;
-    use crate::http::types::user_decrypt::UserDecryptResponseJson;
     use alloy::primitives::Bytes;
 
     #[test]

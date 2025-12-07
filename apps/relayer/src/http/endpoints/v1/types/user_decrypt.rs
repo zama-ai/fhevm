@@ -1,4 +1,4 @@
-use crate::http::types::ChainId;
+use super::ChainId;
 use crate::http::{de_string_or_number, serialize_vec_as_hex};
 use alloy::primitives::Bytes;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};

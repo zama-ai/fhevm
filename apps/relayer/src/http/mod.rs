@@ -1,17 +1,19 @@
-pub mod handlers;
+pub mod endpoints;
 pub mod middleware;
 pub mod server;
-pub mod types;
 pub mod utils;
 
 // Re-export key types and functions for direct access
-pub use handlers::{
-    health_handler, liveness_handler, version_handler, HealthResponse, InputProofHandler,
-    InputProofResponse, LivenessResponse, PublicDecryptHandler, PublicDecryptResponse,
-    UserDecryptHandler, UserDecryptResponse, VersionResponse,
+pub use endpoints::{
+    health_handler, liveness_handler,
+    v1::handlers::{
+        InputProofHandler, InputProofResponse, PublicDecryptHandler, PublicDecryptResponse,
+        UserDecryptHandler, UserDecryptResponse,
+    },
+    version_handler, HealthResponse, LivenessResponse, VersionResponse,
 };
 
-pub use types::{
+pub use endpoints::v1::types::{
     ChainId, HandleContractPairJson, InputProofErrorResponseJson, InputProofRequestJson,
     InputProofResponseJson, KeyUrlResponseJson, PublicDecryptErrorResponseJson,
     PublicDecryptRequestJson, PublicDecryptResponseJson, RequestValidityJson,

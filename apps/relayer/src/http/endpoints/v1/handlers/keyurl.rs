@@ -1,5 +1,5 @@
+use super::super::types::keyurl::KeyUrlResponseJson;
 use crate::config::settings::KeyUrl;
-use crate::http::types::keyurl::KeyUrlResponseJson;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use axum::response::IntoResponse;
 use axum::Json;

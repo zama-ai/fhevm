@@ -157,9 +157,10 @@ jobs:
           echo "Building all test binaries..."
           cargo test --lib --no-run
           cargo test --test transaction_helper_test --no-run
-          cargo test --test user_decrypt_test --no-run
-          cargo test --test public_decrypt_test --no-run
-          cargo test --test input_proof_test --no-run
+          cargo test --test user_decrypt_v1_test --no-run
+          cargo test --test public_decrypt_v1_test --no-run
+          cargo test --test input_proof_v1_test --no-run
+          cargo test --test http_rate_limiter_test --no-run
           cargo test --test health_tests --no-run
 
       # Run the already-built test binaries
@@ -170,8 +171,8 @@ jobs:
           RUST_BACKTRACE=full cargo test --lib
           RUST_BACKTRACE=full cargo test --test transaction_helper_test
           # Use test-threads=1 to force sequential execution. Otherwise they fail due to port free contention (temp fix).
-          RUST_BACKTRACE=full cargo test --test user_decrypt_test -- --test-threads=1
-          RUST_BACKTRACE=full cargo test --test public_decrypt_test -- --test-threads=1
-          RUST_BACKTRACE=full cargo test --test input_proof_test -- --test-threads=1
+          RUST_BACKTRACE=full cargo test --test user_decrypt_v1_test -- --test-threads=1
+          RUST_BACKTRACE=full cargo test --test public_decrypt_v1_test -- --test-threads=1
+          RUST_BACKTRACE=full cargo test --test input_proof_v1_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test http_rate_limiter_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test health_tests -- --test-threads=1

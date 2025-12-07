@@ -1,8 +1,9 @@
 use crate::config::settings::{KeyUrl, RateLimitConfig};
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
-use crate::http::handlers::{
-    health_handler, keyurl, liveness_handler, version_handler, InputProofHandler,
-    PublicDecryptHandler, UserDecryptHandler,
+use crate::http::endpoints::{
+    health_handler, liveness_handler,
+    v1::handlers::{keyurl, InputProofHandler, PublicDecryptHandler, UserDecryptHandler},
+    version_handler,
 };
 use crate::http::{openapi_middleware, with_rate_limiting, HealthChecker};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};

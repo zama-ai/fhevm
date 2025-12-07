@@ -1,10 +1,8 @@
-pub mod health;
 pub mod input_proof;
 pub mod keyurl;
 pub mod public_decrypt;
 pub mod user_decrypt;
 
-pub use health::*;
 pub use input_proof::*;
 pub use keyurl::*;
 pub use public_decrypt::*;

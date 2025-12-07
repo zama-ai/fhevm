@@ -1,4 +1,4 @@
-use crate::http::types::user_decrypt::RequestValidityJson;
+use crate::http::endpoints::v1::types::user_decrypt::RequestValidityJson;
 use alloy::primitives::U256;
 use serde::{de, Deserialize, Deserializer};
 use serde_json::Value;
@@ -163,7 +163,7 @@ pub fn validate_chain_id_string(value: &str) -> Result<(), ValidationError> {
 }
 
 pub fn validate_handle_contract_pairs(
-    pairs: &Vec<crate::http::types::user_decrypt::HandleContractPairJson>,
+    pairs: &Vec<crate::http::endpoints::v1::types::user_decrypt::HandleContractPairJson>,
 ) -> Result<(), ValidationError> {
     for pair in pairs {
         validate_0x_hex(&pair.handle)?;

@@ -17,29 +17,29 @@ test-unit: ## Run library/unit tests only
 test-all: ## Run all tests (unit + integration)
 	@cargo test --lib
 	@cargo test --test transaction_helper_test -- --test-threads=1
-	@cargo test --test input_proof_test -- --test-threads=1
-	@cargo test --test public_decrypt_test -- --test-threads=1
-	@cargo test --test user_decrypt_test -- --test-threads=1
+	@cargo test --test input_proof_v1_test -- --test-threads=1
+	@cargo test --test public_decrypt_v1_test -- --test-threads=1
+	@cargo test --test user_decrypt_v1_test -- --test-threads=1
 	@cargo test --test http_rate_limiter_test -- --test-threads=1
 	@cargo test --test health_tests -- --test-threads=1
 
-test-smoke-ok-all: ## Run smoke test on ok (happy path) for user-decrypt, public-decrypt, input-proof and health endpoints
-	@echo "Building tests..."
-	@RUSTFLAGS="-A warnings" cargo test --test public_decrypt_test --test user_decrypt_test --test input_proof_test --test health_tests --no-run
-	@echo "Running tests..."
-	@RUSTFLAGS="-A warnings" cargo test --test public_decrypt_test test_success_single_request -- --test-threads=4
-	@RUSTFLAGS="-A warnings" cargo test --test user_decrypt_test test_success_single_request -- --test-threads=4
-	@RUSTFLAGS="-A warnings" cargo test --test input_proof_test test_success_single_request -- --test-threads=4
+test-smoke-ok-all-v1: ## Run smoke test on ok (happy path) for v1 endpoints (user-decrypt, public-decrypt, input-proof) and health
+	@echo "Building v1 tests..."
+	@RUSTFLAGS="-A warnings" cargo test --test public_decrypt_v1_test --test user_decrypt_v1_test --test input_proof_v1_test --test health_tests --no-run
+	@echo "Running v1 tests..."
+	@RUSTFLAGS="-A warnings" cargo test --test public_decrypt_v1_test test_success_single_request -- --test-threads=4
+	@RUSTFLAGS="-A warnings" cargo test --test user_decrypt_v1_test test_success_single_request -- --test-threads=4
+	@RUSTFLAGS="-A warnings" cargo test --test input_proof_v1_test test_success_single_request -- --test-threads=4
 	@RUSTFLAGS="-A warnings" cargo test --test health_tests -- --test-threads=4
 
-test-smoke-ok-input-proof: ## Run smoke test on ok (happy path) for input-proof
-	@RUSTFLAGS="-A warnings" cargo test --test input_proof_test test_success_single_request -- --test-threads=4
+test-smoke-ok-input-proof-v1: ## Run smoke test on ok (happy path) for input-proof v1
+	@RUSTFLAGS="-A warnings" cargo test --test input_proof_v1_test test_success_single_request -- --test-threads=4
 
-test-smoke-ok-user-decrypt: ## Run smoke test on ok (happy path) for user-decrypt
-	@RUSTFLAGS="-A warnings" cargo test --test user_decrypt_test test_success_single_request -- --test-threads=4
+test-smoke-ok-user-decrypt-v1: ## Run smoke test on ok (happy path) for user-decrypt v1
+	@RUSTFLAGS="-A warnings" cargo test --test user_decrypt_v1_test test_success_single_request -- --test-threads=4
 
-test-smoke-ok-public-decrypt: ## Run smoke test on ok (happy path) for public-decrypt
-	@RUSTFLAGS="-A warnings" cargo test --test public_decrypt_test test_success_single_request -- --test-threads=4
+test-smoke-ok-public-decrypt-v1: ## Run smoke test on ok (happy path) for public-decrypt v1
+	@RUSTFLAGS="-A warnings" cargo test --test public_decrypt_v1_test test_success_single_request -- --test-threads=4
 
 test-health-endpoints: ## Run health endpoint tests
 	@cargo test --test health_tests -- --test-threads=1

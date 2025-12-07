@@ -1,12 +1,12 @@
+use super::super::types::input_proof::{
+    InputProofErrorResponseJson, InputProofRequestJson, InputProofResponseJson,
+};
 use crate::core::errors::EventProcessingError;
 use crate::core::event::{
     ApiVersion, InputProofEventData, InputProofEventId, InputProofRequest, RelayerEvent,
     RelayerEventData,
 };
 use crate::core::job_id::JobId;
-use crate::http::types::input_proof::{
-    InputProofErrorResponseJson, InputProofRequestJson, InputProofResponseJson,
-};
 use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -19,7 +19,7 @@ use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::{error, info, instrument, span, Level};
 
-pub type InputProofResponse = AppResponse<crate::http::types::input_proof::InputProofResponseJson>;
+pub type InputProofResponse = AppResponse<super::super::types::input_proof::InputProofResponseJson>;
 
 pub struct InputProofHandler<D>
 where

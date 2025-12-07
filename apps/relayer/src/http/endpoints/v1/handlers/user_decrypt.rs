@@ -1,12 +1,12 @@
+use super::super::types::user_decrypt::{
+    UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
+};
 use crate::core::errors::EventProcessingError;
 use crate::core::event::{
     ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptEventId,
     UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
-use crate::http::types::user_decrypt::{
-    UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
-};
 use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -20,7 +20,7 @@ use tokio::sync::oneshot;
 use tracing::{error, info, instrument, span, Level};
 
 pub type UserDecryptResponse =
-    AppResponse<crate::http::types::user_decrypt::UserDecryptResponseJson>;
+    AppResponse<super::super::types::user_decrypt::UserDecryptResponseJson>;
 
 /// User decryption v1 endpoint
 ///

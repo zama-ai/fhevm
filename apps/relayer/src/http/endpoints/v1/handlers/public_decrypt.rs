@@ -1,12 +1,12 @@
+use super::super::types::public_decrypt::{
+    PublicDecryptErrorResponseJson, PublicDecryptRequestJson, PublicDecryptResponseJson,
+};
 use crate::core::errors::EventProcessingError;
 use crate::core::event::{
     ApiVersion, PublicDecryptEventData, PublicDecryptEventId, PublicDecryptRequest, RelayerEvent,
     RelayerEventData,
 };
 use crate::core::job_id::JobId;
-use crate::http::types::public_decrypt::{
-    PublicDecryptErrorResponseJson, PublicDecryptRequestJson, PublicDecryptResponseJson,
-};
 use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
