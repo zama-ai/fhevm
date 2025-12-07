@@ -52,7 +52,7 @@ impl ArbitrumJsonRPCWsClient {
 
         Ok(ArbitrumJsonRPCWsClient {
             provider,
-            health_timeout: Duration::from_secs(config.health_check_timeout_secs),
+            health_timeout: Duration::from_secs(config.ws_health_check_timeout_secs),
         })
     }
 

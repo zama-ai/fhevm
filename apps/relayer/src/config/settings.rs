@@ -10,7 +10,6 @@ pub struct GatewayConfig {
     pub tx_engine: TxEngineConfig,
     pub readiness_checker: ReadinessCheckConfig,
     pub contracts: ContractConfig,
-    pub health_check_timeout_secs: u64,
 }
 
 impl GatewayConfig {
@@ -25,7 +24,8 @@ pub struct BlockchainRpcConfig {
     pub ws_url: String,
     pub http_url: String,
     pub chain_id: u64,
-    pub health_check_timeout_secs: u64,
+    pub ws_health_check_timeout_secs: u64,
+    pub http_health_check_timeout_secs: u64,
 }
 
 impl BlockchainRpcConfig {
@@ -107,7 +107,7 @@ pub struct StorageConfig {
     pub sql_database_url: String,
     /// Maximum number of connections in the SQL connection pool
     pub sql_max_connections: u32,
-    pub health_check_timeout_secs: u64,
+    pub sql_health_check_timeout_secs: u64,
 }
 
 impl fmt::Debug for StorageConfig {
@@ -115,7 +115,10 @@ impl fmt::Debug for StorageConfig {
         f.debug_struct("StorageConfig")
             .field("sql_database_url", &"[REDACTED]")
             .field("sql_max_connections", &self.sql_max_connections)
-            .field("health_check_timeout_secs", &self.health_check_timeout_secs)
+            .field(
+                "sql_health_check_timeout_secs",
+                &self.sql_health_check_timeout_secs,
+            )
             .finish()
     }
 }

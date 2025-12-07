@@ -72,7 +72,9 @@ impl TransactionHelper {
         Self {
             tx_engine,
             chain_id: config.blockchain_rpc.chain_id,
-            health_timeout: Duration::from_secs(config.health_check_timeout_secs),
+            health_timeout: Duration::from_secs(
+                config.blockchain_rpc.http_health_check_timeout_secs,
+            ),
         }
     }
 
