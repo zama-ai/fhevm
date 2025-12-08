@@ -1,3 +1,4 @@
+use crate::dependence_chain;
 use crate::types::CoprocessorError;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
@@ -11,6 +12,7 @@ use prometheus::{register_int_counter, IntCounter};
 use scheduler::dfg::types::{DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
+use sqlx::types::Uuid;
 use sqlx::Postgres;
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
@@ -59,9 +61,11 @@ pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let worker_id = args.worker_id.unwrap_or(Uuid::new_v4());
+    info!(target: "tfhe_worker", worker_id = %worker_id, "Starting tfhe-worker service");
     loop {
         // here we log the errors and make sure we retry
-        if let Err(cycle_error) = tfhe_worker_cycle(&args, health_check.clone()).await {
+        if let Err(cycle_error) = tfhe_worker_cycle(&args, worker_id, health_check.clone()).await {
             WORKER_ERRORS_COUNTER.inc();
             error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
         }
@@ -71,6 +75,7 @@ pub async fn run_tfhe_worker(
 
 async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
+    worker_id: Uuid,
     health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tracer = opentelemetry::global::tracer("tfhe_worker");
@@ -87,10 +92,14 @@ async fn tfhe_worker_cycle(
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;
 
+    let mut deps_chain_mngr = dependence_chain::LockMngr::new(worker_id, pool.clone());
+
     #[cfg(feature = "bench")]
     populate_cache_with_tenant_keys(vec![1i32], &pool, &tenant_key_cache).await?;
     let mut immedially_poll_more_work = false;
     loop {
+        deps_chain_mngr.release_all_owned_locks().await?;
+
         // only if previous iteration had no work done do the wait
         if !immedially_poll_more_work {
             tokio::select! {
@@ -117,8 +126,15 @@ async fn tfhe_worker_cycle(
         s.end();
 
         // Query for transactions to execute, and if relevant the associated keys
-        let (mut transactions, mut unneeded_handles) =
-            query_for_work(args, &health_check, &mut trx, &tracer, &loop_ctx).await?;
+        let (mut transactions, mut unneeded_handles) = query_for_work(
+            args,
+            &health_check,
+            &mut trx,
+            &mut deps_chain_mngr,
+            &tracer,
+            &loop_ctx,
+        )
+        .await?;
         if transactions.is_empty() {
             continue;
         } else {
@@ -137,6 +153,8 @@ async fn tfhe_worker_cycle(
 
         // Execute transactions segregated by tenant
         for (tenant_id, ref mut tenant_txs) in transactions.iter_mut() {
+            deps_chain_mngr.extend_current_lock().await?;
+
             let mut tx_graph = build_transaction_graph_and_execute(
                 tenant_id,
                 tenant_txs,
@@ -152,6 +170,7 @@ async fn tfhe_worker_cycle(
                 &mut tx_graph,
                 &mut unneeded_handles,
                 &mut trx,
+                &mut deps_chain_mngr,
                 &tracer,
                 &loop_ctx,
             )
@@ -290,6 +309,7 @@ async fn query_for_work<'a>(
     args: &crate::daemon_cli::Args,
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
+    deps_chain_mngr: &mut dependence_chain::LockMngr,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<
@@ -298,6 +318,14 @@ async fn query_for_work<'a>(
 > {
     // This query locks our work items so other worker doesn't select them.
     let mut s = tracer.start_with_context("query_work_items", loop_ctx);
+
+    // Lock dependence chain
+    // If dependence_chain_id is None, it means no lock was acquired and
+    // we should not filter by dependence_chain_id.
+    //
+    // In that case, we fallback to the old approach
+    let dependence_chain_id: Option<Vec<u8>> = deps_chain_mngr.acquire_next_lock().await?;
+
     let the_work = query!(
         "
 -- Acquire all computations from a transaction set
@@ -320,8 +348,9 @@ WHERE c.transaction_id IN (
       WHERE is_completed = FALSE
         AND is_error = FALSE
         AND is_allowed = TRUE
+        AND ($1::bytea IS NULL OR dependence_chain_id = $1)
       ORDER BY created_at
-      LIMIT $1
+      LIMIT $2
     ) as c_creation_order
    UNION
     SELECT DISTINCT
@@ -332,11 +361,13 @@ WHERE c.transaction_id IN (
       WHERE is_completed = FALSE
         AND is_error = FALSE
         AND is_allowed = TRUE
+        AND ($1::bytea IS NULL OR dependence_chain_id = $1)
       ORDER BY schedule_order
-      LIMIT $1
+      LIMIT $2
     ) as c_schedule_order
   )
 FOR UPDATE SKIP LOCKED            ",
+        dependence_chain_id,
         args.work_items_batch_size as i32,
     )
     .fetch_all(trx.as_mut())
@@ -349,6 +380,7 @@ FOR UPDATE SKIP LOCKED            ",
     s.end();
     health_check.update_db_access();
     if the_work.is_empty() {
+        warn!(target: "tfhe_worker", dependence_chain_id = ?dependence_chain_id, "No work items found to process");
         health_check.update_activity();
         return Ok((vec![], vec![]));
     }
@@ -388,6 +420,7 @@ FOR UPDATE SKIP LOCKED            ",
                             tenant_id,
                             &e,
                             trx,
+                            deps_chain_mngr,
                             tracer,
                             loop_ctx,
                         )
@@ -502,6 +535,7 @@ async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
     unneeded_handles: &mut Vec<(Handle, Handle)>,
     trx: &mut sqlx::Transaction<'a, Postgres>,
+    deps_mngr: &mut dependence_chain::LockMngr,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -575,6 +609,7 @@ async fn upload_transaction_graph_results<'a>(
                     tenant_id,
                     &*cerr,
                     trx,
+                    deps_mngr,
                     tracer,
                     loop_ctx,
                 )
@@ -653,12 +688,14 @@ async fn upload_transaction_graph_results<'a>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn set_computation_error<'a>(
     output_handle: &[u8],
     transaction_id: &[u8],
     tenant_id: &i32,
     cerr: &(dyn std::error::Error + Send + Sync),
     trx: &mut sqlx::Transaction<'a, Postgres>,
+    deps_mngr: &mut dependence_chain::LockMngr,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -690,6 +727,8 @@ async fn set_computation_error<'a>(
     )
     .execute(trx.as_mut())
     .await?;
+
+    deps_mngr.set_processing_error(Some(err_string)).await?;
     s.end();
     Ok(())
 }
