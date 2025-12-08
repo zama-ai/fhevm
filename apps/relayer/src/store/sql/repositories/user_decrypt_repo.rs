@@ -8,6 +8,7 @@ use crate::store::sql::{
         user_decrypt_req_model::UserDecryptResponseModel,
         user_decrypt_share_model::UserDecryptShare,
     },
+    repositories::utils::compute_advisory_lock_id,
 };
 use alloy::primitives::U256;
 use sqlx::types::Json;
@@ -271,20 +272,33 @@ impl UserDecryptRepository {
         let share_index = u256_to_i32(share_index)
             .map_err(|e| SqlError::conversion_error("share_index", share_index, e))?;
         // Use advisory locks to serialize share operations per gw_reference_id
-        // Advisory locks block and wait instead of failing like SERIALIZABLE
+        //
+        // Advisory locks provide two benefits:
+        // 1. Prevents wasted sequence IDs:
+        //    Without serialization, concurrent INSERT attempts hitting UNIQUE constraints:
+        //    - Multiple transactions call nextval() concurrently
+        //    - All but one fail due to UNIQUE constraint on (gw_reference_id, share_index)
+        //    - Failed transactions waste their sequence IDs, creating gaps
+        //    See: https://www.postgresql.org/docs/current/functions-sequence.html
+        //
+        // 2. Ensures correct counts by serializing inserts:
+        //    When transactions execute sequentially, COUNT(*) sees all previous INSERTs
+        //    for the same gw_reference_id, providing accurate share counts.
+        //
+        // Separating INSERT and COUNT (instead of using CTE) solves read-your-own-writes:
+        // In a CTE, COUNT(*) cannot see rows inserted by the same statement. By splitting
+        // into separate statements, the second SELECT sees the first INSERT's result.
+        // See: https://www.postgresql.org/docs/current/queries-with.html
+        //
+        // Advisory lock automatically released when transaction commits/rollbacks.
+        // See: https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS
         let mut tx = self.pool.get_pool().begin().await?;
 
         // Acquire advisory lock - this WAITS for other transactions, doesn't fail
-        sqlx::query!(
-            r#"
-                SELECT pg_advisory_xact_lock(
-                    ('x' || encode(substring(sha256($1), 1, 8), 'hex'))::bit(64)::bigint
-                )
-                "#,
-            &gw_ref_id
-        )
-        .execute(&mut *tx)
-        .await?;
+        let lock_id = compute_advisory_lock_id(&gw_ref_id);
+        sqlx::query!("SELECT pg_advisory_xact_lock($1)", lock_id)
+            .execute(&mut *tx)
+            .await?;
 
         // First, do the INSERT
         sqlx::query!(
