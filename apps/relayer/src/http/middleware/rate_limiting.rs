@@ -1,7 +1,6 @@
 use crate::config::settings::RateLimitConfig;
 use crate::http::AppResponse;
 use axum::response::IntoResponse;
-use chrono::Utc;
 use rand::Rng;
 use reqwest::Method;
 use tower_governor::{
@@ -26,14 +25,12 @@ pub fn create_rate_limit_error_handler(
             base_ms
         };
 
-        // Generate RFC 7231 timestamp indicating when client should retry
-        // Uses absolute timestamp instead of relative seconds for cache-safety
-        let retry_time = Utc::now() + chrono::Duration::milliseconds(total_ms as i64);
-        let retry_after_timestamp = retry_time.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+        // Convert to seconds for Retry-After header (rounded up)
+        let retry_after_seconds = total_ms.div_ceil(1000); // Round up to nearest second
 
         AppResponse::<()>::rate_limited(
             "Too many requests at relayer HTTP server",
-            &retry_after_timestamp,
+            &retry_after_seconds.to_string(), // Pass as seconds string for header
         )
         .into_response()
     }

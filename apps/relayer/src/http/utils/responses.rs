@@ -346,6 +346,7 @@ pub struct ErrorResponse {
 // Implement `IntoResponse` so Axum can convert our enum into an HTTP response.
 impl<V: serde::Serialize> IntoResponse for AppResponse<V> {
     fn into_response(self) -> Response {
+        use axum::http::HeaderValue;
         match self {
             AppResponse::Success(data) => (StatusCode::OK, Json(data)).into_response(),
             AppResponse::BadRequest {
@@ -393,19 +394,27 @@ impl<V: serde::Serialize> IntoResponse for AppResponse<V> {
                 retry_after,
                 request_id,
             } => {
+                // For 429 errors, retry_after should only be in header, not in body
                 let api_error = ApiError {
                     label,
                     message,
                     request_id,
-                    retry_after: Some(retry_after),
+                    retry_after: None, // For 429, retry_after only in header. This will be used for 202.
                     details: None,
                 };
 
-                (
+                let mut response = (
                     StatusCode::TOO_MANY_REQUESTS,
                     Json(serde_json::json!({ "error": api_error })),
                 )
-                    .into_response()
+                    .into_response();
+
+                // Add Retry-After header with the timestamp
+                if let Ok(header_value) = HeaderValue::from_str(&retry_after) {
+                    response.headers_mut().insert("Retry-After", header_value);
+                }
+
+                response
             }
         }
     }
