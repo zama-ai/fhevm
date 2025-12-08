@@ -26,7 +26,22 @@ ALTER TABLE prep_keygen_responses RENAME COLUMN under_process TO locked;
 ALTER TABLE keygen_responses RENAME COLUMN under_process TO locked;
 ALTER TABLE crsgen_responses RENAME COLUMN under_process TO locked;
 
--- Add the `locked_at` and `completed_at` fields for all events/responses tables.
+-- Add the `locked_at` field for all events/responses tables.
+ALTER TABLE public_decryption_requests ADD COLUMN locked_at TIMESTAMP;
+ALTER TABLE user_decryption_requests ADD COLUMN locked_at TIMESTAMP;
+ALTER TABLE prep_keygen_requests ADD COLUMN locked_at TIMESTAMP;
+ALTER TABLE keygen_requests ADD COLUMN locked_at TIMESTAMP;
+ALTER TABLE crsgen_requests ADD COLUMN locked_at TIMESTAMP;
+ALTER TABLE prss_init ADD COLUMN locked_at TIMESTAMP;
+ALTER TABLE key_reshare_same_set ADD COLUMN locked_at TIMESTAMP;
+
+ALTER TABLE public_decryption_responses ADD COLUMN locked_at TIMESTAMP;
+ALTER TABLE user_decryption_responses ADD COLUMN locked_at TIMESTAMP;
+ALTER TABLE prep_keygen_responses ADD COLUMN locked_at TIMESTAMP;
+ALTER TABLE keygen_responses ADD COLUMN locked_at TIMESTAMP;
+ALTER TABLE crsgen_responses ADD COLUMN locked_at TIMESTAMP;
+
+-- Add the `completed_at` field for all events/responses tables.
 ALTER TABLE public_decryption_requests ADD COLUMN completed_at TIMESTAMP;
 ALTER TABLE user_decryption_requests ADD COLUMN completed_at TIMESTAMP;
 ALTER TABLE prep_keygen_requests ADD COLUMN completed_at TIMESTAMP;
@@ -40,3 +55,5 @@ ALTER TABLE user_decryption_responses ADD COLUMN completed_at TIMESTAMP;
 ALTER TABLE prep_keygen_responses ADD COLUMN completed_at TIMESTAMP;
 ALTER TABLE keygen_responses ADD COLUMN completed_at TIMESTAMP;
 ALTER TABLE crsgen_responses ADD COLUMN completed_at TIMESTAMP;
+
+-- TODO: autofill completed at for public_decryption_requests, ..., crsgen_requests?
