@@ -74,7 +74,7 @@ static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 ///
 /// TODO: properly shutdown tasks
 pub async fn run_fhevm_relayer(
-    mut settings: Settings,
+    settings: Settings,
     shutdown_token: CancellationToken,
     settings_sender: Option<oneshot::Sender<Settings>>,
 ) -> eyre::Result<()> {
@@ -102,7 +102,6 @@ pub async fn run_fhevm_relayer(
     // 4. Init handlers
     //
     //
-    let mut task_set = tokio::task::JoinSet::new();
 
     let tx_engine_gateway = GatewayTransactionEngine::new(
         settings.gateway.blockchain_rpc.clone(),
@@ -215,11 +214,18 @@ pub async fn run_fhevm_relayer(
         .new_subscription(gateway_contract_addresses, latest_block_gateway)
         .await?;
     info!("Starting Relayer Gateway Listener");
-    task_set.spawn(arbitrum_listener(
-        subscription_gateway,
-        Arc::clone(&orchestrator),
-        repositories.block_number.clone(),
-    ));
+    orchestrator
+        .spawn_task_and_wait_ready(
+            "gateway_listener",
+            arbitrum_listener(
+                subscription_gateway,
+                Arc::clone(&orchestrator),
+                repositories.block_number.clone(),
+            ),
+            async { Ok(()) }, // Gateway listener doesn't have a specific readiness check
+        )
+        .await
+        .map_err(|e| eyre::eyre!("Failed to start gateway listener: {}", e))?;
 
     // Setup KeyUrl gateway handler
     let keyurl_gateway_handler =
@@ -228,30 +234,36 @@ pub async fn run_fhevm_relayer(
     // Initialize KeyUrl cache with config data
     keyurl_gateway_handler.initialize().await;
 
+    let mut settings = settings;
+
     // HTTP endpoint
-    if let Some(_http_endpoint) = settings.http.endpoint.clone() {
+    if settings.http.endpoint.is_some() {
         info!("Starting Relayer HTTP server");
 
-        let actual_http_addr = run_http_server(
+        let addr = run_http_server(
             &settings.http,
             Arc::clone(&orchestrator),
             repositories.clone(),
         )
         .await;
-        // Update settings with the actual bound address
-        settings.http.endpoint = Some(actual_http_addr.to_string());
-        info!("HTTP server bound to actual address: {}", actual_http_addr);
+
+        info!("HTTP server bound to actual address: {}", addr);
+        settings.http.endpoint = Some(addr.to_string());
     };
 
     // Run metrics server
-    let actual_metrics_addr =
-        metrics::server::run_metrics_server(registry_clone, metrics_endpoint).await;
-    // Update settings with the actual bound address
-    settings.metrics.endpoint = actual_metrics_addr.to_string();
+    info!("Starting Relayer metrics server");
+    let actual_metrics_addr = metrics::server::run_metrics_server(
+        registry_clone,
+        metrics_endpoint,
+        Arc::clone(&orchestrator),
+    )
+    .await;
     info!(
         "Metrics server bound to actual address: {}",
         actual_metrics_addr
     );
+    settings.metrics.endpoint = actual_metrics_addr.to_string();
 
     // Initialize KeyUrl handler with config data
     // Must be after http server init, so that http handler can catch the event.
@@ -259,82 +271,21 @@ pub async fn run_fhevm_relayer(
 
     drop(setup_span);
 
-    // Perform self-check to ensure servers are ready
-    wait_for_servers_ready(
-        settings.http.endpoint.as_deref(),
-        &settings.metrics.endpoint,
-    )
-    .await?;
     info!("All servers are ready and responding");
 
     // Send settings through the channel if provided (for tests)
     if let Some(sender) = settings_sender {
         let _ = sender.send(settings.clone());
-        info!("Settings sent to test setup");
+        info!("Settings sent to test setup with actual server addresses");
     }
 
-    // === Wait for shutdown signal via cancellation token
-    shutdown_token.cancelled().await;
-    task_set.shutdown().await;
+    // === Wait for shutdown signal and shutdown all tasks via orchestrator
+    orchestrator
+        .run_until_shutdown(shutdown_token)
+        .await
+        .map_err(|e| eyre::eyre!("Failed during shutdown: {}", e))?;
 
     info!("Relayer shutdown complete");
-
-    Ok(())
-}
-
-/// Wait for servers to be ready by performing health checks
-async fn wait_for_servers_ready(
-    http_endpoint: Option<&str>,
-    metrics_endpoint: &str,
-) -> eyre::Result<()> {
-    use std::time::Duration;
-
-    const MAX_RETRIES: u32 = 10;
-    const RETRY_DELAY: Duration = Duration::from_millis(200);
-
-    // Check HTTP server if configured
-    if let Some(http_endpoint) = http_endpoint {
-        let url = format!("http://{}/liveness", http_endpoint);
-        let mut retries = 0;
-
-        loop {
-            match reqwest::get(&url).await {
-                Ok(response) if response.status().is_success() => {
-                    info!("HTTP server health check passed");
-                    break;
-                }
-                _ => {
-                    retries += 1;
-                    if retries >= MAX_RETRIES {
-                        return Err(eyre::eyre!("HTTP server failed to start within timeout"));
-                    }
-                    tokio::time::sleep(RETRY_DELAY).await;
-                }
-            }
-        }
-    }
-
-    // Check metrics server
-    {
-        let url = format!("http://{}/health", metrics_endpoint);
-        let mut retries = 0;
-
-        loop {
-            match reqwest::get(&url).await {
-                Ok(response) if response.status().is_success() => {
-                    info!("Metrics server health check passed");
-                    break;
-                }
-                _ => {
-                    retries += 1;
-                    if retries >= MAX_RETRIES {
-                        return Err(eyre::eyre!("Metrics server failed to start within timeout"));
-                    }
-                    tokio::time::sleep(RETRY_DELAY).await;
-                }
-            }
-        }
-    }
 
     Ok(())
 }

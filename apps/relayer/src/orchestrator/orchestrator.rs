@@ -1,6 +1,7 @@
 use crate::core::job_id::JobId;
 use crate::orchestrator::health_checker::{HealthCheck, HealthChecker};
 use crate::orchestrator::ids;
+use crate::orchestrator::task_manager::TaskManager;
 use crate::orchestrator::traits::Event;
 use crate::orchestrator::traits::{
     EventDispatcher, EventHandler, HandlerRegistry, HookRegistry, PreDispatchHook,
@@ -8,7 +9,9 @@ use crate::orchestrator::traits::{
 use anyhow::Error;
 use async_trait::async_trait;
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::{Arc, RwLock};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, instrument};
 use uuid::Uuid;
 
@@ -16,6 +19,7 @@ pub struct Orchestrator<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> {
     event_dispatcher: Arc<D>,
     pre_dispatch_hooks: Arc<RwLock<Vec<Arc<dyn PreDispatchHook<E>>>>>,
     health_checker: Arc<RwLock<HealthChecker>>,
+    task_manager: TaskManager,
     _marker: std::marker::PhantomData<E>,
 }
 
@@ -25,6 +29,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
             event_dispatcher,
             pre_dispatch_hooks: Arc::new(RwLock::new(Vec::new())),
             health_checker: Arc::new(RwLock::new(HealthChecker::new())),
+            task_manager: TaskManager::new(),
             _marker: std::marker::PhantomData,
         })
     }
@@ -61,6 +66,30 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
         };
 
         health_checker.check_all().await
+    }
+
+    /// Spawn a task and wait for it to be ready before continuing
+    pub async fn spawn_task_and_wait_ready<F, R>(
+        &self,
+        name: &str,
+        task_future: F,
+        ready_future: R,
+    ) -> anyhow::Result<()>
+    where
+        F: Future<Output = ()> + Send + 'static,
+        R: Future<Output = anyhow::Result<()>>,
+    {
+        self.task_manager
+            .spawn_task_and_wait_ready(name, task_future, ready_future)
+            .await
+    }
+
+    /// Wait for shutdown signal and gracefully shutdown all tasks
+    pub async fn run_until_shutdown(
+        &self,
+        shutdown_token: CancellationToken,
+    ) -> anyhow::Result<()> {
+        self.task_manager.run_until_shutdown(shutdown_token).await
     }
 
     #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=%(event.job_id())))]

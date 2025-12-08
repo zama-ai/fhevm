@@ -12,6 +12,22 @@ use crate::store::sql::repositories::Repositories;
 use axum::{routing::get, Router};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
+
+async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
+    const MAX_RETRIES: u32 = 10;
+    let url = format!("http://{}/liveness", addr);
+    for _ in 0..MAX_RETRIES {
+        if reqwest::get(&url)
+            .await
+            .is_ok_and(|r| r.status().is_success())
+        {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    Err(anyhow::anyhow!("HTTP server failed to start"))
+}
 
 pub async fn run_http_server<D>(
     config: &HttpConfig,
@@ -52,7 +68,7 @@ where
     let orchestrator_for_health = orchestrator.clone();
 
     // Create KeyUrlHandler - it self-registers with orchestrator
-    let keyurl_handler = KeyUrlHandler::new(orchestrator);
+    let keyurl_handler = KeyUrlHandler::new(orchestrator.clone());
 
     // Create the router by merging all handler routers
     let app = Router::new()
@@ -82,9 +98,21 @@ where
 
     println!("Server listening on http://{actual_addr}");
 
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
+    // Use orchestrator's task manager instead of raw tokio::spawn
+    let addr_for_readiness = actual_addr;
+    orchestrator
+        .spawn_task_and_wait_ready(
+            "http_server_axum",
+            async move {
+                axum::serve(listener, app).await.unwrap();
+            },
+            async move {
+                // Wait for HTTP server to be ready with actual health check
+                wait_for_ready(addr_for_readiness).await
+            },
+        )
+        .await
+        .unwrap();
 
     actual_addr
 }
