@@ -30,10 +30,10 @@ components(
     schemas(KeyUrlResponseJson),
     schemas(crate::http::endpoints::v1::types::keyurl::Response, crate::http::endpoints::v1::types::keyurl::FheKeyInfo, crate::http::endpoints::v1::types::keyurl::KeyData),
     schemas(crate::http::ErrorResponse, crate::http::ApiError, crate::http::ErrorDetail, crate::http::ErrorLabel),
-    schemas(crate::http::endpoints::v1::types::user_decrypt::HandleContractPairJson, crate::http::endpoints::v1::types::user_decrypt::RequestValidityJson, crate::http::endpoints::v1::types::user_decrypt::UserDecryptResponsePayloadJson),
+    schemas(crate::http::endpoints::common::types::HandleContractPairJson, crate::http::endpoints::common::types::RequestValidityJson, crate::http::endpoints::v1::types::user_decrypt::UserDecryptResponsePayloadJson),
     schemas(crate::http::endpoints::v1::types::input_proof::InputProofResponsePayloadJson),
     schemas(crate::http::endpoints::v1::types::public_decrypt::PublicDecryptResponsePayloadJson),
-    schemas(crate::http::endpoints::v1::types::ChainId),
+    schemas(crate::http::endpoints::common::types::ChainId),
 ),
 tags(
     (name = "FHEVM Relayer API", description = "FHEVM Relayer API")

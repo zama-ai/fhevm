@@ -1,9 +1,7 @@
-use super::ChainId;
+use crate::http::endpoints::common::types::{ChainId, HandleContractPairJson, RequestValidityJson};
 use crate::http::{de_string_or_number, serialize_vec_as_hex};
 use alloy::primitives::Bytes;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
-use std::fmt::Display;
-use std::hash::Hash;
 use utoipa::ToSchema;
 use validator::Validate;
 
@@ -39,29 +37,6 @@ pub struct UserDecryptRequestJson {
     pub extra_data: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Serialize, Hash, ToSchema, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct HandleContractPairJson {
-    pub handle: String,
-    pub contract_address: String,
-}
-
-impl Display for HandleContractPairJson {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "ct-handle: {}, contract-address: {}",
-            self.handle, self.contract_address
-        )
-    }
-}
-
-#[derive(Debug, Deserialize, Clone, Serialize, Validate, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct RequestValidityJson {
-    pub start_timestamp: String,
-    pub duration_days: String,
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct UserDecryptResponseJson {
