@@ -20,6 +20,9 @@ test-all: ## Run all tests (unit + integration)
 	@cargo test --test input_proof_v1_test -- --test-threads=1
 	@cargo test --test public_decrypt_v1_test -- --test-threads=1
 	@cargo test --test user_decrypt_v1_test -- --test-threads=1
+	@cargo test --test input_proof_v2_test -- --test-threads=1
+	@cargo test --test public_decrypt_v2_test -- --test-threads=1
+	@cargo test --test user_decrypt_v2_test -- --test-threads=1
 	@cargo test --test http_rate_limiter_test -- --test-threads=1
 	@cargo test --test health_tests -- --test-threads=1
 
@@ -43,6 +46,31 @@ test-smoke-ok-public-decrypt-v1: ## Run smoke test on ok (happy path) for public
 
 test-health-endpoints: ## Run health endpoint tests
 	@cargo test --test health_tests -- --test-threads=1
+
+##@ V2 API Testing
+test-smoke-ok-all-v2: ## Run smoke test on ok (happy path) for v2 endpoints (user-decrypt, public-decrypt, input-proof)
+	@echo "Building v2 tests..."
+	@RUSTFLAGS="-A warnings" cargo test --test public_decrypt_v2_test --test user_decrypt_v2_test --test input_proof_v2_test --no-run
+	@echo "Running v2 tests..."
+	@RUSTFLAGS="-A warnings" cargo test --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
+	@RUSTFLAGS="-A warnings" cargo test --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
+	@RUSTFLAGS="-A warnings" cargo test --test input_proof_v2_test test_success_single_request -- --test-threads=4
+
+test-smoke-ok-input-proof-v2: ## Run smoke test on ok (happy path) for input-proof v2
+	@RUSTFLAGS="-A warnings" cargo test --test input_proof_v2_test test_success_single_request -- --test-threads=4
+
+test-smoke-ok-user-decrypt-v2: ## Run smoke test on ok (happy path) for user-decrypt v2
+	@RUSTFLAGS="-A warnings" cargo test --test user_decrypt_v2_test test_success_single_request -- --test-threads=4
+
+test-smoke-ok-public-decrypt-v2: ## Run smoke test on ok (happy path) for public-decrypt v2
+	@RUSTFLAGS="-A warnings" cargo test --test public_decrypt_v2_test test_success_single_request -- --test-threads=4
+
+##@ Combined Testing  
+test-smoke-all-versions: ## Run smoke tests for both v1 and v2 endpoints
+	@echo "Running v1 smoke tests..."
+	@make test-smoke-ok-all-v1
+	@echo "Running v2 smoke tests..."
+	@make test-smoke-ok-all-v2
 
 ##@ Linting
 clippy: ## Check code with clippy (no fixes)

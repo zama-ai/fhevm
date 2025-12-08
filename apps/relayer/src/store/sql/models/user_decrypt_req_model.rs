@@ -5,9 +5,7 @@ use sqlx::prelude::FromRow;
 use sqlx::types::Json;
 use uuid::Uuid;
 
-use crate::store::sql::models::{
-    req_status_enum_model::ReqStatus, user_decrypt_share_model::UserDecryptShare,
-};
+use crate::store::sql::models::req_status_enum_model::ReqStatus;
 
 /// Represents a row in the `user_decrypt_req` table.
 #[derive(Debug, FromRow, Clone)]
@@ -34,6 +32,12 @@ pub struct ConsensusReqState {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct UserDecryptResponseShare {
+    pub share: String,
+    pub kms_signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UserDecryptResponseModel {
     pub ext_reference_id: Uuid,
     pub req_status: ReqStatus,
@@ -41,5 +45,6 @@ pub struct UserDecryptResponseModel {
     pub err_reason: Option<String>,
     pub gw_req_tx_hash: Option<String>,
     pub gw_consensus_tx_hash: Option<String>,
-    pub shares: Json<Vec<UserDecryptShare>>,
+    pub shares: Json<Vec<UserDecryptResponseShare>>,
+    pub req: Value,
 }

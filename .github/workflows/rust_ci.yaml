@@ -160,6 +160,9 @@ jobs:
           cargo test --test user_decrypt_v1_test --no-run
           cargo test --test public_decrypt_v1_test --no-run
           cargo test --test input_proof_v1_test --no-run
+          cargo test --test user_decrypt_v2_test --no-run
+          cargo test --test public_decrypt_v2_test --no-run
+          cargo test --test input_proof_v2_test --no-run
           cargo test --test http_rate_limiter_test --no-run
           cargo test --test health_tests --no-run
 
@@ -171,8 +174,14 @@ jobs:
           RUST_BACKTRACE=full cargo test --lib
           RUST_BACKTRACE=full cargo test --test transaction_helper_test
           # Use test-threads=1 to force sequential execution. Otherwise they fail due to port free contention (temp fix).
+          echo "Running v1 API tests..."
           RUST_BACKTRACE=full cargo test --test user_decrypt_v1_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test public_decrypt_v1_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test input_proof_v1_test -- --test-threads=1
+          echo "Running v2 API tests..."
+          RUST_BACKTRACE=full cargo test --test user_decrypt_v2_test -- --test-threads=1
+          RUST_BACKTRACE=full cargo test --test public_decrypt_v2_test -- --test-threads=1
+          RUST_BACKTRACE=full cargo test --test input_proof_v2_test -- --test-threads=1
+          echo "Running other tests..."
           RUST_BACKTRACE=full cargo test --test http_rate_limiter_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test health_tests -- --test-threads=1

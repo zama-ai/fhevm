@@ -2,7 +2,14 @@ use crate::config::settings::HttpConfig;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::http::endpoints::{
     health_handler, liveness_handler,
-    v1::handlers::{InputProofHandler, KeyUrlHandler, PublicDecryptHandler, UserDecryptHandler},
+    v1::handlers::{
+        InputProofHandler as InputProofHandlerV1, KeyUrlHandler,
+        PublicDecryptHandler as PublicDecryptHandlerV1, UserDecryptHandler as UserDecryptHandlerV1,
+    },
+    v2::handlers::{
+        InputProofHandler as InputProofHandlerV2, PublicDecryptHandler as PublicDecryptHandlerV2,
+        UserDecryptHandler as UserDecryptHandlerV2,
+    },
     version_handler,
 };
 use crate::http::{openapi_middleware, with_rate_limiting};
@@ -33,6 +40,7 @@ pub async fn run_http_server<D>(
     config: &HttpConfig,
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     repositories: Arc<Repositories>,
+    user_decrypt_shares_threshold: u16,
 ) -> SocketAddr
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
@@ -45,20 +53,40 @@ where
         .expect("Invalid http-endpoint address");
     let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
 
-    // Initialize handlers
-    let input_proof_handler = Arc::new(InputProofHandler::new(
+    // Initialize v1 handlers
+    let input_proof_handler_v1 = Arc::new(InputProofHandlerV1::new(
         orchestrator.clone(),
         api_version,
         repositories.input_proof.clone(),
     ));
 
-    let user_decrypt_handler = Arc::new(UserDecryptHandler::new(
+    let user_decrypt_handler_v1 = Arc::new(UserDecryptHandlerV1::new(
         orchestrator.clone(),
         api_version,
         repositories.user_decrypt.clone(),
     ));
 
-    let public_decrypt_handler = Arc::new(PublicDecryptHandler::new(
+    let public_decrypt_handler_v1 = Arc::new(PublicDecryptHandlerV1::new(
+        orchestrator.clone(),
+        api_version,
+        repositories.public_decrypt.clone(),
+    ));
+
+    // Initialize v2 handlers
+    let input_proof_handler_v2 = Arc::new(InputProofHandlerV2::new(
+        orchestrator.clone(),
+        api_version,
+        repositories.input_proof.clone(),
+    ));
+
+    let user_decrypt_handler_v2 = Arc::new(UserDecryptHandlerV2::new(
+        orchestrator.clone(),
+        api_version,
+        repositories.user_decrypt.clone(),
+        user_decrypt_shares_threshold,
+    ));
+
+    let public_decrypt_handler_v2 = Arc::new(PublicDecryptHandlerV2::new(
         orchestrator.clone(),
         api_version,
         repositories.public_decrypt.clone(),
@@ -82,9 +110,14 @@ where
         // Merge handler routers with rate limiting applied to POST endpoints
         .merge(with_rate_limiting(
             Router::new()
-                .merge(input_proof_handler.routes())
-                .merge(public_decrypt_handler.routes())
-                .merge(user_decrypt_handler.routes()),
+                // v1 routes
+                .merge(input_proof_handler_v1.routes())
+                .merge(public_decrypt_handler_v1.routes())
+                .merge(user_decrypt_handler_v1.routes())
+                // v2 routes
+                .merge(input_proof_handler_v2.routes())
+                .merge(public_decrypt_handler_v2.routes())
+                .merge(user_decrypt_handler_v2.routes()),
             &config.rate_limit_post_endpoints,
         ))
         // Add keyurl route (no rate limiting for GET)

@@ -108,6 +108,7 @@ pub async fn run_fhevm_relayer(
             &settings.http,
             Arc::clone(&orchestrator),
             repositories.clone(),
+            settings.gateway.contracts.user_decrypt_shares_threshold,
         )
         .await;
 

@@ -1,0 +1,398 @@
+use super::super::types::error::{
+    RelayerV2ApiError400NoDetails,
+    RelayerV2ApiError404,
+    RelayerV2ApiError500,
+    // TODO: Import when implementing 503/504 errors
+    // RelayerV2ApiError503, RelayerV2ApiError504,
+};
+use super::super::types::input_proof::{
+    InputProofPostResponseJson, InputProofQueuedResult, InputProofResponseJson,
+    InputProofStatusResponseJson,
+};
+use crate::core::event::{
+    ApiVersion, InputProofEventData, InputProofRequest, RelayerEvent, RelayerEventData,
+};
+use crate::core::job_id::JobId;
+use crate::http::endpoints::v1::types::input_proof::InputProofRequestJson;
+use crate::http::{parse_and_validate, AppResponse};
+use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
+use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
+use crate::orchestrator::Orchestrator;
+use crate::store::sql::repositories::input_proof_repo::InputProofRepository;
+use axum::{
+    body::Bytes,
+    extract::{FromRequest, Path},
+    http::Request,
+    response::IntoResponse,
+};
+use axum::{http::StatusCode, Json};
+use std::sync::Arc;
+use tracing::{error, info, instrument, span, Level};
+use uuid::Uuid;
+
+pub type InputProofResponse = AppResponse<InputProofPostResponseJson>;
+
+pub struct InputProofHandler<D>
+where
+    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
+{
+    orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+    api_version: ApiVersion,
+    input_proof_repo: Arc<InputProofRepository>,
+}
+
+impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
+    InputProofHandler<D>
+{
+    pub fn new(
+        orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+        api_version: ApiVersion,
+        input_proof_repo: Arc<InputProofRepository>,
+    ) -> Self {
+        Self {
+            orchestrator,
+            api_version,
+            input_proof_repo,
+        }
+    }
+
+    /// Create router with input proof v2 routes
+    pub fn routes(self: Arc<Self>) -> axum::Router {
+        axum::Router::new()
+            .route(
+                "/v2/input-proof",
+                axum::routing::post({
+                    let handler = self.clone();
+                    move |req| async move { handler.input_proof_post_v2(req).await }
+                }),
+            )
+            .route(
+                "/v2/input-proof/{job_id}",
+                axum::routing::get({
+                    let handler = self;
+                    move |path| async move { handler.input_proof_get_v2(path).await }
+                }),
+            )
+    }
+
+    /// POST /v2/input-proof - Submit request and get reference ID
+    pub async fn input_proof_post_v2(&self, req: Request<axum::body::Body>) -> impl IntoResponse {
+        http_metrics::with_http_metrics(HttpEndpoint::InputProof, HttpMethod::Post, async move {
+            self.handle_post(req, &()).await
+        })
+        .await
+        .into_response()
+    }
+
+    /// GET /v2/input-proof/<job_id> - Check status and get result
+    pub async fn input_proof_get_v2(&self, Path(job_id): Path<Uuid>) -> impl IntoResponse {
+        http_metrics::with_http_metrics(HttpEndpoint::InputProof, HttpMethod::Get, async move {
+            self.handle_get(job_id).await
+        })
+        .await
+        .into_response()
+    }
+
+    #[instrument(name = "handle-input-proof-post", skip_all, fields(request_id))]
+    pub async fn handle_post<S>(
+        &self,
+        req: Request<axum::body::Body>,
+        _state: &S,
+    ) -> impl IntoResponse
+    where
+        S: Send + Sync,
+    {
+        let request_id = self.orchestrator.new_internal_request_id();
+        let _span = span!(Level::INFO, "handle-input-proof-post-req", request_id = %request_id);
+
+        info!(
+            "Handling input proof POST request, generated request id: {}",
+            request_id
+        );
+
+        let body = match Bytes::from_request(req, _state).await {
+            Ok(body) => body,
+            Err(_) => {
+                let mut response = AppResponse::<()>::request_error("Failed to read request body");
+                response.set_request_id(&request_id.to_string());
+                return response.into_response();
+            }
+        };
+
+        let request_data: InputProofRequest =
+            match parse_and_validate::<InputProofRequestJson, InputProofRequest>(&body) {
+                Ok(request) => request,
+                Err(parse_error) => {
+                    let error_response: AppResponse<()> =
+                        parse_error.to_app_response(&request_id.to_string());
+                    return error_response.into_response();
+                }
+            };
+
+        info!("Successfully parsed and validated request");
+
+        let ext_reference_id = self.orchestrator.new_ext_reference_id();
+
+        // Insert into database immediately
+        if let Err(e) = self
+            .input_proof_repo
+            .insert_new_input_proof(ext_reference_id, request_id, request_data.clone())
+            .await
+        {
+            error!("Failed to insert input proof into database: {}", e);
+            return AppResponse::<()>::internal_server_error_with_request_id(
+                request_id.to_string(),
+            )
+            .into_response();
+        }
+
+        // Trigger orchestrator processing
+        let event_data = InputProofEventData::ReqRcvdFromUser {
+            input_proof_request: request_data,
+        };
+
+        let event = RelayerEvent::new(
+            JobId::from_uuid_v7(request_id),
+            self.api_version,
+            RelayerEventData::InputProof(event_data),
+        );
+
+        if let Err(e) = self.orchestrator.dispatch_event(event).await {
+            error!("Failed to dispatch event to orchestrator: {:?}", e);
+            return AppResponse::<()>::internal_server_error_with_request_id(
+                request_id.to_string(),
+            )
+            .into_response();
+        }
+
+        info!("dispatched event to orchestrator to initiate processing");
+
+        // Generate a new request_id for this HTTP request (not stored)
+        let request_id_for_response = uuid::Uuid::new_v4();
+
+        // Return response immediately
+        let response = InputProofPostResponseJson {
+            status: "queued".to_string(),
+            request_id: request_id_for_response.to_string(), // New per-request UUID
+            result: InputProofQueuedResult {
+                job_id: ext_reference_id.to_string(), // This is what gets stored and tracked
+                retry_after_seconds: 15,
+            },
+        };
+
+        (StatusCode::ACCEPTED, Json(response)).into_response()
+    }
+
+    #[instrument(name = "handle-input-proof-get", skip_all, fields(job_id))]
+    pub async fn handle_get(&self, job_id: Uuid) -> impl IntoResponse {
+        // Generate a new request_id for this HTTP request
+        let request_id = uuid::Uuid::new_v4();
+
+        info!(
+            "Handling input proof GET request for job_id: {}, request_id: {}",
+            job_id, request_id
+        );
+
+        // Check SQL for current status using job_id (which is the external_reference_id in DB)
+        let _status_result = match self.input_proof_repo.find_status_by_ext_id(job_id).await {
+            Ok(Some(response_model)) => {
+                use crate::store::sql::models::req_status_enum_model::ReqStatus;
+                match response_model.req_status {
+                    ReqStatus::Completed => {
+                        if response_model.accepted.unwrap_or(false) {
+                            if let Some(res) = response_model.res {
+                                // Deserialize from database JsonValue to core event type, then convert to API response
+                                if let Ok(core_response) = serde_json::from_value::<
+                                    crate::core::event::InputProofResponse,
+                                >(res)
+                                {
+                                    let api_response = InputProofResponseJson::from(core_response);
+                                    return (
+                                        StatusCode::OK,
+                                        Json(InputProofStatusResponseJson {
+                                            status: "succeeded".to_string(),
+                                            request_id: request_id.to_string(), // Per-request UUID
+                                            result: Some(api_response),
+                                            error: None,
+                                        }),
+                                    )
+                                        .into_response();
+                                } else {
+                                    error!(
+                                        "Failed to deserialize input proof response from database"
+                                    );
+                                    return (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        Json(InputProofStatusResponseJson {
+                                            status: "failed".to_string(),
+                                            request_id: request_id.to_string(),
+                                            result: None,
+                                            error: Some(
+                                                RelayerV2ApiError500::internal_server_error(
+                                                    "Failed to deserialize response data",
+                                                ),
+                                            ),
+                                        }),
+                                    )
+                                        .into_response();
+                                }
+                            } else {
+                                error!("Request marked as completed and accepted but no response data found");
+                                return (StatusCode::INTERNAL_SERVER_ERROR, Json(InputProofStatusResponseJson {
+                                    status: "failed".to_string(),
+                                    request_id: request_id.to_string(),
+                                    result: None,
+                                    error: Some(RelayerV2ApiError500::internal_server_error("Internal error: completed request missing response data")),
+                                })).into_response();
+                            }
+                        } else {
+                            // Request was rejected
+                            let error_msg = response_model
+                                .err_reason
+                                .unwrap_or("Proof rejected".to_string());
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                Json(InputProofStatusResponseJson {
+                                    status: "failed".to_string(),
+                                    request_id: request_id.to_string(),
+                                    result: None,
+                                    error: Some(RelayerV2ApiError400NoDetails::validation_error(
+                                        &error_msg,
+                                    )),
+                                }),
+                            )
+                                .into_response();
+                        }
+                    }
+                    ReqStatus::Failure | ReqStatus::TimedOut => {
+                        let error_msg = response_model
+                            .err_reason
+                            .unwrap_or("Unknown error".to_string());
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(InputProofStatusResponseJson {
+                                status: "failed".to_string(),
+                                request_id: request_id.to_string(),
+                                result: None,
+                                error: Some(RelayerV2ApiError400NoDetails::validation_error(
+                                    &error_msg,
+                                )),
+                            }),
+                        )
+                            .into_response();
+                    }
+                    ReqStatus::Queued | ReqStatus::Processing | ReqStatus::ReceiptReceived => {
+                        // Request is still in progress, fall through to event subscription
+                        response_model
+                    }
+                }
+            }
+            Ok(None) => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(InputProofStatusResponseJson {
+                        status: "failed".to_string(),
+                        request_id: request_id.to_string(),
+                        result: None,
+                        error: Some(RelayerV2ApiError404::not_found("Request not found")),
+                    }),
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                error!("Database error while checking status: {:?}", e);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(InputProofStatusResponseJson {
+                        status: "failed".to_string(),
+                        request_id: request_id.to_string(),
+                        result: None,
+                        error: Some(RelayerV2ApiError500::internal_server_error(
+                            "Database error",
+                        )),
+                    }),
+                )
+                    .into_response();
+            }
+        };
+
+        // If we get here, request is in progress - set up event subscription with 5s timeout
+        info!("Request still in progress, setting up event subscription");
+
+        // TODO: Note - Input proof operations don't have readiness checks like decrypt operations
+        // But they can still experience response timeouts:
+        // if response_timed_out {
+        //     return (StatusCode::GATEWAY_TIMEOUT, Json(InputProofStatusResponseJson {
+        //         status: "failed".to_string(),
+        //         request_id: request_id.to_string(),
+        //         result: None,
+        //         error: Some(RelayerV2ApiError504::response_timedout("Response timed out")),
+        //     })).into_response();
+        // }
+
+        // For now, return pending status with timeout - we can implement event subscription later
+        let timeout_duration = std::time::Duration::from_secs(5);
+
+        tokio::select! {
+            _ = tokio::time::sleep(timeout_duration) => {
+                // Timeout reached, return 202 with queued status
+                (StatusCode::ACCEPTED, Json(InputProofStatusResponseJson {
+                    status: "queued".to_string(),
+                    request_id: request_id.to_string(),
+                    result: None,
+                    error: None,
+                })).into_response()
+            }
+        }
+    }
+}
+
+// OpenAPI documented endpoints as standalone functions
+/// POST /v2/input-proof - Submit input proof verification request and get reference ID
+#[utoipa::path(
+    post,
+    path = "/v2/input-proof",
+    request_body = crate::http::endpoints::v1::types::input_proof::InputProofRequestJson,
+    responses(
+        (status = 202, description = "Request accepted for processing", body = crate::http::endpoints::v2::types::input_proof::InputProofPostResponseJson),
+        (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ApiError400NoDetails),
+        (status = 429, description = "Too many requests", body = crate::http::ErrorResponse),
+        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::error::RelayerV2ApiError500),
+    ),
+    tag = "Input Proof v2"
+)]
+pub async fn input_proof_post_v2<D>(
+    handler: Arc<InputProofHandler<D>>,
+    req: Request<axum::body::Body>,
+) -> impl IntoResponse
+where
+    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
+{
+    handler.input_proof_post_v2(req).await
+}
+
+/// GET /v2/input-proof/<job_id> - Check status and get result
+#[utoipa::path(
+    get,
+    path = "/v2/input-proof/{job_id}",
+    params(
+        ("job_id" = String, Path, description = "Job ID returned from POST request")
+    ),
+    responses(
+        (status = 200, description = "Request completed successfully", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
+        (status = 202, description = "Request still processing", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
+        (status = 400, description = "Request failed", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
+        (status = 404, description = "Request not found", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
+        (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
+    ),
+    tag = "Input Proof v2"
+)]
+pub async fn input_proof_get_v2<D>(
+    handler: Arc<InputProofHandler<D>>,
+    Path(job_id): Path<Uuid>,
+) -> impl IntoResponse
+where
+    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
+{
+    handler.input_proof_get_v2(Path(job_id)).await
+}

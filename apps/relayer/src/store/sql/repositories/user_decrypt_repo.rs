@@ -5,7 +5,7 @@ use crate::store::sql::{
     client::PgClient,
     error::{SqlError, SqlResult},
     models::{
-        user_decrypt_req_model::UserDecryptResponseModel,
+        user_decrypt_req_model::{UserDecryptResponseModel, UserDecryptResponseShare},
         user_decrypt_share_model::UserDecryptShare,
     },
     repositories::utils::compute_advisory_lock_id,
@@ -445,11 +445,19 @@ impl UserDecryptRepository {
                 r.gw_consensus_tx_hash,
                 -- Aggregate shares into a JSON List.
                 -- If no shares exist, return an empty JSON array '[]'
+                -- Only select needed fields to avoid BYTEA deserialization issues
                 COALESCE(
-                    jsonb_agg(to_jsonb(s.*) ORDER BY s.share_index)
+                    jsonb_agg(
+                        jsonb_build_object(
+                            'share', s.share,
+                            'kms_signature', s.kms_signature
+                        ) 
+                        ORDER BY s.share_index
+                    )
                     FILTER (WHERE s.id IS NOT NULL),
                     '[]'::jsonb
-                ) as "shares!: Json<Vec<UserDecryptShare>>"
+                ) as "shares!: Json<Vec<UserDecryptResponseShare>>",
+                r.req -- Include original request for extra_data extraction
             FROM user_decrypt_req r
             LEFT JOIN (
                 SELECT * FROM user_decrypt_share
