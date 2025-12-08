@@ -67,8 +67,23 @@ pub fn init_db_metrics(registry: &Registry) {
     });
 }
 
-// Reuse your Table enum or define a specific one for DB
-pub use crate::metrics::Table;
+pub enum Table {
+    UserDecryptReq,
+    PublicDecryptReq,
+    InputProofReq,
+    GatewayBlockNumberStore,
+}
+
+impl Table {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Table::UserDecryptReq => "user_decrypt_req",
+            Table::PublicDecryptReq => "public_decrypt_req",
+            Table::InputProofReq => "input_proof_req",
+            Table::GatewayBlockNumberStore => "gateway_block_number_store",
+        }
+    }
+}
 
 // --- API ---
 

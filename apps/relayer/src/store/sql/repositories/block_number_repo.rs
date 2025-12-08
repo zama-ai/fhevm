@@ -1,7 +1,12 @@
-use crate::store::sql::{
-    client::PgClient,
-    error::{SqlError, SqlResult},
-    models::gateway_block_number_model::GatewayBlockNumber,
+use std::time::Instant;
+
+use crate::{
+    metrics,
+    store::sql::{
+        client::PgClient,
+        error::{SqlError, SqlResult},
+        models::gateway_block_number_model::GatewayBlockNumber,
+    },
 };
 use chrono::{DateTime, Utc};
 
@@ -24,6 +29,8 @@ impl BlockNumberRepository {
     /// Get the last block info - returns None if no row exists (matches current behavior)
     pub async fn get_last_block_info(&self) -> SqlResult<Option<BlockInfo>> {
         let mut conn = self.pool.get_connection().await?;
+
+        let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
             SELECT last_block_number, last_block_hash, updated_at
@@ -32,10 +39,18 @@ impl BlockNumberRepository {
             "#
         )
         .fetch_optional(&mut *conn)
-        .await
-        .map_err(SqlError::from)?;
+        .await;
+        match &result {
+            Ok(_) => metrics::observe_query(
+                metrics::Table::GatewayBlockNumberStore,
+                query_start.elapsed(),
+            ),
+            Err(_) => metrics::increment_error(metrics::Table::GatewayBlockNumberStore),
+        }
 
-        match result {
+        let record = result.map_err(SqlError::from)?;
+
+        match record {
             Some(row) => Ok(Some(BlockInfo {
                 block_number: row.last_block_number as u64,
                 block_hash: row.last_block_hash,
@@ -48,7 +63,9 @@ impl BlockNumberRepository {
     /// Update block info - fast UPDATE for normal operation (assumes row exists)
     pub async fn update_block_info(&self, block_number: u64, block_hash: String) -> SqlResult<()> {
         let mut conn = self.pool.get_connection().await?;
-        sqlx::query!(
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
             r#"
             UPDATE gateway_block_number_store
             SET last_block_number = $1,
@@ -60,8 +77,15 @@ impl BlockNumberRepository {
             block_hash
         )
         .execute(&mut *conn)
-        .await
-        .map_err(SqlError::from)?;
+        .await;
+        match &result {
+            Ok(_) => metrics::observe_query(
+                metrics::Table::GatewayBlockNumberStore,
+                query_start.elapsed(),
+            ),
+            Err(_) => metrics::increment_error(metrics::Table::GatewayBlockNumberStore),
+        }
+        result.map_err(SqlError::from)?;
 
         Ok(())
     }
@@ -73,7 +97,8 @@ impl BlockNumberRepository {
         block_hash: String,
     ) -> SqlResult<()> {
         let mut conn = self.pool.get_connection().await?;
-        sqlx::query!(
+        let query_start = Instant::now();
+        let result = sqlx::query!(
             r#"
             INSERT INTO gateway_block_number_store (id, last_block_number, last_block_hash)
             VALUES (1, $1, $2)
@@ -82,8 +107,16 @@ impl BlockNumberRepository {
             block_hash
         )
         .execute(&mut *conn)
-        .await
-        .map_err(SqlError::from)?;
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(
+                metrics::Table::GatewayBlockNumberStore,
+                query_start.elapsed(),
+            ),
+            Err(_) => metrics::increment_error(metrics::Table::GatewayBlockNumberStore),
+        }
+        result.map_err(SqlError::from)?;
 
         Ok(())
     }

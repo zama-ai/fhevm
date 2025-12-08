@@ -47,21 +47,8 @@ pub fn init_statuses_metrics(registry: &Registry) {
     });
 }
 
-pub enum Table {
-    UserDecryptReq,
-    PublicDecryptReq,
-    InputProofReq,
-}
-
-impl Table {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Table::UserDecryptReq => "user_decrypt_req",
-            Table::PublicDecryptReq => "public_decrypt_req",
-            Table::InputProofReq => "input_proof_req",
-        }
-    }
-}
+// Reuse your Table enum or define a specific one for DB
+pub use crate::metrics::Table;
 
 pub fn increment_req_status_count(table: Table, status: ReqStatus) {
     let metrics = STATUS_METRICS

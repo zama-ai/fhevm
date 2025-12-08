@@ -13,6 +13,7 @@ use crate::store::sql::{
 };
 use alloy::primitives::U256;
 use sqlx::types::{Json, Uuid};
+use std::time::Instant;
 
 // Import conversion functions privately within this repository
 use crate::store::sql::conversion::u256_to_i32;
@@ -45,6 +46,7 @@ impl UserDecryptRepository {
     ) -> SqlResult<Option<Uuid>> {
         let mut conn = self.pool.get_connection().await?;
 
+        let query_start = Instant::now();
         let result = sqlx::query_scalar!(
             r#"
             SELECT ext_job_id
@@ -55,9 +57,14 @@ impl UserDecryptRepository {
             int_job_id_bytes
         )
         .fetch_optional(&mut *conn)
-        .await?;
+        .await;
 
-        Ok(result)
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+        }
+
+        Ok(result?)
     }
 
     /// Insert req, ext_job_id, int_job_id.
@@ -79,8 +86,9 @@ impl UserDecryptRepository {
 
         let mut conn = self.pool.get_connection().await?;
 
+        let query_start = Instant::now();
         // Logic: Use (xmax=0) to detect if this was a true INSERT or an ON CONFLICT update.
-        let record = sqlx::query!(
+        let result = sqlx::query!(
             r#"
             INSERT INTO user_decrypt_req (
                 ext_job_id,
@@ -98,7 +106,14 @@ impl UserDecryptRepository {
             req,
         )
         .fetch_one(&mut *conn)
-        .await?;
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+        }
+
+        let record = result?;
 
         // Only increment metrics if a new row was actually created
         if record.is_inserted {
@@ -114,7 +129,9 @@ impl UserDecryptRepository {
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_processing(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
         let mut conn = self.pool.get_connection().await?;
-        let record = sqlx::query!(
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
             r#"
             WITH old AS (
                 SELECT req_status, updated_at FROM user_decrypt_req WHERE int_job_id = $1
@@ -134,7 +151,14 @@ impl UserDecryptRepository {
             int_job_id_bytes
         )
         .fetch_optional(&mut *conn)
-        .await?;
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+        }
+
+        let record = result?;
 
         if let Some(r) = record {
             metrics::record_status_transition(
@@ -160,7 +184,8 @@ impl UserDecryptRepository {
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_connection().await?;
 
-        let record = sqlx::query!(
+        let query_start = Instant::now();
+        let result = sqlx::query!(
             r#"
             WITH old AS (
                 SELECT req_status, updated_at FROM user_decrypt_req WHERE int_job_id = $2
@@ -183,7 +208,14 @@ impl UserDecryptRepository {
             int_job_id_bytes
         )
         .fetch_optional(&mut *conn)
-        .await?;
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+        }
+
+        let record = result?;
 
         if let Some(r) = record {
             metrics::record_status_transition(
@@ -214,7 +246,8 @@ impl UserDecryptRepository {
 
         let mut conn = self.pool.get_connection().await?;
 
-        let record = sqlx::query!(
+        let query_start = Instant::now();
+        let result = sqlx::query!(
             r#"
             WITH old AS (
                 SELECT req_status, updated_at FROM user_decrypt_req WHERE int_job_id = $3
@@ -239,7 +272,14 @@ impl UserDecryptRepository {
             int_job_id_bytes
         )
         .fetch_optional(&mut *conn)
-        .await?;
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+        }
+
+        let record = result?;
 
         if let Some(r) = record {
             metrics::record_status_transition(
@@ -263,7 +303,8 @@ impl UserDecryptRepository {
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_connection().await?;
 
-        let record = sqlx::query!(
+        let query_start = Instant::now();
+        let result = sqlx::query!(
             r#"
             WITH old AS (
                 SELECT req_status, updated_at FROM user_decrypt_req WHERE int_job_id = $2
@@ -286,7 +327,14 @@ impl UserDecryptRepository {
             int_job_id_bytes
         )
         .fetch_optional(&mut *conn)
-        .await?;
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+        }
+
+        let record = result?;
 
         if let Some(r) = record {
             metrics::record_status_transition(
@@ -320,6 +368,7 @@ impl UserDecryptRepository {
 
         let mut conn = self.pool.get_connection().await?;
 
+        let query_start = Instant::now();
         let result = sqlx::query_as!(
             ConsensusReqState,
             r#"
@@ -358,9 +407,14 @@ impl UserDecryptRepository {
             gw_ref_id
         )
         .fetch_optional(&mut *conn)
-        .await?;
+        .await;
 
-        Ok(result)
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+        }
+
+        Ok(result?)
     }
 
     // We recieve a share event from the gw.
@@ -522,6 +576,7 @@ impl UserDecryptRepository {
     ) -> SqlResult<Option<UserDecryptResponseModel>> {
         let mut conn = self.pool.get_connection().await?;
 
+        let query_start = Instant::now();
         let result = sqlx::query_as!(
             UserDecryptResponseModel,
             r#"
@@ -563,8 +618,13 @@ impl UserDecryptRepository {
             threshold
         )
         .fetch_optional(&mut *conn)
-        .await?;
+        .await;
 
-        Ok(result)
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+        }
+
+        Ok(result?)
     }
 }

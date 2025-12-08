@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::core::event::{InputProofRequest, InputProofResponse};
 use crate::metrics;
 use crate::store::sql::models::input_proof_req_model::InputProofResponseModel;
@@ -42,6 +44,8 @@ impl InputProofRepository {
         })?;
 
         let mut conn = self.pool.get_connection().await?;
+
+        let query_start = Instant::now();
         let result = sqlx::query_scalar!(
             r#"
             INSERT INTO input_proof_req (
@@ -58,7 +62,12 @@ impl InputProofRepository {
             req
         )
         .fetch_one(&mut *conn)
-        .await?;
+        .await;
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+        let result = result?;
 
         metrics::increment_req_status_count(metrics::Table::InputProofReq, ReqStatus::Processing);
 
@@ -77,7 +86,9 @@ impl InputProofRepository {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
         let mut conn = self.pool.get_connection().await?;
-        let record = sqlx::query!(
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
             r#"
             WITH old AS (
                 SELECT req_status, updated_at FROM input_proof_req WHERE int_request_id = $3
@@ -102,7 +113,14 @@ impl InputProofRepository {
             int_request_id
         )
         .fetch_optional(&mut *conn)
-        .await?;
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+
+        let record = result?;
 
         if let Some(r) = record {
             metrics::record_status_transition(
@@ -127,7 +145,9 @@ impl InputProofRepository {
         err_reason: &str,
     ) -> SqlResult<u64> {
         let mut conn = self.pool.get_connection().await?;
-        let record = sqlx::query!(
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
             r#"
             WITH old AS (
                 SELECT req_status, updated_at FROM input_proof_req WHERE int_request_id = $2
@@ -150,7 +170,13 @@ impl InputProofRepository {
             int_request_id
         )
         .fetch_optional(&mut *conn)
-        .await?;
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+        let record = result?;
 
         if let Some(r) = record {
             metrics::record_status_transition(
@@ -188,7 +214,9 @@ impl InputProofRepository {
         })?;
 
         let mut conn = self.pool.get_connection().await?;
-        let record = sqlx::query!(
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
             r#"
             WITH old AS (
                 SELECT req_status, updated_at FROM input_proof_req WHERE gw_reference_id = $3
@@ -215,7 +243,14 @@ impl InputProofRepository {
             gw_ref_id
         )
         .fetch_one(&mut *conn)
-        .await?;
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+
+        let record = result?;
 
         metrics::record_status_transition(
             metrics::Table::InputProofReq,
@@ -241,7 +276,9 @@ impl InputProofRepository {
         let gw_ref_id = id_as_bytes_array.to_vec();
 
         let mut conn = self.pool.get_connection().await?;
-        let record = sqlx::query!(
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
             r#"
             WITH old AS (
                 SELECT req_status, updated_at FROM input_proof_req WHERE gw_reference_id = $3
@@ -268,8 +305,14 @@ impl InputProofRepository {
             gw_ref_id
         )
         .fetch_one(&mut *conn)
-        .await?;
+        .await;
 
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+
+        let record = result?;
         metrics::record_status_transition(
             metrics::Table::InputProofReq,
             record.old_status,
@@ -289,6 +332,8 @@ impl InputProofRepository {
         ext_job_id: Uuid,
     ) -> SqlResult<Option<InputProofResponseModel>> {
         let mut conn = self.pool.get_connection().await?;
+
+        let query_start = Instant::now();
         let result = sqlx::query_as!(
             InputProofResponseModel,
             r#"
@@ -304,8 +349,13 @@ impl InputProofRepository {
             ext_job_id
         )
         .fetch_optional(&mut *conn)
-        .await?;
+        .await;
 
-        Ok(result)
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+
+        Ok(result?)
     }
 }
