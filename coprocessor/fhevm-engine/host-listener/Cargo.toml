@@ -43,6 +43,7 @@ alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = { workspace = true }
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
+tracing-test = { workspace = true }
 
 [build-dependencies]
 foundry-compilers = { workspace = true }

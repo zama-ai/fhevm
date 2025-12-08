@@ -101,7 +101,7 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value = "128",
+        default_value = "10000",
         help = "Pre-computation dependence chain cache size"
     )]
     pub dependence_cache_size: u16,
@@ -842,6 +842,7 @@ impl InfiniteLogIter {
                     warn!(
                         new_block = ?block_logs.summary,
                         block_time = self.block_time,
+                        nb_logs = block_logs.logs.len(),
                         "Block timeout, proceed with last block"
                     );
                     break block_logs;

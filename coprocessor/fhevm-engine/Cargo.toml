@@ -91,6 +91,7 @@ tonic = { version = "0.12.3", features = ["server"] }
 tonic-build = "0.12.3"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["fmt", "json"] }
+tracing-test = "0.2.5"
 humantime = "2.2.0"
 bytesize = "2.0.1"
 http = "1.3.1"
