@@ -68,24 +68,9 @@ jobs:
     uses: ./.github/workflows/host-contracts-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
-  kms-connector-db-migration-docker-build:
+  kms-connector-docker-build:
     if: startsWith(github.head_ref, 'mergify/merge-queue/')
-    uses: ./.github/workflows/kms-connector-db-migration-docker-build.yml
-    permissions: *docker_permissions
-    secrets: *docker_secrets
-  kms-connector-gw-listener-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
-    uses: ./.github/workflows/kms-connector-gw-listener-docker-build.yml
-    permissions: *docker_permissions
-    secrets: *docker_secrets
-  kms-connector-kms-worker-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
-    uses: ./.github/workflows/kms-connector-kms-worker-docker-build.yml
-    permissions: *docker_permissions
-    secrets: *docker_secrets
-  kms-connector-tx-sender-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
-    uses: ./.github/workflows/kms-connector-tx-sender-docker-build.yml
+    uses: ./.github/workflows/kms-connector-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
   test-suite-docker-build:
@@ -106,10 +91,7 @@ jobs:
       - coprocessor-zkproof-worker-docker-build
       - gateway-contracts-docker-build
       - host-contracts-docker-build
-      - kms-connector-db-migration-docker-build
-      - kms-connector-gw-listener-docker-build
-      - kms-connector-kms-worker-docker-build
-      - kms-connector-tx-sender-docker-build
+      - kms-connector-docker-build
       - test-suite-docker-build
     if: ${{ success() || failure() }}
     env:
@@ -132,34 +114,34 @@ jobs:
             console.log(`Docker build results: ${process.env.DOCKER_BUILD_RESULTS}`)
 
             const dockerBuildResults = JSON.parse(process.env.DOCKER_BUILD_RESULTS);
-            function getImageTagIfBuilt(key) {
-              let imageTag = dockerBuildResults[key].outputs.build_result === 'success' ? commitHash : '';
+            function getImageTagIfBuilt(key, build_result) {
+              let imageTag = dockerBuildResults[key].outputs[build_result] === 'success' ? commitHash : '';
               console.log(`Assigning image tag '${imageTag}' for ${key}`);
               return imageTag;
             }
 
             const coprocessor = [
-              getImageTagIfBuilt('coprocessor-db-migration-docker-build'),
-              getImageTagIfBuilt('coprocessor-gw-listener-docker-build'),
-              getImageTagIfBuilt('coprocessor-host-listener-docker-build'),
-              getImageTagIfBuilt('coprocessor-sns-worker-docker-build'),
-              getImageTagIfBuilt('coprocessor-tfhe-worker-docker-build'),
-              getImageTagIfBuilt('coprocessor-tx-sender-docker-build'),
-              getImageTagIfBuilt('coprocessor-zkproof-worker-docker-build'),
+              getImageTagIfBuilt('coprocessor-db-migration-docker-build', 'build_result'),
+              getImageTagIfBuilt('coprocessor-gw-listener-docker-build', 'build_result'),
+              getImageTagIfBuilt('coprocessor-host-listener-docker-build', 'build_result'),
+              getImageTagIfBuilt('coprocessor-sns-worker-docker-build', 'build_result'),
+              getImageTagIfBuilt('coprocessor-tfhe-worker-docker-build', 'build_result'),
+              getImageTagIfBuilt('coprocessor-tx-sender-docker-build', 'build_result'),
+              getImageTagIfBuilt('coprocessor-zkproof-worker-docker-build', 'build_result'),
             ];
 
             const connector = [
-              getImageTagIfBuilt('kms-connector-db-migration-docker-build'),
-              getImageTagIfBuilt('kms-connector-gw-listener-docker-build'),
-              getImageTagIfBuilt('kms-connector-kms-worker-docker-build'),
-              getImageTagIfBuilt('kms-connector-tx-sender-docker-build'),
+              getImageTagIfBuilt('kms-connector-docker-build', 'db_migration_build_result'),
+              getImageTagIfBuilt('kms-connector-docker-build', 'gw_listener_build_result'),
+              getImageTagIfBuilt('kms-connector-docker-build', 'kms_worker_build_result'),
+              getImageTagIfBuilt('kms-connector-docker-build', 'tx_sender_build_result'),
             ];
 
             core.setOutput('coprocessor', coprocessor);
-            core.setOutput('gateway', getImageTagIfBuilt('gateway-contracts-docker-build'));
-            core.setOutput('host', getImageTagIfBuilt('host-contracts-docker-build'));
+            core.setOutput('gateway', getImageTagIfBuilt('gateway-contracts-docker-build', 'build_result'));
+            core.setOutput('host', getImageTagIfBuilt('host-contracts-docker-build', 'build_result'));
             core.setOutput('connector', connector);
-            core.setOutput('test-suite', getImageTagIfBuilt('test-suite-docker-build'));
+            core.setOutput('test-suite', getImageTagIfBuilt('test-suite-docker-build', 'build_result'));
 
   run-e2e-tests:
     needs: [create-e2e-tests-input]
