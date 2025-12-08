@@ -329,9 +329,10 @@ impl GatewayHandler {
         event: RelayerEvent,
         user_decryption_id: U256,
     ) -> Result<(), EventProcessingError> {
+        let threshold = self.user_decrypt_shares_threshold;
         let (consensus_state, shares) = self
             .user_decrypt_repo
-            .complete_req_and_get_shares_metadata(user_decryption_id)
+            .complete_req_and_get_shares_metadata(user_decryption_id, threshold)
             .await
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "user_decrypt.complete_req_and_get_shares_metadata".to_string(),
@@ -388,7 +389,7 @@ impl GatewayHandler {
         let count = shares.len();
         let threshold = self.user_decrypt_shares_threshold as usize;
 
-        // Validate share count matches threshold
+        // Validate share count matches threshold exactly (database LIMIT should ensure this)
         if shares.len() != threshold {
             error!(
                 job_id = %event.job_id,

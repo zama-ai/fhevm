@@ -350,6 +350,7 @@ impl UserDecryptRepository {
     pub async fn complete_req_and_get_shares_metadata(
         &self,
         gw_reference_id: U256,
+        threshold: i64,
     ) -> SqlResult<(ConsensusReqState, Vec<UserDecryptShare>)> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
@@ -380,9 +381,11 @@ impl UserDecryptRepository {
                 s.updated_at as share_updated_at
             FROM user_decrypt_share s, updated_req u
             WHERE s.gw_reference_id = $1
-            ORDER BY s.share_index ASC
+            ORDER BY s.created_at ASC
+            LIMIT $2
             "#,
-            gw_ref_id
+            gw_ref_id,
+            threshold
         )
         .fetch_all(&self.pool.get_pool())
         .await?;
@@ -428,6 +431,7 @@ impl UserDecryptRepository {
     pub async fn find_req_and_shares_by_ext_reference_id(
         &self,
         ext_reference_id: Uuid,
+        threshold: i64,
     ) -> SqlResult<Option<UserDecryptResponseModel>> {
         let result = sqlx::query_as!(
             UserDecryptResponseModel,
@@ -447,11 +451,19 @@ impl UserDecryptRepository {
                     '[]'::jsonb
                 ) as "shares!: Json<Vec<UserDecryptShare>>"
             FROM user_decrypt_req r
-            LEFT JOIN user_decrypt_share s ON r.gw_reference_id = s.gw_reference_id
+            LEFT JOIN (
+                SELECT * FROM user_decrypt_share
+                WHERE gw_reference_id IN (
+                    SELECT gw_reference_id FROM user_decrypt_req WHERE ext_reference_id = $1
+                )
+                ORDER BY created_at ASC, share_index ASC
+                LIMIT $2  -- Limit to exact threshold number of shares
+            ) s ON r.gw_reference_id = s.gw_reference_id
             WHERE r.ext_reference_id = $1
             GROUP BY r.id
             "#,
-            ext_reference_id
+            ext_reference_id,
+            threshold
         )
         .fetch_optional(&self.pool.get_pool())
         .await?;
