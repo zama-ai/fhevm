@@ -108,6 +108,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         health_check_port: 8080,
         metric_rerand_batch_latency: MetricsConfig::default(),
         metric_fhe_batch_latency: MetricsConfig::default(),
+        worker_id: None,
     };
 
     std::thread::spawn(move || {
