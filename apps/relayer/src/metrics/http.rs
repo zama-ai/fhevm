@@ -25,13 +25,13 @@ pub fn init_http_metrics(registry: &Registry, config: &HttpMetricsConfig) {
     HTTP_METRICS.get_or_init(|| HttpMetrics {
         requests_total: register_counter_vec_with_registry!(
             Opts::new("relayer_http_requests_total", "Count of HTTP requests"),
-            &["endpoint", "method"],
+            &["endpoint", "method", "version"],
             registry
         )
         .unwrap(),
         responses_total: register_counter_vec_with_registry!(
             Opts::new("relayer_http_responses_total", "Count of HTTP responses"),
-            &["endpoint", "method", "status"],
+            &["endpoint", "method", "version", "status"],
             registry
         )
         .unwrap(),
@@ -41,7 +41,7 @@ pub fn init_http_metrics(registry: &Registry, config: &HttpMetricsConfig) {
                 "Histogram of HTTP request durations (seconds)"
             )
             .buckets(config.histogram_buckets.clone()),
-            &["endpoint", "method", "status"],
+            &["endpoint", "method", "version", "status"],
             registry
         )
         .unwrap(),
@@ -49,20 +49,30 @@ pub fn init_http_metrics(registry: &Registry, config: &HttpMetricsConfig) {
 }
 
 /// Increment the HTTP requests_total metric.
-pub fn requests_total(endpoint: HttpEndpoint, method: HttpMethod) {
+pub fn requests_total(endpoint: HttpEndpoint, method: HttpMethod, version: HttpApiVersion) {
     let metrics = HTTP_METRICS.get().expect("HTTP metrics not initialized");
     metrics
         .requests_total
-        .with_label_values(&[endpoint.as_str(), method.as_str()])
+        .with_label_values(&[endpoint.as_str(), method.as_str(), version.as_str()])
         .inc();
 }
 
 /// Increment the HTTP responses_total metric.
-pub fn responses_total(endpoint: HttpEndpoint, method: HttpMethod, status_code: StatusCode) {
+pub fn responses_total(
+    endpoint: HttpEndpoint,
+    method: HttpMethod,
+    version: HttpApiVersion,
+    status_code: StatusCode,
+) {
     let metrics = HTTP_METRICS.get().expect("HTTP metrics not initialized");
     metrics
         .responses_total
-        .with_label_values(&[endpoint.as_str(), method.as_str(), status_code.as_str()])
+        .with_label_values(&[
+            endpoint.as_str(),
+            method.as_str(),
+            version.as_str(),
+            status_code.as_str(), // e.g., "200", "400", "429", "500"
+        ])
         .inc();
 }
 
@@ -70,13 +80,19 @@ pub fn responses_total(endpoint: HttpEndpoint, method: HttpMethod, status_code: 
 pub fn request_duration_seconds(
     endpoint: HttpEndpoint,
     method: HttpMethod,
+    version: HttpApiVersion,
     status_code: StatusCode,
     duration: f64,
 ) {
     let metrics = HTTP_METRICS.get().expect("HTTP metrics not initialized");
     metrics
         .request_duration_seconds
-        .with_label_values(&[endpoint.as_str(), method.as_str(), status_code.as_str()])
+        .with_label_values(&[
+            endpoint.as_str(),
+            method.as_str(),
+            version.as_str(),
+            status_code.as_str(),
+        ])
         .observe(duration);
 }
 
@@ -99,6 +115,24 @@ impl HttpEndpoint {
             HttpEndpoint::UserDecrypt => "/user-decrypt",
             HttpEndpoint::KeyUrl => "/keyurl",
             HttpEndpoint::Unknown => "unknown",
+        }
+    }
+}
+
+/// API Version tag.
+#[derive(Debug, Clone, Copy)]
+pub enum HttpApiVersion {
+    V1,
+    V2,
+    Unversioned,
+}
+
+impl HttpApiVersion {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HttpApiVersion::V1 => "v1",
+            HttpApiVersion::V2 => "v2",
+            HttpApiVersion::Unversioned => "none",
         }
     }
 }
@@ -143,20 +177,29 @@ impl HttpStatus {
 pub async fn with_http_metrics<Fut, R>(
     endpoint: HttpEndpoint,
     method: HttpMethod,
+    version: HttpApiVersion,
     fut: Fut,
 ) -> impl IntoResponse
 where
     Fut: Future<Output = R>,
     R: IntoResponse,
 {
-    requests_total(endpoint, method);
+    requests_total(endpoint, method, version);
 
     let start = Instant::now();
 
     let response = fut.await.into_response();
 
     let status_code = response.status();
-    responses_total(endpoint, method, status_code);
-    request_duration_seconds(endpoint, method, status_code, start.elapsed().as_secs_f64());
+
+    responses_total(endpoint, method, version, status_code);
+    request_duration_seconds(
+        endpoint,
+        method,
+        version,
+        status_code,
+        start.elapsed().as_secs_f64(),
+    );
+
     response
 }

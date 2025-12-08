@@ -8,7 +8,7 @@ use crate::core::event::{
 };
 use crate::core::job_id::JobId;
 use crate::http::{parse_and_validate, AppResponse};
-use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
+use crate::metrics::http::{self as http_metrics, HttpApiVersion, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::OnceHandler;
 use crate::orchestrator::Orchestrator;
@@ -57,9 +57,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
     }
 
     pub async fn input_proof_v1(&self, req: Request<axum::body::Body>) -> impl IntoResponse {
-        http_metrics::with_http_metrics(HttpEndpoint::InputProof, HttpMethod::Post, async move {
-            self.handle(req, &()).await
-        })
+        http_metrics::with_http_metrics(
+            HttpEndpoint::InputProof,
+            HttpMethod::Post,
+            HttpApiVersion::V1,
+            async move { self.handle(req, &()).await },
+        )
         .await
         .into_response()
     }

@@ -1,7 +1,3 @@
-Here is the `metrics_db.md` documentation file, strictly based on the code provided and the structure requested.
-
----
-
 # Relayer Database Infrastructure Metrics
 
 **Monitoring the health, performance, and capacity of the PostgreSQL interaction layer.**

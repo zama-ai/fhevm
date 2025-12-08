@@ -17,6 +17,7 @@ use crate::core::job_id::JobId;
 use crate::http::endpoints::v1::types::public_decrypt::PublicDecryptRequestJson;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
+use crate::metrics::HttpApiVersion;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository;
@@ -87,18 +88,24 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         &self,
         req: Request<axum::body::Body>,
     ) -> impl IntoResponse {
-        http_metrics::with_http_metrics(HttpEndpoint::PublicDecrypt, HttpMethod::Post, async move {
-            self.handle_post(req, &()).await
-        })
+        http_metrics::with_http_metrics(
+            HttpEndpoint::PublicDecrypt,
+            HttpMethod::Post,
+            HttpApiVersion::V2,
+            async move { self.handle_post(req, &()).await },
+        )
         .await
         .into_response()
     }
 
     /// GET /v2/public-decrypt/<job_id> - Check status and get result
     pub async fn public_decrypt_get_v2(&self, Path(job_id): Path<Uuid>) -> impl IntoResponse {
-        http_metrics::with_http_metrics(HttpEndpoint::PublicDecrypt, HttpMethod::Get, async move {
-            self.handle_get(job_id).await
-        })
+        http_metrics::with_http_metrics(
+            HttpEndpoint::PublicDecrypt,
+            HttpMethod::Get,
+            HttpApiVersion::V2,
+            async move { self.handle_get(job_id).await },
+        )
         .await
         .into_response()
     }

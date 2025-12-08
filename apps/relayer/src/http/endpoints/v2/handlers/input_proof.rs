@@ -17,6 +17,7 @@ use crate::core::job_id::JobId;
 use crate::http::endpoints::v1::types::input_proof::InputProofRequestJson;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
+use crate::metrics::HttpApiVersion;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::input_proof_repo::InputProofRepository;
@@ -84,18 +85,24 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
     /// POST /v2/input-proof - Submit request and get reference ID
     pub async fn input_proof_post_v2(&self, req: Request<axum::body::Body>) -> impl IntoResponse {
-        http_metrics::with_http_metrics(HttpEndpoint::InputProof, HttpMethod::Post, async move {
-            self.handle_post(req, &()).await
-        })
+        http_metrics::with_http_metrics(
+            HttpEndpoint::InputProof,
+            HttpMethod::Post,
+            HttpApiVersion::V2,
+            async move { self.handle_post(req, &()).await },
+        )
         .await
         .into_response()
     }
 
     /// GET /v2/input-proof/<job_id> - Check status and get result
     pub async fn input_proof_get_v2(&self, Path(job_id): Path<Uuid>) -> impl IntoResponse {
-        http_metrics::with_http_metrics(HttpEndpoint::InputProof, HttpMethod::Get, async move {
-            self.handle_get(job_id).await
-        })
+        http_metrics::with_http_metrics(
+            HttpEndpoint::InputProof,
+            HttpMethod::Get,
+            HttpApiVersion::V2,
+            async move { self.handle_get(job_id).await },
+        )
         .await
         .into_response()
     }
