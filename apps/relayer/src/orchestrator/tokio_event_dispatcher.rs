@@ -81,9 +81,18 @@ impl<E: Event + std::fmt::Debug> EventDispatcher<E> for TokioEventDispatcher<E> 
 
 impl<E: Event + std::fmt::Debug> HandlerRegistry<E> for TokioEventDispatcher<E> {
     #[instrument(skip(self, handler))]
-    fn register_handler(&self, event_id: u8, handler: Arc<dyn EventHandler<E>>) {
-        self.suscribers.entry(event_id).or_default().push(handler);
-        debug!("Generic-Handler registered for {}", event_id);
+    fn register_handler(&self, event_ids: &[u8], handler: Arc<dyn EventHandler<E>>) {
+        for event_id in event_ids {
+            self.suscribers
+                .entry(*event_id)
+                .or_default()
+                .push(Arc::clone(&handler));
+        }
+        debug!(
+            "Generic-Handler registered for {} events: {:?}",
+            event_ids.len(),
+            event_ids
+        );
     }
 
     #[instrument(skip(self, handler))]

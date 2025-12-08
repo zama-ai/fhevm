@@ -2,8 +2,9 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            GatewayChainEventData, HandleContractPair, RelayerEvent, RelayerEventData,
-            UserDecryptEventData, UserDecryptRequest, UserDecryptResponse,
+            GatewayChainEventData, GatewayChainEventId, HandleContractPair, RelayerEvent,
+            RelayerEventData, UserDecryptEventData, UserDecryptEventId, UserDecryptRequest,
+            UserDecryptResponse,
         },
         job_id::JobId,
     },
@@ -16,7 +17,7 @@ use crate::{
         readiness_checker::{ReadinessCheckError, ReadinessChecker},
     },
     orchestrator::{
-        traits::{EventDispatcher, EventHandler},
+        traits::{EventDispatcher, EventHandler, HandlerRegistry},
         ContentHasher, Orchestrator, TokioEventDispatcher,
     },
     store::sql::{
@@ -60,15 +61,27 @@ impl GatewayHandler {
         decryption_address: Address,
         user_decrypt_shares_threshold: usize,
         user_decrypt_repo: Arc<UserDecryptRepository>,
-    ) -> Self {
-        Self {
-            dispatcher,
+    ) -> Arc<Self> {
+        let handler = Arc::new(Self {
+            dispatcher: Arc::clone(&dispatcher),
             tx_helper,
             readiness_checker,
             decryption_address,
             user_decrypt_repo,
             user_decrypt_shares_threshold: user_decrypt_shares_threshold as i64,
-        }
+        });
+
+        // Self-register for events
+        dispatcher.register_handler(
+            &[
+                UserDecryptEventId::ReqRcvdFromUser.into(),
+                UserDecryptEventId::ReqSentToGw.into(),
+                GatewayChainEventId::EventLogRcvd.into(),
+            ],
+            handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
+        );
+
+        handler
     }
 }
 

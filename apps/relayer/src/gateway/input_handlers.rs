@@ -3,15 +3,15 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            GatewayChainEventData, InputProofEventData, InputProofRequest, InputProofResponse,
-            RelayerEvent, RelayerEventData,
+            GatewayChainEventData, GatewayChainEventId, InputProofEventData, InputProofEventId,
+            InputProofRequest, InputProofResponse, RelayerEvent, RelayerEventData,
         },
         job_id::JobId,
     },
     gateway::arbitrum::transaction::helper::{TransactionHelper, TransactionType},
     gateway::arbitrum::{bindings::InputVerification, ComputeCalldata},
     orchestrator::{
-        traits::{Event, EventDispatcher, EventHandler},
+        traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
     store::sql::repositories::input_proof_repo::InputProofRepository,
@@ -39,13 +39,26 @@ impl InputProofGatewayHandler {
         tx_helper: Arc<TransactionHelper>,
         contracts: ContractConfig,
         input_proof_repo: Arc<InputProofRepository>,
-    ) -> Self {
-        Self {
-            dispatcher,
+    ) -> Arc<Self> {
+        let handler = Arc::new(Self {
+            dispatcher: Arc::clone(&dispatcher),
             tx_helper,
             contracts,
             input_proof_repo,
-        }
+        });
+
+        // Self-register for events
+        dispatcher.register_handler(
+            &[
+                InputProofEventId::ReqRcvdFromUser.into(),
+                InputProofEventId::ReqSentToGw.into(),
+                InputProofEventId::RespRcvdFromGw.into(),
+                GatewayChainEventId::EventLogRcvd.into(),
+            ],
+            handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
+        );
+
+        handler
     }
 }
 

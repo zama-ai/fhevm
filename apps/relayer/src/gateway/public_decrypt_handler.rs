@@ -2,8 +2,9 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            GatewayChainEventData, PublicDecryptEventData, PublicDecryptRequest,
-            PublicDecryptResponse, RelayerEvent, RelayerEventData,
+            GatewayChainEventData, GatewayChainEventId, PublicDecryptEventData,
+            PublicDecryptEventId, PublicDecryptRequest, PublicDecryptResponse, RelayerEvent,
+            RelayerEventData,
         },
         job_id::JobId,
     },
@@ -16,7 +17,7 @@ use crate::{
         readiness_checker::{ReadinessCheckError, ReadinessChecker},
     },
     orchestrator::{
-        traits::{EventDispatcher, EventHandler},
+        traits::{EventDispatcher, EventHandler, HandlerRegistry},
         ContentHasher, Orchestrator, TokioEventDispatcher,
     },
     store::sql::repositories::public_decrypt_repo::PublicDecryptRepository,
@@ -43,14 +44,26 @@ impl GatewayHandler {
         readiness_checker: Arc<ReadinessChecker>,
         decryption_address: Address,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
-    ) -> Self {
-        Self {
-            dispatcher,
+    ) -> Arc<Self> {
+        let handler = Arc::new(Self {
+            dispatcher: Arc::clone(&dispatcher),
             tx_helper,
             readiness_checker,
             decryption_address,
             public_decrypt_repo,
-        }
+        });
+
+        // Self-register for events
+        dispatcher.register_handler(
+            &[
+                PublicDecryptEventId::ReqRcvdFromUser.into(),
+                PublicDecryptEventId::ReqSentToGw.into(),
+                GatewayChainEventId::EventLogRcvd.into(),
+            ],
+            handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
+        );
+
+        handler
     }
 }
 

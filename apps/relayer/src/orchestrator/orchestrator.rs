@@ -135,8 +135,8 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HookRegistry<E> for O
 impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HandlerRegistry<E>
     for Orchestrator<D, E>
 {
-    fn register_handler(&self, event_id: u8, handler: Arc<dyn EventHandler<E>>) {
-        self.event_dispatcher.register_handler(event_id, handler);
+    fn register_handler(&self, event_ids: &[u8], handler: Arc<dyn EventHandler<E>>) {
+        self.event_dispatcher.register_handler(event_ids, handler);
     }
 
     fn register_once_handler(
@@ -190,7 +190,7 @@ mod tests {
         );
 
         let handler = Arc::new(SimpleEventHandler);
-        pubsub.register_handler(event.event_id(), handler);
+        pubsub.register_handler(&[event.event_id()], handler);
         _ = orchestrator.dispatch_event(event).await;
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }

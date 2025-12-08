@@ -45,7 +45,7 @@ impl KeyUrlHandler {
 
         // Self-register for KeyDataUpdated events
         orchestrator.register_handler(
-            KeyUrlEventId::KeyDataUpdated.into(),
+            &[KeyUrlEventId::KeyDataUpdated.into()],
             handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
         );
 
