@@ -38,7 +38,7 @@ impl GatewayEvent {
         }
     }
 
-    /// Sets the `under_process` field of the event as `FALSE` in the database.
+    /// Sets the `locked` field of the event as `FALSE` in the database.
     pub async fn mark_as_pending(&self, db: &Pool<Postgres>) {
         let already_sent = self.already_sent;
         let err_count = self.error_counter;
@@ -199,7 +199,7 @@ pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<GatewayEvent
     })
 }
 
-/// Sets the `under_process` field of the `PublicDecryptionRequest` as `FALSE` in the database.
+/// Sets the `locked` field of the `PublicDecryptionRequest` as `FALSE` in the database.
 pub async fn mark_public_decryption_as_pending(
     db: &Pool<Postgres>,
     id: U256,
@@ -207,7 +207,7 @@ pub async fn mark_public_decryption_as_pending(
     error_counter: i16,
 ) {
     let query = sqlx::query!(
-        "UPDATE public_decryption_requests SET under_process = FALSE, already_sent = $1, error_counter = $2 \
+        "UPDATE public_decryption_requests SET locked = FALSE, already_sent = $1, error_counter = $2 \
         WHERE decryption_id = $3",
         already_sent,
         error_counter,
@@ -216,7 +216,7 @@ pub async fn mark_public_decryption_as_pending(
     execute_free_event_query(db, query).await;
 }
 
-/// Sets the `under_process` field of the `UserDecryptionRequest` as `FALSE` in the database.
+/// Sets the `locked` field of the `UserDecryptionRequest` as `FALSE` in the database.
 pub async fn mark_user_decryption_as_pending(
     db: &Pool<Postgres>,
     id: U256,
@@ -224,7 +224,7 @@ pub async fn mark_user_decryption_as_pending(
     error_counter: i16,
 ) {
     let query = sqlx::query!(
-        "UPDATE user_decryption_requests SET under_process = FALSE, already_sent = $1, error_counter = $2 \
+        "UPDATE user_decryption_requests SET locked = FALSE, already_sent = $1, error_counter = $2 \
         WHERE decryption_id = $3",
         already_sent,
         error_counter,
@@ -233,10 +233,10 @@ pub async fn mark_user_decryption_as_pending(
     execute_free_event_query(db, query).await;
 }
 
-/// Sets the `under_process` field of the `PrepKeygenRequest` as `FALSE` in the database.
+/// Sets the `locked` field of the `PrepKeygenRequest` as `FALSE` in the database.
 pub async fn mark_prep_keygen_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
     let query = sqlx::query!(
-        "UPDATE prep_keygen_requests SET under_process = FALSE, already_sent = $1 \
+        "UPDATE prep_keygen_requests SET locked = FALSE, already_sent = $1 \
         WHERE prep_keygen_id = $2",
         already_sent,
         id.as_le_slice()
@@ -244,10 +244,10 @@ pub async fn mark_prep_keygen_as_pending(db: &Pool<Postgres>, id: U256, already_
     execute_free_event_query(db, query).await;
 }
 
-/// Sets the `under_process` field of the `KeygenRequest` as `FALSE` in the database.
+/// Sets the `locked` field of the `KeygenRequest` as `FALSE` in the database.
 pub async fn mark_keygen_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
     let query = sqlx::query!(
-        "UPDATE keygen_requests SET under_process = FALSE, already_sent = $1 \
+        "UPDATE keygen_requests SET locked = FALSE, already_sent = $1 \
         WHERE key_id = $2",
         already_sent,
         id.as_le_slice()
@@ -255,10 +255,10 @@ pub async fn mark_keygen_as_pending(db: &Pool<Postgres>, id: U256, already_sent:
     execute_free_event_query(db, query).await;
 }
 
-/// Sets the `under_process` field of the `CrsgenRequest` as `FALSE` in the database.
+/// Sets the `locked` field of the `CrsgenRequest` as `FALSE` in the database.
 pub async fn mark_crsgen_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
     let query = sqlx::query!(
-        "UPDATE crsgen_requests SET under_process = FALSE, already_sent = $1 \
+        "UPDATE crsgen_requests SET locked = FALSE, already_sent = $1 \
         WHERE crs_id = $2",
         already_sent,
         id.as_le_slice()
@@ -266,19 +266,19 @@ pub async fn mark_crsgen_as_pending(db: &Pool<Postgres>, id: U256, already_sent:
     execute_free_event_query(db, query).await;
 }
 
-/// Sets the `under_process` field of the `PrssInit` as `FALSE` in the database.
+/// Sets the `locked` field of the `PrssInit` as `FALSE` in the database.
 pub async fn mark_prss_init_as_pending(db: &Pool<Postgres>, id: U256) {
     let query = sqlx::query!(
-        "UPDATE prss_init SET under_process = FALSE WHERE id = $1",
+        "UPDATE prss_init SET locked = FALSE WHERE id = $1",
         id.as_le_slice()
     );
     execute_free_event_query(db, query).await;
 }
 
-/// Sets the `under_process` field of the `KeyReshareSameSet` as `FALSE` in the database.
+/// Sets the `locked` field of the `KeyReshareSameSet` as `FALSE` in the database.
 pub async fn mark_key_reshare_same_set_as_pending(db: &Pool<Postgres>, id: U256) {
     let query = sqlx::query!(
-        "UPDATE key_reshare_same_set SET under_process = FALSE WHERE key_id = $1",
+        "UPDATE key_reshare_same_set SET locked = FALSE WHERE key_id = $1",
         id.as_le_slice()
     );
     execute_free_event_query(db, query).await;
@@ -286,17 +286,17 @@ pub async fn mark_key_reshare_same_set_as_pending(db: &Pool<Postgres>, id: U256)
 
 /// Executes the free event query and checks its result.
 async fn execute_free_event_query(db: &Pool<Postgres>, query: Query<'_, Postgres, PgArguments>) {
-    warn!("Failed to process event. Restoring `under_process` field to `FALSE` in DB...");
+    warn!("Failed to process event. Restoring `locked` field to `FALSE` in DB...");
     let query_result = match query.execute(db).await {
         Ok(result) => result,
-        Err(e) => return warn!("Failed to restore `under_process` field to `FALSE`: {e}"),
+        Err(e) => return warn!("Failed to restore `locked` field to `FALSE`: {e}"),
     };
 
     if query_result.rows_affected() == 1 {
-        info!("Successfully restore `under_process` field to `FALSE` in DB!");
+        info!("Successfully restore `locked` field to `FALSE` in DB!");
     } else {
         warn!(
-            "Unexpected query result while restoring `under_process` field to `FALSE`: {:?}",
+            "Unexpected query result while restoring `locked` field to `FALSE`: {:?}",
             query_result
         )
     }

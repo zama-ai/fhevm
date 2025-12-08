@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE prep_keygen_responses SET locked = FALSE WHERE prep_keygen_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2563a820e5ef7ed9960c0a3bb94bf049107b0e59ae776b4915db507f36ad7fcf"
+}

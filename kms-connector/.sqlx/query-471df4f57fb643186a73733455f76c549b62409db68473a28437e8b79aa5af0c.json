@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_decryption_requests SET locked = FALSE, already_sent = $1, error_counter = $2 WHERE decryption_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Int2",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "471df4f57fb643186a73733455f76c549b62409db68473a28437e8b79aa5af0c"
+}
