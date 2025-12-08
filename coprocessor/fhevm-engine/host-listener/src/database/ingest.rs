@@ -9,6 +9,7 @@ use tracing::{error, info};
 
 use crate::cmd::block_history::BlockSummary;
 use crate::contracts::{AclContract, TfheContract};
+use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Database, LogTfhe,
 };
@@ -100,9 +101,11 @@ pub async fn ingest_block_logs(
                 let log = LogTfhe {
                     event,
                     transaction_hash: log.transaction_hash,
-                    is_allowed: false, // updated in the next loop
                     block_number,
                     block_timestamp,
+                    // updated in the next loop and dependence_chains
+                    is_allowed: false,
+                    dependence_chain: Default::default(),
                 };
                 tfhe_event_log.push(log);
                 continue;
@@ -119,18 +122,19 @@ pub async fn ingest_block_logs(
             );
         }
     }
-
-    for tfhe_log in tfhe_event_log {
-        let is_allowed =
+    for tfhe_log in tfhe_event_log.iter_mut() {
+        tfhe_log.is_allowed =
             if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
                 is_allowed.contains(&result_handle.to_vec())
             } else {
                 false
             };
-        let tfhe_log = LogTfhe {
-            is_allowed,
-            ..tfhe_log
-        };
+    }
+
+    let chains =
+        dependence_chains(&mut tfhe_event_log, &db.dependence_chain).await;
+
+    for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
         if block_logs.catchup && inserted {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
@@ -147,5 +151,6 @@ pub async fn ingest_block_logs(
     }
 
     db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
+    db.update_dependence_chain(&mut tx, chains).await?;
     tx.commit().await
 }
