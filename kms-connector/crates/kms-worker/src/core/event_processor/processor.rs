@@ -38,7 +38,7 @@ pub struct DbEventProcessor<P: Provider> {
     /// The maximum number of decryption attempts.
     max_decryption_attempts: u16,
 
-    /// The DB connection pool used to reset events `under_process` field on error.
+    /// The DB connection pool used to reset events `locked` field on error.
     db_pool: Pool<Postgres>,
 }
 

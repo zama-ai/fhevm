@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE keygen_requests SET locked = FALSE, already_sent = $1 WHERE key_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "27bd92351d1d8247f6c73550a2ff8602a5d7919808cf6b54146331dc8b46f2cf"
+}

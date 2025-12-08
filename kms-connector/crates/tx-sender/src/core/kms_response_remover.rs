@@ -51,7 +51,7 @@ impl KmsResponseRemover for DbKmsResponseRemover {
         Ok(())
     }
 
-    /// Sets the `under_process` field of the response as `FALSE` in the database.
+    /// Sets the `locked` field of the response as `FALSE` in the database.
     #[tracing::instrument(skip_all)]
     async fn mark_response_as_pending(&self, response: KmsResponseKind) {
         match response {
@@ -121,64 +121,64 @@ impl DbKmsResponseRemover {
         .await
     }
 
-    /// Sets the `under_process` field of the `PublicDecryptionResponse` as `FALSE` in the database.
+    /// Sets the `locked` field of the `PublicDecryptionResponse` as `FALSE` in the database.
     pub async fn mark_public_decryption_as_pending(&self, id: U256) {
         let query = sqlx::query!(
-            "UPDATE public_decryption_responses SET under_process = FALSE WHERE decryption_id = $1",
+            "UPDATE public_decryption_responses SET locked = FALSE WHERE decryption_id = $1",
             id.as_le_slice()
         );
         self.execute_free_response_query(query).await;
     }
 
-    /// Sets the `under_process` field of the `UserDecryptionResponse` as `FALSE` in the database.
+    /// Sets the `locked` field of the `UserDecryptionResponse` as `FALSE` in the database.
     pub async fn mark_user_decryption_as_pending(&self, id: U256) {
         let query = sqlx::query!(
-            "UPDATE user_decryption_responses SET under_process = FALSE WHERE decryption_id = $1",
+            "UPDATE user_decryption_responses SET locked = FALSE WHERE decryption_id = $1",
             id.as_le_slice()
         );
         self.execute_free_response_query(query).await;
     }
 
-    /// Sets the `under_process` field of the `PrepKeygenResponse` as `FALSE` in the database.
+    /// Sets the `locked` field of the `PrepKeygenResponse` as `FALSE` in the database.
     pub async fn mark_prep_keygen_as_pending(&self, id: U256) {
         let query = sqlx::query!(
-            "UPDATE prep_keygen_responses SET under_process = FALSE WHERE prep_keygen_id = $1",
+            "UPDATE prep_keygen_responses SET locked = FALSE WHERE prep_keygen_id = $1",
             id.as_le_slice()
         );
         self.execute_free_response_query(query).await;
     }
 
-    /// Sets the `under_process` field of the `KeygenResponse` as `FALSE` in the database.
+    /// Sets the `locked` field of the `KeygenResponse` as `FALSE` in the database.
     pub async fn mark_keygen_as_pending(&self, id: U256) {
         let query = sqlx::query!(
-            "UPDATE keygen_responses SET under_process = FALSE WHERE key_id = $1",
+            "UPDATE keygen_responses SET locked = FALSE WHERE key_id = $1",
             id.as_le_slice()
         );
         self.execute_free_response_query(query).await;
     }
 
-    /// Sets the `under_process` field of the `CrsgenResponse` as `FALSE` in the database.
+    /// Sets the `locked` field of the `CrsgenResponse` as `FALSE` in the database.
     pub async fn mark_crsgen_as_pending(&self, id: U256) {
         let query = sqlx::query!(
-            "UPDATE crsgen_responses SET under_process = FALSE WHERE crs_id = $1",
+            "UPDATE crsgen_responses SET locked = FALSE WHERE crs_id = $1",
             id.as_le_slice()
         );
         self.execute_free_response_query(query).await;
     }
 
-    /// Executes the query to mark the restore the response's `under_process` field to `FALSE`.
+    /// Executes the query to mark the restore the response's `locked` field to `FALSE`.
     async fn execute_free_response_query(&self, query: Query<'_, Postgres, PgArguments>) {
-        warn!("Failed to process response. Restoring `under_process` field to `FALSE` in DB...");
+        warn!("Failed to process response. Restoring `locked` field to `FALSE` in DB...");
         let query_result = match query.execute(&self.db_pool).await {
             Ok(result) => result,
-            Err(e) => return warn!("Failed to restore `under_process` field to `FALSE`: {e}"),
+            Err(e) => return warn!("Failed to restore `locked` field to `FALSE`: {e}"),
         };
 
         if query_result.rows_affected() == 1 {
-            info!("Successfully restore `under_process` field to `FALSE` in DB!");
+            info!("Successfully restore `locked` field to `FALSE` in DB!");
         } else {
             warn!(
-                "Unexpected query result while restoring `under_process` field to `FALSE`: {:?}",
+                "Unexpected query result while restoring `locked` field to `FALSE`: {:?}",
                 query_result
             )
         }
