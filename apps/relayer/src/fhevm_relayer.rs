@@ -28,7 +28,6 @@ use crate::gateway::{
     PublicDecryptGatewayHandler, UserDecryptGatewayHandler,
 };
 use alloy::primitives::Address;
-use std::net::SocketAddr;
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -212,7 +211,7 @@ pub async fn run_fhevm_relayer(
     keyurl_gateway_handler.initialize().await;
 
     // HTTP endpoint
-    if let Some(http_endpoint) = settings.http.endpoint.clone() {
+    if let Some(_http_endpoint) = settings.http.endpoint.clone() {
         info!("Starting Relayer HTTP server");
 
         // Set up health checker with composable health checks
@@ -238,18 +237,11 @@ pub async fn run_fhevm_relayer(
 
         let health_checker = Arc::new(health_checker);
 
-        let addr: SocketAddr = http_endpoint
-            .parse()
-            .expect("Invalid http-endpoint address");
-        
         let actual_http_addr = run_http_server(
-            addr,
+            &settings.http,
             Arc::clone(&orchestrator),
             health_checker,
-            settings.http.rate_limit_post_endpoints.clone(),
-            repositories.input_proof.clone(),
-            repositories.public_decrypt.clone(),
-            repositories.user_decrypt.clone(),
+            repositories.clone(),
         )
         .await;
         // Update settings with the actual bound address

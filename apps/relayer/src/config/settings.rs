@@ -87,7 +87,9 @@ pub struct RateLimitConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct HttpConfig {
-    /// HTTP endpoint address
+    /// HTTP endpoint address to bind to (e.g., "0.0.0.0:3000").
+    /// Can be None to disable HTTP server (useful for tests or metrics-only mode).
+    /// When Some, server will bind to this address and update the field with actual bound address.
     pub endpoint: Option<String>,
     /// Rate limiting configuration for HTTP endpoints
     pub rate_limit_post_endpoints: RateLimitConfig,
