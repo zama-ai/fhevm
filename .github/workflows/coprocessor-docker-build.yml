@@ -1,0 +1,253 @@
+name: coprocessor-docker-build
+
+on:
+  release:
+    types:
+      - published
+  workflow_call:
+    secrets:
+      AWS_ACCESS_KEY_S3_USER:
+        required: true
+      AWS_SECRET_KEY_S3_USER:
+        required: true
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: true
+      CGR_USERNAME:
+        required: true
+      CGR_PASSWORD:
+        required: true
+    outputs:
+      db_migration_build_result:
+        description: "Result of the build-db-migration job"
+        value: ${{ jobs.build-db-migration.result }}
+      gw_listener_build_result:
+        description: "Result of the build-gw-listener job"
+        value: ${{ jobs.build-gw-listener.result }}
+      host_listener_build_result:
+        description: "Result of the build-host-listener job"
+        value: ${{ jobs.build-host-listener.result }}
+      sns_worker_build_result:
+        description: "Result of the build-sns-worker job"
+        value: ${{ jobs.build-sns-worker.result }}
+      tfhe_worker_build_result:
+        description: "Result of the build-tfhe-worker job"
+        value: ${{ jobs.build-tfhe-worker.result }}
+      tx_sender_build_result:
+        description: "Result of the build-tx-sender job"
+        value: ${{ jobs.build-tx-sender.result }}
+      zkproof_worker_build_result:
+        description: "Result of the build-zkproof-worker job"
+        value: ${{ jobs.build-zkproof-worker.result }}
+  workflow_dispatch:
+    inputs:
+      build_db_migration:
+        description: "Enable/disable build for Coprocessor's DB Migration"
+        type: boolean
+        default: true
+      build_gw_listener:
+        description: "Enable/disable build for Coprocessor's Gateway Listener"
+        type: boolean
+        default: true
+      build_host_listener:
+        description: "Enable/disable build for Coprocessor's Host Listener"
+        type: boolean
+        default: true
+      build_sns_worker:
+        description: "Enable/disable build for Coprocessor's SNS Worker"
+        type: boolean
+        default: true
+      build_tfhe_worker:
+        description: "Enable/disable build for Coprocessor's TFHE Worker"
+        type: boolean
+        default: true
+      build_tx_sender:
+        description: "Enable/disable build for Coprocessor's Transaction Sender"
+        type: boolean
+        default: true
+      build_zkproof_worker:
+        description: "Enable/disable build for Coprocessor's ZKProof Worker"
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: coprocessor-docker-build-${{ github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check-changes:
+    name: check-changes
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+    runs-on: ubuntu-latest
+    outputs:
+      changes-db-migration: ${{ steps.filter.outputs.db-migration }}
+      changes-gw-listener: ${{ steps.filter.outputs.gw-listener }}
+      changes-host-listener: ${{ steps.filter.outputs.host-listener }}
+      changes-sns-worker: ${{ steps.filter.outputs.sns-worker }}
+      changes-tfhe-worker: ${{ steps.filter.outputs.tfhe-worker }}
+      changes-tx-sender: ${{ steps.filter.outputs.tx-sender }}
+      changes-zkproof-worker: ${{ steps.filter.outputs.zkproof-worker }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            db-migration:
+              - .github/workflows/coprocessor-docker-build.yml
+              - coprocessor/fhevm-engine/db-migration/**
+            gw-listener:
+              - .github/workflows/coprocessor-docker-build.yml
+              - coprocessor/fhevm-engine/gw-listener/**
+              - coprocessor/fhevm-engine/Cargo.*
+            host-listener:
+              - .github/workflows/coprocessor-docker-build.yml
+              - coprocessor/fhevm-engine/host-listener/**
+              - coprocessor/fhevm-engine/Cargo.*
+              - host-contracts/contracts/*Events.sol
+              - host-contracts/contracts/shared/**
+            sns-worker:
+              - .github/workflows/coprocessor-docker-build.yml
+              - coprocessor/fhevm-engine/sns-worker/**
+              - coprocessor/fhevm-engine/Cargo.*
+            tfhe-worker:
+              - .github/workflows/coprocessor-docker-build.yml
+              - coprocessor/fhevm-engine/tfhe-worker/**
+              - coprocessor/fhevm-engine/Cargo.*
+            tx-sender:
+              - .github/workflows/coprocessor-docker-build.yml
+              - coprocessor/fhevm-engine/transaction-sender/**
+              - coprocessor/fhevm-engine/Cargo.*
+            zkproof-worker:
+              - .github/workflows/coprocessor-docker-build.yml
+              - coprocessor/fhevm-engine/zkproof-worker/**
+              - coprocessor/fhevm-engine/Cargo.*
+
+  build-db-migration:
+    needs: check-changes
+    if: |
+      github.event_name == 'release'
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-db-migration == 'true')
+      || (github.event_name == 'workflow_dispatch' && inputs.build_db_migration)
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    secrets: &docker_secrets
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    permissions: &docker_permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/db-migration"
+      docker-file: "coprocessor/fhevm-engine/db-migration/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-db-migration"
+
+  build-gw-listener:
+    needs: check-changes
+    if: |
+      github.event_name == 'release'
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-gw-listener == 'true')
+      || (github.event_name == 'workflow_dispatch' && inputs.build_gw_listener)
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/gw-listener"
+      docker-file: "./coprocessor/fhevm-engine/gw-listener/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-gw-listener"
+
+  build-host-listener:
+    needs: check-changes
+    if: |
+      github.event_name == 'release'
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-host-listener == 'true')
+      || (github.event_name == 'workflow_dispatch' && inputs.build_host_listener)
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/host-listener"
+      docker-file: "coprocessor/fhevm-engine/host-listener/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-host-listener"
+
+  build-sns-worker:
+    needs: check-changes
+    if: |
+      github.event_name == 'release'
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-sns-worker == 'true')
+      || (github.event_name == 'workflow_dispatch' && inputs.build_sns_worker)
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/sns-worker"
+      docker-file: "coprocessor/fhevm-engine/sns-worker/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-sns-worker"
+
+  build-tfhe-worker:
+    needs: check-changes
+    if: |
+      github.event_name == 'release'
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-tfhe-worker == 'true')
+      || (github.event_name == 'workflow_dispatch' && inputs.build_tfhe_worker)
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/tfhe-worker"
+      docker-file: "coprocessor/fhevm-engine/tfhe-worker/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-tfhe-worker"
+
+  build-tx-sender:
+    needs: check-changes
+    if: |
+      github.event_name == 'release'
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-tx-sender == 'true')
+      || (github.event_name == 'workflow_dispatch' && inputs.build_tx_sender)
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/tx-sender"
+      docker-file: "./coprocessor/fhevm-engine/transaction-sender/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-tx-sender"
+
+  build-zkproof-worker:
+    needs: check-changes
+    if: |
+      github.event_name == 'release'
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-zkproof-worker == 'true')
+      || (github.event_name == 'workflow_dispatch' && inputs.build_zkproof_worker)
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/zkproof-worker"
+      docker-file: "coprocessor/fhevm-engine/zkproof-worker/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-zkproof-worker"

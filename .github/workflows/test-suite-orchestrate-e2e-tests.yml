@@ -12,9 +12,9 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  coprocessor-db-migration-docker-build:
+  coprocessor-docker-build:
     if: startsWith(github.head_ref, 'mergify/merge-queue/')
-    uses: ./.github/workflows/coprocessor-db-migration-docker-build.yml
+    uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
@@ -28,36 +28,6 @@ jobs:
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
-  coprocessor-gw-listener-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
-    uses: ./.github/workflows/coprocessor-gw-listener-docker-build.yml
-    permissions: *docker_permissions
-    secrets: *docker_secrets
-  coprocessor-host-listener-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
-    uses: ./.github/workflows/coprocessor-host-listener-docker-build.yml
-    permissions: *docker_permissions
-    secrets: *docker_secrets
-  coprocessor-sns-worker-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
-    uses: ./.github/workflows/coprocessor-sns-worker-docker-build.yml
-    permissions: *docker_permissions
-    secrets: *docker_secrets
-  coprocessor-tfhe-worker-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
-    uses: ./.github/workflows/coprocessor-tfhe-worker-docker-build.yml
-    permissions: *docker_permissions
-    secrets: *docker_secrets
-  coprocessor-tx-sender-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
-    uses: ./.github/workflows/coprocessor-tx-sender-docker-build.yml
-    permissions: *docker_permissions
-    secrets: *docker_secrets
-  coprocessor-zkproof-worker-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
-    uses: ./.github/workflows/coprocessor-zkproof-worker-docker-build.yml
-    permissions: *docker_permissions
-    secrets: *docker_secrets
   gateway-contracts-docker-build:
     if: startsWith(github.head_ref, 'mergify/merge-queue/')
     uses: ./.github/workflows/gateway-contracts-docker-build.yml
@@ -82,13 +52,7 @@ jobs:
   create-e2e-tests-input:
     name: create-e2e-tests-input
     needs:
-      - coprocessor-db-migration-docker-build
-      - coprocessor-gw-listener-docker-build
-      - coprocessor-host-listener-docker-build
-      - coprocessor-sns-worker-docker-build
-      - coprocessor-tfhe-worker-docker-build
-      - coprocessor-tx-sender-docker-build
-      - coprocessor-zkproof-worker-docker-build
+      - coprocessor-docker-build
       - gateway-contracts-docker-build
       - host-contracts-docker-build
       - kms-connector-docker-build
@@ -121,13 +85,13 @@ jobs:
             }
 
             const coprocessor = [
-              getImageTagIfBuilt('coprocessor-db-migration-docker-build', 'build_result'),
-              getImageTagIfBuilt('coprocessor-gw-listener-docker-build', 'build_result'),
-              getImageTagIfBuilt('coprocessor-host-listener-docker-build', 'build_result'),
-              getImageTagIfBuilt('coprocessor-sns-worker-docker-build', 'build_result'),
-              getImageTagIfBuilt('coprocessor-tfhe-worker-docker-build', 'build_result'),
-              getImageTagIfBuilt('coprocessor-tx-sender-docker-build', 'build_result'),
-              getImageTagIfBuilt('coprocessor-zkproof-worker-docker-build', 'build_result'),
+              getImageTagIfBuilt('coprocessor-docker-build', 'db_migration_build_result'),
+              getImageTagIfBuilt('coprocessor-docker-build', 'gw_listener_build_result'),
+              getImageTagIfBuilt('coprocessor-docker-build', 'host_listener_build_result'),
+              getImageTagIfBuilt('coprocessor-docker-build', 'sns_worker_build_result'),
+              getImageTagIfBuilt('coprocessor-docker-build', 'tfhe_worker_build_result'),
+              getImageTagIfBuilt('coprocessor-docker-build', 'tx_sender_build_result'),
+              getImageTagIfBuilt('coprocessor-docker-build', 'zkproof_worker_build_result'),
             ];
 
             const connector = [
