@@ -221,7 +221,7 @@ impl UserDecryptRepository {
                 SET gw_consensus_tx_hash = $1
                 WHERE id = (SELECT id FROM target)
                   AND gw_consensus_tx_hash IS NULL
-                  AND req_status = 'receipt_received'::req_status
+                  AND req_status IN ('receipt_received'::req_status, 'completed'::req_status)
                 RETURNING req_status, updated_at, err_reason, int_indexer_id
             )
             -- 1. Select from updated_row

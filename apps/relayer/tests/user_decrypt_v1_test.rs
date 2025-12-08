@@ -132,6 +132,10 @@ async fn test_success_single_request() {
         expect_success(),
     )
     .await;
+
+    // V1 only: Consensus event arrives 1 block (~500ms) after shares. Sleep keeps relayer running to process it.
+    // V2 tests already have sleep between POST and GET. In production, relayer runs continuously so no timing issues.
+    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 }
 
 #[tokio::test]
@@ -176,6 +180,10 @@ async fn test_success_concurrent_requests() {
         let index = result.expect("Task should complete");
         println!("Concurrent request {} completed successfully", index);
     }
+
+    // V1 only: Consensus event arrives 1 block (~500ms) after shares. Sleep keeps relayer running to process it.
+    // V2 tests already have sleep between POST and GET. In production, relayer runs continuously so no timing issues.
+    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 }
 
 #[rstest]

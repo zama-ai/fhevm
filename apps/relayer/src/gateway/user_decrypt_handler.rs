@@ -300,7 +300,7 @@ impl GatewayHandler {
             })?;
 
         info!(
-            "COUNT AFTER INSERT of index: {:?} {} for Gateway reference ID {}",
+            "COUNT after insert of index: {:?} {} for Gateway reference ID {}",
             user_decrypt_response.indexShare, count, user_decryption_id
         );
 
@@ -475,12 +475,17 @@ impl GatewayHandler {
         tx_hash: TxHash,
     ) {
         if let Some(decryption_id_topic) = log.topics().get(1) {
-            let user_decryption_id = U256::from_be_bytes::<32>(
-                decryption_id_topic
-                    .as_slice()
-                    .try_into()
-                    .unwrap_or([0u8; 32]),
-            );
+            let topic_bytes: [u8; 32] = match decryption_id_topic.as_slice().try_into() {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    error!(
+                        "Invalid decryption ID topic: expected 32 bytes, got {}",
+                        decryption_id_topic.as_slice().len()
+                    );
+                    return;
+                }
+            };
+            let user_decryption_id = U256::from_be_bytes(topic_bytes);
 
             info!(
                 "Consensus event received for decryption ID {}",
@@ -488,9 +493,28 @@ impl GatewayHandler {
             );
 
             let tx_hash_str = format!("{:?}", tx_hash);
-            let _result = self
+
+            match self
                 .user_decrypt_repo
-                .update_consensus_hash_and_return_state(user_decryption_id, &tx_hash_str);
+                .update_consensus_hash_and_return_state(user_decryption_id, &tx_hash_str)
+                .await
+            {
+                Ok(Some(state)) => {
+                    info!(
+                        "Consensus hash updated for decryption ID {}, status: {:?}",
+                        user_decryption_id, state.req_status
+                    );
+                }
+                Ok(None) => {
+                    error!(
+                        "Failed to update consensus hash for decryption ID {}",
+                        user_decryption_id
+                    );
+                }
+                Err(e) => {
+                    error!("Database error updating consensus hash: {}", e);
+                }
+            }
         } else {
             error!("UserDecryptionResponseThresholdReached event missing decryption_id topic");
         }
