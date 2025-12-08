@@ -1,5 +1,6 @@
-# RUST_IMAGE_VERSION arg can be used to override the default version
-ARG RUST_IMAGE_VERSION=1.87.0
+# RUST_IMAGE_VERSION arg can be used to override the default version.
+# Use the same Rust version as the project’s toolchain (see rust-toolchain.toml).
+ARG RUST_IMAGE_VERSION=1.91.0
 
 # Stage 1: install DB Migration tooling
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
