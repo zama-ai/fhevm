@@ -71,6 +71,8 @@ impl PublicDecryptRepository {
                 format!("Failed to serialize: {}", e),
             )
         })?;
+
+        let mut conn = self.pool.get_connection().await?;
         let record = sqlx::query!(
             r#"
             INSERT INTO public_decrypt_req (
@@ -91,7 +93,7 @@ impl PublicDecryptRepository {
             int_job_id_bytes,
             req
         )
-        .fetch_one(&self.pool.get_pool())
+        .fetch_one(&mut *conn)
         .await?;
 
         if record.is_inserted {
@@ -109,6 +111,7 @@ impl PublicDecryptRepository {
     /// Update req_status to 'processing' by int_job_id.
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_processing(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
+        let mut conn = self.pool.get_connection().await?;
         let record = sqlx::query!(
             r#"
             WITH old AS (
@@ -128,7 +131,7 @@ impl PublicDecryptRepository {
             "#,
             int_job_id_bytes
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(r) = record {
@@ -153,6 +156,8 @@ impl PublicDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
+        let mut conn = self.pool.get_connection().await?;
+
         let record = sqlx::query!(
             r#"
             WITH old AS (
@@ -175,7 +180,7 @@ impl PublicDecryptRepository {
             err_reason,
             int_job_id_bytes
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(r) = record {
@@ -203,6 +208,9 @@ impl PublicDecryptRepository {
     ) -> SqlResult<u64> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
+
+        let mut conn = self.pool.get_connection().await?;
+
         let record = sqlx::query!(
             r#"
             WITH old AS (
@@ -227,7 +235,7 @@ impl PublicDecryptRepository {
             gw_ref_id,
             int_job_id_bytes
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(r) = record {
@@ -250,6 +258,8 @@ impl PublicDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
+        let mut conn = self.pool.get_connection().await?;
+
         let record = sqlx::query!(
             r#"
             WITH old AS (
@@ -272,7 +282,7 @@ impl PublicDecryptRepository {
             err_reason,
             int_job_id_bytes
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(r) = record {
@@ -311,6 +321,8 @@ impl PublicDecryptRepository {
             )
         })?;
 
+        let mut conn = self.pool.get_connection().await?;
+
         let record = sqlx::query_as!(
             PublicReqStateModelWithOldStatusAndTimestamp,
             r#"
@@ -346,7 +358,7 @@ impl PublicDecryptRepository {
             gw_response_tx_hash,
             gw_ref_id,
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(r) = record {
@@ -375,6 +387,7 @@ impl PublicDecryptRepository {
         &self,
         ext_job_id: Uuid,
     ) -> SqlResult<Option<PublicDecryptResponseModel>> {
+        let mut conn = self.pool.get_connection().await?;
         let result = sqlx::query_as!(
             PublicDecryptResponseModel,
             r#"
@@ -389,7 +402,7 @@ impl PublicDecryptRepository {
             "#,
             ext_job_id
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(result)

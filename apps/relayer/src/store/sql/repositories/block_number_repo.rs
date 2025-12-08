@@ -23,6 +23,7 @@ impl BlockNumberRepository {
 
     /// Get the last block info - returns None if no row exists (matches current behavior)
     pub async fn get_last_block_info(&self) -> SqlResult<Option<BlockInfo>> {
+        let mut conn = self.pool.get_connection().await?;
         let result = sqlx::query!(
             r#"
             SELECT last_block_number, last_block_hash, updated_at
@@ -30,7 +31,7 @@ impl BlockNumberRepository {
             WHERE id = 1
             "#
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await
         .map_err(SqlError::from)?;
 
@@ -46,6 +47,7 @@ impl BlockNumberRepository {
 
     /// Update block info - fast UPDATE for normal operation (assumes row exists)
     pub async fn update_block_info(&self, block_number: u64, block_hash: String) -> SqlResult<()> {
+        let mut conn = self.pool.get_connection().await?;
         sqlx::query!(
             r#"
             UPDATE gateway_block_number_store
@@ -57,7 +59,7 @@ impl BlockNumberRepository {
             block_number as i64,
             block_hash
         )
-        .execute(&self.pool.get_pool())
+        .execute(&mut *conn)
         .await
         .map_err(SqlError::from)?;
 
@@ -70,6 +72,7 @@ impl BlockNumberRepository {
         block_number: u64,
         block_hash: String,
     ) -> SqlResult<()> {
+        let mut conn = self.pool.get_connection().await?;
         sqlx::query!(
             r#"
             INSERT INTO gateway_block_number_store (id, last_block_number, last_block_hash)
@@ -78,7 +81,7 @@ impl BlockNumberRepository {
             block_number as i64,
             block_hash
         )
-        .execute(&self.pool.get_pool())
+        .execute(&mut *conn)
         .await
         .map_err(SqlError::from)?;
 

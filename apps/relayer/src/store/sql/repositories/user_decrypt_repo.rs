@@ -43,6 +43,8 @@ impl UserDecryptRepository {
         &self,
         int_job_id_bytes: &[u8],
     ) -> SqlResult<Option<Uuid>> {
+        let mut conn = self.pool.get_connection().await?;
+
         let result = sqlx::query_scalar!(
             r#"
             SELECT ext_job_id
@@ -52,7 +54,7 @@ impl UserDecryptRepository {
             "#,
             int_job_id_bytes
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(result)
@@ -75,6 +77,8 @@ impl UserDecryptRepository {
             )
         })?;
 
+        let mut conn = self.pool.get_connection().await?;
+
         // Logic: Use (xmax=0) to detect if this was a true INSERT or an ON CONFLICT update.
         let record = sqlx::query!(
             r#"
@@ -93,7 +97,7 @@ impl UserDecryptRepository {
             int_job_id_bytes,
             req,
         )
-        .fetch_one(&self.pool.get_pool())
+        .fetch_one(&mut *conn)
         .await?;
 
         // Only increment metrics if a new row was actually created
@@ -109,6 +113,7 @@ impl UserDecryptRepository {
     /// Update req_status to 'processing' by int_job_id.
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_processing(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
+        let mut conn = self.pool.get_connection().await?;
         let record = sqlx::query!(
             r#"
             WITH old AS (
@@ -128,7 +133,7 @@ impl UserDecryptRepository {
             "#,
             int_job_id_bytes
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(r) = record {
@@ -153,6 +158,8 @@ impl UserDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
+        let mut conn = self.pool.get_connection().await?;
+
         let record = sqlx::query!(
             r#"
             WITH old AS (
@@ -175,7 +182,7 @@ impl UserDecryptRepository {
             err_reason,
             int_job_id_bytes
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(r) = record {
@@ -204,6 +211,9 @@ impl UserDecryptRepository {
     ) -> SqlResult<u64> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
+
+        let mut conn = self.pool.get_connection().await?;
+
         let record = sqlx::query!(
             r#"
             WITH old AS (
@@ -228,7 +238,7 @@ impl UserDecryptRepository {
             gw_ref_id,
             int_job_id_bytes
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(r) = record {
@@ -251,6 +261,8 @@ impl UserDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
+        let mut conn = self.pool.get_connection().await?;
+
         let record = sqlx::query!(
             r#"
             WITH old AS (
@@ -273,7 +285,7 @@ impl UserDecryptRepository {
             err_reason,
             int_job_id_bytes
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         if let Some(r) = record {
@@ -305,6 +317,9 @@ impl UserDecryptRepository {
     ) -> SqlResult<Option<ConsensusReqState>> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
+
+        let mut conn = self.pool.get_connection().await?;
+
         let result = sqlx::query_as!(
             ConsensusReqState,
             r#"
@@ -342,7 +357,7 @@ impl UserDecryptRepository {
             gw_consensus_tx_hash,
             gw_ref_id
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(result)
@@ -505,6 +520,8 @@ impl UserDecryptRepository {
         ext_job_id: Uuid,
         threshold: i64,
     ) -> SqlResult<Option<UserDecryptResponseModel>> {
+        let mut conn = self.pool.get_connection().await?;
+
         let result = sqlx::query_as!(
             UserDecryptResponseModel,
             r#"
@@ -545,7 +562,7 @@ impl UserDecryptRepository {
             ext_job_id,
             threshold
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&mut *conn)
         .await?;
 
         Ok(result)

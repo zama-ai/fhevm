@@ -46,6 +46,8 @@ impl Repositories {
         let health_timeout = Duration::from_secs(config.sql_health_check_timeout_secs);
         let pg_client = Arc::new(PgClient::new(config).await);
 
+        pg_client.spawn_db_pool_monitor();
+
         Self {
             input_proof: Arc::new(InputProofRepository::new((*pg_client).clone())),
             public_decrypt: Arc::new(PublicDecryptRepository::new((*pg_client).clone())),
