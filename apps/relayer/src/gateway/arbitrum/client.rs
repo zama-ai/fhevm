@@ -1,6 +1,6 @@
 use crate::config::settings::BlockchainRpcConfig;
 use crate::core::errors::Error;
-use crate::http::HealthCheck;
+use crate::orchestrator::HealthCheck;
 use alloy::{
     network::AnyNetwork,
     primitives::Address,

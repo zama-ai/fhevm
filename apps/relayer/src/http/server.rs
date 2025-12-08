@@ -5,7 +5,7 @@ use crate::http::endpoints::{
     v1::handlers::{InputProofHandler, KeyUrlHandler, PublicDecryptHandler, UserDecryptHandler},
     version_handler,
 };
-use crate::http::{openapi_middleware, with_rate_limiting, HealthChecker};
+use crate::http::{openapi_middleware, with_rate_limiting};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::Repositories;
@@ -16,7 +16,6 @@ use std::sync::Arc;
 pub async fn run_http_server<D>(
     config: &HttpConfig,
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
-    health_checker: Arc<HealthChecker>,
     repositories: Arc<Repositories>,
 ) -> SocketAddr
 where
@@ -49,6 +48,9 @@ where
         repositories.public_decrypt.clone(),
     ));
 
+    // Clone orchestrator for health endpoint before using it
+    let orchestrator_for_health = orchestrator.clone();
+
     // Create KeyUrlHandler - it self-registers with orchestrator
     let keyurl_handler = KeyUrlHandler::new(orchestrator);
 
@@ -58,7 +60,7 @@ where
         .route("/liveness", get(liveness_handler))
         .route(
             "/healthz",
-            get(move || async move { health_handler(health_checker).await }),
+            get(move || async move { health_handler(orchestrator_for_health.clone()).await }),
         )
         .route("/version", get(version_handler))
         // Merge handler routers with rate limiting applied to POST endpoints

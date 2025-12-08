@@ -1,4 +1,5 @@
 use crate::core::job_id::JobId;
+use crate::orchestrator::health_checker::{HealthCheck, HealthChecker};
 use crate::orchestrator::ids;
 use crate::orchestrator::traits::Event;
 use crate::orchestrator::traits::{
@@ -6,6 +7,7 @@ use crate::orchestrator::traits::{
 };
 use anyhow::Error;
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, error, instrument};
 use uuid::Uuid;
@@ -13,6 +15,7 @@ use uuid::Uuid;
 pub struct Orchestrator<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> {
     event_dispatcher: Arc<D>,
     pre_dispatch_hooks: Arc<RwLock<Vec<Arc<dyn PreDispatchHook<E>>>>>,
+    health_checker: Arc<RwLock<HealthChecker>>,
     _marker: std::marker::PhantomData<E>,
 }
 
@@ -21,6 +24,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
         Arc::new(Self {
             event_dispatcher,
             pre_dispatch_hooks: Arc::new(RwLock::new(Vec::new())),
+            health_checker: Arc::new(RwLock::new(HealthChecker::new())),
             _marker: std::marker::PhantomData,
         })
     }
@@ -31,6 +35,32 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
 
     pub fn new_ext_reference_id(&self) -> Uuid {
         ids::new_external_reference_id()
+    }
+
+    /// Add a health check to the orchestrator
+    pub fn add_health_check(&self, name: String, check: Arc<dyn HealthCheck>) {
+        if let Ok(mut health_checker) = self.health_checker.write() {
+            health_checker.add_health_check(name, check);
+        } else {
+            error!("Failed to acquire write lock on health checker");
+        }
+    }
+
+    /// Check all registered health checks
+    pub async fn check_all_health(&self) -> (bool, HashMap<String, String>) {
+        // Clone the health checker to avoid holding the lock across await
+        let health_checker = if let Ok(guard) = self.health_checker.read() {
+            // Clone the internal HashMap to release the lock before awaiting
+            let checks = guard.checks.clone();
+            HealthChecker { checks }
+        } else {
+            error!("Failed to acquire read lock on health checker");
+            let mut error_result = HashMap::new();
+            error_result.insert("health_checker".to_string(), "error".to_string());
+            return (false, error_result);
+        };
+
+        health_checker.check_all().await
     }
 
     #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=%(event.job_id())))]

@@ -1,4 +1,4 @@
-use crate::http::HealthCheck;
+use crate::orchestrator::HealthCheck;
 
 use super::Repositories;
 

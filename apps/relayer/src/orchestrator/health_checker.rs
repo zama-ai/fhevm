@@ -7,8 +7,9 @@ pub trait HealthCheck: Send + Sync {
 }
 
 /// Health checker to manage all dependency checks
+#[derive(Clone)]
 pub struct HealthChecker {
-    checks: HashMap<String, Arc<dyn HealthCheck>>,
+    pub(crate) checks: HashMap<String, Arc<dyn HealthCheck>>,
 }
 
 impl Default for HealthChecker {

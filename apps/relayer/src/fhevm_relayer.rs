@@ -46,11 +46,11 @@ use crate::{
         },
         ArbitrumJsonRPCWsClient,
     },
-    http::{server::run_http_server, HealthCheck, HealthChecker},
+    http::server::run_http_server,
     metrics,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
-        Orchestrator, TokioEventDispatcher,
+        HealthCheck, Orchestrator, TokioEventDispatcher,
     },
     store::sql::repositories::{
         input_proof_repo::InputProofRepository, public_decrypt_repo::PublicDecryptRepository,
@@ -116,11 +116,23 @@ pub async fn run_fhevm_relayer(
     let repositories = Arc::new(Repositories::new(settings.storage.clone()).await);
     info!("Initialized SQL repositories");
 
+    // Register database with orchestrator for health checks
+    orchestrator.add_health_check(
+        "database".to_string(),
+        repositories.clone() as Arc<dyn HealthCheck>,
+    );
+
     // let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
     let gateway_tx_helper = Arc::new(GatewayTransactionHelper::new(
         settings.gateway.clone(),
         tx_engine_gateway.clone().into(),
     ));
+
+    // Register gateway transaction helper with orchestrator for health checks
+    orchestrator.add_health_check(
+        "gateway_http".to_string(),
+        gateway_tx_helper.clone() as Arc<dyn HealthCheck>,
+    );
 
     // Create ReadinessChecker once to be shared by both decrypt handlers
     let readiness_checker = Arc::new(ReadinessChecker::new(&settings.gateway)?);
@@ -166,6 +178,12 @@ pub async fn run_fhevm_relayer(
     .await
     .map_err(|e| eyre::eyre!("Failed to create event handler for gateway: {}", e))?;
     let listener_client_ws = Arc::new(listener_client_ws);
+
+    // Register gateway websocket client with orchestrator for health checks
+    orchestrator.add_health_check(
+        "gateway_ws".to_string(),
+        listener_client_ws.clone() as Arc<dyn HealthCheck>,
+    );
 
     let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
         .map_err(|_| eyre::eyre!("Invalid decryption contract address"))?;
@@ -214,33 +232,9 @@ pub async fn run_fhevm_relayer(
     if let Some(_http_endpoint) = settings.http.endpoint.clone() {
         info!("Starting Relayer HTTP server");
 
-        // Set up health checker with composable health checks
-        let mut health_checker = HealthChecker::new();
-
-        // Add Gateway RPC health check (using transaction helper directly)
-        health_checker.add_health_check(
-            "gateway_rpc".to_string(),
-            gateway_tx_helper.clone() as Arc<dyn HealthCheck>,
-        );
-
-        // Add Gateway WebSocket health check (using WebSocket client directly)
-        health_checker.add_health_check(
-            "gateway_websocket".to_string(),
-            listener_client_ws.clone() as Arc<dyn HealthCheck>,
-        );
-
-        // Add Database health check (using Repositories)
-        health_checker.add_health_check(
-            "database".to_string(),
-            repositories.clone() as Arc<dyn HealthCheck>,
-        );
-
-        let health_checker = Arc::new(health_checker);
-
         let actual_http_addr = run_http_server(
             &settings.http,
             Arc::clone(&orchestrator),
-            health_checker,
             repositories.clone(),
         )
         .await;

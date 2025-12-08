@@ -12,3 +12,6 @@ pub use ids::ContentHasher;
 
 mod once_handler;
 pub use once_handler::OnceHandler;
+
+pub mod health_checker;
+pub use health_checker::{HealthCheck, HealthChecker};

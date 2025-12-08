@@ -53,9 +53,6 @@ pub use utils::{
     ErrorDetail,
     ErrorLabel,
     ErrorResponse,
-    // Health utilities
-    HealthCheck,
-    HealthChecker,
     ParseError,
     ValidatedJson,
 };

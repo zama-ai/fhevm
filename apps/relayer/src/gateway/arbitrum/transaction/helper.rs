@@ -1,6 +1,6 @@
 use crate::config::settings::GatewayConfig;
 use crate::gateway::arbitrum::transaction::engine::{CustomFillers, TransactionEngine};
-use crate::http::HealthCheck;
+use crate::orchestrator::HealthCheck;
 use crate::{core::errors::EventProcessingError, metrics};
 use alloy::network::AnyTransactionReceipt;
 use alloy::network::Ethereum;

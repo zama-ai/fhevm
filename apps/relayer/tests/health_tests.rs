@@ -71,7 +71,7 @@ async fn test_version_endpoint_success() {
 }
 
 /// Test health endpoint returns HTTP 200 when all dependencies are healthy.
-/// Checks gateway_rpc, gateway_websocket, and database dependencies.
+/// Checks gateway_http, gateway_ws, and database dependencies.
 #[rstest]
 #[tokio::test]
 async fn test_health_endpoint_all_healthy() {
@@ -93,8 +93,8 @@ async fn test_health_endpoint_all_healthy() {
     }
 
     // Verify expected dependencies are present
-    assert!(dependencies.contains_key("gateway_rpc"));
-    assert!(dependencies.contains_key("gateway_websocket"));
+    assert!(dependencies.contains_key("gateway_http"));
+    assert!(dependencies.contains_key("gateway_ws"));
     assert!(dependencies.contains_key("database"));
 }
 
