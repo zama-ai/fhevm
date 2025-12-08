@@ -27,7 +27,6 @@ use crate::gateway::{
     readiness_checker::ReadinessChecker, InputProofGatewayHandler, KeyUrlGatewayHandler,
     PublicDecryptGatewayHandler, UserDecryptGatewayHandler,
 };
-use crate::store::sql::repositories::block_number_repo::BlockNumberRepository;
 use alloy::primitives::Address;
 use std::net::SocketAddr;
 use std::{str::FromStr, sync::Arc};
@@ -48,21 +47,15 @@ use crate::{
         },
         ArbitrumJsonRPCWsClient,
     },
-    http::{
-        server::run_http_server, HealthCheck,
-        HealthChecker,
-    },
+    http::{server::run_http_server, HealthCheck, HealthChecker},
     metrics,
     orchestrator::{
         traits::{EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
-    store::sql::{
-        client::PgClient,
-        repositories::{
-            input_proof_repo::InputProofRepository, public_decrypt_repo::PublicDecryptRepository,
-            user_decrypt_repo::UserDecryptRepository,
-        },
+    store::sql::repositories::{
+        input_proof_repo::InputProofRepository, public_decrypt_repo::PublicDecryptRepository,
+        user_decrypt_repo::UserDecryptRepository, Repositories,
     },
 };
 use prometheus::Registry;
@@ -120,15 +113,9 @@ pub async fn run_fhevm_relayer(
     // === Intialize the orchestrator.
     let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::<RelayerEvent>::new()));
 
-    // Initialize PostgreSQL client and repositories
-    let pg_client = PgClient::new(settings.storage.clone()).await;
-    let pg_client = Arc::new(pg_client);
-    info!("Initialized PostgreSQL client");
-
-    // Create SQL repositories
-    let input_proof_repo = Arc::new(InputProofRepository::new((*pg_client).clone()));
-    let public_decrypt_repo = Arc::new(PublicDecryptRepository::new((*pg_client).clone()));
-    let user_decrypt_repo = Arc::new(UserDecryptRepository::new((*pg_client).clone()));
+    // Initialize SQL repositories
+    let repositories = Arc::new(Repositories::new(settings.storage.clone()).await);
+    info!("Initialized SQL repositories");
 
     // let gateway_tx_config = GatewayTxConfig::from(settings.transaction.clone());
     let gateway_tx_helper = Arc::new(GatewayTransactionHelper::new(
@@ -147,7 +134,7 @@ pub async fn run_fhevm_relayer(
         &orchestrator,
         gateway_tx_helper.clone(),
         settings.gateway.contracts.clone(),
-        input_proof_repo.clone(),
+        repositories.input_proof.clone(),
     )?;
 
     setup_public_decrypt_gateway_handler(
@@ -155,7 +142,7 @@ pub async fn run_fhevm_relayer(
         gateway_tx_helper.clone(),
         readiness_checker.clone(),
         decryption_address,
-        public_decrypt_repo.clone(),
+        repositories.public_decrypt.clone(),
     )?;
 
     setup_user_decrypt_gateway_handler(
@@ -164,7 +151,7 @@ pub async fn run_fhevm_relayer(
         readiness_checker.clone(),
         decryption_address,
         settings.gateway.contracts.user_decrypt_shares_threshold as usize,
-        user_decrypt_repo.clone(),
+        repositories.user_decrypt.clone(),
     )?;
 
     // === Initialize gateway listener with reconnection configuration
@@ -192,10 +179,10 @@ pub async fn run_fhevm_relayer(
     // TODO: Pass the event_dispatcher to the event_listener
     let gateway_contract_addresses = vec![decryption_address, input_verification_address];
 
-    let gateway_block_repo = Arc::new(BlockNumberRepository::new((*pg_client).clone()));
     let latest_block_gateway = match settings.gateway.listener.last_block_number {
         Some(block_number) => Some(block_number),
-        None => gateway_block_repo
+        None => repositories
+            .block_number
             .get_last_block_info()
             .await
             .map_err(|e| eyre::eyre!("Error getting last block number: {}", e))?
@@ -214,7 +201,7 @@ pub async fn run_fhevm_relayer(
     task_set.spawn(arbitrum_listener(
         subscription_gateway,
         Arc::clone(&orchestrator),
-        Arc::clone(&gateway_block_repo),
+        repositories.block_number.clone(),
     ));
 
     // Setup KeyUrl gateway handler
@@ -243,10 +230,10 @@ pub async fn run_fhevm_relayer(
             listener_client_ws.clone() as Arc<dyn HealthCheck>,
         );
 
-        // Add Database health check (using PgClient directly)
+        // Add Database health check (using Repositories)
         health_checker.add_health_check(
             "database".to_string(),
-            pg_client.clone() as Arc<dyn HealthCheck>,
+            repositories.clone() as Arc<dyn HealthCheck>,
         );
 
         let health_checker = Arc::new(health_checker);
@@ -260,9 +247,9 @@ pub async fn run_fhevm_relayer(
             Arc::clone(&orchestrator),
             health_checker,
             settings.http.rate_limit_post_endpoints.clone(),
-            input_proof_repo.clone(),
-            public_decrypt_repo.clone(),
-            user_decrypt_repo.clone(),
+            repositories.input_proof.clone(),
+            repositories.public_decrypt.clone(),
+            repositories.user_decrypt.clone(),
         )
         .await;
         // Update settings with the actual bound address
@@ -482,8 +469,7 @@ fn setup_keyurl_gateway_handler(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     config: crate::config::settings::KeyUrl,
 ) -> eyre::Result<KeyUrlGatewayHandler> {
-
     let handler = KeyUrlGatewayHandler::new(Arc::clone(orchestrator), config);
-    
+
     Ok(handler)
 }
