@@ -38,7 +38,7 @@ export HOST_VERSION=${HOST_VERSION:-"v0.10.0"}
 # Other services.
 export CORE_VERSION=${CORE_VERSION:-"v0.12.4"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.6.0"}
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"fa59c8c"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"4a20721"}
 
 
 function print_logo() {
