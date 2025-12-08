@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{KmsResponse, kms_response};
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, types::chrono};
 use std::future::Future;
 use tokio::sync::mpsc::{self, Receiver};
 use tracing::{debug, info, warn};
@@ -111,7 +111,7 @@ impl DbKmsResponsePicker {
         sqlx::query(
             "
                 UPDATE public_decryption_responses
-                SET locked = TRUE
+                SET locked = TRUE, locked_at = $2
                 FROM (
                     SELECT decryption_id
                     FROM public_decryption_responses
@@ -123,6 +123,7 @@ impl DbKmsResponsePicker {
             ",
         )
         .bind(self.responses_batch_size as i16)
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -134,7 +135,7 @@ impl DbKmsResponsePicker {
         sqlx::query(
             "
                 UPDATE user_decryption_responses
-                SET locked = TRUE
+                SET locked = TRUE, locked_at = $2
                 FROM (
                     SELECT decryption_id
                     FROM user_decryption_responses
@@ -146,6 +147,7 @@ impl DbKmsResponsePicker {
             ",
         )
         .bind(self.responses_batch_size as i16)
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -157,7 +159,7 @@ impl DbKmsResponsePicker {
         sqlx::query(
             "
                 UPDATE prep_keygen_responses
-                SET locked = TRUE
+                SET locked = TRUE, locked_at = $2
                 FROM (
                     SELECT prep_keygen_id
                     FROM prep_keygen_responses
@@ -169,6 +171,7 @@ impl DbKmsResponsePicker {
             ",
         )
         .bind(self.responses_batch_size as i16)
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -180,7 +183,7 @@ impl DbKmsResponsePicker {
         sqlx::query(
             "
                 UPDATE keygen_responses
-                SET locked = TRUE
+                SET locked = TRUE, locked_at = $2
                 FROM (
                     SELECT key_id
                     FROM keygen_responses
@@ -192,6 +195,7 @@ impl DbKmsResponsePicker {
             ",
         )
         .bind(self.responses_batch_size as i16)
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -203,7 +207,7 @@ impl DbKmsResponsePicker {
         sqlx::query(
             "
                 UPDATE crsgen_responses
-                SET locked = TRUE
+                SET locked = TRUE, locked_at = $2
                 FROM (
                     SELECT crs_id
                     FROM crsgen_responses
@@ -215,6 +219,7 @@ impl DbKmsResponsePicker {
             ",
         )
         .bind(self.responses_batch_size as i16)
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
