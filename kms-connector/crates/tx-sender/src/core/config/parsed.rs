@@ -45,6 +45,8 @@ pub struct Config {
     pub task_limit: usize,
     /// The monitoring server endpoint of the `TransactionSender`.
     pub monitoring_endpoint: SocketAddr,
+    /// The interval between gauge updates.
+    pub gauge_update_interval: Duration,
     /// The timeout to perform each external service connection healthcheck.
     pub healthcheck_timeout: Duration,
 }
@@ -98,6 +100,7 @@ impl Config {
         let database_polling_timeout =
             Duration::from_secs(raw_config.database_polling_timeout_secs);
         let tx_retry_interval = Duration::from_millis(raw_config.tx_retry_interval_ms);
+        let gauge_update_interval = Duration::from_secs(raw_config.gauge_update_interval_secs);
         let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
 
         Ok(Self {
@@ -117,6 +120,7 @@ impl Config {
             gas_multiplier_percent: raw_config.gas_multiplier_percent,
             task_limit: raw_config.task_limit,
             monitoring_endpoint,
+            gauge_update_interval,
             healthcheck_timeout,
         })
     }
@@ -169,6 +173,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_TX_RETRY_INTERVAL_MS");
             env::remove_var("KMS_CONNECTOR_TRACE_REVERTED_TX");
             env::remove_var("KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT");
+            env::remove_var("KMS_CONNECTOR_GAUGE_UPDATE_INTERVAL_SECS");
         }
     }
 
@@ -255,6 +260,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_TX_RETRY_INTERVAL_MS", "200");
             env::set_var("KMS_CONNECTOR_TRACE_REVERTED_TX", "false");
             env::set_var("KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT", "180");
+            env::set_var("KMS_CONNECTOR_GAUGE_UPDATE_INTERVAL_SECS", "20");
         }
 
         // Load config from environment
@@ -277,6 +283,7 @@ mod tests {
         assert_eq!(config.tx_retry_interval, Duration::from_millis(200));
         assert!(!config.trace_reverted_tx);
         assert_eq!(config.gas_multiplier_percent, 180);
+        assert_eq!(config.gauge_update_interval, Duration::from_secs(20));
 
         cleanup_env_vars();
     }

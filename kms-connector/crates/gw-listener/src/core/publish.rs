@@ -1,4 +1,3 @@
-use crate::monitoring::metrics::EVENT_STORED_COUNTER;
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::{
@@ -44,7 +43,6 @@ pub async fn publish_event(
 
     if query_result.rows_affected() == 1 {
         info!("Event successfully stored in DB!");
-        EVENT_STORED_COUNTER.inc();
     } else {
         warn!("Unexpected query result while publishing event: {query_result:?}");
     }
