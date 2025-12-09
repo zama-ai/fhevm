@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE dependence_chain\n                SET \n                lock_expires_at = NOW() + make_interval(secs => $3)\n            WHERE dependence_chain_id = $1 AND worker_id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a01797060f0aa81caf73909e7dda7d8ed471b51fc1693919054faf41fc99da99"
+}
