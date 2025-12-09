@@ -34,6 +34,6 @@ task("task:enableAdminModule").setAction(async function (
   );
 
   console.log(
-    "AdminModule was successfully enabled in the Safe : please double check by calling isEnabledModule(ADMIN_MODULE_ADDRESS) on the SafeProxy",
+    "AdminModule was successfully enabled in the Safe : please double check by calling isModuleEnabled(ADMIN_MODULE_ADDRESS) on the SafeProxy",
   );
 });
