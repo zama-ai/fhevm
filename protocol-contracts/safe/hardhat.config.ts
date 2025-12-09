@@ -97,6 +97,10 @@ const config: HardhatUserConfig = {
       url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET || "",
       accounts,
     },
+    "gateway-mainnet": {
+      url: process.env.RPC_URL_ZAMA_GATEWAY_MAINNET || "",
+      accounts,
+    },
     hardhat: {
       // Need this to avoid deployment issues in test
       saveDeployments: false,
