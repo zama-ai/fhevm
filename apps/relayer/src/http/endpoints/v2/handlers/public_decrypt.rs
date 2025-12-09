@@ -134,15 +134,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!("Successfully parsed and validated request");
 
-        let int_indexer_id = request.content_hash();
-        let ext_reference_id = self.orchestrator.new_ext_reference_id();
+        let int_job_id = request.content_hash();
+        let ext_job_id = self.orchestrator.new_ext_job_id();
 
         // Insert into database immediately
         if let Err(e) = self
             .public_decrypt_repo
-            .insert_data_on_conflict_and_get_ext_reference_id(
-                ext_reference_id,
-                &int_indexer_id[..],
+            .insert_data_on_conflict_and_get_ext_job_id(
+                ext_job_id,
+                &int_job_id[..],
                 request.clone(),
             )
             .await
@@ -158,7 +158,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         }
 
         // Trigger orchestrator processing
-        let job_id = JobId::from_sha256_hash(int_indexer_id);
+        let job_id = JobId::from_sha256_hash(int_job_id);
         let event_data = PublicDecryptEventData::ReqRcvdFromUser {
             decrypt_request: request.clone(),
         };
@@ -187,7 +187,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             status: "queued".to_string(),
             request_id: request_id_for_response.to_string(), // New per-request UUID
             result: PublicDecryptQueuedResult {
-                job_id: ext_reference_id.to_string(), // This is what gets stored and tracked
+                job_id: ext_job_id.to_string(),
                 retry_after_seconds: 15,
             },
         };
@@ -339,7 +339,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         //     })).into_response();
         // }
 
-        // Extract job_id from the status result (we need the int_indexer_id)
+        // Extract job_id from the status result (we need the int_job_id)
         // For now, return pending status with timeout - we can implement event subscription later
         let timeout_duration = std::time::Duration::from_secs(5);
 

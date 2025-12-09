@@ -11,8 +11,8 @@ use crate::store::sql::models::req_status_enum_model::ReqStatus;
 #[derive(Debug, FromRow, Clone)]
 pub struct UserDecryptReq {
     pub id: i32,
-    pub ext_reference_id: Uuid,
-    pub int_indexer_id: Vec<u8>,
+    pub ext_job_id: Uuid,
+    pub int_job_id: Vec<u8>,
     pub gw_reference_id: Option<Vec<u8>>,
     pub req: Value,
     pub req_status: ReqStatus,
@@ -28,7 +28,7 @@ pub struct ConsensusReqState {
     pub req_status: ReqStatus,
     pub updated_at: DateTime<Utc>,
     pub err_reason: Option<String>,
-    pub int_indexer_id: Vec<u8>,
+    pub int_job_id: Vec<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,7 +39,7 @@ pub struct UserDecryptResponseShare {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserDecryptResponseModel {
-    pub ext_reference_id: Uuid,
+    pub ext_job_id: Uuid,
     pub req_status: ReqStatus,
     pub updated_at: DateTime<Utc>,
     pub err_reason: Option<String>,

@@ -275,8 +275,7 @@ impl GatewayHandler {
             })?;
 
         // Create JobId from content hash stored in database
-        let job_id =
-            JobId::from_sha256_hash(req_state.int_indexer_id.try_into().unwrap_or([0u8; 32]));
+        let job_id = JobId::from_sha256_hash(req_state.int_job_id.try_into().unwrap_or([0u8; 32]));
 
         // Dispatch response event to notify waiting HTTP handlers
         let response_event_data =

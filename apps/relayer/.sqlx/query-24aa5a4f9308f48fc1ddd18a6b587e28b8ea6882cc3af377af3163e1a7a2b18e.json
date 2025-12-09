@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            WITH updated_req AS (\n                UPDATE user_decrypt_req\n                SET req_status = 'completed'::req_status\n                WHERE gw_reference_id = $1\n                  AND req_status != 'timed_out'::req_status -- Prevent updating if already timed out\n                RETURNING int_indexer_id, req_status, updated_at, err_reason\n            )\n            SELECT\n                -- Metadata from the Update (Force non-null types for SQLx)\n                u.int_indexer_id as \"int_indexer_id!\",\n                u.req_status as \"req_status!: ReqStatus\",\n                u.updated_at as \"updated_at!\",\n                u.err_reason,\n\n                -- Share Data\n                s.id as share_id,\n                s.gw_reference_id,\n                s.share_index,\n                s.share,\n                s.kms_signature,\n                s.extra_data,\n                s.created_at as share_created_at,\n                s.updated_at as share_updated_at\n            FROM user_decrypt_share s, updated_req u\n            WHERE s.gw_reference_id = $1\n            ORDER BY s.created_at ASC\n            LIMIT $2\n            ",
+  "query": "\n            WITH updated_req AS (\n                UPDATE user_decrypt_req\n                SET req_status = 'completed'::req_status\n                WHERE gw_reference_id = $1\n                  AND req_status != 'timed_out'::req_status -- Prevent updating if already timed out\n                RETURNING int_job_id, req_status, updated_at, err_reason\n            )\n            SELECT\n                -- Metadata from the Update (Force non-null types for SQLx)\n                u.int_job_id as \"int_job_id!\",\n                u.req_status as \"req_status!: ReqStatus\",\n                u.updated_at as \"updated_at!\",\n                u.err_reason,\n\n                -- Share Data\n                s.id as share_id,\n                s.gw_reference_id,\n                s.share_index,\n                s.share,\n                s.kms_signature,\n                s.extra_data,\n                s.created_at as share_created_at,\n                s.updated_at as share_updated_at\n            FROM user_decrypt_share s, updated_req u\n            WHERE s.gw_reference_id = $1\n            ORDER BY s.created_at ASC\n            LIMIT $2\n            ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "int_indexer_id!",
+        "name": "int_job_id!",
         "type_info": "Bytea"
       },
       {
@@ -99,5 +99,5 @@
       false
     ]
   },
-  "hash": "fe5cb07fd00f9ccf49f52836e50cbed1f02a8bf1915c5e760cc5ae063d646dcc"
+  "hash": "24aa5a4f9308f48fc1ddd18a6b587e28b8ea6882cc3af377af3163e1a7a2b18e"
 }

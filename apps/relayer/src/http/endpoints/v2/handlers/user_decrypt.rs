@@ -130,15 +130,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!("Successfully parsed and validated request");
 
-        let int_indexer_id = user_decrypt_request.content_hash();
-        let ext_reference_id = self.orchestrator.new_ext_reference_id();
+        let int_job_id = user_decrypt_request.content_hash();
+        let ext_job_id = self.orchestrator.new_ext_job_id();
 
         // Insert into database immediately
         if let Err(e) = self
             .user_decrypt_repo
-            .insert_data_on_conflict_and_get_ext_reference_id(
-                ext_reference_id,
-                &int_indexer_id[..],
+            .insert_data_on_conflict_and_get_ext_job_id(
+                ext_job_id,
+                &int_job_id[..],
                 user_decrypt_request.clone(),
             )
             .await
@@ -154,7 +154,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         }
 
         // Trigger orchestrator processing
-        let job_id = JobId::from_sha256_hash(int_indexer_id);
+        let job_id = JobId::from_sha256_hash(int_job_id);
         let request_data = UserDecryptEventData::ReqRcvdFromUser {
             decrypt_request: user_decrypt_request,
         };
@@ -182,7 +182,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             status: "queued".to_string(),
             request_id: request_id_for_response.to_string(), // New per-request UUID
             result: UserDecryptQueuedResult {
-                job_id: ext_reference_id.to_string(), // This is what gets stored and tracked
+                job_id: ext_job_id.to_string(),
                 retry_after_seconds: 15,
             },
         };
@@ -204,7 +204,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         let threshold = self.user_decrypt_shares_threshold as i64;
         let _status_result = match self
             .user_decrypt_repo
-            .find_req_and_shares_by_ext_reference_id(job_id, threshold)
+            .find_req_and_shares_by_ext_job_id(job_id, threshold)
             .await
         {
             Ok(Some(response_model)) => {
@@ -227,7 +227,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 .into_response();
                         } else {
                             error!(
-                                "Request marked as completed but insufficient shares: got {}, needed {}", 
+                                "Request marked as completed but insufficient shares: got {}, needed {}",
                                 response_model.shares.len(), required_threshold
                             );
                             return (

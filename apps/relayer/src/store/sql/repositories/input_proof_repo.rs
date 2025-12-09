@@ -22,13 +22,13 @@ impl InputProofRepository {
     // Update status to timed_out with err_reason = 'response timed out' (ACL propagation error).
     // OR IN THE TIMEOUT REPO.
 
-    // insert ext_reference_id, int_request_id (uuidv7), req into input_proof_req table return ext_reference_id
+    // insert ext_job_id, int_request_id (uuidv7), req into input_proof_req table return ext_job_id
     // TODO: Ensure, rows affected was 1, else return an errror ? UUID is not needed in this case. But an error in case of no rows inserted.
-    /// Insert ext_reference_id, int_request_id, req into input_proof_req table.
-    /// Returns the ext_reference_id.
+    /// Insert ext_job_id, int_request_id, req into input_proof_req table.
+    /// Returns the ext_job_id.
     pub async fn insert_new_input_proof(
         &self,
-        ext_reference_id: Uuid,
+        ext_job_id: Uuid,
         int_request_id: Uuid,
         request: InputProofRequest,
     ) -> SqlResult<Uuid> {
@@ -42,15 +42,15 @@ impl InputProofRepository {
         let result = sqlx::query_scalar!(
             r#"
             INSERT INTO input_proof_req (
-                ext_reference_id,
+                ext_job_id,
                 int_request_id,
                 req,
                 req_status
             )
             VALUES ($1, $2, $3, 'processing'::req_status)
-            RETURNING ext_reference_id
+            RETURNING ext_job_id
             "#,
-            ext_reference_id,
+            ext_job_id,
             int_request_id,
             req
         )
@@ -189,11 +189,11 @@ impl InputProofRepository {
     }
 
     // GET REQUEST.
-    // select by ext_reference_id and return res, err_reason, accepted, updated_at
-    /// Select status, res, err_reason, accepted, and updated_at by ext_reference_id.
+    // select by ext_job_id and return res, err_reason, accepted, updated_at
+    /// Select status, res, err_reason, accepted, and updated_at by ext_job_id.
     pub async fn find_status_by_ext_id(
         &self,
-        ext_reference_id: Uuid,
+        ext_job_id: Uuid,
     ) -> SqlResult<Option<InputProofResponseModel>> {
         let result = sqlx::query_as!(
             InputProofResponseModel,
@@ -205,9 +205,9 @@ impl InputProofRepository {
                 accepted,
                 updated_at
             FROM input_proof_req
-            WHERE ext_reference_id = $1
+            WHERE ext_job_id = $1
             "#,
-            ext_reference_id
+            ext_job_id
         )
         .fetch_optional(&self.pool.get_pool())
         .await?;

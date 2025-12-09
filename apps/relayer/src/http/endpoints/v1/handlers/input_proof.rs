@@ -124,10 +124,10 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         );
         info!("Registered once handler for handling input proof failure");
 
-        let ext_reference_id = self.orchestrator.new_ext_reference_id();
+        let ext_job_id = self.orchestrator.new_ext_job_id();
         if let Err(e) = self
             .input_proof_repo
-            .insert_new_input_proof(ext_reference_id, request_id, request_data.clone())
+            .insert_new_input_proof(ext_job_id, request_id, request_data.clone())
             .await
         {
             error!("Failed to insert input proof into database: {}", e);
@@ -255,7 +255,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
     }
 }
 
-/// Input proof v1 endpoint - Requests input proof verification  
+/// Input proof v1 endpoint - Requests input proof verification
 #[utoipa::path(
 post,
 path = "/v1/input-proof",

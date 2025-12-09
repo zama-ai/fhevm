@@ -423,12 +423,9 @@ impl GatewayHandler {
                     event.job_id
                 );
 
-                // Create JobId from the stored content hash (int_indexer_id database field)
+                // Create JobId from the stored content hash (int_job_id database field)
                 let job_id = JobId::from_sha256_hash(
-                    consensus_state
-                        .int_indexer_id
-                        .try_into()
-                        .unwrap_or([0u8; 32]), // TODO(xyz): return an error
+                    consensus_state.int_job_id.try_into().unwrap_or([0u8; 32]), // TODO(xyz): return an error
                 );
 
                 let response_event_data =

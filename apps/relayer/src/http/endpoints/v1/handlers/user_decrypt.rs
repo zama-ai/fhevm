@@ -127,8 +127,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!("Successfully parsed and validated request");
 
-        let int_indexer_id = user_decrypt_request.content_hash();
-        let job_id = JobId::from_sha256_hash(int_indexer_id);
+        let int_job_id = JobId::from_sha256_hash(user_decrypt_request.content_hash());
 
         let (response_handler, response_rx): (
             OnceHandler<RelayerEvent>,
@@ -138,7 +137,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         self.orchestrator.register_once_handler(
             UserDecryptEventId::RespRcvdFromGw.into(),
-            job_id,
+            int_job_id,
             response_handler,
         );
         info!("Registered once handler for user decrypt response");
@@ -151,17 +150,17 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         self.orchestrator.register_once_handler(
             UserDecryptEventId::Failed.into(),
-            job_id,
+            int_job_id,
             error_handler,
         );
         info!("Registered once handler for user decrypt failure");
 
-        let ext_reference_id = self.orchestrator.new_ext_reference_id();
+        let ext_job_id = self.orchestrator.new_ext_job_id();
         if let Err(e) = self
             .user_decrypt_repo
-            .insert_data_on_conflict_and_get_ext_reference_id(
-                ext_reference_id,
-                &int_indexer_id[..],
+            .insert_data_on_conflict_and_get_ext_job_id(
+                ext_job_id,
+                &int_job_id.as_sha256_hash().unwrap()[..], // Safe to wrap as we just constructed the ID.
                 user_decrypt_request.clone(),
             )
             .await
@@ -180,7 +179,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             decrypt_request: user_decrypt_request,
         };
         let event = RelayerEvent::new(
-            job_id,
+            int_job_id,
             self.api_version,
             RelayerEventData::UserDecrypt(request_data),
         );

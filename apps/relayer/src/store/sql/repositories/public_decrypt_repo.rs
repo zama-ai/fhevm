@@ -25,27 +25,27 @@ impl PublicDecryptRepository {
     // OR IN THE TIMEOUT REPO.
 
     /* NOTE: max size for indexes
-        B-Tree (Default)	~2,704 bytes	Used for your UNIQUE indexes (int_indexer_id).
-        Hash (USING HASH)	Unlimited (1 GB)	Used for your non-unique lookups (ext_reference_id).
+        B-Tree (Default)	~2,704 bytes	Used for your UNIQUE indexes (int_job_id).
+        Hash (USING HASH)	Unlimited (1 GB)	Used for your non-unique lookups (ext_job_id).
     */
 
     // INITIAL POST REQUEST:
 
-    // Check if there is already existing internal_indexer_id and return ext_reference_id if there is one
+    // Check if there is already existing internal_indexer_id and return ext_job_id if there is one
     /// Check if there is already an existing internal_indexer_id.
-    /// Returns the ext_reference_id (UUID) if found.
-    pub async fn find_ext_ref_by_int_indexer_id(
+    /// Returns the ext_job_id (UUID) if found.
+    pub async fn find_ext_ref_by_int_job_id(
         &self,
-        int_indexer_id_bytes: &[u8],
+        int_job_id_bytes: &[u8],
     ) -> SqlResult<Option<Uuid>> {
         let result = sqlx::query_scalar!(
             r#"
-            SELECT ext_reference_id
+            SELECT ext_job_id
             FROM public_decrypt_req
-            WHERE int_indexer_id = $1
+            WHERE int_job_id = $1
             LIMIT 1
             "#,
-            int_indexer_id_bytes
+            int_job_id_bytes
         )
         .fetch_optional(&self.pool.get_pool())
         .await?;
@@ -53,14 +53,14 @@ impl PublicDecryptRepository {
         Ok(result)
     }
 
-    /// Insert req, ext_reference_id, int_indexer_id.
-    /// If conflict on int_indexer_id, it returns the EXISTING ext_reference_id.
-    /// If no conflict, it inserts and returns the NEW ext_reference_id.
+    /// Insert req, ext_job_id, int_job_id.
+    /// If conflict on int_job_id, it returns the EXISTING ext_job_id.
+    /// If no conflict, it inserts and returns the NEW ext_job_id.
     // TODO: Return the umber of rows affected.
-    pub async fn insert_data_on_conflict_and_get_ext_reference_id(
+    pub async fn insert_data_on_conflict_and_get_ext_job_id(
         &self,
-        ext_reference_id: Uuid,
-        int_indexer_id_bytes: &[u8],
+        ext_job_id: Uuid,
+        int_job_id_bytes: &[u8],
         request: PublicDecryptRequest,
     ) -> SqlResult<Uuid> {
         let req = serde_json::to_value(&request).map_err(|e| {
@@ -73,21 +73,21 @@ impl PublicDecryptRepository {
         let result = sqlx::query_scalar!(
             r#"
             INSERT INTO public_decrypt_req (
-                ext_reference_id,
-                int_indexer_id,
+                ext_job_id,
+                int_job_id,
                 req,
                 req_status,
                 created_at,
                 updated_at
             )
             VALUES ($1, $2, $3, 'queued'::req_status, NOW(), NOW())
-            ON CONFLICT (int_indexer_id)
-            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status) 
+            ON CONFLICT (int_job_id)
+            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             DO UPDATE SET updated_at = public_decrypt_req.updated_at -- Dummy update, preserves existing timestamp
-            RETURNING ext_reference_id
+            RETURNING ext_job_id
             "#,
-            ext_reference_id,
-            int_indexer_id_bytes,
+            ext_job_id,
+            int_job_id_bytes,
             req
         )
         .fetch_one(&self.pool.get_pool())
@@ -97,17 +97,17 @@ impl PublicDecryptRepository {
     }
 
     // GATEWAY READINESS CHECK.
-    /// update public_decrypt_req by int_indexer_id for to req_status processing
-    /// Update req_status to 'processing' by int_indexer_id.
+    /// update public_decrypt_req by int_job_id for to req_status processing
+    /// Update req_status to 'processing' by int_job_id.
     /// Returns the number of rows affected (1 if found, 0 if not).
-    pub async fn update_status_to_processing(&self, int_indexer_id_bytes: &[u8]) -> SqlResult<u64> {
+    pub async fn update_status_to_processing(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
         let result = sqlx::query!(
             r#"
             UPDATE public_decrypt_req
             SET req_status = 'processing'::req_status
-            WHERE int_indexer_id = $1
+            WHERE int_job_id = $1
             "#,
-            int_indexer_id_bytes
+            int_job_id_bytes
         )
         .execute(&self.pool.get_pool())
         .await?;
@@ -116,23 +116,23 @@ impl PublicDecryptRepository {
     }
 
     // if not ready after 30min..
-    /// Update req_status to 'timed_out' and set err_reason by int_indexer_id.
+    /// Update req_status to 'timed_out' and set err_reason by int_job_id.
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_timed_out(
         &self,
-        int_indexer_id_bytes: &[u8],
+        int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
         let result = sqlx::query!(
             r#"
             UPDATE public_decrypt_req
-            SET 
+            SET
                 req_status = 'timed_out'::req_status,
                 err_reason = $1
-            WHERE int_indexer_id = $2
+            WHERE int_job_id = $2
             "#,
             err_reason,
-            int_indexer_id_bytes
+            int_job_id_bytes
         )
         .execute(&self.pool.get_pool())
         .await?;
@@ -141,11 +141,11 @@ impl PublicDecryptRepository {
     }
 
     // TRANSACTION REQUESTS.
-    /// Updating the req_status to receipt_received, gw_req_tx_hash, gw_reference_id by int_indexer_id
+    /// Updating the req_status to receipt_received, gw_req_tx_hash, gw_reference_id by int_job_id
     /// Returns the number of rows affected (should be 1 or retry).
     pub async fn update_status_to_receipt_received_on_tx_success(
         &self,
-        int_indexer_id_bytes: &[u8],
+        int_job_id_bytes: &[u8],
         gw_req_tx_hash: &str,
         gw_reference_id: U256,
     ) -> SqlResult<u64> {
@@ -154,15 +154,15 @@ impl PublicDecryptRepository {
         let result = sqlx::query!(
             r#"
             UPDATE public_decrypt_req
-            SET 
+            SET
                 req_status = 'receipt_received'::req_status,
                 gw_req_tx_hash = $1,
                 gw_reference_id = $2
-            WHERE int_indexer_id = $3
+            WHERE int_job_id = $3
             "#,
             gw_req_tx_hash,
             gw_ref_id,
-            int_indexer_id_bytes
+            int_job_id_bytes
         )
         .execute(&self.pool.get_pool())
         .await?;
@@ -173,19 +173,19 @@ impl PublicDecryptRepository {
     /// update req_status to failure and apply err_reason by internal_indexer_id
     pub async fn update_status_to_failure_on_tx_failed(
         &self,
-        int_indexer_id_bytes: &[u8],
+        int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
         let result = sqlx::query!(
             r#"
             UPDATE public_decrypt_req
-            SET 
+            SET
                 req_status = 'failure'::req_status,
                 err_reason = $1
-            WHERE int_indexer_id = $2
+            WHERE int_job_id = $2
             "#,
             err_reason,
-            int_indexer_id_bytes
+            int_job_id_bytes
         )
         .execute(&self.pool.get_pool())
         .await?;
@@ -195,10 +195,10 @@ impl PublicDecryptRepository {
 
     // LISTENER QUERIES:
 
-    // update by gw_reference_id, res, and status completed, where status != 'timed_out' or 'failure', returns int_indexer_id, status, updated_at, err_reason
+    // update by gw_reference_id, res, and status completed, where status != 'timed_out' or 'failure', returns int_job_id, status, updated_at, err_reason
     /// Update res, req_status to 'completed', and gw_response_tx_hash.
     /// Condition: req_status is NOT 'timed_out' AND NOT 'failure'.
-    /// Returns: (int_indexer_id, req_status, updated_at, err_reason).
+    /// Returns: (int_job_id, req_status, updated_at, err_reason).
     pub async fn complete_req_with_res(
         &self,
         gw_reference_id: U256,
@@ -218,15 +218,15 @@ impl PublicDecryptRepository {
             PublicReqStateModel,
             r#"
             UPDATE public_decrypt_req
-            SET 
+            SET
                 res = $1,
                 req_status = 'completed'::req_status,
                 gw_response_tx_hash = $2
             WHERE gw_reference_id = $3
               AND req_status NOT IN ('timed_out'::req_status, 'failure'::req_status)
-            RETURNING 
-                int_indexer_id as "int_indexer_id!", -- Force Non-Null
-                req_status as "req_status!: ReqStatus", 
+            RETURNING
+                int_job_id as "int_job_id!", -- Force Non-Null
+                req_status as "req_status!: ReqStatus",
                 updated_at as "updated_at!",         -- Force Non-Null
                 err_reason
             "#,
@@ -240,25 +240,25 @@ impl PublicDecryptRepository {
         Ok(result)
     }
 
-    // select in `public_decrypt_req` by `ext_reference_id` (need status `res` and `err_reason` and `updated_at` and `ext_request_id`)
-    /// Select status, res, err_reason, and updated_at by ext_reference_id.
+    // select in `public_decrypt_req` by `ext_job_id` (need status `res` and `err_reason` and `updated_at` and `ext_request_id`)
+    /// Select status, res, err_reason, and updated_at by ext_job_id.
     pub async fn find_status_and_res_by_ext_id(
         &self,
-        ext_reference_id: Uuid,
+        ext_job_id: Uuid,
     ) -> SqlResult<Option<PublicDecryptResponseModel>> {
         let result = sqlx::query_as!(
             PublicDecryptResponseModel,
             r#"
-            SELECT 
-                ext_reference_id,
+            SELECT
+                ext_job_id,
                 req_status as "req_status!: ReqStatus", -- Force Non-Null Enum
                 res,
                 err_reason,
                 updated_at
             FROM public_decrypt_req
-            WHERE ext_reference_id = $1
+            WHERE ext_job_id = $1
             "#,
-            ext_reference_id
+            ext_job_id
         )
         .fetch_optional(&self.pool.get_pool())
         .await?;

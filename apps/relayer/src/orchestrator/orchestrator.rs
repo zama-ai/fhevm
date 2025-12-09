@@ -38,7 +38,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
         ids::new_internal_request_id()
     }
 
-    pub fn new_ext_reference_id(&self) -> Uuid {
+    pub fn new_ext_job_id(&self) -> Uuid {
         ids::new_external_reference_id()
     }
 

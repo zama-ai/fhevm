@@ -1,15 +1,10 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT \n                ext_reference_id,\n                req_status as \"req_status!: ReqStatus\", -- Force Non-Null Enum\n                res,\n                err_reason,\n                updated_at\n            FROM public_decrypt_req\n            WHERE ext_reference_id = $1\n            ",
+  "query": "\n            SELECT\n                req_status as \"req_status!: ReqStatus\",\n                res,\n                err_reason,\n                accepted,\n                updated_at\n            FROM input_proof_req\n            WHERE ext_job_id = $1\n            ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "ext_reference_id",
-        "type_info": "Uuid"
-      },
-      {
-        "ordinal": 1,
         "name": "req_status!: ReqStatus",
         "type_info": {
           "Custom": {
@@ -28,14 +23,19 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 1,
         "name": "res",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "err_reason",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "accepted",
+        "type_info": "Bool"
       },
       {
         "ordinal": 4,
@@ -50,11 +50,11 @@
     },
     "nullable": [
       false,
-      false,
+      true,
       true,
       true,
       false
     ]
   },
-  "hash": "3e2d124cdb174ddbc7c767e0ad210d0729657bfc09d400cb8e5b7834e92d38ee"
+  "hash": "2e52f277a4eaa00e33d019e0ceb25553d02827c2b7a6e0007f43d4027e221abc"
 }

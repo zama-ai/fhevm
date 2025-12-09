@@ -17,9 +17,8 @@ CREATE TYPE req_status AS ENUM ('queued', 'processing', 'receipt_received', 'com
 -- Table for user decryption requests.
 CREATE TABLE user_decrypt_req(
     id SERIAL PRIMARY KEY,
-    ext_reference_id UUID NOT NULL,
-    -- int_indexer_id TEXT NOT NULL,
-    int_indexer_id BYTEA NOT NULL,
+    ext_job_id UUID NOT NULL,
+    int_job_id BYTEA NOT NULL,
     gw_reference_id BYTEA,
     req JSONB NOT NULL,
     req_status req_status NOT NULL DEFAULT 'queued',
@@ -31,10 +30,10 @@ CREATE TABLE user_decrypt_req(
 );
 
 -- Indexes for user_decrypt_req
-CREATE INDEX idx_user_decrypt_req_ext_reference_id ON user_decrypt_req USING HASH (ext_reference_id);
+CREATE INDEX idx_user_decrypt_req_ext_job_id ON user_decrypt_req USING HASH (ext_job_id);
 -- limit size with indexes.
-CREATE UNIQUE INDEX idx_user_decrypt_req_unique_int_indexer_id_partial
-ON user_decrypt_req (int_indexer_id)
+CREATE UNIQUE INDEX idx_user_decrypt_req_unique_int_job_id_partial
+ON user_decrypt_req (int_job_id)
 WHERE req_status NOT IN ('failure', 'timed_out');
 CREATE INDEX idx_user_decrypt_req_gw_reference_id ON user_decrypt_req (gw_reference_id);
 
@@ -75,9 +74,9 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 -- Table for public decryption requests.
 CREATE TABLE public_decrypt_req(
     id SERIAL PRIMARY KEY,
-    ext_reference_id UUID NOT NULL,
-    -- int_indexer_id TEXT NOT NULL,
-    int_indexer_id BYTEA NOT NULL,
+    ext_job_id UUID NOT NULL,
+    -- int_job_id TEXT NOT NULL,
+    int_job_id BYTEA NOT NULL,
     gw_reference_id BYTEA,
     req JSONB NOT NULL,
     res JSONB,
@@ -89,10 +88,10 @@ CREATE TABLE public_decrypt_req(
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_public_decrypt_req_ext_req_id ON public_decrypt_req USING HASH (ext_reference_id);
+CREATE INDEX idx_public_decrypt_req_ext_job_id ON public_decrypt_req USING HASH (ext_job_id);
 -- [REQUIRED] Create this index to make the search fast and support future ON CONFLICT logic
-CREATE UNIQUE INDEX idx_public_decrypt_req_unique_int_indexer_id_partial
-ON public_decrypt_req (int_indexer_id)
+CREATE UNIQUE INDEX idx_public_decrypt_req_unique_int_job_id_partial
+ON public_decrypt_req (int_job_id)
 WHERE req_status NOT IN ('failure', 'timed_out');
 -- [REQUIRED] Needed for efficient updates by Gateway ID
 CREATE INDEX idx_public_decrypt_req_gw_reference_id ON public_decrypt_req (gw_reference_id);
@@ -106,8 +105,8 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 -- Table for input proof requests.
 CREATE TABLE input_proof_req(
     id SERIAL PRIMARY KEY,
-    ext_reference_id UUID NOT NULL,
-    int_request_id UUID NOT NULL, -- uuid v7 here. -- slight difference, we can have the same proof multiple times.
+    ext_job_id UUID NOT NULL,
+    int_request_id UUID NOT NULL, -- uuid v7 here. -- unlike decryption, each int_request triggers a gw request, hence using int_request_id instead of int_job_id
     gw_reference_id BYTEA,
     accepted BOOLEAN DEFAULT null,
     req JSONB NOT NULL,
@@ -121,7 +120,7 @@ CREATE TABLE input_proof_req(
 );
 
 -- Index with ext_ref_id.
-CREATE INDEX idx_input_proof_req_ext_reference_id ON input_proof_req USING HASH (ext_reference_id);
+CREATE INDEX idx_input_proof_req_ext_job_id ON input_proof_req USING HASH (ext_job_id);
 -- UUID v7 is time-ordered, so B-Tree is very efficient here.
 CREATE INDEX idx_input_proof_req_int_request_id ON input_proof_req (int_request_id);
 CREATE INDEX idx_input_proof_req_gw_reference_id ON input_proof_req (gw_reference_id);
