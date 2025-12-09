@@ -257,7 +257,7 @@ impl UserDecryptRepository {
     /// Insert in user_decrypt_share table all the fields: gw_reference_id, share_index, share, kms_signature, extra_data and return number of shares for gw_reference_id in the table.
     /// Insert a share and return the total count of shares for this gw_reference_id.
     /// NOTE: This lead to possibility of non relevant shares, we can recieve unrelated shares non related to relayer events, or timed_out shares, we register them anyway.
-    // TODO(xyz): return status here to detect timedout
+    // TODO(xyz): return status here to detect timed_out
     pub async fn insert_share_and_return_count(
         &self,
         gw_reference_id: U256,

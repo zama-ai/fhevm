@@ -43,7 +43,7 @@ pub struct RelayerV2ApiError503 {
 
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 pub struct RelayerV2ApiError504 {
-    pub label: String, // 'readiness_check_timedout' | 'response_timedout'
+    pub label: String, // 'readiness_check_timed_out' | 'response_timed_out'
     pub message: String,
 }
 
@@ -131,18 +131,18 @@ impl RelayerV2ApiError503 {
 // TODO: Implement helper functions for 504 errors when needed
 impl RelayerV2ApiError504 {
     #[allow(dead_code)]
-    pub fn readiness_check_timedout(message: &str) -> Value {
+    pub fn readiness_check_timed_out(message: &str) -> Value {
         serde_json::to_value(RelayerV2ApiError504 {
-            label: "readiness_check_timedout".to_string(),
+            label: "readiness_check_timed_out".to_string(),
             message: message.to_string(),
         })
         .unwrap()
     }
 
     #[allow(dead_code)]
-    pub fn response_timedout(message: &str) -> Value {
+    pub fn response_timed_out(message: &str) -> Value {
         serde_json::to_value(RelayerV2ApiError504 {
-            label: "response_timedout".to_string(),
+            label: "response_timed_out".to_string(),
             message: message.to_string(),
         })
         .unwrap()

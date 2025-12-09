@@ -308,7 +308,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         //         status: "failed".to_string(),
         //         request_id: request_id.to_string(),
         //         result: None,
-        //         error: Some(RelayerV2ApiError504::readiness_check_timedout("Readiness check timed out")),
+        //         error: Some(RelayerV2ApiError504::readiness_check_timed_out("Readiness check timed out")),
         //     })).into_response();
         // }
 
