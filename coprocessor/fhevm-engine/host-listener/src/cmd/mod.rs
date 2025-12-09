@@ -58,8 +58,13 @@ pub struct Args {
     #[arg(long, default_value = None, help = "Can be negative from last block", allow_hyphen_values = true)]
     pub start_at_block: Option<i64>,
 
-    #[arg(long, default_value = None)]
-    pub end_at_block: Option<u64>,
+    #[arg(
+        long,
+        default_value = None,
+        help = "End catchup at this block (can be negative from last block)",
+        allow_hyphen_values = true
+    )]
+    pub end_at_block: Option<i64>,
 
     #[arg(long, help = "A Coprocessor API key is needed for database access")]
     pub coprocessor_api_key: Option<Uuid>,
@@ -118,6 +123,22 @@ pub struct Args {
         help = "Maximum number of blocks to wait before a block is finalized"
     )]
     pub catchup_finalization_in_blocks: u64,
+
+    #[arg(
+        long,
+        default_value_t = false,
+        requires = "end_at_block",
+        help = "Run only catchup loop without real-time subscription"
+    )]
+    pub only_catchup_loop: bool,
+
+    #[arg(
+        long,
+        default_value_t = 60u64,
+        requires = "only_catchup_loop",
+        help = "Sleep duration in seconds between catchup loop iterations"
+    )]
+    pub catchup_loop_sleep_secs: u64,
 }
 
 // TODO: to merge with Levent works
@@ -133,7 +154,8 @@ struct InfiniteLogIter {
     pub provider: Arc<RwLock<Option<BlockchainProvider>>>, // required to maintain the stream
     last_valid_block: Option<u64>,
     start_at_block: Option<i64>,
-    end_at_block: Option<u64>,
+    end_at_block: Option<i64>,
+    absolute_end_at_block: Option<u64>,
     catchup_margin: u64,
     catchup_paging: u64,
     pub tick_timeout: HeartBeat,
@@ -189,6 +211,7 @@ impl InfiniteLogIter {
             last_valid_block: None,
             start_at_block: args.start_at_block,
             end_at_block: args.end_at_block,
+            absolute_end_at_block: None,
             catchup_paging: args.catchup_paging.max(1),
             catchup_margin: args.catchup_margin,
             tick_timeout: HeartBeat::default(),
@@ -208,6 +231,20 @@ impl InfiniteLogIter {
         let ws = WsConnect::new(&self.url).with_config(config);
         let provider = ProviderBuilder::new().connect_ws(ws).await?;
         Ok(provider.get_chain_id().await?)
+    }
+
+    /// Resolves `end_at_block` to an absolute block number.
+    /// If `end_at_block` is negative, it is interpreted as relative to the current block.
+    async fn resolve_end_at_block(
+        &self,
+        provider: &BlockchainProvider,
+    ) -> Option<u64> {
+        let n = self.end_at_block?;
+        if n >= 0 {
+            return Some(n as u64);
+        }
+        let last_block = provider.get_block_number().await.ok()?;
+        Some(last_block.saturating_sub(n.unsigned_abs()))
     }
 
     async fn catchup_block_from(
@@ -641,9 +678,11 @@ impl InfiniteLogIter {
                 Ok(provider) => {
                     let catch_up_from =
                         self.catchup_block_from(&provider).await;
+                    self.absolute_end_at_block =
+                        self.resolve_end_at_block(&provider).await;
                     self.catchup_blocks = Some((
                         catch_up_from.as_number().unwrap_or(0),
-                        self.end_at_block,
+                        self.absolute_end_at_block,
                     ));
                     // note subscribing to real-time before reading catchup
                     // events to have the minimal gap between the two
@@ -736,7 +775,7 @@ impl InfiniteLogIter {
     }
 
     async fn end_at_block_reached(&self) -> bool {
-        let Some(end_at_block) = self.end_at_block else {
+        let Some(end_at_block) = self.absolute_end_at_block else {
             return false;
         };
         let current_block_number =
@@ -765,10 +804,16 @@ impl InfiniteLogIter {
                 return self.next_blocklogs.pop_front();
             };
             if self.end_at_block_reached().await {
-                eprintln!(
-                    "End at block reached: {}",
-                    self.end_at_block.unwrap()
-                );
+                match self.end_at_block {
+                    Some(n) if n < 0 => eprintln!(
+                        "End at block reached: {:?} (from {})",
+                        self.absolute_end_at_block, n
+                    ),
+                    _ => eprintln!(
+                        "End at block reached: {:?}",
+                        self.absolute_end_at_block
+                    ),
+                }
                 warn!("Stopping due to --end-at-block");
                 return None;
             }
@@ -811,6 +856,16 @@ impl InfiniteLogIter {
         self.check_missing_ancestors(block_logs.summary).await;
         self.next_blocklogs.push_back(block_logs);
         self.next_blocklogs.pop_front()
+    }
+
+    /// Reset state for the next catchup loop iteration.
+    fn reset_for_catchup_loop(&mut self) {
+        self.catchup_blocks = None;
+        self.next_blocklogs.clear();
+        self.last_valid_block = None;
+        self.absolute_end_at_block = None;
+        self.block_history =
+            BlockHistory::new(self.reorg_maximum_duration_in_blocks as usize);
     }
 }
 
@@ -868,6 +923,29 @@ async fn db_insert_block(
 pub async fn main(args: Args) -> anyhow::Result<()> {
     info!("Starting main");
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    // Validate catchup-only mode arguments
+    if args.only_catchup_loop {
+        if let Some(start) = args.start_at_block {
+            if start >= 0 {
+                return Err(anyhow!(
+                    "--only-catchup-loop requires negative --start-at-block (e.g., -40)"
+                ));
+            }
+
+            let blocks_during_sleep =
+                args.catchup_loop_sleep_secs / args.initial_block_time;
+            let lookback_blocks = (-start) as u64;
+
+            if blocks_during_sleep > lookback_blocks {
+                return Err(anyhow!(
+                    "--catchup-loop-sleep-secs {} too large for --start-at-block {}",
+                    args.catchup_loop_sleep_secs,
+                    start
+                ));
+            }
+        }
+    }
 
     let acl_contract_address = if args.acl_contract_address.is_empty() {
         error!("--acl-contract-address cannot be empty");
@@ -961,27 +1039,46 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             .map(|n| n - args.catchup_margin as i64);
     }
 
-    log_iter.new_log_stream(true).await;
+    loop {
+        log_iter.new_log_stream(true).await;
 
-    while let Some(block_logs) = log_iter.next().await {
-        let status = db_insert_block(
-            chain_id,
-            &mut db,
-            &block_logs,
-            &acl_contract_address,
-            &tfhe_contract_address,
-        )
-        .await;
-        if status.is_err() {
-            // logging & retry on error is already done in db_insert_block
-            continue;
-        };
-        log_iter.last_valid_block = Some(
-            block_logs
-                .summary
-                .number
-                .max(log_iter.last_valid_block.unwrap_or(0)),
+        while let Some(block_logs) = log_iter.next().await {
+            if args.only_catchup_loop && !block_logs.catchup {
+                break;
+            }
+            let status = db_insert_block(
+                chain_id,
+                &mut db,
+                &block_logs,
+                &acl_contract_address,
+                &tfhe_contract_address,
+            )
+            .await;
+            if status.is_err() {
+                // logging & retry on error is already done in db_insert_block
+                continue;
+            };
+            log_iter.last_valid_block = Some(
+                block_logs
+                    .summary
+                    .number
+                    .max(log_iter.last_valid_block.unwrap_or(0)),
+            );
+        }
+
+        if !args.only_catchup_loop {
+            break;
+        }
+
+        info!(
+            sleep_secs = args.catchup_loop_sleep_secs,
+            "Catchup loop iteration complete, sleeping"
         );
+        tokio::time::sleep(Duration::from_secs(args.catchup_loop_sleep_secs))
+            .await;
+
+        // Reset state for next iteration
+        log_iter.reset_for_catchup_loop();
     }
     cancel_token.cancel();
     anyhow::Result::Ok(())
