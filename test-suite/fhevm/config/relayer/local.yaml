@@ -1,7 +1,14 @@
-environment: development
 
 gateway:
+  blockchain_rpc:
+    ws_url: "ws://localhost:8757"
+    http_url: "http://localhost:8757"
+    chain_id: 654321
+    ws_health_check_timeout_secs: 5
+    http_health_check_timeout_secs: 5
   listener:
+    # Optional: set the starting block number for event subscriptions
+    # last_block_number: null
     ws_reconnect_config:
       max_attempts: 20
       retry_interval_ms: 500
@@ -15,9 +22,26 @@ gateway:
     max_concurrency: 100
     retry:
       max_attempts: 30
-      # The time is treated as seconds in code, even the config name has _ms suffix.
-      # This will be fixed in next rc, until then treat the value as seconds.
       retry_interval_ms: 2000
+  contracts:
+    decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
+    input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
+    user_decrypt_shares_threshold: 9
+log:
+
+  format: "pretty"          # compact, pretty, or json
+  show_file_line: false
+  show_thread_ids: false
+  show_timestamp: true
+  show_target: true
+
+keyurl:
+    fhe_public_key:
+      data_id: "fhe-public-key-data-id"
+      url: "http://0.0.0.0:3001/publicKey.bin"
+    crs:
+      data_id: "crs-data-id"
+      url: "http://0.0.0.0:3001/crs2048.bin"
 
 http:
   endpoint: "0.0.0.0:3000"
@@ -27,21 +51,12 @@ http:
     retry_after_seconds: 5
     jitter_max_ms: 2000
   metrics:
-    histogram_buckets: [0, 0.5, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 10, 12, 14, 16, 18, 20, 25, 30]
-
-log:
-  format: "compact"
-  show_file_line: true
-  show_thread_ids: false
-  show_timestamp: true
-  show_target: true
+    histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
 
 metrics:
   endpoint: "0.0.0.0:9898"
 
 storage:
-  db_path_rocksdb: "./.database"
+  sql_database_url: "postgresql://postgres:postgres@localhost:5433/relayer_db"
   sql_max_connections: 10
-
-development:
-  verbose_errors: true
+  sql_health_check_timeout_secs: 5
