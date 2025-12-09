@@ -336,7 +336,7 @@ async fn query_for_work<'a>(
 
     s.set_attribute(KeyValue::new(
         "dependence_chain_id",
-        format!("{:?}", dependence_chain_id),
+        format!("{:?}", dependence_chain_id.as_ref().map(hex::encode)),
     ));
 
     let the_work = query!(
