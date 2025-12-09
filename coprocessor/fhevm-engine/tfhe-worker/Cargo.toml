@@ -63,6 +63,7 @@ host-listener = { path = "../host-listener" }
 testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
 serde = { workspace = true }
+serial_test = { workspace = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }
