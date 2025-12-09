@@ -13,11 +13,6 @@
 {{- default $hostListenerPollerNameDefault .Values.hostListenerPoller.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "hostListenerCatchupOnlyName" -}}
-{{- $hostListenerCatchupOnlyNameDefault := printf "%s-%s" .Release.Name "host-listener-catchup-only" }}
-{{- default $hostListenerCatchupOnlyNameDefault .Values.hostListenerCatchupOnly.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
 {{- define "txSenderName" -}}
 {{- $txSenderNameDefault := printf "%s-%s" .Release.Name "tx-sender" }}
 {{- default $txSenderNameDefault .Values.txSender.nameOverride | trunc 63 | trimSuffix "-" -}}
