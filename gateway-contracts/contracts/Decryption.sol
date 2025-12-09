@@ -45,8 +45,8 @@ contract Decryption is
      * EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
      */
     struct PublicDecryptVerification {
-        /// @notice The handles of the ciphertexts that have been decrypted.
-        bytes32[] ctHandles;
+        /// @notice The hash of the handles of the ciphertexts that have been decrypted.
+        bytes32 ctHandlesHash;
         /// @notice The decrypted result of the public decryption.
         bytes decryptedResult;
         /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
@@ -257,7 +257,7 @@ contract Decryption is
             mapping(bytes32 digest => bytes[] verifiedSignatures))
                 verifiedPublicDecryptSignatures;
         /// @notice Handles of the ciphertexts requested for a public decryption
-        mapping(uint256 decryptionId => bytes32[] ctHandles) publicCtHandles;
+        mapping(uint256 decryptionId => bytes32 ctHandlesHash) publicCtHandlesHashes;
         /// @notice The number of public decryption requests, used to generate request IDs (`decryptionId`).
         uint256 publicDecryptionCounter;
         // ----------------------------------------------------------------------------------------------
@@ -346,7 +346,7 @@ contract Decryption is
         uint256 publicDecryptionId = $.publicDecryptionCounter;
 
         // The handles are used during response calls for the EIP712 signature validation.
-        $.publicCtHandles[publicDecryptionId] = ctHandles;
+        $.publicCtHandlesHashes[publicDecryptionId] = keccak256(abi.encodePacked(ctHandles));
 
         // Collect the fee from the transaction sender for this public decryption request.
         _collectPublicDecryptionFee(msg.sender);
@@ -376,7 +376,7 @@ contract Decryption is
 
         // Initialize the PublicDecryptVerification structure for the signature validation.
         PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
-            $.publicCtHandles[decryptionId],
+            $.publicCtHandlesHashes[decryptionId],
             decryptedResult,
             extraData
         );
@@ -909,7 +909,7 @@ contract Decryption is
                 keccak256(
                     abi.encode(
                         EIP712_PUBLIC_DECRYPT_TYPE_HASH,
-                        keccak256(abi.encodePacked(publicDecryptVerification.ctHandles)),
+                        publicDecryptVerification.ctHandlesHash,
                         keccak256(publicDecryptVerification.decryptedResult),
                         keccak256(abi.encodePacked(publicDecryptVerification.extraData))
                     )
