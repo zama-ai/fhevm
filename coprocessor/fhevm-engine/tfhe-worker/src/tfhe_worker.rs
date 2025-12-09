@@ -1,4 +1,4 @@
-use crate::dependence_chain;
+use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
@@ -94,12 +94,13 @@ async fn tfhe_worker_cycle(
 
     let mut deps_chain_mngr = dependence_chain::LockMngr::new(worker_id, pool.clone());
 
+    // Release all owned locks on startup to avoid stale locks
+    deps_chain_mngr.release_all_owned_locks().await?;
+
     #[cfg(feature = "bench")]
     populate_cache_with_tenant_keys(vec![1i32], &pool, &tenant_key_cache).await?;
     let mut immedially_poll_more_work = false;
     loop {
-        deps_chain_mngr.release_all_owned_locks().await?;
-
         // only if previous iteration had no work done do the wait
         if !immedially_poll_more_work {
             tokio::select! {
@@ -113,6 +114,7 @@ async fn tfhe_worker_cycle(
                 },
             };
         }
+
         immedially_poll_more_work = false;
         #[cfg(feature = "bench")]
         let now = std::time::SystemTime::now();
@@ -136,6 +138,7 @@ async fn tfhe_worker_cycle(
         )
         .await?;
         if transactions.is_empty() {
+            deps_chain_mngr.release_current_lock().await?;
             continue;
         } else {
             // We've fetched work, so we'll poll again without waiting
@@ -320,11 +323,21 @@ async fn query_for_work<'a>(
     let mut s = tracer.start_with_context("query_work_items", loop_ctx);
 
     // Lock dependence chain
-    // If dependence_chain_id is None, it means no lock was acquired and
+    let (dependence_chain_id, locking_reason) = match deps_chain_mngr.extend_current_lock().await? {
+        // If there is a current lock, we extend it and use its dependence_chain_id
+        Some((id, reason)) => (Some(id), reason),
+        None => deps_chain_mngr.acquire_next_lock().await?,
+    };
+
+    // If acquire_next_lock returns None, it means no lock was acquired and
     // we should not filter by dependence_chain_id.
     //
     // In that case, we fallback to the old approach
-    let dependence_chain_id: Option<Vec<u8>> = deps_chain_mngr.acquire_next_lock().await?;
+
+    s.set_attribute(KeyValue::new(
+        "dependence_chain_id",
+        format!("{:?}", dependence_chain_id),
+    ));
 
     let the_work = query!(
         "
@@ -380,12 +393,12 @@ FOR UPDATE SKIP LOCKED            ",
     s.end();
     health_check.update_db_access();
     if the_work.is_empty() {
-        warn!(target: "tfhe_worker", dependence_chain_id = ?dependence_chain_id, "No work items found to process");
+        warn!(target: "tfhe_worker", dep = ?dependence_chain_id, locking = ?locking_reason, "No work items found to process");
         health_check.update_activity();
         return Ok((vec![], vec![]));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
-    info!(target: "tfhe_worker", { count = the_work.len() }, "Processing work items");
+    info!(target: "tfhe_worker", { count = the_work.len(), dep = ?dependence_chain_id, locking = ?locking_reason }, "Processing work items");
     // Make sure we process each tenant independently to avoid
     // setting different keys from different tenants in the worker
     // threads
