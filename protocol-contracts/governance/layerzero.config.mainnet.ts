@@ -24,7 +24,7 @@ const pathways: TwoWayConfig[] = [
         ethereumContract, // Chain A contract
         zamaMainnetContract, // Chain B contract
         // TODO: Add custom ZAMA DVN in next line?
-        [['LayerZero Labs', 'Nethermind'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
+        [['LayerZero Labs'], [['Nethermind', 'Luganodes', 'P2P'], 2]], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
         [15, undefined], // [A to B confirmations, B to A confirmations] // NOTE: `undefined` is used here because we want an uniderectional pathway
         [undefined, undefined], // NOTE: first `undefined` is because we do not enforce gas, since proposals are arbitrary calls. Instead, we will use a gas profiler to calculate the gas needed for proposal execution and adds a relative buffer on top. Second `undefined` is used here because we want an uniderectional pathway.
     ],
