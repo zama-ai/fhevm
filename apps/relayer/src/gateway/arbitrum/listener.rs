@@ -46,6 +46,107 @@ where
         })
     }
 
+    async fn fetch_block_hash_from_rpc(
+        &self,
+        block_number_for_hash_lookup: u64,
+        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
+    ) -> anyhow::Result<String> {
+        match provider
+            .get_block_by_number(BlockNumberOrTag::Number(block_number_for_hash_lookup))
+            .await
+        {
+            Ok(Some(block)) => {
+                let block_hash_from_rpc = block.header.hash;
+                Ok(format!("{:#x}", block_hash_from_rpc))
+            }
+            Ok(None) => Err(anyhow::anyhow!(
+                "Block {} not found - invalid config block number",
+                block_number_for_hash_lookup
+            )),
+            Err(e) => Err(anyhow::anyhow!(
+                "Failed to fetch block {}: {}",
+                block_number_for_hash_lookup,
+                e
+            )),
+        }
+    }
+
+    async fn resolve_starting_block(
+        &self,
+        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
+    ) -> anyhow::Result<u64> {
+        let block_info_from_db = self.block_number_repo.get_last_block_info().await?;
+
+        let block_number = match (
+            self.gateway_config.listener.last_block_number,
+            block_info_from_db,
+        ) {
+            // Config takes precedence
+            (Some(block_number_from_cfg), Some(block_info_from_db)) => {
+                if block_info_from_db.block_number != block_number_from_cfg {
+                    info!(
+                        "Starting from config block {} (overriding database block {})",
+                        block_number_from_cfg, block_info_from_db.block_number
+                    );
+                    let block_hash_from_rpc = self
+                        .fetch_block_hash_from_rpc(block_number_from_cfg, provider)
+                        .await?;
+                    self.block_number_repo
+                        .update_block_info(block_number_from_cfg, block_hash_from_rpc)
+                        .await?;
+                } else {
+                    info!(
+                        "Starting from config block {} (matches database)",
+                        block_number_from_cfg
+                    );
+                }
+                block_number_from_cfg
+            }
+
+            // Config with no DB record
+            (Some(block_number_from_cfg), None) => {
+                info!(
+                    "Starting from config block {} (initializing database)",
+                    block_number_from_cfg
+                );
+                let block_hash_from_rpc = self
+                    .fetch_block_hash_from_rpc(block_number_from_cfg, provider)
+                    .await?;
+                self.block_number_repo
+                    .insert_initial_block_info(block_number_from_cfg, block_hash_from_rpc)
+                    .await?;
+                block_number_from_cfg
+            }
+
+            // No config, use existing DB
+            (None, Some(block_info_from_db)) => {
+                info!(
+                    "Starting from database block {} (resuming)",
+                    block_info_from_db.block_number
+                );
+                block_info_from_db.block_number
+            }
+
+            // Fresh start: no config, no DB
+            (None, None) => {
+                let current_block_from_rpc = provider.get_block_number().await?;
+                info!(
+                    "Starting from current chain block {} (first run)",
+                    current_block_from_rpc
+                );
+                let block_hash_from_rpc = self
+                    .fetch_block_hash_from_rpc(current_block_from_rpc, provider)
+                    .await?;
+                self.block_number_repo
+                    .insert_initial_block_info(current_block_from_rpc, block_hash_from_rpc)
+                    .await?;
+                current_block_from_rpc
+            }
+        };
+
+        Ok(block_number)
+    }
+
     pub async fn run(self) -> anyhow::Result<()> {
         // Parse contract addresses from config
         let decryption_address =
@@ -56,31 +157,14 @@ where
                 .map_err(|_| anyhow::anyhow!("Invalid InputVerification address"))?;
         let contract_addresses = vec![decryption_address, input_verification_address];
 
-        // Get starting block from config or repository
-        let starting_block = match self.gateway_config.listener.last_block_number {
-            Some(block_number) => Some(block_number),
-            None => self
-                .block_number_repo
-                .get_last_block_info()
-                .await
-                .map_err(|e| anyhow::anyhow!("Error getting last block number: {}", e))?
-                .map(|info| info.block_number),
-        };
-
-        info!(
-            "start listening from block \"{}\" on gateway chain",
-            starting_block
-                .map(|b| b.to_string())
-                .unwrap_or("latest".to_string())
-        );
-
-        // Create WebSocket provider with preserved settings
+        // Create WebSocket provider
         let provider = self.create_provider().await?;
 
-        // Create log subscription
-        let block_number_or_tag = starting_block
-            .map(BlockNumberOrTag::Number)
-            .unwrap_or(BlockNumberOrTag::Latest);
+        // Resolve starting block with proper initialization
+        let starting_block = self.resolve_starting_block(&provider).await?;
+
+        // Create log subscription from determined starting point
+        let block_number_or_tag = BlockNumberOrTag::Number(starting_block);
 
         let filter = Filter::new()
             .from_block(block_number_or_tag)
@@ -123,14 +207,19 @@ where
                                 .map(|h| format!("{:#x}", h))
                                 .unwrap_or_else(|| "0x0".to_string());
 
-                            // Try to update first, if that fails (no row exists), insert
-                            if self.block_number_repo.update_block_info(block_number, block_hash.clone()).await.is_err() {
-                                self.block_number_repo.insert_initial_block_info(block_number, block_hash).await.unwrap_or_else(|e| {
-                                    error!(
-                                        error = %e,
-                                        "inserting initial block info"
-                                    );
-                                });
+                            // Update block progress - log error but don't stop processing
+                            if let Err(e) = self.block_number_repo
+                                .update_block_info(block_number, block_hash.clone())
+                                .await
+                            {
+                                error!(
+                                    block_number = %block_number,
+                                    block_hash = %block_hash,
+                                    error = %e,
+                                    "Failed to update block progress - continuing without persistence"
+                                );
+                                // Continue processing events even if we can't persist progress
+                                // This allows the service to keep running but logs the issue
                             }
                         }
                     }
