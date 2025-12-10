@@ -2,7 +2,6 @@
 
 pragma solidity ^0.8.27;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ERC1363} from "@openzeppelin/contracts/token/ERC20/extensions/ERC1363.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -28,7 +27,7 @@ import {ProtocolStaking} from "./ProtocolStaking.sol";
  * may decrease due to slashing. These losses are symmetrically passed to delegators on the `OperatorStaking` level.
  * Slashing must first decrease the `ProtocolStaking` balance of this contract before affecting pending withdrawals.
  */
-contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
+contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
     using Math for uint256;
     using Checkpoints for Checkpoints.Trace208;
 
@@ -56,7 +55,10 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
     /// @dev Emitted when the rewarder contract is set.
     event RewarderSet(address oldRewarder, address newRewarder);
 
-    /// @dev Throw when the rewarder address is not valid during {setRewarder}.
+    /// @dev Thrown when the caller is not the ProtocolStaking's owner.
+    error CallerNotProtocolStakingOwner(address caller);
+
+    /// @dev Thrown when the rewarder address is not valid during {setRewarder}.
     error InvalidRewarder(address rewarder);
 
     /// @dev Thrown when the sender does not have authorization to perform an action.
@@ -65,12 +67,16 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
     /// @dev Thrown when the controller address is not valid (e.g., zero address).
     error InvalidController();
 
+    modifier onlyOwner() {
+        require(msg.sender == owner(), CallerNotProtocolStakingOwner(msg.sender));
+        _;
+    }
+
     /**
      * @notice Initializes the OperatorStaking contract.
      * @param name The name of the ERC20 token.
      * @param symbol The symbol of the ERC20 token.
      * @param protocolStaking_ The ProtocolStaking contract address.
-     * @param owner The owner address.
      * @param beneficiary The address that can set and claim fees.
      * @param initialMaxFeeBasisPoints_ The initial maximum fee basis points for the OperatorRewarder contract.
      * @param initialFeeBasisPoints_ The initial fee basis points for the OperatorRewarder contract.
@@ -79,25 +85,17 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
         string memory name,
         string memory symbol,
         ProtocolStaking protocolStaking_,
-        address owner,
         address beneficiary,
         uint16 initialMaxFeeBasisPoints_,
         uint16 initialFeeBasisPoints_
-    ) ERC20(name, symbol) Ownable(owner) {
+    ) ERC20(name, symbol) {
         _asset = IERC20(protocolStaking_.stakingToken());
         _protocolStaking = protocolStaking_;
 
         IERC20(asset()).approve(address(protocolStaking_), type(uint256).max);
 
         address rewarder_ = address(
-            new OperatorRewarder(
-                owner,
-                beneficiary,
-                protocolStaking_,
-                this,
-                initialMaxFeeBasisPoints_,
-                initialFeeBasisPoints_
-            )
+            new OperatorRewarder(beneficiary, protocolStaking_, this, initialMaxFeeBasisPoints_, initialFeeBasisPoints_)
         );
         protocolStaking_.setRewardsRecipient(rewarder_);
         _rewarder = rewarder_;
@@ -225,6 +223,14 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
         _operator[msg.sender][operator] = approved;
 
         emit OperatorSet(msg.sender, operator, approved);
+    }
+
+    /**
+     * @notice Returns the owner address, the ProtocolStaking owner address, which can set the rewarder.
+     * @return The owner address.
+     */
+    function owner() public view virtual returns (address) {
+        return protocolStaking().owner();
     }
 
     /**

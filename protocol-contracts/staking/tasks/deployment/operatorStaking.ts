@@ -21,7 +21,6 @@ async function deployOperatorStaking(
   tokenName: string,
   symbol: string,
   protocolStakingAddress: string,
-  ownerAddress: string,
   beneficiaryAddress: string,
   initialMaxFeeBasisPoints: number,
   initialFeeBasisPoints: number,
@@ -40,7 +39,6 @@ async function deployOperatorStaking(
     tokenName,
     symbol,
     protocolStakingAddress,
-    ownerAddress,
     beneficiaryAddress,
     initialMaxFeeBasisPoints,
     initialFeeBasisPoints,
@@ -93,7 +91,6 @@ task('task:deployOperatorStakingCopro')
     // Get the env vars for the coprocessor operator staking contract
     const coproTokenName = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_TOKEN_NAME_${index}`);
     const coproTokenSymbol = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_TOKEN_SYMBOL_${index}`);
-    const coproOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_OWNER_ADDRESS_${index}`);
 
     // Get the env vars for the coprocessor operator rewarder contract (deployed at the same time)
     const coproBeneficiaryAddress = getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_BENEFICIARY_${index}`);
@@ -104,7 +101,6 @@ task('task:deployOperatorStakingCopro')
       coproTokenName,
       coproTokenSymbol,
       protocolStakingCoproProxyAddress,
-      coproOwnerAddress,
       coproBeneficiaryAddress,
       coproInitialMaxFeeBasisPoints,
       coproInitialFeeBasisPoints,
@@ -133,7 +129,6 @@ task('task:deployOperatorStakingKMS')
     // Get the env vars for the KMS operator staking contract
     const kmsTokenName = getRequiredEnvVar(`OPERATOR_STAKING_KMS_TOKEN_NAME_${index}`);
     const kmsTokenSymbol = getRequiredEnvVar(`OPERATOR_STAKING_KMS_TOKEN_SYMBOL_${index}`);
-    const kmsOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_KMS_OWNER_ADDRESS_${index}`);
 
     // Get the env vars for the KMS operator rewarder contract (deployed at the same time)
     const kmsBeneficiaryAddress = getRequiredEnvVar(`OPERATOR_REWARDER_KMS_BENEFICIARY_${index}`);
@@ -144,7 +139,6 @@ task('task:deployOperatorStakingKMS')
       kmsTokenName,
       kmsTokenSymbol,
       protocolStakingKMSProxyAddress,
-      kmsOwnerAddress,
       kmsBeneficiaryAddress,
       kmsInitialMaxFeeBasisPoints,
       kmsInitialFeeBasisPoints,
