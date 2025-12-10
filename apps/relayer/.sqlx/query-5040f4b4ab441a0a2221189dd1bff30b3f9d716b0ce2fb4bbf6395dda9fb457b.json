@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM user_decrypt_share \n            WHERE created_at < NOW() - INTERVAL '24 hours'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "5040f4b4ab441a0a2221189dd1bff30b3f9d716b0ce2fb4bbf6395dda9fb457b"
+}

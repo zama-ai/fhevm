@@ -1,4 +1,6 @@
 pub mod block_number_repo;
+pub mod cron_task;
+pub mod expiry_repo;
 pub mod health;
 pub mod input_proof_repo;
 pub mod public_decrypt_repo;
@@ -7,7 +9,14 @@ pub mod user_decrypt_repo;
 pub mod utils;
 
 use super::client::PgClient;
-use crate::config::settings::StorageConfig;
+use crate::{
+    config::settings::StorageConfig,
+    store::sql::repositories::{
+        cron_task::{spawn_expiry_worker, spawn_timeout_worker},
+        expiry_repo::ExpiryRepository,
+        timeout_repo::TimeoutRepository,
+    },
+};
 use block_number_repo::BlockNumberRepository;
 use input_proof_repo::InputProofRepository;
 use public_decrypt_repo::PublicDecryptRepository;
@@ -23,6 +32,8 @@ pub struct Repositories {
     pub public_decrypt: Arc<PublicDecryptRepository>,
     pub user_decrypt: Arc<UserDecryptRepository>,
     pub block_number: Arc<BlockNumberRepository>,
+    pub timeout_repo: Arc<TimeoutRepository>,
+    pub expiry_repo: Arc<ExpiryRepository>,
 
     // Internal fields for health checking
     pg_client: Arc<PgClient>,
@@ -35,11 +46,16 @@ impl Repositories {
         let health_timeout = Duration::from_secs(config.sql_health_check_timeout_secs);
         let pg_client = Arc::new(PgClient::new(config).await);
 
+        spawn_timeout_worker((*pg_client).clone());
+        spawn_expiry_worker((*pg_client).clone());
+
         Self {
             input_proof: Arc::new(InputProofRepository::new((*pg_client).clone())),
             public_decrypt: Arc::new(PublicDecryptRepository::new((*pg_client).clone())),
             user_decrypt: Arc::new(UserDecryptRepository::new((*pg_client).clone())),
             block_number: Arc::new(BlockNumberRepository::new((*pg_client).clone())),
+            timeout_repo: Arc::new(TimeoutRepository::new((*pg_client).clone())),
+            expiry_repo: Arc::new(ExpiryRepository::new((*pg_client).clone())),
             pg_client,
             health_timeout,
         }

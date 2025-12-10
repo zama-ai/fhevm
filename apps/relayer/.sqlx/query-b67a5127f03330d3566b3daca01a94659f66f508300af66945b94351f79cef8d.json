@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM input_proof_req \n            WHERE created_at < NOW() - INTERVAL '24 hours'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "b67a5127f03330d3566b3daca01a94659f66f508300af66945b94351f79cef8d"
+}

@@ -111,33 +111,26 @@ impl TimeoutRepository {
     }
 
     /// Updates stale requests safely in a distributed environment.
-    /// Only ONE instance will execute this at a time. Others will skip.
+    ///
+    /// Mechanism:
+    /// 1. Starts a DB transaction.
+    /// 2. Attempts to acquire a Postgres Advisory Lock.
+    /// 3. If acquired: Performs updates on all 3 tables.
+    /// 4. If not acquired: Returns immediately (another pod is handling it).
+    ///
+    /// Returns the total number of rows moved to 'timed_out'.
     pub async fn time_out_stale_requests(&self) -> Result<u64> {
-        // 1. Start a Transaction
         let mut tx = self.pool.get_pool().begin().await?;
-
-        // 2. Try to acquire the Advisory Lock for this Transaction
-        // 'pg_try_advisory_xact_lock' returns true if obtained, false if someone else has it.
-        // The lock is auto-released when 'tx' commits or rolls back.
-        let got_lock: bool = sqlx::query_scalar!(
-            "SELECT pg_try_advisory_xact_lock($1)",
-            TIMEOUT_JOB_LOCK_ID
-        )
-        .fetch_one(&mut *tx)
-        .await?
-        .unwrap_or(false);
-
-        // 3. If we didn't get the lock, another instance is doing it. Abort.
+        let got_lock: bool =
+            sqlx::query_scalar!("SELECT pg_try_advisory_xact_lock($1)", TIMEOUT_JOB_LOCK_ID)
+                .fetch_one(&mut *tx)
+                .await?
+                .unwrap_or(false);
         if !got_lock {
-            // tracing::debug!("Timeout job already running on another instance. Skipping.");
             return Ok(0);
         }
 
-        // --- WE ARE THE LEADER NOW ---
-
-        // 4. Execute Updates (using the transaction 'tx')
-
-        // User Decrypt
+        // --- LEADER SECTION: We hold the lock ---
         let r1 = sqlx::query!(
             r#"
             UPDATE user_decrypt_req
@@ -151,7 +144,6 @@ impl TimeoutRepository {
         .await?
         .rows_affected();
 
-        // Public Decrypt
         let r2 = sqlx::query!(
             r#"
             UPDATE public_decrypt_req
@@ -165,7 +157,6 @@ impl TimeoutRepository {
         .await?
         .rows_affected();
 
-        // Input Proof
         let r3 = sqlx::query!(
             r#"
             UPDATE input_proof_req
@@ -179,8 +170,6 @@ impl TimeoutRepository {
         .await?
         .rows_affected();
 
-        // 5. Commit the transaction
-        // This applies the updates AND releases the lock atomically.
         tx.commit().await?;
 
         Ok(r1 + r2 + r3)
