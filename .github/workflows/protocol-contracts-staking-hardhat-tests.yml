@@ -1,5 +1,5 @@
-# Run hardhat tests
-name: protocol-contracts-staking-hardhat-tests
+# Run tests
+name: protocol-contracts-staking-tests
 
 on:
   pull_request:
@@ -11,12 +11,12 @@ on:
 permissions: {}
 
 concurrency:
-  group: ci-hardhat-tests-${{ github.ref }}
+  group: ci-tests-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check-changes:
-    name: protocol-contracts-staking-hardhat-tests/check-changes
+    name: protocol-contracts-staking-tests/check-changes
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
@@ -33,10 +33,10 @@ jobs:
         with:
           filters: |
             protocol-contracts-staking:
-              - .github/workflows/protocol-contracts-staking-hardhat-tests.yml
+              - .github/workflows/protocol-contracts-staking-tests.yml
               - protocol-contracts/staking/**
   tests:
-    name: protocol-contracts-staking-hardhat-tests/tests (bpr)
+    name: protocol-contracts-staking-tests/tests (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-protocol-contracts-staking == 'true' }}
     runs-on: ubuntu-latest
@@ -52,7 +52,7 @@ jobs:
         working-directory: protocol-contracts/staking
         run: npm ci
 
-      - name: Run hardhat tests
+      - name: Run unit tests
         working-directory: protocol-contracts/staking
         run: make test
 
