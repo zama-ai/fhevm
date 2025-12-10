@@ -40,13 +40,13 @@ describe('OperatorStaking Deployment', function () {
         // Get the env vars for the coprocessor operator rewarder contract
         const coproBeneficiaryAddress = getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_BENEFICIARY_${i}`);
         const coproInitialFee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_FEE_${i}`));
-        const coproInitialMaxfee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_MAX_FEE_${i}`));
+        const coproInitialMaxFee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_MAX_FEE_${i}`));
 
         // Verify the rewarder contract configuration
         const rewarder = await hre.ethers.getContractAt('OperatorRewarder', rewarderAddress);
         expect(await rewarder.beneficiary()).to.equal(coproBeneficiaryAddress);
         expect(await rewarder.feeBasisPoints()).to.equal(coproInitialFee);
-        expect(await rewarder.maxfeeBasisPoints()).to.equal(coproInitialMaxfee);
+        expect(await rewarder.maxFeeBasisPoints()).to.equal(coproInitialMaxFee);
       }
     });
   });
@@ -86,13 +86,13 @@ describe('OperatorStaking Deployment', function () {
         // Get the env vars for the KMS operator rewarder contract
         const kmsBeneficiaryAddress = getRequiredEnvVar(`OPERATOR_REWARDER_KMS_BENEFICIARY_${i}`);
         const kmsInitialFee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_FEE_${i}`));
-        const kmsInitialMaxfee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_MAX_FEE_${i}`));
+        const kmsInitialMaxFee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_MAX_FEE_${i}`));
 
         // Verify the rewarder contract configuration
         const rewarder = await hre.ethers.getContractAt('OperatorRewarder', rewarderAddress);
         expect(await rewarder.beneficiary()).to.equal(kmsBeneficiaryAddress);
         expect(await rewarder.feeBasisPoints()).to.equal(kmsInitialFee);
-        expect(await rewarder.maxfeeBasisPoints()).to.equal(kmsInitialMaxfee);
+        expect(await rewarder.maxFeeBasisPoints()).to.equal(kmsInitialMaxFee);
       }
     });
   });

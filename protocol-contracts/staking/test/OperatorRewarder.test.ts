@@ -301,13 +301,13 @@ describe('OperatorRewarder', function () {
     });
   });
 
-  describe('setMaxfee', async function () {
+  describe('setMaxFee', async function () {
     it('should update max fee', async function () {
-      await expect(this.mock.maxfeeBasisPoints()).to.eventually.eq(10000);
-      await expect(this.mock.connect(this.admin).setMaxfee(1234))
-        .to.emit(this.mock, 'MaxfeeUpdated')
+      await expect(this.mock.maxFeeBasisPoints()).to.eventually.eq(10000);
+      await expect(this.mock.connect(this.admin).setMaxFee(1234))
+        .to.emit(this.mock, 'MaxFeeUpdated')
         .withArgs(10000, 1234);
-      await expect(this.mock.maxfeeBasisPoints()).to.eventually.eq(1234);
+      await expect(this.mock.maxFeeBasisPoints()).to.eventually.eq(1234);
     });
 
     it('should set fee to max fee and claim fees if new max fee lower than current fee', async function () {
@@ -318,8 +318,8 @@ describe('OperatorRewarder', function () {
       // If the new max fee is lower than the current fee:
       // - the fee is set to the new max fee
       // - the unpaid fees are claimed and transferred to the beneficiary
-      await expect(this.mock.connect(this.admin).setMaxfee(500))
-        .to.emit(this.mock, 'MaxfeeUpdated')
+      await expect(this.mock.connect(this.admin).setMaxFee(500))
+        .to.emit(this.mock, 'MaxFeeUpdated')
         .withArgs(10000, 500)
         .to.emit(this.mock, 'FeeUpdated')
         .withArgs(1000, 500)
@@ -329,20 +329,20 @@ describe('OperatorRewarder', function () {
     });
 
     it('should not set max fee if not owner', async function () {
-      await expect(this.mock.connect(this.anyone).setMaxfee(1234))
+      await expect(this.mock.connect(this.anyone).setMaxFee(1234))
         .to.be.revertedWithCustomError(this.mock, 'OwnableUnauthorizedAccount')
         .withArgs(this.anyone);
     });
 
     it('should revert if over 100%', async function () {
-      await expect(this.mock.connect(this.admin).setMaxfee(10001))
+      await expect(this.mock.connect(this.admin).setMaxFee(10001))
         .to.be.revertedWithCustomError(this.mock, 'InvalidBasisPoints')
         .withArgs(10001);
     });
 
     it('should revert if max fee already set', async function () {
-      await this.mock.connect(this.admin).setMaxfee(1000);
-      await expect(this.mock.connect(this.admin).setMaxfee(1000))
+      await this.mock.connect(this.admin).setMaxFee(1000);
+      await expect(this.mock.connect(this.admin).setMaxFee(1000))
         .to.be.revertedWithCustomError(this.mock, 'MaxFeeAlreadySet')
         .withArgs(1000, 1000);
     });
@@ -410,7 +410,7 @@ describe('OperatorRewarder', function () {
     });
 
     it('should revert if over max fee', async function () {
-      await this.mock.connect(this.admin).setMaxfee(1000);
+      await this.mock.connect(this.admin).setMaxFee(1000);
       await expect(this.mock.connect(this.beneficiary).setFee(1234))
         .to.be.revertedWithCustomError(this.mock, 'MaxBasisPointsExceeded')
         .withArgs(1234, 1000);

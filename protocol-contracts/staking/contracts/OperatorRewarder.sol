@@ -27,7 +27,7 @@ contract OperatorRewarder is Ownable {
     ProtocolStaking private immutable _protocolStaking;
     OperatorStaking private immutable _operatorStaking;
     address private _beneficiary;
-    uint16 private _maxfeeBasisPoints;
+    uint16 private _maxFeeBasisPoints;
     uint16 private _feeBasisPoints;
     bool private _shutdown;
     uint256 private _lastClaimTotalAssetsPlusPaidRewards;
@@ -42,7 +42,7 @@ contract OperatorRewarder is Ownable {
     event Shutdown();
 
     /// @notice Emitted when the maximum fee is updated.
-    event MaxfeeUpdated(uint16 oldFee, uint16 newFee);
+    event MaxFeeUpdated(uint16 oldFee, uint16 newFee);
 
     /// @notice Emitted when the fee is updated.
     event FeeUpdated(uint16 oldFee, uint16 newFee);
@@ -87,10 +87,10 @@ contract OperatorRewarder is Ownable {
     /**
      * @notice Initializes the OperatorRewarder contract.
      * @param owner The owner address.
-     * @param beneficiary_ The beneficiary address.
+     * @param beneficiary_ The address that can set and claim fees.
      * @param protocolStaking_ The ProtocolStaking contract address.
      * @param operatorStaking_ The OperatorStaking contract address.
-     * @param initialMaxfeeBasisPoints_ The initial max fee basis points.
+     * @param initialMaxFeeBasisPoints_ The initial max fee basis points.
      * @param initialFeeBasisPoints_ The initial fee basis points.
      */
     constructor(
@@ -98,14 +98,14 @@ contract OperatorRewarder is Ownable {
         address beneficiary_,
         ProtocolStaking protocolStaking_,
         OperatorStaking operatorStaking_,
-        uint16 initialMaxfeeBasisPoints_,
+        uint16 initialMaxFeeBasisPoints_,
         uint16 initialFeeBasisPoints_
     ) Ownable(owner) {
         _transferBeneficiary(beneficiary_);
         _token = IERC20(protocolStaking_.stakingToken());
         _protocolStaking = protocolStaking_;
         _operatorStaking = operatorStaking_;
-        _setMaxfee(initialMaxfeeBasisPoints_);
+        _setMaxFee(initialMaxFeeBasisPoints_);
         _setFee(initialFeeBasisPoints_);
     }
 
@@ -145,10 +145,10 @@ contract OperatorRewarder is Ownable {
      * - the unpaid fees are claimed and transferred to the beneficiary
      * @param basisPoints Maximum fee in basis points (max 10000).
      */
-    function setMaxfee(uint16 basisPoints) public virtual onlyOwner {
-        require(basisPoints != _maxfeeBasisPoints, MaxFeeAlreadySet(basisPoints, _maxfeeBasisPoints));
+    function setMaxFee(uint16 basisPoints) public virtual onlyOwner {
+        require(basisPoints != _maxFeeBasisPoints, MaxFeeAlreadySet(basisPoints, _maxFeeBasisPoints));
 
-        _setMaxfee(basisPoints);
+        _setMaxFee(basisPoints);
     }
 
     /**
@@ -200,7 +200,7 @@ contract OperatorRewarder is Ownable {
     }
 
     /**
-     * @notice Returns the beneficiary address.
+     * @notice Returns the beneficiary address, the address that can set and claim fees.
      * @return The beneficiary address.
      */
     function beneficiary() public view virtual returns (address) {
@@ -243,8 +243,8 @@ contract OperatorRewarder is Ownable {
      * @notice Returns the maximum fee in basis points that the beneficiary can set.
      * @return Fee in basis points.
      */
-    function maxfeeBasisPoints() public view returns (uint16) {
-        return _maxfeeBasisPoints;
+    function maxFeeBasisPoints() public view returns (uint16) {
+        return _maxFeeBasisPoints;
     }
 
     /**
@@ -322,15 +322,15 @@ contract OperatorRewarder is Ownable {
      * - the unpaid fees are claimed and transferred to the beneficiary
      * @param basisPoints Maximum fee in basis points (max 10000).
      */
-    function _setMaxfee(uint16 basisPoints) internal virtual {
+    function _setMaxFee(uint16 basisPoints) internal virtual {
         require(basisPoints <= 10000, InvalidBasisPoints(basisPoints));
 
         if (basisPoints < _feeBasisPoints) {
             _setFee(basisPoints);
         }
 
-        emit MaxfeeUpdated(_maxfeeBasisPoints, basisPoints);
-        _maxfeeBasisPoints = basisPoints;
+        emit MaxFeeUpdated(_maxFeeBasisPoints, basisPoints);
+        _maxFeeBasisPoints = basisPoints;
     }
 
     /**
@@ -340,7 +340,7 @@ contract OperatorRewarder is Ownable {
      */
     function _setFee(uint16 basisPoints) internal virtual {
         require(basisPoints <= 10000, InvalidBasisPoints(basisPoints));
-        require(basisPoints <= _maxfeeBasisPoints, MaxBasisPointsExceeded(basisPoints, _maxfeeBasisPoints));
+        require(basisPoints <= _maxFeeBasisPoints, MaxBasisPointsExceeded(basisPoints, _maxFeeBasisPoints));
 
         _claimFee();
         emit FeeUpdated(_feeBasisPoints, basisPoints);

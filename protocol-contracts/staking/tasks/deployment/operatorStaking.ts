@@ -23,7 +23,7 @@ async function deployOperatorStaking(
   protocolStakingAddress: string,
   ownerAddress: string,
   beneficiaryAddress: string,
-  initialMaxfeeBasisPoints: number,
+  initialMaxFeeBasisPoints: number,
   initialFeeBasisPoints: number,
   hre: HardhatRuntimeEnvironment,
 ) {
@@ -42,7 +42,7 @@ async function deployOperatorStaking(
     protocolStakingAddress,
     ownerAddress,
     beneficiaryAddress,
-    initialMaxfeeBasisPoints,
+    initialMaxFeeBasisPoints,
     initialFeeBasisPoints,
   );
   await operatorStaking.waitForDeployment();
@@ -97,7 +97,7 @@ task('task:deployOperatorStakingCopro')
 
     // Get the env vars for the coprocessor operator rewarder contract (deployed at the same time)
     const coproBeneficiaryAddress = getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_BENEFICIARY_${index}`);
-    const coproInitialMaxfeeBasisPoints = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_MAX_FEE_${index}`));
+    const coproInitialMaxFeeBasisPoints = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_MAX_FEE_${index}`));
     const coproInitialFeeBasisPoints = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_FEE_${index}`));
 
     await deployOperatorStaking(
@@ -106,7 +106,7 @@ task('task:deployOperatorStakingCopro')
       protocolStakingCoproProxyAddress,
       coproOwnerAddress,
       coproBeneficiaryAddress,
-      coproInitialMaxfeeBasisPoints,
+      coproInitialMaxFeeBasisPoints,
       coproInitialFeeBasisPoints,
       hre,
     );
@@ -137,7 +137,7 @@ task('task:deployOperatorStakingKMS')
 
     // Get the env vars for the KMS operator rewarder contract (deployed at the same time)
     const kmsBeneficiaryAddress = getRequiredEnvVar(`OPERATOR_REWARDER_KMS_BENEFICIARY_${index}`);
-    const kmsInitialMaxfeeBasisPoints = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_MAX_FEE_${index}`));
+    const kmsInitialMaxFeeBasisPoints = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_MAX_FEE_${index}`));
     const kmsInitialFeeBasisPoints = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_FEE_${index}`));
 
     await deployOperatorStaking(
@@ -146,7 +146,7 @@ task('task:deployOperatorStakingKMS')
       protocolStakingKMSProxyAddress,
       kmsOwnerAddress,
       kmsBeneficiaryAddress,
-      kmsInitialMaxfeeBasisPoints,
+      kmsInitialMaxFeeBasisPoints,
       kmsInitialFeeBasisPoints,
       hre,
     );
