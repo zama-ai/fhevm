@@ -329,10 +329,10 @@ async fn query_for_work<'a>(
         None => deps_chain_mngr.acquire_next_lock().await?,
     };
 
-    // If acquire_next_lock returns None, it means no lock was acquired and
-    // we should not filter by dependence_chain_id.
-    //
-    // In that case, we fallback to the old approach
+    if dependence_chain_id.is_none() {
+        health_check.update_activity();
+        return Ok((vec![], vec![]));
+    }
 
     s.set_attribute(KeyValue::new(
         "dependence_chain_id",
