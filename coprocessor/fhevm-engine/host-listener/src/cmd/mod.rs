@@ -1045,7 +1045,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             if args.only_catchup_loop && !block_logs.catchup {
                 break;
             }
-            let _ = db_insert_block(
+            let status = db_insert_block(
                 chain_id,
                 &mut db,
                 &block_logs,
@@ -1053,7 +1053,16 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &tfhe_contract_address,
             )
             .await;
-            // logging & retry on error is already done in db_insert_block
+            if status.is_err() {
+                // logging & retry on error is already done in db_insert_block
+                continue;
+            };
+            log_iter.last_valid_block = Some(
+                block_logs
+                    .summary
+                    .number
+                    .max(log_iter.last_valid_block.unwrap_or(0)),
+            );
         }
 
         if !args.only_catchup_loop {
