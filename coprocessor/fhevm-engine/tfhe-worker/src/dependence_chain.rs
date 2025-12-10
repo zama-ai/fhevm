@@ -1,3 +1,5 @@
+use std::fmt;
+
 use chrono::{DateTime, Utc};
 use sqlx::Postgres;
 use tracing::{debug, info, warn};
@@ -33,7 +35,7 @@ pub struct LockMngr {
 }
 
 /// Dependence chain lock data
-#[derive(Debug, sqlx::FromRow, Clone)]
+#[derive(sqlx::FromRow, Clone)]
 pub struct DatabaseChainLock {
     pub dependence_chain_id: Vec<u8>,
     pub worker_id: Option<Uuid>,
@@ -41,6 +43,19 @@ pub struct DatabaseChainLock {
     pub lock_expires_at: Option<DateTime<Utc>>,
     pub last_updated_at: DateTime<Utc>,
     pub match_reason: String,
+}
+
+impl fmt::Debug for DatabaseChainLock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DatabaseChainLock")
+            .field("dcid", &hex::encode(&self.dependence_chain_id))
+            .field("worker_id", &self.worker_id)
+            .field("lock_acquired_at", &self.lock_acquired_at)
+            .field("lock_expires_at", &self.lock_expires_at)
+            .field("last_updated_at", &self.last_updated_at)
+            .field("match_reason", &self.match_reason)
+            .finish()
+    }
 }
 
 impl LockMngr {
@@ -116,7 +131,7 @@ impl LockMngr {
         };
 
         self.lock.replace(row.clone());
-        info!(target: "deps_chain", ?row, "Acquired lock");
+        info!(?row, "Acquired lock");
 
         Ok((
             Some(row.dependence_chain_id),
@@ -151,7 +166,7 @@ impl LockMngr {
 
         self.lock.take();
 
-        info!(target: "deps_chain", worker_id = %self.worker_id,
+        info!(worker_id = %self.worker_id,
             count = rows.rows_affected(), "Released all locks");
 
         Ok(rows.rows_affected())
@@ -164,7 +179,7 @@ impl LockMngr {
         let dep_chain_id = match &self.lock {
             Some(lock) => lock.dependence_chain_id.clone(),
             None => {
-                debug!(target: "deps_chain", "No lock to release");
+                debug!("No lock to release");
                 return Ok(0);
             }
         };
@@ -190,7 +205,7 @@ impl LockMngr {
 
         self.lock.take();
 
-        info!(target: "deps_chain", ?dep_chain_id, "Released lock");
+        info!(dcid = %hex::encode(&dep_chain_id), "Released lock");
 
         Ok(rows.rows_affected())
     }
@@ -204,7 +219,7 @@ impl LockMngr {
         let dep_chain_id: Vec<u8> = match &self.lock {
             Some(lock) => lock.dependence_chain_id.clone(),
             None => {
-                warn!(target: "deps_chain", "No lock to set error on");
+                warn!("No lock to set error on");
                 return Ok(0);
             }
         };
@@ -226,7 +241,7 @@ impl LockMngr {
         .execute(&self.pool)
         .await?;
 
-        info!(target: "deps_chain", ?dep_chain_id, error = ?err, "Set error on lock");
+        info!(dcid = %hex::encode(&dep_chain_id), error = ?err, "Set error on lock");
         Ok(rows.rows_affected())
     }
 
@@ -237,7 +252,7 @@ impl LockMngr {
         let dependence_chain_id = match &self.lock {
             Some(lock) => lock.dependence_chain_id.clone(),
             None => {
-                info!(target: "deps_chain", "No lock to extend");
+                debug!("No lock to extend");
                 return Ok(None);
             }
         };
@@ -256,7 +271,7 @@ impl LockMngr {
         .execute(&self.pool)
         .await?;
 
-        info!(target: "deps_chain", ?dependence_chain_id, "Extended lock");
+        info!(dcid = %hex::encode(&dependence_chain_id), "Extended lock");
 
         Ok(Some((dependence_chain_id, LockingReason::ExtendedLock)))
     }
