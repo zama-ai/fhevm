@@ -36,6 +36,10 @@ async fn metrics_handler(registry: Registry) -> impl axum::response::IntoRespons
     }
 }
 
+async fn health_handler() -> impl axum::response::IntoResponse {
+    axum::http::StatusCode::OK
+}
+
 /// Initializes a http server for metrics endpoint and binds it to the given registry. The port in
 /// endpoint can either be explicitly specified or set to :0 (in which case listener will bind to
 /// free port assigned by OS). The actual socket address is returned.
@@ -54,13 +58,15 @@ where
 
     info!("metrics server listening at http://{}", actual_addr);
 
-    let app = Router::new().route(
-        "/metrics",
-        get({
-            let registry = registry.clone();
-            move || metrics_handler(registry.clone())
-        }),
-    );
+    let app = Router::new()
+        .route(
+            "/metrics",
+            get({
+                let registry = registry.clone();
+                move || metrics_handler(registry.clone())
+            }),
+        )
+        .route("/health", get(health_handler));
 
     // Use orchestrator's task manager instead of raw tokio::spawn
     let addr_for_readiness = actual_addr;
