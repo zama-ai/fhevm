@@ -231,8 +231,8 @@ contract Decryption is
         // ----------------------------------------------------------------------------------------------
         // Common decryption state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice Whether a (public, user, delegated user) decryption is done
-        mapping(uint256 decryptionId => bool decryptionDone) decryptionDone;
+        /// @notice Whether a (user, delegated user) decryption is done
+        mapping(uint256 decryptionId => bool userDecryptionDone) userDecryptionDone;
         // prettier-ignore
         /// @notice Whether KMS signer has already responded to a decryption request.
         mapping(uint256 decryptionId =>
@@ -406,9 +406,7 @@ contract Decryption is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
-            $.decryptionDone[decryptionId] = true;
-
+        if ($.decryptionConsensusDigest[decryptionId] == bytes32(0) && _isConsensusReachedPublic(verifiedSignatures.length)) {
             // A "late" valid KMS could still see its transaction sender address be added to the list
             // after consensus. This storage variable is here to be able to retrieve this list later
             // by only knowing the decryption ID, since a consensus can only happen once per decryption
@@ -671,8 +669,8 @@ contract Decryption is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isThresholdReachedUser(txSenderAddresses.length)) {
-            $.decryptionDone[decryptionId] = true;
+        if (!$.userDecryptionDone[decryptionId] && _isThresholdReachedUser(txSenderAddresses.length)) {
+            $.userDecryptionDone[decryptionId] = true;
 
             // Since we use the default value for `bytes32`, this means we do not need to store the
             // digest in `decryptionConsensusDigest` here like we do for the public decryption case.
@@ -783,7 +781,11 @@ contract Decryption is
      */
     function isDecryptionDone(uint256 decryptionId) external view virtual returns (bool) {
         DecryptionStorage storage $ = _getDecryptionStorage();
-        return $.decryptionDone[decryptionId];
+        // Public decryption: check if consensus digest has been set
+        if (decryptionId > PUBLIC_DECRYPT_COUNTER_BASE && decryptionId <= USER_DECRYPT_COUNTER_BASE) {
+            return $.decryptionConsensusDigest[decryptionId] != bytes32(0);
+        }
+        return $.userDecryptionDone[decryptionId];
     }
 
     /**
