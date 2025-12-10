@@ -76,9 +76,10 @@ task('task:depositAllCoproOperatorStakingFromDeployer').setAction(async function
   // Get the addresses of all coprocessor operator staking contracts
   const operatorStakingAddresses = await getAllOperatorStakingCoproAddresses(hre);
 
-  for (let i = 0; i < operatorStakingAddresses.length; i++) {
-    const assets = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_STAKING_COPRO_INITIAL_DEPOSIT_ASSETS_${i}`)));
-    const receiver = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_INITIAL_DEPOSIT_RECEIVER_${i}`);
+ for (let i = 0; i < operatorStakingAddresses.length; i++) {
+  // Convert environment variable directly to BigInt to avoid precision loss
+  const assets = BigInt(getRequiredEnvVar(`OPERATOR_STAKING_COPRO_INITIAL_DEPOSIT_ASSETS_${i}`));
+  const receiver = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_INITIAL_DEPOSIT_RECEIVER_${i}`);
 
     await hre.run('task:depositOperatorStakingFromDeployer', {
       assets,
@@ -94,9 +95,10 @@ task('task:depositAllKMSOperatorStakingFromDeployer').setAction(async function (
   // Get the addresses of all KMS operator staking contracts
   const operatorStakingAddresses = await getAllOperatorStakingKMSAddresses(hre);
 
-  for (let i = 0; i < operatorStakingAddresses.length; i++) {
-    const assets = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_STAKING_KMS_INITIAL_DEPOSIT_ASSETS_${i}`)));
-    const receiver = getRequiredEnvVar(`OPERATOR_STAKING_KMS_INITIAL_DEPOSIT_RECEIVER_${i}`);
+ for (let i = 0; i < operatorStakingAddresses.length; i++) {
+  // Convert environment variable directly to BigInt to avoid precision loss
+  const assets = BigInt(getRequiredEnvVar(`OPERATOR_STAKING_KMS_INITIAL_DEPOSIT_ASSETS_${i}`));
+  const receiver = getRequiredEnvVar(`OPERATOR_STAKING_KMS_INITIAL_DEPOSIT_RECEIVER_${i}`);
 
     await hre.run('task:depositOperatorStakingFromDeployer', {
       assets,
