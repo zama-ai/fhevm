@@ -116,6 +116,14 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
         );
       }
       break;
+    case 'mainnet':
+      jsonRpcUrl = process.env.RPC_URL || defaultRpcUrl;
+      if (jsonRpcUrl === defaultRpcUrl && !process.env.RPC_URL) {
+        console.warn(
+          `WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
+        );
+      }
+      break;
     case 'localCoprocessor':
       jsonRpcUrl = 'http://localhost:8746';
       break;
@@ -180,6 +188,7 @@ const config: HardhatUserConfig = {
     staging: getChainConfig('staging'),
     zwsDev: getChainConfig('zwsDev'),
     sepolia: getChainConfig('sepolia'),
+    mainnet: getChainConfig('mainnet'),
     localNative: getChainConfig('localNative'),
     localCoprocessor: getChainConfig('localCoprocessor'),
     localCoprocessorL1: getChainConfig('localCoprocessorL1'),
