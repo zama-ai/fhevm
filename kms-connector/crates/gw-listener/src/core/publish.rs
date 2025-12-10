@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::{
@@ -14,10 +16,35 @@ use fhevm_gateway_bindings::{
     },
 };
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
+
+const INSERTION_RETRY_LIMIT: usize = 10;
+const INSERTION_RETRY_INTERVAL: Duration = Duration::from_millis(10);
 
 #[tracing::instrument(skip_all)]
 pub async fn publish_event(
+    db_pool: &Pool<Postgres>,
+    event: GatewayEvent,
+    block_number: Option<u64>,
+) -> anyhow::Result<()> {
+    for i in 1..=INSERTION_RETRY_LIMIT {
+        match publish_event_inner(db_pool, event.clone(), block_number).await {
+            Ok(()) => return Ok(()),
+            Err(e) => error!("Insertion attempt #{i}/{INSERTION_RETRY_LIMIT} failed: {e}"),
+        }
+        if i != INSERTION_RETRY_LIMIT {
+            tokio::time::sleep(INSERTION_RETRY_INTERVAL).await;
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Failed to publish {:?} event after {} attempts",
+        event.kind,
+        INSERTION_RETRY_LIMIT
+    ))
+}
+
+async fn publish_event_inner(
     db_pool: &Pool<Postgres>,
     event: GatewayEvent,
     block_number: Option<u64>,
