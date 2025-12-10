@@ -8,6 +8,7 @@ To run this example correctly, make sure the files are placed in the following d
 
 This ensures Hardhat can compile and test your contracts as expected.
 {% endhint %}
+
 {% tabs %}
 
 {% tab title="ERC7984ERC20WrapperExample.sol" %}
@@ -29,5 +30,5 @@ contract ERC7984ERC20WrapperExample is ERC7984ERC20Wrapper, ZamaEthereumConfig {
     ) ERC7984ERC20Wrapper(token) ERC7984(name, symbol, uri) {}
 }
 ```
-
+{% endtab %}
 {% endtabs %}
