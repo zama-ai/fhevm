@@ -397,16 +397,20 @@ FOR UPDATE SKIP LOCKED            ",
     s.end();
     health_check.update_db_access();
     if the_work.is_empty() {
-        warn!(target: "tfhe_worker", dep = ?dependence_chain_id, locking = ?locking_reason, "No work items found to process");
+        if let Some(dependence_chain_id) = &dependence_chain_id {
+            warn!(target: "tfhe_worker", dcid = %hex::encode(dependence_chain_id), locking = ?locking_reason, "No work items found to process");
+        }
         health_check.update_activity();
         return Ok((vec![], vec![]));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
-    info!(target: "tfhe_worker", { count = the_work.len(), dep = ?dependence_chain_id, locking = ?locking_reason }, "Processing work items");
+    info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
+         locking = ?locking_reason }, "Processing work items");
     // Make sure we process each tenant independently to avoid
     // setting different keys from different tenants in the worker
     // threads
-    let mut s_prep = tracer.start_with_context("prepare_dataflow_graphs", loop_ctx);
+    let mut s_prep: opentelemetry::global::BoxedSpan =
+        tracer.start_with_context("prepare_dataflow_graphs", loop_ctx);
     s_prep.set_attribute(KeyValue::new("work_items", the_work.len() as i64));
     // Partition work by tenant
     let work_by_tenant = the_work.into_iter().into_group_map_by(|k| k.tenant_id);
