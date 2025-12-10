@@ -78,7 +78,7 @@ async fn monitor_pool_loop(pool: PgPool) {
     loop {
         let size = pool.size();
         let idle = pool.num_idle();
-        let active = size.checked_sub(idle as u32).unwrap_or(0);
+        let active = size.saturating_sub(idle as u32);
 
         // Update the Prometheus Gauges
         metrics::sql::update_pool_stats(active, idle as u32);
