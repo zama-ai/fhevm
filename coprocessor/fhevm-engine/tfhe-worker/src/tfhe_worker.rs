@@ -115,7 +115,6 @@ async fn tfhe_worker_cycle(
             };
         }
 
-        immedially_poll_more_work = false;
         #[cfg(feature = "bench")]
         let now = std::time::SystemTime::now();
         let loop_span = tracer.start("worker_iteration");
@@ -139,6 +138,12 @@ async fn tfhe_worker_cycle(
         .await?;
         if transactions.is_empty() {
             deps_chain_mngr.release_current_lock().await?;
+
+            // Lock another dependence chain if available and
+            // continue processing without waiting for notification
+            let (lock, _) = deps_chain_mngr.acquire_next_lock().await?;
+            immedially_poll_more_work = lock.is_some();
+
             continue;
         } else {
             // We've fetched work, so we'll poll again without waiting
