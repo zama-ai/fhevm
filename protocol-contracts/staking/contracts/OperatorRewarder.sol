@@ -56,14 +56,23 @@ contract OperatorRewarder is Ownable {
     /// @notice Error for invalid beneficiary address.
     error InvalidBeneficiary(address beneficiary);
 
+    /// @notice Error for beneficiary already set to the same address.
+    error BeneficiaryAlreadySet(address beneficiary);
+
     /// @notice Error for attempting to shutdown when already shutdown.
     error AlreadyShutdown();
 
     /// @notice Error for invalid basis points value.
     error InvalidBasisPoints(uint16 basisPoints);
 
+    /// @notice Error for fee already set to the same value.
+    error FeeAlreadySet(uint16 basisPoints, uint16 feeBasisPoints);
+
     /// @notice Error for basis points value greater than the maximum allowed.
     error MaxBasisPointsExceeded(uint16 basisPoints, uint16 maxBasisPoints);
+
+    /// @notice Error for max fee already set to the same value.
+    error MaxFeeAlreadySet(uint16 basisPoints, uint16 maxFeeBasisPoints);
 
     modifier onlyOperatorStaking() {
         require(msg.sender == address(operatorStaking()), CallerNotOperatorStaking(msg.sender));
@@ -281,9 +290,9 @@ contract OperatorRewarder is Ownable {
      * @param newBeneficiary The new beneficiary address.
      */
     function _transferBeneficiary(address newBeneficiary) internal virtual {
-        if (newBeneficiary == address(0)) {
-            revert InvalidBeneficiary(address(0));
-        }
+        require(newBeneficiary != address(0), InvalidBeneficiary(address(0)));
+        require(newBeneficiary != _beneficiary, BeneficiaryAlreadySet(newBeneficiary));
+
         address oldBeneficiary = _beneficiary;
         _beneficiary = newBeneficiary;
         emit BeneficiaryTransferred(oldBeneficiary, newBeneficiary);
@@ -311,6 +320,7 @@ contract OperatorRewarder is Ownable {
      */
     function _setMaxfee(uint16 basisPoints) internal virtual {
         require(basisPoints <= 10000, InvalidBasisPoints(basisPoints));
+        require(basisPoints != _maxfeeBasisPoints, MaxFeeAlreadySet(basisPoints, _maxfeeBasisPoints));
 
         if (basisPoints < _feeBasisPoints) {
             _setFee(basisPoints);
@@ -327,6 +337,7 @@ contract OperatorRewarder is Ownable {
      */
     function _setFee(uint16 basisPoints) internal virtual {
         require(basisPoints <= 10000, InvalidBasisPoints(basisPoints));
+        require(basisPoints != feeBasisPoints(), FeeAlreadySet(basisPoints, feeBasisPoints()));
         require(basisPoints <= _maxfeeBasisPoints, MaxBasisPointsExceeded(basisPoints, _maxfeeBasisPoints));
 
         _claimFee();
