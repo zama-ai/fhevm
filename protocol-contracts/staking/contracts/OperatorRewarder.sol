@@ -14,7 +14,7 @@ import {ProtocolStaking} from "./ProtocolStaking.sol";
 /**
  * @title OperatorRewarder
  * @custom:security-contact security@zama.ai
- * @notice Distributes protocol staking rewards to operator stakers, with optional fee.
+ * @notice Distributes protocol staking rewards to operator delegators, with optional fee.
  * @dev A rewarder contract that works in tandem with `OperatorStaking` and `ProtocolStaking` contracts.
  * This contract receives rewards directly from `ProtocolStaking` and distributes them to `OperatorStaking` staker.
  * The owner of this contract can opt to take a fee on the rewards.
@@ -118,8 +118,8 @@ contract OperatorRewarder is Ownable {
     }
 
     /**
-     * @notice Claims rewards for a staker.
-     * @param account The staker's address.
+     * @notice Claims rewards for a delegator.
+     * @param account The delegator's address.
      */
     function claimRewards(address account) public virtual {
         uint256 earned_ = earned(account);
@@ -256,14 +256,14 @@ contract OperatorRewarder is Ownable {
     }
 
     /**
-     * @notice Returns unpaid reward for a staker.
-     * @param account The staker's address.
+     * @notice Returns unpaid reward for a delegator.
+     * @param account The delegator's address.
      * @return Amount of unpaid reward.
      */
     function earned(address account) public view virtual returns (uint256) {
-        uint256 stakedBalance = operatorStaking().balanceOf(account);
+        uint256 delegatedBalance = operatorStaking().balanceOf(account);
         int256 allocation = SafeCast.toInt256(
-            stakedBalance > 0 ? _allocation(stakedBalance, operatorStaking().totalSupply()) : 0
+            delegatedBalance > 0 ? _allocation(delegatedBalance, operatorStaking().totalSupply()) : 0
         );
         return SafeCast.toUint256(SignedMath.max(0, allocation - _rewardsPaid[account]));
     }
