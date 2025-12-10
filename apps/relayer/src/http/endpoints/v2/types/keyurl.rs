@@ -4,22 +4,27 @@ use std::collections::HashMap;
 use utoipa::ToSchema;
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct KeyUrlResponseJson {
+    pub status: String,
     pub response: Response,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Response {
     pub fhe_key_info: Vec<FheKeyInfo>,
     pub crs: HashMap<String, KeyData>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct FheKeyInfo {
     pub fhe_public_key: KeyData,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct KeyData {
     pub data_id: String,
     pub urls: Vec<String>,
@@ -28,6 +33,7 @@ pub struct KeyData {
 impl From<KeyUrl> for KeyUrlResponseJson {
     fn from(value: KeyUrl) -> Self {
         KeyUrlResponseJson {
+            status: "succeeded".to_string(),
             response: Response {
                 fhe_key_info: vec![FheKeyInfo {
                     fhe_public_key: KeyData {
@@ -54,6 +60,7 @@ impl From<KeyUrl> for KeyUrlResponseJson {
 impl From<crate::core::event::KeyUrlData> for KeyUrlResponseJson {
     fn from(value: crate::core::event::KeyUrlData) -> Self {
         KeyUrlResponseJson {
+            status: "succeeded".to_string(),
             response: Response {
                 fhe_key_info: vec![FheKeyInfo {
                     fhe_public_key: KeyData {

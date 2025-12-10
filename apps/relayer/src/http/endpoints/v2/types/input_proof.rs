@@ -44,6 +44,7 @@ pub struct InputProofQueuedResult {
 
 // GET response when completed
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct InputProofResponseJson {
     pub accepted: bool,
     #[schema(value_type = String)]
@@ -69,6 +70,7 @@ pub struct InputProofStatusResponseJson {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct InputProofErrorResponseJson {
     pub message: String,
 }

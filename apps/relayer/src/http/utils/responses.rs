@@ -154,10 +154,13 @@ impl<V: serde::Serialize> AppResponse<V> {
         let count = field_names.len();
 
         let message = if count == 1 {
-            format!("Missing required field (1): {}", field_names[0])
+            format!(
+                "Missing 1 required field in the request: {}",
+                field_names[0]
+            )
         } else {
             format!(
-                "Missing required fields ({}): {}",
+                "Missing {} required fields in the request: {}",
                 count,
                 field_names.join(", ")
             )
@@ -182,9 +185,16 @@ impl<V: serde::Serialize> AppResponse<V> {
         let count = field_names.len();
 
         let message = if count == 1 {
-            format!("Validation failed (1): {}", field_names[0])
+            format!(
+                "Validation failed for 1 field in the request: {}",
+                field_names[0]
+            )
         } else {
-            format!("Validation failed ({}): {}", count, field_names.join(", "))
+            format!(
+                "Validation failed for {} fields in the request: {}",
+                count,
+                field_names.join(", ")
+            )
         };
 
         AppResponse::BadRequest {
@@ -241,7 +251,7 @@ impl<V: serde::Serialize> AppResponse<V> {
         let request_id_str = request_id.into();
         AppResponse::InternalServerError {
             label: ErrorLabel::InternalServerError,
-            message: format!("Internal server error. Request ID: {}", request_id_str),
+            message: "Internal server error".to_string(),
             request_id: Some(request_id_str),
         }
     }

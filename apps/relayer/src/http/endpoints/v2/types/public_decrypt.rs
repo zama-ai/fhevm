@@ -34,6 +34,7 @@ pub struct PublicDecryptQueuedResult {
 
 // GET response when completed
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct PublicDecryptResponseJson {
     #[schema(value_type = String)]
     pub decrypted_value: String, // Hex string without 0x prefix
@@ -56,6 +57,7 @@ pub struct PublicDecryptStatusResponseJson {
 }
 
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct PublicDecryptErrorResponseJson {
     pub message: String,
 }
