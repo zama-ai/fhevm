@@ -10,7 +10,7 @@ use alloy::sol_types::SolEvent;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::info;
 
 pub type TxResult = AnyTransactionReceipt;
@@ -82,16 +82,23 @@ impl TransactionHelper {
         let tx_metric_type = transaction_type.as_metrics_type();
         metrics::transaction::transaction_broadcast(tx_metric_type);
 
+        let transaction_start_time = Instant::now();
         let receipt = self
             .tx_engine
             .send_raw_transaction_sync(target, calldata, None)
             .await
             .map_err(|error| {
-                metrics::transaction::transaction_failure(tx_metric_type);
+                metrics::transaction::transaction_failure(
+                    tx_metric_type,
+                    transaction_start_time.elapsed().as_millis() as f64,
+                );
                 EventProcessingError::from(error)
             })?;
 
-        metrics::transaction::transaction_confirmed(tx_metric_type);
+        metrics::transaction::transaction_confirmed(
+            tx_metric_type,
+            transaction_start_time.elapsed().as_millis() as f64,
+        );
 
         info!(
             operation = %transaction_type,
