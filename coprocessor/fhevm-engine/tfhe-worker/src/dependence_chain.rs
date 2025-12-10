@@ -1,8 +1,7 @@
-use std::fmt;
-
 use chrono::{DateTime, Utc};
 use sqlx::Postgres;
-use tracing::{debug, info, warn};
+use std::fmt;
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +42,11 @@ pub struct DatabaseChainLock {
     pub lock_expires_at: Option<DateTime<Utc>>,
     pub last_updated_at: DateTime<Utc>,
     pub match_reason: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct LockExpiresAt {
+    lock_expires_at: Option<DateTime<Utc>>,
 }
 
 impl fmt::Debug for DatabaseChainLock {
@@ -247,7 +251,7 @@ impl LockMngr {
 
     /// Extend the lock expiration time on the current dependence chain
     pub async fn extend_current_lock(
-        &self,
+        &mut self,
     ) -> Result<Option<(Vec<u8>, LockingReason)>, sqlx::Error> {
         let dependence_chain_id = match &self.lock {
             Some(lock) => lock.dependence_chain_id.clone(),
@@ -257,21 +261,35 @@ impl LockMngr {
             }
         };
 
-        sqlx::query!(
+        let row = sqlx::query_as!(
+            LockExpiresAt,
             r#"
-            UPDATE dependence_chain
-                SET 
+            UPDATE dependence_chain AS dc
+                SET
                 lock_expires_at = NOW() + make_interval(secs => $3)
             WHERE dependence_chain_id = $1 AND worker_id = $2
+            RETURNING dc.lock_expires_at::timestamptz AS "lock_expires_at: chrono::DateTime<Utc>";
         "#,
             dependence_chain_id,
             self.worker_id,
             self.expiration_duration_secs as f64
         )
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await?;
 
-        info!(dcid = %hex::encode(&dependence_chain_id), "Extended lock");
+        let lock_expires_at = match row {
+            Some(r) => r,
+            None => {
+                error!(dcid = %hex::encode(&dependence_chain_id), "No lock extended");
+                return Ok(None);
+            }
+        };
+
+        // Update the in-memory lock
+        if let Some(lock) = self.lock.as_mut() {
+            lock.lock_expires_at = lock_expires_at.lock_expires_at;
+            info!(dcid = %hex::encode(&dependence_chain_id), expires_at = ?lock.lock_expires_at, "Extended lock");
+        }
 
         Ok(Some((dependence_chain_id, LockingReason::ExtendedLock)))
     }
