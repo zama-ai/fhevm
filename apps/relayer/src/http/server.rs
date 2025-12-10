@@ -3,12 +3,12 @@ use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::http::endpoints::{
     health_handler, liveness_handler,
     v1::handlers::{
-        InputProofHandler as InputProofHandlerV1, KeyUrlHandler,
+        InputProofHandler as InputProofHandlerV1, KeyUrlHandler as KeyUrlHandlerV1,
         PublicDecryptHandler as PublicDecryptHandlerV1, UserDecryptHandler as UserDecryptHandlerV1,
     },
     v2::handlers::{
-        InputProofHandler as InputProofHandlerV2, PublicDecryptHandler as PublicDecryptHandlerV2,
-        UserDecryptHandler as UserDecryptHandlerV2,
+        InputProofHandler as InputProofHandlerV2, KeyUrlHandler as KeyUrlHandlerV2,
+        PublicDecryptHandler as PublicDecryptHandlerV2, UserDecryptHandler as UserDecryptHandlerV2,
     },
     version_handler,
 };
@@ -95,8 +95,9 @@ where
     // Clone orchestrator for health endpoint before using it
     let orchestrator_for_health = orchestrator.clone();
 
-    // Create KeyUrlHandler - it self-registers with orchestrator
-    let keyurl_handler = KeyUrlHandler::new(orchestrator.clone());
+    // Create KeyUrlHandlers - they self-register with orchestrator
+    let keyurl_handler_v1 = KeyUrlHandlerV1::new(orchestrator.clone());
+    let keyurl_handler_v2 = KeyUrlHandlerV2::new(orchestrator.clone());
 
     // Create the router by merging all handler routers
     let app = Router::new()
@@ -120,8 +121,9 @@ where
                 .merge(user_decrypt_handler_v2.routes()),
             &config.rate_limit_post_endpoints,
         ))
-        // Add keyurl route (no rate limiting for GET)
-        .merge(keyurl_handler.routes())
+        // Add keyurl routes (no rate limiting for GET)
+        .merge(keyurl_handler_v1.routes())
+        .merge(keyurl_handler_v2.routes())
         // Add OpenAPI documentation
         .merge(openapi_middleware());
 

@@ -3,14 +3,14 @@ pub mod types;
 
 // Re-export handlers explicitly to avoid naming conflicts
 pub use handlers::{
-    InputProofHandler, InputProofResponse, PublicDecryptHandler, PublicDecryptResponse,
-    UserDecryptHandler, UserDecryptResponse,
+    InputProofHandler, InputProofResponse, KeyUrlHandler, PublicDecryptHandler,
+    PublicDecryptResponse, UserDecryptHandler, UserDecryptResponse,
 };
 
 // Re-export types explicitly to avoid naming conflicts
 pub use types::{
     ChainId, HandleContractPairJson, InputProofErrorResponseJson, InputProofRequestJson,
-    InputProofResponseJson, PublicDecryptErrorResponseJson, PublicDecryptRequestJson,
-    PublicDecryptResponseJson, RequestValidityJson, UserDecryptErrorResponseJson,
-    UserDecryptRequestJson, UserDecryptResponseJson,
+    InputProofResponseJson, KeyUrlResponseJson, PublicDecryptErrorResponseJson,
+    PublicDecryptRequestJson, PublicDecryptResponseJson, RequestValidityJson,
+    UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
 };

@@ -597,8 +597,12 @@ async fn test_get_endpoints_burst_no_rate_limiting() {
             format!("http://localhost:{}/version", setup.http_port),
         ),
         (
-            "keyurl",
+            "keyurl v1",
             format!("http://localhost:{}/v1/keyurl", setup.http_port),
+        ),
+        (
+            "keyurl v2",
+            format!("http://localhost:{}/v2/keyurl", setup.http_port),
         ),
     ];
 
