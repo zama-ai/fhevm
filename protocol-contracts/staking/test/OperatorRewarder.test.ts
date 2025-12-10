@@ -75,6 +75,12 @@ describe('OperatorRewarder', function () {
         .withArgs(ethers.ZeroAddress);
     });
 
+    it('should not transfer beneficiary address to same address', async function () {
+      await expect(this.mock.connect(this.admin).transferBeneficiary(this.beneficiary.address))
+        .to.be.revertedWithCustomError(this.mock, 'BeneficiaryAlreadySet')
+        .withArgs(this.beneficiary.address);
+    });
+
     it('should not transfer beneficiary address if not owner', async function () {
       await expect(this.mock.connect(this.anyone).transferBeneficiary(this.anyone.address))
         .to.be.revertedWithCustomError(this.mock, 'OwnableUnauthorizedAccount')
@@ -333,6 +339,13 @@ describe('OperatorRewarder', function () {
         .to.be.revertedWithCustomError(this.mock, 'InvalidBasisPoints')
         .withArgs(10001);
     });
+
+    it('should revert if max fee already set', async function () {
+      await this.mock.connect(this.admin).setMaxfee(1000);
+      await expect(this.mock.connect(this.admin).setMaxfee(1000))
+        .to.be.revertedWithCustomError(this.mock, 'MaxFeeAlreadySet')
+        .withArgs(1000, 1000);
+    });
   });
 
   describe('setFee', async function () {
@@ -387,6 +400,13 @@ describe('OperatorRewarder', function () {
       await expect(this.mock.connect(this.beneficiary).setFee(10001))
         .to.be.revertedWithCustomError(this.mock, 'InvalidBasisPoints')
         .withArgs(10001);
+    });
+
+    it('should revert if fee already set', async function () {
+      await this.mock.connect(this.beneficiary).setFee(1000);
+      await expect(this.mock.connect(this.beneficiary).setFee(1000))
+        .to.be.revertedWithCustomError(this.mock, 'FeeAlreadySet')
+        .withArgs(1000, 1000);
     });
 
     it('should revert if over max fee', async function () {

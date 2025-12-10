@@ -146,6 +146,8 @@ contract OperatorRewarder is Ownable {
      * @param basisPoints Maximum fee in basis points (max 10000).
      */
     function setMaxfee(uint16 basisPoints) public virtual onlyOwner {
+        require(basisPoints != _maxfeeBasisPoints, MaxFeeAlreadySet(basisPoints, _maxfeeBasisPoints));
+
         _setMaxfee(basisPoints);
     }
 
@@ -155,6 +157,8 @@ contract OperatorRewarder is Ownable {
      * @param basisPoints Fee in basis points (cannot be greater than the maximum fee).
      */
     function setFee(uint16 basisPoints) public virtual onlyBeneficiary {
+        require(basisPoints != feeBasisPoints(), FeeAlreadySet(basisPoints, feeBasisPoints()));
+
         _setFee(basisPoints);
     }
 
@@ -320,7 +324,6 @@ contract OperatorRewarder is Ownable {
      */
     function _setMaxfee(uint16 basisPoints) internal virtual {
         require(basisPoints <= 10000, InvalidBasisPoints(basisPoints));
-        require(basisPoints != _maxfeeBasisPoints, MaxFeeAlreadySet(basisPoints, _maxfeeBasisPoints));
 
         if (basisPoints < _feeBasisPoints) {
             _setFee(basisPoints);
@@ -337,7 +340,6 @@ contract OperatorRewarder is Ownable {
      */
     function _setFee(uint16 basisPoints) internal virtual {
         require(basisPoints <= 10000, InvalidBasisPoints(basisPoints));
-        require(basisPoints != feeBasisPoints(), FeeAlreadySet(basisPoints, feeBasisPoints()));
         require(basisPoints <= _maxfeeBasisPoints, MaxBasisPointsExceeded(basisPoints, _maxfeeBasisPoints));
 
         _claimFee();
