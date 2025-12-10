@@ -8,7 +8,10 @@ use tracing::{error, info};
 use super::super::types::keyurl::KeyUrlResponseJson;
 use crate::{
     core::event::{KeyUrlEventData, KeyUrlEventId, RelayerEvent, RelayerEventData},
-    metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod},
+    metrics::{
+        http::{self as http_metrics, HttpEndpoint, HttpMethod},
+        HttpApiVersion,
+    },
     orchestrator::{
         traits::{EventDispatcher, EventHandler, HandlerRegistry},
         Orchestrator,
@@ -83,15 +86,20 @@ impl KeyUrlHandler {
 
         let response = rx.borrow().clone();
 
-        http_metrics::with_http_metrics(HttpEndpoint::KeyUrl, HttpMethod::Get, async move {
-            match response {
-                Some(keyurl_response) => Json(keyurl_response).into_response(),
-                None => {
-                    error!("key url not configured");
-                    axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response()
+        http_metrics::with_http_metrics(
+            HttpEndpoint::KeyUrl,
+            HttpMethod::Get,
+            HttpApiVersion::V2,
+            async move {
+                match response {
+                    Some(keyurl_response) => Json(keyurl_response).into_response(),
+                    None => {
+                        error!("key url not configured");
+                        axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response()
+                    }
                 }
-            }
-        })
+            },
+        )
         .await
         .into_response()
     }
