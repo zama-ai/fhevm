@@ -28,7 +28,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     using SafeERC20 for IERC20;
     using Math for uint256;
 
-    /// @custom:storage-location erc7201:zama.storage.ProtocolStaking
+    /// @custom:storage-location erc7201:fhevm_protocol.storage.ProtocolStaking
     struct ProtocolStakingStorage {
         // Stake - general
         address _stakingToken;
@@ -48,10 +48,9 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         int256 _totalVirtualPaid;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("zama.storage.ProtocolStaking")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("fhevm_protocol.storage.ProtocolStaking")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant PROTOCOL_STAKING_STORAGE_LOCATION =
-        0x6867237db38693700f305f18dff1dbf600e282237f7d452b4c792e6b019c6b00;
-    bytes32 private constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+        0xd955b2342c0487c5e5b5f50f5620ec67dcb16d94462ba5d080d7b7472b67b900;
     bytes32 private constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 private constant ELIGIBLE_ACCOUNT_ROLE = keccak256("ELIGIBLE_ACCOUNT_ROLE");
 
@@ -89,13 +88,11 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         string memory version,
         address stakingToken_,
         address governor,
-        address upgrader,
         address manager,
         uint48 initialUnstakeCooldownPeriod,
         uint256 initialRewardRate
     ) public initializer {
         __AccessControlDefaultAdminRules_init(0, governor);
-        _grantRole(UPGRADER_ROLE, upgrader);
         _grantRole(MANAGER_ROLE, manager);
         _setRoleAdmin(ELIGIBLE_ACCOUNT_ROLE, MANAGER_ROLE);
         __ERC20_init(name, symbol);
@@ -370,7 +367,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         super._update(from, to, value);
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     function _historicalReward() internal view returns (uint256) {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();

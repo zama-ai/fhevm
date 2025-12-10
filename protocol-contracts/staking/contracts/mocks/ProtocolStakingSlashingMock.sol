@@ -13,7 +13,7 @@ contract ProtocolStakingSlashingMock is ProtocolStaking {
     using SafeERC20 for IERC20;
 
     bytes32 private constant PROTOCOL_STAKING_STORAGE_LOCATION =
-        0x6867237db38693700f305f18dff1dbf600e282237f7d452b4c792e6b019c6b00;
+        0xd955b2342c0487c5e5b5f50f5620ec67dcb16d94462ba5d080d7b7472b67b900;
 
     mapping(address => uint256) private _slashedAmount;
 

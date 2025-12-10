@@ -8,7 +8,12 @@ export const OPERATOR_REWARDER_CONTRACT_NAME = 'OperatorRewarder';
 
 // Get the name of the operator staking contract to save in the deployments
 export function getOperatorStakingName(tokenName: string): string {
-  return tokenName + '_Staking';
+  return tokenName + '_Staking_Proxy';
+}
+
+// Get the name of the implementation contract to save in the deployments
+export function getOperatorStakingImplName(tokenName: string): string {
+  return tokenName + '_Staking_Impl';
 }
 
 // Get the name of the operator rewarder contract to save in the deployments
@@ -26,33 +31,30 @@ async function deployOperatorStaking(
   initialFeeBasisPoints: number,
   hre: HardhatRuntimeEnvironment,
 ) {
-  const { getNamedAccounts, ethers, deployments, network } = hre;
+  const { getNamedAccounts, ethers, deployments, network, upgrades } = hre;
   const { save, getArtifact } = deployments;
 
   // Get the deployer account
   const { deployer } = await getNamedAccounts();
   const deployerSigner = await ethers.getSigner(deployer);
 
-  // Get the contract factory and deploy the operator staking and rewarder contracts
-  const operatorStakingFactory = await ethers.getContractFactory(OPERATOR_STAKING_CONTRACT_NAME, deployerSigner);
-  const operatorStaking = await operatorStakingFactory.deploy(
-    tokenName,
-    symbol,
-    protocolStakingAddress,
-    beneficiaryAddress,
-    initialMaxFeeBasisPoints,
-    initialFeeBasisPoints,
+  // Get the contract factory and deploy the proxy + the implementation + the rewarder contract
+  const protocolStakingFactory = await ethers.getContractFactory(OPERATOR_STAKING_CONTRACT_NAME, deployerSigner);
+  const proxy = await upgrades.deployProxy(
+    protocolStakingFactory,
+    [tokenName, symbol, protocolStakingAddress, beneficiaryAddress, initialMaxFeeBasisPoints, initialFeeBasisPoints],
+    { kind: 'uups', initializer: 'initialize' },
   );
-  await operatorStaking.waitForDeployment();
+  await proxy.waitForDeployment();
 
-  // Get the operator staking and rewarder addresses
-  const operatorStakingAddress = await operatorStaking.getAddress();
-  const operatorRewarderAddress = await operatorStaking.rewarder();
+  // Get the operator staking proxy and rewarder addresses
+  const operatorStakingProxyAddress = await proxy.getAddress();
+  const operatorRewarderAddress = await proxy.rewarder();
 
   console.log(
     [
       `✅ Deployed ${tokenName} OperatorStaking:`,
-      `  - Operator staking address:  ${operatorStakingAddress}`,
+      `  - Operator staking proxy address:  ${operatorStakingProxyAddress}`,
       `  - Operator rewarder address: ${operatorRewarderAddress}`,
       `  - Deployed by deployer account: ${deployer}`,
       `  - Network: ${network.name}`,
@@ -60,9 +62,16 @@ async function deployOperatorStaking(
     ].join('\n'),
   );
 
-  // Save the OperatorStaking and OperatorRewarder contract artifacts
+  // Save the OperatorStaking proxy and implementation contract artifacts
   const operatorStakingArtifact = await getArtifact(OPERATOR_STAKING_CONTRACT_NAME);
-  await save(getOperatorStakingName(tokenName), { address: operatorStakingAddress, abi: operatorStakingArtifact.abi });
+  const implAddress = await upgrades.erc1967.getImplementationAddress(operatorStakingProxyAddress);
+  await save(getOperatorStakingName(tokenName), {
+    address: operatorStakingProxyAddress,
+    abi: operatorStakingArtifact.abi,
+  });
+  await save(getOperatorStakingImplName(tokenName), { address: implAddress, abi: operatorStakingArtifact.abi });
+
+  // Save the OperatorRewarder contract artifacts
   const operatorRewarderArtifact = await getArtifact(OPERATOR_REWARDER_CONTRACT_NAME);
   await save(getOperatorRewarderName(tokenName), {
     address: operatorRewarderAddress,

@@ -19,19 +19,20 @@ describe('OperatorStaking', function () {
         token.target,
         admin.address,
         admin.address,
-        admin.address,
         60 /* 1 min */, // unstake cooldown period
         0n, // reward rate
       ]),
     );
-    const mock = await ethers.deployContract('$OperatorStaking', [
-      'OPStake',
-      'OP',
-      protocolStaking,
-      beneficiary.address,
-      10000, // 100% maximum fee
-      0,
-    ]);
+    const mock = await ethers.getContractFactory('OperatorStaking').then(factory =>
+      upgrades.deployProxy(factory, [
+        'OPStake',
+        'OP',
+        protocolStaking.target,
+        beneficiary.address,
+        10000, // 100% maximum fee
+        0,
+      ]),
+    );
 
     await Promise.all(
       [delegator1, delegator2].flatMap(account => [
@@ -59,6 +60,12 @@ describe('OperatorStaking', function () {
       const operatorStakingOwner = await this.mock.owner();
       expect(protocolStakingOwner).to.equal(this.anyone);
       expect(operatorStakingOwner).to.equal(this.anyone);
+    });
+
+    it('should not upgrade if not authorized', async function () {
+      await expect(
+        this.mock.connect(this.anyone).upgradeToAndCall(this.mock.target, '0x'),
+      ).to.be.revertedWithCustomError(this.mock, 'CallerNotProtocolStakingOwner');
     });
   });
 

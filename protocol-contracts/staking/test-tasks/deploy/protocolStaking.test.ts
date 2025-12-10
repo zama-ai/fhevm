@@ -1,4 +1,4 @@
-import { getProtocolStakingProxyName } from '../../tasks/deployment';
+import { getProtocolStakingProxyName, getProtocolStakingImplName } from '../../tasks/deployment';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import { expectContractDeployed } from '../utils';
 import { expect } from 'chai';
@@ -108,10 +108,12 @@ describe('ProtocolStaking Deployment', function () {
   });
 
   describe('Helper Functions', function () {
-    it('Should generate correct ProtocolStaking proxy names', function () {
-      expect(getProtocolStakingProxyName('TestToken')).to.equal('TestToken_Proxy');
-      expect(getProtocolStakingProxyName('COPRO')).to.equal('COPRO_Proxy');
-      expect(getProtocolStakingProxyName('KMS')).to.equal('KMS_Proxy');
+    it('Should generate correct ProtocolStaking proxy name', function () {
+      expect(getProtocolStakingProxyName('MyContract')).to.equal('MyContract_Proxy');
+    });
+
+    it('Should generate correct ProtocolStaking implementation name', function () {
+      expect(getProtocolStakingImplName('MyContract')).to.equal('MyContract_Impl');
     });
   });
 });

@@ -20,19 +20,20 @@ describe('OperatorRewarder', function () {
         token.target,
         admin.address,
         admin.address,
-        admin.address,
         60 /* 1 min */, // unstake cooldown period
         ethers.parseEther('0.5'), // reward rate
       ]),
     );
-    const operatorStaking = await ethers.deployContract('$OperatorStaking', [
-      'OPStake',
-      'OP',
-      protocolStaking,
-      beneficiary.address,
-      10000, // 100% maximum fee
-      0,
-    ]);
+    const operatorStaking = await ethers.getContractFactory('OperatorStaking').then(factory =>
+      upgrades.deployProxy(factory, [
+        'OPStake',
+        'OP',
+        protocolStaking.target,
+        beneficiary.address,
+        10000, // 100% maximum fee
+        0,
+      ]),
+    );
     const mock = await ethers.getContractAt('OperatorRewarder', await operatorStaking.rewarder());
     await expect(mock.token()).to.eventually.eq(token.target);
 

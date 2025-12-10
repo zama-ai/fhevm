@@ -10,7 +10,7 @@ export function getProtocolStakingProxyName(tokenName: string): string {
 }
 
 // Get the name of the implementation contract to save in the deployments
-function getProtocolStakingImplName(tokenName: string): string {
+export function getProtocolStakingImplName(tokenName: string): string {
   return tokenName + '_Impl';
 }
 
@@ -32,15 +32,14 @@ async function deployProtocolStaking(
 
   // Get the env vars shared by both protocol staking contracts
   const zamaTokenAddress = getRequiredEnvVar('ZAMA_TOKEN_ADDRESS');
-  const daoAddress = getRequiredEnvVar('DAO_ADDRESS');
 
   // Get the contract factory and deploy the proxy + the implementation
-  // At deployment, the governor and upgrader roles are set to the deployer address to ease initial
+  // At deployment, the governor and manager roles are set to the deployer address to ease initial
   // configuration. They should be transferred to the DAO address soon after.
   const protocolStakingFactory = await ethers.getContractFactory(PROTOCOL_STAKING_CONTRACT_NAME, deployerSigner);
   const proxy = await upgrades.deployProxy(
     protocolStakingFactory,
-    [tokenName, symbol, version, zamaTokenAddress, deployer, daoAddress, deployer, cooldown, rewardRate],
+    [tokenName, symbol, version, zamaTokenAddress, deployer, deployer, cooldown, rewardRate],
     { kind: 'uups', initializer: 'initialize' },
   );
   await proxy.waitForDeployment();

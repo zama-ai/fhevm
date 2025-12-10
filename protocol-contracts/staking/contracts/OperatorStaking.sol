@@ -2,9 +2,9 @@
 
 pragma solidity ^0.8.27;
 
+import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {ERC1363} from "@openzeppelin/contracts/token/ERC20/extensions/ERC1363.sol";
+import {ERC1363Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC1363Upgradeable.sol";
 import {ERC4626, IERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -27,17 +27,24 @@ import {ProtocolStaking} from "./ProtocolStaking.sol";
  * may decrease due to slashing. These losses are symmetrically passed to delegators on the `OperatorStaking` level.
  * Slashing must first decrease the `ProtocolStaking` balance of this contract before affecting pending withdrawals.
  */
-contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
+contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
     using Math for uint256;
     using Checkpoints for Checkpoints.Trace208;
 
-    ProtocolStaking private immutable _protocolStaking;
-    IERC20 private immutable _asset;
-    address private _rewarder;
-    uint256 private _totalSharesInRedemption;
-    mapping(address => uint256) private _sharesReleased;
-    mapping(address => Checkpoints.Trace208) private _redeemRequests;
-    mapping(address => mapping(address => bool)) private _operator;
+    /// @custom:storage-location erc7201:fhevm_protocol.storage.OperatorStaking
+    struct OperatorStakingStorage {
+        ProtocolStaking _protocolStaking;
+        IERC20 _asset;
+        address _rewarder;
+        uint256 _totalSharesInRedemption;
+        mapping(address => uint256) _sharesReleased;
+        mapping(address => Checkpoints.Trace208) _redeemRequests;
+        mapping(address => mapping(address => bool)) _operator;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("fhevm_protocol.storage.OperatorStaking")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant OPERATOR_STAKING_STORAGE_LOCATION =
+        0x7fc851282090a0d8832502c48739eac98a0856539351f17cb5d5950c860fd200;
 
     /// @dev Emitted when an operator is set or unset for a controller.
     event OperatorSet(address indexed controller, address indexed operator, bool approved);
@@ -72,6 +79,11 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
         _;
     }
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     /**
      * @notice Initializes the OperatorStaking contract.
      * @param name The name of the ERC20 token.
@@ -81,24 +93,34 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @param initialMaxFeeBasisPoints_ The initial maximum fee basis points for the OperatorRewarder contract.
      * @param initialFeeBasisPoints_ The initial fee basis points for the OperatorRewarder contract.
      */
-    constructor(
+    function initialize(
         string memory name,
         string memory symbol,
         ProtocolStaking protocolStaking_,
         address beneficiary_,
         uint16 initialMaxFeeBasisPoints_,
         uint16 initialFeeBasisPoints_
-    ) ERC20(name, symbol) {
-        _asset = IERC20(protocolStaking_.stakingToken());
-        _protocolStaking = protocolStaking_;
+    ) public initializer {
+        __ERC20_init(name, symbol);
+
+        OperatorStakingStorage storage $ = _getOperatorStakingStorage();
+
+        $._asset = IERC20(protocolStaking_.stakingToken());
+        $._protocolStaking = protocolStaking_;
 
         IERC20(asset()).approve(address(protocolStaking_), type(uint256).max);
 
         address rewarder_ = address(
-            new OperatorRewarder(beneficiary_, protocolStaking_, this, initialMaxFeeBasisPoints_, initialFeeBasisPoints_)
+            new OperatorRewarder(
+                beneficiary_,
+                protocolStaking_,
+                this,
+                initialMaxFeeBasisPoints_,
+                initialFeeBasisPoints_
+            )
         );
         protocolStaking_.setRewardsRecipient(rewarder_);
-        _rewarder = rewarder_;
+        $._rewarder = rewarder_;
 
         emit RewarderSet(address(0), rewarder_);
     }
@@ -133,8 +155,10 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
         }
         _burn(ownerRedeem, shares);
 
+        OperatorStakingStorage storage $ = _getOperatorStakingStorage();
+
         uint256 newTotalSharesInRedemption = totalSharesInRedemption() + shares;
-        _totalSharesInRedemption = newTotalSharesInRedemption;
+        $._totalSharesInRedemption = newTotalSharesInRedemption;
 
         ProtocolStaking protocolStaking_ = protocolStaking();
         int256 assetsToWithdraw = SafeCast.toInt256(previewRedeem(newTotalSharesInRedemption)) -
@@ -142,10 +166,10 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
                 IERC20(asset()).balanceOf(address(this)) + protocolStaking_.awaitingRelease(address(this))
             );
 
-        (, uint48 lastReleaseTime, uint208 controllerSharesRedeemed) = _redeemRequests[controller].latestCheckpoint();
+        (, uint48 lastReleaseTime, uint208 controllerSharesRedeemed) = $._redeemRequests[controller].latestCheckpoint();
         uint48 releaseTime = protocolStaking_.unstake(SafeCast.toUint256(SignedMath.max(assetsToWithdraw, 0)));
         assert(releaseTime >= lastReleaseTime); // should never happen
-        _redeemRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
+        $._redeemRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
 
         emit RedeemRequest(controller, ownerRedeem, 0, msg.sender, shares, releaseTime);
     }
@@ -174,8 +198,9 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
         uint256 assets = previewRedeem(shares);
 
         if (assets > 0) {
-            _totalSharesInRedemption -= shares;
-            _sharesReleased[controller] += shares;
+            OperatorStakingStorage storage $ = _getOperatorStakingStorage();
+            $._totalSharesInRedemption -= shares;
+            $._sharesReleased[controller] += shares;
             _doTransferOut(receiver, assets);
 
             emit IERC4626.Withdraw(msg.sender, receiver, controller, assets, shares);
@@ -200,7 +225,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
     }
 
     /**
-     * @dev Set a new rewarder contract.
+     * @dev Set a new rewarder contract. Only callable by the owner.
      * @param newRewarder The new rewarder contract address. This contract must not be the same as the current
      * and must have code.
      */
@@ -208,7 +233,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
         address oldRewarder = rewarder();
         require(newRewarder != oldRewarder && newRewarder.code.length > 0, InvalidRewarder(newRewarder));
         OperatorRewarder(oldRewarder).shutdown();
-        _rewarder = newRewarder;
+        _getOperatorStakingStorage()._rewarder = newRewarder;
         protocolStaking().setRewardsRecipient(newRewarder);
 
         emit RewarderSet(oldRewarder, newRewarder);
@@ -220,7 +245,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @param approved True to approve, false to revoke.
      */
     function setOperator(address operator, bool approved) public virtual {
-        _operator[msg.sender][operator] = approved;
+        _getOperatorStakingStorage()._operator[msg.sender][operator] = approved;
 
         emit OperatorSet(msg.sender, operator, approved);
     }
@@ -238,7 +263,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @return The asset address.
      */
     function asset() public view virtual returns (address) {
-        return address(_asset);
+        return address(_getOperatorStakingStorage()._asset);
     }
 
     /**
@@ -246,7 +271,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @return The ProtocolStaking contract address.
      */
     function protocolStaking() public view virtual returns (ProtocolStaking) {
-        return _protocolStaking;
+        return _getOperatorStakingStorage()._protocolStaking;
     }
 
     /**
@@ -254,7 +279,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @return The rewarder contract address.
      */
     function rewarder() public view virtual returns (address) {
-        return _rewarder;
+        return _getOperatorStakingStorage()._rewarder;
     }
 
     /**
@@ -275,7 +300,8 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @return Amount of shares pending redeem.
      */
     function pendingRedeemRequest(uint256, address controller) public view virtual returns (uint256) {
-        return _redeemRequests[controller].latest() - _redeemRequests[controller].upperLookup(Time.timestamp());
+        OperatorStakingStorage storage $ = _getOperatorStakingStorage();
+        return $._redeemRequests[controller].latest() - $._redeemRequests[controller].upperLookup(Time.timestamp());
     }
 
     /**
@@ -284,7 +310,8 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @return Amount of claimable shares.
      */
     function claimableRedeemRequest(uint256, address controller) public view virtual returns (uint256) {
-        return _redeemRequests[controller].upperLookup(Time.timestamp()) - _sharesReleased[controller];
+        OperatorStakingStorage storage $ = _getOperatorStakingStorage();
+        return $._redeemRequests[controller].upperLookup(Time.timestamp()) - $._sharesReleased[controller];
     }
 
     /**
@@ -292,7 +319,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @return The total shares in redemption.
      */
     function totalSharesInRedemption() public view virtual returns (uint256) {
-        return _totalSharesInRedemption;
+        return _getOperatorStakingStorage()._totalSharesInRedemption;
     }
 
     /**
@@ -337,7 +364,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @return True if operator is approved, false otherwise.
      */
     function isOperator(address controller, address operator) public view virtual returns (bool) {
-        return _operator[controller][operator];
+        return _getOperatorStakingStorage()._operator[controller][operator];
     }
 
     function _doTransferOut(address to, uint256 amount) internal {
@@ -371,6 +398,8 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
         emit IERC4626.Deposit(caller, receiver, assets, shares);
     }
 
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view virtual returns (uint256) {
         // Shares in redemption have not yet received assets, so we need to account for them in the conversion.
         return
@@ -393,5 +422,11 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
 
     function _decimalsOffset() internal view virtual returns (uint8) {
         return 0;
+    }
+
+    function _getOperatorStakingStorage() private pure returns (OperatorStakingStorage storage $) {
+        assembly {
+            $.slot := OPERATOR_STAKING_STORAGE_LOCATION
+        }
     }
 }
