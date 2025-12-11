@@ -8187,6 +8187,9 @@ library FHE {
      * @dev Evaluates not(ebool value) and returns the result.
      */
     function not(ebool value) internal returns (ebool) {
+        if (!isInitialized(value)) {
+            value = asEbool(false);
+        }
         return ebool.wrap(Impl.not(ebool.unwrap(value)));
     }
 
@@ -8194,6 +8197,9 @@ library FHE {
      * @dev Evaluates neg(euint8 value) and returns the result.
      */
     function neg(euint8 value) internal returns (euint8) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         return euint8.wrap(Impl.neg(euint8.unwrap(value)));
     }
 
@@ -8201,6 +8207,9 @@ library FHE {
      * @dev Evaluates not(euint8 value) and returns the result.
      */
     function not(euint8 value) internal returns (euint8) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         return euint8.wrap(Impl.not(euint8.unwrap(value)));
     }
 
@@ -8208,6 +8217,9 @@ library FHE {
      * @dev Evaluates neg(euint16 value) and returns the result.
      */
     function neg(euint16 value) internal returns (euint16) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         return euint16.wrap(Impl.neg(euint16.unwrap(value)));
     }
 
@@ -8215,6 +8227,9 @@ library FHE {
      * @dev Evaluates not(euint16 value) and returns the result.
      */
     function not(euint16 value) internal returns (euint16) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         return euint16.wrap(Impl.not(euint16.unwrap(value)));
     }
 
@@ -8222,6 +8237,9 @@ library FHE {
      * @dev Evaluates neg(euint32 value) and returns the result.
      */
     function neg(euint32 value) internal returns (euint32) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         return euint32.wrap(Impl.neg(euint32.unwrap(value)));
     }
 
@@ -8229,6 +8247,9 @@ library FHE {
      * @dev Evaluates not(euint32 value) and returns the result.
      */
     function not(euint32 value) internal returns (euint32) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         return euint32.wrap(Impl.not(euint32.unwrap(value)));
     }
 
@@ -8236,6 +8257,9 @@ library FHE {
      * @dev Evaluates neg(euint64 value) and returns the result.
      */
     function neg(euint64 value) internal returns (euint64) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         return euint64.wrap(Impl.neg(euint64.unwrap(value)));
     }
 
@@ -8243,6 +8267,9 @@ library FHE {
      * @dev Evaluates not(euint64 value) and returns the result.
      */
     function not(euint64 value) internal returns (euint64) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         return euint64.wrap(Impl.not(euint64.unwrap(value)));
     }
 
@@ -8250,6 +8277,9 @@ library FHE {
      * @dev Evaluates neg(euint128 value) and returns the result.
      */
     function neg(euint128 value) internal returns (euint128) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         return euint128.wrap(Impl.neg(euint128.unwrap(value)));
     }
 
@@ -8257,6 +8287,9 @@ library FHE {
      * @dev Evaluates not(euint128 value) and returns the result.
      */
     function not(euint128 value) internal returns (euint128) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         return euint128.wrap(Impl.not(euint128.unwrap(value)));
     }
 
@@ -8264,6 +8297,9 @@ library FHE {
      * @dev Evaluates neg(euint256 value) and returns the result.
      */
     function neg(euint256 value) internal returns (euint256) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         return euint256.wrap(Impl.neg(euint256.unwrap(value)));
     }
 
@@ -8271,6 +8307,9 @@ library FHE {
      * @dev Evaluates not(euint256 value) and returns the result.
      */
     function not(euint256 value) internal returns (euint256) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         return euint256.wrap(Impl.not(euint256.unwrap(value)));
     }
 

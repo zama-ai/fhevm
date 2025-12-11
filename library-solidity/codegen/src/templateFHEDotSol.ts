@@ -509,6 +509,7 @@ function handleSolidityTFHEUnaryOperators(fheType: AdjustedFheType, operators: O
            * @dev Evaluates ${op.name}(e${fheType.type.toLowerCase()} value) and returns the result.
            */
         function ${op.name}(e${fheType.type.toLowerCase()} value) internal returns (e${fheType.type.toLowerCase()}) {
+            ${checkInitialized('value', fheType.type)}
             return e${fheType.type.toLowerCase()}.wrap(Impl.${op.name}(e${fheType.type.toLowerCase()}.unwrap(value)));
         }
       `);
