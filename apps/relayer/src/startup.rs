@@ -58,23 +58,16 @@ pub async fn run_fhevm_relayer(
     shutdown_token: CancellationToken,
     settings_sender: Option<oneshot::Sender<Settings>>,
 ) -> eyre::Result<()> {
-    // 0. Print settings
+    // === Setup Phase ===
+    // Initialize logging, metrics, and validate configuration
     info!("Starting relayer with configuration: {:?}", settings);
 
-    // 2. Init logging
-    //
     let main_span = span!(Level::INFO, "main-span"); // Add other relevant top-level details
     let setup_span = span!(parent: &main_span, Level::INFO, "setup-span");
-
-    // 1. Init metrics
-    //
     let metrics_registry = ensure_global_init(&settings)?;
-
-    // === Use the singleton registry for metrics endpoint
     let metrics_endpoint = settings.metrics.endpoint.clone();
     let registry_clone = metrics_registry.clone();
 
-    // 3. Validate settings
     settings
         .validate_addresses()
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
@@ -82,7 +75,8 @@ pub async fn run_fhevm_relayer(
         .validate_listener_config()
         .map_err(|e| eyre::eyre!("Listener configuration validation failed: {}", e))?;
 
-    // Initialize the orchestrator
+    // === Orchestration Phase ===
+    // Create orchestrator, repositories, and gateway components
     let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::<RelayerEvent>::new()));
 
     // Initialize SQL repositories
@@ -121,7 +115,8 @@ pub async fn run_fhevm_relayer(
 
     let mut settings = settings;
 
-    // HTTP endpoint
+    // === Services Phase ===
+    // Start HTTP server, metrics server, and initialize handlers
     if settings.http.endpoint.is_some() {
         info!("Starting Relayer HTTP server");
 
@@ -165,7 +160,8 @@ pub async fn run_fhevm_relayer(
         info!("Settings sent to test setup with actual server addresses");
     }
 
-    // === Wait for shutdown signal and shutdown all tasks via orchestrator
+    // === Runtime Phase ===
+    // Wait for shutdown signal and shutdown all tasks via orchestrator
     orchestrator
         .run_until_shutdown(shutdown_token)
         .await
