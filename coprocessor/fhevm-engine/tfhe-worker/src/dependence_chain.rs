@@ -1,8 +1,36 @@
 use chrono::{DateTime, Utc};
+use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use sqlx::Postgres;
-use std::fmt;
+use std::{fmt, sync::LazyLock, time::SystemTime};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+pub(crate) static ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER: LazyLock<IntCounter> =
+    LazyLock::new(|| {
+        register_int_counter!(
+            "coprocessor_tfhe_worker_dcid_counter",
+            "Number of acquired dependence chain IDs in tfhe-worker"
+        )
+        .unwrap()
+    });
+
+pub static ACQUIRE_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    register_histogram!(
+        "coprocessor_tfhe_worker_query_acquire_dcid_seconds",
+        "Histogram of query-time spent acquiring dependence chain IDs in tfhe-worker",
+        vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 2.0, 5.0, 10.0]
+    )
+    .unwrap()
+});
+
+pub static EXTEND_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    register_histogram!(
+        "coprocessor_tfhe_worker_query_extend_dcid_seconds",
+        "Histogram of query-time spent extending dependence_chain lock in tfhe-worker",
+        vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 2.0, 5.0, 10.0]
+    )
+    .unwrap()
+});
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LockingReason {
@@ -30,7 +58,7 @@ pub struct LockMngr {
     pool: sqlx::Pool<Postgres>,
     worker_id: Uuid,
     lock: Option<DatabaseChainLock>,
-    expiration_duration_secs: i64,
+    lock_ttl_sec: i64,
 }
 
 /// Dependence chain lock data
@@ -68,17 +96,13 @@ impl LockMngr {
             worker_id,
             pool,
             lock: None,
-            expiration_duration_secs: 30,
+            lock_ttl_sec: 30,
         }
     }
 
-    pub fn new_with_expiry(
-        worker_id: Uuid,
-        pool: sqlx::Pool<Postgres>,
-        expiration_duration_secs: i64,
-    ) -> Self {
+    pub fn new_with_ttl(worker_id: Uuid, pool: sqlx::Pool<Postgres>, lock_ttl_sec: u32) -> Self {
         let mut mgr = Self::new(worker_id, pool);
-        mgr.expiration_duration_secs = expiration_duration_secs;
+        mgr.lock_ttl_sec = lock_ttl_sec as i64;
         mgr
     }
 
@@ -88,6 +112,7 @@ impl LockMngr {
     pub async fn acquire_next_lock(
         &mut self,
     ) -> Result<(Option<Vec<u8>>, LockingReason), sqlx::Error> {
+        let started_at = SystemTime::now();
         let row = sqlx::query_as::<_, DatabaseChainLock>(
             r#"
             WITH candidate AS (
@@ -124,7 +149,7 @@ impl LockMngr {
         "#,
         )
         .bind(self.worker_id)
-        .bind(self.expiration_duration_secs)
+        .bind(self.lock_ttl_sec)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -135,7 +160,15 @@ impl LockMngr {
         };
 
         self.lock.replace(row.clone());
-        info!(?row, "Acquired lock");
+
+        ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
+
+        let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        if elapsed > 0.0 {
+            ACQUIRE_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM.observe(elapsed);
+        }
+
+        info!(?row, query_elapsed = %elapsed, "Acquired lock");
 
         Ok((
             Some(row.dependence_chain_id),
@@ -253,6 +286,7 @@ impl LockMngr {
     pub async fn extend_current_lock(
         &mut self,
     ) -> Result<Option<(Vec<u8>, LockingReason)>, sqlx::Error> {
+        let started_at = SystemTime::now();
         let dependence_chain_id = match &self.lock {
             Some(lock) => lock.dependence_chain_id.clone(),
             None => {
@@ -272,7 +306,7 @@ impl LockMngr {
         "#,
             dependence_chain_id,
             self.worker_id,
-            self.expiration_duration_secs as f64
+            self.lock_ttl_sec as f64
         )
         .fetch_optional(&self.pool)
         .await?;
@@ -280,6 +314,7 @@ impl LockMngr {
         let lock_expires_at = match row {
             Some(r) => r,
             None => {
+                self.lock.take();
                 error!(dcid = %hex::encode(&dependence_chain_id), "No lock extended");
                 return Ok(None);
             }
@@ -289,6 +324,11 @@ impl LockMngr {
         if let Some(lock) = self.lock.as_mut() {
             lock.lock_expires_at = lock_expires_at.lock_expires_at;
             info!(dcid = %hex::encode(&dependence_chain_id), expires_at = ?lock.lock_expires_at, "Extended lock");
+        }
+
+        let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        if elapsed > 0.0 {
+            EXTEND_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM.observe(elapsed);
         }
 
         Ok(Some((dependence_chain_id, LockingReason::ExtendedLock)))
