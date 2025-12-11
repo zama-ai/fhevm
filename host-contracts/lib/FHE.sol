@@ -7887,6 +7887,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'euint8'.
      */
     function asEuint8(euint16 value) internal returns (euint8) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         return euint8.wrap(Impl.cast(euint16.unwrap(value), FheType.Uint8));
     }
 
@@ -7894,6 +7897,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'euint8'.
      */
     function asEuint8(euint32 value) internal returns (euint8) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         return euint8.wrap(Impl.cast(euint32.unwrap(value), FheType.Uint8));
     }
 
@@ -7901,6 +7907,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'euint8'.
      */
     function asEuint8(euint64 value) internal returns (euint8) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         return euint8.wrap(Impl.cast(euint64.unwrap(value), FheType.Uint8));
     }
 
@@ -7908,6 +7917,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'euint8'.
      */
     function asEuint8(euint128 value) internal returns (euint8) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         return euint8.wrap(Impl.cast(euint128.unwrap(value), FheType.Uint8));
     }
 
@@ -7915,6 +7927,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'euint8'.
      */
     function asEuint8(euint256 value) internal returns (euint8) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         return euint8.wrap(Impl.cast(euint256.unwrap(value), FheType.Uint8));
     }
 
@@ -7923,6 +7938,9 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint8'.
      */
     function asEuint8(ebool b) internal returns (euint8) {
+        if (!isInitialized(b)) {
+            b = asEbool(false);
+        }
         return euint8.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint8));
     }
 
@@ -7930,6 +7948,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'ebool'.
      */
     function asEbool(euint8 value) internal returns (ebool) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         return ne(value, 0);
     }
 
@@ -7937,6 +7958,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'euint16'.
      */
     function asEuint16(euint8 value) internal returns (euint16) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         return euint16.wrap(Impl.cast(euint8.unwrap(value), FheType.Uint16));
     }
 
@@ -7944,6 +7968,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'euint16'.
      */
     function asEuint16(euint32 value) internal returns (euint16) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         return euint16.wrap(Impl.cast(euint32.unwrap(value), FheType.Uint16));
     }
 
@@ -7951,6 +7978,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'euint16'.
      */
     function asEuint16(euint64 value) internal returns (euint16) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         return euint16.wrap(Impl.cast(euint64.unwrap(value), FheType.Uint16));
     }
 
@@ -7958,6 +7988,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'euint16'.
      */
     function asEuint16(euint128 value) internal returns (euint16) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         return euint16.wrap(Impl.cast(euint128.unwrap(value), FheType.Uint16));
     }
 
@@ -7965,6 +7998,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'euint16'.
      */
     function asEuint16(euint256 value) internal returns (euint16) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         return euint16.wrap(Impl.cast(euint256.unwrap(value), FheType.Uint16));
     }
 
@@ -7973,6 +8009,9 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint16'.
      */
     function asEuint16(ebool b) internal returns (euint16) {
+        if (!isInitialized(b)) {
+            b = asEbool(false);
+        }
         return euint16.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint16));
     }
 
@@ -7980,6 +8019,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'ebool'.
      */
     function asEbool(euint16 value) internal returns (ebool) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         return ne(value, 0);
     }
 
@@ -7987,6 +8029,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'euint32'.
      */
     function asEuint32(euint8 value) internal returns (euint32) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         return euint32.wrap(Impl.cast(euint8.unwrap(value), FheType.Uint32));
     }
 
@@ -7994,6 +8039,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'euint32'.
      */
     function asEuint32(euint16 value) internal returns (euint32) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         return euint32.wrap(Impl.cast(euint16.unwrap(value), FheType.Uint32));
     }
 
@@ -8001,6 +8049,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'euint32'.
      */
     function asEuint32(euint64 value) internal returns (euint32) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         return euint32.wrap(Impl.cast(euint64.unwrap(value), FheType.Uint32));
     }
 
@@ -8008,6 +8059,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'euint32'.
      */
     function asEuint32(euint128 value) internal returns (euint32) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         return euint32.wrap(Impl.cast(euint128.unwrap(value), FheType.Uint32));
     }
 
@@ -8015,6 +8069,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'euint32'.
      */
     function asEuint32(euint256 value) internal returns (euint32) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         return euint32.wrap(Impl.cast(euint256.unwrap(value), FheType.Uint32));
     }
 
@@ -8023,6 +8080,9 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint32'.
      */
     function asEuint32(ebool b) internal returns (euint32) {
+        if (!isInitialized(b)) {
+            b = asEbool(false);
+        }
         return euint32.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint32));
     }
 
@@ -8030,6 +8090,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'ebool'.
      */
     function asEbool(euint32 value) internal returns (ebool) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         return ne(value, 0);
     }
 
@@ -8037,6 +8100,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'euint64'.
      */
     function asEuint64(euint8 value) internal returns (euint64) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         return euint64.wrap(Impl.cast(euint8.unwrap(value), FheType.Uint64));
     }
 
@@ -8044,6 +8110,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'euint64'.
      */
     function asEuint64(euint16 value) internal returns (euint64) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         return euint64.wrap(Impl.cast(euint16.unwrap(value), FheType.Uint64));
     }
 
@@ -8051,6 +8120,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'euint64'.
      */
     function asEuint64(euint32 value) internal returns (euint64) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         return euint64.wrap(Impl.cast(euint32.unwrap(value), FheType.Uint64));
     }
 
@@ -8058,6 +8130,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'euint64'.
      */
     function asEuint64(euint128 value) internal returns (euint64) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         return euint64.wrap(Impl.cast(euint128.unwrap(value), FheType.Uint64));
     }
 
@@ -8065,6 +8140,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'euint64'.
      */
     function asEuint64(euint256 value) internal returns (euint64) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         return euint64.wrap(Impl.cast(euint256.unwrap(value), FheType.Uint64));
     }
 
@@ -8073,6 +8151,9 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint64'.
      */
     function asEuint64(ebool b) internal returns (euint64) {
+        if (!isInitialized(b)) {
+            b = asEbool(false);
+        }
         return euint64.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint64));
     }
 
@@ -8080,6 +8161,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'ebool'.
      */
     function asEbool(euint64 value) internal returns (ebool) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         return ne(value, 0);
     }
 
@@ -8087,6 +8171,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'euint128'.
      */
     function asEuint128(euint8 value) internal returns (euint128) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         return euint128.wrap(Impl.cast(euint8.unwrap(value), FheType.Uint128));
     }
 
@@ -8094,6 +8181,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'euint128'.
      */
     function asEuint128(euint16 value) internal returns (euint128) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         return euint128.wrap(Impl.cast(euint16.unwrap(value), FheType.Uint128));
     }
 
@@ -8101,6 +8191,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'euint128'.
      */
     function asEuint128(euint32 value) internal returns (euint128) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         return euint128.wrap(Impl.cast(euint32.unwrap(value), FheType.Uint128));
     }
 
@@ -8108,6 +8201,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'euint128'.
      */
     function asEuint128(euint64 value) internal returns (euint128) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         return euint128.wrap(Impl.cast(euint64.unwrap(value), FheType.Uint128));
     }
 
@@ -8115,6 +8211,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'euint128'.
      */
     function asEuint128(euint256 value) internal returns (euint128) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         return euint128.wrap(Impl.cast(euint256.unwrap(value), FheType.Uint128));
     }
 
@@ -8123,6 +8222,9 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint128'.
      */
     function asEuint128(ebool b) internal returns (euint128) {
+        if (!isInitialized(b)) {
+            b = asEbool(false);
+        }
         return euint128.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint128));
     }
 
@@ -8130,6 +8232,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'ebool'.
      */
     function asEbool(euint128 value) internal returns (ebool) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         return ne(value, 0);
     }
 
@@ -8137,6 +8242,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'euint256'.
      */
     function asEuint256(euint8 value) internal returns (euint256) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         return euint256.wrap(Impl.cast(euint8.unwrap(value), FheType.Uint256));
     }
 
@@ -8144,6 +8252,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'euint256'.
      */
     function asEuint256(euint16 value) internal returns (euint256) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         return euint256.wrap(Impl.cast(euint16.unwrap(value), FheType.Uint256));
     }
 
@@ -8151,6 +8262,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'euint256'.
      */
     function asEuint256(euint32 value) internal returns (euint256) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         return euint256.wrap(Impl.cast(euint32.unwrap(value), FheType.Uint256));
     }
 
@@ -8158,6 +8272,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'euint256'.
      */
     function asEuint256(euint64 value) internal returns (euint256) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         return euint256.wrap(Impl.cast(euint64.unwrap(value), FheType.Uint256));
     }
 
@@ -8165,6 +8282,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'euint256'.
      */
     function asEuint256(euint128 value) internal returns (euint256) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         return euint256.wrap(Impl.cast(euint128.unwrap(value), FheType.Uint256));
     }
 
@@ -8173,6 +8293,9 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint256'.
      */
     function asEuint256(ebool b) internal returns (euint256) {
+        if (!isInitialized(b)) {
+            b = asEbool(false);
+        }
         return euint256.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint256));
     }
 
@@ -8180,6 +8303,9 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'ebool'.
      */
     function asEbool(euint256 value) internal returns (ebool) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         return ne(value, 0);
     }
 
@@ -8551,6 +8677,9 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(ebool value, address account) internal returns (ebool) {
+        if (!isInitialized(value)) {
+            value = asEbool(false);
+        }
         Impl.allow(ebool.unwrap(value), account);
         return value;
     }
@@ -8559,6 +8688,9 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(ebool value) internal returns (ebool) {
+        if (!isInitialized(value)) {
+            value = asEbool(false);
+        }
         Impl.allow(ebool.unwrap(value), address(this));
         return value;
     }
@@ -8567,6 +8699,9 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(ebool value, address account) internal returns (ebool) {
+        if (!isInitialized(value)) {
+            value = asEbool(false);
+        }
         Impl.allowTransient(ebool.unwrap(value), account);
         return value;
     }
@@ -8575,6 +8710,9 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(ebool value) internal returns (ebool) {
+        if (!isInitialized(value)) {
+            value = asEbool(false);
+        }
         Impl.makePubliclyDecryptable(ebool.unwrap(value));
         return value;
     }
@@ -8604,6 +8742,9 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint8 value, address account) internal returns (euint8) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         Impl.allow(euint8.unwrap(value), account);
         return value;
     }
@@ -8612,6 +8753,9 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint8 value) internal returns (euint8) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         Impl.allow(euint8.unwrap(value), address(this));
         return value;
     }
@@ -8620,6 +8764,9 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint8 value, address account) internal returns (euint8) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         Impl.allowTransient(euint8.unwrap(value), account);
         return value;
     }
@@ -8628,6 +8775,9 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint8 value) internal returns (euint8) {
+        if (!isInitialized(value)) {
+            value = asEuint8(0);
+        }
         Impl.makePubliclyDecryptable(euint8.unwrap(value));
         return value;
     }
@@ -8657,6 +8807,9 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint16 value, address account) internal returns (euint16) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         Impl.allow(euint16.unwrap(value), account);
         return value;
     }
@@ -8665,6 +8818,9 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint16 value) internal returns (euint16) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         Impl.allow(euint16.unwrap(value), address(this));
         return value;
     }
@@ -8673,6 +8829,9 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint16 value, address account) internal returns (euint16) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         Impl.allowTransient(euint16.unwrap(value), account);
         return value;
     }
@@ -8681,6 +8840,9 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint16 value) internal returns (euint16) {
+        if (!isInitialized(value)) {
+            value = asEuint16(0);
+        }
         Impl.makePubliclyDecryptable(euint16.unwrap(value));
         return value;
     }
@@ -8710,6 +8872,9 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint32 value, address account) internal returns (euint32) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         Impl.allow(euint32.unwrap(value), account);
         return value;
     }
@@ -8718,6 +8883,9 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint32 value) internal returns (euint32) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         Impl.allow(euint32.unwrap(value), address(this));
         return value;
     }
@@ -8726,6 +8894,9 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint32 value, address account) internal returns (euint32) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         Impl.allowTransient(euint32.unwrap(value), account);
         return value;
     }
@@ -8734,6 +8905,9 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint32 value) internal returns (euint32) {
+        if (!isInitialized(value)) {
+            value = asEuint32(0);
+        }
         Impl.makePubliclyDecryptable(euint32.unwrap(value));
         return value;
     }
@@ -8763,6 +8937,9 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint64 value, address account) internal returns (euint64) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         Impl.allow(euint64.unwrap(value), account);
         return value;
     }
@@ -8771,6 +8948,9 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint64 value) internal returns (euint64) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         Impl.allow(euint64.unwrap(value), address(this));
         return value;
     }
@@ -8779,6 +8959,9 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint64 value, address account) internal returns (euint64) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         Impl.allowTransient(euint64.unwrap(value), account);
         return value;
     }
@@ -8787,6 +8970,9 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint64 value) internal returns (euint64) {
+        if (!isInitialized(value)) {
+            value = asEuint64(0);
+        }
         Impl.makePubliclyDecryptable(euint64.unwrap(value));
         return value;
     }
@@ -8816,6 +9002,9 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint128 value, address account) internal returns (euint128) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         Impl.allow(euint128.unwrap(value), account);
         return value;
     }
@@ -8824,6 +9013,9 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint128 value) internal returns (euint128) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         Impl.allow(euint128.unwrap(value), address(this));
         return value;
     }
@@ -8832,6 +9024,9 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint128 value, address account) internal returns (euint128) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         Impl.allowTransient(euint128.unwrap(value), account);
         return value;
     }
@@ -8840,6 +9035,9 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint128 value) internal returns (euint128) {
+        if (!isInitialized(value)) {
+            value = asEuint128(0);
+        }
         Impl.makePubliclyDecryptable(euint128.unwrap(value));
         return value;
     }
@@ -8869,6 +9067,9 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(eaddress value, address account) internal returns (eaddress) {
+        if (!isInitialized(value)) {
+            value = asEaddress(address(0));
+        }
         Impl.allow(eaddress.unwrap(value), account);
         return value;
     }
@@ -8877,6 +9078,9 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(eaddress value) internal returns (eaddress) {
+        if (!isInitialized(value)) {
+            value = asEaddress(address(0));
+        }
         Impl.allow(eaddress.unwrap(value), address(this));
         return value;
     }
@@ -8885,6 +9089,9 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(eaddress value, address account) internal returns (eaddress) {
+        if (!isInitialized(value)) {
+            value = asEaddress(address(0));
+        }
         Impl.allowTransient(eaddress.unwrap(value), account);
         return value;
     }
@@ -8893,6 +9100,9 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(eaddress value) internal returns (eaddress) {
+        if (!isInitialized(value)) {
+            value = asEaddress(address(0));
+        }
         Impl.makePubliclyDecryptable(eaddress.unwrap(value));
         return value;
     }
@@ -8922,6 +9132,9 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint256 value, address account) internal returns (euint256) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         Impl.allow(euint256.unwrap(value), account);
         return value;
     }
@@ -8930,6 +9143,9 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint256 value) internal returns (euint256) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         Impl.allow(euint256.unwrap(value), address(this));
         return value;
     }
@@ -8938,6 +9154,9 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint256 value, address account) internal returns (euint256) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         Impl.allowTransient(euint256.unwrap(value), account);
         return value;
     }
@@ -8946,6 +9165,9 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint256 value) internal returns (euint256) {
+        if (!isInitialized(value)) {
+            value = asEuint256(0);
+        }
         Impl.makePubliclyDecryptable(euint256.unwrap(value));
         return value;
     }

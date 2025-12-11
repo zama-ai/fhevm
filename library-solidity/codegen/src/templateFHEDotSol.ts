@@ -465,6 +465,7 @@ function handleSolidityTFHECustomCastBetweenTwoEuint(
     * @dev Casts an encrypted integer from 'e${inputFheType.type.toLowerCase()}' to 'e${outputFheType.type.toLowerCase()}'.
     */
     function asE${outputFheType.type.toLowerCase()}(e${inputFheType.type.toLowerCase()} value) internal returns (e${outputFheType.type.toLowerCase()}) {
+        ${checkInitialized('value', inputFheType.type)}
         return e${outputFheType.type.toLowerCase()}.wrap(Impl.cast(e${inputFheType.type.toLowerCase()}.unwrap(value), FheType.${outputFheType.type}));
     }
     `;
@@ -480,6 +481,7 @@ function handleSolidityTFHECustomCastBetweenEboolAndEuint(fheType: AdjustedFheTy
      * @dev Converts an 'ebool' to an 'e${fheType.type.toLowerCase()}'.
      */
     function asE${fheType.type.toLowerCase()}(ebool b) internal returns (e${fheType.type.toLowerCase()}) {
+        ${checkInitialized('b', 'Bool')}
         return e${fheType.type.toLowerCase()}.wrap(Impl.cast(ebool.unwrap(b), FheType.${fheType.type}));
     }
     `);
@@ -490,6 +492,7 @@ function handleSolidityTFHECustomCastBetweenEboolAndEuint(fheType: AdjustedFheTy
       * @dev Casts an encrypted integer from 'e${fheType.type.toLowerCase()}' to 'ebool'.
       */
       function asEbool(e${fheType.type.toLowerCase()} value) internal returns (ebool) {
+          ${checkInitialized('value', fheType.type)}
           return ne(value, 0);
       }
       `);
@@ -600,6 +603,7 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
      * @dev Allows the use of value for the address account.
      */
     function allow(e${fheType.type.toLowerCase()} value, address account) internal returns(e${fheType.type.toLowerCase()}) {
+      ${checkInitialized('value', fheType.type)}
       Impl.allow(e${fheType.type.toLowerCase()}.unwrap(value), account);
       return value;
     }
@@ -608,6 +612,7 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(e${fheType.type.toLowerCase()} value) internal returns(e${fheType.type.toLowerCase()}) {
+      ${checkInitialized('value', fheType.type)}
       Impl.allow(e${fheType.type.toLowerCase()}.unwrap(value), address(this));
       return value;
     }
@@ -616,6 +621,7 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(e${fheType.type.toLowerCase()} value, address account) internal returns(e${fheType.type.toLowerCase()}) {
+      ${checkInitialized('value', fheType.type)}
       Impl.allowTransient(e${fheType.type.toLowerCase()}.unwrap(value), account);
       return value;
     }
@@ -624,6 +630,7 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(e${fheType.type.toLowerCase()} value) internal returns(e${fheType.type.toLowerCase()}) {
+      ${checkInitialized('value', fheType.type)}
       Impl.makePubliclyDecryptable(e${fheType.type.toLowerCase()}.unwrap(value));
       return value;
     }
