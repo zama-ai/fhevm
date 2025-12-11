@@ -7468,9 +7468,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.4.0-alpha.3"
+version = "1.4.0-alpha.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "217d37960449b4c3c9a6c9cf60982bd1f7eaaa9f6a5e64aa4abfc2bfe91fad60"
+checksum = "e09d61555abaa29fafa83e9921d597166d099274b92cef448f5adbd5eeece613"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -7615,9 +7615,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-zk-pok"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f7b4fa4d6b7d0bd2b5d37e237e2628dc464fc09d40ad4b95fcd3c5d2461cf98"
+checksum = "7c86ce0affb497566f3518af9707c30bf3abcb02bbe3421af76c405ec67e7fff"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
