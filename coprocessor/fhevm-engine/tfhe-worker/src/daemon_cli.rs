@@ -90,6 +90,11 @@ pub struct Args {
     #[arg(long, value_parser = clap::value_parser!(Uuid))]
     pub worker_id: Option<Uuid>,
 
+    /// Time-to-live in seconds for dependence chain locks
+    /// Defaults to 30 seconds if not provided
+    #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 30)]
+    pub dcid_ttl_sec: u32,
+
     /// Log level for the application
     #[arg(
         long,
