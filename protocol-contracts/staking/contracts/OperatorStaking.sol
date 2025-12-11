@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {ERC1363} from "@openzeppelin/contracts/token/ERC20/extensions/ERC1363.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC4626, IERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -21,12 +22,13 @@ import {ProtocolStaking} from "./ProtocolStaking.sol";
  * @custom:security-contact security@zama.ai
  * @notice Allows users to stake assets and receive shares, with support for reward distribution.
  * @dev Integrates with ProtocolStaking and OperatorRewarder contracts. Inspired by ERC7540 but not fully compliant.
+ * Also inherits ERC1363 to ease of users with potential OperatorStaking contract migrations.
  *
  * NOTE: This contract supports slashing on the `ProtocolStaking` level, meaning that the overall stake of this contract
  * may decrease due to slashing. These losses are symmetrically passed to restakers on the `OperatorStaking` level.
  * Slashing must first decrease the `ProtocolStaking` balance of this contract before affecting pending withdrawals.
  */
-contract OperatorStaking is ERC20, Ownable, ReentrancyGuardTransient {
+contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
     using Math for uint256;
     using Checkpoints for Checkpoints.Trace208;
 
