@@ -44,7 +44,7 @@ FHEVM ensures both confidentiality and composability, with the following guarant
   - [Project structure](#project-structure)
   - [Main features](#main-features)
   - [Use cases](#use-cases)
-- [](#)
+- [Resources](#resources)
 - [Working with FHEVM](#working-with-fhevm)
   - [Citations](#citations)
   - [Contributing](#contributing)
