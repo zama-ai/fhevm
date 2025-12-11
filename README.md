@@ -87,7 +87,7 @@ The directories of this repository are organized in the following way:
 - **Security:** The underlying FHE crypto-scheme of FHEVM is quantum-resistant. Decryption is managed via a key management system (KMS) using multi-party computation (MPC), ensuring security even if some parties are compromised or misbehaving.
 - **Symbolic execution of FHE computations:** All FHE operations are executed symbolically on the host chain, significantly reducing execution time. The actual computations on encrypted data are offloaded asynchronously to our coprocessor, allowing for faster, efficient, and scalable processing.
 
-_Learn more about FHEVM features in the [documentation](https://docs.zama.ai/protocol) and in our [whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)._
+_Learn more about FHEVM features in the [documentation](https://docs.zama.ai/protocol), explore the concrete examples, and dive into the [whitepaper](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf) for full technical details._
 <br></br>
 
 ### Use cases
