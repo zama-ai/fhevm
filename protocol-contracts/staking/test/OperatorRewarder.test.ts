@@ -344,7 +344,7 @@ describe('OperatorRewarder', function () {
       await this.mock.connect(this.admin).setMaxFee(1000);
       await expect(this.mock.connect(this.admin).setMaxFee(1000))
         .to.be.revertedWithCustomError(this.mock, 'MaxFeeAlreadySet')
-        .withArgs(1000, 1000);
+        .withArgs(1000);
     });
   });
 
@@ -406,7 +406,7 @@ describe('OperatorRewarder', function () {
       await this.mock.connect(this.beneficiary).setFee(1000);
       await expect(this.mock.connect(this.beneficiary).setFee(1000))
         .to.be.revertedWithCustomError(this.mock, 'FeeAlreadySet')
-        .withArgs(1000, 1000);
+        .withArgs(1000);
     });
 
     it('should revert if over max fee', async function () {
