@@ -1,0 +1,85 @@
+# This configuration can be tested with https://github.com/justwatchcom/sql_exporter
+# Configuration reference: https://github.com/justwatchcom/sql_exporter/blob/master/config.yml.dist
+jobs:
+  - name: "coprocessor-database"
+    interval: '30s'
+    connections:
+      - 'postgres://{{DATABASE_USERNAME}}:{{DATABASE_PASSWORD}}@{{DATABASE_ENDPOINT}}/{{DATABASE_NAME}}'
+    startup_sql:
+      - 'SET lock_timeout = 1000'
+      - 'SET idle_in_transaction_session_timeout = 100'
+    queries:
+      - name: "allowed_handles_txn_sent"
+        help: "Number of allowed handles transactions sent"
+        labels:
+          - "status"
+        values:
+          - "count"
+        query: |
+          SELECT 'txn_sent' AS status, count(*)::float
+          FROM allowed_handles
+          WHERE txn_is_sent = true
+          UNION ALL
+          SELECT 'txn_unsent' AS status, count(*)::float
+          FROM allowed_handles
+          WHERE txn_is_sent = false;
+      - name: "ciphertext_txn_sent"
+        help: "Number of ciphertext transactions sent"
+        labels:
+          - "status"
+        values:
+          - "count"
+        query: |
+          SELECT 'txn_sent' AS status, count(*)::float
+          FROM ciphertext_digest
+          WHERE txn_is_sent = true
+          UNION ALL
+          SELECT 'txn_unsent' AS status, count(*)::float
+          FROM ciphertext_digest
+          WHERE txn_is_sent = false;
+      - name: "computations_completion"
+        help: "Number of computations done"
+        labels:
+          - "status"
+        values:
+          - "count"
+        query: |
+          SELECT 'completed' AS status, COUNT(*)::float
+          FROM computations
+          WHERE is_completed = true
+          UNION ALL
+          SELECT 'uncompleted', COUNT(*)::float
+          FROM computations
+          WHERE is_completed = false;
+      - name: "pbs_completion"
+        help: "Number of PBS done"
+        labels:
+          - "status"
+        values:
+          - "count"
+        query: |
+          SELECT 'completed' AS status, COUNT(*)::float
+          FROM pbs_computations
+          WHERE is_completed = true
+          UNION ALL
+          SELECT 'uncompleted', COUNT(*)::float
+          FROM pbs_computations
+          WHERE is_completed = false;
+      - name: "ciphertexts"
+        help: "Number of ciphertexts in ciphertexts table"
+        labels:
+          - "status"
+        values:
+          - "count"
+        query: |
+          SELECT COUNT(*)::float
+          FROM ciphertexts;
+      - name: "zkproof"
+        help: "Number of remaining ZK-Proof to process"
+        labels:
+          - "status"
+        values:
+          - "count"
+        query: |
+          SELECT COUNT(*)::float
+          FROM verify_proofs;
