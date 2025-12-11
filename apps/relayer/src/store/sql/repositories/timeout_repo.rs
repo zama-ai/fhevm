@@ -110,27 +110,10 @@ impl TimeoutRepository {
         Self { pool }
     }
 
-    /// Updates stale requests safely in a distributed environment.
-    ///
-    /// Mechanism:
-    /// 1. Starts a DB transaction.
-    /// 2. Attempts to acquire a Postgres Advisory Lock.
-    /// 3. If acquired: Performs updates on all 3 tables.
-    /// 4. If not acquired: Returns immediately (another pod is handling it).
-    ///
+    // TODO: Make the timeout configurable from settings for each of the values here.
+
     /// Returns the total number of rows moved to 'timed_out'.
     pub async fn time_out_stale_requests(&self) -> Result<u64> {
-        let mut tx = self.pool.get_pool().begin().await?;
-        let got_lock: bool =
-            sqlx::query_scalar!("SELECT pg_try_advisory_xact_lock($1)", TIMEOUT_JOB_LOCK_ID)
-                .fetch_one(&mut *tx)
-                .await?
-                .unwrap_or(false);
-        if !got_lock {
-            return Ok(0);
-        }
-
-        // --- LEADER SECTION: We hold the lock ---
         let r1 = sqlx::query!(
             r#"
             UPDATE user_decrypt_req
@@ -140,7 +123,7 @@ impl TimeoutRepository {
               AND updated_at < NOW() - INTERVAL '30 minutes'
             "#
         )
-        .execute(&mut *tx)
+        .execute(&self.pool.get_pool())
         .await?
         .rows_affected();
 
@@ -153,7 +136,7 @@ impl TimeoutRepository {
               AND updated_at < NOW() - INTERVAL '30 minutes'
             "#
         )
-        .execute(&mut *tx)
+        .execute(&self.pool.get_pool())
         .await?
         .rows_affected();
 
@@ -166,11 +149,9 @@ impl TimeoutRepository {
               AND updated_at < NOW() - INTERVAL '30 minutes'
             "#
         )
-        .execute(&mut *tx)
+        .execute(&self.pool.get_pool())
         .await?
         .rows_affected();
-
-        tx.commit().await?;
 
         Ok(r1 + r2 + r3)
     }

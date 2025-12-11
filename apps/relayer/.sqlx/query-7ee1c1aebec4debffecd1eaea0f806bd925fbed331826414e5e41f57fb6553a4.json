@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM public_decrypt_req \n            WHERE updated_at < NOW() - INTERVAL '365 days'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "7ee1c1aebec4debffecd1eaea0f806bd925fbed331826414e5e41f57fb6553a4"
+}

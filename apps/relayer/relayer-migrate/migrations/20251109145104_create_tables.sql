@@ -165,11 +165,11 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 
 -- Indexes for retention policies
 -- 1. Index for User Decrypt Retention
-CREATE INDEX idx_user_decrypt_req_created_at ON user_decrypt_req (created_at);
-CREATE INDEX idx_user_decrypt_share_created_at ON user_decrypt_share (created_at);
+CREATE INDEX idx_user_decrypt_req_updated_at ON user_decrypt_req (updated_at);
+CREATE INDEX idx_user_decrypt_share_updated_at ON user_decrypt_share (updated_at);
 
 -- 2. Index for Public Decrypt Retention
-CREATE INDEX idx_public_decrypt_req_created_at ON public_decrypt_req (created_at);
+CREATE INDEX idx_public_decrypt_req_updated_at ON public_decrypt_req (updated_at);
 
 -- 3. Index for Input Proof Retention
-CREATE INDEX idx_input_proof_req_created_at ON input_proof_req (created_at);
+CREATE INDEX idx_input_proof_req_updated_at ON input_proof_req (updated_at);

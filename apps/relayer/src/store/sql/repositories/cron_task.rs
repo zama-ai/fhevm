@@ -11,7 +11,6 @@ async fn run_timeout_worker_logic(pool: PgClient) {
     let mut interval = tokio::time::interval(Duration::from_secs(60));
 
     loop {
-        interval.tick().await;
         match repo.time_out_stale_requests().await {
             Ok(0) => {}
             Ok(count) => {
@@ -24,6 +23,7 @@ async fn run_timeout_worker_logic(pool: PgClient) {
                 error!("Timeout Worker Error (Retrying in next tick): {:?}", e);
             }
         }
+        interval.tick().await;
     }
 }
 
@@ -59,12 +59,10 @@ pub fn spawn_timeout_worker(pool: PgClient) {
 async fn run_expiry_worker_logic(pool: PgClient) {
     let repo = ExpiryRepository::new(pool);
 
-    // Check every 6 hour (3600 seconds)
-    let mut interval = tokio::time::interval(Duration::from_secs(21600));
+    // Check every 5 minutes (60 * 5 seconds)
+    let mut interval = tokio::time::interval(Duration::from_secs(300));
 
     loop {
-        interval.tick().await;
-
         match repo.purge_stale_data().await {
             Ok(0) => {}
             Ok(count) => {
@@ -77,6 +75,7 @@ async fn run_expiry_worker_logic(pool: PgClient) {
                 error!("Expiry Worker Error (Retrying next hour): {:?}", e);
             }
         }
+        interval.tick().await;
     }
 }
 
