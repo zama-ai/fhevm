@@ -8,13 +8,14 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
-use prometheus::{register_int_counter, IntCounter};
+use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use scheduler::dfg::types::{DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::types::Uuid;
 use sqlx::Postgres;
 use sqlx::{postgres::PgListener, query, Acquire};
+use std::time::SystemTime;
 use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
@@ -55,12 +56,20 @@ lazy_static! {
         "work items successfully processed and stored in the database"
     )
     .unwrap();
+    static ref WORK_ITEMS_QUERY_HISTOGRAM: Histogram = register_histogram!(
+        "coprocessor_tfhe_worker_query_work_items_seconds",
+        "Histogram of time spent querying work items in tfhe-worker",
+        vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 2.0, 5.0, 10.0]
+    )
+    .unwrap();
 }
 
 pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Determine worker ID to use for the lifetime of this process
+    // In case of a failure in tfhe_worker_cycle, the same id must be reused to quickly unlock any held locks
     let worker_id = args.worker_id.unwrap_or(Uuid::new_v4());
     info!(target: "tfhe_worker", worker_id = %worker_id, "Starting tfhe-worker service");
     loop {
@@ -92,10 +101,11 @@ async fn tfhe_worker_cycle(
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;
 
-    let mut deps_chain_mngr = dependence_chain::LockMngr::new(worker_id, pool.clone());
+    let mut dcid_mngr =
+        dependence_chain::LockMngr::new_with_ttl(worker_id, pool.clone(), args.dcid_ttl_sec);
 
     // Release all owned locks on startup to avoid stale locks
-    deps_chain_mngr.release_all_owned_locks().await?;
+    dcid_mngr.release_all_owned_locks().await?;
 
     #[cfg(feature = "bench")]
     populate_cache_with_tenant_keys(vec![1i32], &pool, &tenant_key_cache).await?;
@@ -131,18 +141,26 @@ async fn tfhe_worker_cycle(
             args,
             &health_check,
             &mut trx,
-            &mut deps_chain_mngr,
+            &mut dcid_mngr,
             &tracer,
             &loop_ctx,
         )
         .await?;
         if transactions.is_empty() {
-            deps_chain_mngr.release_current_lock().await?;
+            dcid_mngr.release_current_lock().await?;
 
             // Lock another dependence chain if available and
             // continue processing without waiting for notification
-            let (lock, _) = deps_chain_mngr.acquire_next_lock().await?;
-            immedially_poll_more_work = lock.is_some();
+            let mut s = tracer.start_with_context("query_dependence_chain", &loop_ctx);
+
+            let (dependence_chain_id, _) = dcid_mngr.acquire_next_lock().await?;
+            immedially_poll_more_work = dependence_chain_id.is_some();
+
+            s.set_attribute(KeyValue::new(
+                "dependence_chain_id",
+                format!("{:?}", dependence_chain_id.as_ref().map(hex::encode)),
+            ));
+            s.end();
 
             continue;
         } else {
@@ -161,7 +179,12 @@ async fn tfhe_worker_cycle(
 
         // Execute transactions segregated by tenant
         for (tenant_id, ref mut tenant_txs) in transactions.iter_mut() {
-            deps_chain_mngr.extend_current_lock().await?;
+            if dcid_mngr.extend_current_lock().await?.is_none() {
+                // best-effort attempt to extend the lock and prevent other replicas from trying to lock the same DCID.
+                // Worst-case scenario, it returns None if the lock has expired.
+                // However, the worker has already secured exclusive access to the txn computations in the Computations table.
+                warn!(target: "tfhe_worker", tenant_id = %tenant_id, "Lost dcid lock while processing transactions");
+            }
 
             let mut tx_graph = build_transaction_graph_and_execute(
                 tenant_id,
@@ -178,7 +201,7 @@ async fn tfhe_worker_cycle(
                 &mut tx_graph,
                 &mut unneeded_handles,
                 &mut trx,
-                &mut deps_chain_mngr,
+                &mut dcid_mngr,
                 &tracer,
                 &loop_ctx,
             )
@@ -324,8 +347,7 @@ async fn query_for_work<'a>(
     (Vec<(i32, Vec<ComponentNode>)>, Vec<(Handle, Handle)>),
     Box<dyn std::error::Error + Send + Sync>,
 > {
-    // This query locks our work items so other worker doesn't select them.
-    let mut s = tracer.start_with_context("query_work_items", loop_ctx);
+    let mut s = tracer.start_with_context("query_dependence_chain", loop_ctx);
 
     // Lock dependence chain
     let (dependence_chain_id, locking_reason) = match deps_chain_mngr.extend_current_lock().await? {
@@ -343,7 +365,11 @@ async fn query_for_work<'a>(
         "dependence_chain_id",
         format!("{:?}", dependence_chain_id.as_ref().map(hex::encode)),
     ));
+    s.end();
 
+    // This query locks our work items so other worker doesn't select them.
+    let mut s = tracer.start_with_context("query_work_items", loop_ctx);
+    let started_at = SystemTime::now();
     let the_work = query!(
         "
 WITH selected_computations AS (
@@ -398,6 +424,8 @@ FOR UPDATE SKIP LOCKED            ",
         error!(target: "tfhe_worker", { error = %err }, "error while querying work items");
         err
     })?;
+
+    WORK_ITEMS_QUERY_HISTOGRAM.observe(started_at.elapsed().unwrap_or_default().as_secs_f64());
     s.set_attribute(KeyValue::new("count", the_work.len() as i64));
     s.end();
     health_check.update_db_access();

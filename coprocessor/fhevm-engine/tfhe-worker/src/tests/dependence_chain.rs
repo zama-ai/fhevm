@@ -20,7 +20,7 @@ async fn test_acquire_next_lock() {
 
     for dependence_chain_id in dependence_chain_ids.iter() {
         info!(target: "deps_chain", ?dependence_chain_id, "Testing acquire_next_lock");
-        let mut mgr = LockMngr::new_with_expiry(Uuid::new_v4(), pool.clone(), 3600);
+        let mut mgr = LockMngr::new_with_ttl(Uuid::new_v4(), pool.clone(), 3600);
 
         let (acquired, locking) = mgr.acquire_next_lock().await.unwrap();
         assert_eq!(acquired, Some(dependence_chain_id.clone()));
@@ -65,7 +65,7 @@ async fn test_work_stealing() {
         info!(?dependence_chain_id, "Testing acquire_next_lock");
 
         let worker = Uuid::new_v4();
-        let mut mgr = LockMngr::new_with_expiry(worker, pool.clone(), expiration_duration_secs);
+        let mut mgr = LockMngr::new_with_ttl(worker, pool.clone(), expiration_duration_secs);
         let acquired = mgr.acquire_next_lock().await.unwrap().0;
         assert_eq!(acquired, Some(dependence_chain_id.clone()));
 
