@@ -187,14 +187,14 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
     }
 
     /**
-     * @dev Restake excess tokens held by this contract. Excess tokens held by this contract after
+     * @dev Stake excess tokens held by this contract. Excess tokens held by this contract after
      * accounting for all in-flight redemptions are restaked into the `ProtocolStaking` contract.
      *
      * NOTE: Excess tokens will be in the `OperatorStaking` contract the operator is slashed
      * during a redemption flow or if donations are made to it. Anyone can call this function to
      * restake those tokens.
      */
-    function restakeExcess() public virtual {
+    function stakeExcess() public virtual {
         ProtocolStaking protocolStaking_ = protocolStaking();
         protocolStaking_.release(address(this));
         uint256 amountToRestake = IERC20(asset()).balanceOf(address(this)) - previewRedeem(totalSharesInRedemption());

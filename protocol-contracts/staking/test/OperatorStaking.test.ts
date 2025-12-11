@@ -247,10 +247,10 @@ describe('OperatorStaking', function () {
     });
   });
 
-  describe('restakeExcess', async function () {
+  describe('stakeExcess', async function () {
     it('should restake in protocol staking', async function () {
       await this.token.connect(this.delegator1).transfer(this.mock, ethers.parseEther('10'));
-      await expect(this.mock.restakeExcess())
+      await expect(this.mock.stakeExcess())
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.protocolStaking, ethers.parseEther('10'));
     });
@@ -267,7 +267,7 @@ describe('OperatorStaking', function () {
       await this.protocolStaking.release(this.mock);
 
       const restakeAmount = BigInt(ethers.parseEther('1')) + 1n;
-      await expect(this.mock.restakeExcess())
+      await expect(this.mock.stakeExcess())
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.protocolStaking, restakeAmount);
     });
