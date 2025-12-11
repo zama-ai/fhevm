@@ -4,7 +4,7 @@ use crate::store::sql::{
 };
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 async fn run_timeout_worker_logic(pool: PgClient) {
     let repo = TimeoutRepository::new(pool);
@@ -12,10 +12,12 @@ async fn run_timeout_worker_logic(pool: PgClient) {
 
     loop {
         match repo.time_out_stale_requests().await {
-            Ok(0) => {}
+            Ok(0) => {
+                debug!("Nothing timed out for gateway events.");
+            }
             Ok(count) => {
                 info!(
-                    "Timeout Worker: Moved {} stale requests to timed_out",
+                    "Timeout Worker: Moved {} stale requests to timed_out.",
                     count
                 );
             }
@@ -64,7 +66,9 @@ async fn run_expiry_worker_logic(pool: PgClient) {
 
     loop {
         match repo.purge_stale_data().await {
-            Ok(0) => {}
+            Ok(0) => {
+                debug!("No request expired.");
+            }
             Ok(count) => {
                 info!(
                     "Expiry Worker: Purged {} stale rows (requests/shares)",

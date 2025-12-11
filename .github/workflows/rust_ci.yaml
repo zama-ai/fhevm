@@ -82,6 +82,22 @@ jobs:
       matrix:
         folder: [apps/relayer]
 
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: relayer_db
+        ports:
+          - 5432:5432
+        # Health check ensures DB is ready before steps run
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
       SQLX_OFFLINE: true # Use cached queries for compilation (speeds up CI)
       DATABASE_URL: postgres://postgres:password@localhost:5432/relayer_db
@@ -94,32 +110,6 @@ jobs:
           persist-credentials: false
           token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
           submodules: recursive
-
-      - name: Build and Start Postgres with pg_cron
-        run: |
-          cat <<EOF > Dockerfile
-          FROM postgres:17
-          RUN apt-get update && apt-get install -y postgresql-17-cron
-          EOF
-
-          docker build -t secure-postgres-cron .
-
-          docker run -d \
-            --name postgres \
-            -p 5432:5432 \
-            -e POSTGRES_USER=postgres \
-            -e POSTGRES_PASSWORD=password \
-            -e POSTGRES_DB=relayer_db \
-            -e POSTGRES_HOST_AUTH_METHOD=trust \
-            secure-postgres-cron \
-            postgres -c shared_preload_libraries=pg_cron -c cron.database_name=relayer_db
-
-      - name: Wait for PostgreSQL
-        run: |
-          until docker exec postgres pg_isready -U postgres; do
-            echo "Waiting for postgres..."
-            sleep 2
-          done
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
