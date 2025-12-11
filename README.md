@@ -178,3 +178,12 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+## Version Compatibility
+
+FHEVM requires the following toolchain versions for correct operation:
+
+- **Rust**: 1.75 or higher  
+- **Node.js**: 18+ for running scripts and examples  
+- **Solidity**: 0.8.20 or higher for compiling encrypted smart contracts  
+
+These requirements help ensure consistent behavior across development environments.
