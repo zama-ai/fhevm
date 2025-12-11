@@ -178,3 +178,11 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Terminology
+
+A few key terms used throughout this project:
+
+- **FHE (Fully Homomorphic Encryption)** — encryption that allows computations on encrypted data.
+- **FHEVM** — execution model combining smart contracts with FHE capabilities.
+- **TFHE-rs** — Zama’s Rust library providing fast FHE operations used by this project.
