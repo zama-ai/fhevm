@@ -90,6 +90,7 @@ mod helpers {
         })
     }
 
+
     pub fn extract_ciphertext_handles_from_user_payload(payload: &serde_json::Value) -> Vec<B256> {
         payload["handleContractPairs"]
             .as_array()
@@ -284,6 +285,122 @@ async fn test_success_single_request() {
         }
         _ => panic!("Unexpected status code: {}", status),
     }
+}
+
+/// Test consecutive duplicate requests succeed in V2
+/// Documents that duplicate requests with identical content should both succeed
+/// and validates duplicate requests return valid job_ids.
+#[tokio::test]
+async fn test_consecutive_duplicate_requests_succeed() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+
+    // Generate random payload once and use across two requests
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
+    let encrypted_bytes = helpers::random_encrypted_bytes();
+
+    setup
+        .fhevm_mock
+        .on_user_decrypt_success(handles, user_address, encrypted_bytes);
+
+    let client = reqwest::Client::new();
+    let url = helpers::v2_user_decrypt_post_url(&setup);
+
+    // Send first POST request
+    let response1 = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send first POST request");
+
+    assert_eq!(response1.status(), reqwest::StatusCode::ACCEPTED);
+
+    let post_response1: UserDecryptPostResponseJson = response1
+        .json()
+        .await
+        .expect("Failed to parse first POST response");
+
+    assert_eq!(post_response1.status, "queued");
+    let job_id_1 = &post_response1.result.job_id;
+
+    // Send consecutive duplicate request (same payload)
+    let response2 = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send second POST request");
+
+    assert_eq!(response2.status(), reqwest::StatusCode::ACCEPTED);
+
+    let post_response2: UserDecryptPostResponseJson = response2
+        .json()
+        .await
+        .expect("Failed to parse second POST response");
+
+    assert_eq!(post_response2.status, "queued");
+    let job_id_2 = &post_response2.result.job_id;
+
+    // Print job_ids for debugging
+    println!("First request job_id: {}", job_id_1);
+    println!("Second request job_id: {}", job_id_2);
+
+    // Wait for processing
+    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+
+    // GET with first job_id should work
+    let get_response1 = client
+        .get(helpers::v2_user_decrypt_get_url(&setup, job_id_1))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .expect("Failed to send first GET request");
+
+    let status1 = get_response1.status();
+    println!("First GET job_id '{}' - Status: {}", job_id_1, status1);
+
+    // Should NOT be 404
+    assert_ne!(
+        status1,
+        reqwest::StatusCode::NOT_FOUND,
+        "GET request for first job_id '{}' returned 404. This indicates the job_id \
+         returned by POST doesn't exist in the database.",
+        job_id_1
+    );
+
+    // GET with second job_id should also work (since they should be identical)
+    let get_response2 = client
+        .get(helpers::v2_user_decrypt_get_url(&setup, job_id_2))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .expect("Failed to send second GET request");
+
+    let status2 = get_response2.status();
+    println!("Second GET job_id '{}' - Status: {}", job_id_2, status2);
+
+    // Should NOT be 404 - documents expected behavior
+    assert_ne!(
+        status2,
+        reqwest::StatusCode::NOT_FOUND,
+        "GET request for second job_id '{}' returned 404. This indicates the job_id \
+         returned by POST doesn't exist in the database. Both job_ids should be retrievable \
+         for duplicate requests with identical content.",
+        job_id_2
+    );
 }
 
 #[test]

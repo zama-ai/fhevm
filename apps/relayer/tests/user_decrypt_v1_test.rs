@@ -5,7 +5,6 @@ use crate::common::validation_helper::{
     expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success,
     test_endpoint, test_endpoint_raw_body, with_invalid_field,
 };
-use crate::constants::FUTURE_DATE;
 use alloy::primitives::{Address, Bytes, B256};
 use rand::{rng, Rng};
 use rstest::rstest;
@@ -132,6 +131,89 @@ async fn test_success_single_request() {
         expect_success(),
     )
     .await;
+
+    // V1 only: Consensus event arrives 1 block (~500ms) after shares. Sleep keeps relayer running to process it.
+    // V2 tests already have sleep between POST and GET. In production, relayer runs continuously so no timing issues.
+    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+}
+
+/// Test consecutive duplicate requests succeed in V1
+/// Documents that duplicate requests with identical content should both succeed
+/// with consistent responses. Currently may expose race conditions in V1 handler.
+#[tokio::test]
+async fn test_consecutive_duplicate_requests_succeed() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+
+    // Generate random payload once and use across two requests
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+    let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
+    let encrypted_bytes = helpers::random_encrypted_bytes();
+
+    setup
+        .fhevm_mock
+        .on_user_decrypt_success(handles.clone(), user_address, encrypted_bytes);
+
+    // Step 1: Send first request with random payload
+    let response1 = reqwest::Client::new()
+        .post(helpers::v1_user_decrypt_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send first request");
+
+    let response1_status = response1.status();
+    let response1_text = response1
+        .text()
+        .await
+        .expect("Failed to get first response text");
+
+    assert_eq!(
+        response1_status,
+        reqwest::StatusCode::OK,
+        "First request should return 200 OK. Got status: {} with body: {}",
+        response1_status,
+        response1_text
+    );
+
+    // Step 2: Immediately send consecutive duplicate request (same payload)
+    let response2 = reqwest::Client::new()
+        .post(helpers::v1_user_decrypt_url(&setup))
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send second request");
+
+    assert_eq!(
+        response2.status(),
+        reqwest::StatusCode::OK,
+        "Second request should return 200 OK"
+    );
+
+    let response2_text = response2
+        .text()
+        .await
+        .expect("Failed to get second response text");
+
+    // Step 3: CRITICAL TEST - Both responses should be identical
+    // This documents the expected behavior where duplicate consecutive requests
+    // should return consistent responses
+    assert_eq!(
+        response1_text, response2_text,
+        "Duplicate requests should return identical responses.\n\
+         First response: {}\nSecond response: {}",
+        response1_text, response2_text
+    );
 
     // V1 only: Consensus event arrives 1 block (~500ms) after shares. Sleep keeps relayer running to process it.
     // V2 tests already have sleep between POST and GET. In production, relayer runs continuously so no timing issues.
@@ -339,7 +421,7 @@ async fn test_error_invalid_nested_handle_fields(
 }
 
 #[rstest]
-#[case::future_timestamp(FUTURE_DATE, constants::TIMESTAMP_MUST_NOT_BE_IN_FUTURE)]
+#[case::future_timestamp(constants::FUTURE_DATE, constants::TIMESTAMP_MUST_NOT_BE_IN_FUTURE)]
 #[tokio::test]
 async fn test_error_invalid_nested_handle_fields_2(
     #[case] future_date: &str,

@@ -17,8 +17,8 @@ CREATE TYPE req_status AS ENUM ('queued', 'processing', 'receipt_received', 'com
 -- Table for user decryption requests.
 CREATE TABLE user_decrypt_req(
     id SERIAL PRIMARY KEY,
-    ext_job_id UUID NOT NULL,
-    int_job_id BYTEA NOT NULL,
+    ext_job_id UUID NOT NULL UNIQUE,
+    int_job_id BYTEA NOT NULL UNIQUE,
     gw_reference_id BYTEA,
     req JSONB NOT NULL,
     req_status req_status NOT NULL DEFAULT 'queued',
@@ -74,9 +74,9 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 -- Table for public decryption requests.
 CREATE TABLE public_decrypt_req(
     id SERIAL PRIMARY KEY,
-    ext_job_id UUID NOT NULL,
+    ext_job_id UUID NOT NULL UNIQUE,
     -- int_job_id TEXT NOT NULL,
-    int_job_id BYTEA NOT NULL,
+    int_job_id BYTEA NOT NULL UNIQUE,
     gw_reference_id BYTEA,
     req JSONB NOT NULL,
     res JSONB,
@@ -105,8 +105,8 @@ EXECUTE PROCEDURE trigger_set_timestamp();
 -- Table for input proof requests.
 CREATE TABLE input_proof_req(
     id SERIAL PRIMARY KEY,
-    ext_job_id UUID NOT NULL,
-    int_request_id UUID NOT NULL, -- uuid v7 here. -- unlike decryption, each int_request triggers a gw request, hence using int_request_id instead of int_job_id
+    ext_job_id UUID NOT NULL UNIQUE,
+    int_request_id UUID NOT NULL UNIQUE, -- uuid v7 here. -- unlike decryption, each int_request triggers a gw request, hence using int_request_id instead of int_job_id
     gw_reference_id BYTEA,
     accepted BOOLEAN DEFAULT null,
     req JSONB NOT NULL,

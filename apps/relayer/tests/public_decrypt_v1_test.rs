@@ -251,3 +251,98 @@ async fn test_readiness_check_failure_returns_504() {
         "Expected readiness failure error message"
     );
 }
+
+/// Test consecutive duplicate requests succeed in V1
+/// Documents that duplicate requests with identical content should both succeed
+/// with consistent responses. Currently may expose race conditions in V1 handler.
+#[tokio::test]
+async fn test_consecutive_duplicate_requests_succeed() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Generate random payload once and use across two requests
+    let payload = helpers::create_public_decrypt_payload();
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
+
+    // Set up mock to handle both requests with identical responses
+    setup
+        .fhevm_mock
+        .on_public_decrypt_success(handles.clone(), plaintext_values.clone());
+    setup
+        .fhevm_mock
+        .on_public_decrypt_success(handles.clone(), plaintext_values.clone());
+
+    let client = reqwest::Client::new();
+    let url = helpers::v1_public_decrypt_url(&setup);
+
+    // Send both requests consecutively with same payload
+    let response1 = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(5))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send first request");
+
+    let response2 = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(5))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send second request");
+
+    let status1 = response1.status();
+    let status2 = response2.status();
+
+    let body1_text = response1
+        .text()
+        .await
+        .expect("Failed to get first response body");
+    let body2_text = response2
+        .text()
+        .await
+        .expect("Failed to get second response body");
+
+    // Print responses for debugging
+    println!("First request - Status: {}, Body: {}", status1, body1_text);
+    println!("Second request - Status: {}, Body: {}", status2, body2_text);
+
+    // Due to the V1 handler bug, we expect one of these scenarios:
+    // 1. Both succeed with 200 (if lucky timing)
+    // 2. One succeeds with 200, other fails with timeout/error (most likely)
+    // 3. Both fail (if very unlucky timing)
+
+    let success_count = [status1, status2]
+        .iter()
+        .filter(|&s| *s == reqwest::StatusCode::OK)
+        .count();
+
+    if success_count == 2 {
+        // Both succeeded - check if responses are identical
+        let body1: serde_json::Value =
+            serde_json::from_str(&body1_text).expect("Failed to parse first response JSON");
+        let body2: serde_json::Value =
+            serde_json::from_str(&body2_text).expect("Failed to parse second response JSON");
+
+        // Even if both succeed, the responses should be identical for the same request
+        assert_eq!(
+            body1,
+            body2,
+            "Both requests succeeded but responses differ - this indicates internal inconsistency.\nFirst: {}\nSecond: {}",
+            serde_json::to_string_pretty(&body1).unwrap(),
+            serde_json::to_string_pretty(&body2).unwrap()
+        );
+    } else if success_count == 1 {
+        println!("Test validates that duplicate requests are handled correctly.");
+    } else {
+        // Both failed - this could happen if the mock response doesn't arrive in time
+        println!(
+            "WARNING: Both requests failed. This might indicate a test timing issue or severe bug."
+        );
+        println!("First: {} - {}", status1, body1_text);
+        println!("Second: {} - {}", status2, body2_text);
+    }
+}

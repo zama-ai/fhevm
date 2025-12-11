@@ -156,7 +156,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         info!("Registered once handler for user decrypt failure");
 
         let ext_job_id = self.orchestrator.new_ext_job_id();
-        if let Err(e) = self
+        let _actual_ext_job_id = match self
             .user_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 ext_job_id,
@@ -165,15 +165,18 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             )
             .await
         {
-            error!(
-                "Failed to insert/get user decrypt into/from database: {}",
-                e
-            );
-            return AppResponse::<()>::internal_server_error_with_request_id(
-                request_id.to_string(),
-            )
-            .into_response();
-        }
+            Ok(stored_ext_job_id) => stored_ext_job_id,
+            Err(e) => {
+                error!(
+                    "Failed to insert/get user decrypt into/from database: {}",
+                    e
+                );
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
+        };
 
         let request_data = UserDecryptEventData::ReqRcvdFromUser {
             decrypt_request: user_decrypt_request,

@@ -138,8 +138,8 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         let int_job_id = request.content_hash();
         let ext_job_id = self.orchestrator.new_ext_job_id();
 
-        // Insert into database immediately
-        if let Err(e) = self
+        // Insert into database immediately and get the actual ext_job_id that was stored
+        let actual_ext_job_id = match self
             .public_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 ext_job_id,
@@ -148,15 +148,18 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             )
             .await
         {
-            error!(
-                "Failed to insert/get public decrypt into/from database: {}",
-                e
-            );
-            return AppResponse::<()>::internal_server_error_with_request_id(
-                request_id.to_string(),
-            )
-            .into_response();
-        }
+            Ok(stored_ext_job_id) => stored_ext_job_id,
+            Err(e) => {
+                error!(
+                    "Failed to insert/get public decrypt into/from database: {}",
+                    e
+                );
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
+        };
 
         // Trigger orchestrator processing
         let job_id = JobId::from_sha256_hash(int_job_id);
@@ -183,12 +186,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         // Generate a new request_id for this HTTP request (not stored)
         let request_id_for_response = uuid::Uuid::new_v4();
 
-        // Return response immediately
+        // Return response immediately with the actual ext_job_id from database
         let response = PublicDecryptPostResponseJson {
             status: "queued".to_string(),
             request_id: request_id_for_response.to_string(), // New per-request UUID
             result: PublicDecryptQueuedResult {
-                job_id: ext_job_id.to_string(),
+                job_id: actual_ext_job_id.to_string(), // Use the actual ext_job_id from database
                 retry_after_seconds: 15,
             },
         };
