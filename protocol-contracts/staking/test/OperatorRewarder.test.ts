@@ -316,7 +316,7 @@ describe('OperatorRewarder', function () {
 
     it('should set fee to max fee and claim fees if new max fee lower than current fee', async function () {
       await this.mock.connect(this.beneficiary).setFee(1000);
-      await this.operatorStaking.connect(this.staker1).deposit(ethers.parseEther('1'), this.staker1);
+      await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
       await timeIncreaseNoMine(10);
 
       // If the new max fee is lower than the current fee:

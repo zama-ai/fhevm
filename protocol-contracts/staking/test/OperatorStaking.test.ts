@@ -247,10 +247,10 @@ describe('OperatorStaking', function () {
     });
   });
 
-  describe('restakeOperatorExcess', async function () {
+  describe('restakeExcess', async function () {
     it('should restake in protocol staking', async function () {
       await this.token.connect(this.delegator1).transfer(this.mock, ethers.parseEther('10'));
-      await expect(this.mock.restakeOperatorExcess())
+      await expect(this.mock.restakeExcess())
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.protocolStaking, ethers.parseEther('10'));
     });
@@ -267,7 +267,7 @@ describe('OperatorStaking', function () {
       await this.protocolStaking.release(this.mock);
 
       const restakeAmount = BigInt(ethers.parseEther('1')) + 1n;
-      await expect(this.mock.restakeOperatorExcess())
+      await expect(this.mock.restakeExcess())
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.protocolStaking, restakeAmount);
     });
@@ -426,7 +426,7 @@ describe('OperatorStaking', function () {
         await time.increase(10);
 
         await expect(this.newRewarder.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('1.25'));
-        await expect(this.newRewarder.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('3.75'));
+        await expect(this.newRewarder.earned(this.delegator2)).to.eventually.eq(ethers.parseEther('3.75'));
         await expect(this.newRewarder.unpaidFee()).to.eventually.eq(0);
 
         await expect(this.newRewarder.claimRewards(this.delegator1))
