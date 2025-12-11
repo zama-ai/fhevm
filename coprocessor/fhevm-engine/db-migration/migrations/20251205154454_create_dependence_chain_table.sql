@@ -5,7 +5,7 @@ CREATE TABLE dependence_chain (
     status              TEXT NOT NULL CHECK (status IN (
                                 'updated', 'processing', 'processed'
                             )),
-    error_message              TEXT,  -- optional error message if processing failed
+    error_message        TEXT,  -- optional error message if processing failed
 
     -- Worker Ownership (updated by tfhe-workers)
     worker_id           UUID,              
@@ -24,4 +24,8 @@ CREATE INDEX idx_dependence_chain_worker_id
     ON dependence_chain (worker_id);
 
 CREATE INDEX idx_dependence_chain_worker_id_and_dependence_chain_id
-    ON dependence_chain (dependence_chain_id, worker_id);
+    ON dependence_chain (worker_id, dependence_chain_id);
+
+CREATE INDEX idx_dependence_chain_processing_by_worker
+    ON dependence_chain (worker_id)
+    WHERE status = 'processing';
