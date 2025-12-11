@@ -10,9 +10,9 @@ impl TimeoutRepository {
         Self { pool }
     }
 
-    // NOTE: This is an alternative/fallback solution to the time out cron job migration if we are not able to manage installation of the pg_cron extension into our databse.
-    // Comment cron job migration file and use this if we are not able to install it.
+    // TODO: Make the timeout configurable from settings for each of the values here.
 
+    /// Returns the total number of rows moved to 'timed_out'.
     /// Updates all requests that have been stuck in 'receipt_received' for > 30 minutes.
     pub async fn time_out_stale_requests(&self) -> Result<u64> {
         // 1. User Decrypt
@@ -60,100 +60,3 @@ impl TimeoutRepository {
         Ok(r1 + r2 + r3)
     }
 }
-
-// SUBSEQUENT TOKIO TASK IF WE CANNOT INSTALL OUR CRON...
-/*
-use std::time::Duration;
-use tokio::time::interval;
-use tracing::{error, info};
-
-// Pass your db pool to this function
-pub fn spawn_timeout_worker(pool: PgClient) {
-    tokio::spawn(async move {
-        let repo = TimeoutRepository::new(pool);
-        let mut ticker = interval(Duration::from_secs(60)); // Run every 60 seconds
-
-        loop {
-            ticker.tick().await; // Wait for next tick
-
-            match repo.time_out_stale_requests().await {
-                Ok(count) => {
-                    if count > 0 {
-                        info!("Timeout Worker: Timed out {} stale requests", count);
-                    }
-                }
-                Err(e) => {
-                    error!("Timeout Worker Failed: {:?}", e);
-                }
-            }
-        }
-    });
-}
-
-*/
-
-// ALTERNATIVE FOR DISTRIBUTED CRON JOBS EVEN IN THE INTERNALS.
-/*
-use anyhow::Result;
-use crate::store::sql::client::PgClient;
-
-// A random constant integer ID for this specific job.
-// Postgres uses i64 keys. This ensures no other app logic conflicts with this lock.
-const TIMEOUT_JOB_LOCK_ID: i64 = 847202384;
-
-pub struct TimeoutRepository {
-    pool: PgClient,
-}
-
-impl TimeoutRepository {
-    pub fn new(pool: PgClient) -> Self {
-        Self { pool }
-    }
-
-    // TODO: Make the timeout configurable from settings for each of the values here.
-
-    /// Returns the total number of rows moved to 'timed_out'.
-    pub async fn time_out_stale_requests(&self) -> Result<u64> {
-        let r1 = sqlx::query!(
-            r#"
-            UPDATE user_decrypt_req
-            SET req_status = 'timed_out'::req_status,
-                err_reason = 'Gateway chain did not respond within the expected timeframe'
-            WHERE req_status = 'receipt_received'::req_status
-              AND updated_at < NOW() - INTERVAL '30 minutes'
-            "#
-        )
-        .execute(&self.pool.get_pool())
-        .await?
-        .rows_affected();
-
-        let r2 = sqlx::query!(
-            r#"
-            UPDATE public_decrypt_req
-            SET req_status = 'timed_out'::req_status,
-                err_reason = 'Gateway chain did not respond within the expected timeframe'
-            WHERE req_status = 'receipt_received'::req_status
-              AND updated_at < NOW() - INTERVAL '30 minutes'
-            "#
-        )
-        .execute(&self.pool.get_pool())
-        .await?
-        .rows_affected();
-
-        let r3 = sqlx::query!(
-            r#"
-            UPDATE input_proof_req
-            SET req_status = 'timed_out'::req_status,
-                err_reason = 'Gateway chain did not respond within the expected timeframe'
-            WHERE req_status = 'receipt_received'::req_status
-              AND updated_at < NOW() - INTERVAL '30 minutes'
-            "#
-        )
-        .execute(&self.pool.get_pool())
-        .await?
-        .rows_affected();
-
-        Ok(r1 + r2 + r3)
-    }
-}
-*/

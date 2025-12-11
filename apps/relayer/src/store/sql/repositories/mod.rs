@@ -46,9 +46,6 @@ impl Repositories {
         let health_timeout = Duration::from_secs(config.sql_health_check_timeout_secs);
         let pg_client = Arc::new(PgClient::new(config).await);
 
-        spawn_timeout_worker((*pg_client).clone());
-        spawn_expiry_worker((*pg_client).clone());
-
         Self {
             input_proof: Arc::new(InputProofRepository::new((*pg_client).clone())),
             public_decrypt: Arc::new(PublicDecryptRepository::new((*pg_client).clone())),
@@ -59,5 +56,11 @@ impl Repositories {
             pg_client,
             health_timeout,
         }
+    }
+
+    pub fn start_background_workers(&self) {
+        // We use the internal pg_client to spawn workers
+        spawn_timeout_worker((*self.pg_client).clone());
+        spawn_expiry_worker((*self.pg_client).clone());
     }
 }
