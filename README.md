@@ -44,7 +44,7 @@ FHEVM ensures both confidentiality and composability, with the following guarant
   - [Project structure](#project-structure)
   - [Main features](#main-features)
   - [Use cases](#use-cases)
-- [Resources](#resources)
+- [](#)
 - [Working with FHEVM](#working-with-fhevm)
   - [Citations](#citations)
   - [Contributing](#contributing)
@@ -108,7 +108,7 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/protocol/ex
 ## Resources
 - [Documentation](https://docs.zama.ai/protocol) — Official documentation of FHEVM.
 - [Whitepaper](./fhevm-whitepaper.pdf) — Technical overview of FHEVM's cryptographic design.
-- [Examples](https://docs.zama.ai/protocol/examples) — Examples of building confidential smart contracts.
+- [Examples](https://docs.zama.ai/protocol/examples) — Hands-on examples of building confidential smart contracts with FHEVM.
 - [Awesome Zama – FHEVM](https://github.com/zama-ai/awesome-zama?tab=readme-ov-file#fhevm) — Curated articles, talks, and ecosystem projects.
 
 <p align="right">
