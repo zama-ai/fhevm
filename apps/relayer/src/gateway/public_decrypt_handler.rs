@@ -318,7 +318,7 @@ impl GatewayHandler {
             gateway_request_id: public_decryption_id,
             decrypted_value: req.decryptedResult,
             signatures: req.signatures,
-            extra_data: req.extraData,
+            extra_data: format!("0x{}", hex::encode(&req.extraData)),
         };
 
         let tx_hash_str = format!("{:?}", tx_hash);

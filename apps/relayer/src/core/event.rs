@@ -492,7 +492,7 @@ pub struct PublicDecryptResponse {
     pub gateway_request_id: U256,
     pub decrypted_value: Bytes,
     pub signatures: Vec<Bytes>,
-    pub extra_data: Bytes,
+    pub extra_data: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -500,7 +500,7 @@ pub struct UserDecryptResponse {
     pub gateway_request_id: U256,
     pub reencrypted_shares: Vec<Bytes>,
     pub signatures: Vec<Bytes>,
-    pub extra_data: Bytes,
+    pub extra_data: String,
 }
 
 impl Display for UserDecryptResponse {
@@ -915,7 +915,7 @@ mod tests {
             Bytes::from(vec![9, 10, 11, 12]),
             Bytes::from(vec![13, 14, 15, 16]),
         ];
-        let extra_data = Bytes::from(vec![0x00]);
+        let extra_data = "0x00".to_string();
 
         let response = UserDecryptResponse {
             gateway_request_id: U256::from_str("5").unwrap(),

@@ -69,7 +69,7 @@ impl From<crate::core::event::PublicDecryptResponse> for PublicDecryptResponseJs
         PublicDecryptResponseJson {
             decrypted_value: hex::encode(&response.decrypted_value),
             signatures,
-            extra_data: format!("0x{}", hex::encode(&response.extra_data)), // Add 0x prefix
+            extra_data: response.extra_data, // Already a string
         }
     }
 }

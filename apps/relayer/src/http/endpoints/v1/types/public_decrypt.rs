@@ -28,7 +28,7 @@ pub struct PublicDecryptResponsePayloadJson {
     #[schema(value_type = Vec<String>)]
     pub signatures: Vec<Bytes>,
     #[schema(value_type = String)]
-    pub extra_data: Bytes,
+    pub extra_data: String,
 }
 
 impl Serialize for PublicDecryptResponsePayloadJson {

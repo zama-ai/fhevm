@@ -70,7 +70,7 @@ pub struct UserDecryptResponsePayloadJson {
     // serde(skip) - field is completely skipped during serialization AND deserialization
     #[schema(value_type = String)]
     #[serde(skip)]
-    pub extra_data: Bytes,
+    pub extra_data: String,
 }
 
 impl Serialize for UserDecryptResponsePayloadJson {
@@ -139,17 +139,10 @@ impl From<crate::store::sql::models::user_decrypt_req_model::UserDecryptResponse
             let payload_bytes = hex::decode(&share.share).unwrap_or_default();
             let signature_bytes = hex::decode(&share.kms_signature).unwrap_or_default();
 
-            // Parse extra_data from share - remove 0x prefix if present
-            let extra_data_hex = share
-                .extra_data
-                .strip_prefix("0x")
-                .unwrap_or(&share.extra_data);
-            let extra_data_bytes = hex::decode(extra_data_hex).unwrap_or_else(|_| vec![0x00]);
-
             result_items.push(UserDecryptResponsePayloadJson {
                 payload: Bytes::from(payload_bytes),
                 signature: Bytes::from(signature_bytes),
-                extra_data: Bytes::from(extra_data_bytes),
+                extra_data: share.extra_data,
             });
         }
 

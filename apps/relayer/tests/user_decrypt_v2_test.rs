@@ -129,7 +129,7 @@ mod helpers {
         // Create identical test data
         let test_payload = Bytes::from(vec![0x01, 0x02, 0x03]);
         let test_signature = Bytes::from(vec![0x04, 0x05, 0x06]);
-        let test_extra_data = Bytes::from(vec![0x00]);
+        let test_extra_data = "0x00".to_string();
 
         // Create v1 response
         let v1_item = v1_types::UserDecryptResponsePayloadJson {

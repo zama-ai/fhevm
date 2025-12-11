@@ -49,7 +49,7 @@ pub struct UserDecryptResponsePayloadJson {
     #[schema(value_type = String)]
     pub signature: Bytes,
     #[schema(value_type = String)]
-    pub extra_data: Bytes,
+    pub extra_data: String,
 }
 
 impl Serialize for UserDecryptResponsePayloadJson {

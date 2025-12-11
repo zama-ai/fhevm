@@ -807,11 +807,8 @@ fn assemble_final_response(shares: Vec<UserDecryptShare>) -> Result<UserDecryptR
         }
     }
 
-    // Use extra_data from first share with hex decoding
-    let extra_data = match hex::decode(&first_share.extra_data) {
-        Ok(decoded) => Bytes::from(decoded),
-        Err(e) => return Err(format!("Failed to decode extra_data hex: {}", e)),
-    };
+    // Use extra_data from first share as string
+    let extra_data = first_share.extra_data.clone();
 
     Ok(UserDecryptResponse {
         gateway_request_id: decryption_id,
