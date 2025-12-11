@@ -56,8 +56,9 @@ task('task:setRewardRate')
 task('task:setCoprocessorRewardRate').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   console.log('Setting reward rate for coprocessor protocol staking contract...\n');
 
-  // Get the reward rate for the coprocessor protocol staking contract
-  const rewardRate = BigInt(parseInt(getRequiredEnvVar('PROTOCOL_STAKING_COPRO_REWARD_RATE')));
+// Get the reward rate for the coprocessor protocol staking contract
+// Convert environment variable directly to BigInt to avoid precision loss
+const rewardRate = BigInt(getRequiredEnvVar('PROTOCOL_STAKING_COPRO_REWARD_RATE'));
 
   const protocolStakingCoproProxyAddress = await getProtocolStakingCoproProxyAddress(hre);
   await hre.run('task:setRewardRate', { rewardRate, protocolStakingProxyAddress: protocolStakingCoproProxyAddress });
@@ -69,8 +70,9 @@ task('task:setCoprocessorRewardRate').setAction(async function (_, hre: HardhatR
 task('task:setKMSRewardRate').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   console.log('Setting reward rate for KMS protocol staking contract...\n');
 
-  // Get the reward rate for the KMS protocol staking contract
-  const rewardRate = BigInt(parseInt(getRequiredEnvVar('PROTOCOL_STAKING_KMS_REWARD_RATE')));
+// Get the reward rate for the KMS protocol staking contract
+// Convert environment variable directly to BigInt to avoid precision loss
+const rewardRate = BigInt(getRequiredEnvVar('PROTOCOL_STAKING_KMS_REWARD_RATE'));
 
   // Get the address of the KMS protocol staking contract
   const protocolStakingKmsProxyAddress = await getProtocolStakingKMSProxyAddress(hre);

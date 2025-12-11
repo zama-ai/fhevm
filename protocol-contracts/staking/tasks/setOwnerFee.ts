@@ -77,10 +77,10 @@ task('task:setAllCoprocessorOwnerFees').setAction(async function (_, hre: Hardha
 
   for (let i = 0; i < operatorRewarderAddresses.length; i++) {
     // Get the owner fee for the operator rewarder contracts
-    const ownerFee = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_OWNER_FEE_${i}`)));
+    // Convert environment variable directly to BigInt to avoid precision loss
+    const ownerFee = BigInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_OWNER_FEE_${i}`));
     await hre.run('task:setOwnerFee', { ownerFee, operatorRewarderAddress: operatorRewarderAddresses[i] });
   }
-});
 
 // Set the owner fees for the all KMS operator rewarder contracts using the deployer account
 // This task only works if the deployer account is the owner of all the KMS operator rewarder contracts
@@ -104,10 +104,10 @@ task('task:setAllKMSOwnerFees').setAction(async function (_, hre: HardhatRuntime
 
   for (let i = 0; i < operatorRewarderAddresses.length; i++) {
     // Get the owner fee for the operator rewarder contracts
-    const ownerFee = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_OWNER_FEE_${i}`)));
+    // Convert environment variable directly to BigInt to avoid precision loss
+    const ownerFee = BigInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_OWNER_FEE_${i}`));
     await hre.run('task:setOwnerFee', { ownerFee, operatorRewarderAddress: operatorRewarderAddresses[i] });
   }
-});
 
 // Set the owner fee for the all operator rewarder contracts using the deployer account
 // This task only works if the deployer account is the owner of all the operator rewarder contracts
