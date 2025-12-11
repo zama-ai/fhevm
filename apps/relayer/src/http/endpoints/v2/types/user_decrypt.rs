@@ -1,10 +1,11 @@
-use crate::http::de_string_or_number;
 use crate::http::endpoints::common::types::{ChainId, HandleContractPairJson, RequestValidityJson};
+use crate::http::{de_string_or_number, serialize_vec_as_hex};
+use alloy::primitives::Bytes;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
 
-// Same request type as v1
+// Request type for user decryption
 #[derive(Debug, Deserialize, Clone, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptRequestJson {
@@ -53,16 +54,39 @@ pub struct UserDecryptQueuedResult {
     pub retry_after_seconds: u32,
 }
 
-// GET response when completed
+// Response format defined for TKMS library compatibility on client-side plaintext reconstruction
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct UserDecryptResponseJson {
-    #[schema(value_type = Vec<String>)]
-    pub payloads: Vec<String>, // Hex strings without 0x prefix
-    #[schema(value_type = Vec<String>)]
-    pub signatures: Vec<String>, // Hex strings without 0x prefix
-    #[schema(value_type = Vec<String>)]
-    pub extra_data: Vec<String>, // Hex strings with 0x prefix
+    pub result: Vec<UserDecryptResponsePayloadJson>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+pub struct UserDecryptResponsePayloadJson {
+    #[schema(value_type = String)]
+    pub payload: Bytes,
+    #[schema(value_type = String)]
+    pub signature: Bytes,
+    // Field name must be snake_case for TKMS library compatibility
+    #[schema(value_type = String)]
+    pub extra_data: Bytes,
+}
+
+impl Serialize for UserDecryptResponsePayloadJson {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("UserDecryptResponsePayloadJson", 3)?;
+        state.serialize_field("payload", &serialize_vec_as_hex(&self.payload.to_vec()))?;
+        state.serialize_field("signature", &serialize_vec_as_hex(&self.signature.to_vec()))?;
+        // Field name "extra_data" required for TKMS library compatibility
+        state.serialize_field(
+            "extra_data",
+            &serialize_vec_as_hex(&self.extra_data.to_vec()),
+        )?;
+        state.end()
+    }
 }
 
 // GET response for status check
@@ -83,66 +107,57 @@ pub struct UserDecryptErrorResponseJson {
     pub message: String,
 }
 
-// Standard serialization implementations for v2 API types
+// Implementation for converting core event to response format
 impl From<crate::core::event::UserDecryptResponse> for UserDecryptResponseJson {
     fn from(response: crate::core::event::UserDecryptResponse) -> Self {
-        let payloads: Vec<String> = response
-            .reencrypted_shares
-            .iter()
-            .map(hex::encode)
-            .collect();
+        let mut result_items = Vec::new();
 
-        let signatures: Vec<String> = response.signatures.iter().map(hex::encode).collect();
+        for (i, share) in response.reencrypted_shares.iter().enumerate() {
+            let signature = response.signatures.get(i).cloned().unwrap_or_default();
 
-        // Format extra_data with 0x prefix and create array matching payloads length
-        let formatted_extra_data = format!("0x{}", hex::encode(&response.extra_data));
-        let extra_data: Vec<String> = vec![formatted_extra_data; payloads.len()];
+            result_items.push(UserDecryptResponsePayloadJson {
+                payload: share.clone(),
+                signature,
+                extra_data: response.extra_data.clone(),
+            });
+        }
 
         UserDecryptResponseJson {
-            payloads,
-            signatures,
-            extra_data,
+            result: result_items,
         }
     }
 }
 
-// From implementation for converting database model to v2 API response
+// Implementation for converting database model to response format
 impl From<crate::store::sql::models::user_decrypt_req_model::UserDecryptResponseModel>
     for UserDecryptResponseJson
 {
     fn from(
         model: crate::store::sql::models::user_decrypt_req_model::UserDecryptResponseModel,
     ) -> Self {
-        let mut payloads: Vec<String> = Vec::new();
-        let mut signatures: Vec<String> = Vec::new();
+        let mut result_items = Vec::new();
 
         for share in model.shares.0 {
-            // Shares are already hex strings in the database
-            payloads.push(share.share);
-            signatures.push(share.kms_signature);
+            // Convert hex strings back to bytes
+            let payload_bytes = hex::decode(&share.share).unwrap_or_default();
+            let signature_bytes = hex::decode(&share.kms_signature).unwrap_or_default();
+
+            // Parse extra_data from share - remove 0x prefix if present
+            let extra_data_hex = share
+                .extra_data
+                .strip_prefix("0x")
+                .unwrap_or(&share.extra_data);
+            let extra_data_bytes = hex::decode(extra_data_hex).unwrap_or_else(|_| vec![0x00]);
+
+            result_items.push(UserDecryptResponsePayloadJson {
+                payload: Bytes::from(payload_bytes),
+                signature: Bytes::from(signature_bytes),
+                extra_data: Bytes::from(extra_data_bytes),
+            });
         }
 
-        // Extract extra_data from original request and create array matching shares count
-        let extra_data_value = model
-            .req
-            .get("extra_data")
-            .and_then(|v| v.as_str())
-            .unwrap_or("0x00");
-
-        // Ensure extra_data has 0x prefix for consistency with other v2 endpoints
-        let formatted_extra_data = if extra_data_value.starts_with("0x") {
-            extra_data_value.to_string()
-        } else {
-            format!("0x{}", extra_data_value)
-        };
-
-        // Create extra_data array with same length as payloads/signatures
-        let extra_data: Vec<String> = vec![formatted_extra_data; payloads.len()];
-
         UserDecryptResponseJson {
-            payloads,
-            signatures,
-            extra_data,
+            result: result_items,
         }
     }
 }

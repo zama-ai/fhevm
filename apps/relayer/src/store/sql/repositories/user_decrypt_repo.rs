@@ -11,8 +11,7 @@ use crate::store::sql::{
     repositories::utils::compute_advisory_lock_id,
 };
 use alloy::primitives::U256;
-use sqlx::types::Json;
-use sqlx::types::Uuid;
+use sqlx::types::{Json, Uuid};
 
 // Import conversion functions privately within this repository
 use crate::store::sql::conversion::u256_to_i32;
@@ -450,14 +449,14 @@ impl UserDecryptRepository {
                     jsonb_agg(
                         jsonb_build_object(
                             'share', s.share,
-                            'kms_signature', s.kms_signature
+                            'kms_signature', s.kms_signature,
+                            'extra_data', s.extra_data
                         )
                         ORDER BY s.share_index
                     )
                     FILTER (WHERE s.id IS NOT NULL),
                     '[]'::jsonb
-                ) as "shares!: Json<Vec<UserDecryptResponseShare>>",
-                r.req -- Include original request for extra_data extraction
+                ) as "shares!: Json<Vec<UserDecryptResponseShare>>"
             FROM user_decrypt_req r
             LEFT JOIN (
                 SELECT * FROM user_decrypt_share

@@ -35,6 +35,7 @@ pub struct ConsensusReqState {
 pub struct UserDecryptResponseShare {
     pub share: String,
     pub kms_signature: String,
+    pub extra_data: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -46,5 +47,4 @@ pub struct UserDecryptResponseModel {
     pub gw_req_tx_hash: Option<String>,
     pub gw_consensus_tx_hash: Option<String>,
     pub shares: Json<Vec<UserDecryptResponseShare>>,
-    pub req: Value,
 }

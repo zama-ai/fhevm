@@ -103,6 +103,104 @@ mod helpers {
             })
             .collect()
     }
+
+    /// Validates UserDecrypt response format compatibility with TKMS library
+    /// for client-side plaintext reconstruction
+    pub fn verify_tkms_compatibility() {
+        use alloy::primitives::Bytes;
+        use fhevm_relayer::http::endpoints::v1::types::user_decrypt as v1_types;
+        use fhevm_relayer::http::endpoints::v2::types::user_decrypt as v2_types;
+        use serde_json;
+
+        // Create identical test data
+        let test_payload = Bytes::from(vec![0x01, 0x02, 0x03]);
+        let test_signature = Bytes::from(vec![0x04, 0x05, 0x06]);
+        let test_extra_data = Bytes::from(vec![0x00]);
+
+        // Create v1 response
+        let v1_item = v1_types::UserDecryptResponsePayloadJson {
+            payload: test_payload.clone(),
+            signature: test_signature.clone(),
+            extra_data: test_extra_data.clone(),
+        };
+        let v1_response = v1_types::UserDecryptResponseJson {
+            response: vec![v1_item],
+        };
+
+        // Create v2 response
+        let v2_item = v2_types::UserDecryptResponsePayloadJson {
+            payload: test_payload.clone(),
+            signature: test_signature.clone(),
+            extra_data: test_extra_data.clone(),
+        };
+        let v2_response = v2_types::UserDecryptResponseJson {
+            result: vec![v2_item],
+        };
+
+        // Serialize both to JSON
+        let v1_json = serde_json::to_string(&v1_response).expect("Failed to serialize v1 response");
+        let v2_json = serde_json::to_string(&v2_response).expect("Failed to serialize v2 response");
+
+        // Parse back to compare structure
+        let v1_parsed: serde_json::Value =
+            serde_json::from_str(&v1_json).expect("Failed to parse v1 JSON");
+        let v2_parsed: serde_json::Value =
+            serde_json::from_str(&v2_json).expect("Failed to parse v2 JSON");
+
+        // Check that both have the expected structure
+        assert_eq!(
+            v1_parsed["response"].as_array().unwrap().len(),
+            1,
+            "v1 should have one response item"
+        );
+        assert_eq!(
+            v2_parsed["result"].as_array().unwrap().len(),
+            1,
+            "v2 should have one result item"
+        );
+
+        let v1_item = &v1_parsed["response"][0];
+        let v2_item = &v2_parsed["result"][0];
+
+        // Verify field presence and types
+        assert!(
+            v1_item["payload"].is_string(),
+            "v1 payload should be string"
+        );
+        assert!(
+            v1_item["signature"].is_string(),
+            "v1 signature should be string"
+        );
+
+        assert!(
+            v2_item["payload"].is_string(),
+            "v2 payload should be string"
+        );
+        assert!(
+            v2_item["signature"].is_string(),
+            "v2 signature should be string"
+        );
+        assert!(
+            v2_item["extra_data"].is_string(),
+            "v2 extra_data should be string"
+        );
+
+        // Verify payload and signature values match
+        assert_eq!(
+            v1_item["payload"], v2_item["payload"],
+            "Payload values must match between v1 and v2"
+        );
+        assert_eq!(
+            v1_item["signature"], v2_item["signature"],
+            "Signature values must match between v1 and v2"
+        );
+
+        // Note: v1 doesn't serialize extra_data, so we only verify v2 has it
+        assert_eq!(
+            v2_item["extra_data"], "00",
+            "v2 extra_data should be hex encoded"
+        );
+    }
 }
 
 #[tokio::test]
@@ -166,49 +264,38 @@ async fn test_success_single_request() {
             assert_eq!(get_body.status, "succeeded");
             assert!(get_body.result.is_some());
 
-            // Validate the response structure includes extra_data
+            // Validate the response structure for TKMS library compatibility
             let result = get_body.result.unwrap();
-            assert!(!result.payloads.is_empty(), "Payloads should not be empty");
             assert!(
-                !result.signatures.is_empty(),
-                "Signatures should not be empty"
-            );
-            assert!(
-                !result.extra_data.is_empty(),
-                "Extra data should not be empty"
+                !result.result.is_empty(),
+                "Result items should not be empty"
             );
 
-            // Ensure extra_data has the same length as payloads/signatures
-            assert_eq!(
-                result.payloads.len(),
-                result.signatures.len(),
-                "Payloads and signatures should have same length"
-            );
-            assert_eq!(
-                result.payloads.len(),
-                result.extra_data.len(),
-                "Payloads and extra_data should have same length"
-            );
-
-            // Verify extra_data format (should be hex with 0x prefix)
-            for extra_data_item in &result.extra_data {
+            // Verify each result item has the required fields
+            for result_item in &result.result {
                 assert!(
-                    extra_data_item.starts_with("0x"),
-                    "Extra data should start with 0x prefix: {}",
-                    extra_data_item
+                    !result_item.payload.is_empty(),
+                    "Payload should not be empty"
+                );
+                assert!(
+                    !result_item.signature.is_empty(),
+                    "Signature should not be empty"
+                );
+                assert!(
+                    !result_item.extra_data.is_empty(),
+                    "Extra data should not be empty"
                 );
             }
-
-            println!(
-                "✅ V2 response validation passed: {} payloads, {} signatures, {} extra_data items",
-                result.payloads.len(),
-                result.signatures.len(),
-                result.extra_data.len()
-            );
         }
         reqwest::StatusCode::ACCEPTED => {
             assert_eq!(get_body.status, "queued");
         }
         _ => panic!("Unexpected status code: {}", status),
     }
+}
+
+#[test]
+fn test_tkms_compatibility() {
+    // Validates response format compatibility with TKMS library for plaintext reconstruction
+    helpers::verify_tkms_compatibility();
 }
