@@ -20,12 +20,12 @@ import {ProtocolStaking} from "./ProtocolStaking.sol";
 /**
  * @title OperatorStaking
  * @custom:security-contact security@zama.ai
- * @notice Allows users to stake assets and receive shares, with support for reward distribution.
+ * @notice Allows users to delegate assets to an operator staker and receive shares, with support for reward distribution.
  * @dev Integrates with ProtocolStaking and OperatorRewarder contracts. Inspired by ERC7540 but not fully compliant.
  * Also inherits ERC1363 to ease of users with potential OperatorStaking contract migrations.
  *
  * NOTE: This contract supports slashing on the `ProtocolStaking` level, meaning that the overall stake of this contract
- * may decrease due to slashing. These losses are symmetrically passed to restakers on the `OperatorStaking` level.
+ * may decrease due to slashing. These losses are symmetrically passed to delegators on the `OperatorStaking` level.
  * Slashing must first decrease the `ProtocolStaking` balance of this contract before affecting pending withdrawals.
  */
 contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
@@ -37,7 +37,7 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
     address private _rewarder;
     uint256 private _totalSharesInRedemption;
     mapping(address => uint256) private _sharesReleased;
-    mapping(address => Checkpoints.Trace208) private _unstakeRequests;
+    mapping(address => Checkpoints.Trace208) private _redeemRequests;
     mapping(address => mapping(address => bool)) private _operator;
 
     /// @dev Emitted when an operator is set or unset for a controller.
@@ -144,10 +144,10 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
                 IERC20(asset()).balanceOf(address(this)) + protocolStaking_.awaitingRelease(address(this))
             );
 
-        (, uint48 lastReleaseTime, uint208 controllerSharesRedeemed) = _unstakeRequests[controller].latestCheckpoint();
+        (, uint48 lastReleaseTime, uint208 controllerSharesRedeemed) = _redeemRequests[controller].latestCheckpoint();
         uint48 releaseTime = protocolStaking_.unstake(SafeCast.toUint256(SignedMath.max(assetsToWithdraw, 0)));
         assert(releaseTime >= lastReleaseTime); // should never happen
-        _unstakeRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
+        _redeemRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
 
         emit RedeemRequest(controller, owner, 0, msg.sender, shares, releaseTime);
     }
@@ -187,13 +187,14 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
     }
 
     /**
-     * @dev Restake excess tokens held by this contract. Excess tokens held by this contract after
+     * @dev Stake excess tokens held by this contract. Excess tokens held by this contract after
      * accounting for all in-flight redemptions are restaked into the `ProtocolStaking` contract.
      *
      * NOTE: Excess tokens will be in the `OperatorStaking` contract the operator is slashed
-     * during a redemption flow. Anyone can call this function to restake those tokens.
+     * during a redemption flow or if donations are made to it. Anyone can call this function to
+     * restake those tokens.
      */
-    function restake() public virtual {
+    function stakeExcess() public virtual {
         ProtocolStaking protocolStaking_ = protocolStaking();
         protocolStaking_.release(address(this));
         uint256 amountToRestake = IERC20(asset()).balanceOf(address(this)) - previewRedeem(totalSharesInRedemption());
@@ -268,7 +269,7 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
      * @return Amount of shares pending redeem.
      */
     function pendingRedeemRequest(uint256, address controller) public view virtual returns (uint256) {
-        return _unstakeRequests[controller].latest() - _unstakeRequests[controller].upperLookup(Time.timestamp());
+        return _redeemRequests[controller].latest() - _redeemRequests[controller].upperLookup(Time.timestamp());
     }
 
     /**
@@ -277,7 +278,7 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
      * @return Amount of claimable shares.
      */
     function claimableRedeemRequest(uint256, address controller) public view virtual returns (uint256) {
-        return _unstakeRequests[controller].upperLookup(Time.timestamp()) - _sharesReleased[controller];
+        return _redeemRequests[controller].upperLookup(Time.timestamp()) - _sharesReleased[controller];
     }
 
     /**
