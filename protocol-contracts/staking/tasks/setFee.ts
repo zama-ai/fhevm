@@ -4,28 +4,23 @@ import { getRequiredEnvVar } from './utils/loadVariables';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-// Set the owner fee for the operator rewarder contract using the deployer account
+// Set the fee for the operator rewarder contract using the deployer account
 // This task only works if the deployer account is the owner of the operator rewarder contract
-// Note: The owner fee is in basis points (in 1/100th of a percent, so 10000 = 100.00%)
+// Note: The fee is in basis points (in 1/100th of a percent, so 10000 = 100.00%)
 // Example usage:
-// npx hardhat task:setOwnerFee --ownerFee 2000 --operatorRewarderAddress 0x1234567890123456789012345678901234567890 --network testnet
-task('task:setOwnerFee')
-  .addParam(
-    'ownerFee',
-    'The owner fee to set for the operator rewarder contract (in 1/100th of a percent)',
-    0n,
-    types.bigint,
-  )
+// npx hardhat task:setFee --fee 2000 --operatorRewarderAddress 0x1234567890123456789012345678901234567890 --network testnet
+task('task:setFee')
+  .addParam('fee', 'The fee to set for the operator rewarder contract (in 1/100th of a percent)', 0n, types.bigint)
   .addParam(
     'operatorRewarderAddress',
-    'The address of the operator rewarder contract to set the owner fee for',
+    'The address of the operator rewarder contract to set the fee for',
     '',
     types.string,
   )
-  .setAction(async function ({ ownerFee, operatorRewarderAddress }, hre: HardhatRuntimeEnvironment) {
+  .setAction(async function ({ fee, operatorRewarderAddress }, hre: HardhatRuntimeEnvironment) {
     const { ethers, network, getNamedAccounts } = hre;
 
-    console.log('Setting owner fee for operator rewarder contract...');
+    console.log('Setting fee for operator rewarder contract...');
 
     // Get the deployer account
     const { deployer } = await getNamedAccounts();
@@ -39,14 +34,14 @@ task('task:setOwnerFee')
       deployerSigner,
     );
 
-    // Set the owner fee
-    const tx = await operatorRewarder.setOwnerFee(ownerFee);
+    // Set the fee
+    const tx = await operatorRewarder.setFee(fee);
     await tx.wait();
 
     console.log(
       [
-        `👉 Set owner fee:`,
-        `  - Owner fee in basis points: ${ownerFee}`,
+        `👉 Set fee:`,
+        `  - Fee in basis points: ${fee}`,
         `  - Operator rewarder address: ${operatorRewarderAddress}`,
         `  - Initiated by owner (deployer): ${deployer}`,
         `  - Network: ${network.name}`,
@@ -55,12 +50,12 @@ task('task:setOwnerFee')
     );
   });
 
-// Set the owner fees for the all coprocessor operator rewarder contracts using the deployer account
+// Set the fees for the all coprocessor operator rewarder contracts using the deployer account
 // This task only works if the deployer account is the owner of all the coprocessor operator rewarder contracts
 // Example usage:
-// npx hardhat task:setAllCoprocessorOwnerFees --network testnet
-task('task:setAllCoprocessorOwnerFees').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
-  console.log('Setting owner fee for all coprocessor operator rewarder contracts...\n');
+// npx hardhat task:setAllCoprocessorFees --network testnet
+task('task:setAllCoprocessorFees').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
+  console.log('Setting fee for all coprocessor operator rewarder contracts...\n');
 
   // Get the addresses of all coprocessor operator rewarder contracts
   const operatorRewarderAddresses = await getAllOperatorRewarderCoproAddresses(hre);
@@ -76,18 +71,18 @@ task('task:setAllCoprocessorOwnerFees').setAction(async function (_, hre: Hardha
   }
 
   for (let i = 0; i < operatorRewarderAddresses.length; i++) {
-    // Get the owner fee for the operator rewarder contracts
-    const ownerFee = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_OWNER_FEE_${i}`)));
-    await hre.run('task:setOwnerFee', { ownerFee, operatorRewarderAddress: operatorRewarderAddresses[i] });
+    // Get the fee for the operator rewarder contracts
+    const fee = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_FEE_${i}`)));
+    await hre.run('task:setFee', { fee, operatorRewarderAddress: operatorRewarderAddresses[i] });
   }
 });
 
-// Set the owner fees for the all KMS operator rewarder contracts using the deployer account
+// Set the fees for the all KMS operator rewarder contracts using the deployer account
 // This task only works if the deployer account is the owner of all the KMS operator rewarder contracts
 // Example usage:
-// npx hardhat task:setAllKMSOwnerFees --network testnet
-task('task:setAllKMSOwnerFees').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
-  console.log('Setting owner fee for all KMS operator rewarder contracts...\n');
+// npx hardhat task:setAllKMSFees --network testnet
+task('task:setAllKMSFees').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
+  console.log('Setting fee for all KMS operator rewarder contracts...\n');
 
   // Get the addresses of all KMS operator rewarder contracts
   const operatorRewarderAddresses = await getAllOperatorRewarderKMSAddresses(hre);
@@ -103,21 +98,21 @@ task('task:setAllKMSOwnerFees').setAction(async function (_, hre: HardhatRuntime
   }
 
   for (let i = 0; i < operatorRewarderAddresses.length; i++) {
-    // Get the owner fee for the operator rewarder contracts
-    const ownerFee = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_OWNER_FEE_${i}`)));
-    await hre.run('task:setOwnerFee', { ownerFee, operatorRewarderAddress: operatorRewarderAddresses[i] });
+    // Get the fee for the operator rewarder contracts
+    const fee = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_FEE_${i}`)));
+    await hre.run('task:setFee', { fee, operatorRewarderAddress: operatorRewarderAddresses[i] });
   }
 });
 
-// Set the owner fee for the all operator rewarder contracts using the deployer account
+// Set the fee for the all operator rewarder contracts using the deployer account
 // This task only works if the deployer account is the owner of all the operator rewarder contracts
 // Example usage:
-// npx hardhat task:setAllOwnerFees --network testnet
-task('task:setAllOwnerFees').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
-  console.log('Setting owner fee for all operator rewarder contracts...\n');
+// npx hardhat task:setAllFees --network testnet
+task('task:setAllFees').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
+  console.log('Setting fee for all operator rewarder contracts...\n');
 
-  await hre.run('task:setAllCoprocessorOwnerFees');
-  await hre.run('task:setAllKMSOwnerFees');
+  await hre.run('task:setAllCoprocessorFees');
+  await hre.run('task:setAllKMSFees');
 
-  console.log('✅ Owner fees for all operator rewarder contracts have been set\n');
+  console.log('✅ Fees for all operator rewarder contracts have been set\n');
 });

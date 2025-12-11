@@ -22,6 +22,9 @@ async function deployOperatorStaking(
   symbol: string,
   protocolStakingAddress: string,
   ownerAddress: string,
+  beneficiaryAddress: string,
+  initialMaxFeeBasisPoints: number,
+  initialFeeBasisPoints: number,
   hre: HardhatRuntimeEnvironment,
 ) {
   const { getNamedAccounts, ethers, deployments, network } = hre;
@@ -33,7 +36,15 @@ async function deployOperatorStaking(
 
   // Get the contract factory and deploy the operator staking and rewarder contracts
   const operatorStakingFactory = await ethers.getContractFactory(OPERATOR_STAKING_CONTRACT_NAME, deployerSigner);
-  const operatorStaking = await operatorStakingFactory.deploy(tokenName, symbol, protocolStakingAddress, ownerAddress);
+  const operatorStaking = await operatorStakingFactory.deploy(
+    tokenName,
+    symbol,
+    protocolStakingAddress,
+    ownerAddress,
+    beneficiaryAddress,
+    initialMaxFeeBasisPoints,
+    initialFeeBasisPoints,
+  );
   await operatorStaking.waitForDeployment();
 
   // Get the operator staking and rewarder addresses
@@ -84,11 +95,19 @@ task('task:deployOperatorStakingCopro')
     const coproTokenSymbol = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_TOKEN_SYMBOL_${index}`);
     const coproOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_OWNER_ADDRESS_${index}`);
 
+    // Get the env vars for the coprocessor operator rewarder contract (deployed at the same time)
+    const coproBeneficiaryAddress = getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_BENEFICIARY_${index}`);
+    const coproInitialMaxFeeBasisPoints = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_MAX_FEE_${index}`));
+    const coproInitialFeeBasisPoints = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_FEE_${index}`));
+
     await deployOperatorStaking(
       coproTokenName,
       coproTokenSymbol,
       protocolStakingCoproProxyAddress,
       coproOwnerAddress,
+      coproBeneficiaryAddress,
+      coproInitialMaxFeeBasisPoints,
+      coproInitialFeeBasisPoints,
       hre,
     );
   });
@@ -116,7 +135,21 @@ task('task:deployOperatorStakingKMS')
     const kmsTokenSymbol = getRequiredEnvVar(`OPERATOR_STAKING_KMS_TOKEN_SYMBOL_${index}`);
     const kmsOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_KMS_OWNER_ADDRESS_${index}`);
 
-    await deployOperatorStaking(kmsTokenName, kmsTokenSymbol, protocolStakingKMSProxyAddress, kmsOwnerAddress, hre);
+    // Get the env vars for the KMS operator rewarder contract (deployed at the same time)
+    const kmsBeneficiaryAddress = getRequiredEnvVar(`OPERATOR_REWARDER_KMS_BENEFICIARY_${index}`);
+    const kmsInitialMaxFeeBasisPoints = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_MAX_FEE_${index}`));
+    const kmsInitialFeeBasisPoints = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_FEE_${index}`));
+
+    await deployOperatorStaking(
+      kmsTokenName,
+      kmsTokenSymbol,
+      protocolStakingKMSProxyAddress,
+      kmsOwnerAddress,
+      kmsBeneficiaryAddress,
+      kmsInitialMaxFeeBasisPoints,
+      kmsInitialFeeBasisPoints,
+      hre,
+    );
   });
 
 // Deploy the coprocessor OperatorStaking contracts

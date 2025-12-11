@@ -14,7 +14,7 @@ import { HardhatRuntimeEnvironment } from 'hardhat/types';
 // --network testnet
 task('task:depositOperatorStakingFromDeployer')
   .addParam('assets', 'The amount of assets to deposit into the operator staking contract', 0n, types.bigint)
-  .addParam('receiver', 'The address of the operator rewarder contract to set the owner fee for', '', types.string)
+  .addParam('receiver', 'The address to receive the minted shares', '', types.string)
   .addParam(
     'operatorStakingAddress',
     'The address of the operator staking contract to deposit assets into',
@@ -30,11 +30,11 @@ task('task:depositOperatorStakingFromDeployer')
     const { deployer } = await getNamedAccounts();
     const deployerSigner = await ethers.getSigner(deployer);
 
-    // Get the Zama token mock contract
-    const zamaTokenMock = await ethers.getContractAt('ERC20Mock', getRequiredEnvVar('ZAMA_TOKEN_ADDRESS'));
+    // Get the Zama token contract as an ERC20 interface
+    const zamaToken = await ethers.getContractAt('IERC20', getRequiredEnvVar('ZAMA_TOKEN_ADDRESS'));
 
     // Approve the operator staking contract with the assets amount
-    const txApprove = await zamaTokenMock.connect(deployerSigner).approve(operatorStakingAddress, assets);
+    const txApprove = await zamaToken.connect(deployerSigner).approve(operatorStakingAddress, assets);
     const receiptApprove = await txApprove.wait();
 
     if (receiptApprove?.status !== 1) {

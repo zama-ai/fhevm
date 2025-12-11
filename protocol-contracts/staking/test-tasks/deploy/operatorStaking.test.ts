@@ -15,6 +15,7 @@ describe('OperatorStaking Deployment', function () {
 
       // Test each coprocessor operator staking contract
       for (let i = 0; i < numOperatorStakingCopro; i++) {
+        // Get the env vars for the coprocessor operator staking contract
         const coproTokenName = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_TOKEN_NAME_${i}`);
         const coproTokenSymbol = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_TOKEN_SYMBOL_${i}`);
         const coproOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_OWNER_ADDRESS_${i}`);
@@ -35,6 +36,17 @@ describe('OperatorStaking Deployment', function () {
         // Verify the rewarder was deployed and has bytecode
         const rewarderAddress = await operatorStaking.rewarder();
         await expectContractDeployed(rewarderAddress);
+
+        // Get the env vars for the coprocessor operator rewarder contract
+        const coproBeneficiaryAddress = getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_BENEFICIARY_${i}`);
+        const coproInitialFee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_FEE_${i}`));
+        const coproInitialMaxFee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_COPRO_MAX_FEE_${i}`));
+
+        // Verify the rewarder contract configuration
+        const rewarder = await hre.ethers.getContractAt('OperatorRewarder', rewarderAddress);
+        expect(await rewarder.beneficiary()).to.equal(coproBeneficiaryAddress);
+        expect(await rewarder.feeBasisPoints()).to.equal(coproInitialFee);
+        expect(await rewarder.maxFeeBasisPoints()).to.equal(coproInitialMaxFee);
       }
     });
   });
@@ -49,6 +61,7 @@ describe('OperatorStaking Deployment', function () {
 
       // Test each KMS operator staking contract
       for (let i = 0; i < numOperatorStakingKms; i++) {
+        // Get the env vars for the KMS operator staking contract
         const kmsTokenName = getRequiredEnvVar(`OPERATOR_STAKING_KMS_TOKEN_NAME_${i}`);
         const kmsTokenSymbol = getRequiredEnvVar(`OPERATOR_STAKING_KMS_TOKEN_SYMBOL_${i}`);
         const kmsOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_KMS_OWNER_ADDRESS_${i}`);
@@ -69,6 +82,17 @@ describe('OperatorStaking Deployment', function () {
         // Verify the rewarder was deployed and has bytecode
         const rewarderAddress = await operatorStaking.rewarder();
         await expectContractDeployed(rewarderAddress);
+
+        // Get the env vars for the KMS operator rewarder contract
+        const kmsBeneficiaryAddress = getRequiredEnvVar(`OPERATOR_REWARDER_KMS_BENEFICIARY_${i}`);
+        const kmsInitialFee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_FEE_${i}`));
+        const kmsInitialMaxFee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_MAX_FEE_${i}`));
+
+        // Verify the rewarder contract configuration
+        const rewarder = await hre.ethers.getContractAt('OperatorRewarder', rewarderAddress);
+        expect(await rewarder.beneficiary()).to.equal(kmsBeneficiaryAddress);
+        expect(await rewarder.feeBasisPoints()).to.equal(kmsInitialFee);
+        expect(await rewarder.maxFeeBasisPoints()).to.equal(kmsInitialMaxFee);
       }
     });
   });

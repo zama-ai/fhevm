@@ -69,19 +69,34 @@ contract OperatorStaking is ERC20, Ownable, ReentrancyGuardTransient {
      * @param symbol The symbol of the ERC20 token.
      * @param protocolStaking_ The ProtocolStaking contract address.
      * @param owner The owner address.
+     * @param beneficiary The address that can set and claim fees.
+     * @param initialMaxFeeBasisPoints_ The initial maximum fee basis points for the OperatorRewarder contract.
+     * @param initialFeeBasisPoints_ The initial fee basis points for the OperatorRewarder contract.
      */
     constructor(
         string memory name,
         string memory symbol,
         ProtocolStaking protocolStaking_,
-        address owner
+        address owner,
+        address beneficiary,
+        uint16 initialMaxFeeBasisPoints_,
+        uint16 initialFeeBasisPoints_
     ) ERC20(name, symbol) Ownable(owner) {
         _asset = IERC20(protocolStaking_.stakingToken());
         _protocolStaking = protocolStaking_;
 
         IERC20(asset()).approve(address(protocolStaking_), type(uint256).max);
 
-        address rewarder_ = address(new OperatorRewarder(owner, protocolStaking_, this));
+        address rewarder_ = address(
+            new OperatorRewarder(
+                owner,
+                beneficiary,
+                protocolStaking_,
+                this,
+                initialMaxFeeBasisPoints_,
+                initialFeeBasisPoints_
+            )
+        );
         protocolStaking_.setRewardsRecipient(rewarder_);
         _rewarder = rewarder_;
 

@@ -3,7 +3,7 @@ import './tasks/addEligibleAccount';
 import './tasks/deployment';
 import './tasks/deposit';
 import './tasks/ownership';
-import './tasks/setOwnerFee';
+import './tasks/setFee';
 import './tasks/setRewardRate';
 import './tasks/verify';
 import '@nomicfoundation/hardhat-chai-matchers';

@@ -14,7 +14,7 @@ import {ProtocolStaking} from "./ProtocolStaking.sol";
 /**
  * @title OperatorRewarder
  * @custom:security-contact security@zama.ai
- * @notice Distributes protocol staking rewards to operator stakers, with optional owner fee.
+ * @notice Distributes protocol staking rewards to operator stakers, with optional fee.
  * @dev A rewarder contract that works in tandem with `OperatorStaking` and `ProtocolStaking` contracts.
  * This contract receives rewards directly from `ProtocolStaking` and distributes them to `OperatorStaking` staker.
  * The owner of this contract can opt to take a fee on the rewards.
@@ -26,21 +26,38 @@ contract OperatorRewarder is Ownable {
     IERC20 private immutable _token;
     ProtocolStaking private immutable _protocolStaking;
     OperatorStaking private immutable _operatorStaking;
-    uint16 private _ownerFeeBasisPoints;
+    address private _beneficiary;
+    uint16 private _maxFeeBasisPoints;
+    uint16 private _feeBasisPoints;
     bool private _shutdown;
     uint256 private _lastClaimTotalAssetsPlusPaidRewards;
     uint256 private _totalRewardsPaid;
     int256 private _totalVirtualRewardsPaid;
     mapping(address => int256) private _rewardsPaid;
 
+    /// @notice Emitted when the beneficiary is transferred.
+    event BeneficiaryTransferred(address oldBeneficiary, address newBeneficiary);
+
     /// @notice Emitted when the contract is shut down.
     event Shutdown();
 
-    /// @notice Emitted when the owner fee is updated.
-    event OwnerFeeUpdated(uint16 oldFee, uint16 newFee);
+    /// @notice Emitted when the maximum fee is updated.
+    event MaxFeeUpdated(uint16 oldFee, uint16 newFee);
+
+    /// @notice Emitted when the fee is updated.
+    event FeeUpdated(uint16 oldFee, uint16 newFee);
 
     /// @notice Error for unauthorized caller (not OperatorStaking).
     error CallerNotOperatorStaking(address caller);
+
+    /// @notice Error for unauthorized caller (not beneficiary).
+    error CallerNotBeneficiary(address caller);
+
+    /// @notice Error for invalid beneficiary address.
+    error InvalidBeneficiary(address beneficiary);
+
+    /// @notice Error for beneficiary already set to the same address.
+    error BeneficiaryAlreadySet(address beneficiary);
 
     /// @notice Error for attempting to shutdown when already shutdown.
     error AlreadyShutdown();
@@ -48,15 +65,56 @@ contract OperatorRewarder is Ownable {
     /// @notice Error for invalid basis points value.
     error InvalidBasisPoints(uint16 basisPoints);
 
+    /// @notice Error for fee already set to the same value.
+    error FeeAlreadySet(uint16 feeBasisPoints);
+
+    /// @notice Error for basis points value greater than the maximum allowed.
+    error MaxBasisPointsExceeded(uint16 basisPoints, uint16 maxBasisPoints);
+
+    /// @notice Error for max fee already set to the same value.
+    error MaxFeeAlreadySet(uint16 maxFeeBasisPoints);
+
     modifier onlyOperatorStaking() {
         require(msg.sender == address(operatorStaking()), CallerNotOperatorStaking(msg.sender));
         _;
     }
 
-    constructor(address owner, ProtocolStaking protocolStaking_, OperatorStaking operatorStaking_) Ownable(owner) {
+    modifier onlyBeneficiary() {
+        require(msg.sender == _beneficiary, CallerNotBeneficiary(msg.sender));
+        _;
+    }
+
+    /**
+     * @notice Initializes the OperatorRewarder contract.
+     * @param owner The owner address.
+     * @param beneficiary_ The address that can set and claim fees.
+     * @param protocolStaking_ The ProtocolStaking contract address.
+     * @param operatorStaking_ The OperatorStaking contract address.
+     * @param initialMaxFeeBasisPoints_ The initial max fee basis points.
+     * @param initialFeeBasisPoints_ The initial fee basis points.
+     */
+    constructor(
+        address owner,
+        address beneficiary_,
+        ProtocolStaking protocolStaking_,
+        OperatorStaking operatorStaking_,
+        uint16 initialMaxFeeBasisPoints_,
+        uint16 initialFeeBasisPoints_
+    ) Ownable(owner) {
+        _transferBeneficiary(beneficiary_);
         _token = IERC20(protocolStaking_.stakingToken());
         _protocolStaking = protocolStaking_;
         _operatorStaking = operatorStaking_;
+        _setMaxFee(initialMaxFeeBasisPoints_);
+        _setFee(initialFeeBasisPoints_);
+    }
+
+    /**
+     * @notice Transfers the beneficiary address. Only callable by the owner.
+     * @param newBeneficiary The new beneficiary address.
+     */
+    function transferBeneficiary(address newBeneficiary) public virtual onlyOwner {
+        _transferBeneficiary(newBeneficiary);
     }
 
     /**
@@ -73,27 +131,35 @@ contract OperatorRewarder is Ownable {
     }
 
     /**
-     * @notice Claims owner fee.
+     * @notice Claims unpaid fees. Only callable by the beneficiary.
      */
-    function claimOwnerFee() public virtual onlyOwner {
-        uint256 totalAssetsPlusPaidRewards = _totalAssetsPlusPaidRewards();
-        uint256 unpaidOwnerFee_ = _unpaidOwnerFee(totalAssetsPlusPaidRewards);
-        _lastClaimTotalAssetsPlusPaidRewards = totalAssetsPlusPaidRewards - unpaidOwnerFee_;
-        if (unpaidOwnerFee_ > 0) {
-            _doTransferOut(owner(), unpaidOwnerFee_);
-        }
+    function claimFee() public virtual onlyBeneficiary {
+        _claimFee();
     }
 
     /**
-     * @notice Sets the owner fee in basis points (1/100th of a percent).
-     * @param basisPoints Fee in basis points (max 10000).
+     * @notice Sets the maximum fee in basis points (1/100th of a percent) that the beneficiary
+     * can set.
+     * If the new max fee is lower than the current fee:
+     * - the fee is set to the new max fee
+     * - the unpaid fees are claimed and transferred to the beneficiary
+     * @param basisPoints Maximum fee in basis points (max 10000).
      */
-    function setOwnerFee(uint16 basisPoints) public virtual onlyOwner {
-        require(basisPoints <= 10000, InvalidBasisPoints(basisPoints));
+    function setMaxFee(uint16 basisPoints) public virtual onlyOwner {
+        require(basisPoints != maxFeeBasisPoints(), MaxFeeAlreadySet(maxFeeBasisPoints()));
 
-        claimOwnerFee();
-        emit OwnerFeeUpdated(_ownerFeeBasisPoints, basisPoints);
-        _ownerFeeBasisPoints = basisPoints;
+        _setMaxFee(basisPoints);
+    }
+
+    /**
+     * @notice Sets the fee in basis points (1/100th of a percent). Only callable by the beneficiary.
+     * Unpaid fees are claimed and transferred to the beneficiary.
+     * @param basisPoints Fee in basis points (cannot be greater than the maximum fee).
+     */
+    function setFee(uint16 basisPoints) public virtual onlyBeneficiary {
+        require(basisPoints != feeBasisPoints(), FeeAlreadySet(feeBasisPoints()));
+
+        _setFee(basisPoints);
     }
 
     /**
@@ -134,6 +200,14 @@ contract OperatorRewarder is Ownable {
     }
 
     /**
+     * @notice Returns the beneficiary address, the address that can set and claim fees.
+     * @return The beneficiary address.
+     */
+    function beneficiary() public view virtual returns (address) {
+        return _beneficiary;
+    }
+
+    /**
      * @notice Returns the staking token address.
      * @return The IERC20 staking token.
      */
@@ -166,11 +240,19 @@ contract OperatorRewarder is Ownable {
     }
 
     /**
-     * @notice Returns the owner fee in basis points.
+     * @notice Returns the maximum fee in basis points that the beneficiary can set.
      * @return Fee in basis points.
      */
-    function ownerFeeBasisPoints() public view returns (uint16) {
-        return _ownerFeeBasisPoints;
+    function maxFeeBasisPoints() public view returns (uint16) {
+        return _maxFeeBasisPoints;
+    }
+
+    /**
+     * @notice Returns the fee in basis points.
+     * @return Fee in basis points.
+     */
+    function feeBasisPoints() public view returns (uint16) {
+        return _feeBasisPoints;
     }
 
     /**
@@ -188,15 +270,15 @@ contract OperatorRewarder is Ownable {
 
     function historicalReward() public view virtual returns (uint256) {
         uint256 totalAssetsPlusPaidRewards = _totalAssetsPlusPaidRewards();
-        return totalAssetsPlusPaidRewards - _unpaidOwnerFee(totalAssetsPlusPaidRewards);
+        return totalAssetsPlusPaidRewards - _unpaidFee(totalAssetsPlusPaidRewards);
     }
 
     /**
-     * @notice Returns unpaid owner fee.
-     * @return Amount of unpaid owner fee.
+     * @notice Returns unpaid fee.
+     * @return Amount of unpaid fee.
      */
-    function unpaidOwnerFee() public view virtual returns (uint256) {
-        return _unpaidOwnerFee(_totalAssetsPlusPaidRewards());
+    function unpaidFee() public view virtual returns (uint256) {
+        return _unpaidFee(_totalAssetsPlusPaidRewards());
     }
 
     function _doTransferOut(address to, uint256 amount) internal {
@@ -207,6 +289,69 @@ contract OperatorRewarder is Ownable {
         token_.safeTransfer(to, amount);
     }
 
+    /**
+     * @notice Transfers the beneficiary address.
+     * @param newBeneficiary The new beneficiary address.
+     * @dev Transferring the beneficiary address does not trigger a claim of unclaimed fees for the
+     * old beneficiary on purpose. This is to avoid losing unclaimed fees in case a beneficiary loses
+     * access to their private key. It is acceptable as the owner (who can set the beneficiary) is
+     * expected to be a governance DAO.
+     */
+    function _transferBeneficiary(address newBeneficiary) internal virtual {
+        require(newBeneficiary != address(0), InvalidBeneficiary(address(0)));
+        require(newBeneficiary != _beneficiary, BeneficiaryAlreadySet(newBeneficiary));
+
+        address oldBeneficiary = _beneficiary;
+        _beneficiary = newBeneficiary;
+        emit BeneficiaryTransferred(oldBeneficiary, newBeneficiary);
+    }
+
+    /**
+     * @notice Claims fee. Fees are transferred to the beneficiary address.
+     */
+    function _claimFee() internal virtual {
+        uint256 totalAssetsPlusPaidRewards = _totalAssetsPlusPaidRewards();
+        uint256 unpaidFee_ = _unpaidFee(totalAssetsPlusPaidRewards);
+        _lastClaimTotalAssetsPlusPaidRewards = totalAssetsPlusPaidRewards - unpaidFee_;
+        if (unpaidFee_ > 0) {
+            _doTransferOut(beneficiary(), unpaidFee_);
+        }
+    }
+
+    /**
+     * @notice Sets the maximum fee in basis points (1/100th of a percent) that the beneficiary
+     * can set.
+     * If the new max fee is lower than the current fee:
+     * - the fee is set to the new max fee
+     * - the unpaid fees are claimed and transferred to the beneficiary
+     * @param basisPoints Maximum fee in basis points (max 10000).
+     */
+    function _setMaxFee(uint16 basisPoints) internal virtual {
+        require(basisPoints <= 10000, InvalidBasisPoints(basisPoints));
+
+        if (basisPoints < feeBasisPoints()) {
+            _setFee(basisPoints);
+        }
+
+        emit MaxFeeUpdated(maxFeeBasisPoints(), basisPoints);
+        _maxFeeBasisPoints = basisPoints;
+    }
+
+    /**
+     * @notice Sets the fee in basis points (1/100th of a percent).
+     * Unpaid fees are claimed and transferred to the beneficiary.
+     * @param basisPoints Fee in basis points (cannot be greater than the maximum fee).
+     */
+    function _setFee(uint16 basisPoints) internal virtual {
+        // The following statement also makes sure the basis points is not greater than 10000, as
+        // the max fee basis points also follows this constraint.
+        require(basisPoints <= maxFeeBasisPoints(), MaxBasisPointsExceeded(basisPoints, maxFeeBasisPoints()));
+
+        _claimFee();
+        emit FeeUpdated(feeBasisPoints(), basisPoints);
+        _feeBasisPoints = basisPoints;
+    }
+
     function _totalAssetsPlusPaidRewards() internal view returns (uint256) {
         return
             token().balanceOf(address(this)) +
@@ -214,9 +359,9 @@ contract OperatorRewarder is Ownable {
             _totalRewardsPaid;
     }
 
-    function _unpaidOwnerFee(uint256 totalAssetsPlusPaidRewards) internal view returns (uint256) {
+    function _unpaidFee(uint256 totalAssetsPlusPaidRewards) internal view returns (uint256) {
         uint256 totalAssetsPlusPaidRewardsDelta = totalAssetsPlusPaidRewards - _lastClaimTotalAssetsPlusPaidRewards;
-        return (totalAssetsPlusPaidRewardsDelta * ownerFeeBasisPoints()) / 10_000;
+        return (totalAssetsPlusPaidRewardsDelta * feeBasisPoints()) / 10_000;
     }
 
     /// @dev Compute total allocation based on number of shares and total shares. Must take paid rewards into account after.
