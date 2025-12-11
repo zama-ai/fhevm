@@ -2,13 +2,14 @@ use super::super::types::error::{
     RelayerV2ApiError400NoDetails,
     RelayerV2ApiError404,
     RelayerV2ApiError500,
-    // TODO: Import when implementing 503/504 errors
-    // RelayerV2ApiError503, RelayerV2ApiError504,
+    RelayerV2ApiError504,
+    // TODO: Import RelayerV2ApiError503 when implementing 503 errors for gateway/upstream related errors
 };
 use super::super::types::input_proof::{
     InputProofPostResponseJson, InputProofQueuedResult, InputProofResponseJson,
     InputProofStatusResponseJson,
 };
+use crate::core::errors::TIMEOUT_REASON_MISSING_MSG;
 use crate::core::event::{
     ApiVersion, InputProofEventData, InputProofRequest, RelayerEvent, RelayerEventData,
 };
@@ -194,7 +195,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         );
 
         // Check SQL for current status using job_id (which is the external_reference_id in DB)
-        let _status_result = match self.input_proof_repo.find_status_by_ext_id(job_id).await {
+        match self.input_proof_repo.find_status_by_ext_id(job_id).await {
             Ok(Some(response_model)) => {
                 use crate::store::sql::models::req_status_enum_model::ReqStatus;
                 match response_model.req_status {
@@ -207,7 +208,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 >(res)
                                 {
                                     let api_response = InputProofResponseJson::from(core_response);
-                                    return (
+                                    (
                                         StatusCode::OK,
                                         Json(InputProofStatusResponseJson {
                                             status: "succeeded".to_string(),
@@ -216,12 +217,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                             error: None,
                                         }),
                                     )
-                                        .into_response();
+                                        .into_response()
                                 } else {
                                     error!(
                                         "Failed to deserialize input proof response from database"
                                     );
-                                    return (
+                                    (
                                         StatusCode::INTERNAL_SERVER_ERROR,
                                         Json(InputProofStatusResponseJson {
                                             status: "failed".to_string(),
@@ -234,23 +235,23 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                             ),
                                         }),
                                     )
-                                        .into_response();
+                                        .into_response()
                                 }
                             } else {
                                 error!("Request marked as completed and accepted but no response data found");
-                                return (StatusCode::INTERNAL_SERVER_ERROR, Json(InputProofStatusResponseJson {
+                                (StatusCode::INTERNAL_SERVER_ERROR, Json(InputProofStatusResponseJson {
                                     status: "failed".to_string(),
                                     request_id: request_id.to_string(),
                                     result: None,
                                     error: Some(RelayerV2ApiError500::internal_server_error("Internal error: completed request missing response data")),
-                                })).into_response();
+                                })).into_response()
                             }
                         } else {
                             // Request was rejected
                             let error_msg = response_model
                                 .err_reason
                                 .unwrap_or("Proof rejected".to_string());
-                            return (
+                            (
                                 StatusCode::BAD_REQUEST,
                                 Json(InputProofStatusResponseJson {
                                     status: "failed".to_string(),
@@ -261,14 +262,36 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                     )),
                                 }),
                             )
-                                .into_response();
+                                .into_response()
                         }
                     }
-                    ReqStatus::Failure | ReqStatus::TimedOut => {
+                    ReqStatus::TimedOut => {
+                        let error_msg = match response_model.err_reason {
+                            Some(reason) => reason,
+                            None => {
+                                error!(
+                                    request_id = %request_id,
+                                    "TimedOut request missing error reason in database"
+                                );
+                                TIMEOUT_REASON_MISSING_MSG.to_string()
+                            }
+                        };
+                        (
+                            StatusCode::GATEWAY_TIMEOUT,
+                            Json(InputProofStatusResponseJson {
+                                status: "failed".to_string(),
+                                request_id: request_id.to_string(),
+                                result: None,
+                                error: Some(RelayerV2ApiError504::response_timed_out(&error_msg)),
+                            }),
+                        )
+                            .into_response()
+                    }
+                    ReqStatus::Failure => {
                         let error_msg = response_model
                             .err_reason
                             .unwrap_or("Unknown error".to_string());
-                        return (
+                        (
                             StatusCode::BAD_REQUEST,
                             Json(InputProofStatusResponseJson {
                                 status: "failed".to_string(),
@@ -279,29 +302,37 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 )),
                             }),
                         )
-                            .into_response();
+                            .into_response()
                     }
                     ReqStatus::Queued | ReqStatus::Processing | ReqStatus::ReceiptReceived => {
-                        // Request is still in progress, fall through to event subscription
-                        response_model
+                        // Request is still in progress, return 202 immediately
+                        info!("Request still in progress, returning queued status");
+                        (
+                            StatusCode::ACCEPTED,
+                            Json(InputProofStatusResponseJson {
+                                status: "queued".to_string(),
+                                request_id: request_id.to_string(),
+                                result: None,
+                                error: None,
+                            }),
+                        )
+                            .into_response()
                     }
                 }
             }
-            Ok(None) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(InputProofStatusResponseJson {
-                        status: "failed".to_string(),
-                        request_id: request_id.to_string(),
-                        result: None,
-                        error: Some(RelayerV2ApiError404::not_found("Request not found")),
-                    }),
-                )
-                    .into_response();
-            }
+            Ok(None) => (
+                StatusCode::NOT_FOUND,
+                Json(InputProofStatusResponseJson {
+                    status: "failed".to_string(),
+                    request_id: request_id.to_string(),
+                    result: None,
+                    error: Some(RelayerV2ApiError404::not_found("Request not found")),
+                }),
+            )
+                .into_response(),
             Err(e) => {
                 error!("Database error while checking status: {:?}", e);
-                return (
+                (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(InputProofStatusResponseJson {
                         status: "failed".to_string(),
@@ -312,36 +343,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         )),
                     }),
                 )
-                    .into_response();
-            }
-        };
-
-        // If we get here, request is in progress - set up event subscription with 5s timeout
-        info!("Request still in progress, setting up event subscription");
-
-        // TODO: Note - Input proof operations don't have readiness checks like decrypt operations
-        // But they can still experience response timeouts:
-        // if response_timed_out {
-        //     return (StatusCode::GATEWAY_TIMEOUT, Json(InputProofStatusResponseJson {
-        //         status: "failed".to_string(),
-        //         request_id: request_id.to_string(),
-        //         result: None,
-        //         error: Some(RelayerV2ApiError504::response_timed_out("Response timed out")),
-        //     })).into_response();
-        // }
-
-        // For now, return pending status with timeout - we can implement event subscription later
-        let timeout_duration = std::time::Duration::from_secs(5);
-
-        tokio::select! {
-            _ = tokio::time::sleep(timeout_duration) => {
-                // Timeout reached, return 202 with queued status
-                (StatusCode::ACCEPTED, Json(InputProofStatusResponseJson {
-                    status: "queued".to_string(),
-                    request_id: request_id.to_string(),
-                    result: None,
-                    error: None,
-                })).into_response()
+                    .into_response()
             }
         }
     }
@@ -384,6 +386,7 @@ where
         (status = 400, description = "Request failed", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
         (status = 404, description = "Request not found", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
         (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
+        (status = 504, description = "Request timed out", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
     ),
     tag = "Input Proof v2"
 )]

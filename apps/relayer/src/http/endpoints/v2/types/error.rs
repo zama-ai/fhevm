@@ -128,9 +128,7 @@ impl RelayerV2ApiError503 {
     }
 }
 
-// TODO: Implement helper functions for 504 errors when needed
 impl RelayerV2ApiError504 {
-    #[allow(dead_code)]
     pub fn readiness_check_timed_out(message: &str) -> Value {
         serde_json::to_value(RelayerV2ApiError504 {
             label: "readiness_check_timed_out".to_string(),
@@ -139,7 +137,6 @@ impl RelayerV2ApiError504 {
         .unwrap()
     }
 
-    #[allow(dead_code)]
     pub fn response_timed_out(message: &str) -> Value {
         serde_json::to_value(RelayerV2ApiError504 {
             label: "response_timed_out".to_string(),

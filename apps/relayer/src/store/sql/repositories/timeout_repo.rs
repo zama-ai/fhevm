@@ -20,7 +20,7 @@ impl TimeoutRepository {
             r#"
             UPDATE user_decrypt_req
             SET req_status = 'timed_out'::req_status, 
-                err_reason = 'response timed out'
+                err_reason = 'Gateway chain did not respond within the expected timeframe'
             WHERE req_status = 'receipt_received'::req_status
               AND updated_at < NOW() - INTERVAL '30 minutes'
             "#
@@ -34,7 +34,7 @@ impl TimeoutRepository {
             r#"
             UPDATE public_decrypt_req
             SET req_status = 'timed_out'::req_status, 
-                err_reason = 'response timed out'
+                err_reason = 'Gateway chain did not respond within the expected timeframe'
             WHERE req_status = 'receipt_received'::req_status
               AND updated_at < NOW() - INTERVAL '30 minutes'
             "#
@@ -48,7 +48,7 @@ impl TimeoutRepository {
             r#"
             UPDATE input_proof_req
             SET req_status = 'timed_out'::req_status, 
-                err_reason = 'response timed out'
+                err_reason = 'Gateway chain did not respond within the expected timeframe'
             WHERE req_status = 'receipt_received'::req_status
               AND updated_at < NOW() - INTERVAL '30 minutes'
             "#
@@ -142,7 +142,7 @@ impl TimeoutRepository {
             r#"
             UPDATE user_decrypt_req
             SET req_status = 'timed_out'::req_status,
-                err_reason = 'response timed out'
+                err_reason = 'Gateway chain did not respond within the expected timeframe'
             WHERE req_status = 'receipt_received'::req_status
               AND updated_at < NOW() - INTERVAL '30 minutes'
             "#
@@ -156,7 +156,7 @@ impl TimeoutRepository {
             r#"
             UPDATE public_decrypt_req
             SET req_status = 'timed_out'::req_status,
-                err_reason = 'response timed out'
+                err_reason = 'Gateway chain did not respond within the expected timeframe'
             WHERE req_status = 'receipt_received'::req_status
               AND updated_at < NOW() - INTERVAL '30 minutes'
             "#
@@ -170,7 +170,7 @@ impl TimeoutRepository {
             r#"
             UPDATE input_proof_req
             SET req_status = 'timed_out'::req_status,
-                err_reason = 'response timed out'
+                err_reason = 'Gateway chain did not respond within the expected timeframe'
             WHERE req_status = 'receipt_received'::req_status
               AND updated_at < NOW() - INTERVAL '30 minutes'
             "#

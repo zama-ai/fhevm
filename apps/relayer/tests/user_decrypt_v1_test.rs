@@ -486,7 +486,7 @@ async fn test_readiness_check_failure_returns_504() {
 
     assert_eq!(
         body["message"].as_str(),
-        Some("Ciphertext not ready for decryption"),
+        Some("Ciphertext not ready for decryption on the gateway chain"),
         "Expected readiness failure error message"
     );
 }

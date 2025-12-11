@@ -1,7 +1,7 @@
 use super::super::types::public_decrypt::{
     PublicDecryptErrorResponseJson, PublicDecryptRequestJson, PublicDecryptResponseJson,
 };
-use crate::core::errors::EventProcessingError;
+use crate::core::errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG};
 use crate::core::event::{
     ApiVersion, PublicDecryptEventData, PublicDecryptEventId, PublicDecryptRequest, RelayerEvent,
     RelayerEventData,
@@ -206,7 +206,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                     EventProcessingError::ReadinessCheckFailed => (
                                         StatusCode::GATEWAY_TIMEOUT,
                                         Json(PublicDecryptErrorResponseJson {
-                                            message: "Ciphertext not ready for decryption".to_string(),
+                                            message: READINESS_CHECK_TIMEOUT_MSG.to_string(),
                                         }),
                                     )
                                         .into_response(),

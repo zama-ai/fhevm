@@ -9,6 +9,13 @@ use serde::{Deserialize, Serialize};
 
 use thiserror::Error;
 
+// Standardized timeout error messages
+pub const READINESS_CHECK_TIMEOUT_MSG: &str =
+    "Ciphertext not ready for decryption on the gateway chain";
+pub const RESPONSE_TIMEOUT_MSG: &str =
+    "Gateway chain did not respond within the expected timeframe";
+pub const TIMEOUT_REASON_MISSING_MSG: &str = "Request timed out (reason not available)";
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Event processing failed: {0}")]
@@ -47,7 +54,7 @@ pub enum EventProcessingError {
     #[error("Configuration error: {0}")]
     ConfigError(#[from] AppConfigError),
 
-    #[error("Ciphertext not ready for decryption")]
+    #[error("{}", crate::core::errors::READINESS_CHECK_TIMEOUT_MSG)]
     ReadinessCheckFailed,
 }
 

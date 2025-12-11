@@ -2,13 +2,14 @@ use super::super::types::error::{
     RelayerV2ApiError400NoDetails,
     RelayerV2ApiError404,
     RelayerV2ApiError500,
-    // TODO: Import when implementing 503/504 errors
-    // RelayerV2ApiError503, RelayerV2ApiError504,
+    RelayerV2ApiError504,
+    // TODO: Import RelayerV2ApiError503 when implementing 503 errors for gateway/upstream related errors
 };
 use super::super::types::public_decrypt::{
     PublicDecryptPostResponseJson, PublicDecryptQueuedResult, PublicDecryptResponseJson,
     PublicDecryptStatusResponseJson,
 };
+use crate::core::errors::TIMEOUT_REASON_MISSING_MSG;
 use crate::core::event::{
     ApiVersion, PublicDecryptEventData, PublicDecryptRequest, RelayerEvent, RelayerEventData,
 };
@@ -206,7 +207,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         );
 
         // Check SQL for current status using job_id (which is the external_reference_id in DB)
-        let _status_result = match self
+        match self
             .public_decrypt_repo
             .find_status_and_res_by_ext_id(job_id)
             .await
@@ -222,7 +223,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             >(res)
                             {
                                 let api_response = PublicDecryptResponseJson::from(core_response);
-                                return (
+                                (
                                     StatusCode::OK,
                                     Json(PublicDecryptStatusResponseJson {
                                         status: "succeeded".to_string(),
@@ -231,10 +232,10 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                         error: None,
                                     }),
                                 )
-                                    .into_response();
+                                    .into_response()
                             } else {
                                 error!("Failed to deserialize response from database");
-                                return (
+                                (
                                     StatusCode::INTERNAL_SERVER_ERROR,
                                     Json(PublicDecryptStatusResponseJson {
                                         status: "failed".to_string(),
@@ -245,11 +246,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                         )),
                                     }),
                                 )
-                                    .into_response();
+                                    .into_response()
                             }
                         } else {
                             error!("Request marked as completed but no response data found");
-                            return (
+                            (
                                 StatusCode::INTERNAL_SERVER_ERROR,
                                 Json(PublicDecryptStatusResponseJson {
                                     status: "failed".to_string(),
@@ -260,14 +261,37 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                     )),
                                 }),
                             )
-                                .into_response();
+                                .into_response()
                         }
                     }
-                    ReqStatus::Failure | ReqStatus::TimedOut => {
+                    ReqStatus::TimedOut => {
+                        let error_msg = match response_model.err_reason {
+                            Some(reason) => reason,
+                            None => {
+                                error!(
+                                    request_id = %request_id,
+                                    job_id = ?response_model.ext_job_id,
+                                    "TimedOut request missing error reason in database"
+                                );
+                                TIMEOUT_REASON_MISSING_MSG.to_string()
+                            }
+                        };
+                        (
+                            StatusCode::GATEWAY_TIMEOUT,
+                            Json(PublicDecryptStatusResponseJson {
+                                status: "failed".to_string(),
+                                request_id: request_id.to_string(),
+                                result: None,
+                                error: Some(RelayerV2ApiError504::response_timed_out(&error_msg)),
+                            }),
+                        )
+                            .into_response()
+                    }
+                    ReqStatus::Failure => {
                         let error_msg = response_model
                             .err_reason
                             .unwrap_or("Unknown error".to_string());
-                        return (
+                        (
                             StatusCode::BAD_REQUEST,
                             Json(PublicDecryptStatusResponseJson {
                                 status: "failed".to_string(),
@@ -278,29 +302,37 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 )),
                             }),
                         )
-                            .into_response();
+                            .into_response()
                     }
                     ReqStatus::Queued | ReqStatus::Processing | ReqStatus::ReceiptReceived => {
-                        // Request is still in progress, fall through to event subscription
-                        response_model
+                        // Request is still in progress,  202 immediately
+                        info!("Request still in progress, ing queued status");
+                        (
+                            StatusCode::ACCEPTED,
+                            Json(PublicDecryptStatusResponseJson {
+                                status: "queued".to_string(),
+                                request_id: request_id.to_string(),
+                                result: None,
+                                error: None,
+                            }),
+                        )
+                            .into_response()
                     }
                 }
             }
-            Ok(None) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(PublicDecryptStatusResponseJson {
-                        status: "failed".to_string(),
-                        request_id: request_id.to_string(),
-                        result: None,
-                        error: Some(RelayerV2ApiError404::not_found("Request not found")),
-                    }),
-                )
-                    .into_response();
-            }
+            Ok(None) => (
+                StatusCode::NOT_FOUND,
+                Json(PublicDecryptStatusResponseJson {
+                    status: "failed".to_string(),
+                    request_id: request_id.to_string(),
+                    result: None,
+                    error: Some(RelayerV2ApiError404::not_found("Request not found")),
+                }),
+            )
+                .into_response(),
             Err(e) => {
                 error!("Database error while checking status: {:?}", e);
-                return (
+                (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(PublicDecryptStatusResponseJson {
                         status: "failed".to_string(),
@@ -311,47 +343,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         )),
                     }),
                 )
-                    .into_response();
-            }
-        };
-
-        // If we get here, request is in progress - set up event subscription with 5s timeout
-        info!("Request still in progress, setting up event subscription");
-
-        // TODO: Implement readiness check with timeout for decrypt operations
-        // When readiness check times out (e.g., ciphertext not ready), return 504
-        // if readiness_check_timed_out {
-        //     return (StatusCode::GATEWAY_TIMEOUT, Json(PublicDecryptStatusResponseJson {
-        //         status: "failed".to_string(),
-        //         request_id: request_id.to_string(),
-        //         result: None,
-        //         error: Some(RelayerV2ApiError504::readiness_check_timed_out("Ciphertext readiness check timed out")),
-        //     })).into_response();
-        // }
-        //
-        // TODO: If overall response times out while waiting for result, return 504
-        // if response_timed_out {
-        //     return (StatusCode::GATEWAY_TIMEOUT, Json(PublicDecryptStatusResponseJson {
-        //         status: "failed".to_string(),
-        //         request_id: request_id.to_string(),
-        //         result: None,
-        //         error: Some(RelayerV2ApiError504::response_timed_out("Response timed out")),
-        //     })).into_response();
-        // }
-
-        // Extract job_id from the status result (we need the int_job_id)
-        // For now, return pending status with timeout - we can implement event subscription later
-        let timeout_duration = std::time::Duration::from_secs(5);
-
-        tokio::select! {
-            _ = tokio::time::sleep(timeout_duration) => {
-                // Timeout reached, return 202 with queued status
-                (StatusCode::ACCEPTED, Json(PublicDecryptStatusResponseJson {
-                    status: "queued".to_string(),
-                    request_id: request_id.to_string(),
-                    result: None,
-                    error: None,
-                })).into_response()
+                    .into_response()
             }
         }
     }
@@ -386,7 +378,7 @@ where
     get,
     path = "/v2/public-decrypt/{job_id}",
     params(
-        ("job_id" = String, Path, description = "Job ID returned from POST request")
+        ("job_id" = String, Path, description = "Job ID ed from POST request")
     ),
     responses(
         (status = 200, description = "Request completed successfully", body = PublicDecryptStatusResponseJson),
@@ -394,6 +386,7 @@ where
         (status = 400, description = "Request failed", body = PublicDecryptStatusResponseJson),
         (status = 404, description = "Request not found", body = PublicDecryptStatusResponseJson),
         (status = 500, description = "Internal server error", body = PublicDecryptStatusResponseJson),
+        (status = 504, description = "Request timed out", body = PublicDecryptStatusResponseJson),
     ),
     tag = "Public Decrypt v2"
 )]

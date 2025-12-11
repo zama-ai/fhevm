@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        errors::EventProcessingError,
+        errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG, RESPONSE_TIMEOUT_MSG},
         event::{
             GatewayChainEventData, GatewayChainEventId, HandleContractPair, RelayerEvent,
             RelayerEventData, UserDecryptEventData, UserDecryptEventId, UserDecryptRequest,
@@ -353,11 +353,11 @@ impl GatewayHandler {
             ReqStatus::TimedOut => {
                 error!(
                     job_id = %event.job_id,
-                    "User decrypt request timed out (response timed out)"
+                    "User decrypt request timed out ({})", RESPONSE_TIMEOUT_MSG
                 );
                 Err(EventProcessingError::ValidationFailed {
                     field: "request_status".to_string(),
-                    reason: "request timed out waiting for response".to_string(),
+                    reason: RESPONSE_TIMEOUT_MSG.to_string(),
                 })
             }
             _ => {
@@ -603,6 +603,33 @@ impl GatewayHandler {
                             job_id = %event.job_id,
                             db_error = %db_err,
                             "Failed to update failure status in database"
+                        );
+                    }
+                }
+            }
+
+            EventProcessingError::ReadinessCheckFailed => {
+                error!(
+                    job_id = %event.job_id,
+                    "Readiness check failed - updating database with timeout status"
+                );
+
+                if let RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
+                    ref decrypt_request,
+                    ..
+                }) = event.data
+                {
+                    let job_id_hash = decrypt_request.content_hash();
+
+                    if let Err(db_err) = self
+                        .user_decrypt_repo
+                        .update_status_to_timed_out(&job_id_hash[..], READINESS_CHECK_TIMEOUT_MSG)
+                        .await
+                    {
+                        error!(
+                            job_id = %event.job_id,
+                            db_error = %db_err,
+                            "Failed to update timeout status in database"
                         );
                     }
                 }

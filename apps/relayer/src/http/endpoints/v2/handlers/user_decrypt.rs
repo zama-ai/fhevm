@@ -1,10 +1,15 @@
 use super::super::types::error::{
-    RelayerV2ApiError400NoDetails, RelayerV2ApiError404, RelayerV2ApiError500,
+    RelayerV2ApiError400NoDetails,
+    RelayerV2ApiError404,
+    RelayerV2ApiError500,
+    RelayerV2ApiError504,
+    // TODO: Import RelayerV2ApiError503 when implementing 503 errors for gateway/upstream related errors
 };
 use super::super::types::user_decrypt::{
     UserDecryptErrorResponseJson, UserDecryptPostResponseJson, UserDecryptQueuedResult,
     UserDecryptResponseJson, UserDecryptStatusResponseJson,
 };
+use crate::core::errors::TIMEOUT_REASON_MISSING_MSG;
 use crate::core::event::{
     ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
 };
@@ -202,7 +207,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         // Check SQL for current status using job_id (which is the external_reference_id in DB)
         let threshold = self.user_decrypt_shares_threshold as i64;
-        let _status_result = match self
+        match self
             .user_decrypt_repo
             .find_req_and_shares_by_ext_job_id(job_id, threshold)
             .await
@@ -215,7 +220,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         if response_model.shares.len() >= required_threshold {
                             // Convert from database model to API response
                             let api_response = UserDecryptResponseJson::from(response_model);
-                            return (
+                            (
                                 StatusCode::OK,
                                 Json(UserDecryptStatusResponseJson {
                                     status: "succeeded".to_string(),
@@ -224,13 +229,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                     error: None,
                                 }),
                             )
-                                .into_response();
+                                .into_response()
                         } else {
                             error!(
                                 "Request marked as completed but insufficient shares: got {}, needed {}",
                                 response_model.shares.len(), required_threshold
                             );
-                            return (
+                            (
                                 StatusCode::INTERNAL_SERVER_ERROR,
                                 Json(UserDecryptStatusResponseJson {
                                     status: "failed".to_string(),
@@ -241,16 +246,37 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                     )),
                                 }),
                             )
-                                .into_response();
+                                .into_response()
                         }
                     }
-                    // TODO: Implement 503/504 errors for gateway / upstream related errors.
-                    // RelayerV2ApiError503, RelayerV2ApiError504,
-                    ReqStatus::Failure | ReqStatus::TimedOut => {
+                    ReqStatus::TimedOut => {
+                        let error_msg = match response_model.err_reason {
+                            Some(reason) => reason,
+                            None => {
+                                error!(
+                                    request_id = %request_id,
+                                    job_id = ?response_model.ext_job_id,
+                                    "TimedOut request missing error reason in database"
+                                );
+                                TIMEOUT_REASON_MISSING_MSG.to_string()
+                            }
+                        };
+                        (
+                            StatusCode::GATEWAY_TIMEOUT,
+                            Json(UserDecryptStatusResponseJson {
+                                status: "failed".to_string(),
+                                request_id: request_id.to_string(),
+                                result: None,
+                                error: Some(RelayerV2ApiError504::response_timed_out(&error_msg)),
+                            }),
+                        )
+                            .into_response()
+                    }
+                    ReqStatus::Failure => {
                         let error_msg = response_model
                             .err_reason
                             .unwrap_or("Unknown error".to_string());
-                        return (
+                        (
                             StatusCode::BAD_REQUEST,
                             Json(UserDecryptStatusResponseJson {
                                 status: "failed".to_string(),
@@ -261,29 +287,37 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 )),
                             }),
                         )
-                            .into_response();
+                            .into_response()
                     }
                     ReqStatus::Queued | ReqStatus::Processing | ReqStatus::ReceiptReceived => {
-                        // Request is still in progress, fall through to event subscription
-                        response_model
+                        // Request is still in progress, return 202 immediately
+                        info!("Request still in progress, returning queued status");
+                        (
+                            StatusCode::ACCEPTED,
+                            Json(UserDecryptStatusResponseJson {
+                                status: "queued".to_string(),
+                                request_id: request_id.to_string(),
+                                result: None,
+                                error: None,
+                            }),
+                        )
+                            .into_response()
                     }
                 }
             }
-            Ok(None) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(UserDecryptStatusResponseJson {
-                        status: "failed".to_string(),
-                        request_id: request_id.to_string(),
-                        result: None,
-                        error: Some(RelayerV2ApiError404::not_found("Request not found")),
-                    }),
-                )
-                    .into_response();
-            }
+            Ok(None) => (
+                StatusCode::NOT_FOUND,
+                Json(UserDecryptStatusResponseJson {
+                    status: "failed".to_string(),
+                    request_id: request_id.to_string(),
+                    result: None,
+                    error: Some(RelayerV2ApiError404::not_found("Request not found")),
+                }),
+            )
+                .into_response(),
             Err(e) => {
                 error!("Database error while checking status: {:?}", e);
-                return (
+                (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(UserDecryptStatusResponseJson {
                         status: "failed".to_string(),
@@ -294,36 +328,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         )),
                     }),
                 )
-                    .into_response();
-            }
-        };
-
-        // If we get here, request is in progress - set up event subscription with 5s timeout
-        info!("Request still in progress, setting up event subscription");
-
-        // TODO: Implement readiness check with timeout for user decrypt operations
-        // When readiness check times out, return 504
-        // if readiness_check_timed_out {
-        //     return (StatusCode::GATEWAY_TIMEOUT, Json(UserDecryptStatusResponseJson {
-        //         status: "failed".to_string(),
-        //         request_id: request_id.to_string(),
-        //         result: None,
-        //         error: Some(RelayerV2ApiError504::readiness_check_timed_out("Readiness check timed out")),
-        //     })).into_response();
-        // }
-
-        // For now, return pending status with timeout - we can implement event subscription later
-        let timeout_duration = std::time::Duration::from_secs(5);
-
-        tokio::select! {
-            _ = tokio::time::sleep(timeout_duration) => {
-                // Timeout reached, return 202 with queued status
-                (StatusCode::ACCEPTED, Json(UserDecryptStatusResponseJson {
-                    status: "queued".to_string(),
-                    request_id: request_id.to_string(),
-                    result: None,
-                    error: None,
-                })).into_response()
+                    .into_response()
             }
         }
     }
@@ -366,6 +371,7 @@ where
         (status = 400, description = "Request failed", body = UserDecryptStatusResponseJson),
         (status = 404, description = "Request not found", body = UserDecryptStatusResponseJson),
         (status = 500, description = "Internal server error", body = UserDecryptStatusResponseJson),
+        (status = 504, description = "Request timed out", body = UserDecryptStatusResponseJson),
     ),
     tag = "User Decrypt v2"
 )]
