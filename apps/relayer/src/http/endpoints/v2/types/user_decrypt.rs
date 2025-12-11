@@ -66,8 +66,11 @@ pub struct UserDecryptResponsePayloadJson {
     pub payload: Bytes,
     #[schema(value_type = String)]
     pub signature: Bytes,
-    // Field name must be snake_case for TKMS library compatibility
+    // Note: extra_data field is not serialized for TKMS library compatibility (used while decrypting to plain text)
+    // TODO: Check with TKMS library and re-align if needed
+    // serde(skip) - field is completely skipped during serialization AND deserialization
     #[schema(value_type = String)]
+    #[serde(skip)]
     pub extra_data: Bytes,
 }
 
@@ -77,14 +80,9 @@ impl Serialize for UserDecryptResponsePayloadJson {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("UserDecryptResponsePayloadJson", 3)?;
+        let mut state = serializer.serialize_struct("UserDecryptResponsePayloadJson", 2)?;
         state.serialize_field("payload", &serialize_vec_as_hex(&self.payload.to_vec()))?;
         state.serialize_field("signature", &serialize_vec_as_hex(&self.signature.to_vec()))?;
-        // Field name "extra_data" required for TKMS library compatibility
-        state.serialize_field(
-            "extra_data",
-            &serialize_vec_as_hex(&self.extra_data.to_vec()),
-        )?;
         state.end()
     }
 }

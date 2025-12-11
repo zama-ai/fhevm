@@ -180,11 +180,6 @@ mod helpers {
             v2_item["signature"].is_string(),
             "v2 signature should be string"
         );
-        assert!(
-            v2_item["extra_data"].is_string(),
-            "v2 extra_data should be string"
-        );
-
         // Verify payload and signature values match
         assert_eq!(
             v1_item["payload"], v2_item["payload"],
@@ -195,10 +190,10 @@ mod helpers {
             "Signature values must match between v1 and v2"
         );
 
-        // Note: v1 doesn't serialize extra_data, so we only verify v2 has it
-        assert_eq!(
-            v2_item["extra_data"], "00",
-            "v2 extra_data should be hex encoded"
+        // Note: Both v1 and v2 now have aligned behavior - neither serializes extra_data
+        assert!(
+            v2_item.get("extra_data").is_none(),
+            "v2 should not serialize extra_data field (aligned with v1)"
         );
     }
 }
@@ -281,10 +276,7 @@ async fn test_success_single_request() {
                     !result_item.signature.is_empty(),
                     "Signature should not be empty"
                 );
-                assert!(
-                    !result_item.extra_data.is_empty(),
-                    "Extra data should not be empty"
-                );
+                // Note: extra_data is no longer serialized (aligned with V1 behavior)
             }
         }
         reqwest::StatusCode::ACCEPTED => {
