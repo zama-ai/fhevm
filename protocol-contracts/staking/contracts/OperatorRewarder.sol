@@ -292,6 +292,10 @@ contract OperatorRewarder is Ownable {
     /**
      * @notice Transfers the beneficiary address.
      * @param newBeneficiary The new beneficiary address.
+     * @dev Transferring the beneficiary address does not trigger a claim of unclaimed fees for the
+     * old beneficiary on purpose. This is to avoid losing unclaimed fees in case a beneficiary loses
+     * access to their private key. It is acceptable as the owner (who can set the beneficiary) is
+     * expected to be a governance DAO.
      */
     function _transferBeneficiary(address newBeneficiary) internal virtual {
         require(newBeneficiary != address(0), InvalidBeneficiary(address(0)));
