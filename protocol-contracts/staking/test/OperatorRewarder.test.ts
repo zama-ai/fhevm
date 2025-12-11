@@ -398,8 +398,8 @@ describe('OperatorRewarder', function () {
 
     it('should revert if over 100%', async function () {
       await expect(this.mock.connect(this.beneficiary).setFee(10001))
-        .to.be.revertedWithCustomError(this.mock, 'InvalidBasisPoints')
-        .withArgs(10001);
+        .to.be.revertedWithCustomError(this.mock, 'MaxBasisPointsExceeded')
+        .withArgs(10001, 10000);
     });
 
     it('should revert if fee already set', async function () {
