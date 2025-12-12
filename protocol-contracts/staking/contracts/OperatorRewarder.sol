@@ -34,6 +34,7 @@ contract OperatorRewarder is Ownable {
     uint256 private _totalRewardsPaid;
     int256 private _totalVirtualRewardsPaid;
     mapping(address => int256) private _rewardsPaid;
+    mapping(address => address) private _authorizedClaimers;
 
     /// @notice Emitted when the beneficiary is transferred.
     event BeneficiaryTransferred(address oldBeneficiary, address newBeneficiary);
@@ -46,6 +47,18 @@ contract OperatorRewarder is Ownable {
 
     /// @notice Emitted when the fee is updated.
     event FeeUpdated(uint16 oldFee, uint16 newFee);
+
+    /// @notice Emitted when an address is authorized to claim rewards on behalf of the receiver address.
+    event ClaimerAuthorized(address receiver, address claimer);
+
+    /// @notice Error for invalid claimer address.
+    error InvalidClaimer(address claimer);
+
+    /// @notice Emitted when the claimer for the receiver address is already set.
+    error ClaimerAlreadySet(address receiver, address claimer);
+
+    /// @notice Emitted when an address is not authorized to claim rewards on behalf of the receiver address.
+    error ClaimerNotAuthorized(address receiver, address claimer);
 
     /// @notice Error for unauthorized caller (not OperatorStaking).
     error CallerNotOperatorStaking(address caller);
@@ -84,6 +97,11 @@ contract OperatorRewarder is Ownable {
         _;
     }
 
+    modifier onlyClaimer(address receiver) {
+        require(claimer(receiver) == msg.sender, ClaimerNotAuthorized(receiver, msg.sender));
+        _;
+    }
+
     /**
      * @notice Initializes the OperatorRewarder contract.
      * @param owner The owner address.
@@ -118,10 +136,12 @@ contract OperatorRewarder is Ownable {
     }
 
     /**
-     * @notice Claims rewards for a delegator.
+     * @notice Claims rewards for a delegator. The caller must be authorized to claim rewards on
+     * behalf of the delegator. By default, the caller is authorized to claim rewards on behalf of
+     * themselves.
      * @param account The delegator's address.
      */
-    function claimRewards(address account) public virtual {
+    function claimRewards(address account) public virtual onlyClaimer(account) {
         uint256 earned_ = earned(account);
         if (earned_ > 0) {
             _rewardsPaid[account] += SafeCast.toInt256(earned_);
@@ -160,6 +180,19 @@ contract OperatorRewarder is Ownable {
         require(basisPoints != feeBasisPoints(), FeeAlreadySet(feeBasisPoints()));
 
         _setFee(basisPoints);
+    }
+
+    /**
+     * @notice Sets an address to be authorized to claim rewards on behalf of the caller. The caller
+     * will be the address that will receive the rewards.
+     * @param claimer_ The address to be authorized to claim rewards.
+     */
+    function setClaimer(address claimer_) public virtual {
+        require(claimer_ != address(0), InvalidClaimer(address(0)));
+        require(claimer(msg.sender) != claimer_, ClaimerAlreadySet(msg.sender, claimer_));
+
+        _authorizedClaimers[msg.sender] = claimer_;
+        emit ClaimerAuthorized(msg.sender, claimer_);
     }
 
     /**
@@ -205,6 +238,17 @@ contract OperatorRewarder is Ownable {
      */
     function beneficiary() public view virtual returns (address) {
         return _beneficiary;
+    }
+
+    /**
+     * @notice Returns the authorized claimer for a receiver address. If no claimer is set (null
+     * address), the receiver address is considered its own claimer.
+     * @param receiver The receiver address.
+     * @return The claimer address.
+     */
+    function claimer(address receiver) public view returns (address) {
+        address authorizedClaimer = _authorizedClaimers[receiver];
+        return authorizedClaimer == address(0) ? receiver : authorizedClaimer;
     }
 
     /**

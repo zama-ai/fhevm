@@ -9,7 +9,7 @@ const timeIncreaseNoMine = (duration: number) =>
 
 describe('OperatorRewarder', function () {
   beforeEach(async function () {
-    const [delegator1, delegator2, admin, beneficiary, anyone, ...accounts] = await ethers.getSigners();
+    const [delegator1, delegator2, claimer, admin, beneficiary, anyone, ...accounts] = await ethers.getSigners();
 
     const token = await ethers.deployContract('$ERC20Mock', ['StakingToken', 'ST', 18]);
     const protocolStaking = await ethers.getContractFactory('ProtocolStakingSlashingMock').then(factory =>
@@ -49,6 +49,7 @@ describe('OperatorRewarder', function () {
     Object.assign(this, {
       delegator1,
       delegator2,
+      claimer,
       admin,
       beneficiary,
       anyone,
@@ -97,7 +98,7 @@ describe('OperatorRewarder', function () {
 
       await expect(this.mock.unpaidFee()).to.eventually.eq(0);
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('5'));
-      await expect(this.mock.claimRewards(this.delegator1))
+      await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.delegator1, ethers.parseEther('5'));
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
@@ -117,12 +118,12 @@ describe('OperatorRewarder', function () {
       await expect(this.mock.earned(this.delegator2)).to.eventually.eq(ethers.parseEther('2.25'));
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('2.75'));
 
-      await expect(this.mock.claimRewards(this.delegator1))
+      await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.delegator1, ethers.parseEther('2.75'));
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
 
-      await expect(this.mock.claimRewards(this.delegator2))
+      await expect(this.mock.connect(this.delegator2).claimRewards(this.delegator2))
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.delegator2, ethers.parseEther('2.25'));
       await expect(this.mock.earned(this.delegator2)).to.eventually.eq(0);
@@ -135,7 +136,7 @@ describe('OperatorRewarder', function () {
       await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
       await timeIncreaseNoMine(10);
       await this.protocolStaking.connect(this.admin).setRewardRate(0);
-      await this.mock.claimRewards(this.delegator1); // claims past rewards before not being able to
+      await this.mock.connect(this.delegator1).claimRewards(this.delegator1); // claims past rewards before not being able to
       await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, ethers.parseEther('1'));
       // delegator1 will be able deposit and claim reward again
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
@@ -156,7 +157,7 @@ describe('OperatorRewarder', function () {
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('4.5'));
       await expect(this.mock.unpaidFee()).to.eventually.eq(ethers.parseEther('0.5'));
 
-      await expect(this.mock.claimRewards(this.delegator1))
+      await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.delegator1, ethers.parseEther('4.5'));
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
@@ -175,7 +176,10 @@ describe('OperatorRewarder', function () {
       await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
       await time.increase(9);
 
-      await expect(this.mock.claimRewards(this.delegator1)).to.not.emit(this.token, 'Transfer');
+      await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1)).to.not.emit(
+        this.token,
+        'Transfer',
+      );
 
       // Historical reward: 0 (no reward rate)
       await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('0'));
@@ -188,8 +192,8 @@ describe('OperatorRewarder', function () {
       await timeIncreaseNoMine(10);
       await this.protocolStaking.connect(this.admin).setRewardRate(0);
 
-      await this.mock.claimRewards(this.delegator1);
-      await this.mock.claimRewards(this.delegator2);
+      await this.mock.connect(this.delegator1).claimRewards(this.delegator1);
+      await this.mock.connect(this.delegator2).claimRewards(this.delegator2);
 
       await this.operatorStaking
         .connect(this.delegator1)
@@ -214,7 +218,7 @@ describe('OperatorRewarder', function () {
       await time.increase(10);
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('5'));
 
-      await expect(this.mock.claimRewards(this.delegator1))
+      await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.delegator1, ethers.parseEther('5.5'));
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
@@ -240,6 +244,48 @@ describe('OperatorRewarder', function () {
 
       // Historical reward: (1+10) (seconds) * 0.5 (reward rate) = 10.5
       await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('10.5'));
+    });
+
+    it('should claim rewards with authorized claimer', async function () {
+      await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
+      await this.mock.connect(this.delegator1).setClaimer(this.claimer);
+      await expect(this.mock.claimer(this.delegator1)).to.eventually.eq(this.claimer);
+
+      await timeIncreaseNoMine(10);
+      await this.protocolStaking.connect(this.admin).setRewardRate(ethers.parseEther('0'));
+
+      await expect(this.mock.connect(this.claimer).claimRewards(this.delegator1))
+        .to.emit(this.token, 'Transfer')
+        .withArgs(this.mock, this.delegator1, ethers.parseEther('5.5'));
+    });
+
+    it('should claim rewards with delegator first and then authorized claimer', async function () {
+      await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
+      await expect(this.mock.claimer(this.delegator1)).to.eventually.eq(this.delegator1);
+
+      await timeIncreaseNoMine(10);
+      await this.protocolStaking.connect(this.admin).setRewardRate(ethers.parseEther('0'));
+
+      await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
+        .to.emit(this.token, 'Transfer')
+        .withArgs(this.mock, this.delegator1, ethers.parseEther('5'));
+
+      await this.protocolStaking.connect(this.admin).setRewardRate(ethers.parseEther('0.5'));
+      await timeIncreaseNoMine(10);
+      await this.protocolStaking.connect(this.admin).setRewardRate(ethers.parseEther('0'));
+
+      await this.mock.connect(this.delegator1).setClaimer(this.claimer);
+
+      await expect(this.mock.connect(this.claimer).claimRewards(this.delegator1))
+        .to.emit(this.token, 'Transfer')
+        .withArgs(this.mock, this.delegator1, ethers.parseEther('5'));
+    });
+
+    it('should not claim rewards if not authorized to claim rewards', async function () {
+      await expect(this.mock.claimer(this.delegator1)).to.not.eventually.eq(this.claimer);
+      await expect(this.mock.connect(this.claimer).claimRewards(this.delegator1))
+        .to.be.revertedWithCustomError(this.mock, 'ClaimerNotAuthorized')
+        .withArgs(this.delegator1, this.claimer);
     });
   });
 
@@ -418,6 +464,34 @@ describe('OperatorRewarder', function () {
       await expect(this.mock.connect(this.beneficiary).setFee(1234))
         .to.be.revertedWithCustomError(this.mock, 'MaxBasisPointsExceeded')
         .withArgs(1234, 1000);
+    });
+  });
+
+  describe('setClaimer', async function () {
+    it('should be caller if no claimer set', async function () {
+      await expect(this.mock.claimer(this.anyone)).to.eventually.eq(this.anyone);
+    });
+
+    it('should set claimer', async function () {
+      await expect(this.mock.claimer(this.anyone)).to.eventually.eq(this.anyone);
+      await expect(this.mock.connect(this.anyone).setClaimer(this.claimer))
+        .to.emit(this.mock, 'ClaimerAuthorized')
+        .withArgs(this.anyone, this.claimer);
+      await expect(this.mock.claimer(this.anyone)).to.eventually.eq(this.claimer);
+    });
+
+    it('should not set claimer to zero address', async function () {
+      await expect(this.mock.connect(this.anyone).setClaimer(ethers.ZeroAddress))
+        .to.be.revertedWithCustomError(this.mock, 'InvalidClaimer')
+        .withArgs(ethers.ZeroAddress);
+    });
+
+    it('should not set same claimer', async function () {
+      await this.mock.connect(this.anyone).setClaimer(this.claimer);
+
+      await expect(this.mock.connect(this.anyone).setClaimer(this.claimer))
+        .to.be.revertedWithCustomError(this.mock, 'ClaimerAlreadySet')
+        .withArgs(this.anyone, this.claimer);
     });
   });
 
