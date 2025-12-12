@@ -165,6 +165,10 @@ describe('OperatorStaking', function () {
         depositWithPermitTx,
         permitValue: value,
         delegatorNoApproval: delegatorNoApproval,
+        permitDeadline: deadline,
+        v: sig.v,
+        r: sig.r,
+        s: sig.s,
       });
     });
 
@@ -184,6 +188,22 @@ describe('OperatorStaking', function () {
       await expect(this.depositWithPermitTx)
         .to.emit(this.token, 'Transfer')
         .withArgs(this.delegatorNoApproval, this.mock, this.permitValue);
+    });
+
+    it('should revert if signature is invalid', async function () {
+      await expect(
+        this.mock
+          .connect(this.delegatorNoApproval)
+          .depositWithPermit(this.permitValue, this.delegatorNoApproval, this.permitDeadline, 0, this.r, this.s),
+      ).to.be.revertedWithCustomError(this.token, 'ECDSAInvalidSignature');
+    });
+
+    it('should revert if signer is invalid', async function () {
+      await expect(
+        this.mock
+          .connect(this.delegator1)
+          .depositWithPermit(this.permitValue, this.delegator1, this.permitDeadline, this.v, this.r, this.s),
+      ).to.be.revertedWithCustomError(this.token, 'ERC2612InvalidSigner');
     });
   });
 
