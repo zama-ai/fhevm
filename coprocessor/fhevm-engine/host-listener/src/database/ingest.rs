@@ -9,6 +9,7 @@ use tracing::{error, info};
 
 use crate::cmd::block_history::BlockSummary;
 use crate::contracts::{AclContract, TfheContract};
+use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, tfhe_result_handle, Database, LogTfhe,
 };
@@ -49,6 +50,7 @@ pub async fn ingest_block_logs(
     let block_number = block_logs.summary.number;
     let mut catchup_insertion = 0;
     let block_timestamp = block_date_time_utc(block_logs.summary.timestamp);
+    let mut at_least_one_insertion = false;
 
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
@@ -72,6 +74,7 @@ pub async fn ingest_block_logs(
                         block_number,
                     )
                     .await?;
+                at_least_one_insertion |= inserted;
                 if block_logs.catchup && inserted {
                     info!(
                         acl_event = ?event,
@@ -100,9 +103,11 @@ pub async fn ingest_block_logs(
                 let log = LogTfhe {
                     event,
                     transaction_hash: log.transaction_hash,
-                    is_allowed: false, // updated in the next loop
                     block_number,
                     block_timestamp,
+                    // updated in the next loop and dependence_chains
+                    is_allowed: false,
+                    dependence_chain: Default::default(),
                 };
                 tfhe_event_log.push(log);
                 continue;
@@ -119,19 +124,21 @@ pub async fn ingest_block_logs(
             );
         }
     }
-
-    for tfhe_log in tfhe_event_log {
-        let is_allowed =
+    for tfhe_log in tfhe_event_log.iter_mut() {
+        tfhe_log.is_allowed =
             if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
                 is_allowed.contains(&result_handle.to_vec())
             } else {
                 false
             };
-        let tfhe_log = LogTfhe {
-            is_allowed,
-            ..tfhe_log
-        };
+    }
+
+    let chains =
+        dependence_chains(&mut tfhe_event_log, &db.dependence_chain).await;
+
+    for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
+        at_least_one_insertion |= inserted;
         if block_logs.catchup && inserted {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
             catchup_insertion += 1;
@@ -140,12 +147,20 @@ pub async fn ingest_block_logs(
         }
     }
 
-    if catchup_insertion == block_logs.logs.len() {
-        info!(block_number, catchup_insertion, "Catchup inserted a block");
-    } else if catchup_insertion > 0 {
-        info!(block_number, catchup_insertion, "Catchup inserted events");
+    if catchup_insertion > 0 {
+        if catchup_insertion == block_logs.logs.len() {
+            info!(
+                block_number,
+                catchup_insertion, "Catchup inserted a full block"
+            );
+        } else {
+            info!(block_number, catchup_insertion, "Catchup inserted events");
+        }
     }
 
     db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
+    if at_least_one_insertion {
+        db.update_dependence_chain(&mut tx, chains).await?;
+    }
     tx.commit().await
 }
