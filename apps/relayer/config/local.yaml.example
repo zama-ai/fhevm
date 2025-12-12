@@ -7,6 +7,8 @@
 # 3. Adjust the http_url and ws_url to match your local Ethereum node
 # 4. Modify log settings based on your debugging needs
 
+global:
+  test_mock: true
 gateway:
   blockchain_rpc:
     ws_url: "ws://localhost:8757"

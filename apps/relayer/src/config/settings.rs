@@ -162,10 +162,32 @@ pub struct KeyData {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct GlobalSettings {
+    /// Determine if we are in the test setup directly from the configuration.
+    #[serde(default = "default_test_mock")]
+    pub test_mock: bool,
+}
+
+fn default_test_mock() -> bool {
+    false
+}
+
+impl Default for GlobalSettings {
+    fn default() -> Self {
+        Self {
+            test_mock: default_test_mock(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
 /// Top-level configuration structure.
 ///
 /// Contains all configuration settings for the relayer service.
 pub struct Settings {
+    #[serde(default)]
+    /// General settings
+    pub global: GlobalSettings,
     /// Network configurations
     pub gateway: GatewayConfig,
     /// Logging configuration

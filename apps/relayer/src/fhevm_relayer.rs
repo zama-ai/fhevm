@@ -86,7 +86,9 @@ pub async fn run_fhevm_relayer(
     let repositories = Arc::new(Repositories::new(settings.storage.clone()).await);
     info!("Initialized SQL repositories");
 
-    repositories.start_background_workers();
+    if !settings.global.test_mock {
+        repositories.start_background_workers();
+    }
 
     // Register database with orchestrator for health checks
     orchestrator.add_health_check(
