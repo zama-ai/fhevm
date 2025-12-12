@@ -218,6 +218,7 @@ pub const KEY_RESHARE_SAME_SET_NOTIFICATION: &str = "key_reshare_same_set_availa
 #[sqlx(type_name = "operation_status", rename_all = "lowercase")]
 pub enum OperationStatus {
     Pending,
+    #[sqlx(rename = "under_process")]
     UnderProcess,
     Completed,
     Failed,
