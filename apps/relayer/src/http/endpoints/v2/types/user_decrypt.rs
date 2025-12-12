@@ -51,7 +51,6 @@ pub struct UserDecryptPostResponseJson {
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptQueuedResult {
     pub job_id: String,
-    pub retry_after_seconds: u32,
 }
 
 // Response format defined for TKMS library compatibility on client-side plaintext reconstruction

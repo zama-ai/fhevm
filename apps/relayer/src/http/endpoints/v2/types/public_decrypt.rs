@@ -29,7 +29,6 @@ pub struct PublicDecryptPostResponseJson {
 #[serde(rename_all = "camelCase")]
 pub struct PublicDecryptQueuedResult {
     pub job_id: String,
-    pub retry_after_seconds: u32,
 }
 
 // GET response when completed

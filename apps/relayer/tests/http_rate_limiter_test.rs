@@ -139,6 +139,7 @@ struct BatchResult {
     successful_requests: u32,
     rate_limit_post_endpoints_requests: u32,
     error_requests: u32,
+    retry_after_header_count: u32, // Count of 429 responses that had Retry-After header
 }
 
 async fn execute_batch(
@@ -163,12 +164,27 @@ async fn execute_batch(
                 .send()
                 .await;
 
-            let status = match &res {
-                Ok(response) => response.status().as_u16(),
-                Err(_) => 0,
+            let (status, has_valid_retry_after_header) = match &res {
+                Ok(response) => {
+                    let status = response.status().as_u16();
+                    let has_valid_retry_after = if status == 429 {
+                        // For 429 responses, check for Retry-After header with valid numeric value
+                        response
+                            .headers()
+                            .get("retry-after")
+                            .or_else(|| response.headers().get("Retry-After"))
+                            .and_then(|header_val| header_val.to_str().ok())
+                            .and_then(|header_str| header_str.parse::<u32>().ok())
+                            .is_some()
+                    } else {
+                        true // Non-429 responses don't need Retry-After header
+                    };
+                    (status, has_valid_retry_after)
+                }
+                Err(_) => (0, false),
             };
 
-            (i, status, res.is_ok())
+            (i, status, res.is_ok(), has_valid_retry_after_header)
         });
 
         all_tasks.push(task);
@@ -186,12 +202,18 @@ async fn execute_batch(
     let mut successful_requests = 0;
     let mut rate_limit_post_endpoints_requests = 0;
     let mut error_requests = 0;
+    let mut retry_after_header_count = 0;
 
     for result in results {
-        if let Ok((_request_id, status, _success)) = result {
+        if let Ok((_request_id, status, _success, has_valid_retry_after)) = result {
             match status {
                 200 => successful_requests += 1,
-                429 => rate_limit_post_endpoints_requests += 1,
+                429 => {
+                    rate_limit_post_endpoints_requests += 1;
+                    if has_valid_retry_after {
+                        retry_after_header_count += 1;
+                    }
+                }
                 _ => error_requests += 1,
             }
         } else {
@@ -203,6 +225,7 @@ async fn execute_batch(
         successful_requests,
         rate_limit_post_endpoints_requests,
         error_requests,
+        retry_after_header_count,
     }
 }
 
@@ -220,12 +243,27 @@ async fn execute_get_batch(client: &reqwest::Client, url: &str, batch: &Batch) -
                 .send()
                 .await;
 
-            let status = match &res {
-                Ok(response) => response.status().as_u16(),
-                Err(_) => 0,
+            let (status, has_valid_retry_after_header) = match &res {
+                Ok(response) => {
+                    let status = response.status().as_u16();
+                    let has_valid_retry_after = if status == 429 {
+                        // For 429 responses, check for Retry-After header with valid numeric value
+                        response
+                            .headers()
+                            .get("retry-after")
+                            .or_else(|| response.headers().get("Retry-After"))
+                            .and_then(|header_val| header_val.to_str().ok())
+                            .and_then(|header_str| header_str.parse::<u32>().ok())
+                            .is_some()
+                    } else {
+                        true // Non-429 responses don't need Retry-After header
+                    };
+                    (status, has_valid_retry_after)
+                }
+                Err(_) => (0, false),
             };
 
-            (i, status, res.is_ok())
+            (i, status, res.is_ok(), has_valid_retry_after_header)
         });
 
         all_tasks.push(task);
@@ -243,12 +281,18 @@ async fn execute_get_batch(client: &reqwest::Client, url: &str, batch: &Batch) -
     let mut successful_requests = 0;
     let mut rate_limit_post_endpoints_requests = 0;
     let mut error_requests = 0;
+    let mut retry_after_header_count = 0;
 
     for result in results {
-        if let Ok((_request_id, status, _success)) = result {
+        if let Ok((_request_id, status, _success, has_valid_retry_after)) = result {
             match status {
                 200 => successful_requests += 1,
-                429 => rate_limit_post_endpoints_requests += 1,
+                429 => {
+                    rate_limit_post_endpoints_requests += 1;
+                    if has_valid_retry_after {
+                        retry_after_header_count += 1;
+                    }
+                }
                 _ => error_requests += 1,
             }
         } else {
@@ -260,6 +304,7 @@ async fn execute_get_batch(client: &reqwest::Client, url: &str, batch: &Batch) -
         successful_requests,
         rate_limit_post_endpoints_requests,
         error_requests,
+        retry_after_header_count,
     }
 }
 
@@ -286,9 +331,10 @@ async fn run_scenario(
         let result = execute_batch(&client, &url, payload, batch).await;
 
         println!(
-            "    Results: {} successful, {} rate limited, {} errors",
+            "    Results: {} successful, {} rate limited ({} with valid Retry-After), {} errors",
             result.successful_requests,
             result.rate_limit_post_endpoints_requests,
+            result.retry_after_header_count,
             result.error_requests
         );
 
@@ -433,6 +479,16 @@ fn validate_scenario_results(scenario: &TestScenario, results: &[BatchResult]) {
             expectation.max_errors,
             result.error_requests
         );
+
+        // Validate that ALL 429 responses have valid Retry-After headers
+        assert_eq!(
+            result.rate_limit_post_endpoints_requests, result.retry_after_header_count,
+            "Scenario '{}', Batch {}: ALL 429 responses must have valid Retry-After header. Got {} 429s but only {} with valid headers",
+            scenario.name,
+            batch_idx + 1,
+            result.rate_limit_post_endpoints_requests,
+            result.retry_after_header_count
+        );
     }
 }
 
@@ -550,9 +606,10 @@ async fn run_get_scenario(
         let result = execute_get_batch(&client, url, batch).await;
 
         println!(
-            "    Results: {} successful, {} rate limited, {} errors",
+            "    Results: {} successful, {} rate limited ({} with valid Retry-After), {} errors",
             result.successful_requests,
             result.rate_limit_post_endpoints_requests,
+            result.retry_after_header_count,
             result.error_requests
         );
 

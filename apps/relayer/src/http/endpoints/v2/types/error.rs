@@ -73,7 +73,6 @@ pub struct RelayerV2ResponseQueued {
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 pub struct RelayerV2ResultQueued {
     pub job_id: String,
-    pub retry_after_seconds: u32,
 }
 
 // Helper functions to create standard v2 error responses

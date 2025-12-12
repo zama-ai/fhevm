@@ -97,6 +97,8 @@ pub struct HttpConfig {
     pub rate_limit_post_endpoints: RateLimitConfig,
     /// HTTP metrics configuration
     pub metrics: HttpMetricsConfig,
+    /// Default retry-after seconds for queued API responses
+    pub api_retry_after_seconds: u32,
 }
 
 #[derive(Debug, Deserialize, Clone)]

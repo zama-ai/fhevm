@@ -39,7 +39,6 @@ pub struct InputProofPostResponseJson {
 #[serde(rename_all = "camelCase")]
 pub struct InputProofQueuedResult {
     pub job_id: String,
-    pub retry_after_seconds: u32,
 }
 
 // GET response when completed

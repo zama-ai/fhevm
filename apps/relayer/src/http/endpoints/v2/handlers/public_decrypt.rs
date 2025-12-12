@@ -26,7 +26,10 @@ use axum::{
     http::Request,
     response::IntoResponse,
 };
-use axum::{http::StatusCode, Json};
+use axum::{
+    http::{header, StatusCode},
+    Json,
+};
 use std::sync::Arc;
 use tracing::{error, info, instrument, span, Level};
 use uuid::Uuid;
@@ -40,6 +43,7 @@ where
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     api_version: ApiVersion,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
+    retry_after_seconds: u32,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
@@ -49,11 +53,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
         api_version: ApiVersion,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
+        retry_after_seconds: u32,
     ) -> Self {
         Self {
             orchestrator,
             api_version,
             public_decrypt_repo,
+            retry_after_seconds,
         }
     }
 
@@ -192,11 +198,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             request_id: request_id_for_response.to_string(), // New per-request UUID
             result: PublicDecryptQueuedResult {
                 job_id: actual_ext_job_id.to_string(), // Use the actual ext_job_id from database
-                retry_after_seconds: 15,
             },
         };
 
-        (StatusCode::ACCEPTED, Json(response)).into_response()
+        // Add Retry-After header with the configured retry value
+        (
+            StatusCode::ACCEPTED,
+            [(header::RETRY_AFTER, self.retry_after_seconds.to_string())],
+            Json(response),
+        )
+            .into_response()
     }
 
     #[instrument(name = "handle-public-decrypt-get", skip_all, fields(job_id))]

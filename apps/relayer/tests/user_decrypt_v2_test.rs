@@ -1,6 +1,6 @@
 mod common;
 
-use crate::common::utils::TestSetup;
+use crate::common::utils::{assert_retry_after_header_present, TestSetup};
 use alloy::primitives::{Address, Bytes, B256};
 use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptStatusResponseJson,
@@ -89,7 +89,6 @@ mod helpers {
             "extraData": constants::EXTRA_DATA
         })
     }
-
 
     pub fn extract_ciphertext_handles_from_user_payload(payload: &serde_json::Value) -> Vec<B256> {
         payload["handleContractPairs"]
@@ -228,6 +227,7 @@ async fn test_success_single_request() {
         .expect("Failed to send POST request");
 
     assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
+    assert_retry_after_header_present(&response);
 
     let post_response: UserDecryptPostResponseJson = response
         .json()
@@ -249,6 +249,12 @@ async fn test_success_single_request() {
         .expect("Failed to send GET request");
 
     let status = get_response.status();
+
+    // Check Retry-After header before consuming response
+    if status == reqwest::StatusCode::ACCEPTED {
+        assert_retry_after_header_present(&get_response);
+    }
+
     let get_body: UserDecryptStatusResponseJson = get_response
         .json()
         .await
@@ -325,6 +331,7 @@ async fn test_consecutive_duplicate_requests_succeed() {
         .expect("Failed to send first POST request");
 
     assert_eq!(response1.status(), reqwest::StatusCode::ACCEPTED);
+    assert_retry_after_header_present(&response1);
 
     let post_response1: UserDecryptPostResponseJson = response1
         .json()
@@ -345,6 +352,7 @@ async fn test_consecutive_duplicate_requests_succeed() {
         .expect("Failed to send second POST request");
 
     assert_eq!(response2.status(), reqwest::StatusCode::ACCEPTED);
+    assert_retry_after_header_present(&response2);
 
     let post_response2: UserDecryptPostResponseJson = response2
         .json()

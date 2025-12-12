@@ -278,6 +278,21 @@ pub async fn setup_test_database(config: StorageConfig) -> eyre::Result<PgClient
     Ok(pg_client)
 }
 
+/// Validates that a 202 response has a valid Retry-After header with numeric value
+#[allow(dead_code)]
+pub fn assert_retry_after_header_present(response: &reqwest::Response) {
+    let retry_after_header = response
+        .headers()
+        .get("retry-after")
+        .or_else(|| response.headers().get("Retry-After"))
+        .and_then(|header_val| header_val.to_str().ok())
+        .and_then(|header_str| header_str.parse::<u32>().ok());
+    assert!(
+        retry_after_header.is_some(),
+        "202 response should have valid Retry-After header"
+    );
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

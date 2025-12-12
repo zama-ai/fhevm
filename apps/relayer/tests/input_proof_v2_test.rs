@@ -1,6 +1,6 @@
 mod common;
 
-use crate::common::utils::TestSetup;
+use crate::common::utils::{assert_retry_after_header_present, TestSetup};
 use alloy::primitives::{Address, Bytes};
 use fhevm_relayer::http::endpoints::v2::types::input_proof::{
     InputProofPostResponseJson, InputProofStatusResponseJson,
@@ -75,6 +75,7 @@ async fn test_success_single_request() {
         .expect("Failed to send POST request");
 
     assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
+    assert_retry_after_header_present(&response);
 
     let post_response: InputProofPostResponseJson = response
         .json()
@@ -96,6 +97,12 @@ async fn test_success_single_request() {
         .expect("Failed to send GET request");
 
     let status = get_response.status();
+
+    // Check Retry-After header before consuming response
+    if status == reqwest::StatusCode::ACCEPTED {
+        assert_retry_after_header_present(&get_response);
+    }
+
     let get_body: InputProofStatusResponseJson = get_response
         .json()
         .await

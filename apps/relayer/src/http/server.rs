@@ -77,6 +77,7 @@ where
         orchestrator.clone(),
         api_version,
         repositories.input_proof.clone(),
+        config.api_retry_after_seconds,
     ));
 
     let user_decrypt_handler_v2 = Arc::new(UserDecryptHandlerV2::new(
@@ -84,12 +85,14 @@ where
         api_version,
         repositories.user_decrypt.clone(),
         user_decrypt_shares_threshold,
+        config.api_retry_after_seconds,
     ));
 
     let public_decrypt_handler_v2 = Arc::new(PublicDecryptHandlerV2::new(
         orchestrator.clone(),
         api_version,
         repositories.public_decrypt.clone(),
+        config.api_retry_after_seconds,
     ));
 
     // Clone orchestrator for health endpoint before using it
