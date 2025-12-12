@@ -24,8 +24,18 @@ mod helpers {
         format!("http://localhost:{}/v2/keyurl", setup.http_port)
     }
 
-    /// Validate the keyurl response structure matches expected schema
-    pub async fn validate_keyurl_response(response: reqwest::Response) -> Value {
+    /// Validate the keyurl v1 response structure (snake_case)
+    pub async fn validate_keyurl_v1_response(response: reqwest::Response) -> Value {
+        validate_keyurl_response_internal(response, false).await
+    }
+
+    /// Validate the keyurl v2 response structure (camelCase)
+    pub async fn validate_keyurl_v2_response(response: reqwest::Response) -> Value {
+        validate_keyurl_response_internal(response, true).await
+    }
+
+    /// Internal validation function that handles both formats
+    async fn validate_keyurl_response_internal(response: reqwest::Response, is_v2: bool) -> Value {
         // Check status code
         assert_eq!(response.status(), 200, "keyurl endpoint should return 200");
 
@@ -51,40 +61,64 @@ mod helpers {
         assert!(body.get("response").is_some(), "Missing 'response' field");
         let response = &body["response"];
 
+        // Handle v2-specific status field
+        if is_v2 {
+            assert!(body.get("status").is_some(), "Missing 'status' field in v2");
+            assert!(
+                body["status"].is_string(),
+                "'status' should be a string in v2"
+            );
+        }
+
+        // Choose field names based on version
+        let (fhe_key_info_field, fhe_public_key_field, data_id_field) = if is_v2 {
+            ("fheKeyInfo", "fhePublicKey", "dataId")
+        } else {
+            ("fhe_key_info", "fhe_public_key", "data_id")
+        };
+
         // Check fhe_key_info array
         assert!(
-            response.get("fhe_key_info").is_some(),
-            "Missing 'fhe_key_info' field"
+            response.get(fhe_key_info_field).is_some(),
+            "Missing '{}' field",
+            fhe_key_info_field
         );
         assert!(
-            response["fhe_key_info"].is_array(),
-            "'fhe_key_info' should be an array"
+            response[fhe_key_info_field].is_array(),
+            "'{}' should be an array",
+            fhe_key_info_field
         );
-        let fhe_key_info = response["fhe_key_info"].as_array().unwrap();
+        let fhe_key_info = response[fhe_key_info_field].as_array().unwrap();
         assert!(
             !fhe_key_info.is_empty(),
-            "'fhe_key_info' array should not be empty"
+            "'{}' array should not be empty",
+            fhe_key_info_field
         );
 
         // Check first fhe_key_info entry
         let first_key_info = &fhe_key_info[0];
         assert!(
-            first_key_info.get("fhe_public_key").is_some(),
-            "Missing 'fhe_public_key' field"
+            first_key_info.get(fhe_public_key_field).is_some(),
+            "Missing '{}' field",
+            fhe_public_key_field
         );
 
-        let fhe_public_key = &first_key_info["fhe_public_key"];
+        let fhe_public_key = &first_key_info[fhe_public_key_field];
         assert!(
-            fhe_public_key.get("data_id").is_some(),
-            "Missing 'data_id' in fhe_public_key"
+            fhe_public_key.get(data_id_field).is_some(),
+            "Missing '{}' in {}",
+            data_id_field,
+            fhe_public_key_field
         );
         assert!(
             fhe_public_key.get("urls").is_some(),
-            "Missing 'urls' in fhe_public_key"
+            "Missing 'urls' in {}",
+            fhe_public_key_field
         );
         assert!(
-            fhe_public_key["data_id"].is_string(),
-            "'data_id' should be a string"
+            fhe_public_key[data_id_field].is_string(),
+            "'{}' should be a string",
+            data_id_field
         );
         assert!(
             fhe_public_key["urls"].is_array(),
@@ -101,13 +135,15 @@ mod helpers {
         assert!(crs.contains_key("2048"), "'crs' should contain '2048' key");
         let crs_2048 = &crs["2048"];
         assert!(
-            crs_2048.get("data_id").is_some(),
-            "Missing 'data_id' in crs.2048"
+            crs_2048.get(data_id_field).is_some(),
+            "Missing '{}' in crs.2048",
+            data_id_field
         );
         assert!(crs_2048.get("urls").is_some(), "Missing 'urls' in crs.2048");
         assert!(
-            crs_2048["data_id"].is_string(),
-            "'data_id' should be a string"
+            crs_2048[data_id_field].is_string(),
+            "'{}' should be a string",
+            data_id_field
         );
         assert!(crs_2048["urls"].is_array(), "'urls' should be an array");
 
@@ -124,16 +160,15 @@ async fn test_keyurl_endpoints_success() {
     let v1_url = helpers::keyurl_v1_url(&setup);
     let v2_url = helpers::keyurl_v2_url(&setup);
 
-    // Get responses and validate them
+    // Get responses and validate them with their respective formats
     let v1_response = reqwest::get(&v1_url).await.unwrap();
     let v2_response = reqwest::get(&v2_url).await.unwrap();
 
-    let v1_body = helpers::validate_keyurl_response(v1_response).await;
-    let v2_body = helpers::validate_keyurl_response(v2_response).await;
+    let _v1_body = helpers::validate_keyurl_v1_response(v1_response).await;
+    let _v2_body = helpers::validate_keyurl_v2_response(v2_response).await;
 
-    // Ensure v1 and v2 return identical responses (requirement for duplicated endpoints)
-    assert_eq!(
-        v1_body, v2_body,
-        "v1 and v2 keyurl endpoints must return identical responses"
-    );
+    // Both endpoints validated successfully with their respective schemas
+    // v1 uses snake_case, v2 uses camelCase + includes status field
+
+    setup.shutdown().await;
 }
