@@ -110,6 +110,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         metric_fhe_batch_latency: MetricsConfig::default(),
         worker_id: None,
         dcid_ttl_sec: 30,
+        disable_dcid_locking: true,
     };
 
     std::thread::spawn(move || {
