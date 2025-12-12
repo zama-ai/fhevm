@@ -2,6 +2,7 @@ use clap::Parser;
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::utils::DatabaseURL;
 use tracing::Level;
+use uuid::Uuid;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -82,6 +83,17 @@ pub struct Args {
     /// tfhe-worker service name in OTLP traces
     #[arg(long, default_value = "tfhe-worker")]
     pub service_name: String,
+
+    /// Worker/replica ID for this worker instance
+    /// If not provided, a random UUID will be generated
+    /// Used to identify the worker in the dependence_chain table
+    #[arg(long, value_parser = clap::value_parser!(Uuid))]
+    pub worker_id: Option<Uuid>,
+
+    /// Time-to-live in seconds for dependence chain locks
+    /// Defaults to 30 seconds if not provided
+    #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 30)]
+    pub dcid_ttl_sec: u32,
 
     /// Log level for the application
     #[arg(
