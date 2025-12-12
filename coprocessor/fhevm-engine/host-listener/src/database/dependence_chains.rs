@@ -117,6 +117,7 @@ fn assign_tx_a_chain_dependency(
     let nb_txs = txs.len();
     let mut txn_to_chain_dep = HashMap::with_capacity(nb_txs);
     let mut chains = HashSet::with_capacity(nb_txs);
+    let mut already_reordered = HashSet::with_capacity(0);
     // tx to its chain dependency
     while let Some(tx) = txs.pop_back() {
         let chain_dep = txn_to_chain_dep.entry(tx);
@@ -129,20 +130,32 @@ fn assign_tx_a_chain_dependency(
         {
             let (_age, tx_dep) = direct_deps;
             assert!(*tx_dep != tx);
-            let Some(chain) = txn_to_chain_dep.get(tx_dep) else {
-                warn!(?tx, "Out of order transactions");
-                // only happens if logs are out of order
-                txs.push_back(tx);
-                // let's do its dependency first
-                txs.push_back(*tx_dep);
-                continue;
-            };
-            *chain
+            if let Some(chain) = txn_to_chain_dep.get(tx_dep) {
+                *chain
+            } else {
+                // This should not happen as everything is supposed to be in order.
+                warn!(?tx, ?tx_dep, "Out of order transactions");
+                if !already_reordered.contains(&tx) {
+                    already_reordered.insert(tx);
+                    // only happens if logs are out of order
+                    txs.push_back(tx);
+                    // let's do its dependency first
+                    txs.push_back(*tx_dep);
+                    continue;
+                }
+                // cycle detected
+                error!(
+                    ?tx,
+                    ?tx_dep,
+                    "Cycle detected in dependence chains, creating a new chain"
+                );
+                tx
+            }
         } else if let Some(chain) = tx_chain_dependency.get(&tx) {
             *chain
         } else {
             // no dependency or unknown ones
-            // createa new chain
+            // create a new chain
             tx
         };
         // eprintln!("Assign tx {:?} to chain {:?}", tx, chain);

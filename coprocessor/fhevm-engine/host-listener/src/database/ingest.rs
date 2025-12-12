@@ -50,6 +50,7 @@ pub async fn ingest_block_logs(
     let block_number = block_logs.summary.number;
     let mut catchup_insertion = 0;
     let block_timestamp = block_date_time_utc(block_logs.summary.timestamp);
+    let mut at_least_one_insertion = false;
 
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
@@ -73,6 +74,7 @@ pub async fn ingest_block_logs(
                         block_number,
                     )
                     .await?;
+                at_least_one_insertion |= inserted;
                 if block_logs.catchup && inserted {
                     info!(
                         acl_event = ?event,
@@ -136,6 +138,7 @@ pub async fn ingest_block_logs(
 
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
+        at_least_one_insertion |= inserted;
         if block_logs.catchup && inserted {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
             catchup_insertion += 1;
@@ -144,13 +147,20 @@ pub async fn ingest_block_logs(
         }
     }
 
-    if catchup_insertion == block_logs.logs.len() {
-        info!(block_number, catchup_insertion, "Catchup inserted a block");
-    } else if catchup_insertion > 0 {
-        info!(block_number, catchup_insertion, "Catchup inserted events");
+    if catchup_insertion > 0 {
+        if catchup_insertion == block_logs.logs.len() {
+            info!(
+                block_number,
+                catchup_insertion, "Catchup inserted a full block"
+            );
+        } else {
+            info!(block_number, catchup_insertion, "Catchup inserted events");
+        }
     }
 
     db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
-    db.update_dependence_chain(&mut tx, chains).await?;
+    if at_least_one_insertion {
+        db.update_dependence_chain(&mut tx, chains).await?;
+    }
     tx.commit().await
 }
