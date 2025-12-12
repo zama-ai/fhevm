@@ -111,11 +111,11 @@ impl DbKmsResponsePicker {
         sqlx::query(
             "
                 UPDATE public_decryption_responses
-                SET locked = TRUE, locked_at = $2
+                SET status = 'under_process', updated_at = $2
                 FROM (
                     SELECT decryption_id
                     FROM public_decryption_responses
-                    WHERE locked = FALSE
+                    WHERE status = 'pending'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE public_decryption_responses.decryption_id = resp.decryption_id
@@ -135,11 +135,11 @@ impl DbKmsResponsePicker {
         sqlx::query(
             "
                 UPDATE user_decryption_responses
-                SET locked = TRUE, locked_at = $2
+                SET status = 'under_process', updated_at = $2
                 FROM (
                     SELECT decryption_id
                     FROM user_decryption_responses
-                    WHERE locked = FALSE
+                    WHERE status = 'pending'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE user_decryption_responses.decryption_id = resp.decryption_id
@@ -159,11 +159,11 @@ impl DbKmsResponsePicker {
         sqlx::query(
             "
                 UPDATE prep_keygen_responses
-                SET locked = TRUE, locked_at = $2
+                SET status = 'under_process', updated_at = $2
                 FROM (
                     SELECT prep_keygen_id
                     FROM prep_keygen_responses
-                    WHERE locked = FALSE
+                    WHERE status = 'pending'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE prep_keygen_responses.prep_keygen_id = resp.prep_keygen_id
@@ -183,11 +183,11 @@ impl DbKmsResponsePicker {
         sqlx::query(
             "
                 UPDATE keygen_responses
-                SET locked = TRUE, locked_at = $2
+                SET status = 'under_process', updated_at = $2
                 FROM (
                     SELECT key_id
                     FROM keygen_responses
-                    WHERE locked = FALSE
+                    WHERE status = 'pending'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE keygen_responses.key_id = resp.key_id
@@ -207,11 +207,11 @@ impl DbKmsResponsePicker {
         sqlx::query(
             "
                 UPDATE crsgen_responses
-                SET locked = TRUE, locked_at = $2
+                SET status = 'under_process', updated_at = $2
                 FROM (
                     SELECT crs_id
                     FROM crsgen_responses
-                    WHERE locked = FALSE
+                    WHERE status = 'pending'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE crsgen_responses.crs_id = resp.crs_id

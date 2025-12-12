@@ -147,7 +147,7 @@ impl DbKmsResponsePublisher {
         .map_err(anyhow::Error::from)
     }
 
-    /// Sets the `locked` field of the event as `FALSE` in the database.
+    /// Sets the `status` field of the event to `pending` in the database.
     pub async fn mark_event_as_pending(&self, event: GatewayEvent) {
         event.mark_as_pending(&self.db_pool).await
     }

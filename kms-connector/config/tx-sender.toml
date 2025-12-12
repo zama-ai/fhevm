@@ -101,3 +101,17 @@ private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 # The maximum number of tasks to process events/responses concurrently (optional, defaults to 1000)
 # ENV: KMS_CONNECTOR_TASK_LIMIT
 # task_limit = 1000
+
+# The interval between garbage collection runs, in minutes (optional, defaults to 5).
+# ENV: KMS_CONNECTOR_GC_RUN_INTERVAL_MINS
+# gc_run_interval_mins = 5
+
+# The expiration time in minutes for completed/failed decryptions, after which they will be
+# deleted (optional, defaults to 1440 = 24 hours).
+# ENV: KMS_CONNECTOR_GC_DECRYPTION_EXPIRY_MINS
+# gc_decryption_expiry_mins = 1440
+
+# The time limit in minutes for decryption to be under process, after which they will be
+# considered as pending again (optional, defaults to 10).
+# ENV: KMS_CONNECTOR_GC_DECRYPTION_UNDER_PROCESS_LIMIT_MINS
+# gc_decryption_under_process_limit_mins = 10

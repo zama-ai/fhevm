@@ -1,6 +1,6 @@
 mod common;
 
-use crate::common::{check_no_request_in_db, insert_rand_request};
+use crate::common::{check_no_uncompleted_request_in_db, insert_rand_request};
 use alloy::{
     hex,
     primitives::U256,
@@ -164,18 +164,17 @@ async fn test_processing_request(event_type: EventType, already_sent: bool) -> a
     // Waiting for kms_worker to process the request
     match &request {
         GatewayEventKind::PrssInit(_) | GatewayEventKind::KeyReshareSameSet(_) => {
-            while check_no_request_in_db(test_instance.db(), event_type)
-                .await
-                .is_err()
+            while let Err(e) =
+                check_no_uncompleted_request_in_db(test_instance.db(), event_type).await
             {
-                warn!("Still requests in DB!");
+                warn!("Still requests in DB: {e}");
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
         }
         _ => {
             let response = wait_for_response_in_db(test_instance.db(), &request).await?;
             check_response_data(&request, response)?;
-            check_no_request_in_db(test_instance.db(), event_type).await?;
+            check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
         }
     }
 

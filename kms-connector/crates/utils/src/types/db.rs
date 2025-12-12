@@ -213,3 +213,12 @@ pub const KEYGEN_REQUEST_NOTIFICATION: &str = "keygen_request_available";
 pub const CRSGEN_REQUEST_NOTIFICATION: &str = "crsgen_request_available";
 pub const PRSS_INIT_NOTIFICATION: &str = "prss_init_available";
 pub const KEY_RESHARE_SAME_SET_NOTIFICATION: &str = "key_reshare_same_set_available";
+
+#[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
+#[sqlx(type_name = "operation_status", rename_all = "lowercase")]
+pub enum OperationStatus {
+    Pending,
+    UnderProcess,
+    Completed,
+    Failed,
+}
