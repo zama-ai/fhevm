@@ -77,7 +77,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @param name The name of the ERC20 token.
      * @param symbol The symbol of the ERC20 token.
      * @param protocolStaking_ The ProtocolStaking contract address.
-     * @param beneficiary The address that can set and claim fees.
+     * @param beneficiary_ The address that can set and claim fees.
      * @param initialMaxFeeBasisPoints_ The initial maximum fee basis points for the OperatorRewarder contract.
      * @param initialFeeBasisPoints_ The initial fee basis points for the OperatorRewarder contract.
      */
@@ -85,7 +85,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
         string memory name,
         string memory symbol,
         ProtocolStaking protocolStaking_,
-        address beneficiary,
+        address beneficiary_,
         uint16 initialMaxFeeBasisPoints_,
         uint16 initialFeeBasisPoints_
     ) ERC20(name, symbol) {
@@ -95,7 +95,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
         IERC20(asset()).approve(address(protocolStaking_), type(uint256).max);
 
         address rewarder_ = address(
-            new OperatorRewarder(beneficiary, protocolStaking_, this, initialMaxFeeBasisPoints_, initialFeeBasisPoints_)
+            new OperatorRewarder(beneficiary_, protocolStaking_, this, initialMaxFeeBasisPoints_, initialFeeBasisPoints_)
         );
         protocolStaking_.setRewardsRecipient(rewarder_);
         _rewarder = rewarder_;
