@@ -178,3 +178,11 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Additional Resources
+
+For users exploring FHE development, here are a few helpful external resources:
+
+- Introduction to Fully Homomorphic Encryption: https://fhe.org/intro  
+- Cryptography Primer (beginner friendly): https://cryptobook.nakov.com  
+- Zama engineering blog: https://www.zama.ai/blog
