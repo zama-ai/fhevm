@@ -253,11 +253,13 @@ impl UserDecryptRepository {
     }
 
     // We recieve a share event from the gw.
-    /// Insert in user_decrypt_share table all the fields: gw_reference_id, share_index, share, kms_signature, extra_data and return number of shares for gw_reference_id in the table.
-    /// Insert a share and return the total count of shares for this gw_reference_id.
-    /// NOTE: This lead to possibility of non relevant shares, we can recieve unrelated shares non related to relayer events, or timed_out shares, we register them anyway.
-    // TODO(xyz): return status here to detect timed_out
-    pub async fn insert_share_and_return_count(
+    /// Insert share and atomically complete request if threshold is reached.
+    /// Returns (share_count, completion_result) where completion_result contains
+    /// metadata and shares if threshold was reached and completion successful.
+    ///
+    /// This prevents race conditions between share insertion and request completion
+    /// by performing all operations within a single atomic transaction.
+    pub async fn insert_share_and_complete_if_threshold_reached(
         &self,
         gw_reference_id: U256,
         share_index: U256,
@@ -265,11 +267,13 @@ impl UserDecryptRepository {
         kms_signature: &str,
         extra_data: &str,
         tx_hash: &str,
-    ) -> SqlResult<i64> {
+        threshold: i64,
+    ) -> SqlResult<(i64, Option<(ConsensusReqState, Vec<UserDecryptShare>)>)> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
         let share_index = u256_to_i32(share_index)
             .map_err(|e| SqlError::conversion_error("share_index", share_index, e))?;
+
         // Use advisory locks to serialize share operations per gw_reference_id
         //
         // Advisory locks provide two benefits:
@@ -284,10 +288,9 @@ impl UserDecryptRepository {
         //    When transactions execute sequentially, COUNT(*) sees all previous INSERTs
         //    for the same gw_reference_id, providing accurate share counts.
         //
-        // Separating INSERT and COUNT (instead of using CTE) solves read-your-own-writes:
-        // In a CTE, COUNT(*) cannot see rows inserted by the same statement. By splitting
-        // into separate statements, the second SELECT sees the first INSERT's result.
-        // See: https://www.postgresql.org/docs/current/queries-with.html
+        // 3. Prevents race conditions between threshold check and completion:
+        //    By including completion logic in the same transaction, we prevent pg_cron
+        //    timeout jobs from interfering between share insertion and request completion.
         //
         // Advisory lock automatically released when transaction commits/rollbacks.
         // See: https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS
@@ -323,9 +326,7 @@ impl UserDecryptRepository {
         .execute(&mut *tx)
         .await?;
 
-        // Count in a separate query within the same transaction so that
-        // it includes inserted row.
-        // count! ensures non-null return value. i.e i64 and not Option<i64>.
+        // Count shares within the same transaction
         let count = sqlx::query_scalar!(
             r#"
             SELECT COUNT(*) as "count!"
@@ -337,91 +338,71 @@ impl UserDecryptRepository {
         .fetch_one(&mut *tx)
         .await?;
 
-        tx.commit().await?;
-        Ok(count)
-    }
-
-    // TODO: Should update this query with ! failed, but don't needed since we will surely not recieve the event from gw chain. (TX CRASHED..)
-    /// update user_decrypt_reqf req_status to completed by gw_reference_id and return all shares + int_job_id + status + updated_at + err_reason from user_decrypt_share table by gw_reference_id.
-    /// Step 6 (Share Flow): Update to 'completed' and return Metadata + All Shares.
-    /// Returns a tuple: (ConsensusReqState, Vec<UserDecryptShare>).
-    /// Fails if the request is 'timed_out' or does not exist.
-    pub async fn complete_req_and_get_shares_metadata(
-        &self,
-        gw_reference_id: U256,
-        threshold: i64,
-    ) -> SqlResult<(ConsensusReqState, Vec<UserDecryptShare>)> {
-        let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
-        let gw_ref_id = id_as_bytes_array.to_vec();
-        let records = sqlx::query!(
-            r#"
-            WITH updated_req AS (
+        // If threshold reached, complete the request atomically
+        let completion_result = if count == threshold {
+            // Attempt to update request to completed status
+            let update_result = sqlx::query!(
+                r#"
                 UPDATE user_decrypt_req
                 SET req_status = 'completed'::req_status
                 WHERE gw_reference_id = $1
-                  AND req_status != 'timed_out'::req_status -- Prevent updating if already timed out
-                RETURNING int_job_id, req_status, updated_at, err_reason
+                  AND req_status != 'timed_out'::req_status
+                RETURNING int_job_id, req_status as "req_status: ReqStatus", updated_at, err_reason
+                "#,
+                gw_ref_id
             )
-            SELECT
-                -- Metadata from the Update (Force non-null types for SQLx)
-                u.int_job_id as "int_job_id!",
-                u.req_status as "req_status!: ReqStatus",
-                u.updated_at as "updated_at!",
-                u.err_reason,
+            .fetch_optional(&mut *tx)
+            .await?;
 
-                -- Share Data
-                s.id as share_id,
-                s.gw_reference_id,
-                s.share_index,
-                s.share,
-                s.kms_signature,
-                s.extra_data,
-                s.created_at as share_created_at,
-                s.updated_at as share_updated_at
-            FROM user_decrypt_share s, updated_req u
-            WHERE s.gw_reference_id = $1
-            ORDER BY s.created_at ASC
-            LIMIT $2
-            "#,
-            gw_ref_id,
-            threshold
-        )
-        .fetch_all(&self.pool.get_pool())
-        .await?;
+            // If update succeeded, fetch shares
+            if let Some(req_data) = update_result {
+                let metadata = ConsensusReqState {
+                    int_job_id: req_data.int_job_id,
+                    req_status: ReqStatus::Completed,
+                    updated_at: req_data.updated_at,
+                    err_reason: req_data.err_reason,
+                };
 
-        // If empty, it means either:
-        // 1. The gw_reference_id doesn't exist.
-        // 2. The request was 'timed_out' (so the UPDATE returned 0 rows).
-        // 3. There are no shares (unlikely if we reached threshold logic).
-        if records.is_empty() {
-            return Err(SqlError::Execution(sqlx::Error::RowNotFound));
-        }
+                // Fetch shares ordered by creation time, limited to threshold
+                let share_records = sqlx::query!(
+                    r#"
+                    SELECT id, gw_reference_id, share_index, share, kms_signature, extra_data, created_at, updated_at
+                    FROM user_decrypt_share
+                    WHERE gw_reference_id = $1
+                    ORDER BY created_at ASC, share_index ASC
+                    LIMIT $2
+                    "#,
+                    gw_ref_id,
+                    threshold
+                )
+                .fetch_all(&mut *tx)
+                .await?;
 
-        // 1. Extract Metadata from the first row (it's identical for all rows)
-        let first = &records[0];
-        let metadata = ConsensusReqState {
-            int_job_id: first.int_job_id.clone(),
-            req_status: first.req_status,
-            updated_at: first.updated_at,
-            err_reason: first.err_reason.clone(),
+                let shares: Vec<UserDecryptShare> = share_records
+                    .into_iter()
+                    .map(|r| UserDecryptShare {
+                        id: r.id,
+                        gw_reference_id: r.gw_reference_id,
+                        share_index: r.share_index,
+                        share: r.share,
+                        kms_signature: r.kms_signature,
+                        extra_data: r.extra_data,
+                        created_at: r.created_at,
+                        updated_at: r.updated_at,
+                    })
+                    .collect();
+
+                Some((metadata, shares))
+            } else {
+                // Request was already timed_out or doesn't exist
+                None
+            }
+        } else {
+            None
         };
 
-        // 2. Map all rows to UserDecryptShare struct
-        let shares: Vec<UserDecryptShare> = records
-            .into_iter()
-            .map(|r| UserDecryptShare {
-                id: r.share_id,
-                gw_reference_id: r.gw_reference_id,
-                share_index: r.share_index,
-                share: r.share,
-                kms_signature: r.kms_signature,
-                extra_data: r.extra_data,
-                created_at: r.share_created_at,
-                updated_at: r.share_updated_at,
-            })
-            .collect();
-
-        Ok((metadata, shares))
+        tx.commit().await?;
+        Ok((count, completion_result))
     }
 
     // GET REQUESTS RESULTS.

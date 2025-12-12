@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE user_decrypt_req\n                SET req_status = 'completed'::req_status\n                WHERE gw_reference_id = $1\n                  AND req_status != 'timed_out'::req_status\n                RETURNING int_job_id, req_status as \"req_status: ReqStatus\", updated_at, err_reason\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "int_job_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "req_status: ReqStatus",
+        "type_info": {
+          "Custom": {
+            "name": "req_status",
+            "kind": {
+              "Enum": [
+                "queued",
+                "processing",
+                "receipt_received",
+                "completed",
+                "timed_out",
+                "failure"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "err_reason",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "ac684cbb95ee5947956c0215f9200549340c80e40cca3bed7b87250308b81fa3"
+}

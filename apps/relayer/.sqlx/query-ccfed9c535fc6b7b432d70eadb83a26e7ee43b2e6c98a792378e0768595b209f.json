@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT id, gw_reference_id, share_index, share, kms_signature, extra_data, created_at, updated_at\n                    FROM user_decrypt_share\n                    WHERE gw_reference_id = $1\n                    ORDER BY created_at ASC, share_index ASC\n                    LIMIT $2\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "gw_reference_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "share_index",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "share",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "kms_signature",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "extra_data",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ccfed9c535fc6b7b432d70eadb83a26e7ee43b2e6c98a792378e0768595b209f"
+}

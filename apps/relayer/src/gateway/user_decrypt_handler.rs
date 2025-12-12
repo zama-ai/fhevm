@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG, RESPONSE_TIMEOUT_MSG},
+        errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG},
         event::{
             GatewayChainEventData, GatewayChainEventId, HandleContractPair, RelayerEvent,
             RelayerEventData, UserDecryptEventData, UserDecryptEventId, UserDecryptRequest,
@@ -22,8 +22,7 @@ use crate::{
     },
     store::sql::{
         models::{
-            req_status_enum_model::ReqStatus, user_decrypt_req_model::ConsensusReqState,
-            user_decrypt_share_model::UserDecryptShare,
+            user_decrypt_req_model::ConsensusReqState, user_decrypt_share_model::UserDecryptShare,
         },
         repositories::user_decrypt_repo::UserDecryptRepository,
     },
@@ -271,9 +270,9 @@ impl GatewayHandler {
             .await
     }
 
-    /// Stores individual share in database and checks if threshold is reached.
+    /// Stores individual share in database and atomically completes request if threshold is reached.
     ///
-    /// When share count equals threshold, triggers final response assembly.
+    /// Uses atomic transaction to prevent race conditions with timeout jobs.
     async fn store_share_and_check_threshold(
         &self,
         event: RelayerEvent,
@@ -281,21 +280,24 @@ impl GatewayHandler {
         tx_hash: TxHash,
     ) -> Result<(), EventProcessingError> {
         let user_decryption_id = user_decrypt_response.decryptionId;
+        let threshold = self.user_decrypt_shares_threshold;
 
         let tx_hash_str = format!("{:?}", tx_hash);
-        let count = self
+        let (count, completion_result) = self
             .user_decrypt_repo
-            .insert_share_and_return_count(
+            .insert_share_and_complete_if_threshold_reached(
                 user_decryption_id,
                 user_decrypt_response.indexShare,
                 &hex::encode(&user_decrypt_response.userDecryptedShare),
                 &hex::encode(&user_decrypt_response.signature),
                 &hex::encode(&user_decrypt_response.extraData),
                 &tx_hash_str,
+                threshold,
             )
             .await
             .map_err(|e| EventProcessingError::SqlOperationFailed {
-                operation: "user_decrypt.insert_share_and_return_count".to_string(),
+                operation: "user_decrypt.insert_share_and_complete_if_threshold_reached"
+                    .to_string(),
                 reason: e.to_string(),
             })?;
 
@@ -304,74 +306,31 @@ impl GatewayHandler {
             user_decrypt_response.indexShare, count, user_decryption_id
         );
 
-        if count == self.user_decrypt_shares_threshold {
-            info!(
-                "Count equals threshold {}, {}",
-                count, self.user_decrypt_shares_threshold
-            );
-            self.handle_threshold_reached(event, user_decryption_id)
-                .await?;
-        } else {
-            info!(
-                "Count not equal to threshold, going forward {}, {}",
-                count, self.user_decrypt_shares_threshold
-            );
+        match completion_result {
+            Some((metadata, shares)) => {
+                info!(
+                    "Threshold reached and completion successful: {}/{}",
+                    count, threshold
+                );
+                self.assemble_final_response(event, metadata, shares).await;
+            }
+            None if count == threshold => {
+                error!(
+                    job_id = %event.job_id,
+                    "Threshold reached but request was timed out: {}/{}",
+                    count, threshold
+                );
+                return Err(EventProcessingError::ValidationFailed {
+                    field: "request_status".to_string(),
+                    reason: "Request timed out before completion".to_string(),
+                });
+            }
+            None => {
+                info!("Threshold not yet reached: {}/{}", count, threshold);
+            }
         }
 
         Ok(())
-    }
-
-    /// Handles threshold reached event by fetching shares and assembling final response.
-    ///
-    /// Validates request status and assembles final decryption response from all shares.
-    async fn handle_threshold_reached(
-        &self,
-        event: RelayerEvent,
-        user_decryption_id: U256,
-    ) -> Result<(), EventProcessingError> {
-        let threshold = self.user_decrypt_shares_threshold;
-        let (consensus_state, shares) = self
-            .user_decrypt_repo
-            .complete_req_and_get_shares_metadata(user_decryption_id, threshold)
-            .await
-            .map_err(|e| EventProcessingError::SqlOperationFailed {
-                operation: "user_decrypt.complete_req_and_get_shares_metadata".to_string(),
-                reason: e.to_string(),
-            })?;
-
-        info!(
-            "fetched all shares. Status = {:?}",
-            consensus_state.req_status
-        );
-
-        match consensus_state.req_status {
-            ReqStatus::Completed => {
-                self.assemble_final_response(event, consensus_state, shares)
-                    .await;
-                Ok(())
-            }
-            ReqStatus::TimedOut => {
-                error!(
-                    job_id = %event.job_id,
-                    "User decrypt request timed out ({})", RESPONSE_TIMEOUT_MSG
-                );
-                Err(EventProcessingError::ValidationFailed {
-                    field: "request_status".to_string(),
-                    reason: RESPONSE_TIMEOUT_MSG.to_string(),
-                })
-            }
-            _ => {
-                error!(
-                    job_id = %event.job_id,
-                    status = ?consensus_state.req_status,
-                    "Unexpected state of requests"
-                );
-                Err(EventProcessingError::ValidationFailed {
-                    field: "request_status".to_string(),
-                    reason: "unexpected request state".to_string(),
-                })
-            }
-        }
     }
 
     /// Assembles and dispatches final user decrypt response from collected shares.
