@@ -48,14 +48,14 @@ contract OperatorRewarder is Ownable {
     /// @notice Emitted when the fee is updated.
     event FeeUpdated(uint16 oldFee, uint16 newFee);
 
+    /// @notice Emitted when an address is authorized to claim rewards on behalf of the receiver address.
+    event ClaimerAuthorized(address receiver, address claimer);
+
     /// @notice Error for invalid claimer address.
     error InvalidClaimer(address claimer);
 
     /// @notice Emitted when the claimer for the receiver address is already set.
     error ClaimerAlreadySet(address receiver, address claimer);
-
-    /// @notice Emitted when an address is authorized to claim rewards on behalf of the receiver address.
-    event ClaimerAuthorized(address receiver, address claimer);
 
     /// @notice Emitted when an address is not authorized to claim rewards on behalf of the receiver address.
     error ClaimerNotAuthorized(address receiver, address claimer);
