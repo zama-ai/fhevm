@@ -157,37 +157,31 @@ describe('OperatorStaking', function () {
       const sig = ethers.Signature.from(flatSig);
 
       // Deposit with permit
-      const depositWithPermitTx = await this.mock
+      const depositWithPermitTx = this.mock
         .connect(delegatorNoApproval)
         .depositWithPermit(value, delegatorNoApproval, deadline, sig.v, sig.r, sig.s);
 
-      const depositWithPermitReceipt = await depositWithPermitTx.wait();
-
-      if (depositWithPermitReceipt?.status !== 1) {
-        throw new Error('Deposit with permit failed');
-      }
-
       Object.assign(this, {
-        depositWithPermitReceipt: depositWithPermitReceipt,
+        depositWithPermitTx,
         permitValue: value,
         delegatorNoApproval: delegatorNoApproval,
       });
     });
 
     it('should stake into protocol staking with permit', async function () {
-      expect(this.depositWithPermitReceipt)
+      await expect(this.depositWithPermitTx)
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.protocolStaking, this.permitValue);
     });
 
     it('should mint shares with permit', async function () {
-      expect(this.depositWithPermitReceipt)
+      await expect(this.depositWithPermitTx)
         .to.emit(this.mock, 'Transfer')
         .withArgs(ethers.ZeroAddress, this.delegatorNoApproval, this.permitValue);
     });
 
     it('should pull tokens with permit', async function () {
-      expect(this.depositWithPermitReceipt)
+      await expect(this.depositWithPermitTx)
         .to.emit(this.token, 'Transfer')
         .withArgs(this.delegatorNoApproval, this.mock, this.permitValue);
     });
