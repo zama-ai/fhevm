@@ -247,7 +247,8 @@ contract OperatorRewarder is Ownable {
      * @return The claimer address.
      */
     function claimer(address receiver) public view returns (address) {
-        return _authorizedClaimers[receiver] == address(0) ? receiver : _authorizedClaimers[receiver];
+        address authorizedClaimer = _authorizedClaimers[receiver];
+        return authorizedClaimer == address(0) ? receiver : authorizedClaimer;
     }
 
     /**

@@ -282,7 +282,7 @@ describe('OperatorRewarder', function () {
     });
 
     it('should not claim rewards if not authorized to claim rewards', async function () {
-      await expect(this.mock.claimer(this.anyone)).to.not.eventually.eq(this.claimer);
+      await expect(this.mock.claimer(this.delegator1)).to.not.eventually.eq(this.claimer);
       await expect(this.mock.connect(this.claimer).claimRewards(this.delegator1))
         .to.be.revertedWithCustomError(this.mock, 'ClaimerNotAuthorized')
         .withArgs(this.delegator1, this.claimer);
