@@ -123,15 +123,15 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @notice Request to redeem shares for assets, subject to cooldown.
      * @param shares Amount of shares to redeem.
      * @param controller The controller address for the request.
-     * @param owner_ The owner of the shares.
+     * @param ownerRedeem The owner of the shares.
      */
-    function requestRedeem(uint208 shares, address controller, address owner_) public virtual {
+    function requestRedeem(uint208 shares, address controller, address ownerRedeem) public virtual {
         if (shares == 0) return;
         require(controller != address(0), InvalidController());
-        if (msg.sender != owner_) {
-            _spendAllowance(owner_, msg.sender, shares);
+        if (msg.sender != ownerRedeem) {
+            _spendAllowance(ownerRedeem, msg.sender, shares);
         }
-        _burn(owner_, shares);
+        _burn(ownerRedeem, shares);
 
         uint256 newTotalSharesInRedemption = totalSharesInRedemption() + shares;
         _totalSharesInRedemption = newTotalSharesInRedemption;
@@ -147,7 +147,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
         assert(releaseTime >= lastReleaseTime); // should never happen
         _redeemRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
 
-        emit RedeemRequest(controller, owner_, 0, msg.sender, shares, releaseTime);
+        emit RedeemRequest(controller, ownerRedeem, 0, msg.sender, shares, releaseTime);
     }
 
     /**
@@ -305,11 +305,11 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
 
     /**
      * @notice Returns the maximum redeemable shares for an owner.
-     * @param owner_ The owner address.
+     * @param ownerRedeem The owner address.
      * @return The maximum redeemable shares.
      */
-    function maxRedeem(address owner_) public view virtual returns (uint256) {
-        return claimableRedeemRequest(0, owner_);
+    function maxRedeem(address ownerRedeem) public view virtual returns (uint256) {
+        return claimableRedeemRequest(0, ownerRedeem);
     }
 
     /**
