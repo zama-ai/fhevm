@@ -8,7 +8,7 @@ const timeIncreaseNoMine = (duration: number) =>
 
 describe('OperatorStaking', function () {
   beforeEach(async function () {
-    const [delegator1, delegator2, admin, beneficiary, ...accounts] = await ethers.getSigners();
+    const [delegator1, delegator2, admin, beneficiary, anyone, ...accounts] = await ethers.getSigners();
 
     const token = await ethers.deployContract('$ERC20Mock', ['StakingToken', 'ST', 18]);
     const protocolStaking = await ethers.getContractFactory('ProtocolStakingSlashingMock').then(factory =>
@@ -28,7 +28,6 @@ describe('OperatorStaking', function () {
       'OPStake',
       'OP',
       protocolStaking,
-      admin.address,
       beneficiary.address,
       10000, // 100% maximum fee
       0,
@@ -41,7 +40,26 @@ describe('OperatorStaking', function () {
       ]),
     );
 
-    Object.assign(this, { delegator1, delegator2, admin, beneficiary, accounts, token, protocolStaking, mock });
+    Object.assign(this, { delegator1, delegator2, admin, beneficiary, anyone, accounts, token, protocolStaking, mock });
+  });
+
+  describe('Access Control', function () {
+    it('should be same owner as ProtocolStaking owner', async function () {
+      const protocolStakingOwner = await this.protocolStaking.owner();
+      const operatorStakingOwner = await this.mock.owner();
+
+      expect(operatorStakingOwner).to.equal(protocolStakingOwner);
+    });
+
+    it('should update ProtocolStaking and OperatorStaking owner if ProtocolStaking owner is changed', async function () {
+      await this.protocolStaking.connect(this.admin).beginDefaultAdminTransfer(this.anyone);
+      await this.protocolStaking.connect(this.anyone).acceptDefaultAdminTransfer();
+
+      const protocolStakingOwner = await this.protocolStaking.owner();
+      const operatorStakingOwner = await this.mock.owner();
+      expect(protocolStakingOwner).to.equal(this.anyone);
+      expect(operatorStakingOwner).to.equal(this.anyone);
+    });
   });
 
   describe('deposit', async function () {
@@ -376,7 +394,7 @@ describe('OperatorStaking', function () {
     it('only owner can set rewarder', async function () {
       await expect(this.mock.connect(this.delegator1).setRewarder(ethers.ZeroAddress)).to.be.revertedWithCustomError(
         this.mock,
-        'OwnableUnauthorizedAccount',
+        'CallerNotProtocolStakingOwner',
       );
     });
 
@@ -396,7 +414,6 @@ describe('OperatorStaking', function () {
     describe('with new rewarder', async function () {
       beforeEach(async function () {
         const newRewarder = await ethers.deployContract('OperatorRewarder', [
-          this.admin,
           this.beneficiary,
           this.protocolStaking,
           this.mock,

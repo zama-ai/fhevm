@@ -2,10 +2,9 @@
 
 pragma solidity ^0.8.27;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
-import {ERC1363} from "@openzeppelin/contracts/token/ERC20/extensions/ERC1363.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC1363} from "@openzeppelin/contracts/token/ERC20/extensions/ERC1363.sol";
 import {ERC4626, IERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -28,7 +27,7 @@ import {ProtocolStaking} from "./ProtocolStaking.sol";
  * may decrease due to slashing. These losses are symmetrically passed to delegators on the `OperatorStaking` level.
  * Slashing must first decrease the `ProtocolStaking` balance of this contract before affecting pending withdrawals.
  */
-contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
+contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
     using Math for uint256;
     using Checkpoints for Checkpoints.Trace208;
 
@@ -56,7 +55,10 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
     /// @dev Emitted when the rewarder contract is set.
     event RewarderSet(address oldRewarder, address newRewarder);
 
-    /// @dev Throw when the rewarder address is not valid during {setRewarder}.
+    /// @dev Thrown when the caller is not the ProtocolStaking's owner.
+    error CallerNotProtocolStakingOwner(address caller);
+
+    /// @dev Thrown when the rewarder address is not valid during {setRewarder}.
     error InvalidRewarder(address rewarder);
 
     /// @dev Thrown when the sender does not have authorization to perform an action.
@@ -65,13 +67,17 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
     /// @dev Thrown when the controller address is not valid (e.g., zero address).
     error InvalidController();
 
+    modifier onlyOwner() {
+        require(msg.sender == owner(), CallerNotProtocolStakingOwner(msg.sender));
+        _;
+    }
+
     /**
      * @notice Initializes the OperatorStaking contract.
      * @param name The name of the ERC20 token.
      * @param symbol The symbol of the ERC20 token.
      * @param protocolStaking_ The ProtocolStaking contract address.
-     * @param owner The owner address.
-     * @param beneficiary The address that can set and claim fees.
+     * @param beneficiary_ The address that can set and claim fees.
      * @param initialMaxFeeBasisPoints_ The initial maximum fee basis points for the OperatorRewarder contract.
      * @param initialFeeBasisPoints_ The initial fee basis points for the OperatorRewarder contract.
      */
@@ -79,25 +85,17 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
         string memory name,
         string memory symbol,
         ProtocolStaking protocolStaking_,
-        address owner,
-        address beneficiary,
+        address beneficiary_,
         uint16 initialMaxFeeBasisPoints_,
         uint16 initialFeeBasisPoints_
-    ) ERC20(name, symbol) Ownable(owner) {
+    ) ERC20(name, symbol) {
         _asset = IERC20(protocolStaking_.stakingToken());
         _protocolStaking = protocolStaking_;
 
         IERC20(asset()).approve(address(protocolStaking_), type(uint256).max);
 
         address rewarder_ = address(
-            new OperatorRewarder(
-                owner,
-                beneficiary,
-                protocolStaking_,
-                this,
-                initialMaxFeeBasisPoints_,
-                initialFeeBasisPoints_
-            )
+            new OperatorRewarder(beneficiary_, protocolStaking_, this, initialMaxFeeBasisPoints_, initialFeeBasisPoints_)
         );
         protocolStaking_.setRewardsRecipient(rewarder_);
         _rewarder = rewarder_;
@@ -125,15 +123,15 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
      * @notice Request to redeem shares for assets, subject to cooldown.
      * @param shares Amount of shares to redeem.
      * @param controller The controller address for the request.
-     * @param owner The owner of the shares.
+     * @param ownerRedeem The owner of the shares.
      */
-    function requestRedeem(uint208 shares, address controller, address owner) public virtual {
+    function requestRedeem(uint208 shares, address controller, address ownerRedeem) public virtual {
         if (shares == 0) return;
         require(controller != address(0), InvalidController());
-        if (msg.sender != owner) {
-            _spendAllowance(owner, msg.sender, shares);
+        if (msg.sender != ownerRedeem) {
+            _spendAllowance(ownerRedeem, msg.sender, shares);
         }
-        _burn(owner, shares);
+        _burn(ownerRedeem, shares);
 
         uint256 newTotalSharesInRedemption = totalSharesInRedemption() + shares;
         _totalSharesInRedemption = newTotalSharesInRedemption;
@@ -149,7 +147,7 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
         assert(releaseTime >= lastReleaseTime); // should never happen
         _redeemRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
 
-        emit RedeemRequest(controller, owner, 0, msg.sender, shares, releaseTime);
+        emit RedeemRequest(controller, ownerRedeem, 0, msg.sender, shares, releaseTime);
     }
 
     /**
@@ -228,6 +226,14 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
     }
 
     /**
+     * @notice Returns the owner address, the ProtocolStaking owner address, which can set the rewarder.
+     * @return The owner address.
+     */
+    function owner() public view virtual returns (address) {
+        return protocolStaking().owner();
+    }
+
+    /**
      * @notice Returns the address of the staking asset.
      * @return The asset address.
      */
@@ -299,11 +305,11 @@ contract OperatorStaking is ERC1363, Ownable, ReentrancyGuardTransient {
 
     /**
      * @notice Returns the maximum redeemable shares for an owner.
-     * @param owner The owner address.
+     * @param ownerRedeem The owner address.
      * @return The maximum redeemable shares.
      */
-    function maxRedeem(address owner) public view virtual returns (uint256) {
-        return claimableRedeemRequest(0, owner);
+    function maxRedeem(address ownerRedeem) public view virtual returns (uint256) {
+        return claimableRedeemRequest(0, ownerRedeem);
     }
 
     /**

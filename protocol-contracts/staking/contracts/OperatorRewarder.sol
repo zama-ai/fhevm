@@ -2,7 +2,6 @@
 
 pragma solidity ^0.8.27;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -19,7 +18,7 @@ import {ProtocolStaking} from "./ProtocolStaking.sol";
  * This contract receives rewards directly from `ProtocolStaking` and distributes them to `OperatorStaking` staker.
  * The owner of this contract can opt to take a fee on the rewards.
  */
-contract OperatorRewarder is Ownable {
+contract OperatorRewarder {
     using SafeERC20 for IERC20;
     using Math for uint256;
 
@@ -60,6 +59,9 @@ contract OperatorRewarder is Ownable {
     /// @notice Emitted when an address is not authorized to claim rewards on behalf of the receiver address.
     error ClaimerNotAuthorized(address receiver, address claimer);
 
+    /// @notice Thrown when the caller is not the ProtocolStaking's owner.
+    error CallerNotProtocolStakingOwner(address caller);
+
     /// @notice Error for unauthorized caller (not OperatorStaking).
     error CallerNotOperatorStaking(address caller);
 
@@ -92,6 +94,11 @@ contract OperatorRewarder is Ownable {
         _;
     }
 
+    modifier onlyOwner() {
+        require(msg.sender == owner(), CallerNotProtocolStakingOwner(msg.sender));
+        _;
+    }
+
     modifier onlyBeneficiary() {
         require(msg.sender == _beneficiary, CallerNotBeneficiary(msg.sender));
         _;
@@ -104,7 +111,6 @@ contract OperatorRewarder is Ownable {
 
     /**
      * @notice Initializes the OperatorRewarder contract.
-     * @param owner The owner address.
      * @param beneficiary_ The address that can set and claim fees.
      * @param protocolStaking_ The ProtocolStaking contract address.
      * @param operatorStaking_ The OperatorStaking contract address.
@@ -112,13 +118,12 @@ contract OperatorRewarder is Ownable {
      * @param initialFeeBasisPoints_ The initial fee basis points.
      */
     constructor(
-        address owner,
         address beneficiary_,
         ProtocolStaking protocolStaking_,
         OperatorStaking operatorStaking_,
         uint16 initialMaxFeeBasisPoints_,
         uint16 initialFeeBasisPoints_
-    ) Ownable(owner) {
+    ) {
         _transferBeneficiary(beneficiary_);
         _token = IERC20(protocolStaking_.stakingToken());
         _protocolStaking = protocolStaking_;
@@ -230,6 +235,15 @@ contract OperatorRewarder is Ownable {
         } else {
             _totalVirtualRewardsPaid -= virtualAmount;
         }
+    }
+
+    /**
+     * @notice Returns the owner address, the ProtocolStaking owner address, which can set the
+     * beneficiary and max fee.
+     * @return TheProtocolStaking owner address.
+     */
+    function owner() public view virtual returns (address) {
+        return protocolStaking().owner();
     }
 
     /**

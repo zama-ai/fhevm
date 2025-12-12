@@ -29,7 +29,6 @@ describe('OperatorRewarder', function () {
       'OPStake',
       'OP',
       protocolStaking,
-      admin.address,
       beneficiary.address,
       10000, // 100% maximum fee
       0,
@@ -84,8 +83,27 @@ describe('OperatorRewarder', function () {
 
     it('should not transfer beneficiary address if not owner', async function () {
       await expect(this.mock.connect(this.anyone).transferBeneficiary(this.anyone.address))
-        .to.be.revertedWithCustomError(this.mock, 'OwnableUnauthorizedAccount')
+        .to.be.revertedWithCustomError(this.mock, 'CallerNotProtocolStakingOwner')
         .withArgs(this.anyone.address);
+    });
+  });
+
+  describe('Access Control', function () {
+    it('should be same owner as ProtocolStaking owner', async function () {
+      const protocolStakingOwner = await this.protocolStaking.owner();
+      const operatorRewarderOwner = await this.mock.owner();
+
+      expect(operatorRewarderOwner).to.equal(protocolStakingOwner);
+    });
+
+    it('should update ProtocolStaking and OperatorStaking owner if ProtocolStaking owner is changed', async function () {
+      await this.protocolStaking.connect(this.admin).beginDefaultAdminTransfer(this.anyone);
+      await this.protocolStaking.connect(this.anyone).acceptDefaultAdminTransfer();
+
+      const protocolStakingOwner = await this.protocolStaking.owner();
+      const operatorRewarderOwner = await this.mock.owner();
+      expect(protocolStakingOwner).to.equal(this.anyone);
+      expect(operatorRewarderOwner).to.equal(this.anyone);
     });
   });
 
@@ -380,7 +398,7 @@ describe('OperatorRewarder', function () {
 
     it('should not set max fee if not owner', async function () {
       await expect(this.mock.connect(this.anyone).setMaxFee(1234))
-        .to.be.revertedWithCustomError(this.mock, 'OwnableUnauthorizedAccount')
+        .to.be.revertedWithCustomError(this.mock, 'CallerNotProtocolStakingOwner')
         .withArgs(this.anyone);
     });
 
@@ -501,7 +519,6 @@ describe('OperatorRewarder', function () {
       await timeIncreaseNoMine(9);
 
       const newRewarder = await ethers.deployContract('OperatorRewarder', [
-        this.admin,
         this.beneficiary.address,
         this.protocolStaking,
         this.operatorStaking,
