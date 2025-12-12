@@ -1,6 +1,5 @@
-use crate::common::insert_rand_response;
 use alloy::primitives::U256;
-use connector_utils::tests::setup::TestInstanceBuilder;
+use connector_utils::tests::{db::responses::insert_rand_response, setup::TestInstanceBuilder};
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
@@ -47,9 +46,9 @@ async fn test_parallel_response_picking(request_str: &str) -> anyhow::Result<()>
     let mut response_picker = init_response_picker(test_instance.db().clone()).await?;
 
     let insert_response0 =
-        insert_rand_response(test_instance.db(), request_str, Some(U256::ZERO)).await?;
+        insert_rand_response(test_instance.db(), request_str, Some(U256::ZERO), None).await?;
     let insert_response1 =
-        insert_rand_response(test_instance.db(), request_str, Some(U256::ONE)).await?;
+        insert_rand_response(test_instance.db(), request_str, Some(U256::ONE), None).await?;
 
     info!("Picking two {request_str}...");
     let responses0 = response_picker.pick_responses().await?;

@@ -1,17 +1,18 @@
-mod common;
-
 use alloy::primitives::U256;
 use anyhow::anyhow;
-use common::{
-    insert_rand_crsgen_response, insert_rand_keygen_response, insert_rand_prep_keygen_response,
-    insert_rand_public_decrypt_response, insert_rand_user_decrypt_response,
-};
 use connector_utils::{
     config::KmsWallet,
     conn::connect_to_gateway_with_wallet,
-    tests::setup::{
-        CHAIN_ID, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY, KMS_GENERATION_MOCK_ADDRESS,
-        TestInstance, TestInstanceBuilder,
+    tests::{
+        db::responses::{
+            insert_rand_crsgen_response, insert_rand_keygen_response,
+            insert_rand_prep_keygen_response, insert_rand_public_decrypt_response,
+            insert_rand_user_decrypt_response,
+        },
+        setup::{
+            CHAIN_ID, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY, KMS_GENERATION_MOCK_ADDRESS,
+            TestInstance, TestInstanceBuilder,
+        },
     },
     types::db::OperationStatus,
 };
@@ -53,7 +54,8 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     info!("Mocking PublicDecryptionResponse in Postgres...");
-    let inserted_response = insert_rand_public_decrypt_response(test_instance.db(), None).await?;
+    let inserted_response =
+        insert_rand_public_decrypt_response(test_instance.db(), None, None).await?;
     info!("PublicDecryptionResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -104,7 +106,8 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     info!("Mocking UserDecryptionResponse in Postgres...");
-    let inserted_response = insert_rand_user_decrypt_response(test_instance.db(), None).await?;
+    let inserted_response =
+        insert_rand_user_decrypt_response(test_instance.db(), None, None).await?;
     info!("UserDecryptionResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -155,7 +158,8 @@ async fn test_process_prep_keygen_response() -> anyhow::Result<()> {
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     info!("Mocking PrepKeygenResponse in Postgres...");
-    let inserted_response = insert_rand_prep_keygen_response(test_instance.db(), None).await?;
+    let inserted_response =
+        insert_rand_prep_keygen_response(test_instance.db(), None, None).await?;
     info!("PrepKeygenResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -206,7 +210,7 @@ async fn test_process_keygen_response() -> anyhow::Result<()> {
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     info!("Mocking KeygenResponse in Postgres...");
-    let inserted_response = insert_rand_keygen_response(test_instance.db(), None).await?;
+    let inserted_response = insert_rand_keygen_response(test_instance.db(), None, None).await?;
     info!("KeygenResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -257,7 +261,7 @@ async fn test_process_crsgen_response() -> anyhow::Result<()> {
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     info!("Mocking CrsgenResponse in Postgres...");
-    let inserted_response = insert_rand_crsgen_response(test_instance.db(), None).await?;
+    let inserted_response = insert_rand_crsgen_response(test_instance.db(), None, None).await?;
     info!("CrsgenResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -311,7 +315,7 @@ async fn stress_test() -> anyhow::Result<()> {
     info!("Mocking {nb_response} UserDecryptionResponse in Postgres...");
     let mut responses_id = Vec::with_capacity(nb_response);
     for _ in 0..nb_response {
-        let response = insert_rand_user_decrypt_response(test_instance.db(), None).await?;
+        let response = insert_rand_user_decrypt_response(test_instance.db(), None, None).await?;
         responses_id.push(response.decryption_id);
     }
     info!("{nb_response} UserDecryptionResponse successfully stored!");

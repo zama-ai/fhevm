@@ -1,13 +1,13 @@
-mod common;
-
-use crate::common::{check_no_uncompleted_request_in_db, insert_rand_request};
 use alloy::{
     providers::{Provider, ProviderBuilder, mock::Asserter},
     sol_types::SolValue,
     transports::http::reqwest,
 };
 use connector_utils::{
-    tests::setup::{DbInstance, S3Instance, TestInstanceBuilder},
+    tests::{
+        db::requests::{check_no_uncompleted_request_in_db, insert_rand_request},
+        setup::{DbInstance, S3Instance, TestInstanceBuilder},
+    },
     types::{GatewayEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
@@ -103,7 +103,7 @@ async fn test_processing_request(event_type: EventType) -> anyhow::Result<()> {
     info!("Gateway mock started!");
 
     // Insert request in DB to trigger kms_worker job
-    let request = insert_rand_request(test_instance.db(), event_type, None, false).await?;
+    let request = insert_rand_request(test_instance.db(), event_type, None, false, None).await?;
 
     // Mocking KMS responses
     let kms_mocks = prepare_mocks(&request);

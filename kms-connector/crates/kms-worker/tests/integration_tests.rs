@@ -1,6 +1,3 @@
-mod common;
-
-use crate::common::{check_no_uncompleted_request_in_db, insert_rand_request};
 use alloy::{
     hex,
     primitives::U256,
@@ -9,7 +6,10 @@ use alloy::{
     transports::http::reqwest,
 };
 use connector_utils::{
-    tests::setup::{DbInstance, S3Instance, TestInstanceBuilder},
+    tests::{
+        db::requests::{check_no_uncompleted_request_in_db, insert_rand_request},
+        setup::{DbInstance, S3Instance, TestInstanceBuilder},
+    },
     types::{
         GatewayEventKind, KmsGrpcResponse, KmsResponse, KmsResponseKind, db::EventType,
         kms_response,
@@ -142,7 +142,8 @@ async fn test_processing_request(event_type: EventType, already_sent: bool) -> a
     info!("Gateway mock started!");
 
     // Insert request in DB to trigger kms_worker job
-    let request = insert_rand_request(test_instance.db(), event_type, None, already_sent).await?;
+    let request =
+        insert_rand_request(test_instance.db(), event_type, None, already_sent, None).await?;
 
     // Mocking KMS responses
     let kms_mocks = prepare_mocks(&request, already_sent);

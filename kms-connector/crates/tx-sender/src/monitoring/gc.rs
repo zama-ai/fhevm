@@ -40,7 +40,7 @@ async fn run_garbage_collection_routine(
     }
 }
 
-async fn delete_completed_and_failed_public_decryption_requests(
+pub async fn delete_completed_and_failed_public_decryption_requests(
     db_pool: &Pool<Postgres>,
     expiry: PgInterval,
 ) {
@@ -63,7 +63,7 @@ async fn delete_completed_and_failed_public_decryption_requests(
     }
 }
 
-async fn delete_completed_and_failed_user_decryption_requests(
+pub async fn delete_completed_and_failed_user_decryption_requests(
     db_pool: &Pool<Postgres>,
     expiry: PgInterval,
 ) {
@@ -86,7 +86,7 @@ async fn delete_completed_and_failed_user_decryption_requests(
     }
 }
 
-async fn delete_completed_and_failed_public_decryption_responses(
+pub async fn delete_completed_and_failed_public_decryption_responses(
     db_pool: &Pool<Postgres>,
     expiry: PgInterval,
 ) {
@@ -109,7 +109,7 @@ async fn delete_completed_and_failed_public_decryption_responses(
     }
 }
 
-async fn delete_completed_and_failed_user_decryption_responses(
+pub async fn delete_completed_and_failed_user_decryption_responses(
     db_pool: &Pool<Postgres>,
     expiry: PgInterval,
 ) {
@@ -132,7 +132,7 @@ async fn delete_completed_and_failed_user_decryption_responses(
     }
 }
 
-async fn unlock_public_decryption_requests(
+pub async fn unlock_public_decryption_requests(
     db_pool: &Pool<Postgres>,
     under_process_limit: PgInterval,
 ) {
@@ -154,7 +154,7 @@ async fn unlock_public_decryption_requests(
     }
 }
 
-async fn unlock_user_decryption_requests(
+pub async fn unlock_user_decryption_requests(
     db_pool: &Pool<Postgres>,
     under_process_limit: PgInterval,
 ) {
@@ -176,7 +176,7 @@ async fn unlock_user_decryption_requests(
     }
 }
 
-async fn unlock_public_decryption_responses(
+pub async fn unlock_public_decryption_responses(
     db_pool: &Pool<Postgres>,
     under_process_limit: PgInterval,
 ) {
@@ -198,7 +198,7 @@ async fn unlock_public_decryption_responses(
     }
 }
 
-async fn unlock_user_decryption_responses(
+pub async fn unlock_user_decryption_responses(
     db_pool: &Pool<Postgres>,
     under_process_limit: PgInterval,
 ) {
