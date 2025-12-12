@@ -158,7 +158,14 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             self.api_version,
             RelayerEventData::PublicDecrypt(event_data),
         );
-        let _ = self.orchestrator.dispatch_event(event).await;
+
+        if let Err(e) = self.orchestrator.dispatch_event(event).await {
+            error!("Failed to dispatch event to orchestrator: {:?}", e);
+            return AppResponse::<()>::internal_server_error_with_request_id(
+                request_id.to_string(),
+            )
+            .into_response();
+        }
         info!("Dispatched event to orchestrator to initiate processing");
 
         info!("Waiting for public decrypt response or error event");
