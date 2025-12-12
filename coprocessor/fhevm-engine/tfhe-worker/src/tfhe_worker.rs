@@ -101,8 +101,12 @@ async fn tfhe_worker_cycle(
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;
 
-    let mut dcid_mngr =
-        dependence_chain::LockMngr::new_with_ttl(worker_id, pool.clone(), args.dcid_ttl_sec);
+    let mut dcid_mngr = dependence_chain::LockMngr::new_with_ttl(
+        worker_id,
+        pool.clone(),
+        args.dcid_ttl_sec,
+        args.disable_dcid_locking,
+    );
 
     // Release all owned locks on startup to avoid stale locks
     dcid_mngr.release_all_owned_locks().await?;
@@ -183,7 +187,9 @@ async fn tfhe_worker_cycle(
                 // best-effort attempt to extend the lock and prevent other replicas from trying to lock the same DCID.
                 // Worst-case scenario, it returns None if the lock has expired.
                 // However, the worker has already secured exclusive access to the txn computations in the Computations table.
-                warn!(target: "tfhe_worker", tenant_id = %tenant_id, "Lost dcid lock while processing transactions");
+                if dcid_mngr.enabled() {
+                    warn!(target: "tfhe_worker", tenant_id = %tenant_id, "Lost dcid lock while processing transactions, but continuing since computations are locked");
+                }
             }
 
             let mut tx_graph = build_transaction_graph_and_execute(
@@ -356,7 +362,7 @@ async fn query_for_work<'a>(
         None => deps_chain_mngr.acquire_next_lock().await?,
     };
 
-    if dependence_chain_id.is_none() {
+    if deps_chain_mngr.enabled() && dependence_chain_id.is_none() {
         health_check.update_activity();
         return Ok((vec![], vec![]));
     }
