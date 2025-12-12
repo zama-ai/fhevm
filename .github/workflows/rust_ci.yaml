@@ -177,6 +177,7 @@ jobs:
           cargo test --test input_proof_v2_test --no-run
           cargo test --test http_rate_limiter_test --no-run
           cargo test --test health_tests --no-run
+          cargo test --test keyurl_test --no-run
 
       # Run the already-built test binaries
       - name: Run tests
@@ -197,3 +198,4 @@ jobs:
           echo "Running other tests..."
           RUST_BACKTRACE=full cargo test --test http_rate_limiter_test -- --test-threads=1
           RUST_BACKTRACE=full cargo test --test health_tests -- --test-threads=1
+          RUST_BACKTRACE=full cargo test --test keyurl_test -- --test-threads=1

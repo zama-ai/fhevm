@@ -25,6 +25,7 @@ test-all: ## Run all tests (unit + integration)
 	@cargo test --test user_decrypt_v2_test -- --test-threads=1
 	@cargo test --test http_rate_limiter_test -- --test-threads=1
 	@cargo test --test health_tests -- --test-threads=1
+	@cargo test --test keyurl_test -- --test-threads=1
 
 test-smoke-ok-all-v1: ## Run smoke test on ok (happy path) for v1 endpoints (user-decrypt, public-decrypt, input-proof) and health
 	@echo "Building v1 tests..."
