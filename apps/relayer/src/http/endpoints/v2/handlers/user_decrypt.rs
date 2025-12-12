@@ -142,19 +142,18 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         info!("Successfully parsed and validated request");
 
         let int_job_id = user_decrypt_request.content_hash();
-        let ext_job_id = self.orchestrator.new_ext_job_id();
+        let proposed_ext_job_id = self.orchestrator.new_ext_job_id();
 
-        // Insert into database immediately and get the actual ext_job_id that was stored
-        let actual_ext_job_id = match self
+        let assigned_ext_job_id = match self
             .user_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
-                ext_job_id,
+                proposed_ext_job_id,
                 &int_job_id[..],
                 user_decrypt_request.clone(),
             )
             .await
         {
-            Ok(stored_ext_job_id) => stored_ext_job_id,
+            Ok(assigned_ext_job_id) => assigned_ext_job_id,
             Err(e) => {
                 error!(
                     "Failed to insert/get user decrypt into/from database: {}",
@@ -191,12 +190,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         // Generate a new request_id for this HTTP request (not stored)
         let request_id_for_response = uuid::Uuid::new_v4();
 
-        // Return response immediately with the actual ext_job_id from database
         let response = UserDecryptPostResponseJson {
             status: "queued".to_string(),
-            request_id: request_id_for_response.to_string(), // New per-request UUID
+            request_id: request_id_for_response.to_string(),
             result: UserDecryptQueuedResult {
-                job_id: actual_ext_job_id.to_string(), // Use the actual ext_job_id from database
+                job_id: assigned_ext_job_id.to_string(),
             },
         };
 

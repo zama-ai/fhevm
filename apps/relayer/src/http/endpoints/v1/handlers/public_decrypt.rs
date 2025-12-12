@@ -126,17 +126,17 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         );
         info!("Registered once handler for error");
 
-        let ext_job_id = self.orchestrator.new_ext_job_id();
-        let _actual_ext_job_id = match self
+        let proposed_ext_job_id = self.orchestrator.new_ext_job_id();
+        let _assigned_ext_job_id = match self
             .public_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
-                ext_job_id,
+                proposed_ext_job_id,
                 &int_job_id.as_sha256_hash().unwrap()[..], // Safe to wrap as we just constructed the ID.
                 request.clone(),
             )
             .await
         {
-            Ok(stored_ext_job_id) => stored_ext_job_id,
+            Ok(assigned_ext_job_id) => assigned_ext_job_id,
             Err(e) => {
                 error!(
                     "Failed to insert/get public decrypt into/from database: {}",
@@ -148,6 +148,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 .into_response();
             }
         };
+        // V1 is synchronous - assigned job_id not returned to user
 
         let event_data = PublicDecryptEventData::ReqRcvdFromUser {
             decrypt_request: request.clone(),
