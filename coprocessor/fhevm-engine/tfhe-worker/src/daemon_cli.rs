@@ -95,6 +95,12 @@ pub struct Args {
     #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 30)]
     pub dcid_ttl_sec: u32,
 
+    /// If set to true, disable dependence chain ID locking mechanism
+    /// Enabling this may lead to multiple workers processing the same dependence chain simultaneously
+    /// Useful for fallbacking to non-locking behavior in case of issues with the locking mechanism
+    #[arg(long, value_parser = clap::value_parser!(bool), default_value_t = false)]
+    pub disable_dcid_locking: bool,
+
     /// Log level for the application
     #[arg(
         long,

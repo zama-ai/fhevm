@@ -57,8 +57,12 @@ impl From<&str> for LockingReason {
 pub struct LockMngr {
     pool: sqlx::Pool<Postgres>,
     worker_id: Uuid,
-    lock: Option<DatabaseChainLock>,
+    lock: Option<(DatabaseChainLock, SystemTime)>,
+
+    // Configurations
     lock_ttl_sec: i64,
+    max_lock_ttl_sec: i64,
+    disable_locking: bool,
 }
 
 /// Dependence chain lock data
@@ -97,12 +101,20 @@ impl LockMngr {
             pool,
             lock: None,
             lock_ttl_sec: 30,
+            max_lock_ttl_sec: 300,
+            disable_locking: false,
         }
     }
 
-    pub fn new_with_ttl(worker_id: Uuid, pool: sqlx::Pool<Postgres>, lock_ttl_sec: u32) -> Self {
+    pub fn new_with_ttl(
+        worker_id: Uuid,
+        pool: sqlx::Pool<Postgres>,
+        lock_ttl_sec: u32,
+        disable_locking: bool,
+    ) -> Self {
         let mut mgr = Self::new(worker_id, pool);
         mgr.lock_ttl_sec = lock_ttl_sec as i64;
+        mgr.disable_locking = disable_locking;
         mgr
     }
 
@@ -112,6 +124,11 @@ impl LockMngr {
     pub async fn acquire_next_lock(
         &mut self,
     ) -> Result<(Option<Vec<u8>>, LockingReason), sqlx::Error> {
+        if self.disable_locking {
+            warn!("Locking is disabled");
+            return Ok((None, LockingReason::Missing));
+        }
+
         let started_at = SystemTime::now();
         let row = sqlx::query_as::<_, DatabaseChainLock>(
             r#"
@@ -159,7 +176,7 @@ impl LockMngr {
             return Ok((None, LockingReason::Missing));
         };
 
-        self.lock.replace(row.clone());
+        self.lock.replace((row.clone(), SystemTime::now()));
 
         ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
 
@@ -213,8 +230,13 @@ impl LockMngr {
     /// If host-listener has marked the dependence chain as 'updated' in the meantime,
     /// we don't overwrite its status
     pub async fn release_current_lock(&mut self) -> Result<u64, sqlx::Error> {
+        if self.disable_locking {
+            debug!("Locking is disabled, skipping release_current_lock");
+            return Ok(0);
+        }
+
         let dep_chain_id = match &self.lock {
-            Some(lock) => lock.dependence_chain_id.clone(),
+            Some((lock, _)) => lock.dependence_chain_id.clone(),
             None => {
                 debug!("No lock to release");
                 return Ok(0);
@@ -253,8 +275,13 @@ impl LockMngr {
     ///
     /// The error is only informational and does not affect the processing status
     pub async fn set_processing_error(&self, err: Option<String>) -> Result<u64, sqlx::Error> {
+        if self.disable_locking {
+            debug!("Locking is disabled");
+            return Ok(0);
+        }
+
         let dep_chain_id: Vec<u8> = match &self.lock {
-            Some(lock) => lock.dependence_chain_id.clone(),
+            Some((lock, _)) => lock.dependence_chain_id.clone(),
             None => {
                 warn!("No lock to set error on");
                 return Ok(0);
@@ -286,14 +313,32 @@ impl LockMngr {
     pub async fn extend_current_lock(
         &mut self,
     ) -> Result<Option<(Vec<u8>, LockingReason)>, sqlx::Error> {
+        if self.disable_locking {
+            debug!("Locking is disabled, skipping extend_current_lock");
+            return Ok(None);
+        }
+
         let started_at = SystemTime::now();
-        let dependence_chain_id = match &self.lock {
-            Some(lock) => lock.dependence_chain_id.clone(),
+        let (dependence_chain_id, created_at) = match &self.lock {
+            Some((lock, created_at)) => (lock.dependence_chain_id.clone(), *created_at),
             None => {
                 debug!("No lock to extend");
                 return Ok(None);
             }
         };
+
+        if created_at
+            .elapsed()
+            .map(|d: std::time::Duration| d.as_secs())
+            .unwrap_or(0)
+            >= self.max_lock_ttl_sec as u64
+        {
+            self.release_current_lock().await?;
+            warn!(dcid = %hex::encode(&dependence_chain_id), "Max lock TTL exceeded, releasing lock");
+            return Ok(None);
+        }
+
+        // max_lock_ttl_sec
 
         let row = sqlx::query_as!(
             LockExpiresAt,
@@ -321,7 +366,7 @@ impl LockMngr {
         };
 
         // Update the in-memory lock
-        if let Some(lock) = self.lock.as_mut() {
+        if let Some((lock, _)) = self.lock.as_mut() {
             lock.lock_expires_at = lock_expires_at.lock_expires_at;
             info!(dcid = %hex::encode(&dependence_chain_id), expires_at = ?lock.lock_expires_at, "Extended lock");
         }
@@ -335,10 +380,14 @@ impl LockMngr {
     }
 
     pub fn get_current_lock(&self) -> Option<DatabaseChainLock> {
-        self.lock.clone()
+        self.lock.as_ref().map(|(lock, _)| lock.clone())
     }
 
     pub fn worker_id(&self) -> Uuid {
         self.worker_id
+    }
+
+    pub fn enabled(&self) -> bool {
+        !self.disable_locking
     }
 }
