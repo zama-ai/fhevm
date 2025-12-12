@@ -8,8 +8,7 @@ const timeIncreaseNoMine = (duration: number) =>
 
 describe('OperatorStaking', function () {
   beforeEach(async function () {
-    const [delegator1, delegator2, delegatorNoApproval, admin, beneficiary, anyone, ...accounts] =
-      await ethers.getSigners();
+    const [delegator1, delegator2, admin, beneficiary, anyone, ...accounts] = await ethers.getSigners();
 
     const token = await ethers.deployContract('$ERC20Mock', ['StakingToken', 'ST', 18]);
     const protocolStaking = await ethers.getContractFactory('ProtocolStakingSlashingMock').then(factory =>
@@ -43,13 +42,9 @@ describe('OperatorStaking', function () {
       ]),
     );
 
-    // Mint tokens but don't approve mock contract
-    await Promise.all([delegatorNoApproval].flatMap(account => [token.mint(account, ethers.parseEther('1000'))]));
-
     Object.assign(this, {
       delegator1,
       delegator2,
-      delegatorNoApproval,
       admin,
       beneficiary,
       anyone,
@@ -107,8 +102,14 @@ describe('OperatorStaking', function () {
 
   describe('depositWithPermit', async function () {
     beforeEach(async function () {
+      // Define delegator, mint tokens but don't approve mock contract
+      const delegatorNoApproval = this.accounts[0];
+      await Promise.all(
+        [delegatorNoApproval].flatMap(account => [this.token.mint(account, ethers.parseEther('1000'))]),
+      );
+
       // Get deposit with permit inputs
-      const owner = this.delegatorNoApproval.address;
+      const owner = delegatorNoApproval.address;
       const spender = this.mock.target;
       const value = ethers.parseEther('1');
       const deadline = ethers.MaxUint256;
@@ -150,46 +151,43 @@ describe('OperatorStaking', function () {
       };
 
       // Sign EIP-712 Permit message
-      const flatSig = await this.delegatorNoApproval.signTypedData(domain, types, message);
+      const flatSig = await delegatorNoApproval.signTypedData(domain, types, message);
 
       // Split into v, r, s
       const sig = ethers.Signature.from(flatSig);
 
+      // Deposit with permit
+      const depositWithPermitTx = await this.mock
+        .connect(delegatorNoApproval)
+        .depositWithPermit(value, delegatorNoApproval, deadline, sig.v, sig.r, sig.s);
+
+      const depositWithPermitReceipt = await depositWithPermitTx.wait();
+
+      if (depositWithPermitReceipt?.status !== 1) {
+        throw new Error('Deposit with permit failed');
+      }
+
       Object.assign(this, {
+        depositWithPermitReceipt: depositWithPermitReceipt,
         permitValue: value,
-        permitDeadline: deadline,
-        v: sig.v,
-        r: sig.r,
-        s: sig.s,
+        delegatorNoApproval: delegatorNoApproval,
       });
     });
 
     it('should stake into protocol staking with permit', async function () {
-      await expect(
-        this.mock
-          .connect(this.delegatorNoApproval)
-          .depositWithPermit(this.permitValue, this.delegatorNoApproval, this.permitDeadline, this.v, this.r, this.s),
-      )
+      expect(this.depositWithPermitReceipt)
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.protocolStaking, this.permitValue);
     });
 
     it('should mint shares with permit', async function () {
-      await expect(
-        this.mock
-          .connect(this.delegatorNoApproval)
-          .depositWithPermit(this.permitValue, this.delegatorNoApproval, this.permitDeadline, this.v, this.r, this.s),
-      )
+      expect(this.depositWithPermitReceipt)
         .to.emit(this.mock, 'Transfer')
         .withArgs(ethers.ZeroAddress, this.delegatorNoApproval, this.permitValue);
     });
 
     it('should pull tokens with permit', async function () {
-      await expect(
-        this.mock
-          .connect(this.delegatorNoApproval)
-          .depositWithPermit(this.permitValue, this.delegatorNoApproval, this.permitDeadline, this.v, this.r, this.s),
-      )
+      expect(this.depositWithPermitReceipt)
         .to.emit(this.token, 'Transfer')
         .withArgs(this.delegatorNoApproval, this.mock, this.permitValue);
     });
