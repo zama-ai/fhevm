@@ -1,6 +1,7 @@
 use crate::store::sql::{
     client::PgClient,
     error::{SqlError, SqlResult},
+    models::gateway_block_number_model::GatewayBlockNumber,
 };
 use chrono::{DateTime, Utc};
 
@@ -82,5 +83,30 @@ impl BlockNumberRepository {
         .map_err(SqlError::from)?;
 
         Ok(())
+    }
+
+    /// Returns full model with all fields
+    pub async fn get_gateway_block_number(&self) -> SqlResult<Option<GatewayBlockNumber>> {
+        let result = sqlx::query!(
+            r#"
+            SELECT id, last_block_number, last_block_hash, created_at, updated_at
+            FROM gateway_block_number_store
+            WHERE id = 1
+            "#
+        )
+        .fetch_optional(&self.pool.get_pool())
+        .await
+        .map_err(SqlError::from)?;
+
+        match result {
+            Some(row) => Ok(Some(GatewayBlockNumber {
+                id: row.id,
+                last_block_number: row.last_block_number,
+                last_block_hash: row.last_block_hash,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            })),
+            None => Ok(None),
+        }
     }
 }

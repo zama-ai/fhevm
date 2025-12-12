@@ -22,7 +22,8 @@ use crate::{
     },
     store::sql::{
         models::{
-            user_decrypt_req_model::ConsensusReqState, user_decrypt_share_model::UserDecryptShare,
+            user_decrypt_req_model::ConsensusReqState,
+            user_decrypt_share_model::{ShareInsertParams, UserDecryptShare},
         },
         repositories::user_decrypt_repo::UserDecryptRepository,
     },
@@ -283,17 +284,18 @@ impl GatewayHandler {
         let threshold = self.user_decrypt_shares_threshold;
 
         let tx_hash_str = format!("{:?}", tx_hash);
+        let params = ShareInsertParams {
+            gw_reference_id: user_decryption_id,
+            share_index: user_decrypt_response.indexShare,
+            share: &hex::encode(&user_decrypt_response.userDecryptedShare),
+            kms_signature: &hex::encode(&user_decrypt_response.signature),
+            extra_data: &hex::encode(&user_decrypt_response.extraData),
+            tx_hash: &tx_hash_str,
+        };
+
         let (count, completion_result) = self
             .user_decrypt_repo
-            .insert_share_and_complete_if_threshold_reached(
-                user_decryption_id,
-                user_decrypt_response.indexShare,
-                &hex::encode(&user_decrypt_response.userDecryptedShare),
-                &hex::encode(&user_decrypt_response.signature),
-                &hex::encode(&user_decrypt_response.extraData),
-                &tx_hash_str,
-                threshold,
-            )
+            .insert_share_and_complete_if_threshold_reached(params, threshold)
             .await
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "user_decrypt.insert_share_and_complete_if_threshold_reached"

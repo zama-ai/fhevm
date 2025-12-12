@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                    SELECT id, gw_reference_id, share_index, share, kms_signature, extra_data, created_at, updated_at\n                    FROM user_decrypt_share\n                    WHERE gw_reference_id = $1\n                    ORDER BY created_at ASC, share_index ASC\n                    LIMIT $2\n                    ",
+  "query": "\n                    SELECT id, gw_reference_id, tx_hash, share_index, share, kms_signature, extra_data, created_at, updated_at\n                    FROM user_decrypt_share\n                    WHERE gw_reference_id = $1\n                    ORDER BY created_at ASC, share_index ASC\n                    LIMIT $2\n                    ",
   "describe": {
     "columns": [
       {
@@ -15,31 +15,36 @@
       },
       {
         "ordinal": 2,
+        "name": "tx_hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
         "name": "share_index",
         "type_info": "Int4"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "share",
         "type_info": "Text"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "kms_signature",
         "type_info": "Text"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "extra_data",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -53,6 +58,7 @@
     "nullable": [
       false,
       false,
+      true,
       false,
       false,
       false,
@@ -61,5 +67,5 @@
       false
     ]
   },
-  "hash": "ccfed9c535fc6b7b432d70eadb83a26e7ee43b2e6c98a792378e0768595b209f"
+  "hash": "5df06ab5ca4bef25bbf4a20716ad2cdb0a7df2669537d230ea83bedc06607e0e"
 }

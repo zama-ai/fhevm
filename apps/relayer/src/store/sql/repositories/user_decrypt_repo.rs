@@ -6,7 +6,7 @@ use crate::store::sql::{
     error::{SqlError, SqlResult},
     models::{
         user_decrypt_req_model::{UserDecryptResponseModel, UserDecryptResponseShare},
-        user_decrypt_share_model::UserDecryptShare,
+        user_decrypt_share_model::{ShareInsertParams, UserDecryptShare},
     },
     repositories::utils::compute_advisory_lock_id,
 };
@@ -261,18 +261,13 @@ impl UserDecryptRepository {
     /// by performing all operations within a single atomic transaction.
     pub async fn insert_share_and_complete_if_threshold_reached(
         &self,
-        gw_reference_id: U256,
-        share_index: U256,
-        share: &str,
-        kms_signature: &str,
-        extra_data: &str,
-        tx_hash: &str,
+        params: ShareInsertParams<'_>,
         threshold: i64,
     ) -> SqlResult<(i64, Option<(ConsensusReqState, Vec<UserDecryptShare>)>)> {
-        let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
+        let id_as_bytes_array: [u8; 32] = params.gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
-        let share_index = u256_to_i32(share_index)
-            .map_err(|e| SqlError::conversion_error("share_index", share_index, e))?;
+        let share_index = u256_to_i32(params.share_index)
+            .map_err(|e| SqlError::conversion_error("share_index", params.share_index, e))?;
 
         // Use advisory locks to serialize share operations per gw_reference_id
         //
@@ -317,11 +312,11 @@ impl UserDecryptRepository {
             ON CONFLICT (gw_reference_id, share_index) DO NOTHING
             "#,
             gw_ref_id,
-            tx_hash,
+            params.tx_hash,
             share_index,
-            share,
-            kms_signature,
-            extra_data
+            params.share,
+            params.kms_signature,
+            params.extra_data
         )
         .execute(&mut *tx)
         .await?;
@@ -366,7 +361,7 @@ impl UserDecryptRepository {
                 // Fetch shares ordered by creation time, limited to threshold
                 let share_records = sqlx::query!(
                     r#"
-                    SELECT id, gw_reference_id, share_index, share, kms_signature, extra_data, created_at, updated_at
+                    SELECT id, gw_reference_id, tx_hash, share_index, share, kms_signature, extra_data, created_at, updated_at
                     FROM user_decrypt_share
                     WHERE gw_reference_id = $1
                     ORDER BY created_at ASC, share_index ASC
@@ -383,6 +378,7 @@ impl UserDecryptRepository {
                     .map(|r| UserDecryptShare {
                         id: r.id,
                         gw_reference_id: r.gw_reference_id,
+                        tx_hash: r.tx_hash,
                         share_index: r.share_index,
                         share: r.share,
                         kms_signature: r.kms_signature,
