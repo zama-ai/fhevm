@@ -109,7 +109,6 @@ contract OperatorRewarder {
         _;
     }
 
-
     /**
      * @notice Initializes the OperatorRewarder contract.
      * @param beneficiary_ The address that can set and claim fees.

@@ -123,15 +123,15 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
      * @notice Request to redeem shares for assets, subject to cooldown.
      * @param shares Amount of shares to redeem.
      * @param controller The controller address for the request.
-     * @param owner The owner of the shares.
+     * @param owner_ The owner of the shares.
      */
-    function requestRedeem(uint208 shares, address controller, address owner) public virtual {
+    function requestRedeem(uint208 shares, address controller, address owner_) public virtual {
         if (shares == 0) return;
         require(controller != address(0), InvalidController());
-        if (msg.sender != owner) {
-            _spendAllowance(owner, msg.sender, shares);
+        if (msg.sender != owner_) {
+            _spendAllowance(owner_, msg.sender, shares);
         }
-        _burn(owner, shares);
+        _burn(owner_, shares);
 
         uint256 newTotalSharesInRedemption = totalSharesInRedemption() + shares;
         _totalSharesInRedemption = newTotalSharesInRedemption;
@@ -147,7 +147,7 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
         assert(releaseTime >= lastReleaseTime); // should never happen
         _redeemRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
 
-        emit RedeemRequest(controller, owner, 0, msg.sender, shares, releaseTime);
+        emit RedeemRequest(controller, owner_, 0, msg.sender, shares, releaseTime);
     }
 
     /**
@@ -305,11 +305,11 @@ contract OperatorStaking is ERC1363, ReentrancyGuardTransient {
 
     /**
      * @notice Returns the maximum redeemable shares for an owner.
-     * @param owner The owner address.
+     * @param owner_ The owner address.
      * @return The maximum redeemable shares.
      */
-    function maxRedeem(address owner) public view virtual returns (uint256) {
-        return claimableRedeemRequest(0, owner);
+    function maxRedeem(address owner_) public view virtual returns (uint256) {
+        return claimableRedeemRequest(0, owner_);
     }
 
     /**
