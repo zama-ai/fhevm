@@ -8,7 +8,7 @@ use lazy_static::lazy_static;
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
 use prometheus::{register_int_counter, IntCounter};
-use scheduler::dfg::types::{DFGTxInput, SchedulerError};
+use scheduler::dfg::types::{BlockHash, DFGTxInput, SchedulerError, Transaction, TransactionId};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use sqlx::Postgres;
@@ -116,6 +116,7 @@ async fn tfhe_worker_cycle(
         let mut trx = conn.begin().await?;
         s.end();
 
+        info!("Fetch work");
         // Query for transactions to execute, and if relevant the associated keys
         let (mut transactions, mut unneeded_handles) =
             query_for_work(args, &health_check, &mut trx, &tracer, &loop_ctx).await?;
@@ -126,6 +127,7 @@ async fn tfhe_worker_cycle(
             // for a notification after this cycle.
             immedially_poll_more_work = true;
         }
+        info!("Fetch keys");
         query_tenants_and_keys(
             &transactions,
             &tenant_key_cache,
@@ -135,9 +137,11 @@ async fn tfhe_worker_cycle(
         )
         .await?;
 
+        info!("Start compute");
         // Execute transactions segregated by tenant
         for (tenant_id, ref mut tenant_txs) in transactions.iter_mut() {
-            let mut tx_graph = build_transaction_graph_and_execute(
+            info!("Tenant {}", tenant_id);
+            let tx_graph= match build_transaction_graph_and_execute(
                 tenant_id,
                 tenant_txs,
                 &tenant_key_cache,
@@ -145,8 +149,15 @@ async fn tfhe_worker_cycle(
                 &mut trx,
                 &tracer,
                 &loop_ctx,
-            )
-            .await?;
+            ).await {
+                Ok(tx_graph) => tx_graph,
+                Err(err) => {
+                    trx.rollback().await?;
+                    info!("Scheduling failed");
+                    return Err(err)
+                }
+            };
+            let mut tx_graph = tx_graph;
             upload_transaction_graph_results(
                 tenant_id,
                 &mut tx_graph,
@@ -159,6 +170,7 @@ async fn tfhe_worker_cycle(
         }
         s.end();
         trx.commit().await?;
+        info!("Db commit");
         let _guard = loop_ctx.attach();
         #[cfg(feature = "bench")]
         {
@@ -196,8 +208,10 @@ async fn query_tenants_and_keys<'a>(
         "tenants_to_query",
         tenants_to_query.len() as i64,
     ));
+    info!("Fetch keys");
     populate_cache_with_tenant_keys(keys_to_query, trx.as_mut(), tenant_key_cache).await?;
     s.end();
+    info!("Keys ready");
     Ok(())
 }
 
@@ -243,7 +257,7 @@ async fn query_ciphertexts<'a>(
 
 // Update uncomputable ops schedule orders
 async fn update_uncomputable_handles<'a>(
-    uncomputable: Vec<(Handle, Handle)>,
+    uncomputable: Vec<(Handle, Transaction)>,
     tenant_id: i32,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     tracer: &opentelemetry::global::BoxedTracer,
@@ -251,7 +265,14 @@ async fn update_uncomputable_handles<'a>(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut s = tracer.start_with_context("update_unschedulable_computations", loop_ctx);
     let (handles, transactions): (Vec<_>, Vec<_>) = uncomputable.into_iter().unzip();
-
+    let transactions_id = transactions
+        .iter()
+        .map(|tx| tx.transaction_id.clone())
+        .collect::<Vec<_>>();
+    let transactions_blockhash = transactions
+        .iter()
+        .map(|tx| tx.block_hash.clone())
+        .collect::<Vec<_>>();
     s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
     s.set_attributes(
         handles
@@ -259,7 +280,7 @@ async fn update_uncomputable_handles<'a>(
             .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
     );
     s.set_attributes(
-        transactions
+        transactions_id
             .iter()
             .map(|tid| KeyValue::new("transaction_id", format!("0x{}", hex::encode(tid)))),
     );
@@ -269,13 +290,14 @@ async fn update_uncomputable_handles<'a>(
            SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
                uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT
          WHERE tenant_id = $1
-           AND (output_handle, transaction_id) IN (
-              SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
+           AND (output_handle, transaction_id, block_hash) IN (
+              SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[], $4::BYTEA[])
            )
         ",
         tenant_id,
         &handles,
-	&transactions
+	    &transactions_id,
+        &transactions_blockhash,
     )
         .execute(trx.as_mut())
         .await.map_err(|err| {
@@ -286,6 +308,13 @@ async fn update_uncomputable_handles<'a>(
     Ok(())
 }
 
+fn transaction_of_parts(transaction_id: &TransactionId, block_hash: &BlockHash) -> Transaction {
+    Transaction {
+        transaction_id: transaction_id.clone(),
+        block_hash: block_hash.clone(),
+    }
+}
+
 async fn query_for_work<'a>(
     args: &crate::daemon_cli::Args,
     health_check: &crate::health_check::HealthCheck,
@@ -293,7 +322,7 @@ async fn query_for_work<'a>(
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<
-    (Vec<(i32, Vec<ComponentNode>)>, Vec<(Handle, Handle)>),
+    (Vec<(i32, Vec<ComponentNode>)>, Vec<(Handle, Transaction)>),
     Box<dyn std::error::Error + Send + Sync>,
 > {
     // This query locks our work items so other worker doesn't select them.
@@ -303,9 +332,9 @@ async fn query_for_work<'a>(
 WITH selected_computations AS (
   (
     SELECT DISTINCT
-      c_creation_order.transaction_id
+      c_creation_order.transaction_id, c_creation_order.block_hash
     FROM (
-      SELECT transaction_id
+      SELECT transaction_id, block_hash
       FROM computations 
       WHERE is_completed = FALSE
         AND is_error = FALSE
@@ -315,9 +344,9 @@ WITH selected_computations AS (
     ) as c_creation_order
    UNION ALL
     SELECT DISTINCT
-      c_schedule_order.transaction_id
+      c_schedule_order.transaction_id, c_schedule_order.block_hash
     FROM (
-      SELECT transaction_id
+      SELECT transaction_id, block_hash
       FROM computations 
       WHERE is_completed = FALSE
         AND is_error = FALSE
@@ -336,10 +365,12 @@ SELECT
   c.is_scalar,
   c.is_allowed, 
   c.dependence_chain_id,
-  c.transaction_id
+  c.transaction_id,
+  c.block_hash
 FROM computations c
 JOIN selected_computations sc
   ON  c.transaction_id = sc.transaction_id
+  AND c.block_hash = sc.block_hash
 FOR UPDATE SKIP LOCKED            ",
         args.work_items_batch_size as i32,
     )
@@ -366,29 +397,30 @@ FOR UPDATE SKIP LOCKED            ",
     // Partition work by tenant
     let work_by_tenant = the_work.into_iter().into_group_map_by(|k| k.tenant_id);
     // Partition the work by transaction
-    let mut work_by_tenant_by_transaction: HashMap<i32, HashMap<Handle, Vec<_>>> = HashMap::new();
+    let mut work_by_tenant_by_transaction: HashMap<i32, HashMap<Transaction, Vec<_>>> =
+        HashMap::new();
     for (tenant_id, work) in work_by_tenant.into_iter() {
         work_by_tenant_by_transaction.insert(
             tenant_id,
             work.into_iter()
-                .into_group_map_by(|k| k.transaction_id.clone()),
+                .into_group_map_by(|k| transaction_of_parts(&k.transaction_id, &k.block_hash)),
         );
     }
     // Traverse transactions and build transaction nodes
     let mut transactions: Vec<(i32, Vec<ComponentNode>)> = vec![];
-    let mut unneeded_handles: Vec<(Handle, Handle)> = vec![];
+    let mut unneeded_handles: Vec<(Handle, Transaction)> = vec![];
     for (tenant_id, work_by_transaction) in work_by_tenant_by_transaction.iter() {
         let mut tenant_transactions: Vec<ComponentNode> = vec![];
-        for (transaction_id, txwork) in work_by_transaction.iter() {
+        for (transaction, txwork) in work_by_transaction.iter() {
             let mut ops = vec![];
             for w in txwork {
                 let fhe_op: SupportedFheOperations = match w.fhe_operation.try_into() {
                     Ok(op) => op,
                     Err(e) => {
-                        error!(target: "tfhe_worker", { output_handle = ?w.output_handle, transaction_id = ?hex::encode(transaction_id), error = %e, }, "invalid FHE operation ");
+                        error!(target: "tfhe_worker", { output_handle = ?w.output_handle, ?transaction, error = %e, }, "invalid FHE operation ");
                         set_computation_error(
                             &w.output_handle,
-                            transaction_id,
+                            transaction,
                             tenant_id,
                             &e,
                             trx,
@@ -428,13 +460,15 @@ FOR UPDATE SKIP LOCKED            ",
                     is_allowed: w.is_allowed,
                 });
             }
-            let (mut components, mut unneeded) = build_component_nodes(ops, transaction_id)?;
+            info!(target: "tfhe_worker transaction", { unneeded_handles = unneeded_handles.len(), ops = ops.len() }, "Transaction work items");
+            let (mut components, mut unneeded) = build_component_nodes(ops, transaction)?;
             tenant_transactions.append(&mut components);
             unneeded_handles.append(&mut unneeded);
         }
         transactions.push((*tenant_id, tenant_transactions));
     }
     s_prep.end();
+    info!(target: "tfhe_worker", { unneeded_handles = unneeded_handles.len(), transactions = transactions.len() }, "Work items");
     Ok((transactions, unneeded_handles))
 }
 
@@ -456,6 +490,7 @@ async fn build_transaction_graph_and_execute<'a>(
         return Ok(tx_graph);
     }
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
+    info!("query ciphetext");
     let ciphertext_map =
         query_ciphertexts(&cts_to_query, *tenant_id, trx, tracer, loop_ctx).await?;
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
@@ -467,6 +502,7 @@ async fn build_transaction_graph_and_execute<'a>(
     // Execute the DFG with the current tenant's keys
     let mut s_compute = tracer.start_with_context("compute_fhe_ops", loop_ctx);
     {
+        info!("execute 1");
         let mut rk = tenant_key_cache.write().await;
         let keys = match rk.get(tenant_id) {
             Some(k) => k,
@@ -484,7 +520,7 @@ async fn build_transaction_graph_and_execute<'a>(
                 return Err(err.into());
             }
         };
-
+        info!("execute 2");
         // Schedule computations in parallel as dependences allow
         tfhe::set_server_key(keys.sks.clone());
         let mut sched = Scheduler::new(
@@ -495,7 +531,9 @@ async fn build_transaction_graph_and_execute<'a>(
             keys.gpu_sks.clone(),
             health_check.activity_heartbeat.clone(),
         );
+        info!("execute 3");
         sched.schedule(loop_ctx).await?;
+        info!("execute finished");
     }
     s_compute.end();
     Ok(tx_graph)
@@ -504,7 +542,7 @@ async fn build_transaction_graph_and_execute<'a>(
 async fn upload_transaction_graph_results<'a>(
     tenant_id: &i32,
     tx_graph: &mut DFComponentGraph,
-    unneeded_handles: &mut Vec<(Handle, Handle)>,
+    unneeded_handles: &mut Vec<(Handle, Transaction)>,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
@@ -521,6 +559,7 @@ async fn upload_transaction_graph_results<'a>(
     for result in graph_results.into_iter() {
         match result.compressed_ct {
             Ok((db_type, db_bytes)) => {
+                info!(target: "tfhe_worker", { tenant_id = tenant_id, output_handle = format!("0x{}", hex::encode(&result.handle)) }, "computation completed successfully");
                 cts_to_insert.push((
                     *tenant_id,
                     (
@@ -531,6 +570,7 @@ async fn upload_transaction_graph_results<'a>(
                 WORK_ITEMS_PROCESSED_COUNTER.inc();
             }
             Err(mut err) => {
+                info!(target: "tfhe_worker", { err = ?err, tenant_id = tenant_id, output_handle = format!("0x{}", hex::encode(&result.handle)) }, "computation failed");
                 let cerr: Box<dyn std::error::Error + Send + Sync> =
                     if let Some(fhevm_error) = err.downcast_mut::<FhevmError>() {
                         let mut swap_val = FhevmError::BadInputs;
@@ -565,7 +605,7 @@ async fn upload_transaction_graph_results<'a>(
                         err,
                         CoprocessorError::SchedulerError(SchedulerError::MissingInputs)
                     ) {
-                        uncomputable.push((result.handle.clone(), result.transaction_id.clone()));
+                        uncomputable.push((result.handle.clone(), result.transaction.clone()));
                         // Make sure we don't mark this as an error since this simply means that the
                         // inputs weren't available when we tried scheduling these operations.
                         // Setting them as uncomputable will postpone them with an exponential backoff
@@ -575,7 +615,7 @@ async fn upload_transaction_graph_results<'a>(
                 }
                 set_computation_error(
                     &result.handle,
-                    &result.transaction_id,
+                    &result.transaction,
                     tenant_id,
                     &*cerr,
                     trx,
@@ -630,20 +670,31 @@ async fn upload_transaction_graph_results<'a>(
             .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
     );
 
-    let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
+    let (handles_vec, txn_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
+
+    let txn_ids_vec = txn_vec
+        .iter()
+        .map(|tx| tx.transaction_id.clone())
+        .collect::<Vec<_>>();
+
+    let txn_bhs_vec = txn_vec
+        .iter()
+        .map(|tx| tx.block_hash.clone())
+        .collect::<Vec<_>>();
 
     let _ = query!(
                 "
                 UPDATE computations
                 SET is_completed = true, completed_at = CURRENT_TIMESTAMP
                 WHERE tenant_id = $1
-                AND (output_handle, transaction_id) IN (
-                    SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
+                AND (output_handle, transaction_id, block_hash) IN (
+                    SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[], $4::BYTEA[])
                 )
                 ",
                 *tenant_id,
                 &handles_vec,
-                &txn_ids_vec
+                &txn_ids_vec,
+                &txn_bhs_vec,
             )
             .execute(trx.as_mut())
             .await.map_err(|err| {
@@ -659,7 +710,7 @@ async fn upload_transaction_graph_results<'a>(
 
 async fn set_computation_error<'a>(
     output_handle: &[u8],
-    transaction_id: &[u8],
+    transaction: &Transaction,
     tenant_id: &i32,
     cerr: &(dyn std::error::Error + Send + Sync),
     trx: &mut sqlx::Transaction<'a, Postgres>,
@@ -686,11 +737,13 @@ async fn set_computation_error<'a>(
            WHERE tenant_id = $2
            AND output_handle = $3
            AND transaction_id = $4
+           AND block_hash = $5
         ",
         err_string,
         *tenant_id,
         output_handle,
-        transaction_id
+        transaction.transaction_id,
+        transaction.block_hash
     )
     .execute(trx.as_mut())
     .await?;

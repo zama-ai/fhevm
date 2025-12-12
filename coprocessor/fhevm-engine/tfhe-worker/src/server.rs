@@ -696,10 +696,12 @@ impl CoprocessorService {
                         is_scalar,
                         dependence_chain_id,
                         transaction_id,
-                        is_allowed
+                        is_allowed,
+                        block_number,
+                        block_hash
                     )
-                    VALUES($1, $2, $3, $4, false, $5, $6, $7, $8)
-                    ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
+                    VALUES($1, $2, $3, $4, false, $5, $6, $7, $8, $9, $10)
+                    ON CONFLICT (tenant_id, output_handle, transaction_id, block_hash) DO NOTHING
                 ",
                 tenant_id,
                 comp.output_handle,
@@ -708,7 +710,9 @@ impl CoprocessorService {
                 are_comps_scalar[idx],
                 computation_buckets[idx],
                 comp.transaction_id,
-                comp.is_allowed
+                comp.is_allowed,
+                comp.block_number as i64,
+                comp.block_hash,
             )
             .execute(trx.as_mut())
             .await

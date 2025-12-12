@@ -3,7 +3,7 @@ use bigdecimal::num_bigint::BigInt;
 use fhevm_engine_common::{types::AllowEvents, utils::safe_deserialize_key};
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, TransactionHash,
+    BlockHash, ClearConst, Database as ListenerDatabase, Handle, LogTfhe, TransactionHash,
 };
 use rand::Rng;
 use sqlx::types::time::PrimitiveDateTime;
@@ -233,6 +233,7 @@ pub async fn generate_trivial_encrypt(
         is_allowed,
         block_number: 1,
         block_timestamp: PrimitiveDateTime::MAX,
+        block_hash: BlockHash::ZERO,
     };
     let mut tx = listener_event_to_db.new_transaction().await?;
     listener_event_to_db
@@ -415,6 +416,7 @@ pub async fn insert_tfhe_event(
         is_allowed,
         block_number: 1,
         block_timestamp: PrimitiveDateTime::MAX,
+        block_hash: BlockHash::ZERO,
     };
     listener_event_to_db
         .insert_tfhe_event(&mut tx, &log)

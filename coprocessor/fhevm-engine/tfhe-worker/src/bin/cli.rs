@@ -97,7 +97,8 @@ fn smoke_test(tenant_api_key: String, coprocessor_url: String) {
             let num_a = rand::rng().random::<u32>().to_be_bytes().to_vec();
             let num_b = rand::rng().random::<u32>().to_be_bytes().to_vec();
             let transaction_id = rand::rng().random::<u64>().to_be_bytes().to_vec();
-
+            let block_hash = rand::rng().random::<u64>().to_be_bytes().to_vec();
+            let block_number = rand::rng().random::<u64>();
             println!(
                 "Trivially encrypting numbers 0x{} and 0x{} with handles 0x{} and 0x{}",
                 hex::encode(&num_a), hex::encode(&num_b),
@@ -148,7 +149,9 @@ fn smoke_test(tenant_api_key: String, coprocessor_url: String) {
                                     input: Some(tfhe_worker::server::tfhe_worker::async_computation_input::Input::InputHandle(handle_b.clone())),
                                 },
                             ],
-			    is_allowed: true,
+            			    is_allowed: true,
+                            block_hash,
+                            block_number
                         },
                     ]
                 }
