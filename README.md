@@ -116,6 +116,16 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/protocol/ex
 </p>
 
 ## Working with FHEVM
+
+### Tooling
+
+Additional tooling for building with FHEVM:
+
+- Hardhat template: https://github.com/zama-ai/fhevm-hardhat-template
+- React template: https://github.com/zama-ai/fhevm-react-template
+- Mocks toolkit: https://github.com/zama-ai/fhevm-mocks
+
+
 ### Citations
 
 To cite FHEVM or the whitepaper in academic papers, please use the following entries:
