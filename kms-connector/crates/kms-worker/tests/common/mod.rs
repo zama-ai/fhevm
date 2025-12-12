@@ -261,23 +261,31 @@ pub async fn insert_rand_key_reshare_same_set(
     })
 }
 
-pub async fn check_no_request_in_db(
+pub async fn check_no_uncompleted_request_in_db(
     db: &Pool<Postgres>,
     event_type: EventType,
 ) -> anyhow::Result<()> {
-    info!("Checking no requests are remaining in DB...");
+    info!("Checking no pending requests are remaining in DB...");
     let query = match event_type {
         EventType::PublicDecryptionRequest => {
-            "SELECT COUNT(decryption_id) FROM public_decryption_requests"
+            "SELECT COUNT(decryption_id) FROM public_decryption_requests WHERE status = 'pending'"
         }
         EventType::UserDecryptionRequest => {
-            "SELECT COUNT(decryption_id) FROM user_decryption_requests"
+            "SELECT COUNT(decryption_id) FROM user_decryption_requests WHERE status = 'pending'"
         }
-        EventType::PrepKeygenRequest => "SELECT COUNT(prep_keygen_id) FROM prep_keygen_requests",
-        EventType::KeygenRequest => "SELECT COUNT(key_id) FROM keygen_requests",
-        EventType::CrsgenRequest => "SELECT COUNT(crs_id) FROM crsgen_requests",
-        EventType::PrssInit => "SELECT COUNT(id) FROM prss_init",
-        EventType::KeyReshareSameSet => "SELECT COUNT(key_id) FROM key_reshare_same_set",
+        EventType::PrepKeygenRequest => {
+            "SELECT COUNT(prep_keygen_id) FROM prep_keygen_requests WHERE status = 'pending'"
+        }
+        EventType::KeygenRequest => {
+            "SELECT COUNT(key_id) FROM keygen_requests WHERE status = 'pending'"
+        }
+        EventType::CrsgenRequest => {
+            "SELECT COUNT(crs_id) FROM crsgen_requests WHERE status = 'pending'"
+        }
+        EventType::PrssInit => "SELECT COUNT(id) FROM prss_init WHERE status = 'pending'",
+        EventType::KeyReshareSameSet => {
+            "SELECT COUNT(key_id) FROM key_reshare_same_set WHERE status = 'pending'"
+        }
     };
     let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
     if count == 0 {

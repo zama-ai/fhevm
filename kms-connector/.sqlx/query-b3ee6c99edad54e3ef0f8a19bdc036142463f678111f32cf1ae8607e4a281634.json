@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE keygen_requests SET status = $1, already_sent = $2 WHERE key_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "operation_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "under_process",
+                "completed",
+                "failed"
+              ]
+            }
+          }
+        },
+        "Bool",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b3ee6c99edad54e3ef0f8a19bdc036142463f678111f32cf1ae8607e4a281634"
+}

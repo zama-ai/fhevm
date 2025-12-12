@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE key_reshare_same_set SET status = $1 WHERE key_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "operation_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "under_process",
+                "completed",
+                "failed"
+              ]
+            }
+          }
+        },
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ac8229a3ceb462177827da9963f51aaced2c230e0ae6603866711ca949d4a99f"
+}

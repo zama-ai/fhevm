@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE prss_init SET status = $1 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "operation_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "under_process",
+                "completed",
+                "failed"
+              ]
+            }
+          }
+        },
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ac82565c4c15f51c6df30bd691519619bb6ff80098fe4e077ed2b43cf6ac525a"
+}

@@ -1,6 +1,6 @@
 mod common;
 
-use crate::common::{check_no_request_in_db, insert_rand_request};
+use crate::common::{check_no_uncompleted_request_in_db, insert_rand_request};
 use alloy::{
     providers::{Provider, ProviderBuilder, mock::Asserter},
     sol_types::SolValue,
@@ -132,7 +132,7 @@ async fn test_processing_request(event_type: EventType) -> anyhow::Result<()> {
         | GatewayEventKind::UserDecryption(_)
         | GatewayEventKind::PrssInit(_)
         | GatewayEventKind::KeyReshareSameSet(_) => {
-            while check_no_request_in_db(test_instance.db(), event_type)
+            while check_no_uncompleted_request_in_db(test_instance.db(), event_type)
                 .await
                 .is_err()
             {
@@ -143,13 +143,14 @@ async fn test_processing_request(event_type: EventType) -> anyhow::Result<()> {
             cancel_token.cancel();
             kms_worker_task.await.unwrap();
         }
+
         // Stop worker and check the request is still in DB despite the errors.
         _ => {
             tokio::time::sleep(Duration::from_secs(5)).await;
             cancel_token.cancel();
             kms_worker_task.await.unwrap();
 
-            check_no_request_in_db(test_instance.db(), event_type)
+            check_no_uncompleted_request_in_db(test_instance.db(), event_type)
                 .await
                 .unwrap_err();
         }

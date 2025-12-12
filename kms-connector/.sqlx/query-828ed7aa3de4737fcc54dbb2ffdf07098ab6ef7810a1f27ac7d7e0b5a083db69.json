@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM user_decryption_requests\n            WHERE status IN ('completed', 'failed')\n            AND NOW() - updated_at > $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Interval"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "828ed7aa3de4737fcc54dbb2ffdf07098ab6ef7810a1f27ac7d7e0b5a083db69"
+}
