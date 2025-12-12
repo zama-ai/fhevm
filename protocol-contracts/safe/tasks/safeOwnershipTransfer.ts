@@ -104,7 +104,7 @@ task("task:addOwnersToSafe").setAction(async function (
 
 // Log the owners of the Safe and its threshold
 // Example usage:
-// npx hardhat task:getSafeOwnersAndThreshold
+// npx hardhat task:getSafeOwnersAndThreshold --network gateway-mainnet
 task("task:getSafeOwnersAndThreshold").setAction(async function (
   { includeDeployer },
   { getNamedAccounts, ethers },
