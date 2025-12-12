@@ -70,14 +70,21 @@ storage:
   sql_database_url: "postgresql://postgres:postgres@localhost:5433/relayer_db"
   sql_max_connections: 10
   sql_health_check_timeout_secs: 5
-# TODO
   cron:
-    timeout_cron_interval_secs: 60
-    public_decrypt_timeout_secs: 1800
-    user_decrypt_timeout_secs: 1800
-    input_proof_timeout_secs: 1800
+    # 60s for interval check
+    timeout_cron_interval: "60s" 
+    
+    # TODO
+    # 30 mins timeout logic
+    public_decrypt_timeout: "30m"
+    user_decrypt_timeout: "30m"
+    input_proof_timeout: "30m"
 
-    expiry_cron_interval_secs: 3600
-    public_decrypt_expiry_secs: 1800 # 1 year "1y"
-    user_decrypt_expiry_secs: 1800 # 24 hours "1d" rust format.
-    input_proof_expiry_secs: 1800 #...
+    # 5 min interval for cleanup check
+    expiry_cron_interval: "5m"
+    
+    #TODO
+    # Retention Policies
+    public_decrypt_expiry: "1y" # 1 year
+    user_decrypt_expiry: "7d"
+    input_proof_expiry: "7d"

@@ -58,9 +58,13 @@ impl Repositories {
         }
     }
 
-    pub fn start_background_workers(&self) {
+    pub fn start_background_workers(
+        &self,
+        timeout_cron_interval_secs: Duration,
+        expiry_cron_interval_secs: Duration,
+    ) {
         // We use the internal pg_client to spawn workers
-        spawn_timeout_worker((*self.pg_client).clone());
-        spawn_expiry_worker((*self.pg_client).clone());
+        spawn_timeout_worker((*self.pg_client).clone(), timeout_cron_interval_secs);
+        spawn_expiry_worker((*self.pg_client).clone(), expiry_cron_interval_secs);
     }
 }

@@ -1,7 +1,9 @@
 use config::{Config, Environment, File};
-use serde::{Deserialize, Serialize};
+use serde::Deserializer;
+use serde::{de::Error, Deserialize, Serialize};
 use std::env;
 use std::fmt;
+use std::time::Duration;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct GatewayConfig {
@@ -103,6 +105,57 @@ pub struct MetricsConfig {
     pub endpoint: String,
 }
 
+/// Deserializes strings like "30s", "5m", "1d", "1y" into std::time::Duration.
+/// Handles 'y' manually as 365 days.
+fn deserialize_human_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+
+    // 1. Handle "y" (Year) manually since humantime doesn't support it
+    if s.ends_with('y') {
+        let number_part = s.trim_end_matches('y').trim();
+        if let Ok(years) = number_part.parse::<u64>() {
+            // Approximation: 1 year = 365 days
+            let seconds = years * 365 * 24 * 60 * 60;
+            return Ok(Duration::from_secs(seconds));
+        }
+    }
+
+    // 2. Use humantime for standard units (d, h, m, s, ms)
+    humantime::parse_duration(&s).map_err(Error::custom)
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct CronConfig {
+    // We map the YAML key `timeout_cron_interval_secs` to this field,
+    // but parse the string value into a Duration.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub timeout_cron_interval: Duration,
+
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub public_decrypt_timeout: Duration,
+
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub user_decrypt_timeout: Duration,
+
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub input_proof_timeout: Duration,
+
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub expiry_cron_interval: Duration,
+
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub public_decrypt_expiry: Duration,
+
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub user_decrypt_expiry: Duration,
+
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub input_proof_expiry: Duration,
+}
+
 #[derive(Deserialize, Clone)]
 pub struct StorageConfig {
     /// PostgreSQL database URL for SQL storage
@@ -110,6 +163,7 @@ pub struct StorageConfig {
     /// Maximum number of connections in the SQL connection pool
     pub sql_max_connections: u32,
     pub sql_health_check_timeout_secs: u64,
+    pub cron: CronConfig,
 }
 
 impl fmt::Debug for StorageConfig {

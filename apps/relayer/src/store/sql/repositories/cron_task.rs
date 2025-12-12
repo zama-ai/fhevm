@@ -6,9 +6,9 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, error, info};
 
-async fn run_timeout_worker_logic(pool: PgClient) {
+async fn run_timeout_worker_logic(pool: PgClient, timeout_cron_interval_secs: Duration) {
     let repo = TimeoutRepository::new(pool);
-    let mut interval = tokio::time::interval(Duration::from_secs(60));
+    let mut interval = tokio::time::interval(timeout_cron_interval_secs);
 
     loop {
         match repo.time_out_stale_requests().await {
@@ -29,7 +29,7 @@ async fn run_timeout_worker_logic(pool: PgClient) {
     }
 }
 
-pub fn spawn_timeout_worker(pool: PgClient) {
+pub fn spawn_timeout_worker(pool: PgClient, timeout_cron_interval_secs: Duration) {
     tokio::spawn(async move {
         loop {
             let pool_clone = pool.clone();
@@ -37,7 +37,7 @@ pub fn spawn_timeout_worker(pool: PgClient) {
             info!("Starting Timeout Worker...");
 
             let handle = tokio::spawn(async move {
-                run_timeout_worker_logic(pool_clone).await;
+                run_timeout_worker_logic(pool_clone, timeout_cron_interval_secs).await;
             });
             match handle.await {
                 Ok(_) => {
@@ -58,11 +58,11 @@ pub fn spawn_timeout_worker(pool: PgClient) {
     });
 }
 
-async fn run_expiry_worker_logic(pool: PgClient) {
+async fn run_expiry_worker_logic(pool: PgClient, expiry_cron_intervals_secs: Duration) {
     let repo = ExpiryRepository::new(pool);
 
     // Check every 5 minutes (60 * 5 seconds)
-    let mut interval = tokio::time::interval(Duration::from_secs(300));
+    let mut interval = tokio::time::interval(expiry_cron_intervals_secs);
 
     loop {
         match repo.purge_stale_data().await {
@@ -83,14 +83,14 @@ async fn run_expiry_worker_logic(pool: PgClient) {
     }
 }
 
-pub fn spawn_expiry_worker(pool: PgClient) {
+pub fn spawn_expiry_worker(pool: PgClient, expiry_cron_intervals_secs: Duration) {
     tokio::spawn(async move {
         loop {
             let pool_clone = pool.clone();
             info!("Starting Expiry/Cleanup Worker...");
 
             let handle = tokio::spawn(async move {
-                run_expiry_worker_logic(pool_clone).await;
+                run_expiry_worker_logic(pool_clone, expiry_cron_intervals_secs).await;
             });
 
             match handle.await {

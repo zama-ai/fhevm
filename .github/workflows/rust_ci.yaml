@@ -82,11 +82,28 @@ jobs:
       matrix:
         folder: [apps/relayer]
 
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: relayer_db
+        ports:
+          - 5432:5432
+        # Health check ensures DB is ready before steps run
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
       SQLX_OFFLINE: true # Use cached queries for compilation (speeds up CI)
       DATABASE_URL: postgres://postgres:password@localhost:5432/relayer_db
       APP_STORAGE__SQL_DATABASE_URL: postgres://postgres:password@localhost:5432/relayer_db
-      APP_STORAGE__SQL_MAX_CONNECTIONS: 1000
+      # APP_STORAGE__SQL_MAX_CONNECTIONS: 1000
+      APP_GLOBAL__MOCK_TEST: true
 
     steps:
       - name: Checkout Project
@@ -97,24 +114,24 @@ jobs:
           submodules: recursive
 
       # Setting up PostgreSQL with high connection limits for sqlx tests
-      - name: Start PostgreSQL (High Connections)
-        run: |
-          docker run -d \
-            --name postgres \
-            -p 5432:5432 \
-            -e POSTGRES_USER=postgres \
-            -e POSTGRES_PASSWORD=password \
-            -e POSTGRES_DB=relayer_db \
-            --shm-size=1g \
-            postgres:17 \
-            postgres -c max_connections=5000 -c shared_buffers=128MB
+      # - name: Start PostgreSQL (High Connections)
+      #   run: |
+      #     docker run -d \
+      #       --name postgres \
+      #       -p 5432:5432 \
+      #       -e POSTGRES_USER=postgres \
+      #       -e POSTGRES_PASSWORD=password \
+      #       -e POSTGRES_DB=relayer_db \
+      #       --shm-size=1g \
+      #       postgres:17 \
+      #       postgres -c max_connections=5000 -c shared_buffers=128MB
 
-      - name: Wait for PostgreSQL
-        run: |
-          until docker exec postgres pg_isready -U postgres; do
-            echo "Waiting for postgres..."
-            sleep 2
-          done
+      # - name: Wait for PostgreSQL
+      #   run: |
+      #     until docker exec postgres pg_isready -U postgres; do
+      #       echo "Waiting for postgres..."
+      #       sleep 2
+      #     done
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
@@ -165,7 +182,6 @@ jobs:
       - name: Run tests
         working-directory: ${{ matrix.folder }}
         run: |
-          ulimit -n 8192
           echo "Running pre-built test binaries..."
           RUST_BACKTRACE=full cargo test --lib
           RUST_BACKTRACE=full cargo test --test transaction_helper_test

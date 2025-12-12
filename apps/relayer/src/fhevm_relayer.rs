@@ -87,7 +87,10 @@ pub async fn run_fhevm_relayer(
     info!("Initialized SQL repositories");
 
     if !settings.global.test_mock {
-        repositories.start_background_workers();
+        repositories.start_background_workers(
+            settings.storage.cron.timeout_cron_interval,
+            settings.storage.cron.expiry_cron_interval,
+        );
     }
 
     // Register database with orchestrator for health checks
