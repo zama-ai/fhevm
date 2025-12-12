@@ -8,7 +8,8 @@ const timeIncreaseNoMine = (duration: number) =>
 
 describe('OperatorStaking', function () {
   beforeEach(async function () {
-    const [delegator1, delegator2, admin, beneficiary, anyone, ...accounts] = await ethers.getSigners();
+    const [delegator1, delegator2, delegatorNoApproval, admin, beneficiary, anyone, ...accounts] =
+      await ethers.getSigners();
 
     const token = await ethers.deployContract('$ERC20Mock', ['StakingToken', 'ST', 18]);
     const protocolStaking = await ethers.getContractFactory('ProtocolStakingSlashingMock').then(factory =>
@@ -34,6 +35,7 @@ describe('OperatorStaking', function () {
       ]),
     );
 
+    // Mint tokens and approve mock contract
     await Promise.all(
       [delegator1, delegator2].flatMap(account => [
         token.mint(account, ethers.parseEther('1000')),
@@ -41,7 +43,21 @@ describe('OperatorStaking', function () {
       ]),
     );
 
-    Object.assign(this, { delegator1, delegator2, admin, beneficiary, anyone, accounts, token, protocolStaking, mock });
+    // Mint tokens but don't approve mock contract
+    await Promise.all([delegatorNoApproval].flatMap(account => [token.mint(account, ethers.parseEther('1000'))]));
+
+    Object.assign(this, {
+      delegator1,
+      delegator2,
+      delegatorNoApproval,
+      admin,
+      beneficiary,
+      anyone,
+      accounts,
+      token,
+      protocolStaking,
+      mock,
+    });
   });
 
   describe('Access Control', function () {
@@ -86,6 +102,96 @@ describe('OperatorStaking', function () {
       await expect(this.mock.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1))
         .to.emit(this.token, 'Transfer')
         .withArgs(this.delegator1, this.mock, ethers.parseEther('1'));
+    });
+  });
+
+  describe('depositWithPermit', async function () {
+    beforeEach(async function () {
+      // Get deposit with permit inputs
+      const owner = this.delegatorNoApproval.address;
+      const spender = this.mock.target;
+      const value = ethers.parseEther('1');
+      const deadline = ethers.MaxUint256;
+
+      // Get permit parameters from the token
+      const tokenAddress = this.token.target;
+      const nonce = await this.token.nonces(owner);
+      const name = await this.token.name();
+
+      // Get chain ID
+      const { chainId } = await ethers.provider.getNetwork();
+
+      // Define EIP-712 domain
+      const domain = {
+        name: name,
+        version: '1',
+        chainId: chainId,
+        verifyingContract: tokenAddress,
+      };
+
+      // Define EIP-712 Permit type
+      const types = {
+        Permit: [
+          { name: 'owner', type: 'address' },
+          { name: 'spender', type: 'address' },
+          { name: 'value', type: 'uint256' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      };
+
+      // Define EIP-712 Permit message
+      const message = {
+        owner: owner,
+        spender: spender,
+        value: value,
+        nonce: nonce,
+        deadline: deadline,
+      };
+
+      // Sign EIP-712 Permit message
+      const flatSig = await this.delegatorNoApproval.signTypedData(domain, types, message);
+
+      // Split into v, r, s
+      const sig = ethers.Signature.from(flatSig);
+
+      Object.assign(this, {
+        permitValue: value,
+        permitDeadline: deadline,
+        v: sig.v,
+        r: sig.r,
+        s: sig.s,
+      });
+    });
+
+    it('should stake into protocol staking with permit', async function () {
+      await expect(
+        this.mock
+          .connect(this.delegatorNoApproval)
+          .depositWithPermit(this.permitValue, this.delegatorNoApproval, this.permitDeadline, this.v, this.r, this.s),
+      )
+        .to.emit(this.token, 'Transfer')
+        .withArgs(this.mock, this.protocolStaking, this.permitValue);
+    });
+
+    it('should mint shares with permit', async function () {
+      await expect(
+        this.mock
+          .connect(this.delegatorNoApproval)
+          .depositWithPermit(this.permitValue, this.delegatorNoApproval, this.permitDeadline, this.v, this.r, this.s),
+      )
+        .to.emit(this.mock, 'Transfer')
+        .withArgs(ethers.ZeroAddress, this.delegatorNoApproval, this.permitValue);
+    });
+
+    it('should pull tokens with permit', async function () {
+      await expect(
+        this.mock
+          .connect(this.delegatorNoApproval)
+          .depositWithPermit(this.permitValue, this.delegatorNoApproval, this.permitDeadline, this.v, this.r, this.s),
+      )
+        .to.emit(this.token, 'Transfer')
+        .withArgs(this.delegatorNoApproval, this.mock, this.permitValue);
     });
   });
 
