@@ -1,4 +1,9 @@
-import { getOperatorRewarderName, getOperatorStakingName, getProtocolStakingProxyName } from '../../tasks/deployment';
+import {
+  getOperatorRewarderName,
+  getOperatorStakingName,
+  getOperatorStakingImplName,
+  getProtocolStakingProxyName,
+} from '../../tasks/deployment';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import { expectContractDeployed } from '../utils';
 import { expect } from 'chai';
@@ -98,16 +103,16 @@ describe('OperatorStaking Deployment', function () {
   });
 
   describe('Helper Functions', function () {
-    it('Should generate correct OperatorStaking names', function () {
-      expect(getOperatorStakingName('TestToken')).to.equal('TestToken_Staking');
-      expect(getOperatorStakingName('COPRO')).to.equal('COPRO_Staking');
-      expect(getOperatorStakingName('KMS')).to.equal('KMS_Staking');
+    it('Should generate correct OperatorStaking proxy name', function () {
+      expect(getOperatorStakingName('MyContract')).to.equal('MyContract_Staking_Proxy');
     });
 
-    it('Should generate correct OperatorRewarder names', function () {
-      expect(getOperatorRewarderName('TestToken')).to.equal('TestToken_Rewarder');
-      expect(getOperatorRewarderName('COPRO')).to.equal('COPRO_Rewarder');
-      expect(getOperatorRewarderName('KMS')).to.equal('KMS_Rewarder');
+    it('Should generate correct OperatorStaking implementation name', function () {
+      expect(getOperatorStakingImplName('MyContract')).to.equal('MyContract_Staking_Impl');
+    });
+
+    it('Should generate correct OperatorRewarder name', function () {
+      expect(getOperatorRewarderName('MyContract')).to.equal('MyContract_Rewarder');
     });
   });
 });

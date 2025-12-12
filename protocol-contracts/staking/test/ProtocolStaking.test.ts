@@ -10,7 +10,7 @@ const eligibleAccountRole = ethers.id('ELIGIBLE_ACCOUNT_ROLE');
 /* eslint-disable no-unexpected-multiline */
 describe('Protocol Staking', function () {
   beforeEach(async function () {
-    const [staker1, staker2, admin, upgrader, manager, anyone, ...accounts] = await ethers.getSigners();
+    const [staker1, staker2, admin, manager, anyone, ...accounts] = await ethers.getSigners();
     const token = await ethers.deployContract('$ERC20Mock', ['StakingToken', 'ST', 18]);
     const mock = await ethers.getContractFactory('ProtocolStaking').then(factory =>
       upgrades.deployProxy(factory, [
@@ -19,7 +19,6 @@ describe('Protocol Staking', function () {
         '1',
         token.target,
         admin.address,
-        upgrader.address,
         manager.address,
         1, // unstake cooldown period
         0n, // reward rate
@@ -38,7 +37,6 @@ describe('Protocol Staking', function () {
       staker1,
       staker2,
       admin,
-      upgrader,
       manager,
       anyone,
       token,
