@@ -71,6 +71,7 @@ storage:
   sql_max_connections: 10
   sql_health_check_timeout_secs: 5
   cron:
+    # available settings: (d, h, m, s, ms)
     # 60s for interval check
     timeout_cron_interval: "60s" 
     
@@ -85,6 +86,6 @@ storage:
     
     #TODO
     # Retention Policies
-    public_decrypt_expiry: "1y" # 1 year
+    public_decrypt_expiry: "365d"
     user_decrypt_expiry: "7d"
     input_proof_expiry: "7d"
