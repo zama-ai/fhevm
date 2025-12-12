@@ -102,6 +102,28 @@ task("task:addOwnersToSafe").setAction(async function (
   await safeKitDeployer.executeTransaction(batch);
 });
 
+// Log the owners of the Safe and its threshold
+// Example usage:
+// npx hardhat task:getSafeOwnersAndThreshold --network gateway-mainnet
+task("task:getSafeOwnersAndThreshold").setAction(async function (
+  { includeDeployer },
+  { getNamedAccounts, ethers },
+) {
+  // Get the Safe proxy
+  const { safeProxy } = await getSafeProxyAddress(ethers);
+
+  const owners = await safeProxy.getOwners();
+
+  console.log("The current owners of the Safe Multisig accounts are:", owners);
+
+  const threshold = await safeProxy.getThreshold();
+
+  console.log(
+    "The current threshold of the Safe Multisig accounts is:",
+    threshold,
+  );
+});
+
 // Check that the owners of the Safe are set as expected
 // It should be the new added owners, with or without the deployer depending on when this task is called
 // Example usage:
