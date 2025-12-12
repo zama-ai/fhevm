@@ -133,27 +133,22 @@ pub struct CronConfig {
     // but parse the string value into a Duration.
     #[serde(deserialize_with = "deserialize_human_duration")]
     pub timeout_cron_interval: Duration,
-
-    #[serde(deserialize_with = "deserialize_human_duration")]
-    pub public_decrypt_timeout: Duration,
-
-    #[serde(deserialize_with = "deserialize_human_duration")]
-    pub user_decrypt_timeout: Duration,
-
-    #[serde(deserialize_with = "deserialize_human_duration")]
-    pub input_proof_timeout: Duration,
-
+    // TODO
+    // #[serde(deserialize_with = "deserialize_human_duration")]
+    // pub public_decrypt_timeout: Duration,
+    // #[serde(deserialize_with = "deserialize_human_duration")]
+    // pub user_decrypt_timeout: Duration,
+    // #[serde(deserialize_with = "deserialize_human_duration")]
+    // pub input_proof_timeout: Duration,
     #[serde(deserialize_with = "deserialize_human_duration")]
     pub expiry_cron_interval: Duration,
-
-    #[serde(deserialize_with = "deserialize_human_duration")]
-    pub public_decrypt_expiry: Duration,
-
-    #[serde(deserialize_with = "deserialize_human_duration")]
-    pub user_decrypt_expiry: Duration,
-
-    #[serde(deserialize_with = "deserialize_human_duration")]
-    pub input_proof_expiry: Duration,
+    // TODO
+    // #[serde(deserialize_with = "deserialize_human_duration")]
+    // pub public_decrypt_expiry: Duration,
+    // #[serde(deserialize_with = "deserialize_human_duration")]
+    // pub user_decrypt_expiry: Duration,
+    // #[serde(deserialize_with = "deserialize_human_duration")]
+    // pub input_proof_expiry: Duration,
 }
 
 #[derive(Deserialize, Clone)]
