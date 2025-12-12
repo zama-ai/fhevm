@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{GatewayEvent, db::EventType, gw_event};
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, types::chrono};
 use tokio::sync::mpsc::{self, Receiver};
 use tracing::{debug, info, warn};
 
@@ -110,11 +110,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE public_decryption_requests
-                SET under_process = TRUE
+                SET status = 'under_process', updated_at = $2
                 FROM (
                     SELECT decryption_id
                     FROM public_decryption_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE public_decryption_requests.decryption_id = req.decryption_id
@@ -122,6 +122,7 @@ impl DbEventPicker {
             ",
         )
         .bind(self.events_batch_size as i16)
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -133,11 +134,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE user_decryption_requests
-                SET under_process = TRUE
+                SET status = 'under_process', updated_at = $2
                 FROM (
                     SELECT decryption_id
                     FROM user_decryption_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
@@ -145,6 +146,7 @@ impl DbEventPicker {
             ",
         )
         .bind(self.events_batch_size as i16)
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -156,17 +158,18 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE prep_keygen_requests
-                SET under_process = TRUE
+                SET status = 'under_process', updated_at = $1
                 FROM (
                     SELECT prep_keygen_id
                     FROM prep_keygen_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prep_keygen_requests.prep_keygen_id = req.prep_keygen_id
                 RETURNING req.prep_keygen_id, epoch_id, params_type, otlp_context, already_sent
             ",
         )
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -178,17 +181,18 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE keygen_requests
-                SET under_process = TRUE
+                SET status = 'under_process', updated_at = $1
                 FROM (
                     SELECT key_id
                     FROM keygen_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE keygen_requests.key_id = req.key_id
                 RETURNING prep_keygen_id, req.key_id, otlp_context, already_sent
             ",
         )
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -200,17 +204,18 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE crsgen_requests
-                SET under_process = TRUE
+                SET status = 'under_process', updated_at = $1
                 FROM (
                     SELECT crs_id
                     FROM crsgen_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE crsgen_requests.crs_id = req.crs_id
                 RETURNING req.crs_id, max_bit_length, params_type, otlp_context, already_sent
             ",
         )
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -222,17 +227,18 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE prss_init
-                SET under_process = TRUE
+                SET status = 'under_process', updated_at = $1
                 FROM (
                     SELECT id
                     FROM prss_init
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prss_init.id = req.id
                 RETURNING req.id, otlp_context
             ",
         )
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -244,17 +250,18 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE key_reshare_same_set
-                SET under_process = TRUE
+                SET status = 'under_process', updated_at = $1
                 FROM (
                     SELECT key_id
                     FROM key_reshare_same_set
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE key_reshare_same_set.key_id = req.key_id
                 RETURNING prep_keygen_id, req.key_id, key_reshare_id, params_type, otlp_context
             ",
         )
+        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()

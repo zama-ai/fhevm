@@ -1,6 +1,11 @@
-use crate::common::{check_no_request_in_db, insert_rand_request};
 use alloy::primitives::U256;
-use connector_utils::{tests::setup::TestInstanceBuilder, types::db::EventType};
+use connector_utils::{
+    tests::{
+        db::requests::{check_no_uncompleted_request_in_db, insert_rand_request},
+        setup::TestInstanceBuilder,
+    },
+    types::db::EventType,
+};
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
@@ -59,10 +64,16 @@ async fn test_parallel_request_picking(event_type: EventType) -> anyhow::Result<
     let test_instance = TestInstanceBuilder::db_setup().await?;
     let mut event_picker = init_event_picker(test_instance.db().clone()).await?;
 
-    let insert_request0 =
-        insert_rand_request(test_instance.db(), event_type, Some(U256::ZERO), false).await?;
+    let insert_request0 = insert_rand_request(
+        test_instance.db(),
+        event_type,
+        Some(U256::ZERO),
+        false,
+        None,
+    )
+    .await?;
     let insert_request1 =
-        insert_rand_request(test_instance.db(), event_type, Some(U256::ONE), false).await?;
+        insert_rand_request(test_instance.db(), event_type, Some(U256::ONE), false, None).await?;
 
     info!("Picking two {event_type}...");
     let events0 = event_picker.pick_events().await?;
@@ -91,17 +102,15 @@ async fn test_parallel_request_picking(event_type: EventType) -> anyhow::Result<
         vec![insert_request0]
     );
 
-    info!("Data OK! Releasing and deleting all events...");
+    info!("Data OK! Marking all events as completed...");
     for event in events0 {
-        event.mark_as_pending(test_instance.db()).await;
-        event.delete_from_db(test_instance.db()).await;
+        event.mark_as_completed(test_instance.db()).await;
     }
     for event in events1 {
-        event.mark_as_pending(test_instance.db()).await;
-        event.delete_from_db(test_instance.db()).await;
+        event.mark_as_completed(test_instance.db()).await;
     }
-    info!("Done! Checking DB is empty...");
-    check_no_request_in_db(test_instance.db(), event_type).await?;
+    info!("Done! Checking there is no uncompleted request in DB...");
+    check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
     info!("Done!");
     Ok(())
 }

@@ -1,6 +1,9 @@
 use crate::{
     monitoring::otlp::PropagationContext,
-    types::{KmsGrpcResponse, db::KeyDigestDbItem},
+    types::{
+        KmsGrpcResponse,
+        db::{KeyDigestDbItem, OperationStatus},
+    },
 };
 use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
@@ -12,20 +15,14 @@ use kms_grpc::{
     },
     rpc_types::abi_encode_plaintexts,
 };
-use sqlx::{Row, postgres::PgRow};
+use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use std::fmt::Display;
-use tracing::debug;
+use tracing::{debug, info, warn};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KmsResponse {
     pub kind: KmsResponseKind,
     pub otlp_context: PropagationContext,
-}
-
-impl KmsResponse {
-    pub fn new(kind: KmsResponseKind, otlp_context: PropagationContext) -> Self {
-        Self { kind, otlp_context }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -71,6 +68,76 @@ pub struct CrsgenResponse {
     pub crs_id: U256,
     pub crs_digest: Vec<u8>,
     pub signature: Vec<u8>,
+}
+
+impl KmsResponse {
+    pub fn new(kind: KmsResponseKind, otlp_context: PropagationContext) -> Self {
+        Self { kind, otlp_context }
+    }
+
+    /// Sets the response's `status` field to `pending` in the database.
+    pub async fn mark_as_pending(&self, db: &Pool<Postgres>) {
+        warn!("Failed to process response. Restoring `status` field to `pending` in DB...");
+        self.update_status(db, OperationStatus::Pending).await
+    }
+
+    /// Sets the response's `status` field to `completed` in the database.
+    pub async fn mark_as_completed(&self, db: &Pool<Postgres>) {
+        info!(
+            "Response successfully processed. Setting its `status` field to `completed` in DB..."
+        );
+        self.update_status(db, OperationStatus::Completed).await
+    }
+
+    /// Sets the response's `status` field to `failed` in the database.
+    pub async fn mark_as_failed(&self, db: &Pool<Postgres>) {
+        warn!("Failed to process response. Restoring `status` field to `failed` in DB...");
+        self.update_status(db, OperationStatus::Failed).await
+    }
+
+    async fn update_status(&self, db: &Pool<Postgres>, status: OperationStatus) {
+        let query = match &self.kind {
+            KmsResponseKind::PublicDecryption(r) => sqlx::query!(
+                "UPDATE public_decryption_responses SET status = $1 WHERE decryption_id = $2",
+                status as OperationStatus,
+                r.decryption_id.as_le_slice()
+            ),
+            KmsResponseKind::UserDecryption(r) => sqlx::query!(
+                "UPDATE user_decryption_responses SET status = $1 WHERE decryption_id = $2",
+                status as OperationStatus,
+                r.decryption_id.as_le_slice()
+            ),
+            KmsResponseKind::PrepKeygen(r) => sqlx::query!(
+                "UPDATE prep_keygen_responses SET status = $1 WHERE prep_keygen_id = $2",
+                status as OperationStatus,
+                r.prep_keygen_id.as_le_slice()
+            ),
+            KmsResponseKind::Keygen(r) => sqlx::query!(
+                "UPDATE keygen_responses SET status = $1 WHERE key_id = $2",
+                status as OperationStatus,
+                r.key_id.as_le_slice()
+            ),
+            KmsResponseKind::Crsgen(r) => sqlx::query!(
+                "UPDATE crsgen_responses SET status = $1 WHERE crs_id = $2",
+                status as OperationStatus,
+                r.crs_id.as_le_slice()
+            ),
+        };
+
+        let query_result = match query.execute(db).await {
+            Ok(result) => result,
+            Err(e) => return warn!("Failed to update response: {e}"),
+        };
+
+        if query_result.rows_affected() == 1 {
+            info!("Successfully updated response in DB!");
+        } else {
+            warn!(
+                "Unexpected query result while updating response: {:?}",
+                query_result
+            )
+        }
+    }
 }
 
 impl KmsResponseKind {

@@ -38,7 +38,7 @@ pub struct DbEventProcessor<P: Provider> {
     /// The maximum number of decryption attempts.
     max_decryption_attempts: u16,
 
-    /// The DB connection pool used to reset events `under_process` field on error.
+    /// The DB connection pool used to update the events `status` field on error.
     db_pool: Pool<Postgres>,
 }
 
@@ -61,7 +61,7 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
                 GatewayEventKind::PrssInit(_) | GatewayEventKind::KeyReshareSameSet(_),
             ) => {
                 error!("{}", ProcessingError::Irrecoverable(e));
-                event.delete_from_db(&self.db_pool).await;
+                event.mark_as_failed(&self.db_pool).await;
                 None
             }
             // For now, we only check the error counter for public and user decryptions as they are
@@ -75,10 +75,10 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
             ) if event.error_counter as u16 >= self.max_decryption_attempts => {
                 error!(
                     "{}. Maximum number of decryption attempts reached: {}",
-                    ProcessingError::Recoverable(e),
+                    ProcessingError::Irrecoverable(e),
                     event.error_counter
                 );
-                event.delete_from_db(&self.db_pool).await;
+                event.mark_as_failed(&self.db_pool).await;
                 None
             }
             (Err(ProcessingError::Recoverable(e)), _) => {
@@ -188,7 +188,7 @@ impl<P: Provider> DbEventProcessor<P> {
         let grpc_response = grpc_result?;
 
         if let KmsGrpcResponse::NoResponseExpected = &grpc_response {
-            event.delete_from_db(&self.db_pool).await;
+            event.mark_as_completed(&self.db_pool).await;
             return Ok(None);
         }
 

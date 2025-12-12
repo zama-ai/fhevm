@@ -1,5 +1,4 @@
-use crate::common::insert_rand_response;
-use connector_utils::tests::setup::TestInstanceBuilder;
+use connector_utils::tests::{db::responses::insert_rand_response, setup::TestInstanceBuilder};
 use rstest::rstest;
 use std::time::Duration;
 use tracing::info;
@@ -44,7 +43,8 @@ async fn test_pick_response_with_polling_backup(response_str: &str) -> anyhow::R
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
     info!("Inserting {response_str} before starting the picker...");
-    let inserted_response = insert_rand_response(test_instance.db(), response_str, None).await?;
+    let inserted_response =
+        insert_rand_response(test_instance.db(), response_str, None, None).await?;
 
     let mut config = Config::default().await;
     config.database_polling_timeout = Duration::from_millis(500);

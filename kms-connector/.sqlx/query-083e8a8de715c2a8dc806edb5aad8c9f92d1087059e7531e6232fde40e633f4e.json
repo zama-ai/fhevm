@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE public_decryption_responses SET status = 'pending'\n            WHERE status = 'under_process' AND NOW() - updated_at > $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Interval"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "083e8a8de715c2a8dc806edb5aad8c9f92d1087059e7531e6232fde40e633f4e"
+}
