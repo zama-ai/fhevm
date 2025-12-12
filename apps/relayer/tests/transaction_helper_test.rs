@@ -35,6 +35,8 @@ async fn test_tx_helper() {
     // failing transactions
     //
 
+    setup.shutdown().await;
+
     let random_target_address =
         Address::from_str("0xB8Ae44365c45A7C5256b14F607CaE23BC040c354").unwrap();
 

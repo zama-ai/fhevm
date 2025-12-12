@@ -119,4 +119,6 @@ async fn test_success_single_request() {
         }
         _ => panic!("Unexpected status code: {}", status),
     }
+
+    setup.shutdown().await;
 }

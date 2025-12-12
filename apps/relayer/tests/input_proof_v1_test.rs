@@ -79,6 +79,8 @@ async fn test_error_gateway_rejection() {
         },
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[tokio::test]
@@ -97,6 +99,8 @@ async fn test_success_single_request() {
         expect_success(),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[tokio::test]
@@ -131,6 +135,8 @@ async fn test_success_concurrent_requests() {
     while let Some(result) = tasks.join_next().await {
         result.expect("Task should complete");
     }
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -161,6 +167,8 @@ async fn test_error_invalid_fields_set_1(
         expect_invalid_field(field, expected_issue),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -187,6 +195,8 @@ async fn test_error_invalid_fields_set_2(
         expect_invalid_field(field, expected_issue),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -216,6 +226,8 @@ async fn test_error_invalid_fields_set_3(
         expect_invalid_field(field, expected_issue),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -238,6 +250,8 @@ async fn test_error_missing_fields(#[case] field: &str) {
         expect_missing_field(field),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -262,6 +276,8 @@ async fn test_error_missing_two_fields_reports_first_only(
         expect_missing_field(expected_reported_field), // Only expect the first field to be reported
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -287,6 +303,8 @@ async fn test_error_missing_three_fields_reports_first_only(
         expect_missing_field(expected_reported_field), // Only expect the first field to be reported
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -302,4 +320,6 @@ async fn test_error_malformed_json(#[case] malformed_json: &str) {
         expect_malformed_json(),
     )
     .await;
+
+    setup.shutdown().await;
 }

@@ -582,6 +582,8 @@ async fn test_user_decrypt_rate_limit_post_endpoints_scenarios() {
 
         println!("✓ Scenario '{}' completed successfully\n", scenario.name);
     }
+
+    setup.shutdown().await;
 }
 
 async fn run_get_scenario(
@@ -671,4 +673,6 @@ async fn test_get_endpoints_burst_no_rate_limiting() {
 
         println!("✓ {} endpoint burst test passed\n", endpoint_name);
     }
+
+    setup.shutdown().await;
 }

@@ -79,6 +79,8 @@ async fn test_success_single_request() {
         expect_success(),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[tokio::test]
@@ -120,6 +122,8 @@ async fn test_success_concurrent_requests() {
         let index = result.expect("Task should complete");
         println!("Concurrent request {} completed successfully", index);
     }
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -150,6 +154,8 @@ async fn test_error_invalid_fields(
         expect_invalid_field(field, expected_issue),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -169,6 +175,8 @@ async fn test_error_missing_fields(#[case] field: &str) {
         expect_missing_field(field),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -192,6 +200,8 @@ async fn test_error_missing_two_fields_reports_first_only(
         expect_missing_field(expected_reported_field), // Only expect the first field to be reported
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -207,6 +217,8 @@ async fn test_error_malformed_json(#[case] malformed_json: &str) {
         expect_malformed_json(),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 /// Test readiness check failure returns 504 Gateway Timeout with correct message
@@ -250,6 +262,8 @@ async fn test_readiness_check_failure_returns_504() {
         Some("Ciphertext not ready for decryption on the gateway chain"),
         "Expected readiness failure error message"
     );
+
+    setup.shutdown().await;
 }
 
 /// Test consecutive duplicate requests succeed in V1
@@ -345,4 +359,6 @@ async fn test_consecutive_duplicate_requests_succeed() {
         println!("First: {} - {}", status1, body1_text);
         println!("Second: {} - {}", status2, body2_text);
     }
+
+    setup.shutdown().await;
 }

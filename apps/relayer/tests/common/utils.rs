@@ -10,19 +10,19 @@ use alloy::primitives::Address;
 use rand::{rng, Rng};
 use tempfile::TempDir;
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 /// Per-test isolated setup with own ports, database, and mock servers
+#[allow(dead_code)]
 pub struct TestSetup {
-    #[allow(dead_code)]
     pub fhevm_mock: FhevmMockWrapper,
-    #[allow(dead_code)]
     pub settings: Settings,
-    #[allow(dead_code)]
     pub http_port: u16,
-    _host_handle: MockServerHandle,
-    _gateway_handle: MockServerHandle,
-    _cancellation_token: CancellationToken,
+    host_handle: MockServerHandle,
+    gateway_handle: MockServerHandle,
+    cancellation_token: CancellationToken,
+    relayer_handle: JoinHandle<()>,
 }
 
 impl TestSetup {
@@ -153,7 +153,7 @@ impl TestSetup {
         let (settings_tx, settings_rx) = oneshot::channel::<Settings>();
 
         // Spawn relayer in background task - it will run until cancellation
-        tokio::spawn(async move {
+        let relayer_handle = tokio::spawn(async move {
             match run_fhevm_relayer(relayer_settings, relayer_token, Some(settings_tx)).await {
                 Ok(()) => tracing::debug!("Relayer service exited normally"),
                 Err(e) => tracing::error!("Relayer service error: {}", e),
@@ -194,17 +194,25 @@ impl TestSetup {
             fhevm_mock: fhevm_wrapper,
             settings,
             http_port,
-            _host_handle: host_handle,
-            _gateway_handle: gateway_handle,
-            _cancellation_token: cancellation_token,
+            host_handle,
+            gateway_handle,
+            cancellation_token,
+            relayer_handle,
         })
     }
-}
 
-impl Drop for TestSetup {
-    fn drop(&mut self) {
-        tracing::debug!("Cleaning up isolated test setup");
-        self._cancellation_token.cancel();
+    #[allow(dead_code)]
+    pub async fn shutdown(self) {
+        self.cancellation_token.cancel();
+
+        // Only wait for relayer - it has the DB connections
+        if let Err(e) = self.relayer_handle.await {
+            tracing::error!("Test relayer task failed: {}", e);
+        }
+
+        // Mock servers will shutdown when handles are dropped
+        drop(self.host_handle);
+        drop(self.gateway_handle);
     }
 }
 

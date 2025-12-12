@@ -135,6 +135,8 @@ async fn test_success_single_request() {
     // V1 only: Consensus event arrives 1 block (~500ms) after shares. Sleep keeps relayer running to process it.
     // V2 tests already have sleep between POST and GET. In production, relayer runs continuously so no timing issues.
     tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+    setup.shutdown().await;
 }
 
 /// Test consecutive duplicate requests succeed in V1
@@ -218,6 +220,8 @@ async fn test_consecutive_duplicate_requests_succeed() {
     // V1 only: Consensus event arrives 1 block (~500ms) after shares. Sleep keeps relayer running to process it.
     // V2 tests already have sleep between POST and GET. In production, relayer runs continuously so no timing issues.
     tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+    setup.shutdown().await;
 }
 
 #[tokio::test]
@@ -266,6 +270,8 @@ async fn test_success_concurrent_requests() {
     // V1 only: Consensus event arrives 1 block (~500ms) after shares. Sleep keeps relayer running to process it.
     // V2 tests already have sleep between POST and GET. In production, relayer runs continuously so no timing issues.
     tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -303,6 +309,8 @@ async fn test_error_invalid_fields_set_1(
         expect_invalid_field(field, expected_issue),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -338,6 +346,8 @@ async fn test_error_invalid_fields_set_2(
         expect_invalid_field(field, expected_issue),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -377,6 +387,8 @@ async fn test_error_invalid_fields_set_3(
         expect_invalid_field(field, expected_issue),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -418,6 +430,8 @@ async fn test_error_invalid_nested_handle_fields(
         expect_invalid_field("handleContractPairs", expected_issue),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -446,6 +460,8 @@ async fn test_error_invalid_nested_handle_fields_2(
         expect_invalid_field("requestValidity", expected_issue),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -477,6 +493,8 @@ async fn test_error_missing_fields(#[case] field: &str) {
         expect_missing_field(field),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -507,6 +525,8 @@ async fn test_error_missing_two_fields_reports_first_only(
         expect_missing_field(expected_reported_field), // Only expect the first field to be reported
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 #[rstest]
@@ -522,6 +542,8 @@ async fn test_error_malformed_json(#[case] malformed_json: &str) {
         expect_malformed_json(),
     )
     .await;
+
+    setup.shutdown().await;
 }
 
 /// Test readiness check failure returns 504 Gateway Timeout with correct message
@@ -571,4 +593,6 @@ async fn test_readiness_check_failure_returns_504() {
         Some("Ciphertext not ready for decryption on the gateway chain"),
         "Expected readiness failure error message"
     );
+
+    setup.shutdown().await;
 }

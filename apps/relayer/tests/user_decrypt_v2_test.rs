@@ -291,6 +291,8 @@ async fn test_success_single_request() {
         }
         _ => panic!("Unexpected status code: {}", status),
     }
+
+    setup.shutdown().await;
 }
 
 /// Test consecutive duplicate requests succeed in V2
@@ -409,6 +411,8 @@ async fn test_consecutive_duplicate_requests_succeed() {
          for duplicate requests with identical content.",
         job_id_2
     );
+
+    setup.shutdown().await;
 }
 
 #[test]

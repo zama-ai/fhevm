@@ -41,6 +41,8 @@ async fn test_liveness_endpoint_success() {
     });
 
     assert_eq!(body, expected);
+
+    setup.shutdown().await;
 }
 
 /// Test version endpoint returns build metadata with correct structure.
@@ -68,6 +70,8 @@ async fn test_version_endpoint_success() {
     let build = body["build"].as_str().unwrap();
     assert!(build.contains('-'));
     assert!(build.ends_with("clean") || build.ends_with("dirty"));
+
+    setup.shutdown().await;
 }
 
 /// Test health endpoint returns HTTP 200 when all dependencies are healthy.
@@ -96,6 +100,8 @@ async fn test_health_endpoint_all_healthy() {
     assert!(dependencies.contains_key("gateway_http"));
     assert!(dependencies.contains_key("gateway_ws"));
     assert!(dependencies.contains_key("database"));
+
+    setup.shutdown().await;
 }
 
 // Note: RPC failure tests would require mock health checker infrastructure
