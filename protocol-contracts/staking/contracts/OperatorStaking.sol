@@ -2,10 +2,11 @@
 
 pragma solidity ^0.8.27;
 
-import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
-import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ERC1363Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC1363Upgradeable.sol";
+import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {ERC4626, IERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -139,6 +140,29 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         _deposit(msg.sender, receiver, assets, shares);
 
         return shares;
+    }
+
+    /**
+     * @notice Deposit assets and receive shares with ERC-20 Permit extension (ERC-2612).
+     * @param assets Amount of assets to deposit.
+     * @param receiver Address to receive the minted shares.
+     * @param deadline Timestamp in the future until which the permit is valid.
+     * @param v `secp256k1` signature parameter.
+     * @param r `secp256k1` signature parameter.
+     * @param s `secp256k1` signature parameter.
+     * @return shares Amount of shares minted.
+     */
+    function depositWithPermit(
+        uint256 assets,
+        address receiver,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public virtual returns (uint256) {
+        IERC20Permit(asset()).permit(msg.sender, address(this), assets, deadline, v, r, s);
+
+        return deposit(assets, receiver);
     }
 
     /**
