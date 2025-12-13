@@ -48,3 +48,13 @@ pub struct UserDecryptResponseModel {
     pub gw_consensus_tx_hash: Option<String>,
     pub shares: Json<Vec<UserDecryptResponseShare>>,
 }
+
+#[derive(Debug, FromRow)]
+pub struct UserDecryptDoneWithTransitionRes {
+    pub int_job_id: Vec<u8>,
+    pub req_status: ReqStatus,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub err_reason: Option<String>,
+    pub old_status: ReqStatus,
+    pub old_updated_at: chrono::DateTime<chrono::Utc>,
+}

@@ -1,7 +1,9 @@
 use crate::core::event::UserDecryptRequest;
 use crate::metrics;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
-use crate::store::sql::models::user_decrypt_req_model::ConsensusReqState;
+use crate::store::sql::models::user_decrypt_req_model::{
+    ConsensusReqState, UserDecryptDoneWithTransitionRes,
+};
 use crate::store::sql::{
     client::PgClient,
     error::{SqlError, SqlResult},
@@ -454,116 +456,168 @@ impl UserDecryptRepository {
         //
         // Advisory lock automatically released when transaction commits/rollbacks.
         // See: https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS
-        let mut tx = self.pool.get_pool().begin().await?;
+        let pool_wait_start = Instant::now();
+        let mut tx = match self.pool.get_pool().begin().await {
+            Ok(tx) => {
+                // Here we observe pool acquisition timing and increment.
+                metrics::observe_pool_wait(pool_wait_start.elapsed());
+                tx
+            }
+            Err(e) => {
+                // Failed to acquire connection
+                metrics::increment_error(metrics::Table::UserDecryptReq);
+                return Err(e.into());
+            }
+        };
 
-        // Acquire advisory lock - this WAITS for other transactions, doesn't fail
-        let lock_id = compute_advisory_lock_id(&gw_ref_id);
-        sqlx::query!("SELECT pg_advisory_xact_lock($1)", lock_id)
+        // 2. METRIC: Start Query Timer
+        // We start measuring the actual DB work only after we have the connection.
+        let query_start = Instant::now();
+
+        // 3. Execute Business Logic inside the Transaction
+        let result: SqlResult<(i64, Option<(ConsensusReqState, Vec<UserDecryptShare>)>)> = async {
+            // A. Acquire advisory lock (WAITS for other transactions)
+            let lock_id = compute_advisory_lock_id(&gw_ref_id);
+            sqlx::query!("SELECT pg_advisory_xact_lock($1)", lock_id)
+                .execute(&mut *tx)
+                .await?;
+
+            // First, do the INSERT
+            sqlx::query!(
+                r#"
+                INSERT INTO user_decrypt_share (
+                    gw_reference_id,
+                    tx_hash,
+                    share_index,
+                    share,
+                    kms_signature,
+                    extra_data
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (gw_reference_id, share_index) DO NOTHING
+                "#,
+                gw_ref_id,
+                params.tx_hash,
+                share_index,
+                params.share,
+                params.kms_signature,
+                params.extra_data
+            )
             .execute(&mut *tx)
             .await?;
 
-        // First, do the INSERT
-        sqlx::query!(
-            r#"
-            INSERT INTO user_decrypt_share (
-                gw_reference_id,
-                tx_hash,
-                share_index,
-                share,
-                kms_signature,
-                extra_data
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (gw_reference_id, share_index) DO NOTHING
-            "#,
-            gw_ref_id,
-            params.tx_hash,
-            share_index,
-            params.share,
-            params.kms_signature,
-            params.extra_data
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        // Count shares within the same transaction
-        let count = sqlx::query_scalar!(
-            r#"
-            SELECT COUNT(*) as "count!"
-            FROM user_decrypt_share
-            WHERE gw_reference_id = $1
-            "#,
-            gw_ref_id
-        )
-        .fetch_one(&mut *tx)
-        .await?;
-
-        // If threshold reached, complete the request atomically
-        let completion_result = if count == threshold {
-            // Attempt to update request to completed status
-            let update_result = sqlx::query!(
+            // Count shares within the same transaction
+            let count = sqlx::query_scalar!(
                 r#"
-                UPDATE user_decrypt_req
-                SET req_status = 'completed'::req_status
+                SELECT COUNT(*) as "count!"
+                FROM user_decrypt_share
                 WHERE gw_reference_id = $1
-                  AND req_status != 'timed_out'::req_status
-                RETURNING int_job_id, req_status as "req_status: ReqStatus", updated_at, err_reason
                 "#,
                 gw_ref_id
             )
-            .fetch_optional(&mut *tx)
+            .fetch_one(&mut *tx)
             .await?;
 
-            // If update succeeded, fetch shares
-            if let Some(req_data) = update_result {
-                let metadata = ConsensusReqState {
-                    int_job_id: req_data.int_job_id,
-                    req_status: ReqStatus::Completed,
-                    updated_at: req_data.updated_at,
-                    err_reason: req_data.err_reason,
-                };
-
-                // Fetch shares ordered by creation time, limited to threshold
-                let share_records = sqlx::query!(
+           // If threshold reached, complete the request atomically
+            let completion_result = if count == threshold {
+                // Attempt to update request to completed status
+                let update_result = sqlx::query_as!(
+                    UserDecryptDoneWithTransitionRes,
                     r#"
-                    SELECT id, gw_reference_id, tx_hash, share_index, share, kms_signature, extra_data, created_at, updated_at
-                    FROM user_decrypt_share
-                    WHERE gw_reference_id = $1
-                    ORDER BY created_at ASC, share_index ASC
-                    LIMIT $2
+                    WITH old AS (
+                        SELECT req_status, updated_at FROM user_decrypt_req 
+                        WHERE gw_reference_id = $1
+                    ),
+                    upd AS (
+                        UPDATE user_decrypt_req
+                        SET req_status = 'completed'::req_status
+                        WHERE gw_reference_id = $1
+                          AND req_status != 'timed_out'::req_status
+                        RETURNING int_job_id, req_status, updated_at, err_reason
+                    )
+                    SELECT 
+                        upd.int_job_id as "int_job_id!",
+                        upd.req_status as "req_status!: ReqStatus",
+                        upd.updated_at as "updated_at!",
+                        upd.err_reason,
+                        old.req_status as "old_status!: ReqStatus",
+                        old.updated_at as "old_updated_at!"
+                    FROM old, upd
                     "#,
-                    gw_ref_id,
-                    threshold
+                    gw_ref_id
                 )
-                .fetch_all(&mut *tx)
+                .fetch_optional(&mut *tx)
                 .await?;
 
-                let shares: Vec<UserDecryptShare> = share_records
-                    .into_iter()
-                    .map(|r| UserDecryptShare {
-                        id: r.id,
-                        gw_reference_id: r.gw_reference_id,
-                        tx_hash: r.tx_hash,
-                        share_index: r.share_index,
-                        share: r.share,
-                        kms_signature: r.kms_signature,
-                        extra_data: r.extra_data,
-                        created_at: r.created_at,
-                        updated_at: r.updated_at,
-                    })
-                    .collect();
+                if let Some(data) = update_result {
+                    // Record transition immediately (in-memory metric, safe to do inside tx flow)
+                    metrics::record_status_transition(
+                        metrics::Table::UserDecryptReq,
+                        data.old_status,
+                        ReqStatus::Completed,
+                        data.old_updated_at,
+                        data.updated_at,
+                    );
 
-                Some((metadata, shares))
+                    let metadata = ConsensusReqState {
+                        int_job_id: data.int_job_id,
+                        req_status: data.req_status,
+                        updated_at: data.updated_at,
+                        err_reason: data.err_reason,
+                    };
+
+                    // Fetch shares ordered by creation time, limited to threshold
+                    let share_records = sqlx::query!(
+                        r#"
+                        SELECT id, gw_reference_id, tx_hash, share_index, share, kms_signature, extra_data, created_at, updated_at
+                        FROM user_decrypt_share
+                        WHERE gw_reference_id = $1
+                        ORDER BY created_at ASC, share_index ASC
+                        LIMIT $2
+                        "#,
+                        gw_ref_id,
+                        threshold
+                    )
+                    .fetch_all(&mut *tx)
+                    .await?;
+
+                    let shares: Vec<UserDecryptShare> = share_records
+                        .into_iter()
+                        .map(|r| UserDecryptShare {
+                            id: r.id,
+                            gw_reference_id: r.gw_reference_id,
+                            tx_hash: r.tx_hash,
+                            share_index: r.share_index,
+                            share: r.share,
+                            kms_signature: r.kms_signature,
+                            extra_data: r.extra_data,
+                            created_at: r.created_at,
+                            updated_at: r.updated_at,
+                        })
+                        .collect();
+
+                    Some((metadata, shares))
+                } else {
+                    // Request was already timed_out or doesn't exist
+                    None
+                }
             } else {
-                // Request was already timed_out or doesn't exist
                 None
-            }
-        } else {
-            None
-        };
+            };
 
-        tx.commit().await?;
-        Ok((count, completion_result))
+            tx.commit().await?;
+
+            Ok((count, completion_result))
+        }
+        .await;
+
+        // 4. METRIC: Record Query Duration / Error
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+        }
+
+        result
     }
 
     // GET REQUESTS RESULTS.

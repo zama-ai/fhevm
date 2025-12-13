@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                    SELECT id, gw_reference_id, tx_hash, share_index, share, kms_signature, extra_data, created_at, updated_at\n                    FROM user_decrypt_share\n                    WHERE gw_reference_id = $1\n                    ORDER BY created_at ASC, share_index ASC\n                    LIMIT $2\n                    ",
+  "query": "\n                        SELECT id, gw_reference_id, tx_hash, share_index, share, kms_signature, extra_data, created_at, updated_at\n                        FROM user_decrypt_share\n                        WHERE gw_reference_id = $1\n                        ORDER BY created_at ASC, share_index ASC\n                        LIMIT $2\n                        ",
   "describe": {
     "columns": [
       {
@@ -67,5 +67,5 @@
       false
     ]
   },
-  "hash": "5df06ab5ca4bef25bbf4a20716ad2cdb0a7df2669537d230ea83bedc06607e0e"
+  "hash": "a3fbe6eaa2df4a6b138c9ca2c4aaa5d3c905ca90af763200249fe7688fe9a472"
 }
