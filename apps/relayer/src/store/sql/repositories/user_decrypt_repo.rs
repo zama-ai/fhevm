@@ -20,6 +20,10 @@ use std::time::Instant;
 // Import conversion functions privately within this repository
 use crate::store::sql::conversion::u256_to_i32;
 
+// Type alias to satisfy clippy::type-complexity
+// Represents: (Share Count, Option<(Metadata, List of Shares)>)
+pub type ShareThresholdResult = (i64, Option<(ConsensusReqState, Vec<UserDecryptShare>)>);
+
 pub struct UserDecryptRepository {
     pool: PgClient,
 }
@@ -430,7 +434,7 @@ impl UserDecryptRepository {
         &self,
         params: ShareInsertParams<'_>,
         threshold: i64,
-    ) -> SqlResult<(i64, Option<(ConsensusReqState, Vec<UserDecryptShare>)>)> {
+    ) -> SqlResult<ShareThresholdResult> {
         let id_as_bytes_array: [u8; 32] = params.gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
         let share_index = u256_to_i32(params.share_index)
@@ -475,7 +479,7 @@ impl UserDecryptRepository {
         let query_start = Instant::now();
 
         // 3. Execute Business Logic inside the Transaction
-        let result: SqlResult<(i64, Option<(ConsensusReqState, Vec<UserDecryptShare>)>)> = async {
+        let result: SqlResult<ShareThresholdResult> = async {
             // A. Acquire advisory lock (WAITS for other transactions)
             let lock_id = compute_advisory_lock_id(&gw_ref_id);
             sqlx::query!("SELECT pg_advisory_xact_lock($1)", lock_id)
