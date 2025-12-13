@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM user_decrypt_req \n                WHERE updated_at < NOW() - INTERVAL '7 days'\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "26ca489fd7077f75963898438e68644ede1f576db6d8f3fa077ee01017fb3a69"
+}
