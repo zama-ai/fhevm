@@ -123,6 +123,9 @@ impl BlockNumberRepository {
 
     /// Returns full model with all fields
     pub async fn get_gateway_block_number(&self) -> SqlResult<Option<GatewayBlockNumber>> {
+        let mut conn = self.pool.get_connection().await?;
+
+        let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
             SELECT id, last_block_number, last_block_hash, created_at, updated_at
@@ -130,11 +133,20 @@ impl BlockNumberRepository {
             WHERE id = 1
             "#
         )
-        .fetch_optional(&self.pool.get_pool())
-        .await
-        .map_err(SqlError::from)?;
+        .fetch_optional(&mut *conn)
+        .await;
 
-        match result {
+        match &result {
+            Ok(_) => metrics::observe_query(
+                metrics::Table::GatewayBlockNumberStore,
+                query_start.elapsed(),
+            ),
+            Err(_) => metrics::increment_error(metrics::Table::GatewayBlockNumberStore),
+        }
+
+        let record = result.map_err(SqlError::from)?;
+
+        match record {
             Some(row) => Ok(Some(GatewayBlockNumber {
                 id: row.id,
                 last_block_number: row.last_block_number,
