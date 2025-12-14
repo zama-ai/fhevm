@@ -59,7 +59,7 @@ The directories of this repository are organized in the following way:
 
 - **`gateway-contracts/`**: Smart contracts managing the gateway between on-chain and off-chain components.
 
-- **`host-contracts/`**: Smart Contracts deployed on the host chain for orchestrating FHE workflows.
+- **`host-contracts/`**: Smart contracts deployed on the host chain for orchestrating FHE workflows.
 
 ###### FHEVM Compute Engines
 
