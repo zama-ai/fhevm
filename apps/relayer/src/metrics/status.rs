@@ -4,26 +4,28 @@ use prometheus::{
     HistogramOpts, HistogramVec, Opts, Registry,
 };
 
-use crate::store::sql::models::req_status_enum_model::ReqStatus;
+use crate::{
+    config::settings::MetricsConfig, store::sql::models::req_status_enum_model::ReqStatus,
+};
 
 #[derive(Debug)]
-struct InternalMetrics {
+struct StatusMetrics {
     // Count how many requests are in each statuses.
     pub request_status_count: GaugeVec,
     // Histogram for duration.
     pub request_status_duration: HistogramVec,
 }
 
-static STATUS_METRICS: OnceCell<InternalMetrics> = OnceCell::new();
+static STATUS_METRICS: OnceCell<StatusMetrics> = OnceCell::new();
 
-pub fn init_statuses_metrics(registry: &Registry) {
-    STATUS_METRICS.get_or_init(|| InternalMetrics {
+pub fn init_statuses_metrics(registry: &Registry, config: MetricsConfig) {
+    STATUS_METRICS.get_or_init(|| StatusMetrics {
         request_status_count: register_gauge_vec_with_registry!(
             Opts::new(
                 "relayer_request_count",
                 "Number of request by table and statuses"
             ),
-            &["table", "status"],
+            &["req_type", "status"],
             registry,
         )
         .unwrap(),
@@ -31,16 +33,9 @@ pub fn init_statuses_metrics(registry: &Registry) {
             HistogramOpts::new(
                 "relayer_request_status_duration_seconds",
                 "Time spent in a status before transitioning to the next"
-            ) // Bucket Strategy:
-            // - Fast/Internal Logic: 0.1s (100ms) to 1.0s
-            // - Blockchain/Network: 2.5s to 60s
-            // - Long Polling/Timeouts: 5 min, 10 min, 30 min, 1 hour
-            .buckets(vec![
-                0.1, 0.25, 0.5, 1.0, // Sub-second (Internal processing)
-                2.5, 5.0, 10.0, 30.0, 60.0, // Seconds (Network/RPC latency)
-                300.0, 600.0, 1800.0, 3600.0 // Minutes (Timeouts/Stuck detection)
-            ]),
-            &["table", "previous_status"], // We track the status we are LEAVING
+            )
+            .buckets(config.request_status_duration_histogram_bucket.clone()),
+            &["req_type", "previous_status"], // We track the status we are LEAVING
             registry,
         )
         .unwrap(),
@@ -50,30 +45,46 @@ pub fn init_statuses_metrics(registry: &Registry) {
 // Reuse your Table enum or define a specific one for DB
 pub use crate::metrics::Table;
 
-pub fn increment_req_status_count(table: Table, status: ReqStatus) {
+pub enum RequestType {
+    UserDecrypt,
+    PublicDecrypt,
+    InputProof,
+}
+
+impl RequestType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RequestType::UserDecrypt => "user_decrypt",
+            RequestType::PublicDecrypt => "public_decrypt",
+            RequestType::InputProof => "input_proof",
+        }
+    }
+}
+
+pub fn increment_req_status_count(req_type: RequestType, status: ReqStatus) {
     let metrics = STATUS_METRICS
         .get()
         .expect("Statuses metrics not initialized.");
     metrics
         .request_status_count
-        .with_label_values(&[table.as_str(), status.as_str()])
+        .with_label_values(&[req_type.as_str(), status.as_str()])
         .inc();
 }
 
-pub fn decrement_req_status_count(table: Table, status: ReqStatus) {
+pub fn decrement_req_status_count(req_type: RequestType, status: ReqStatus) {
     let metrics = STATUS_METRICS
         .get()
         .expect("Statuses metrics not initialized.");
     metrics
         .request_status_count
-        .with_label_values(&[table.as_str(), status.as_str()])
+        .with_label_values(&[req_type.as_str(), status.as_str()])
         .dec();
 }
 
 // Helper to handle the logic in one place.
 // TODO: verify the seconds logic, and create the subsequent histogram bucket.
 pub fn record_status_transition(
-    table: Table,
+    req_type: RequestType,
     old_status: ReqStatus,
     new_status: ReqStatus,
     old_updated_at: chrono::DateTime<chrono::Utc>,
@@ -84,11 +95,11 @@ pub fn record_status_transition(
     // 1. Update Counters
     metrics
         .request_status_count
-        .with_label_values(&[table.as_str(), old_status.as_str()])
+        .with_label_values(&[req_type.as_str(), old_status.as_str()])
         .dec();
     metrics
         .request_status_count
-        .with_label_values(&[table.as_str(), new_status.as_str()])
+        .with_label_values(&[req_type.as_str(), new_status.as_str()])
         .inc();
 
     // 2. Record Duration
@@ -100,7 +111,7 @@ pub fn record_status_transition(
     if seconds >= 0.0 {
         metrics
             .request_status_duration
-            .with_label_values(&[table.as_str(), old_status.as_str()])
+            .with_label_values(&[req_type.as_str(), old_status.as_str()])
             .observe(seconds);
     }
 }

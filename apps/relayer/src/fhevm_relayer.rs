@@ -170,9 +170,9 @@ fn ensure_global_init(settings: &Settings) -> eyre::Result<&'static Registry> {
 
         let registry = Registry::new();
         metrics::init_http_metrics(&registry, &settings.http.metrics);
-        metrics::init_transaction_metrics(&registry);
-        metrics::init_statuses_metrics(&registry);
-        metrics::init_db_metrics(&registry);
+        metrics::init_transaction_metrics(&registry, settings.metrics.clone());
+        metrics::init_statuses_metrics(&registry, settings.metrics.clone());
+        metrics::init_db_metrics(&registry, settings.metrics.clone());
 
         registry
     });

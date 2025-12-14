@@ -69,7 +69,10 @@ impl InputProofRepository {
         }
         let result = result?;
 
-        metrics::increment_req_status_count(metrics::Table::InputProofReq, ReqStatus::Processing);
+        metrics::increment_req_status_count(
+            metrics::RequestType::InputProof,
+            ReqStatus::Processing,
+        );
 
         Ok(result)
     }
@@ -124,7 +127,7 @@ impl InputProofRepository {
 
         if let Some(r) = record {
             metrics::record_status_transition(
-                metrics::Table::InputProofReq,
+                metrics::RequestType::InputProof,
                 r.old_status,
                 ReqStatus::ReceiptReceived,
                 r.old_updated_at,
@@ -180,7 +183,7 @@ impl InputProofRepository {
 
         if let Some(r) = record {
             metrics::record_status_transition(
-                metrics::Table::InputProofReq,
+                metrics::RequestType::InputProof,
                 r.old_status,
                 ReqStatus::Failure,
                 r.old_updated_at,
@@ -253,7 +256,7 @@ impl InputProofRepository {
         let record = result?;
 
         metrics::record_status_transition(
-            metrics::Table::InputProofReq,
+            metrics::RequestType::InputProof,
             record.old_status,
             ReqStatus::Completed,
             record.old_updated_at,
@@ -314,7 +317,7 @@ impl InputProofRepository {
 
         let record = result?;
         metrics::record_status_transition(
-            metrics::Table::InputProofReq,
+            metrics::RequestType::InputProof,
             record.old_status,
             ReqStatus::Completed,
             record.old_updated_at,

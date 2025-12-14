@@ -70,7 +70,7 @@ impl TimeoutRepository {
             // Metrics: Status Transitions
             for row in rows {
                 metrics::record_status_transition(
-                    metrics::Table::UserDecryptReq,
+                    metrics::RequestType::UserDecrypt,
                     ReqStatus::ReceiptReceived, // Old status
                     ReqStatus::TimedOut,        // New status
                     row.old_updated_at,
@@ -123,7 +123,7 @@ impl TimeoutRepository {
 
             for row in rows {
                 metrics::record_status_transition(
-                    metrics::Table::PublicDecryptReq,
+                    metrics::RequestType::PublicDecrypt,
                     ReqStatus::ReceiptReceived,
                     ReqStatus::TimedOut,
                     row.old_updated_at,
@@ -176,7 +176,7 @@ impl TimeoutRepository {
 
             for row in rows {
                 metrics::record_status_transition(
-                    metrics::Table::InputProofReq,
+                    metrics::RequestType::InputProof,
                     ReqStatus::ReceiptReceived,
                     ReqStatus::TimedOut,
                     row.old_updated_at,

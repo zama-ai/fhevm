@@ -31,7 +31,7 @@ Understanding the flow is essential for interpreting the metrics.
 - **Type**: GaugeVec
 - **Description**: The current number of requests sitting in a specific status _known to the application instance_.
 - **Labels**:
-  - `table`: `user_decrypt_req`, `public_decrypt_req`, `input_proof_req`
+  - `req_type`: `user_decrypt`, `public_decrypt`, `input_proof`
   - `status`: `queued`, `processing`, `receipt_received`, `completed`, `timed_out`, `failure`
 
 ### B. Histogram: Transition Latency
@@ -42,7 +42,7 @@ Understanding the flow is essential for interpreting the metrics.
 - **Description**: Measures **"How long did the request stay in the previous status?"**. It records the duration at the moment of transition.
 - **Buckets**: `0.1s` to `3600s` (1h).
 - **Labels**:
-  - `table`: `user_decrypt_req`, ...
+  - `req_type`: `user_decrypt`, ...
   - `previous_status`: The status the request just _left_ (e.g., if transitioning `queued` -> `processing`, label is `queued`). `completed`, `failed` and `timed_out` not taken in account since they are final states.
 
 ---
@@ -55,35 +55,35 @@ TODO: refine
 
 #### Panel 1: Current Queue Size (Critical)
 
-- **Affected flows (tables labels)**: user_decrypt_req, public_decrypt_req.
+- **Affected flows (req_type labels)**: user_decrypt, public_decrypt.
 - **Visualization**: Stat / Time Series
 - **Description**: Number of requests currently waiting for ACL/Readiness checks.
 - **Goal**: Should be as low as possible. Spikes indicate backlog.
 - **Query**:
   ```promql
-  sum by (table) (relayer_request_count{status="queued"})
+  sum by (req_type) (relayer_request_count{status="queued"})
   ```
 
 #### Panel 2: Active Processing (Internally queued before broadcast and in-flight transactions)
 
-- **Affected flows (tables labels)**: user_decrypt_req, public_decrypt_req, input_proof_req.
+- **Affected flows (req_type labels)**: user_decrypt, public_decrypt, input_proof.
 - **Visualization**: Time Series
 - **Description**: Number of requests waiting for broadcasting and blockchain transaction broadcast confirmations.
 - **Goal**: Should reflect current transaction pending or in-flight mode. Flat line high = Problem with the broadcaster and the processing.
 - **Query**:
   ```promql
-  sum by (table) (relayer_request_count{status="processing"})
+  sum by (req_type) (relayer_request_count{status="processing"})
   ```
 
 #### Panel 3: Waiting for - KMS, Coproc, Gateway: conensus reached, public decrypt ok, input proof done (Receipt Received)
 
-- **Affected flows (tables labels)**: user_decrypt_req, public_decrypt_req, input_proof_req.
+- **Affected flows (req_type labels)**: user_decrypt, public_decrypt, input_proof.
 - **Visualization**: Time Series
 - **Description**: Requests confirmed on-chain, waiting for off-chain KMS/Consensus events.
 - **Goal**: If this grows monotonically, the Listener is dead or KMS is down, or copro is down.
 - **Query**:
   ```promql
-  sum by (table) (relayer_request_count{status="receipt_received"})
+  sum by (req_type) (relayer_request_count{status="receipt_received"})
   ```
 
 ---
@@ -92,7 +92,7 @@ TODO: refine
 
 #### Panel 4: Readiness Check Latency
 
-- **Affected flows (tables labels)**: user_decrypt_req, public_decrypt_req.
+- **Affected flows (req_type labels)**: user_decrypt, public_decrypt.
 - **Visualization**: Heatmap
 - **Description**: Time spent in `queued` status. Measures how long ACL checks take.
 - **Query**:
@@ -102,7 +102,7 @@ TODO: refine
 
 #### Panel 5: Transaction/Mempool Latency
 
-- **Affected flows (tables labels)**: user_decrypt_req, public_decrypt_req, input_proof_req
+- **Affected flows (req_type labels)**: user_decrypt, public_decrypt, input_proof
 - **Visualization**: Heatmap
 - **Description**: Time spent in `processing` status. Measures blockchain block times.
 - **Query**:
@@ -112,7 +112,7 @@ TODO: refine
 
 #### Panel 6: Protocol Copro/KMS Latency, Listener Failure
 
-- **Affected flows (tables labels)**: user_decrypt_req, public_decrypt_req, input_proof_req
+- **Affected flows (req_type labels)**: user_decrypt, public_decrypt, input_proof
 - **Visualization**: Heatmap
 - **Description**: Time spent in `receipt_received` status. Measures KMS network speed and listener.
 - **Query**:
@@ -126,17 +126,17 @@ TODO: refine
 
 #### Panel 7: Completion Rate (Throughput)
 
-- **Affected flows (tables labels)**: user_decrypt_req, public_decrypt_req, input_proof_req
+- **Affected flows (req_type labels)**: user_decrypt, public_decrypt, input_proof
 - **Visualization**: Time Series (Rate)
 - **Description**: Successfully completed requests per second.
 - **Query**:
   ```promql
-  sum by (table) (rate(relayer_request_count{status="completed"}[5m]))
+  sum by (req_type) (rate(relayer_request_count{status="completed"}[5m]))
   ```
 
 #### Panel 8: Engine Failures (Errors)
 
-- **Affected flows (tables labels)**: user_decrypt_req, public_decrypt_req, input_proof_req
+- **Affected flows (req_type labels)**: user_decrypt, public_decrypt, input_proof
 - **Visualization**: Time Series (Bars)
 - **Description**: Failed transactions (RPC errors, etc).
 - **Query**:
@@ -144,9 +144,9 @@ TODO: refine
   increase(relayer_request_count{status="failure"}[1h])
   ```
 
-### Panel 9: TODO LATER WHEN MOVING PG_CRON TO APP:
+#### Panel 9: Timed Out:
 
-- **Affected flows (tables labels)**: user_decrypt_req, public_decrypt_req, input_proof_req
+- **Affected flows (req_type labels)**: user_decrypt, public_decrypt, input_proof
 - **Visualization**: Time Series (Bars)
 - **Description**: Timed out request (Readiness check fails (ACL), KMS or Copro in failure mode, Event missed from listener (should not happens)).
 - **Query**:

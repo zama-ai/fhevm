@@ -119,7 +119,7 @@ impl PublicDecryptRepository {
 
         if record.is_inserted {
             metrics::increment_req_status_count(
-                metrics::Table::PublicDecryptReq,
+                metrics::RequestType::PublicDecrypt,
                 ReqStatus::Queued,
             );
         }
@@ -168,7 +168,7 @@ impl PublicDecryptRepository {
 
         if let Some(r) = record {
             metrics::record_status_transition(
-                metrics::Table::PublicDecryptReq,
+                metrics::RequestType::PublicDecrypt,
                 r.old_status,
                 ReqStatus::Processing,
                 r.old_updated_at,
@@ -227,7 +227,7 @@ impl PublicDecryptRepository {
 
         if let Some(r) = record {
             metrics::record_status_transition(
-                metrics::Table::PublicDecryptReq,
+                metrics::RequestType::PublicDecrypt,
                 r.old_status,
                 ReqStatus::TimedOut,
                 r.old_updated_at,
@@ -292,7 +292,7 @@ impl PublicDecryptRepository {
 
         if let Some(r) = record {
             metrics::record_status_transition(
-                metrics::Table::PublicDecryptReq,
+                metrics::RequestType::PublicDecrypt,
                 r.old_status,
                 ReqStatus::ReceiptReceived,
                 r.old_updated_at,
@@ -349,7 +349,7 @@ impl PublicDecryptRepository {
 
         if let Some(r) = record {
             metrics::record_status_transition(
-                metrics::Table::PublicDecryptReq,
+                metrics::RequestType::PublicDecrypt,
                 r.old_status,
                 ReqStatus::Failure,
                 r.old_updated_at,
@@ -435,7 +435,7 @@ impl PublicDecryptRepository {
 
         if let Some(r) = record {
             metrics::record_status_transition(
-                metrics::Table::PublicDecryptReq,
+                metrics::RequestType::PublicDecrypt,
                 r.old_status,
                 ReqStatus::Completed,
                 r.old_updated_at,

@@ -105,6 +105,12 @@ pub struct HttpConfig {
 pub struct MetricsConfig {
     /// Endpoint for metrics server (e.g., "0.0.0.0:9898")
     pub endpoint: String,
+
+    // metrics buckets.
+    pub query_duration_histogram_bucket: Vec<f64>,
+    pub pool_wait_duration_seconds_histogram_bucket: Vec<f64>,
+    pub request_status_duration_histogram_bucket: Vec<f64>,
+    pub transaction_duration_secs_histogram_bucket: Vec<f64>,
 }
 
 /// Deserializes strings like "30s", "5m", "1d" into std::time::Duration.

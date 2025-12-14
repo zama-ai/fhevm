@@ -123,7 +123,10 @@ impl UserDecryptRepository {
 
         // Only increment metrics if a new row was actually created
         if record.is_inserted {
-            metrics::increment_req_status_count(metrics::Table::UserDecryptReq, ReqStatus::Queued);
+            metrics::increment_req_status_count(
+                metrics::RequestType::UserDecrypt,
+                ReqStatus::Queued,
+            );
         }
 
         Ok(record.ext_job_id)
@@ -168,7 +171,7 @@ impl UserDecryptRepository {
 
         if let Some(r) = record {
             metrics::record_status_transition(
-                metrics::Table::UserDecryptReq,
+                metrics::RequestType::UserDecrypt,
                 r.old_status,
                 ReqStatus::Processing,
                 r.old_updated_at,
@@ -225,7 +228,7 @@ impl UserDecryptRepository {
 
         if let Some(r) = record {
             metrics::record_status_transition(
-                metrics::Table::UserDecryptReq,
+                metrics::RequestType::UserDecrypt,
                 r.old_status,
                 ReqStatus::TimedOut,
                 r.old_updated_at,
@@ -289,7 +292,7 @@ impl UserDecryptRepository {
 
         if let Some(r) = record {
             metrics::record_status_transition(
-                metrics::Table::UserDecryptReq,
+                metrics::RequestType::UserDecrypt,
                 r.old_status,
                 ReqStatus::ReceiptReceived,
                 r.old_updated_at,
@@ -344,7 +347,7 @@ impl UserDecryptRepository {
 
         if let Some(r) = record {
             metrics::record_status_transition(
-                metrics::Table::UserDecryptReq,
+                metrics::RequestType::UserDecrypt,
                 r.old_status,
                 ReqStatus::Failure,
                 r.old_updated_at,
@@ -556,7 +559,7 @@ impl UserDecryptRepository {
                 if let Some(data) = update_result {
                     // Record transition immediately (in-memory metric, safe to do inside tx flow)
                     metrics::record_status_transition(
-                        metrics::Table::UserDecryptReq,
+                        metrics::RequestType::UserDecrypt,
                         data.old_status,
                         ReqStatus::Completed,
                         data.old_updated_at,

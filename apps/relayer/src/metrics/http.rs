@@ -124,7 +124,6 @@ impl HttpEndpoint {
 pub enum HttpApiVersion {
     V1,
     V2,
-    Unversioned,
 }
 
 impl HttpApiVersion {
@@ -132,7 +131,6 @@ impl HttpApiVersion {
         match self {
             HttpApiVersion::V1 => "v1",
             HttpApiVersion::V2 => "v2",
-            HttpApiVersion::Unversioned => "none",
         }
     }
 }

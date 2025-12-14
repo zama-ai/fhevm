@@ -7,6 +7,8 @@ use prometheus::{
 };
 use std::fmt;
 
+use crate::config::settings::MetricsConfig;
+
 // 1.TODO: Track latency of the transaction sending (histogram buckets with 100ms ... up to 1000ms, 1200, ... 1500ms, 2000ms..)
 // Track the status of failure after max retries (Counter + Critical alerting !!!!)
 // Counter on nonces error.
@@ -20,7 +22,7 @@ struct TransactionMetrics {
     // All the transaction emitted.
     transaction_total: CounterVec,
     // Latency tracking
-    transaction_duration_millis: HistogramVec,
+    transaction_duration_secs: HistogramVec,
     // Transaction errors.
     transaction_errors_total: CounterVec,
 }
@@ -29,7 +31,7 @@ static TRANSACTION_METRICS: OnceCell<TransactionMetrics> = OnceCell::new();
 
 /// Initialize transaction metrics.
 /// Call this once at startup with the Prometheus registry.
-pub fn init_transaction_metrics(registry: &Registry) {
+pub fn init_transaction_metrics(registry: &Registry, config: MetricsConfig) {
     TRANSACTION_METRICS.get_or_init(|| TransactionMetrics {
         transaction_total: register_counter_vec_with_registry!(
             Opts::new("relayer_transaction_count", "Total number of transactions"),
@@ -47,14 +49,13 @@ pub fn init_transaction_metrics(registry: &Registry) {
         )
         .unwrap(),
 
-        transaction_duration_millis: register_histogram_vec_with_registry!(
+        transaction_duration_secs: register_histogram_vec_with_registry!(
             HistogramOpts::new(
-                "relayer_transaction_duration_milliseconds",
+                "relayer_transaction_duration_secs",
                 "Latency of transaction submission and confirmation"
             )
-            // Buckets: 10ms, 100ms, 250ms, 500ms, 750ms, 1s, 1.25s, 1.5s, 2s, 5s, 10s
             .buckets(vec![
-                10.0, 100.0, 250.0, 500.0, 750.0, 1000.0, 1250.0, 1500.0, 2000.0, 5000.0, 10000.0
+                0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0
             ]),
             &["transaction_type", "status"],
             registry
@@ -157,13 +158,15 @@ pub fn transaction_confirmed(transaction_type: TransactionType, duration_millis:
             TransactionStatus::Confirmed.as_str(),
         ])
         .inc();
+
+    let duration_secs = duration_millis / 1000.0;
     metrics
-        .transaction_duration_millis
+        .transaction_duration_secs
         .with_label_values(&[
             transaction_type.to_string().as_str(),
             TransactionStatus::Confirmed.as_str(),
         ])
-        .observe(duration_millis);
+        .observe(duration_secs);
 }
 
 pub fn transaction_failure(transaction_type: TransactionType, duration_millis: f64) {
@@ -181,13 +184,15 @@ pub fn transaction_failure(transaction_type: TransactionType, duration_millis: f
             TransactionStatus::Failed.as_str(),
         ])
         .inc();
+
+    let duration_secs = duration_millis / 1000.0;
     metrics
-        .transaction_duration_millis
+        .transaction_duration_secs
         .with_label_values(&[
             transaction_type.to_string().as_str(),
             TransactionStatus::Failed.as_str(),
         ])
-        .observe(duration_millis);
+        .observe(duration_secs);
 }
 
 /// Call this SPECIFICALLY when an error occurs during the process.

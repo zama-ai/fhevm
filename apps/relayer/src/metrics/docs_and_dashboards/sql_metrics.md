@@ -35,12 +35,10 @@ This document outlines the metrics used to track the low-level database operatio
 
 #### Metric Name: `relayer_db_pool_wait_duration_seconds`
 
-- **Type**: HistogramVec
+- **Type**: Histogram
 - **Description**: Measures the time the application spends **blocked** waiting to acquire a connection from the pool.
 - **Goal**: This should ideally be near zero (microseconds). If high, the pool is undersized or transactions are too slow.
 - **Buckets**: `0.1ms` to `3s`.
-- **Labels**:
-  - `pool`: `primary`
 
 ### D. Counter: Database Errors
 

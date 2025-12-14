@@ -27,12 +27,12 @@ This document outlines the metrics used to track the interaction between the Rel
 
 ### C. Histogram: Submission Latency
 
-#### Metric Name: `relayer_transaction_duration_milliseconds`
+#### Metric Name: `relayer_transaction_duration_secs`
 
 - **Type**: HistogramVec
 - **Description**: Measures the time from submission start to final confirmation (or failure).
 - **Unit**: Milliseconds (float)
-- **Buckets**: `10`, `100`, `250`, `500`, `750`, `1000` (1s), `1250`, `1500`, `2000`, `5000`, `10000` (10s).
+- **Buckets**: `0.01`, to `10.0` secs
 - **Labels**:
   - `transaction_type`, `status`
 
@@ -72,11 +72,11 @@ This document outlines the metrics used to track the interaction between the Rel
 **Visualizes the time it takes for a transaction to be mined.**
 
 - **Visualization**: Time Series
-- **Description**: The 95th percentile duration in milliseconds.
+- **Description**: The 95th percentile duration in secs.
 - **Query**:
   ```promql
   histogram_quantile(0.95, sum by (le, transaction_type) (
-    rate(relayer_transaction_duration_milliseconds_bucket[5m])
+    rate(relayer_transaction_duration_secs[5m])
   ))
   ```
 
