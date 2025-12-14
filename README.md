@@ -82,7 +82,7 @@ The directories of this repository are organized in the following way:
 - **Privacy by design:** Building decentralized apps with full privacy and confidentiality on Ethereum, leveraging FHE.
 - **Solidity integration:** Write FHEVM contracts like any standard Solidity contract using Solidity. Compatible with existing toolchains — such as Hardhat and Foundry (*coming soon*).
 - **Programmable privacy:**  Define exactly what data is encrypted and write the access control logic directly in your smart contracts.
-- **High precision encrypted integers :** Up to 256 bits of precision for integers.
+- **High precision encrypted integers:** Up to 256 bits of precision for integers.
 - **Full range of operators:** All typical operators are available: `+`, `-`, `*`, `/`, `<`, `>`, `==`, ternary-if, boolean operations…. Consecutive FHE operations are not limited.
 - **Security:** The underlying FHE crypto-scheme of FHEVM is quantum-resistant. Decryption is managed via a key management system (KMS) using multi-party computation (MPC), ensuring security even if some parties are compromised or misbehaving.
 - **Symbolic execution of FHE computations:** All FHE operations are executed symbolically on the host chain, significantly reducing execution time. The actual computations on encrypted data are offloaded asynchronously to our coprocessor, allowing for faster, efficient, and scalable processing.
