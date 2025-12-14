@@ -54,9 +54,7 @@ pub fn init_transaction_metrics(registry: &Registry, config: MetricsConfig) {
                 "relayer_transaction_duration_secs",
                 "Latency of transaction submission and confirmation"
             )
-            .buckets(vec![
-                0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0
-            ]),
+            .buckets(config.transaction_duration_secs_histogram_bucket.clone()),
             &["transaction_type", "status"],
             registry
         )
