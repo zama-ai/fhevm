@@ -43,14 +43,14 @@ This document outlines the metrics used to track the interaction between the Rel
 - **Type**: CounterVec
 - **Description**: Granular count of specific errors encountered during the transaction lifecycle.
 - **Labels**:
-  - `transaction_type`: `input_request`, ...
   - `error_type`:
     - `max_retries_exceeded`: **CRITICAL**. The engine gave up on the transaction.
     - `nonce_error`: Account sequence mismatch.
     - `transport_error`: Network connection or HTTP issues.
     - `rpc_error`: EVM execution revert or internal node errors.
-    - `simulation_failed`: Transaction failed pre-check simulation.
+    - `reverted`: Transaction failed because of revert.
     - `invalid_address`: Malformed address format/Invalid contract destination address.
+    - `unknown_error`: Error that has not been triaged on the transaction engine.
 
 ---
 

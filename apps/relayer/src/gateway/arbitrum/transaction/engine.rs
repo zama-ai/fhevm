@@ -25,6 +25,7 @@ use crate::{
         parse_private_key,
         transaction::{nonce_manager::NonceManagerNonOptimistic, provider::NonceManagedProvider},
     },
+    metrics,
 };
 
 pub trait SignerCombined: TxSigner<Signature> + Signer + Send + Sync + Debug {}
@@ -161,6 +162,7 @@ impl
         })?;
 
         if code.is_empty() {
+            metrics::track_engine_error(metrics::TransactionErrorType::InvalidAddress);
             error!("No code at target address: {:?} !", target);
             return Err(GatewayTxnError::InvalidAddress(format!(
                 "No code at target address: {target:#x}"
@@ -210,6 +212,7 @@ impl
         loop {
             debug!("Number of retries for gas estimation: {}", retries);
             if retries >= self.gas_estimation_max_retries {
+                metrics::track_engine_error(metrics::TransactionErrorType::MaxRetriesExceeded);
                 return Err(GatewayTxnError::TransactionFailed(format!(
                     "Gas estimation failed after {} retries",
                     self.gas_estimation_max_retries
@@ -248,6 +251,9 @@ impl
                         RpcError::ErrorResp(ErrorPayload { message, .. }) => {
                             let response_error_string = message.to_lowercase();
                             if response_error_string.contains("execution reverted") {
+                                metrics::track_engine_error(
+                                    metrics::TransactionErrorType::Reverted,
+                                );
                                 error!(error = %err_msg, "Simulation failed due to revert: Likely unrecoverable");
                                 return Err(GatewayTxnError::SimulationFailed(format!(
                                     "Execution reverted: {}",
@@ -256,15 +262,18 @@ impl
                             }
                             // For other RPC errors, we will treat them as potentially transient for now and retry.
                             // You can add more specific checks here for other fatal errors.
+                            metrics::track_engine_error(metrics::TransactionErrorType::Rpc);
                             warn!(error = %err_msg, "Gas estimation failed with RPC error");
                             // For now since we don't know what is going on we revert !
                             return Err(GatewayTxnError::RpcError(err_msg));
                         }
                         // This is a network/transport error. It's recoverable, and should be retried.
                         RpcError::Transport(transport_err) => {
+                            metrics::track_engine_error(metrics::TransactionErrorType::Transport);
                             warn!(error = %transport_err, "Transport error during gas estimation: Retrying");
                         }
                         _ => {
+                            metrics::track_engine_error(metrics::TransactionErrorType::Unknown);
                             error!(error = %err_msg, "Unknown error during gas estimation");
                             return Err(GatewayTxnError::RpcError(err_msg));
                         }
@@ -290,6 +299,7 @@ impl
         loop {
             // We could add a max number of retries here.
             if retries >= self.tx_max_retries {
+                metrics::track_engine_error(metrics::TransactionErrorType::MaxRetriesExceeded);
                 return Err(GatewayTxnError::TransactionFailed(format!(
                     "Transaction failed after {} retries.",
                     self.tx_max_retries
@@ -366,6 +376,7 @@ impl
                             if response_error_string.contains("nonce too low")
                                 || response_error_string.contains("already known")
                             {
+                                metrics::track_engine_error(metrics::TransactionErrorType::Nonce);
                                 warn!(
                                     nonce = tx.nonce,
                                     "Nonce too low error: {:?}, Retrying", err_msg
@@ -374,6 +385,7 @@ impl
                                     .confirm_nonce(self.sender_address(), nonce)
                                     .await;
                             } else if response_error_string.contains("nonce too high") {
+                                metrics::track_engine_error(metrics::TransactionErrorType::Nonce);
                                 warn!(
                                     nonce = tx.nonce,
                                     "Nonce too high error: {:?}, Retrying", err_msg
@@ -382,6 +394,7 @@ impl
                                     .release_nonce(self.sender_address(), nonce)
                                     .await;
                             } else {
+                                metrics::track_engine_error(metrics::TransactionErrorType::Rpc);
                                 // TODO create a proper Rpc error response triage error: e.g, "transaction underpriced" and so on.
                                 error!("Non-handled RPC error response: {:?}", err_msg);
                                 self.nonce_manager
@@ -392,6 +405,7 @@ impl
                             }
                         }
                         RpcError::Transport(transport_err) => {
+                            metrics::track_engine_error(metrics::TransactionErrorType::Transport);
                             warn!(nonce = tx.nonce, error = %transport_err, "Transport error during send: Retrying");
                             self.nonce_manager
                                 .release_nonce(self.sender_address(), nonce)
@@ -399,6 +413,7 @@ impl
                         }
                         // TODO: Add an exhaustive triage error here
                         _ => {
+                            metrics::track_engine_error(metrics::TransactionErrorType::Unknown);
                             error!(nonce = tx.nonce, "Unknown RPC error: {:?}", err_msg);
                             self.nonce_manager
                                 .release_nonce(self.sender_address(), nonce)

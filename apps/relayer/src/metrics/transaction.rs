@@ -67,7 +67,7 @@ pub fn init_transaction_metrics(registry: &Registry) {
                 "relayer_transaction_errors_total",
                 "Specific count of transaction errors by type"
             ),
-            &["transaction_type", "error_type"],
+            &["error_type"],
             registry
         )
         .unwrap(),
@@ -107,25 +107,27 @@ impl TransactionStatus {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ErrorType {
+pub enum TransactionErrorType {
     InvalidAddress,
     Nonce,
     Transport,
-    Simulation,
+    Reverted,
     Rpc,
-    // This alert is critical, at 1 for count we should raise a CRITICAL alert.
+    Unknown,
+    // This should raise a critical alert.
     MaxRetriesExceeded,
 }
 
-impl ErrorType {
+impl TransactionErrorType {
     pub fn as_str(&self) -> &'static str {
         match self {
-            ErrorType::InvalidAddress => "invalid_address",
-            ErrorType::Nonce => "nonce_error",
-            ErrorType::Transport => "transport_error",
-            ErrorType::Simulation => "simulation_failed",
-            ErrorType::Rpc => "rpc_error",
-            ErrorType::MaxRetriesExceeded => "max_retries_exceeded",
+            TransactionErrorType::InvalidAddress => "invalid_address",
+            TransactionErrorType::Nonce => "nonce_error",
+            TransactionErrorType::Transport => "transport_error",
+            TransactionErrorType::Reverted => "reverted",
+            TransactionErrorType::Rpc => "rpc_error",
+            TransactionErrorType::Unknown => "unknown_error",
+            TransactionErrorType::MaxRetriesExceeded => "max_retries_exceeded",
         }
     }
 }
@@ -190,10 +192,10 @@ pub fn transaction_failure(transaction_type: TransactionType, duration_millis: f
 
 /// Call this SPECIFICALLY when an error occurs during the process.
 /// You can call this multiple times per transaction (e.g. 3 nonce errors before success).
-pub fn track_manager_error(tx_type: TransactionType, error_type: ErrorType) {
+pub fn track_engine_error(error_type: TransactionErrorType) {
     let metrics = TRANSACTION_METRICS.get().expect("Metrics not initialized");
     metrics
         .transaction_errors_total
-        .with_label_values(&[tx_type.to_string().as_str(), error_type.as_str()])
+        .with_label_values(&[error_type.as_str()])
         .inc();
 }
