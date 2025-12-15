@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{GatewayEvent, db::EventType, gw_event};
-use sqlx::{Pool, Postgres, types::chrono};
+use sqlx::{Pool, Postgres};
 use tokio::sync::mpsc::{self, Receiver};
 use tracing::{debug, info, warn};
 
@@ -110,7 +110,7 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE public_decryption_requests
-                SET status = 'under_process', updated_at = $2
+                SET status = 'under_process'
                 FROM (
                     SELECT decryption_id
                     FROM public_decryption_requests
@@ -122,7 +122,6 @@ impl DbEventPicker {
             ",
         )
         .bind(self.events_batch_size as i16)
-        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -134,7 +133,7 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE user_decryption_requests
-                SET status = 'under_process', updated_at = $2
+                SET status = 'under_process'
                 FROM (
                     SELECT decryption_id
                     FROM user_decryption_requests
@@ -146,7 +145,6 @@ impl DbEventPicker {
             ",
         )
         .bind(self.events_batch_size as i16)
-        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -158,7 +156,7 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE prep_keygen_requests
-                SET status = 'under_process', updated_at = $1
+                SET status = 'under_process'
                 FROM (
                     SELECT prep_keygen_id
                     FROM prep_keygen_requests
@@ -169,7 +167,6 @@ impl DbEventPicker {
                 RETURNING req.prep_keygen_id, epoch_id, params_type, otlp_context, already_sent
             ",
         )
-        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -181,7 +178,7 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE keygen_requests
-                SET status = 'under_process', updated_at = $1
+                SET status = 'under_process'
                 FROM (
                     SELECT key_id
                     FROM keygen_requests
@@ -192,7 +189,6 @@ impl DbEventPicker {
                 RETURNING prep_keygen_id, req.key_id, otlp_context, already_sent
             ",
         )
-        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -204,7 +200,7 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE crsgen_requests
-                SET status = 'under_process', updated_at = $1
+                SET status = 'under_process'
                 FROM (
                     SELECT crs_id
                     FROM crsgen_requests
@@ -215,7 +211,6 @@ impl DbEventPicker {
                 RETURNING req.crs_id, max_bit_length, params_type, otlp_context, already_sent
             ",
         )
-        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -227,7 +222,7 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE prss_init
-                SET status = 'under_process', updated_at = $1
+                SET status = 'under_process'
                 FROM (
                     SELECT id
                     FROM prss_init
@@ -238,7 +233,6 @@ impl DbEventPicker {
                 RETURNING req.id, otlp_context
             ",
         )
-        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
@@ -250,7 +244,7 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE key_reshare_same_set
-                SET status = 'under_process', updated_at = $1
+                SET status = 'under_process'
                 FROM (
                     SELECT key_id
                     FROM key_reshare_same_set
@@ -261,7 +255,6 @@ impl DbEventPicker {
                 RETURNING prep_keygen_id, req.key_id, key_reshare_id, params_type, otlp_context
             ",
         )
-        .bind(chrono::Utc::now().naive_utc())
         .fetch_all(&self.db_pool)
         .await?
         .iter()
