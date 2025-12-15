@@ -68,7 +68,7 @@ The directories of this repository are organized in the following way:
 - **`kms-connector/`**: Interface for integrating with Key Management Services (KMS) to handle encryption keys securely.
 
 ###### FHEVM Utilities
-- **`charts/`**: Helm charts and deployment configurations for the stack.
+- **`charts/`**: Helm charts and deployment configurations for deploying the full FHEVM stack.
 
 - **`golden-container-images/`**: Docker golden images for Node.js and Rust environments used as base images by the stack.
 
