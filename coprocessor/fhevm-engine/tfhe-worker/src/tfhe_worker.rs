@@ -183,7 +183,11 @@ async fn tfhe_worker_cycle(
 
         // Execute transactions segregated by tenant
         for (tenant_id, ref mut tenant_txs) in transactions.iter_mut() {
-            if dcid_mngr.extend_current_lock().await?.is_none() {
+            if dcid_mngr
+                .extend_or_release_current_lock(false)
+                .await?
+                .is_none()
+            {
                 // best-effort attempt to extend the lock and prevent other replicas from trying to lock the same DCID.
                 // Worst-case scenario, it returns None if the lock has expired.
                 // However, the worker has already secured exclusive access to the txn computations in the Computations table.
@@ -356,11 +360,12 @@ async fn query_for_work<'a>(
     let mut s = tracer.start_with_context("query_dependence_chain", loop_ctx);
 
     // Lock dependence chain
-    let (dependence_chain_id, locking_reason) = match deps_chain_mngr.extend_current_lock().await? {
-        // If there is a current lock, we extend it and use its dependence_chain_id
-        Some((id, reason)) => (Some(id), reason),
-        None => deps_chain_mngr.acquire_next_lock().await?,
-    };
+    let (dependence_chain_id, locking_reason) =
+        match deps_chain_mngr.extend_or_release_current_lock(true).await? {
+            // If there is a current lock, we extend it and use its dependence_chain_id
+            Some((id, reason)) => (Some(id), reason),
+            None => deps_chain_mngr.acquire_next_lock().await?,
+        };
 
     if deps_chain_mngr.enabled() && dependence_chain_id.is_none() {
         health_check.update_activity();

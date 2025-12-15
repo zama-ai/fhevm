@@ -61,7 +61,7 @@ pub struct LockMngr {
 
     // Configurations
     lock_ttl_sec: i64,
-    max_lock_ttl_sec: i64,
+    lock_timeslice_sec: i64,
     disable_locking: bool,
 }
 
@@ -101,7 +101,7 @@ impl LockMngr {
             pool,
             lock: None,
             lock_ttl_sec: 30,
-            max_lock_ttl_sec: 300,
+            lock_timeslice_sec: 300,
             disable_locking: false,
         }
     }
@@ -228,7 +228,7 @@ impl LockMngr {
 
     /// Release the lock held by this worker on the current dependence chain
     /// If host-listener has marked the dependence chain as 'updated' in the meantime,
-    /// we don't overwrite its status
+    /// we don't overwrite its status and last_updated_at
     pub async fn release_current_lock(&mut self) -> Result<u64, sqlx::Error> {
         if self.disable_locking {
             debug!("Locking is disabled, skipping release_current_lock");
@@ -253,6 +253,10 @@ impl LockMngr {
             status = CASE 
                     WHEN status = 'processing' THEN 'processed'
                     ELSE status
+                    END,
+            last_updated_at = CASE
+                    WHEN status = 'processing' THEN NOW()
+                    ELSE last_updated_at
                     END
         WHERE worker_id = $1 AND dependence_chain_id = $2
         "#,
@@ -310,8 +314,12 @@ impl LockMngr {
     }
 
     /// Extend the lock expiration time on the current dependence chain
-    pub async fn extend_current_lock(
+    ///
+    /// If `enable_timeslice_check` is true,
+    /// release the current lock when the computation time exceeds the timeslice
+    pub async fn extend_or_release_current_lock(
         &mut self,
+        enable_timeslice_check: bool,
     ) -> Result<Option<(Vec<u8>, LockingReason)>, sqlx::Error> {
         if self.disable_locking {
             debug!("Locking is disabled, skipping extend_current_lock");
@@ -327,14 +335,16 @@ impl LockMngr {
             }
         };
 
-        if created_at
-            .elapsed()
-            .map(|d: std::time::Duration| d.as_secs())
-            .unwrap_or(0)
-            >= self.max_lock_ttl_sec as u64
+        // Check timeslice
+        if enable_timeslice_check
+            && created_at
+                .elapsed()
+                .map(|d: std::time::Duration| d.as_secs())
+                .unwrap_or(0)
+                >= self.lock_timeslice_sec as u64
         {
+            warn!(dcid = %hex::encode(&dependence_chain_id), timeslice = self.lock_timeslice_sec, "Max lock timeslice exceeded, releasing lock");
             self.release_current_lock().await?;
-            warn!(dcid = %hex::encode(&dependence_chain_id), "Max lock TTL exceeded, releasing lock");
             return Ok(None);
         }
 
