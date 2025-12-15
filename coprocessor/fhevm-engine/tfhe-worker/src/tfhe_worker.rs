@@ -507,7 +507,7 @@ async fn upload_transaction_graph_results<'a>(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Get computation results
     let graph_results = tx_graph.get_results();
-    let mut handles_to_update = tx_graph.get_handles();
+    let mut handles_to_update = tx_graph.get_intermediate_handles();
     handles_to_update.append(unneeded_handles);
 
     // Traverse computations that have been scheduled and
@@ -524,6 +524,7 @@ async fn upload_transaction_graph_results<'a>(
                         (db_bytes, (current_ciphertext_version(), db_type)),
                     ),
                 ));
+                handles_to_update.push((result.handle.clone(), result.transaction_id.clone()));
                 WORK_ITEMS_PROCESSED_COUNTER.inc();
             }
             Err(mut err) => {
