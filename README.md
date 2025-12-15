@@ -106,10 +106,10 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/protocol/ex
 
 
 ## Resources
-- [Documentation](https://docs.zama.ai/protocol) — Official documentation of FHEVM.
-- [Whitepaper](./fhevm-whitepaper.pdf) — Technical overview of FHEVM's cryptographic design.
-- [Examples](https://docs.zama.ai/protocol/examples) — Examples of building confidential smart contracts.
-- [Awesome Zama – FHEVM](https://github.com/zama-ai/awesome-zama?tab=readme-ov-file#fhevm) — Curated articles, talks, and ecosystem projects.
+- [Documentation](https://docs.zama.ai/protocol) — Official fhEVM documentation with tutorials, guides, and API references.
+- [Whitepaper](./fhevm-whitepaper.pdf) — In-depth technical overview of fhEVM's cryptographic design and protocol architecture.
+- [Examples](https://docs.zama.ai/protocol/examples) — Reference applications and sample contracts demonstrating common confidential use cases.
+- [Awesome Zama – FHEVM](https://github.com/zama-ai/awesome-zama?tab=readme-ov-file#fhevm) — Curated list of talks, blog posts, and community projects built with fhEVM.
 
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
