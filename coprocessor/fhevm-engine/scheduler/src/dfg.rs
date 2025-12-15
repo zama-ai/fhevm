@@ -67,7 +67,7 @@ pub struct ComponentNode {
     // corresponding FHE op
     pub inputs: HashMap<Handle, Option<DFGTxInput>>,
     pub results: Vec<Handle>,
-    pub unneeded: Vec<Handle>,
+    pub intermediate_handles: Vec<Handle>,
     pub transaction_id: Handle,
     pub is_uncomputable: bool,
     pub component_id: usize,
@@ -236,6 +236,9 @@ impl ComponentNode {
                 }
             }
             self.results.push(op.output_handle.clone());
+            if !op.is_allowed {
+                self.intermediate_handles.push(op.output_handle.clone());
+            }
             let node_idx = self
                 .graph
                 .add_node(
@@ -485,12 +488,12 @@ impl DFComponentGraph {
     pub fn get_results(&mut self) -> Vec<DFGTxResult> {
         std::mem::take(&mut self.results)
     }
-    pub fn get_handles(&mut self) -> Vec<(Handle, Handle)> {
+    pub fn get_intermediate_handles(&mut self) -> Vec<(Handle, Handle)> {
         let mut res = vec![];
         for tx in self.graph.node_weights_mut() {
             if !tx.is_uncomputable {
                 res.append(
-                    &mut (std::mem::take(&mut tx.results))
+                    &mut (std::mem::take(&mut tx.intermediate_handles))
                         .into_iter()
                         .map(|h| (h, tx.transaction_id.clone()))
                         .collect::<Vec<_>>(),
