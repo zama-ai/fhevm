@@ -94,7 +94,7 @@ fn default_gc_decryption_expiry_mins() -> u64 {
 }
 
 fn default_gc_decryption_under_process_limit_mins() -> u64 {
-    10
+    6
 }
 
 impl DeserializeRawConfig for RawConfig {}
