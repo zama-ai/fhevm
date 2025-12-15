@@ -178,3 +178,11 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Security Considerations
+
+When developing with FHEVM, keep security in mind:
+
+- Encrypted computations do not remove the need for secure contract logic
+- Access control and permission checks must still be enforced explicitly
+- Review contracts carefully before deploying to production environments
