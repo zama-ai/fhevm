@@ -9,7 +9,7 @@ use connector_utils::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Deserializable representation of the KMS connector configuration.
+/// Deserializable representation of the `TransactionSender` configuration.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RawConfig {
     pub database_url: String,
@@ -37,6 +37,14 @@ pub struct RawConfig {
     pub gas_multiplier_percent: usize,
     #[serde(default = "default_task_limit")]
     pub task_limit: usize,
+
+    #[serde(default = "default_gc_run_interval_mins")]
+    pub gc_run_interval_mins: u64,
+    #[serde(default = "default_gc_decryption_expiry_mins")]
+    pub gc_decryption_expiry_mins: u64,
+    #[serde(default = "default_gc_decryption_under_process_limit_mins")]
+    pub gc_decryption_under_process_limit_mins: u64,
+
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: String,
     #[serde(default = "default_gauge_update_interval_secs")]
@@ -77,6 +85,18 @@ fn default_gauge_update_interval_secs() -> u64 {
     10
 }
 
+fn default_gc_run_interval_mins() -> u64 {
+    5
+}
+
+fn default_gc_decryption_expiry_mins() -> u64 {
+    60 * 24 // 24 hours
+}
+
+fn default_gc_decryption_under_process_limit_mins() -> u64 {
+    6
+}
+
 impl DeserializeRawConfig for RawConfig {}
 
 // Default implementation for testing purpose
@@ -109,6 +129,10 @@ impl Default for RawConfig {
             responses_batch_size: default_responses_batch_size(),
             gas_multiplier_percent: default_gas_multiplier_percent(),
             task_limit: default_task_limit(),
+            gc_run_interval_mins: default_gc_run_interval_mins(),
+            gc_decryption_expiry_mins: default_gc_decryption_expiry_mins(),
+            gc_decryption_under_process_limit_mins: default_gc_decryption_under_process_limit_mins(
+            ),
             monitoring_endpoint: default_monitoring_endpoint(),
             gauge_update_interval_secs: default_gauge_update_interval_secs(),
             healthcheck_timeout_secs: default_healthcheck_timeout_secs(),

@@ -1,5 +1,4 @@
-use crate::common::insert_rand_response;
-use connector_utils::tests::setup::TestInstanceBuilder;
+use connector_utils::tests::{db::responses::insert_rand_response, setup::TestInstanceBuilder};
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
@@ -46,7 +45,8 @@ async fn test_pick_response_with_pg_notif(response_str: &str) -> anyhow::Result<
     let mut response_picker = init_response_picker(test_instance.db().clone()).await?;
 
     info!("Triggering Postgres notification with CrsgenResponse insertion...");
-    let inserted_response = insert_rand_response(test_instance.db(), response_str, None).await?;
+    let inserted_response =
+        insert_rand_response(test_instance.db(), response_str, None, None).await?;
     info!("Picking {response_str}...");
     let responses = response_picker.pick_responses().await?;
 
