@@ -137,6 +137,7 @@ There are two ways to contribute to FHEVM:
 - Request to become an official contributor by emailing hello@zama.ai.
 
 Becoming an approved contributor involves signing our Contributor License Agreement (CLA). Only approved contributors can send pull requests, so please make sure to get in touch before you do!
+If you are unsure whether your contribution requires CLA approval, feel free to start by opening an issue or a draft pull request so the team can confirm the best path forward.
 <br></br>
 
 ### License
