@@ -352,6 +352,7 @@ where
             FROM allowed_handles 
             WHERE txn_is_sent = false 
             AND txn_limited_retries_count < $1
+            ORDER BY allowed_at ASC
             LIMIT $2;
             ",
             self.conf.allow_handle_max_retries,

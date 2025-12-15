@@ -4,7 +4,7 @@ use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::types::Handle;
-use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
+use sqlx::types::time::OffsetDateTime;
 use tracing::{error, info};
 
 use crate::cmd::block_history::BlockSummary;
@@ -19,20 +19,18 @@ pub struct BlockLogs<T> {
     pub catchup: bool,
 }
 
-/// Converts a block timestamp to a UTC `PrimitiveDateTime`.
+/// Converts a block timestamp to a UTC `OffsetDateTime`.
 ///
 /// # Parameters
 /// - `timestamp`: Seconds since Unix epoch.
 ///
 /// # Returns
-/// A UTC `PrimitiveDateTime` suitable for database writes.
-fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
-    let offset = OffsetDateTime::from_unix_timestamp(timestamp as i64)
-        .unwrap_or_else(|_| {
-            error!(timestamp, "Invalid block timestamp, using now",);
-            OffsetDateTime::now_utc()
-        });
-    PrimitiveDateTime::new(offset.date(), offset.time())
+/// A UTC `OffsetDateTime` suitable for database writes.
+fn block_date_time_utc(timestamp: u64) -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(timestamp as i64).unwrap_or_else(|_| {
+        error!(timestamp, "Invalid block timestamp, using now",);
+        OffsetDateTime::now_utc()
+    })
 }
 
 pub async fn ingest_block_logs(

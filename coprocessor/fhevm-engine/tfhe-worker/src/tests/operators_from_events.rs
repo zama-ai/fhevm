@@ -43,7 +43,7 @@ async fn insert_tfhe_event(
         transaction_hash: log.transaction_hash,
         is_allowed,
         block_number: log.block_number.unwrap_or(0),
-        block_timestamp: PrimitiveDateTime::MAX,
+        block_timestamp: OffsetDateTime::MAX,
     };
     db.insert_tfhe_event(tx, &event).await
 }

@@ -87,7 +87,7 @@ pub struct LogTfhe {
     pub transaction_hash: Option<TransactionHash>,
     pub is_allowed: bool,
     pub block_number: u64,
-    pub block_timestamp: sqlx::types::time::PrimitiveDateTime,
+    pub block_timestamp: sqlx::types::time::OffsetDateTime,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
