@@ -178,3 +178,13 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Common Pitfalls
+
+When working with FHEVM, keep the following in mind:
+
+- Encrypted values cannot be inspected directly without proper decryption
+- Standard EVM assumptions may not apply when operating on encrypted data
+- Debugging often requires reviewing contract logic rather than runtime values
+
+Being aware of these constraints can save time when developing or testing FHE-enabled contracts.
