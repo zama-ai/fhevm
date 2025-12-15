@@ -300,8 +300,18 @@ async fn query_for_work<'a>(
     let mut s = tracer.start_with_context("query_work_items", loop_ctx);
     let the_work = query!(
         "
-WITH selected_computations AS (
-  (
+-- Acquire all computations from a transaction set
+SELECT
+  c.tenant_id, 
+  c.output_handle, 
+  c.dependencies, 
+  c.fhe_operation, 
+  c.is_scalar,
+  c.is_allowed, 
+  c.dependence_chain_id,
+  c.transaction_id
+FROM computations c
+WHERE c.transaction_id IN (
     SELECT DISTINCT
       c_creation_order.transaction_id
     FROM (
@@ -313,7 +323,7 @@ WITH selected_computations AS (
       ORDER BY created_at
       LIMIT $1
     ) as c_creation_order
-   UNION ALL
+   UNION
     SELECT DISTINCT
       c_schedule_order.transaction_id
     FROM (
@@ -326,20 +336,6 @@ WITH selected_computations AS (
       LIMIT $1
     ) as c_schedule_order
   )
-)
--- Acquire all computations from this transaction set
-SELECT
-  c.tenant_id, 
-  c.output_handle, 
-  c.dependencies, 
-  c.fhe_operation, 
-  c.is_scalar,
-  c.is_allowed, 
-  c.dependence_chain_id,
-  c.transaction_id
-FROM computations c
-JOIN selected_computations sc
-  ON  c.transaction_id = sc.transaction_id
 FOR UPDATE SKIP LOCKED            ",
         args.work_items_batch_size as i32,
     )
