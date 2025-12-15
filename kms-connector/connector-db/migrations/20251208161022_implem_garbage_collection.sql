@@ -41,8 +41,8 @@ ALTER TABLE crsgen_responses ADD COLUMN status operation_status DEFAULT 'pending
 
 -- All locked (under_process = TRUE) decryptions will be marked as 'pending', and should be
 -- recovered via retries or cleaned via the garbage collection.
--- Any remaining locked crsgen/keygen operations in DB are failures (stuck operations), but there
--- should be none AFAIK.
+-- Any remaining locked crsgen/keygen operations in DB will be marked as 'failed' as these are old
+-- stuck operations, but there should be none AFAIK.
 UPDATE prep_keygen_requests SET status = 'failed' WHERE under_process = TRUE;
 UPDATE keygen_requests SET status = 'failed' WHERE under_process = TRUE;
 UPDATE crsgen_requests SET status = 'failed' WHERE under_process = TRUE;
@@ -87,15 +87,10 @@ ALTER TABLE crsgen_responses ADD COLUMN updated_at TIMESTAMP DEFAULT NOW() NOT N
 --------------------------------------------------------------------------------------------------
 --                                Create indexes for decryption                                 --
 --------------------------------------------------------------------------------------------------
-CREATE INDEX idx_public_decryption_requests_status ON public_decryption_requests (status);
 CREATE INDEX idx_public_decryption_requests_status_updated_at ON public_decryption_requests (status, updated_at);
-CREATE INDEX idx_user_decryption_requests_status ON user_decryption_requests (status);
 CREATE INDEX idx_user_decryption_requests_status_updated_at ON user_decryption_requests (status, updated_at);
-CREATE INDEX idx_public_decryption_responses_status ON public_decryption_responses (status);
 CREATE INDEX idx_public_decryption_responses_status_updated_at ON public_decryption_responses (status, updated_at);
-CREATE INDEX idx_user_decryption_responses_status ON user_decryption_responses (status);
 CREATE INDEX idx_user_decryption_responses_status_updated_at ON user_decryption_responses (status, updated_at);
-
 
 --------------------------------------------------------------------------------------------------
 --                            Autofill `updated_at`/`status` fields                             --
