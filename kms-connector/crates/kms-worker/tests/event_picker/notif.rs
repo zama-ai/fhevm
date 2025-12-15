@@ -1,5 +1,7 @@
-use crate::common::insert_rand_request;
-use connector_utils::{tests::setup::TestInstanceBuilder, types::db::EventType};
+use connector_utils::{
+    tests::{db::requests::insert_rand_request, setup::TestInstanceBuilder},
+    types::db::EventType,
+};
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
@@ -60,7 +62,8 @@ async fn test_pick_request_with_pg_notification(event_type: EventType) -> anyhow
     let mut event_picker = init_event_picker(test_instance.db().clone()).await?;
 
     info!("Triggering Postgres notification with {event_type} insertion...");
-    let inserted_request = insert_rand_request(test_instance.db(), event_type, None, false).await?;
+    let inserted_request =
+        insert_rand_request(test_instance.db(), event_type, None, false, None).await?;
 
     info!("Picking {event_type}...");
     let events = event_picker.pick_events().await?;

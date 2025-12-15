@@ -7,6 +7,7 @@ use connector_utils::{
     config::{AwsKmsConfig, ContractConfig, DeserializeRawConfig, Error, KmsWallet, Result},
     monitoring::otlp::default_dispatcher,
 };
+use sqlx::postgres::types::PgInterval;
 use std::{net::SocketAddr, path::Path, time::Duration};
 use tracing::{error, info};
 
@@ -43,6 +44,15 @@ pub struct Config {
     pub gas_multiplier_percent: usize,
     /// The maximum number of tasks that can be executed concurrently.
     pub task_limit: usize,
+
+    /// The interval between garbage collection runs.
+    pub gc_run_interval: Duration,
+    /// The expiration time for completed/failed decryptions, after which they will be deleted.
+    pub gc_decryption_expiry: PgInterval,
+    /// The time limit for decryption to be under process, after which they will be considered as
+    /// pending again.
+    pub gc_decryption_under_process_limit: PgInterval,
+
     /// The monitoring server endpoint of the `TransactionSender`.
     pub monitoring_endpoint: SocketAddr,
     /// The interval between gauge updates.
@@ -100,6 +110,14 @@ impl Config {
         let database_polling_timeout =
             Duration::from_secs(raw_config.database_polling_timeout_secs);
         let tx_retry_interval = Duration::from_millis(raw_config.tx_retry_interval_ms);
+        let gc_run_interval = Duration::from_mins(raw_config.gc_run_interval_mins);
+        let gc_decryption_expiry =
+            PgInterval::try_from(Duration::from_mins(raw_config.gc_decryption_expiry_mins))
+                .map_err(|e| Error::InvalidConfig(e.to_string()))?;
+        let gc_decryption_under_process_limit = PgInterval::try_from(Duration::from_mins(
+            raw_config.gc_decryption_under_process_limit_mins,
+        ))
+        .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let gauge_update_interval = Duration::from_secs(raw_config.gauge_update_interval_secs);
         let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
 
@@ -119,6 +137,9 @@ impl Config {
             responses_batch_size: raw_config.responses_batch_size,
             gas_multiplier_percent: raw_config.gas_multiplier_percent,
             task_limit: raw_config.task_limit,
+            gc_run_interval,
+            gc_decryption_expiry,
+            gc_decryption_under_process_limit,
             monitoring_endpoint,
             gauge_update_interval,
             healthcheck_timeout,
@@ -174,6 +195,9 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_TRACE_REVERTED_TX");
             env::remove_var("KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT");
             env::remove_var("KMS_CONNECTOR_GAUGE_UPDATE_INTERVAL_SECS");
+            env::remove_var("KMS_CONNECTOR_GC_RUN_INTERVAL_MINS");
+            env::remove_var("KMS_CONNECTOR_GC_DECRYPTION_EXPIRY_MINS");
+            env::remove_var("KMS_CONNECTOR_GC_DECRYPTION_UNDER_PROCESS_LIMIT_MINS");
         }
     }
 
@@ -261,6 +285,9 @@ mod tests {
             env::set_var("KMS_CONNECTOR_TRACE_REVERTED_TX", "false");
             env::set_var("KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT", "180");
             env::set_var("KMS_CONNECTOR_GAUGE_UPDATE_INTERVAL_SECS", "20");
+            env::set_var("KMS_CONNECTOR_GC_RUN_INTERVAL_MINS", "2");
+            env::set_var("KMS_CONNECTOR_GC_DECRYPTION_EXPIRY_MINS", "50");
+            env::set_var("KMS_CONNECTOR_GC_DECRYPTION_UNDER_PROCESS_LIMIT_MINS", "1");
         }
 
         // Load config from environment
@@ -284,6 +311,15 @@ mod tests {
         assert!(!config.trace_reverted_tx);
         assert_eq!(config.gas_multiplier_percent, 180);
         assert_eq!(config.gauge_update_interval, Duration::from_secs(20));
+        assert_eq!(config.gc_run_interval, Duration::from_mins(2));
+        assert_eq!(
+            config.gc_decryption_expiry,
+            PgInterval::try_from(Duration::from_mins(50)).unwrap()
+        );
+        assert_eq!(
+            config.gc_decryption_under_process_limit,
+            PgInterval::try_from(Duration::from_mins(1)).unwrap()
+        );
 
         cleanup_env_vars();
     }

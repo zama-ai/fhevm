@@ -110,11 +110,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE public_decryption_requests
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT decryption_id
                     FROM public_decryption_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE public_decryption_requests.decryption_id = req.decryption_id
@@ -133,11 +133,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE user_decryption_requests
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT decryption_id
                     FROM user_decryption_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
@@ -156,11 +156,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE prep_keygen_requests
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT prep_keygen_id
                     FROM prep_keygen_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prep_keygen_requests.prep_keygen_id = req.prep_keygen_id
@@ -178,11 +178,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE keygen_requests
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT key_id
                     FROM keygen_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE keygen_requests.key_id = req.key_id
@@ -200,11 +200,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE crsgen_requests
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT crs_id
                     FROM crsgen_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE crsgen_requests.crs_id = req.crs_id
@@ -222,11 +222,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE prss_init
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT id
                     FROM prss_init
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prss_init.id = req.id
@@ -244,11 +244,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE key_reshare_same_set
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT key_id
                     FROM key_reshare_same_set
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE key_reshare_same_set.key_id = req.key_id
