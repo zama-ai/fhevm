@@ -61,7 +61,7 @@ pub struct LockMngr {
 
     // Configurations
     lock_ttl_sec: i64,
-    lock_timeslice_sec: i64,
+    lock_timeslice_sec: Option<i64>,
     disable_locking: bool,
 }
 
@@ -101,7 +101,7 @@ impl LockMngr {
             pool,
             lock: None,
             lock_ttl_sec: 30,
-            lock_timeslice_sec: 300,
+            lock_timeslice_sec: None,
             disable_locking: false,
         }
     }
@@ -111,10 +111,12 @@ impl LockMngr {
         pool: sqlx::Pool<Postgres>,
         lock_ttl_sec: u32,
         disable_locking: bool,
+        lock_timeslice_sec: Option<u32>,
     ) -> Self {
         let mut mgr = Self::new(worker_id, pool);
         mgr.lock_ttl_sec = lock_ttl_sec as i64;
         mgr.disable_locking = disable_locking;
+        mgr.lock_timeslice_sec = lock_timeslice_sec.map(|v| v as i64);
         mgr
     }
 
@@ -336,16 +338,18 @@ impl LockMngr {
         };
 
         // Check timeslice
-        if enable_timeslice_check
-            && created_at
-                .elapsed()
-                .map(|d: std::time::Duration| d.as_secs())
-                .unwrap_or(0)
-                >= self.lock_timeslice_sec as u64
-        {
-            warn!(dcid = %hex::encode(&dependence_chain_id), timeslice = self.lock_timeslice_sec, "Max lock timeslice exceeded, releasing lock");
-            self.release_current_lock().await?;
-            return Ok(None);
+        if let Some(timeslice) = self.lock_timeslice_sec {
+            if enable_timeslice_check
+                && created_at
+                    .elapsed()
+                    .map(|d: std::time::Duration| d.as_secs())
+                    .unwrap_or(0)
+                    >= timeslice as u64
+            {
+                warn!(dcid = %hex::encode(&dependence_chain_id), timeslice = timeslice, "Max lock timeslice exceeded, releasing lock");
+                self.release_current_lock().await?;
+                return Ok(None);
+            }
         }
 
         // max_lock_ttl_sec

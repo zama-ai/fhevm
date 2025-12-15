@@ -101,6 +101,13 @@ pub struct Args {
     #[arg(long, value_parser = clap::value_parser!(bool), default_value_t = false)]
     pub disable_dcid_locking: bool,
 
+    /// Time slice in seconds for processing each dependence chain
+    /// If a worker exceeds this time while processing a dependence chain,
+    /// it will release the lock and allow other workers to acquire it
+    /// If not set, there is no time slice limit
+    #[arg(long)]
+    pub dcid_timeslice_sec: Option<u32>,
+
     /// Log level for the application
     #[arg(
         long,

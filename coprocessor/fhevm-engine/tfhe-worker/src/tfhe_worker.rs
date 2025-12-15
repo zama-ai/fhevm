@@ -106,6 +106,7 @@ async fn tfhe_worker_cycle(
         pool.clone(),
         args.dcid_ttl_sec,
         args.disable_dcid_locking,
+        args.dcid_timeslice_sec,
     );
 
     // Release all owned locks on startup to avoid stale locks
