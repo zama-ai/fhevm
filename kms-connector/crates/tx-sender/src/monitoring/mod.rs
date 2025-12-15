@@ -1,3 +1,3 @@
-pub mod gc;
+pub mod garbage_collection;
 pub mod health;
 pub mod metrics;

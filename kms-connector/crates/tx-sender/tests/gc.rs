@@ -15,7 +15,7 @@ use rstest::rstest;
 use sqlx::{Pool, Postgres, Row, postgres::types::PgInterval};
 use std::time::Duration;
 use tracing::info;
-use tx_sender::monitoring::gc::{
+use tx_sender::monitoring::garbage_collection::{
     delete_completed_and_failed_public_decryption_requests,
     delete_completed_and_failed_public_decryption_responses,
     delete_completed_and_failed_user_decryption_requests,
