@@ -54,6 +54,7 @@ FHEVM ensures both confidentiality and composability, with the following guarant
   <br></br>
 ### Project structure
 The directories of this repository are organized in the following way:
+FHEVM is organized as an npm workspaces monorepo, with separate directories for contracts, compute engines, and utilities that work together to power the protocol.
 
 ###### FHEVM Contracts
 
