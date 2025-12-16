@@ -104,9 +104,8 @@ pub struct Args {
     /// Time slice in seconds for processing each dependence chain
     /// If a worker exceeds this time while processing a dependence chain,
     /// it will release the lock and allow other workers to acquire it
-    /// If not set, there is no time slice limit
-    #[arg(long)]
-    pub dcid_timeslice_sec: Option<u32>,
+    #[arg(long, default_value_t = 90)]
+    pub dcid_timeslice_sec: u32,
 
     /// Log level for the application
     #[arg(

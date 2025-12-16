@@ -276,7 +276,7 @@ impl LockMngr {
 
         self.lock.take();
 
-        info!(dcid = %hex::encode(&dep_chain_id), rows = rows.rows_affected(), "Released lock");
+        info!(dcid = %hex::encode(&dep_chain_id), rows = rows.rows_affected(), mark_as_processed, "Released lock");
 
         Ok(rows.rows_affected())
     }

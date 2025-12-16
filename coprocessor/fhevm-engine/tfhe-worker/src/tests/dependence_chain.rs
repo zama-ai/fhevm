@@ -261,7 +261,7 @@ async fn test_extend_or_release_lock() {
         pool.clone(),
         2,
         false,
-        Some(lock_timeslice_sec as u32),
+        Some(lock_timeslice_sec),
     );
     let acquired = mgr.acquire_next_lock().await.unwrap().0;
     assert_eq!(acquired, Some(dependence_chain_id.clone()));
@@ -275,7 +275,6 @@ async fn test_extend_or_release_lock() {
 }
 
 async fn setup() -> TestInstance {
-    let _ = tracing_subscriber::fmt().json().with_level(true).try_init();
     let test_instance = setup_test_app().await.expect("valid db instance");
     let pool = PgPoolOptions::new()
         .max_connections(2)
