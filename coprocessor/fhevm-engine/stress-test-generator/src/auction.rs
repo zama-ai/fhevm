@@ -66,7 +66,7 @@ pub async fn batch_submit_encrypted_bids(
     let mut user_submitted_bids = vec![];
 
     for e_amount in bids.iter() {
-        let bid_price = 1; // rand::random_range(1..=1000);
+        let bid_price = 1;
 
         let (e_paid, e_amount, price) = process_bid_entry(
             ctx,

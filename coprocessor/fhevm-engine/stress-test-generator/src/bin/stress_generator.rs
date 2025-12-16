@@ -604,6 +604,8 @@ async fn generate_transaction(
             )
             .await?;
 
+            tx.commit().await?;
+
             Ok((Handle::default(), Handle::default()))
         }
         Transaction::BatchSubmitEncryptedBids => {
