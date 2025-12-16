@@ -231,7 +231,10 @@ impl LockMngr {
     /// Release the lock held by this worker on the current dependence chain
     /// If host-listener has marked the dependence chain as 'updated' in the meantime,
     /// we don't overwrite its status and last_updated_at
-    pub async fn release_current_lock(&mut self) -> Result<u64, sqlx::Error> {
+    pub async fn release_current_lock(
+        &mut self,
+        mark_as_processed: bool,
+    ) -> Result<u64, sqlx::Error> {
         if self.disable_locking {
             debug!("Locking is disabled, skipping release_current_lock");
             return Ok(0);
@@ -247,30 +250,33 @@ impl LockMngr {
 
         let rows = sqlx::query!(
             r#"
-        UPDATE dependence_chain 
-        SET 
-            worker_id = NULL,
-            lock_acquired_at = NULL,
-            lock_expires_at = NULL,
-            status = CASE 
-                    WHEN status = 'processing' THEN 'processed'
+            UPDATE dependence_chain
+            SET
+                worker_id = NULL,
+                lock_acquired_at = NULL,
+                lock_expires_at = NULL,
+                status = CASE
+                    WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
+                    WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
                     ELSE status
-                    END,
-            last_updated_at = CASE
+                END,
+                last_updated_at = CASE
                     WHEN status = 'processing' THEN NOW()
                     ELSE last_updated_at
-                    END
-        WHERE worker_id = $1 AND dependence_chain_id = $2
-        "#,
+                END
+            WHERE worker_id = $1
+            AND dependence_chain_id = $2
+            "#,
             self.worker_id,
             dep_chain_id,
+            mark_as_processed,
         )
         .execute(&self.pool)
         .await?;
 
         self.lock.take();
 
-        info!(dcid = %hex::encode(&dep_chain_id), "Released lock");
+        info!(dcid = %hex::encode(&dep_chain_id), rows = rows.rows_affected(), "Released lock");
 
         Ok(rows.rows_affected())
     }
@@ -347,7 +353,10 @@ impl LockMngr {
                     >= timeslice as u64
             {
                 warn!(dcid = %hex::encode(&dependence_chain_id), timeslice = timeslice, "Max lock timeslice exceeded, releasing lock");
-                self.release_current_lock().await?;
+
+                // Release the lock instead of extending it as the timeslice's been consumed
+                // Do not mark as processed so it can be re-acquired
+                self.release_current_lock(false).await?;
                 return Ok(None);
             }
         }
