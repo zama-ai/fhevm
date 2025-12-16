@@ -212,6 +212,68 @@ async fn insert_dependence_chains(
     Ok(out)
 }
 
+#[tokio::test]
+#[serial(db)]
+async fn test_extend_or_release_lock() {
+    let instance = setup().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    // Insert a single dependence-chain row
+    let dependence_chain_id = insert_dependence_chains(&pool, 1)
+        .await
+        .expect("inserted chains")
+        .first()
+        .cloned()
+        .unwrap();
+
+    let lock_timeslice_sec: u32 = 1;
+
+    // Ensure the only available lock can be re-acquired after releasing
+    // where mark_as_processed is false
+    for _ in 0..10 {
+        info!(?dependence_chain_id, "Testing extend_or_release_lock");
+        let mut mgr = LockMngr::new_with_ttl(
+            Uuid::new_v4(),
+            pool.clone(),
+            2,
+            false,
+            Some(lock_timeslice_sec),
+        );
+        let acquired = mgr.acquire_next_lock().await.unwrap().0;
+
+        assert_eq!(acquired, Some(dependence_chain_id.clone()));
+
+        // Try to extend the lock after timeslice has been consumed
+        // where enable_timeslice_check is TRUE
+        sleep(Duration::from_secs(lock_timeslice_sec as u64 + 2)).await;
+        let dcid = mgr.extend_or_release_current_lock(true).await.unwrap();
+
+        assert!(dcid.is_none());
+        assert!(mgr.get_current_lock().is_none());
+    }
+
+    let mut mgr = LockMngr::new_with_ttl(
+        Uuid::new_v4(),
+        pool.clone(),
+        2,
+        false,
+        Some(lock_timeslice_sec as u32),
+    );
+    let acquired = mgr.acquire_next_lock().await.unwrap().0;
+    assert_eq!(acquired, Some(dependence_chain_id.clone()));
+
+    // Try to extend the lock after timeslice has been consumed
+    // where enable_timeslice_check is FALSE
+    sleep(Duration::from_secs(2)).await;
+    let dcid = mgr.extend_or_release_current_lock(false).await.unwrap();
+    assert!(dcid.is_some());
+    assert!(mgr.get_current_lock().is_some());
+}
+
 async fn setup() -> TestInstance {
     let _ = tracing_subscriber::fmt().json().with_level(true).try_init();
     let test_instance = setup_test_app().await.expect("valid db instance");
