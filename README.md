@@ -178,3 +178,13 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Contract Design Notes
+
+When designing contracts for FHEVM:
+
+- Prefer simpler control flows to reduce encrypted computation complexity
+- Minimize state changes involving encrypted values
+- Design with performance and auditability in mind from the start
+
+Thoughtful contract design improves maintainability and long-term reliability.
