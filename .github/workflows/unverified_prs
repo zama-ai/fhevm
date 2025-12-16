@@ -1,0 +1,30 @@
+# Close unverified PRs'
+name: unverified_prs
+on:
+  schedule:
+    - cron: '30 1 * * *'
+
+permissions: {}
+
+# zizmor: ignore[concurrency-limits] only GitHub can trigger this workflow
+
+jobs:
+  stale:
+    name: unverified_prs/stale
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read # Needed to fetch all issues
+      pull-requests: write # Needed to write message and close the PR
+    steps:
+      - uses: actions/stale@5f858e3efba33a5ca4407a664cc011ad407f2008 # v10.1.0
+        with:
+          stale-pr-message: 'This PR is unverified and has been open for 2 days, it will now be closed. If you want to contribute please sign the CLA as indicated by the bot.'
+          days-before-stale: 2
+          days-before-close: 0
+          # We are not interested in suppressing issues so have a currently non existent label
+          # if we ever accept issues to become stale/closable this label will be the signal for that
+          only-issue-labels: can-be-auto-closed
+          # Only unverified PRs are an issue
+          exempt-pr-labels: cla-signed
+          # We don't want people commenting to keep an unverified PR
+          ignore-updates: true
