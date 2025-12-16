@@ -122,7 +122,7 @@ To cite FHEVM or the whitepaper in academic papers, please use the following ent
 
 ```text
 @Misc{FHEVM,
-title={{FHEVM: A full-stack framework for integrating Fully Homomorphic Encryption (FHE) with blockchain applications},
+title={{Fully homomorphic encrypted smart contracts on EVM-compatible blockchains}},
 author={Zama},
 year={2025},
 note={\url{https://github.com/zama-ai/fhevm}},
