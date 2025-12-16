@@ -3,7 +3,7 @@ use std::{fs::read, sync::Arc};
 #[cfg(feature = "gpu")]
 use tfhe::core_crypto::gpu::get_number_of_gpus;
 #[cfg(feature = "gpu")]
-use tfhe::shortint::parameters::v1_5::meta::gpu::V1_5_META_PARAM_GPU_2_2_MULTI_BIT_GROUP_4_KS_PBS_PKE_TO_SMALL_ZKV2_TUNIFORM_2M128 as gpu_meta_parameters;
+use tfhe::shortint::parameters::v1_5::meta::cpu::V1_5_META_PARAM_CPU_2_2_KS_PBS_PKE_TO_SMALL_ZKV2_TUNIFORM_2M128 as gpu_meta_parameters;
 use tfhe::shortint::AtomicPatternParameters;
 use tfhe::{
     set_server_key,
