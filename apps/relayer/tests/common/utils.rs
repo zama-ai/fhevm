@@ -118,6 +118,8 @@ impl TestSetup {
         // Keep test pools small to avoid exhausting CI Postgres.
         settings.storage.app_pool.max_connections = 2;
         settings.storage.cron_pool.max_connections = 1;
+        settings.storage.app_pool.min_connections = 0;
+        settings.storage.cron_pool.min_connections = 0;
 
         // Configure with dynamic ports (use :0 for automatic allocation for relayer HTTP/metrics)
         settings.http.endpoint = Some("0.0.0.0:0".to_string());
@@ -136,6 +138,10 @@ impl TestSetup {
             settings.storage.app_pool.max_connections;
         relayer_settings.storage.cron_pool.max_connections =
             settings.storage.cron_pool.max_connections;
+        relayer_settings.storage.app_pool.min_connections =
+            settings.storage.app_pool.min_connections;
+        relayer_settings.storage.cron_pool.min_connections =
+            settings.storage.cron_pool.min_connections;
         relayer_settings.http.endpoint = settings.http.endpoint.clone();
         relayer_settings.gateway.blockchain_rpc.http_url =
             settings.gateway.blockchain_rpc.http_url.clone();
