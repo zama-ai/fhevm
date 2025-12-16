@@ -14,7 +14,22 @@ RESET  := $(shell tput -Txterm sgr0)
 test-unit: ## Run library/unit tests only
 	@cargo test --lib
 
-test-all: ## Run all tests (unit + integration)
+test-build: ## Build all test binaries
+	@echo "Building all test binaries..."
+	@cargo test --lib --no-run
+	@cargo test --test transaction_helper_test --no-run
+	@cargo test --test input_proof_v1_test --no-run
+	@cargo test --test public_decrypt_v1_test --no-run
+	@cargo test --test user_decrypt_v1_test --no-run
+	@cargo test --test input_proof_v2_test --no-run
+	@cargo test --test public_decrypt_v2_test --no-run
+	@cargo test --test user_decrypt_v2_test --no-run
+	@cargo test --test http_rate_limiter_test --no-run
+	@cargo test --test health_tests --no-run
+	@cargo test --test keyurl_test --no-run
+
+test-run: ## Run pre-built test binaries
+	@echo "Running pre-built test binaries..."
 	@cargo test --lib
 	@cargo test --test transaction_helper_test -- --test-threads=1
 	@cargo test --test input_proof_v1_test -- --test-threads=1
@@ -26,6 +41,8 @@ test-all: ## Run all tests (unit + integration)
 	@cargo test --test http_rate_limiter_test -- --test-threads=1
 	@cargo test --test health_tests -- --test-threads=1
 	@cargo test --test keyurl_test -- --test-threads=1
+
+test-all: test-build test-run ## Build and run all tests (unit + integration) - used by CI
 
 test-smoke-ok-all-v1: ## Run smoke test on ok (happy path) for v1 endpoints (user-decrypt, public-decrypt, input-proof) and health
 	@echo "Building v1 tests..."
