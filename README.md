@@ -178,3 +178,13 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Testing Considerations
+
+Testing FHE-enabled contracts requires additional care:
+
+- Test logic correctness independently from encryption assumptions
+- Use small, controlled inputs to validate encrypted execution paths
+- Expect longer execution times compared to standard EVM tests
+
+Well-structured tests help catch logic errors early despite limited visibility.
