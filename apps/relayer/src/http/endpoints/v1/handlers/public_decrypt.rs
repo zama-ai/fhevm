@@ -191,7 +191,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 let response_json = PublicDecryptResponseJson::from(decrypt_response.clone());
                                 (StatusCode::OK, Json(response_json)).into_response()
                             }
-                            _ => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL CONVERSION ERROR")
+                            _ => (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
                                 .into_response(),
                         }
                     }
@@ -227,13 +227,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                     _ => (
                                         StatusCode::INTERNAL_SERVER_ERROR,
                                         Json(PublicDecryptErrorResponseJson {
-                                            message: format!("{error:?}"),
+                                            message: format!("Internal Server Error: {error:?}"),
                                         }),
                                     )
                                         .into_response(),
                                 }
                             }
-                            _ => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL CONVERSION ERROR")
+                            _ => (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
                                 .into_response(),
                         }
                     }

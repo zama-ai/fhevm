@@ -224,7 +224,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             _ => (
                                 StatusCode::INTERNAL_SERVER_ERROR,
                                 Json(UserDecryptErrorResponseJson {
-                                    message: "INTERNAL CONVERSION ERROR".to_string(),
+                                    message: "Internal Server Error".to_string(),
                                 }),
                             )
                                 .into_response(),
@@ -258,7 +258,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                     _ => (
                                         StatusCode::INTERNAL_SERVER_ERROR,
                                         Json(UserDecryptErrorResponseJson {
-                                            message: format!("{error:?}"),
+                                            message: format!("Internal Server Error: {error:?}"),
                                         }),
                                     )
                                         .into_response(),
@@ -267,7 +267,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             _ => (
                                 StatusCode::INTERNAL_SERVER_ERROR,
                                 Json(UserDecryptErrorResponseJson {
-                                    message: "INTERNAL CONVERSION ERROR".to_string(),
+                                    message: "Internal Server Error".to_string(),
                                 }),
                             )
                                 .into_response(),
