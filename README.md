@@ -178,3 +178,13 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Debugging Guidance
+
+Debugging encrypted smart contracts differs from standard EVM development:
+
+- Intermediate encrypted values cannot be inspected directly
+- Debugging often relies on reviewing control flow and input assumptions
+- Logging should focus on execution paths rather than data contents
+
+Understanding these constraints can significantly reduce debugging time.
