@@ -379,6 +379,8 @@ async fn query_for_work<'a>(
     ));
     s.end();
 
+    let transaction_batch_size = args.work_items_batch_size;
+
     // This query locks our work items so other worker doesn't select them.
     let mut s = tracer.start_with_context("query_work_items", loop_ctx);
     let started_at = SystemTime::now();
@@ -424,7 +426,7 @@ WHERE c.transaction_id IN (
   )
 FOR UPDATE SKIP LOCKED            ",
         dependence_chain_id,
-        args.work_items_batch_size as i32,
+        transaction_batch_size as i32,
     )
     .fetch_all(trx.as_mut())
     .await
@@ -439,14 +441,14 @@ FOR UPDATE SKIP LOCKED            ",
     health_check.update_db_access();
     if the_work.is_empty() {
         if let Some(dependence_chain_id) = &dependence_chain_id {
-            warn!(target: "tfhe_worker", dcid = %hex::encode(dependence_chain_id), locking = ?locking_reason, "No work items found to process");
+            warn!(target: "tfhe_worker", dcid = %hex::encode(dependence_chain_id), locking = ?locking_reason, "No computations found to process");
         }
         health_check.update_activity();
         return Ok((vec![], vec![]));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
-         locking = ?locking_reason }, "Processing work items");
+         locking = ?locking_reason }, "Processing computations");
     // Make sure we process each tenant independently to avoid
     // setting different keys from different tenants in the worker
     // threads

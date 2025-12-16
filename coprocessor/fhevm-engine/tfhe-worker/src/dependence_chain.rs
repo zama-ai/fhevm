@@ -127,7 +127,7 @@ impl LockMngr {
         &mut self,
     ) -> Result<(Option<Vec<u8>>, LockingReason), sqlx::Error> {
         if self.disable_locking {
-            warn!("Locking is disabled");
+            debug!("Locking is disabled");
             return Ok((None, LockingReason::Missing));
         }
 

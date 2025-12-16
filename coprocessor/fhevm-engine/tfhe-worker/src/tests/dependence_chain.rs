@@ -1,7 +1,7 @@
 use crate::dependence_chain::{LockMngr, LockingReason};
+use crate::tests::utils::{setup_test_app, TestInstance};
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
-use test_harness::instance::ImportMode;
 use tokio::time::{sleep, Duration};
 use tracing::info;
 use uuid::Uuid;
@@ -11,7 +11,13 @@ const NUM_SAMPLE_CHAINS: usize = 10;
 #[tokio::test]
 #[serial(db)]
 async fn test_acquire_next_lock() {
-    let pool = setup().await;
+    let instance = setup().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
     let dependence_chain_ids = insert_dependence_chains(&pool, NUM_SAMPLE_CHAINS)
         .await
         .expect("inserted chains");
@@ -52,7 +58,12 @@ async fn test_acquire_next_lock() {
 #[tokio::test]
 #[serial(db)]
 async fn test_work_stealing() {
-    let pool = setup().await;
+    let instance = setup().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
 
     let dependence_chain_ids = insert_dependence_chains(&pool, NUM_SAMPLE_CHAINS)
         .await
@@ -178,7 +189,9 @@ async fn insert_dependence_chains(
     let mut out = Vec::with_capacity(num_chains);
 
     for i in 0..num_chains {
+        info!("Inserting dependence chain {}", i);
         let dependence_chain_id = i.to_le_bytes().to_vec();
+
         sqlx::query!(
             r#"
             INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at)
@@ -199,14 +212,12 @@ async fn insert_dependence_chains(
     Ok(out)
 }
 
-async fn setup() -> sqlx::PgPool {
+async fn setup() -> TestInstance {
     let _ = tracing_subscriber::fmt().json().with_level(true).try_init();
-    let test_instance = test_harness::instance::setup_test_db(ImportMode::None)
-        .await
-        .expect("valid db instance");
+    let test_instance = setup_test_app().await.expect("valid db instance");
     let pool = PgPoolOptions::new()
         .max_connections(2)
-        .connect(test_instance.db_url.as_str())
+        .connect(test_instance.db_url())
         .await
         .unwrap();
 
@@ -216,5 +227,5 @@ async fn setup() -> sqlx::PgPool {
         .await
         .unwrap();
 
-    pool
+    test_instance
 }
