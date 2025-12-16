@@ -28,7 +28,7 @@ impl BlockNumberRepository {
 
     /// Get the last block info - returns None if no row exists (matches current behavior)
     pub async fn get_last_block_info(&self) -> SqlResult<Option<BlockInfo>> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -62,7 +62,7 @@ impl BlockNumberRepository {
 
     /// Update block info - fast UPDATE for normal operation (assumes row exists)
     pub async fn update_block_info(&self, block_number: u64, block_hash: String) -> SqlResult<()> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -96,7 +96,7 @@ impl BlockNumberRepository {
         block_number: u64,
         block_hash: String,
     ) -> SqlResult<()> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
         let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
@@ -123,7 +123,7 @@ impl BlockNumberRepository {
 
     /// Returns full model with all fields
     pub async fn get_gateway_block_number(&self) -> SqlResult<Option<GatewayBlockNumber>> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(

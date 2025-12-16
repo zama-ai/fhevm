@@ -51,7 +51,7 @@ impl PublicDecryptRepository {
             "#,
             int_job_id_bytes
         )
-        .fetch_optional(&self.pool.get_pool())
+        .fetch_optional(&self.pool.get_app_pool())
         .await;
 
         match &result {
@@ -82,7 +82,7 @@ impl PublicDecryptRepository {
             )
         })?;
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -132,7 +132,7 @@ impl PublicDecryptRepository {
     /// Update req_status to 'processing' by int_job_id.
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_processing(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -188,7 +188,7 @@ impl PublicDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -251,7 +251,7 @@ impl PublicDecryptRepository {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -310,7 +310,7 @@ impl PublicDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -383,7 +383,7 @@ impl PublicDecryptRepository {
             )
         })?;
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query_as!(
@@ -459,7 +459,7 @@ impl PublicDecryptRepository {
         &self,
         ext_job_id: Uuid,
     ) -> SqlResult<Option<PublicDecryptResponseModel>> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
         let query_start = Instant::now();
         let result = sqlx::query_as!(
             PublicDecryptResponseModel,

@@ -115,6 +115,10 @@ impl TestSetup {
         // Initialize tracing once with settings
         init_tracing_once(&settings.log);
 
+        // Keep test pools small to avoid exhausting CI Postgres.
+        settings.storage.app_pool.max_connections = 2;
+        settings.storage.cron_pool.max_connections = 1;
+
         // Configure with dynamic ports (use :0 for automatic allocation for relayer HTTP/metrics)
         settings.http.endpoint = Some("0.0.0.0:0".to_string());
         settings.gateway.blockchain_rpc.http_url = format!("http://localhost:{}", gateway_port);
@@ -128,6 +132,10 @@ impl TestSetup {
         // Create a new settings instance for the relayer since Settings doesn't implement Clone
         let mut relayer_settings =
             Settings::new(config_path_str.clone()).expect("Failed to load configuration");
+        relayer_settings.storage.app_pool.max_connections =
+            settings.storage.app_pool.max_connections;
+        relayer_settings.storage.cron_pool.max_connections =
+            settings.storage.cron_pool.max_connections;
         relayer_settings.http.endpoint = settings.http.endpoint.clone();
         relayer_settings.gateway.blockchain_rpc.http_url =
             settings.gateway.blockchain_rpc.http_url.clone();
@@ -273,7 +281,7 @@ pub fn random_handle() -> String {
 /// Setup test database connection
 /// Note: Run `make migrate` before running tests that use SQL repositories
 #[allow(dead_code)]
-pub async fn setup_test_database(config: StorageConfig) -> eyre::Result<PgClient> {
+pub async fn setup_test_database(config: StorageConfig) -> anyhow::Result<PgClient> {
     let pg_client = PgClient::new(config).await;
     Ok(pg_client)
 }

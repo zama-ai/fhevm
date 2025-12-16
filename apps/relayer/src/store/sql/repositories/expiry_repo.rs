@@ -16,7 +16,7 @@ impl ExpiryRepository {
     pub async fn purge_stale_data(&self) -> Result<u64> {
         let mut total_deleted = 0;
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_cron_connection().await?;
         let query_start = Instant::now();
 
         let result = sqlx::query!(
@@ -36,7 +36,7 @@ impl ExpiryRepository {
         }
         total_deleted += result?.rows_affected();
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_cron_connection().await?;
         let query_start = Instant::now();
 
         let result = sqlx::query!(
@@ -57,7 +57,7 @@ impl ExpiryRepository {
         }
         total_deleted += result?.rows_affected();
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_cron_connection().await?;
         let query_start = Instant::now();
 
         let result = sqlx::query!(
@@ -78,7 +78,7 @@ impl ExpiryRepository {
         // ---------------------------------------------------------------------
         // 4. Input Proof Requests (7 days)
         // ---------------------------------------------------------------------
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_cron_connection().await?;
         let query_start = Instant::now();
 
         let result = sqlx::query!(

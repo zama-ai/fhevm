@@ -73,7 +73,18 @@ metrics:
 
 storage:
   sql_database_url: "postgresql://postgres:postgres@localhost:5433/relayer_db"
-  sql_max_connections: 10
+  app_pool:
+    max_connections: 10
+    min_connections: 2
+    acquire_timeout_secs: 10
+    idle_timeout_secs: 300
+    max_lifetime_secs: 900
+  cron_pool:
+    max_connections: 5
+    min_connections: 1
+    acquire_timeout_secs: 30
+    idle_timeout_secs: 600
+    max_lifetime_secs: 1800
   sql_health_check_timeout_secs: 5
   cron:
     # available settings: (d, h, m, s, ms)

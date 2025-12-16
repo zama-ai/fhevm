@@ -149,12 +149,28 @@ pub struct CronConfig {
     // pub input_proof_expiry: Duration,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct SqlPoolConfig {
+    /// Maximum number of connections in the SQL connection pool
+    pub max_connections: u32,
+    /// Minimum number of idle connections to maintain
+    pub min_connections: u32,
+    /// Connection acquire timeout in seconds
+    pub acquire_timeout_secs: u64,
+    /// Idle connection timeout in seconds
+    pub idle_timeout_secs: u64,
+    /// Maximum connection lifetime in seconds
+    pub max_lifetime_secs: u64,
+}
+
 #[derive(Deserialize, Clone)]
 pub struct StorageConfig {
     /// PostgreSQL database URL for SQL storage
     pub sql_database_url: String,
-    /// Maximum number of connections in the SQL connection pool
-    pub sql_max_connections: u32,
+    /// Connection pool configuration for regular application queries
+    pub app_pool: SqlPoolConfig,
+    /// Connection pool configuration for cron job queries
+    pub cron_pool: SqlPoolConfig,
     pub sql_health_check_timeout_secs: u64,
     pub cron: CronConfig,
 }
@@ -163,7 +179,8 @@ impl fmt::Debug for StorageConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StorageConfig")
             .field("sql_database_url", &"[REDACTED]")
-            .field("sql_max_connections", &self.sql_max_connections)
+            .field("app_pool", &self.app_pool)
+            .field("cron_pool", &self.cron_pool)
             .field(
                 "sql_health_check_timeout_secs",
                 &self.sql_health_check_timeout_secs,
@@ -176,8 +193,8 @@ impl fmt::Display for StorageConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "StorageConfig {{ sql_database_url: [REDACTED], sql_max_connections: {} }}",
-            self.sql_max_connections
+            "StorageConfig {{ sql_database_url: [REDACTED], app_pool: max_connections: {}, cron_pool: max_connections: {} }}",
+            self.app_pool.max_connections, self.cron_pool.max_connections
         )
     }
 }

@@ -27,7 +27,7 @@ impl TimeoutRepository {
         // 1. User Decrypt
         // ---------------------------------------------------------------------
         {
-            let mut conn = self.pool.get_connection().await?; // Metrics: Pool Wait
+            let mut conn = self.pool.get_cron_connection().await?; // Metrics: Pool Wait
             let query_start = Instant::now();
 
             // We use a CTE to capture the 'old_updated_at' before the update happens.
@@ -83,7 +83,7 @@ impl TimeoutRepository {
         // 2. Public Decrypt
         // ---------------------------------------------------------------------
         {
-            let mut conn = self.pool.get_connection().await?;
+            let mut conn = self.pool.get_cron_connection().await?;
             let query_start = Instant::now();
 
             let result = sqlx::query!(
@@ -136,7 +136,7 @@ impl TimeoutRepository {
         // 3. Input Proof
         // ---------------------------------------------------------------------
         {
-            let mut conn = self.pool.get_connection().await?;
+            let mut conn = self.pool.get_cron_connection().await?;
             let query_start = Instant::now();
 
             let result = sqlx::query!(

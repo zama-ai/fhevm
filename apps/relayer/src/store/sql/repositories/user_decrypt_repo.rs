@@ -50,7 +50,7 @@ impl UserDecryptRepository {
         &self,
         int_job_id_bytes: &[u8],
     ) -> SqlResult<Option<Uuid>> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query_scalar!(
@@ -90,7 +90,7 @@ impl UserDecryptRepository {
             )
         })?;
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         // Logic: Use (xmax=0) to detect if this was a true INSERT or an ON CONFLICT update.
@@ -137,7 +137,7 @@ impl UserDecryptRepository {
     /// Update req_status to 'processing' by int_job_id.
     /// Returns the number of rows affected (1 if found, 0 if not).
     pub async fn update_status_to_processing(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -191,7 +191,7 @@ impl UserDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -253,7 +253,7 @@ impl UserDecryptRepository {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -310,7 +310,7 @@ impl UserDecryptRepository {
         int_job_id_bytes: &[u8],
         err_reason: &str,
     ) -> SqlResult<u64> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -375,7 +375,7 @@ impl UserDecryptRepository {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query_as!(
@@ -464,7 +464,7 @@ impl UserDecryptRepository {
         // Advisory lock automatically released when transaction commits/rollbacks.
         // See: https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS
         let pool_wait_start = Instant::now();
-        let mut tx = match self.pool.get_pool().begin().await {
+        let mut tx = match self.pool.get_app_pool().begin().await {
             Ok(tx) => {
                 // Here we observe pool acquisition timing and increment.
                 metrics::observe_pool_wait(pool_wait_start.elapsed());
@@ -635,7 +635,7 @@ impl UserDecryptRepository {
         ext_job_id: Uuid,
         threshold: i64,
     ) -> SqlResult<Option<UserDecryptResponseModel>> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query_as!(

@@ -43,7 +43,7 @@ impl InputProofRepository {
             )
         })?;
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query_scalar!(
@@ -88,7 +88,7 @@ impl InputProofRepository {
     ) -> SqlResult<u64> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -147,7 +147,7 @@ impl InputProofRepository {
         int_request_id: Uuid,
         err_reason: &str,
     ) -> SqlResult<u64> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -216,7 +216,7 @@ impl InputProofRepository {
             )
         })?;
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -278,7 +278,7 @@ impl InputProofRepository {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
 
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -334,7 +334,7 @@ impl InputProofRepository {
         &self,
         ext_job_id: Uuid,
     ) -> SqlResult<Option<InputProofResponseModel>> {
-        let mut conn = self.pool.get_connection().await?;
+        let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query_as!(
