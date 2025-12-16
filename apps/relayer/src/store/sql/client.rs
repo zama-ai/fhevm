@@ -14,47 +14,59 @@ pub struct PgClient {
 }
 
 impl PgClient {
-    pub async fn new(config: StorageConfig) -> Self {
-        let app_pool = Self::create_pool(&config.sql_database_url, &config.app_pool, "app").await;
+    pub async fn new(config: StorageConfig) -> anyhow::Result<Self> {
+        let app_pool = Self::create_pool(&config.sql_database_url, &config.app_pool, "app").await?;
         let cron_pool =
-            Self::create_pool(&config.sql_database_url, &config.cron_pool, "cron").await;
+            Self::create_pool(&config.sql_database_url, &config.cron_pool, "cron").await?;
 
-        PgClient {
+        Ok(PgClient {
             app_pool,
             cron_pool,
-        }
+        })
     }
 
     async fn create_pool(
         database_url: &str,
         pool_config: &SqlPoolConfig,
         pool_type: &str,
-    ) -> PgPool {
-        loop {
-            match PgPoolOptions::new()
-                .max_connections(pool_config.max_connections)
-                .acquire_timeout(Duration::from_secs(pool_config.acquire_timeout_secs))
-                .idle_timeout(Duration::from_secs(pool_config.idle_timeout_secs))
-                .max_lifetime(Duration::from_secs(pool_config.max_lifetime_secs))
-                .test_before_acquire(true)
-                .min_connections(pool_config.min_connections)
-                .connect(database_url)
-                .await
-            {
-                Ok(pool) => {
-                    tracing::info!(
-                        "Successfully connected {} pool with {} max connections",
+    ) -> anyhow::Result<PgPool> {
+        let pool = PgPoolOptions::new()
+            .max_connections(pool_config.max_connections)
+            .acquire_timeout(Duration::from_secs(pool_config.acquire_timeout_secs))
+            .idle_timeout(Duration::from_secs(pool_config.idle_timeout_secs))
+            .max_lifetime(Duration::from_secs(pool_config.max_lifetime_secs))
+            .test_before_acquire(true)
+            .min_connections(pool_config.min_connections)
+            .connect(database_url)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to connect to {} database pool: {}", pool_type, e)
+            })?;
+
+        let mut connections = Vec::new();
+        for i in 0..pool_config.min_connections {
+            match pool.acquire().await {
+                Ok(conn) => connections.push(conn),
+                Err(e) => {
+                    return Err(anyhow::anyhow!(
+                        "Failed to acquire minimum connection {}/{} for {} pool: {}",
+                        i + 1,
+                        pool_config.min_connections,
                         pool_type,
-                        pool_config.max_connections
-                    );
-                    break pool;
-                }
-                Err(err) => {
-                    error!("Failed to connect to {} database pool: {}", pool_type, err);
-                    sleep(Duration::from_secs(2)).await;
+                        e
+                    ));
                 }
             }
         }
+
+        drop(connections);
+
+        info!(
+            "Successfully validated {} pool with {} min connections (max: {})",
+            pool_type, pool_config.min_connections, pool_config.max_connections
+        );
+
+        Ok(pool)
     }
 
     pub fn get_app_pool(&self) -> PgPool {

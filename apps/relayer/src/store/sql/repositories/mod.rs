@@ -42,13 +42,13 @@ pub struct Repositories {
 
 impl Repositories {
     /// Create all repositories from storage configuration.
-    pub async fn new(config: StorageConfig) -> Self {
+    pub async fn new(config: StorageConfig) -> anyhow::Result<Self> {
         let health_timeout = Duration::from_secs(config.sql_health_check_timeout_secs);
-        let pg_client = Arc::new(PgClient::new(config).await);
+        let pg_client = Arc::new(PgClient::new(config).await?);
 
         pg_client.spawn_db_pool_monitor();
 
-        Self {
+        Ok(Self {
             input_proof: Arc::new(InputProofRepository::new((*pg_client).clone())),
             public_decrypt: Arc::new(PublicDecryptRepository::new((*pg_client).clone())),
             user_decrypt: Arc::new(UserDecryptRepository::new((*pg_client).clone())),
@@ -57,7 +57,7 @@ impl Repositories {
             expiry_repo: Arc::new(ExpiryRepository::new((*pg_client).clone())),
             pg_client,
             health_timeout,
-        }
+        })
     }
 
     pub fn start_background_workers(

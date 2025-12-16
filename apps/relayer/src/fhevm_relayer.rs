@@ -83,7 +83,11 @@ pub async fn run_fhevm_relayer(
     let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::<RelayerEvent>::new()));
 
     // Initialize SQL repositories
-    let repositories = Arc::new(Repositories::new(settings.storage.clone()).await);
+    let repositories = Arc::new(
+        Repositories::new(settings.storage.clone())
+            .await
+            .map_err(|e| eyre::eyre!("Failed to initialize SQL repositories: {}", e))?,
+    );
     info!("Initialized SQL repositories");
 
     if !settings.global.test_mock {

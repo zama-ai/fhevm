@@ -282,7 +282,7 @@ pub fn random_handle() -> String {
 /// Note: Run `make migrate` before running tests that use SQL repositories
 #[allow(dead_code)]
 pub async fn setup_test_database(config: StorageConfig) -> anyhow::Result<PgClient> {
-    let pg_client = PgClient::new(config).await;
+    let pg_client = PgClient::new(config).await?;
     Ok(pg_client)
 }
 
