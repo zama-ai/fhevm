@@ -11,8 +11,10 @@ pub mod utils;
 use super::client::PgClient;
 use crate::{
     config::settings::StorageConfig,
+    core::event::RelayerEvent,
+    orchestrator::{Orchestrator, TokioEventDispatcher},
     store::sql::repositories::{
-        cron_task::{spawn_expiry_worker, spawn_timeout_worker},
+        cron_task::{create_expiry_worker_future, create_timeout_worker_future},
         expiry_repo::ExpiryRepository,
         timeout_repo::TimeoutRepository,
     },
@@ -46,8 +48,6 @@ impl Repositories {
         let health_timeout = Duration::from_secs(config.sql_health_check_timeout_secs);
         let pg_client = Arc::new(PgClient::new(config).await?);
 
-        pg_client.spawn_db_pool_monitor();
-
         Ok(Self {
             input_proof: Arc::new(InputProofRepository::new((*pg_client).clone())),
             public_decrypt: Arc::new(PublicDecryptRepository::new((*pg_client).clone())),
@@ -60,13 +60,45 @@ impl Repositories {
         })
     }
 
-    pub fn start_background_workers(
+    /// Gracefully close underlying database pools.
+    pub async fn close_pools(&self) {
+        self.pg_client.close().await;
+    }
+
+    /// Register all background workers with the orchestrator for proper lifecycle management
+    pub async fn register_background_workers(
         &self,
-        timeout_cron_interval_secs: Duration,
-        expiry_cron_interval_secs: Duration,
-    ) {
-        // We use the internal pg_client to spawn workers
-        spawn_timeout_worker((*self.pg_client).clone(), timeout_cron_interval_secs);
-        spawn_expiry_worker((*self.pg_client).clone(), expiry_cron_interval_secs);
+        orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        timeout_cron_interval: Duration,
+        expiry_cron_interval: Duration,
+    ) -> anyhow::Result<()> {
+        // Register DB pool monitor
+        orchestrator
+            .spawn_task_and_wait_ready(
+                "db_pool_monitor",
+                self.pg_client.create_db_pool_monitor_future(),
+                async { Ok(()) }, // Ready immediately
+            )
+            .await?;
+
+        // Register timeout worker
+        orchestrator
+            .spawn_task_and_wait_ready(
+                "timeout_worker",
+                create_timeout_worker_future((*self.pg_client).clone(), timeout_cron_interval),
+                async { Ok(()) }, // Ready immediately
+            )
+            .await?;
+
+        // Register expiry worker
+        orchestrator
+            .spawn_task_and_wait_ready(
+                "expiry_worker",
+                create_expiry_worker_future((*self.pg_client).clone(), expiry_cron_interval),
+                async { Ok(()) }, // Ready immediately
+            )
+            .await?;
+
+        Ok(())
     }
 }

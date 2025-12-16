@@ -91,10 +91,15 @@ pub async fn run_fhevm_relayer(
     info!("Initialized SQL repositories");
 
     if !settings.global.test_mock {
-        repositories.start_background_workers(
-            settings.storage.cron.timeout_cron_interval,
-            settings.storage.cron.expiry_cron_interval,
-        );
+        // Register background workers with orchestrator (timeout, expiry cron jobs, and DB pool monitor)
+        repositories
+            .register_background_workers(
+                &orchestrator,
+                settings.storage.cron.timeout_cron_interval,
+                settings.storage.cron.expiry_cron_interval,
+            )
+            .await
+            .map_err(|e| eyre::eyre!("Failed to register background workers: {}", e))?;
     }
 
     // Register database with orchestrator for health checks
@@ -159,6 +164,9 @@ pub async fn run_fhevm_relayer(
         .run_until_shutdown(shutdown_token)
         .await
         .map_err(|e| eyre::eyre!("Failed during shutdown: {}", e))?;
+
+    // Ensure pools close cleanly before exit.
+    repositories.close_pools().await;
 
     info!("Relayer shutdown complete");
 

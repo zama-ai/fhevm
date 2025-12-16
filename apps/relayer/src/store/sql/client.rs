@@ -2,10 +2,11 @@ use crate::{
     config::settings::{SqlPoolConfig, StorageConfig},
     metrics,
 };
+use futures::FutureExt;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{error, info};
+use tracing::info;
 
 #[derive(Debug, Clone)]
 pub struct PgClient {
@@ -95,60 +96,59 @@ impl PgClient {
         conn
     }
 
-    pub fn spawn_db_pool_monitor(&self) {
+    pub fn create_db_pool_monitor_future(
+        &self,
+    ) -> impl std::future::Future<Output = ()> + Send + 'static {
         let app_pool = self.app_pool.clone();
         let cron_pool = self.cron_pool.clone();
-        tokio::spawn(async move {
+        async move {
             loop {
-                let app_pool_clone = app_pool.clone();
-                let cron_pool_clone = cron_pool.clone();
-                let join_handle = tokio::spawn(async move {
-                    monitor_pool_loop(app_pool_clone, cron_pool_clone).await;
-                });
+                let result = std::panic::AssertUnwindSafe(async {
+                    info!("Starting DB Pool Monitor loop for both app and cron pools");
+                    loop {
+                        // Monitor app pool
+                        let app_size = app_pool.size();
+                        let app_idle = app_pool.num_idle();
+                        let app_active = app_size.saturating_sub(app_idle as u32);
 
-                match join_handle.await {
-                    Ok(_) => {
-                        error!("DB Pool Monitor task exited unexpectedly (clean exit). Restarting in 2s...");
+                        // Monitor cron pool
+                        let cron_size = cron_pool.size();
+                        let cron_idle = cron_pool.num_idle();
+                        let cron_active = cron_size.saturating_sub(cron_idle as u32);
+
+                        // For now, aggregate stats for backward compatibility
+                        // In the future, we could extend metrics to track pools separately
+                        let total_active = app_active + cron_active;
+                        let total_idle = app_idle + cron_idle;
+
+                        // Update the Prometheus Gauges
+                        metrics::sql::update_pool_stats(total_active, total_idle as u32);
+
+                        sleep(Duration::from_secs(5)).await;
                     }
-                    Err(e) => {
-                        if e.is_panic() {
-                            error!("DB Pool Monitor task PANICKED. Restarting in 2s...");
-                        } else {
-                            error!(
-                                "DB Pool Monitor task cancelled/failed: {}. Restarting in 2s...",
-                                e
-                            );
-                        }
+                })
+                .catch_unwind()
+                .await;
+
+                match result {
+                    Ok(()) => {
+                        tracing::error!(
+                            "DB Pool Monitor loop exited unexpectedly. Restarting in 2s..."
+                        );
+                    }
+                    Err(_) => {
+                        tracing::error!("DB Pool Monitor loop panicked. Restarting in 2s...");
                     }
                 }
-                // 3. Backoff to prevent hot loops in case of persistent startup crashes
+
                 sleep(Duration::from_secs(2)).await;
             }
-        });
+        }
     }
-}
 
-async fn monitor_pool_loop(app_pool: PgPool, cron_pool: PgPool) {
-    info!("Starting DB Pool Monitor loop for both app and cron pools");
-    loop {
-        // Monitor app pool
-        let app_size = app_pool.size();
-        let app_idle = app_pool.num_idle();
-        let app_active = app_size.saturating_sub(app_idle as u32);
-
-        // Monitor cron pool
-        let cron_size = cron_pool.size();
-        let cron_idle = cron_pool.num_idle();
-        let cron_active = cron_size.saturating_sub(cron_idle as u32);
-
-        // For now, aggregate stats for backward compatibility
-        // In the future, we could extend metrics to track pools separately
-        let total_active = app_active + cron_active;
-        let total_idle = app_idle + cron_idle;
-
-        // Update the Prometheus Gauges
-        metrics::sql::update_pool_stats(total_active, total_idle as u32);
-
-        sleep(Duration::from_secs(5)).await;
+    /// Gracefully close both pools, waiting for connections to drain.
+    pub async fn close(&self) {
+        self.app_pool.close().await;
+        self.cron_pool.close().await;
     }
 }

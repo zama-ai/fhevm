@@ -2,6 +2,7 @@ use crate::store::sql::{
     client::PgClient,
     repositories::{expiry_repo::ExpiryRepository, timeout_repo::TimeoutRepository},
 };
+use futures::FutureExt;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{debug, error, info};
@@ -29,33 +30,28 @@ async fn run_timeout_worker_logic(pool: PgClient, timeout_cron_interval_secs: Du
     }
 }
 
-pub fn spawn_timeout_worker(pool: PgClient, timeout_cron_interval_secs: Duration) {
-    tokio::spawn(async move {
-        loop {
-            let pool_clone = pool.clone();
+pub async fn create_timeout_worker_future(pool: PgClient, timeout_cron_interval_secs: Duration) {
+    loop {
+        let pool_clone = pool.clone();
 
-            info!("Starting Timeout Worker...");
+        info!("Starting Timeout Worker...");
 
-            let handle = tokio::spawn(async move {
-                run_timeout_worker_logic(pool_clone, timeout_cron_interval_secs).await;
-            });
-            match handle.await {
-                Ok(_) => {
-                    error!(
-                        "Timeout Worker stopped unexpectedly. Should never happen. Restarting..."
-                    );
-                }
-                Err(e) => {
-                    if e.is_panic() {
-                        error!("CRITICAL: Timeout Worker PANICKED! Restarting in 5 seconds...");
-                    } else {
-                        error!("Timeout Worker task cancelled. Restarting...");
-                    }
-                }
+        let result = std::panic::AssertUnwindSafe(async {
+            run_timeout_worker_logic(pool_clone, timeout_cron_interval_secs).await;
+        })
+        .catch_unwind()
+        .await;
+
+        match result {
+            Ok(_) => {
+                error!("Timeout Worker stopped unexpectedly. Restarting in 5 seconds...");
             }
-            sleep(Duration::from_secs(5)).await;
+            Err(_) => {
+                error!("CRITICAL: Timeout Worker PANICKED! Restarting in 5 seconds...");
+            }
         }
-    });
+        sleep(Duration::from_secs(5)).await;
+    }
 }
 
 async fn run_expiry_worker_logic(pool: PgClient, expiry_cron_intervals_secs: Duration) {
@@ -83,30 +79,26 @@ async fn run_expiry_worker_logic(pool: PgClient, expiry_cron_intervals_secs: Dur
     }
 }
 
-pub fn spawn_expiry_worker(pool: PgClient, expiry_cron_intervals_secs: Duration) {
-    tokio::spawn(async move {
-        loop {
-            let pool_clone = pool.clone();
-            info!("Starting Expiry/Cleanup Worker...");
+pub async fn create_expiry_worker_future(pool: PgClient, expiry_cron_intervals_secs: Duration) {
+    loop {
+        let pool_clone = pool.clone();
+        info!("Starting Expiry/Cleanup Worker...");
 
-            let handle = tokio::spawn(async move {
-                run_expiry_worker_logic(pool_clone, expiry_cron_intervals_secs).await;
-            });
+        let result = std::panic::AssertUnwindSafe(async {
+            run_expiry_worker_logic(pool_clone, expiry_cron_intervals_secs).await;
+        })
+        .catch_unwind()
+        .await;
 
-            match handle.await {
-                Ok(_) => {
-                    error!("Expiry Worker stopped unexpectedly. Restarting...");
-                }
-                Err(e) => {
-                    if e.is_panic() {
-                        error!("CRITICAL: Expiry Worker PANICKED! Restarting in 30 seconds...");
-                    } else {
-                        error!("Expiry Worker task cancelled. Restarting...");
-                    }
-                }
+        match result {
+            Ok(_) => {
+                error!("Expiry Worker stopped unexpectedly. Restarting in 30 seconds...");
             }
-
-            sleep(Duration::from_secs(30)).await;
+            Err(_) => {
+                error!("CRITICAL: Expiry Worker PANICKED! Restarting in 30 seconds...");
+            }
         }
-    });
+
+        sleep(Duration::from_secs(30)).await;
+    }
 }
