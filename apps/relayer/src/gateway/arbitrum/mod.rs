@@ -1,3 +1,4 @@
+pub mod event_deduplicator;
 pub mod listener;
 pub mod transaction;
 mod transaction_calldata;

@@ -18,6 +18,7 @@ use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
 use crate::store::sql::repositories::Repositories;
 use alloy::primitives::Address;
 use arbitrum::{
+    event_deduplicator::EventDeduplicator,
     transaction::{
         helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
     },
@@ -83,44 +84,65 @@ pub async fn initialize_gateway(
         gateway_tx_helper.clone() as Arc<dyn HealthCheck>,
     );
 
-    // Initialize gateway blockchain listener (spawned as task)
-    let listener_for_health = Arc::new(
-        ArbitrumListener::new(
-            settings.gateway.clone(),
-            orchestrator.clone(),
-            repositories.block_number.clone(),
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to initialize gateway listener: {}", e))?,
+    // Create shared event deduplicator
+    let deduplicator = Arc::new(EventDeduplicator::new(
+        settings.gateway.listener.dedup_ttl_seconds,
+        settings.gateway.listener.dedup_max_capacity,
+    ));
+
+    // Get number of listener instances from configuration
+    let listener_instances = settings.gateway.listener.listener_instances;
+    info!(
+        "Initializing {} gateway listener instances",
+        listener_instances
     );
 
-    // Register listener for health monitoring
-    orchestrator.add_health_check(
-        "gateway_ws".to_string(),
-        listener_for_health.clone() as Arc<dyn HealthCheck>,
-    );
+    // Initialize and spawn multiple listener instances
+    for instance_id in 0..listener_instances {
+        let listener = Arc::new(
+            ArbitrumListener::new(
+                settings.gateway.clone(),
+                orchestrator.clone(),
+                repositories.block_number.clone(),
+                deduplicator.clone(),
+                instance_id,
+            )
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to initialize gateway listener {}: {}",
+                    instance_id,
+                    e
+                )
+            })?,
+        );
 
-    // Create listener for running (run() consumes self)
-    let listener_for_run = ArbitrumListener::new(
-        settings.gateway.clone(),
-        orchestrator.clone(),
-        repositories.block_number.clone(),
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("Failed to initialize gateway listener: {}", e))?;
+        let task_name = format!("gateway_listener_{}", instance_id);
 
-    orchestrator
-        .spawn_task_and_wait_ready(
-            "gateway_listener",
-            async move {
-                if let Err(e) = listener_for_run.run().await {
-                    error!("Gateway listener failed: {}", e);
-                }
-            },
-            async move { listener_for_health.check().await }, // Real readiness check
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to start gateway listener: {}", e))?;
+        // Register THIS listener's health check
+        orchestrator.add_health_check(
+            format!("gateway_ws_{}", instance_id),
+            listener.clone() as Arc<dyn HealthCheck>,
+        );
+
+        // Spawn listener and wait for it to be ready (verifies gateway connection)
+        let listener_clone = listener.clone();
+        let health_listener = listener.clone();
+        orchestrator
+            .spawn_task_and_wait_ready(
+                &task_name,
+                async move {
+                    if let Err(e) = listener_clone.run().await {
+                        error!("Gateway listener {} failed: {}", instance_id, e);
+                    }
+                },
+                async move { health_listener.check().await },
+            )
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to start gateway listener {}: {}", instance_id, e)
+            })?;
+    }
 
     // Create KeyUrl handler (but don't initialize yet - that happens after HTTP server)
     let keyurl_handler =

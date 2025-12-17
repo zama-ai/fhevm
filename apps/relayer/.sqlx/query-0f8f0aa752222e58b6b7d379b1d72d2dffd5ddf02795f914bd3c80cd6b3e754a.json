@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO gateway_block_number_store (instance_id, last_block_number, last_block_hash)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (instance_id)\n            DO UPDATE SET\n                last_block_number = EXCLUDED.last_block_number,\n                last_block_hash = EXCLUDED.last_block_hash,\n                updated_at = NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0f8f0aa752222e58b6b7d379b1d72d2dffd5ddf02795f914bd3c80cd6b3e754a"
+}

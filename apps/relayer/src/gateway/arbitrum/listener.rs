@@ -1,9 +1,10 @@
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
     config::settings::GatewayConfig,
     core::event::{ApiCategory, ApiVersion, GatewayChainEventData, RelayerEvent, RelayerEventData},
     core::job_id::JobId,
+    gateway::arbitrum::event_deduplicator::{EventDeduplicator, EventKey},
     orchestrator::{
         traits::{EventDispatcher, HandlerRegistry},
         HealthCheck, Orchestrator,
@@ -28,6 +29,8 @@ where
     gateway_config: GatewayConfig,
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     block_number_repo: Arc<BlockNumberRepository>,
+    deduplicator: Arc<EventDeduplicator>,
+    instance_id: usize,
 }
 
 impl<D> ArbitrumListener<D>
@@ -38,11 +41,15 @@ where
         gateway_config: GatewayConfig,
         orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
         block_number_repo: Arc<BlockNumberRepository>,
+        deduplicator: Arc<EventDeduplicator>,
+        instance_id: usize,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             gateway_config,
             orchestrator,
             block_number_repo,
+            deduplicator,
+            instance_id,
         })
     }
 
@@ -75,7 +82,10 @@ where
         &self,
         provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
     ) -> anyhow::Result<u64> {
-        let block_info_from_db = self.block_number_repo.get_last_block_info().await?;
+        let block_info_from_db = self
+            .block_number_repo
+            .get_last_block_info(self.instance_id)
+            .await?;
 
         let block_number = match (
             self.gateway_config.listener.last_block_number,
@@ -92,7 +102,11 @@ where
                         .fetch_block_hash_from_rpc(block_number_from_cfg, provider)
                         .await?;
                     self.block_number_repo
-                        .update_block_info(block_number_from_cfg, block_hash_from_rpc)
+                        .update_block_info(
+                            block_number_from_cfg,
+                            block_hash_from_rpc,
+                            self.instance_id,
+                        )
                         .await?;
                 } else {
                     info!(
@@ -113,7 +127,11 @@ where
                     .fetch_block_hash_from_rpc(block_number_from_cfg, provider)
                     .await?;
                 self.block_number_repo
-                    .insert_initial_block_info(block_number_from_cfg, block_hash_from_rpc)
+                    .insert_initial_block_info(
+                        block_number_from_cfg,
+                        block_hash_from_rpc,
+                        self.instance_id,
+                    )
                     .await?;
                 block_number_from_cfg
             }
@@ -138,7 +156,11 @@ where
                     .fetch_block_hash_from_rpc(current_block_from_rpc, provider)
                     .await?;
                 self.block_number_repo
-                    .insert_initial_block_info(current_block_from_rpc, block_hash_from_rpc)
+                    .insert_initial_block_info(
+                        current_block_from_rpc,
+                        block_hash_from_rpc,
+                        self.instance_id,
+                    )
                     .await?;
                 current_block_from_rpc
             }
@@ -147,7 +169,7 @@ where
         Ok(block_number)
     }
 
-    pub async fn run(self) -> anyhow::Result<()> {
+    pub async fn run(&self) -> anyhow::Result<()> {
         // Parse contract addresses from config
         let decryption_address =
             Address::from_str(&self.gateway_config.contracts.decryption_address)
@@ -178,7 +200,10 @@ where
         info!("Subscription to gateway chain is successful. Listening for logs...");
         let mut subscription = sub.into_stream();
 
-        info!("Starting Relayer Gateway Listener");
+        info!(
+            "Starting Relayer Gateway Listener instance {}",
+            self.instance_id
+        );
         loop {
             tokio::select! {
                 event = subscription.next() => match event {
@@ -202,9 +227,25 @@ where
                             .map(|t| format!("{:#x}", t))
                             .unwrap_or_else(|| "none".to_string());
 
+                        // Create deduplication key
+                        let dedup_key = EventKey {
+                            block_number,
+                            block_hash: event_log.block_hash.unwrap_or_default(),
+                            log_index,
+                        };
+
+                        // Check deduplication - skip if already processed
+                        if !self.deduplicator.try_insert(dedup_key).await {
+                            debug!(
+                                "Listener {} skipping duplicate event: block={}, log_index={}, topic0={}",
+                                self.instance_id, block_number, log_index, topic0
+                            );
+                            continue;
+                        }
+
                         info!(
-                            "Gateway event received: block={}, block_hash={}, log_index={}, topic0={}, topic1={}, tx_hash={:#x}",
-                            block_number, block_hash, log_index, topic0, topic1, tx_hash
+                            "Listener {} processing event: block={}, block_hash={}, log_index={}, topic0={}, topic1={}, tx_hash={:#x}",
+                            self.instance_id, block_number, block_hash, log_index, topic0, topic1, tx_hash
                         );
 
                         let event = RelayerEvent::new(
@@ -228,7 +269,7 @@ where
                         if event_log.block_number.is_some() {
                             // Update block progress - log error but don't stop processing
                             if let Err(e) = self.block_number_repo
-                                .update_block_info(block_number, block_hash.clone())
+                                .update_block_info(block_number, block_hash.clone(), self.instance_id)
                                 .await
                             {
                                 error!(
@@ -243,7 +284,7 @@ where
                         }
                     }
                     None => {
-                        info!("Subscription stream ended");
+                        info!("Listener {} subscription stream ended", self.instance_id);
                         break;
                     }
                 },

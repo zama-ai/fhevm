@@ -26,20 +26,23 @@ impl BlockNumberRepository {
         Self { pool }
     }
 
-    /// Get the last block info - returns None if no row exists (matches current behavior)
-    pub async fn get_last_block_info(&self) -> SqlResult<Option<BlockInfo>> {
+    /// Get the last block info for a specific listener instance
+    pub async fn get_last_block_info(&self, instance_id: usize) -> SqlResult<Option<BlockInfo>> {
         let mut conn = self.pool.get_app_connection().await?;
+        let instance = instance_id as i32;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
             SELECT last_block_number, last_block_hash, updated_at
             FROM gateway_block_number_store
-            WHERE id = 1
-            "#
+            WHERE instance_id = $1
+            "#,
+            instance
         )
         .fetch_optional(&mut *conn)
         .await;
+
         match &result {
             Ok(_) => metrics::observe_query(
                 metrics::Table::GatewayBlockNumberStore,
@@ -60,9 +63,15 @@ impl BlockNumberRepository {
         }
     }
 
-    /// Update block info - fast UPDATE for normal operation (assumes row exists)
-    pub async fn update_block_info(&self, block_number: u64, block_hash: String) -> SqlResult<()> {
+    /// Update block info for a specific listener instance
+    pub async fn update_block_info(
+        &self,
+        block_number: u64,
+        block_hash: String,
+        instance_id: usize,
+    ) -> SqlResult<()> {
         let mut conn = self.pool.get_app_connection().await?;
+        let instance = instance_id as i32;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
@@ -71,13 +80,15 @@ impl BlockNumberRepository {
             SET last_block_number = $1,
                 last_block_hash = $2,
                 updated_at = NOW()
-            WHERE id = 1
+            WHERE instance_id = $3
             "#,
             block_number as i64,
-            block_hash
+            block_hash,
+            instance
         )
         .execute(&mut *conn)
         .await;
+
         match &result {
             Ok(_) => metrics::observe_query(
                 metrics::Table::GatewayBlockNumberStore,
@@ -90,19 +101,28 @@ impl BlockNumberRepository {
         Ok(())
     }
 
-    /// Insert initial block info - for first-time setup (when going from None to first value)
+    /// Insert initial block info for a specific listener instance
     pub async fn insert_initial_block_info(
         &self,
         block_number: u64,
         block_hash: String,
+        instance_id: usize,
     ) -> SqlResult<()> {
         let mut conn = self.pool.get_app_connection().await?;
+        let instance = instance_id as i32;
+
         let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
-            INSERT INTO gateway_block_number_store (id, last_block_number, last_block_hash)
-            VALUES (1, $1, $2)
+            INSERT INTO gateway_block_number_store (instance_id, last_block_number, last_block_hash)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (instance_id)
+            DO UPDATE SET
+                last_block_number = EXCLUDED.last_block_number,
+                last_block_hash = EXCLUDED.last_block_hash,
+                updated_at = NOW()
             "#,
+            instance,
             block_number as i64,
             block_hash
         )
@@ -121,17 +141,21 @@ impl BlockNumberRepository {
         Ok(())
     }
 
-    /// Returns full model with all fields
-    pub async fn get_gateway_block_number(&self) -> SqlResult<Option<GatewayBlockNumber>> {
+    /// Returns full model with all fields for a specific listener instance
+    pub async fn get_gateway_block_number(
+        &self,
+        instance_id: usize,
+    ) -> SqlResult<Option<GatewayBlockNumber>> {
         let mut conn = self.pool.get_app_connection().await?;
 
         let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
-            SELECT id, last_block_number, last_block_hash, created_at, updated_at
+            SELECT instance_id, last_block_number, last_block_hash, created_at, updated_at
             FROM gateway_block_number_store
-            WHERE id = 1
-            "#
+            WHERE instance_id = $1
+            "#,
+            instance_id as i32
         )
         .fetch_optional(&mut *conn)
         .await;
@@ -148,7 +172,7 @@ impl BlockNumberRepository {
 
         match record {
             Some(row) => Ok(Some(GatewayBlockNumber {
-                id: row.id,
+                instance_id: row.instance_id,
                 last_block_number: row.last_block_number,
                 last_block_hash: row.last_block_hash,
                 created_at: row.created_at,

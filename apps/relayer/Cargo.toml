@@ -19,6 +19,7 @@ dashmap = "6.1.0"
 eyre = "0.6.12"
 futures = "0.3.31"
 hex = "0.4.3"
+moka = { version = "0.12", features = ["future"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.68"
 sha2 = "0.10"

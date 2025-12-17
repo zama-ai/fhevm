@@ -78,6 +78,9 @@ pub async fn run_fhevm_relayer(
     settings
         .validate_addresses()
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
+    settings
+        .validate_listener_config()
+        .map_err(|e| eyre::eyre!("Listener configuration validation failed: {}", e))?;
 
     // Initialize the orchestrator
     let orchestrator = Orchestrator::new(Arc::new(TokioEventDispatcher::<RelayerEvent>::new()));

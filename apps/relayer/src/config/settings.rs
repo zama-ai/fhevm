@@ -5,6 +5,11 @@ use std::env;
 use std::fmt;
 use std::time::Duration;
 
+// Listener configuration limits
+const MAX_LISTENER_INSTANCES: usize = 3;
+const MIN_DEDUP_TTL_SECONDS: u64 = 1;
+const MAX_DEDUP_TTL_SECONDS: u64 = 10;
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct GatewayConfig {
     pub blockchain_rpc: BlockchainRpcConfig,
@@ -55,6 +60,23 @@ pub struct ListenerConfig {
     pub last_block_number: Option<u64>,
     /// WebSocket reconnection configuration
     pub ws_reconnect_config: RetrySettings,
+    /// Number of parallel listener instances (1-3, required)
+    pub listener_instances: usize,
+    /// TTL for event deduplication cache in seconds (1-10, required)
+    pub dedup_ttl_seconds: u64,
+    /// Maximum capacity for deduplication cache (required)
+    ///
+    /// **Sizing guidance:**
+    /// The cache should accommodate all events received during the TTL window with a safety buffer.
+    ///
+    /// **Formula:** `events_per_second * listener_instances * dedup_ttl_seconds * safety_buffer`
+    ///
+    /// **Recommended values (with 3 listeners, 5s TTL, 1.2x buffer):**
+    /// - 100 events/sec → 1,800
+    /// - 300 events/sec → 5,400
+    /// - 1000 events/sec → 18,000
+    /// - 5000 events/sec → 90,000
+    pub dedup_max_capacity: usize,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -332,6 +354,42 @@ impl Settings {
                     "Invalid {name} address: {address}"
                 )));
             }
+        }
+
+        Ok(())
+    }
+
+    pub fn validate_listener_config(&self) -> Result<(), AppConfigError> {
+        let listener_config = &self.gateway.listener;
+
+        // Validate listener instances count
+        if listener_config.listener_instances < 1
+            || listener_config.listener_instances > MAX_LISTENER_INSTANCES
+        {
+            return Err(AppConfigError::Config(format!(
+                "listener_instances must be between 1 and {}, got: {}",
+                MAX_LISTENER_INSTANCES, listener_config.listener_instances
+            )));
+        }
+
+        // Validate dedup TTL seconds
+        if listener_config.dedup_ttl_seconds < MIN_DEDUP_TTL_SECONDS
+            || listener_config.dedup_ttl_seconds > MAX_DEDUP_TTL_SECONDS
+        {
+            return Err(AppConfigError::Config(format!(
+                "dedup_ttl_seconds must be between {} and {}, got: {}",
+                MIN_DEDUP_TTL_SECONDS, MAX_DEDUP_TTL_SECONDS, listener_config.dedup_ttl_seconds
+            )));
+        }
+
+        // Validate dedup max capacity (should be reasonable)
+        if listener_config.dedup_max_capacity < 1000
+            || listener_config.dedup_max_capacity > 10_000_000
+        {
+            return Err(AppConfigError::Config(format!(
+                "dedup_max_capacity must be between 1000 and 10,000,000, got: {}",
+                listener_config.dedup_max_capacity
+            )));
         }
 
         Ok(())

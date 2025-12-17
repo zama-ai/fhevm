@@ -148,9 +148,9 @@ CREATE INDEX idx_input_proof_req_timeout_check
 ON input_proof_req (updated_at)
 WHERE req_status = 'receipt_received';
 
--- Table for storing last processed block (single row)
+-- Table for storing last processed block (supports multiple listener instances)
 CREATE TABLE gateway_block_number_store (
-    id SERIAL PRIMARY KEY,
+    instance_id INTEGER PRIMARY KEY,
     last_block_number BIGINT NOT NULL,
     last_block_hash TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

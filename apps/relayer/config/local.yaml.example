@@ -22,6 +22,22 @@ gateway:
     ws_reconnect_config:
       max_attempts: 20
       retry_interval_ms: 500
+    # Number of parallel listener instances (1-3)
+    listener_instances: 3
+    # TTL for event deduplication cache in seconds (1-10)
+    dedup_ttl_seconds: 5
+    # Maximum capacity for deduplication cache
+    #
+    # Sizing formula: events_per_second * listener_instances * dedup_ttl_seconds * 1.2 (safety buffer)
+    #
+    # Recommended values (with 3 listeners, 5s TTL, 1.2x buffer):
+    #   100 events/sec → 1,800
+    #   300 events/sec → 5,400
+    #   1000 events/sec → 18,000
+    #   5000 events/sec → 90,000
+    #
+    # Current setting: 100,000 (suitable for ~5500 events/sec)
+    dedup_max_capacity: 100000
   tx_engine:
     private_key: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
     max_concurrency: 100
