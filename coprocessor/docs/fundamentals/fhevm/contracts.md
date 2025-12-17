@@ -51,8 +51,8 @@ When using FHE, the `HCULimit` contract tracks the HCU consumed in each transact
 - the limit for sequential FHE operations is exceeded.
 - the limit for non-sequential FHE operations is exceeded.
 
-## DecryptionOracle Contract
+## Public Decryption
 
-The [DecryptionOracle](../../../contracts/decryptionOracle/DecryptionOracle.sol) is an onchain contract designed to interact with an offchain Gateway component that handles decryption requests. When a dApp calls the `requestDecryption` function, the `DecryptionOracle` contract emits an event that is caught by the Gateway service.
+Public decryption in FHEVM uses a self-relaying model. A dApp marks ciphertexts as publicly decryptable on-chain by calling `FHE.makePubliclyDecryptable()`. Any user can then perform the decryption off-chain via the Relayer SDK's `publicDecrypt()` function, which returns both the cleartext value and a cryptographic proof. Finally, the proof is submitted back on-chain and verified using `FHE.checkSignatures()`.
 
-_Note_: It is possible to have multiple Gateways, so multiple Gateway contracts can also be deployed. This is the only contract from this documentation page that is not strictly part of "core FHEVM" contracts, and as such, it should not be considered as a "trusted" contract. We only trust the KMS and the core FHEVM contracts. The Gateway is only bridging trust from host chain to KMS chain via storage proofs, and from KMS chain to the host chain via the signatures from KMS signers.
+This approach is trustless and permissionless since anyone can perform the off-chain decryption and submit proofs for verification. The KMS signatures ensure authenticity of the decrypted values.
