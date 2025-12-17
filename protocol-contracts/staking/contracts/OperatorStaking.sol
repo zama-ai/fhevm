@@ -75,6 +75,9 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
     /// @dev Thrown when the controller address is not valid (e.g., zero address).
     error InvalidController();
 
+    /// @dev Thrown when the number of shares to redeem or request redeem is zero.
+    error InvalidShares();
+
     modifier onlyOwner() {
         require(msg.sender == owner(), CallerNotProtocolStakingOwner(msg.sender));
         _;
@@ -173,7 +176,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
      * @return releaseTime The timestamp when the assets will be available for withdrawal.
      */
     function requestRedeem(uint208 shares, address controller, address ownerRedeem) public virtual returns (uint48) {
-        if (shares == 0) return type(uint48).max;
+        require(shares != 0, InvalidShares());
         require(controller != address(0), InvalidController());
         if (msg.sender != ownerRedeem) {
             _spendAllowance(ownerRedeem, msg.sender, shares);
@@ -213,6 +216,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         address receiver,
         address controller
     ) public virtual nonReentrant returns (uint256) {
+        require(shares != 0, InvalidShares());
         require(msg.sender == controller || isOperator(controller, msg.sender), Unauthorized());
 
         uint256 maxShares = maxRedeem(controller);
