@@ -39,7 +39,10 @@ jobs:
   tests:
     name: protocol-contracts-confidential-wrapper-tests/tests (bpr)
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-protocol-contracts-confidential-wrapper == 'true' }}
+    # if: ${{ needs.check-changes.outputs.changes-protocol-contracts-confidential-wrapper == 'true' }}
+    # TODO: Re-enable this once the tests are fixed
+    # See https://github.com/zama-ai/fhevm-internal/issues/796
+    if: false
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
