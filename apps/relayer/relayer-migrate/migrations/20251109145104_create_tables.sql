@@ -12,7 +12,7 @@ $$ LANGUAGE plpgsql;
 
 -- Status enum for all tables.
 --- COMPLETED status when we have consensus tx + all the x shares receieved (9 for user, 1 for public)
-CREATE TYPE req_status AS ENUM ('queued', 'processing', 'receipt_received', 'completed', 'timed_out', 'failure');
+CREATE TYPE req_status AS ENUM ('queued', 'processing', 'tx_in_flight', 'receipt_received', 'completed', 'timed_out', 'failure');
 
 -- Table for user decryption requests.
 CREATE TABLE user_decrypt_req(
