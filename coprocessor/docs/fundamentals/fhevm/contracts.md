@@ -51,8 +51,3 @@ When using FHE, the `HCULimit` contract tracks the HCU consumed in each transact
 - the limit for sequential FHE operations is exceeded.
 - the limit for non-sequential FHE operations is exceeded.
 
-## Public Decryption
-
-Public decryption in FHEVM uses a self-relaying model. A dApp marks ciphertexts as publicly decryptable on-chain by calling `FHE.makePubliclyDecryptable()`. Any user can then perform the decryption off-chain via the Relayer SDK's `publicDecrypt()` function, which returns both the cleartext value and a cryptographic proof. Finally, the proof is submitted back on-chain and verified using `FHE.checkSignatures()`.
-
-This approach is trustless and permissionless since anyone can perform the off-chain decryption and submit proofs for verification. The KMS signatures ensure authenticity of the decrypted values.

@@ -2,7 +2,7 @@
 
 This document explains how to perform public decryption of FHEVM ciphertexts.
 Public decryption is required when you want everyone to see the value in a ciphertext, for example the result of private auction.
-Public decryption is done using the Relayer SDK, which handles the off-chain decryption and returns both the cleartext values and a cryptographic proof that can be verified on-chain.
+Public decryption is done using the Relayer SDK, which requests the decryption via HTTP endpoint and returns both the cleartext values and a cryptographic proof that can be verified on-chain.
 
 ## HTTP Public Decrypt
 
@@ -27,4 +27,4 @@ const values = instance.publicDecrypt(handles);
 
 ## On-chain Verification
 
-After obtaining decrypted values via the Relayer SDK, you can verify the decryption proof on-chain using `FHE.checkSignatures()`. For the complete workflow including on-chain setup with `FHE.makePubliclyDecryptable()` and verification, please refer to the [Public Decryption Solidity Guide](https://docs.zama.ai/protocol/solidity-guides/smart-contract/decryption/oracle).
+After obtaining decrypted values via the Relayer SDK, you can verify the decryption proof on-chain using `FHE.checkSignatures()`. For the complete workflow including on-chain setup with `FHE.makePubliclyDecryptable()` and verification, please refer to the [Public Decryption Solidity Guide](https://docs.zama.org/protocol/solidity-guides/smart-contract/oracle).
