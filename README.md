@@ -172,6 +172,10 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
   <img alt="Support">
 </picture>
 </a>
+ 
+### Security disclosure
+
+For security vulnerabilities, please follow the instructions in [SECURITY.md](./SECURITY.md). Do not open public issues for sensitive reports.
 
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
 
