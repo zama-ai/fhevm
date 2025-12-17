@@ -184,6 +184,29 @@ where
                 event = subscription.next() => match event {
                     Some(event_log) => {
                         let tx_hash = event_log.transaction_hash.expect("Event log must have transaction hash");
+
+                        // Extract event details for logging
+                        let block_number = event_log.block_number.unwrap_or(0);
+                        let block_hash = event_log.block_hash
+                            .map(|h| format!("{:#x}", h))
+                            .unwrap_or_else(|| "0x0".to_string());
+                        let log_index = event_log.log_index.unwrap_or(0);
+
+                        // Extract topics for logging
+                        let topic0 = event_log.topics()
+                            .first()
+                            .map(|t| format!("{:#x}", t))
+                            .unwrap_or_else(|| "none".to_string());
+                        let topic1 = event_log.topics()
+                            .get(1)
+                            .map(|t| format!("{:#x}", t))
+                            .unwrap_or_else(|| "none".to_string());
+
+                        info!(
+                            "Gateway event received: block={}, block_hash={}, log_index={}, topic0={}, topic1={}, tx_hash={:#x}",
+                            block_number, block_hash, log_index, topic0, topic1, tx_hash
+                        );
+
                         let event = RelayerEvent::new(
                             JobId::from_uuid_v7(self.orchestrator.new_internal_request_id()),
                             ApiVersion {
@@ -202,11 +225,7 @@ where
                             );
                         });
 
-                        if let Some(block_number) = event_log.block_number {
-                            let block_hash = event_log.block_hash
-                                .map(|h| format!("{:#x}", h))
-                                .unwrap_or_else(|| "0x0".to_string());
-
+                        if event_log.block_number.is_some() {
                             // Update block progress - log error but don't stop processing
                             if let Err(e) = self.block_number_repo
                                 .update_block_info(block_number, block_hash.clone())
