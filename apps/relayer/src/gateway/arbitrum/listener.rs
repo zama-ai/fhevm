@@ -1,4 +1,4 @@
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     config::settings::GatewayConfig,
@@ -171,7 +171,7 @@ where
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        // Parse contract addresses from config
+        // Parse contract addresses once
         let decryption_address =
             Address::from_str(&self.gateway_config.contracts.decryption_address)
                 .map_err(|_| anyhow::anyhow!("Invalid decryption address"))?;
@@ -180,32 +180,115 @@ where
                 .map_err(|_| anyhow::anyhow!("Invalid InputVerification address"))?;
         let contract_addresses = vec![decryption_address, input_verification_address];
 
-        // Create WebSocket provider
-        let provider = Arc::new(self.create_provider().await?);
-
-        // Resolve starting block with proper initialization
-        let starting_block = self.resolve_starting_block(&provider).await?;
-
-        // Create log subscription from determined starting point
-        let sub = self
-            .create_subscription(&provider, &contract_addresses, starting_block)
-            .await?;
-
-        info!("Subscription to gateway chain is successful. Listening for logs...");
-        let mut subscription = sub.into_stream();
+        let mut last_processed_block: Option<u64> = None;
+        let mut consecutive_failures: u32 = 0;
+        let max_attempts = self
+            .gateway_config
+            .listener
+            .ws_reconnect_config
+            .max_attempts;
+        let retry_interval = self
+            .gateway_config
+            .listener
+            .ws_reconnect_config
+            .retry_interval_ms;
 
         info!(
             "Starting Relayer Gateway Listener instance {}",
             self.instance_id
         );
 
-        // Process events until stream ends
-        let mut last_block = None;
-        self.process_events(&mut subscription, &mut last_block)
-            .await;
+        loop {
+            // Check if max retries exceeded
+            if consecutive_failures >= max_attempts {
+                return Err(anyhow::anyhow!(
+                    "Listener {} exceeded max reconnection attempts ({})",
+                    self.instance_id,
+                    max_attempts
+                ));
+            }
 
-        info!("Listener {} subscription stream ended", self.instance_id);
-        Ok(())
+            // Create provider (retry on failure)
+            let provider = match self.create_provider().await {
+                Ok(p) => p,
+                Err(e) => {
+                    consecutive_failures += 1;
+                    warn!(
+                        instance_id = self.instance_id,
+                        error = %e,
+                        attempt = consecutive_failures,
+                        max_attempts = max_attempts,
+                        "Failed to create provider, retrying..."
+                    );
+                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    continue;
+                }
+            };
+
+            // Determine starting block
+            let starting_block = match last_processed_block {
+                Some(block) => block + 1,
+                None => match self.resolve_starting_block(&provider).await {
+                    Ok(block) => block,
+                    Err(e) => {
+                        consecutive_failures += 1;
+                        warn!(
+                            instance_id = self.instance_id,
+                            error = %e,
+                            attempt = consecutive_failures,
+                            max_attempts = max_attempts,
+                            "Failed to resolve starting block, retrying..."
+                        );
+                        tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                        continue;
+                    }
+                },
+            };
+
+            // Create subscription (retry on failure)
+            let sub = match self
+                .create_subscription(&provider, &contract_addresses, starting_block)
+                .await
+            {
+                Ok(s) => s,
+                Err(e) => {
+                    consecutive_failures += 1;
+                    warn!(
+                        instance_id = self.instance_id,
+                        error = %e,
+                        attempt = consecutive_failures,
+                        max_attempts = max_attempts,
+                        "Failed to subscribe, retrying..."
+                    );
+                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                    continue;
+                }
+            };
+
+            // Reset failure counter on successful connection
+            consecutive_failures = 0;
+            info!(
+                "Listener {} subscription to gateway chain is successful. Listening for logs...",
+                self.instance_id
+            );
+            let mut subscription = sub.into_stream();
+
+            // Process events (returns on stream end)
+            self.process_events(&mut subscription, &mut last_processed_block)
+                .await;
+
+            // Stream ended - increment failures and log warning
+            consecutive_failures += 1;
+            warn!(
+                instance_id = self.instance_id,
+                last_block = ?last_processed_block,
+                attempt = consecutive_failures,
+                max_attempts = max_attempts,
+                "Gateway WebSocket connection dropped, reconnecting..."
+            );
+
+            tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+        }
     }
 
     /// Process events from subscription stream. Returns when stream ends.
@@ -329,21 +412,10 @@ where
         // Create WebSocket provider with preserved settings
         // 256MB instead of 64MB max for websocket size (copro bug with payload over 64MB)
         let ws_config = WebSocketConfig::default().max_message_size(Some(256 * 1024 * 1024));
-        // Configure WebSocket with reconnection parameters
+        // Disable implicit reconnect - we handle reconnection at application level
         let ws = WsConnect::new(&self.gateway_config.blockchain_rpc.ws_url)
             .with_config(ws_config)
-            .with_max_retries(
-                self.gateway_config
-                    .listener
-                    .ws_reconnect_config
-                    .max_attempts,
-            )
-            .with_retry_interval(Duration::from_millis(
-                self.gateway_config
-                    .listener
-                    .ws_reconnect_config
-                    .retry_interval_ms,
-            ));
+            .with_max_retries(0);
 
         let provider = ProviderBuilder::new()
             .network::<AnyNetwork>()
