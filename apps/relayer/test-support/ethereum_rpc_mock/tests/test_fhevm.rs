@@ -140,7 +140,12 @@ async fn test_input_proof_response() {
     let proof_data = Bytes::from([1, 2, 3, 4]);
 
     FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_input_proof_success(USER_ADDRESS, proof_data.clone(), 1);
+        .on_input_proof_success(
+            USER_ADDRESS,
+            proof_data.clone(),
+            1,
+            ethereum_rpc_mock::SubscriptionTarget::All,
+        );
 
     let handle = server.clone().start().await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -337,7 +342,12 @@ async fn test_user_decrypt_response() {
     let result_bytes = Bytes::from([42]);
 
     FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_user_decrypt_success(vec![handle], USER_ADDRESS, result_bytes);
+        .on_user_decrypt_success(
+            vec![handle],
+            USER_ADDRESS,
+            result_bytes,
+            ethereum_rpc_mock::SubscriptionTarget::All,
+        );
 
     let server_handle = server.clone().start().await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -529,7 +539,11 @@ async fn test_public_decrypt_response() {
     let values = vec![42u64, 100u64];
 
     FhevmMockWrapper::new(server.clone(), DECRYPTION_CONTRACT, INPUT_PROOF_CONTRACT)
-        .on_public_decrypt_success(vec![handle1, handle2], values);
+        .on_public_decrypt_success(
+            vec![handle1, handle2],
+            values,
+            ethereum_rpc_mock::SubscriptionTarget::All,
+        );
 
     let server_handle = server.clone().start().await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

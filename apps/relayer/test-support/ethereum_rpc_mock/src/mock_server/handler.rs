@@ -8,20 +8,21 @@ use crate::{
     mock_server::{
         rpc::EthRpcApiServer,
         rpc_types::{CallParams, Response, ResponseData, TxParams},
-        MockConfig,
+        MockConfig, SubscriptionTarget,
     },
     pattern_matcher::PatternMatcher,
 };
 use alloy::primitives::{Log as InnerLog, B256};
 use alloy::rpc::types::eth::Log as RpcLog;
 use anyhow::Context;
+use indexmap::IndexMap;
 use jsonrpsee::{
     core::RpcResult,
     types::{ErrorObject, SubscriptionId},
     PendingSubscriptionSink, SubscriptionMessage, SubscriptionSink,
 };
 use serde_json::Value;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::RwLock as AsyncRwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -48,8 +49,8 @@ pub struct MockRpcHandler {
     pub config: Arc<MockConfig>,
     pub pattern_matcher: Arc<PatternMatcher>,
     pub blockchain_state: Arc<BlockchainState>,
-    pub log_subscriptions: Arc<AsyncRwLock<HashMap<SubscriptionId<'static>, SubscriptionSink>>>,
-    pub head_subscriptions: Arc<AsyncRwLock<HashMap<SubscriptionId<'static>, SubscriptionSink>>>,
+    pub log_subscriptions: Arc<AsyncRwLock<IndexMap<SubscriptionId<'static>, SubscriptionSink>>>,
+    pub head_subscriptions: Arc<AsyncRwLock<IndexMap<SubscriptionId<'static>, SubscriptionSink>>>,
     #[allow(dead_code)] // Reserved for future graceful shutdown implementation
     pub shutdown_token: CancellationToken,
 }
@@ -454,7 +455,10 @@ impl MockRpcHandler {
                 // Emit logs to WebSocket subscribers if any
                 if !logs.is_empty() {
                     for log in &logs {
-                        if let Err(e) = self.emit_to_log_subscribers(log.clone()).await {
+                        if let Err(e) = self
+                            .emit_to_log_subscribers(log.clone(), SubscriptionTarget::All)
+                            .await
+                        {
                             warn!("Failed to emit log event: {}", e);
                         }
                     }
@@ -524,15 +528,19 @@ impl MockRpcHandler {
         self.emit_to_head_subscribers(block).await
     }
 
-    /// Emit a log event to all log subscribers
-    async fn emit_to_log_subscribers(&self, log: InnerLog) -> anyhow::Result<()> {
+    /// Emit a log event to subscribers (all or selected)
+    async fn emit_to_log_subscribers(
+        &self,
+        log: InnerLog,
+        target: SubscriptionTarget,
+    ) -> anyhow::Result<()> {
         // Convert inner log to RPC log with proper metadata for WebSocket subscribers
         let rpc_log = self.blockchain_state.convert_inner_log_to_rpc(log);
 
         // Send the RPC log object - JsonRPSee will wrap it with subscription ID
         let log_value = serde_json::to_value(rpc_log).context("Failed to serialize log to JSON")?;
 
-        self.broadcast_to_subscribers(&self.log_subscriptions, &log_value, "log")
+        self.broadcast_to_subscribers(&self.log_subscriptions, &log_value, "log", target)
             .await
             .context("Failed to broadcast log event")
     }
@@ -546,16 +554,23 @@ impl MockRpcHandler {
         let block_value = serde_json::to_value(block.header)
             .context("Failed to serialize block header to JSON")?;
 
-        self.broadcast_to_subscribers(&self.head_subscriptions, &block_value, "head")
-            .await
-            .context("Failed to broadcast block header event")
+        self.broadcast_to_subscribers(
+            &self.head_subscriptions,
+            &block_value,
+            "head",
+            SubscriptionTarget::All,
+        )
+        .await
+        .context("Failed to broadcast block header event")
     }
 
+    /// Broadcast to log subscribers with targeting support
     async fn broadcast_to_subscribers(
         &self,
-        subscribers: &Arc<AsyncRwLock<HashMap<SubscriptionId<'static>, SubscriptionSink>>>,
+        subscribers: &Arc<AsyncRwLock<IndexMap<SubscriptionId<'static>, SubscriptionSink>>>,
         event_value: &serde_json::Value,
         event_type: &str,
+        target: SubscriptionTarget,
     ) -> anyhow::Result<()> {
         // Create the subscription message once
         let message = SubscriptionMessage::from_json(event_value)
@@ -564,28 +579,39 @@ impl MockRpcHandler {
         // Use async write lock to send immediately within the lock
         let mut subs = subscribers.write().await;
 
+        // Determine which indices to send to
+        let indices_to_send: Vec<usize> = match target {
+            SubscriptionTarget::All => (0..subs.len()).collect(),
+            SubscriptionTarget::Only(indices) => indices,
+        };
+
         debug!(
-            "Broadcasting {} event to {} subscribers",
+            "Broadcasting {} event to {} of {} subscribers (target: {:?})",
             event_type,
-            subs.len()
+            indices_to_send.len(),
+            subs.len(),
+            indices_to_send
         );
 
         let mut dead_subscription_ids = Vec::new();
 
-        // Send to all subscribers within the lock
-        for (subscription_id, sink) in subs.iter() {
-            if let Err(err) = sink.send(message.clone()).await {
-                debug!(
-                    "Failed to send {} event to subscriber {:?}: {}. Will remove dead sink.",
-                    event_type, subscription_id, err
-                );
-                dead_subscription_ids.push(subscription_id.clone());
+        // Send to targeted subscribers within the lock
+        for index in indices_to_send {
+            if let Some((subscription_id, sink)) = subs.get_index(index) {
+                if let Err(err) = sink.send(message.clone()).await {
+                    debug!(
+                        "Failed to send {} event to subscriber {:?}: {}. Will remove dead sink.",
+                        event_type, subscription_id, err
+                    );
+                    dead_subscription_ids.push(subscription_id.clone());
+                }
             }
         }
 
-        // Clean up dead subscriptions by removing from HashMap
+        // Clean up dead subscriptions by removing from IndexMap
         for subscription_id in dead_subscription_ids.iter() {
-            subs.remove(subscription_id);
+            // Preserve order so index-based targeting stays deterministic
+            subs.shift_remove(subscription_id);
             debug!(
                 "Removed dead {} subscriber with ID {:?}",
                 event_type, subscription_id
@@ -603,4 +629,6 @@ impl MockRpcHandler {
 
         Ok(())
     }
+
+    // Head subscriptions reuse the same broadcast path with implicit SubscriptionTarget::All
 }

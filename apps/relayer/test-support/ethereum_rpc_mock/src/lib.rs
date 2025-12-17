@@ -60,3 +60,6 @@ pub use pattern_matcher::UsageLimit;
 
 /// Scheduled transaction support for delayed responses
 pub use blockchain::ScheduledTransaction;
+
+/// Subscription targeting for selective event emission
+pub use mock_server::SubscriptionTarget;

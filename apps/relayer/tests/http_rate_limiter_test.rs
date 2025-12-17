@@ -514,6 +514,7 @@ async fn test_user_decrypt_rate_limit_post_endpoints_scenarios() {
             handles.clone(),
             user_address,
             encrypted_bytes.clone(),
+            ethereum_rpc_mock::SubscriptionTarget::All,
         );
     }
 

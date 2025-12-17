@@ -7,8 +7,10 @@
 //! - Transaction validation and decoding
 //! - Receipt generation and storage
 
+use crate::mock_server::SubscriptionTarget;
 use alloy::consensus::{Header as ConsensusHeader, Receipt, ReceiptEnvelope, ReceiptWithBloom};
 use alloy::primitives::{Address, Bytes, Log as InnerLog, B256, U256};
+use indexmap::IndexMap;
 
 /// Mock-specific constants for deterministic testing
 mod mock_constants {
@@ -81,8 +83,8 @@ impl Default for Account {
 pub struct ScheduledTransaction {
     /// Target contract address (None for contract creation)
     pub target_address: Option<Address>,
-    /// Response events to emit with their individual delays
-    pub response_events: Vec<(Duration, InnerLog)>,
+    /// Response events to emit with their individual delays and targets
+    pub response_events: Vec<(Duration, InnerLog, SubscriptionTarget)>,
 }
 
 impl ScheduledTransaction {
@@ -94,7 +96,7 @@ impl ScheduledTransaction {
     ) -> Self {
         Self {
             target_address,
-            response_events: vec![(delay, event)],
+            response_events: vec![(delay, event, SubscriptionTarget::All)],
         }
     }
 
@@ -109,7 +111,10 @@ impl ScheduledTransaction {
         );
         Self {
             target_address,
-            response_events: events,
+            response_events: events
+                .into_iter()
+                .map(|(d, e)| (d, e, SubscriptionTarget::All))
+                .collect(),
         }
     }
 }
@@ -278,7 +283,7 @@ impl BlockchainState {
     pub fn schedule_delayed_transaction(
         &self,
         transaction: ScheduledTransaction,
-        log_subscriptions: Arc<AsyncRwLock<HashMap<SubscriptionId<'static>, SubscriptionSink>>>,
+        log_subscriptions: Arc<AsyncRwLock<IndexMap<SubscriptionId<'static>, SubscriptionSink>>>,
     ) {
         let num_events = transaction.response_events.len();
         let blockchain_state = self.clone(); // Clone Arc wrapper (expert recommendation)
@@ -288,8 +293,9 @@ impl BlockchainState {
             "Scheduling delayed transaction via BlockchainState"
         );
 
-        // Spawn one tokio task per event with individual delays
-        for (delay, event) in transaction.response_events {
+        // Spawn one tokio task per event with individual delays.
+        // Each task runs independently - subscription targeting is evaluated at emission time.
+        for (delay, event, target) in transaction.response_events {
             let log_subscriptions = log_subscriptions.clone();
             let blockchain_state = blockchain_state.clone();
 
@@ -307,6 +313,7 @@ impl BlockchainState {
                     &log_subscriptions,
                     &blockchain_state,
                     event,
+                    target,
                 )
                 .await
                 {
@@ -321,9 +328,10 @@ impl BlockchainState {
 
     /// Static helper for event emission in async tasks (preserves exact behavior)
     async fn emit_to_log_subscribers_static(
-        log_subscriptions: &Arc<AsyncRwLock<HashMap<SubscriptionId<'static>, SubscriptionSink>>>,
+        log_subscriptions: &Arc<AsyncRwLock<IndexMap<SubscriptionId<'static>, SubscriptionSink>>>,
         blockchain_state: &BlockchainState,
         log: InnerLog,
+        target: SubscriptionTarget,
     ) -> AnyhowResult<()> {
         // Convert inner log to RPC log with proper metadata
         let rpc_log = blockchain_state.convert_inner_log_to_rpc(log);
@@ -338,27 +346,40 @@ impl BlockchainState {
         // Use async write lock to send immediately within the lock
         let mut subs = log_subscriptions.write().await;
 
+        // Determine which indices to send to
+        let indices_to_send: Vec<usize> = match target {
+            SubscriptionTarget::All => (0..subs.len()).collect(),
+            SubscriptionTarget::Only(indices) => indices,
+        };
+
         debug!(
-            "Broadcasting scheduled log event to {} subscribers via BlockchainState",
+            "Broadcasting scheduled log event to {} of {} subscribers via BlockchainState",
+            indices_to_send.len(),
             subs.len()
         );
 
         let mut dead_subscription_ids = Vec::new();
 
-        // Send to all subscribers within the lock
-        for (subscription_id, sink) in subs.iter() {
-            if let Err(err) = sink.send(message.clone()).await {
-                debug!(
-                    "Failed to send scheduled log event to subscriber {:?}: {}. Will remove dead sink.",
-                    subscription_id, err
-                );
-                dead_subscription_ids.push(subscription_id.clone());
+        // Send to targeted subscribers within the lock.
+        // Note: get_index returns None for out-of-bounds indices (safe handling).
+        for index in indices_to_send {
+            if let Some((subscription_id, sink)) = subs.get_index(index) {
+                if let Err(err) = sink.send(message.clone()).await {
+                    debug!(
+                        "Failed to send scheduled log event to subscriber {:?}: {}. Will remove dead sink.",
+                        subscription_id, err
+                    );
+                    dead_subscription_ids.push(subscription_id.clone());
+                }
             }
         }
 
-        // Clean up dead subscriptions
+        // Clean up dead subscriptions (happens AFTER all sends complete, so indices were stable above)
         for subscription_id in dead_subscription_ids.iter() {
-            subs.remove(subscription_id);
+            // shift_remove maintains insertion order (unlike swap_remove).
+            // Note: indices of subsequent subscriptions will shift, but this is expected -
+            // future emissions will target "whatever subscription is at index N at that time".
+            subs.shift_remove(subscription_id);
             debug!("Removed dead log subscriber with ID {:?}", subscription_id);
         }
 

@@ -1,5 +1,8 @@
 mod common;
 
+use crate::common::redundancy::{
+    common_redundancy_cases, expand_targets, user_only_redundancy_cases, USER_DECRYPT_EVENT_COUNT,
+};
 use crate::common::utils::TestSetup;
 use crate::common::validation_helper::{
     expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success,
@@ -9,6 +12,7 @@ use alloy::primitives::{Address, Bytes, B256};
 use rand::{rng, Rng};
 use rstest::rstest;
 use serde_json::json;
+use std::collections::HashMap;
 use std::str::FromStr;
 
 mod constants {
@@ -120,9 +124,12 @@ async fn test_success_single_request() {
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
     let encrypted_bytes = helpers::random_encrypted_bytes();
 
-    setup
-        .fhevm_mock
-        .on_user_decrypt_success(handles, user_address, encrypted_bytes);
+    setup.fhevm_mock.on_user_decrypt_success(
+        handles,
+        user_address,
+        encrypted_bytes,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     test_endpoint(
         &helpers::v1_user_decrypt_url(&setup),
@@ -158,9 +165,12 @@ async fn test_consecutive_duplicate_requests_succeed() {
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
     let encrypted_bytes = helpers::random_encrypted_bytes();
 
-    setup
-        .fhevm_mock
-        .on_user_decrypt_success(handles.clone(), user_address, encrypted_bytes);
+    setup.fhevm_mock.on_user_decrypt_success(
+        handles.clone(),
+        user_address,
+        encrypted_bytes,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     // Step 1: Send first request with random payload
     let response1 = reqwest::Client::new()
@@ -238,9 +248,12 @@ async fn test_success_concurrent_requests() {
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
     let encrypted_bytes = helpers::random_encrypted_bytes();
 
-    setup
-        .fhevm_mock
-        .on_user_decrypt_success(handles, user_address, encrypted_bytes);
+    setup.fhevm_mock.on_user_decrypt_success(
+        handles,
+        user_address,
+        encrypted_bytes,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     // Send multiple concurrent requests using test_endpoint
     let mut tasks = tokio::task::JoinSet::new();
@@ -272,6 +285,69 @@ async fn test_success_concurrent_requests() {
     tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
     setup.shutdown().await;
+}
+
+/// Listener redundancy scenarios for user decrypt with clearer case descriptions.
+#[tokio::test]
+#[cfg_attr(
+    not(feature = "long-running-tests"),
+    ignore = "Long-running test - run with --features long-running-tests"
+)]
+async fn test_listener_redundancy_user_decrypt_matrix() {
+    let mut cases = common_redundancy_cases();
+    cases.extend(user_only_redundancy_cases());
+    let mut setups: HashMap<usize, TestSetup> = HashMap::new();
+
+    for case in cases {
+        if let std::collections::hash_map::Entry::Vacant(e) = setups.entry(case.listener_count) {
+            let setup = TestSetup::new_with_listeners(case.listener_count)
+                .await
+                .expect("Failed to create test setup with listeners");
+            e.insert(setup);
+        }
+        let setup = setups
+            .get(&case.listener_count)
+            .expect("Missing test setup for listener count");
+
+        let user_address = helpers::random_address();
+        let contract_address = helpers::random_address();
+        println!("user-decrypt redundancy case: {}", case.name);
+
+        for _ in 0..case.requests {
+            let payload = helpers::create_user_decrypt_payload(
+                &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+                contract_address,
+                user_address,
+            );
+            let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
+            let encrypted_bytes = helpers::random_encrypted_bytes();
+
+            let per_event_targets =
+                expand_targets(USER_DECRYPT_EVENT_COUNT, &case.targets_per_event);
+
+            setup.fhevm_mock.on_user_decrypt_success_with_targets(
+                handles.clone(),
+                user_address,
+                encrypted_bytes,
+                per_event_targets,
+            );
+
+            test_endpoint(
+                &helpers::v1_user_decrypt_url(setup),
+                payload.clone(),
+                |_| {},
+                expect_success(),
+            )
+            .await;
+        }
+
+        // Allow consensus event to be processed
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+    }
+
+    for setup in setups.into_values() {
+        setup.shutdown().await;
+    }
 }
 
 #[rstest]

@@ -42,6 +42,7 @@ impl Default for MockConfig {
 }
 use alloy::primitives::{Address, Bytes, U256};
 use anyhow::{Context, Result as AnyhowResult};
+use indexmap::IndexMap;
 use jsonrpsee::server::{ServerBuilder, ServerHandle};
 use jsonrpsee::types::SubscriptionId;
 use jsonrpsee::SubscriptionSink;
@@ -106,8 +107,8 @@ pub struct MockServer {
     config: Arc<MockConfig>,
     pattern_matcher: Arc<PatternMatcher>,
     blockchain_state: Arc<BlockchainState>,
-    log_subscriptions: Arc<AsyncRwLock<HashMap<SubscriptionId<'static>, SubscriptionSink>>>,
-    head_subscriptions: Arc<AsyncRwLock<HashMap<SubscriptionId<'static>, SubscriptionSink>>>,
+    log_subscriptions: Arc<AsyncRwLock<IndexMap<SubscriptionId<'static>, SubscriptionSink>>>,
+    head_subscriptions: Arc<AsyncRwLock<IndexMap<SubscriptionId<'static>, SubscriptionSink>>>,
     shutdown_token: CancellationToken,
 }
 
@@ -120,8 +121,8 @@ impl MockServer {
         let config = Arc::new(config);
         let pattern_matcher = Arc::new(PatternMatcher::new());
         let blockchain_state = Arc::new(BlockchainState::new(HashMap::new()));
-        let log_subscriptions = Arc::new(AsyncRwLock::new(HashMap::new()));
-        let head_subscriptions = Arc::new(AsyncRwLock::new(HashMap::new()));
+        let log_subscriptions = Arc::new(AsyncRwLock::new(IndexMap::new()));
+        let head_subscriptions = Arc::new(AsyncRwLock::new(IndexMap::new()));
         let shutdown_token = CancellationToken::new();
 
         debug!("MockServer components initialized successfully");
@@ -312,6 +313,18 @@ impl MockServer {
 
     pub fn shutdown_token(&self) -> &CancellationToken {
         &self.shutdown_token
+    }
+
+    /// Get the number of active log subscriptions
+    pub async fn get_log_subscription_count(&self) -> usize {
+        self.log_subscriptions.read().await.len()
+    }
+
+    /// Get access to log subscriptions (for testing)
+    pub fn log_subscriptions(
+        &self,
+    ) -> &Arc<AsyncRwLock<IndexMap<SubscriptionId<'static>, SubscriptionSink>>> {
+        &self.log_subscriptions
     }
 
     /// Convert MockServer into RPC methods

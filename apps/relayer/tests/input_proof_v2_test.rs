@@ -60,9 +60,12 @@ async fn test_success_single_request() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
     let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
-    setup
-        .fhevm_mock
-        .on_input_proof_success(user_address, ciphertext_data, 1);
+    setup.fhevm_mock.on_input_proof_success(
+        user_address,
+        ciphertext_data,
+        1,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     // Step 1: POST request should return reference ID
     let response = reqwest::Client::new()

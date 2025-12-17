@@ -81,7 +81,10 @@ fn print_all_fhevm_event_signatures() {
     );
 
     println!("4. UserDecryptionResponse");
-    println!("   Signature: {}", Decryption::UserDecrypt::SIGNATURE);
+    println!(
+        "   Signature: {}",
+        Decryption::UserDecryptionResponse::SIGNATURE
+    );
     println!(
         "   Hash:      0x{}\n",
         hex::encode(Decryption::UserDecryptionResponse::SIGNATURE_HASH)

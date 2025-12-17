@@ -1,5 +1,6 @@
 mod common;
 
+use crate::common::redundancy::{common_redundancy_cases, expand_targets, RedundancyCase};
 use crate::common::utils::TestSetup;
 use crate::common::validation_helper::{
     expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success,
@@ -9,6 +10,7 @@ use alloy::primitives::{Address, Bytes};
 use rand::{rng, Rng};
 use rstest::rstest;
 use serde_json::json;
+use std::collections::HashMap;
 
 mod constants {
     pub const EXTRA_DATA: &str = "0x00";
@@ -88,9 +90,12 @@ async fn test_success_single_request() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
 
     let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
-    setup
-        .fhevm_mock
-        .on_input_proof_success(user_address, ciphertext_data, 1);
+    setup.fhevm_mock.on_input_proof_success(
+        user_address,
+        ciphertext_data,
+        1,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     test_endpoint(
         &helpers::v1_input_proof_url(&setup),
@@ -112,9 +117,12 @@ async fn test_success_concurrent_requests() {
     let number_of_requests = 10;
 
     let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
-    setup
-        .fhevm_mock
-        .on_input_proof_success(user_address, ciphertext_data, number_of_requests);
+    setup.fhevm_mock.on_input_proof_success(
+        user_address,
+        ciphertext_data,
+        number_of_requests,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     for i in 1..=number_of_requests {
         let payload_clone = payload.clone();
@@ -137,6 +145,57 @@ async fn test_success_concurrent_requests() {
     }
 
     setup.shutdown().await;
+}
+
+/// Listener redundancy for input proof with clear cases.
+#[tokio::test]
+#[cfg_attr(
+    not(feature = "long-running-tests"),
+    ignore = "Long-running test - run with --features long-running-tests"
+)]
+async fn test_listener_redundancy_input_proof_matrix() {
+    let cases: Vec<RedundancyCase> = common_redundancy_cases();
+    let mut setups: HashMap<usize, TestSetup> = HashMap::new();
+
+    for case in cases {
+        if let std::collections::hash_map::Entry::Vacant(e) = setups.entry(case.listener_count) {
+            let setup = TestSetup::new_with_listeners(case.listener_count)
+                .await
+                .expect("Failed to create test setup");
+            e.insert(setup);
+        }
+        let setup = setups
+            .get(&case.listener_count)
+            .expect("Missing test setup for listener count");
+
+        println!("input-proof redundancy case: {}", case.name);
+
+        let request_targets = expand_targets(case.requests, &case.targets_per_event);
+
+        for target in request_targets {
+            let (payload, user_address, ciphertext_data) =
+                helpers::create_input_proof_payload(setup);
+            // Register one success pattern per request with its target
+            setup.fhevm_mock.on_input_proof_success(
+                user_address,
+                ciphertext_data.clone(),
+                1,
+                target.clone(),
+            );
+
+            test_endpoint(
+                &helpers::v1_input_proof_url(setup),
+                payload,
+                |_| {},
+                expect_success(),
+            )
+            .await;
+        }
+    }
+
+    for setup in setups.into_values() {
+        setup.shutdown().await;
+    }
 }
 
 #[rstest]

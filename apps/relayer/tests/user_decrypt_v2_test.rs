@@ -212,9 +212,12 @@ async fn test_success_single_request() {
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
     let encrypted_bytes = helpers::random_encrypted_bytes();
 
-    setup
-        .fhevm_mock
-        .on_user_decrypt_success(handles, user_address, encrypted_bytes);
+    setup.fhevm_mock.on_user_decrypt_success(
+        handles,
+        user_address,
+        encrypted_bytes,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     // Step 1: POST request should return reference ID
     let response = reqwest::Client::new()
@@ -315,9 +318,12 @@ async fn test_consecutive_duplicate_requests_succeed() {
     let handles = helpers::extract_ciphertext_handles_from_user_payload(&payload);
     let encrypted_bytes = helpers::random_encrypted_bytes();
 
-    setup
-        .fhevm_mock
-        .on_user_decrypt_success(handles, user_address, encrypted_bytes);
+    setup.fhevm_mock.on_user_decrypt_success(
+        handles,
+        user_address,
+        encrypted_bytes,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     let client = reqwest::Client::new();
     let url = helpers::v2_user_decrypt_post_url(&setup);

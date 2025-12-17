@@ -46,6 +46,14 @@ impl TestSetup {
         Self::new_with_config_path(Some(temp_config_path)).await
     }
 
+    /// Create test setup with specified number of listener instances (for redundancy testing)
+    #[allow(dead_code)]
+    pub async fn new_with_listeners(listener_count: usize) -> eyre::Result<Self> {
+        let temp_config_dir = TempDir::new()?;
+        let temp_config_path = create_listener_config(&temp_config_dir, listener_count)?;
+        Self::new_with_config_path(Some(temp_config_path)).await
+    }
+
     /// Create setup with optional custom config path
     async fn new_with_config_path(config_path: Option<std::path::PathBuf>) -> eyre::Result<Self> {
         // Get free ports for mock servers (they don't support :0 yet)
@@ -247,6 +255,39 @@ fn create_fast_readiness_config(temp_dir: &TempDir) -> eyre::Result<std::path::P
                 retry["retry_interval_ms"] =
                     serde_yaml::Value::Number(serde_yaml::Number::from(250));
             }
+        }
+    }
+
+    // Serialize back to YAML and write to temp file
+    let modified_content = serde_yaml::to_string(&config)
+        .map_err(|e| eyre::eyre!("Failed to serialize modified config: {}", e))?;
+
+    std::fs::write(&temp_config_path, modified_content)
+        .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
+
+    Ok(temp_config_path)
+}
+
+/// Create a config file with specified number of listener instances
+fn create_listener_config(
+    temp_dir: &TempDir,
+    listener_count: usize,
+) -> eyre::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join("listener_config.yaml");
+
+    // Read the default config
+    let config_content = std::fs::read_to_string("config/local.yaml.example")
+        .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
+
+    // Parse YAML as a generic value
+    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
+        .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
+
+    // Modify the listener instances count
+    if let Some(gateway) = config.get_mut("gateway") {
+        if let Some(listener) = gateway.get_mut("listener") {
+            listener["listener_instances"] =
+                serde_yaml::Value::Number(serde_yaml::Number::from(listener_count));
         }
     }
 

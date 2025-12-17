@@ -1,6 +1,6 @@
 use crate::{
     blockchain::ScheduledTransaction,
-    mock_server::{rpc_types::Response, MockServer},
+    mock_server::{self, rpc_types::Response, MockServer},
     pattern_matcher::UsageLimit,
 };
 use alloy::primitives::{Address, Bytes, B256, U256};
@@ -67,7 +67,6 @@ fn matches_contract_and_selector_for_txn(
 #[derive(Clone)]
 pub struct FhevmMockWrapper {
     json_rpc_server: MockServer,
-    next_decryption_id: Arc<AtomicU64>,
     next_zk_proof_id: Arc<AtomicU64>,
     pub decryption_contract: Address,
     pub input_proof_contract: Address,
@@ -106,9 +105,6 @@ impl FhevmMockWrapper {
 
         Self {
             json_rpc_server,
-            next_decryption_id: Arc::new(AtomicU64::new(
-                rand::rng().random_range(0..u16::MAX) as u64, // Use u16 max, so that incrementing by 1 will not hit u32 max anytime.
-            )),
             next_zk_proof_id: Arc::new(
                 AtomicU64::new(rand::rng().random_range(0..u16::MAX) as u64), // Use u16 max, so that incrementing by 1 will not hit u32 max anytime.
             ),
@@ -117,8 +113,8 @@ impl FhevmMockWrapper {
         }
     }
 
-    pub fn next_decryption_id(&self) -> u64 {
-        self.next_decryption_id.fetch_add(1, Ordering::SeqCst)
+    pub fn next_decryption_id(&self) -> U256 {
+        U256::from(rand::random::<u64>())
     }
 
     pub fn next_zk_proof_id(&self) -> u64 {
@@ -174,33 +170,82 @@ impl FhevmMockWrapper {
 
     // Generic setup methods to eliminate duplication
 
-    /// Generic registration method for decryption patterns
+    /// Generic registration method for decryption patterns with subscription targeting
     fn register_decrypt_pattern<F>(
         &self,
         operation_type: &str,
         contract: Address,
         selector: [u8; 4],
+        target: mock_server::SubscriptionTarget,
+        usage_limit: UsageLimit,
         log_creator: F,
     ) where
-        F: FnOnce(u64, Address) -> (Log, Log),
+        F: FnOnce(U256, Address) -> (Log, Log),
     {
         let id = self.next_decryption_id();
-        debug!(decryption_id = id, "Registering {} pattern", operation_type);
+        debug!(decryption_id = %id, "Registering {} pattern", operation_type);
         let (request_log, response_log) = log_creator(id, contract);
-        self.register_pattern(contract, selector, request_log, response_log);
+        self.register_pattern(
+            contract,
+            selector,
+            request_log,
+            response_log,
+            target,
+            usage_limit,
+        );
     }
 
     // Public API methods
 
     /// Register user decryption that succeeds with the new multi-response pattern
     /// Emits events across multiple blocks using 3-3-3-1 pattern + consensus
-    pub fn on_user_decrypt_success(&self, handles: Vec<B256>, user: Address, _result: Bytes) {
+    /// Uses Unlimited usage limit for tests that send duplicate requests
+    pub fn on_user_decrypt_success(
+        &self,
+        handles: Vec<B256>,
+        user: Address,
+        _result: Bytes,
+        target: mock_server::SubscriptionTarget,
+    ) {
+        self.on_user_decrypt_success_internal(
+            handles,
+            user,
+            _result,
+            vec![target],
+            UsageLimit::Unlimited,
+        );
+    }
+
+    /// Same as `on_user_decrypt_success` but allows custom per-event targets (cycled if shorter).
+    ///
+    /// User decryption emits **10 events** (3+3+3+1 block pattern). If fewer targets are provided,
+    /// they cycle. Example: `[Only([0]), Only([1])]` becomes `[0,1,0,1,0,1,0,1,0,1]` across the 10 events.
+    /// Uses Once usage limit for redundancy tests that register multiple patterns
+    pub fn on_user_decrypt_success_with_targets(
+        &self,
+        handles: Vec<B256>,
+        user: Address,
+        _result: Bytes,
+        targets: Vec<mock_server::SubscriptionTarget>,
+    ) {
+        self.on_user_decrypt_success_internal(handles, user, _result, targets, UsageLimit::Once);
+    }
+
+    /// Internal method for user decryption with configurable usage limit
+    fn on_user_decrypt_success_internal(
+        &self,
+        handles: Vec<B256>,
+        user: Address,
+        _result: Bytes,
+        targets: Vec<mock_server::SubscriptionTarget>,
+        usage_limit: UsageLimit,
+    ) {
         // Set up readiness check patterns to return true (ready)
         self.set_readiness_success();
 
         let id = self.next_decryption_id();
         debug!(
-            decryption_id = id,
+            decryption_id = %id,
             "Registering user decryption success with multi-block pattern"
         );
 
@@ -212,123 +257,129 @@ impl FhevmMockWrapper {
         // Build the request log (immediate response)
         let request_log = build_user_decrypt_request(self.decryption_contract, id, user, handles);
 
-        // Build events using hard-coded 3-3-3-1 block pattern
-        let mut events = Vec::new();
+        // Build events using hard-coded 3-3-3-1 block pattern (targets resolved later)
+        let events: Vec<(Duration, Log)> = vec![
+            // Block N+1: 3 individual events (indexShare 0, 1, 2)
+            (
+                Duration::from_millis(BLOCK_DELAY_1_MS),
+                build_individual_user_decrypt_response(
+                    self.decryption_contract,
+                    id,
+                    0,
+                    user_shares[0].clone(),
+                    signatures[0].clone(),
+                    extra_data.clone(),
+                ),
+            ),
+            (
+                Duration::from_millis(BLOCK_DELAY_1_MS),
+                build_individual_user_decrypt_response(
+                    self.decryption_contract,
+                    id,
+                    1,
+                    user_shares[1].clone(),
+                    signatures[1].clone(),
+                    extra_data.clone(),
+                ),
+            ),
+            (
+                Duration::from_millis(BLOCK_DELAY_1_MS),
+                build_individual_user_decrypt_response(
+                    self.decryption_contract,
+                    id,
+                    2,
+                    user_shares[2].clone(),
+                    signatures[2].clone(),
+                    extra_data.clone(),
+                ),
+            ),
+            // Block N+2: 3 individual events (indexShare 3, 4, 5)
+            (
+                Duration::from_millis(BLOCK_DELAY_2_MS),
+                build_individual_user_decrypt_response(
+                    self.decryption_contract,
+                    id,
+                    3,
+                    user_shares[3].clone(),
+                    signatures[3].clone(),
+                    extra_data.clone(),
+                ),
+            ),
+            (
+                Duration::from_millis(BLOCK_DELAY_2_MS),
+                build_individual_user_decrypt_response(
+                    self.decryption_contract,
+                    id,
+                    4,
+                    user_shares[4].clone(),
+                    signatures[4].clone(),
+                    extra_data.clone(),
+                ),
+            ),
+            (
+                Duration::from_millis(BLOCK_DELAY_2_MS),
+                build_individual_user_decrypt_response(
+                    self.decryption_contract,
+                    id,
+                    5,
+                    user_shares[5].clone(),
+                    signatures[5].clone(),
+                    extra_data.clone(),
+                ),
+            ),
+            // Block N+3: 3 individual events (indexShare 6, 7, 8)
+            (
+                Duration::from_millis(BLOCK_DELAY_3_MS),
+                build_individual_user_decrypt_response(
+                    self.decryption_contract,
+                    id,
+                    6,
+                    user_shares[6].clone(),
+                    signatures[6].clone(),
+                    extra_data.clone(),
+                ),
+            ),
+            (
+                Duration::from_millis(BLOCK_DELAY_3_MS),
+                build_individual_user_decrypt_response(
+                    self.decryption_contract,
+                    id,
+                    7,
+                    user_shares[7].clone(),
+                    signatures[7].clone(),
+                    extra_data.clone(),
+                ),
+            ),
+            (
+                Duration::from_millis(BLOCK_DELAY_3_MS),
+                build_individual_user_decrypt_response(
+                    self.decryption_contract,
+                    id,
+                    8,
+                    user_shares[8].clone(),
+                    signatures[8].clone(),
+                    extra_data.clone(),
+                ),
+            ),
+            // Block N+4: 1 consensus event
+            (
+                Duration::from_millis(BLOCK_DELAY_4_MS),
+                build_user_decrypt_threshold_reached(self.decryption_contract, id),
+            ),
+        ];
 
-        // Block N+1: 3 individual events (indexShare 0, 1, 2)
-        events.push((
-            Duration::from_millis(BLOCK_DELAY_1_MS),
-            build_individual_user_decrypt_response(
-                self.decryption_contract,
-                id,
-                0,
-                user_shares[0].clone(),
-                signatures[0].clone(),
-                extra_data.clone(),
-            ),
-        ));
-        events.push((
-            Duration::from_millis(BLOCK_DELAY_1_MS),
-            build_individual_user_decrypt_response(
-                self.decryption_contract,
-                id,
-                1,
-                user_shares[1].clone(),
-                signatures[1].clone(),
-                extra_data.clone(),
-            ),
-        ));
-        events.push((
-            Duration::from_millis(BLOCK_DELAY_1_MS),
-            build_individual_user_decrypt_response(
-                self.decryption_contract,
-                id,
-                2,
-                user_shares[2].clone(),
-                signatures[2].clone(),
-                extra_data.clone(),
-            ),
-        ));
-
-        // Block N+2: 3 individual events (indexShare 3, 4, 5)
-        events.push((
-            Duration::from_millis(BLOCK_DELAY_2_MS),
-            build_individual_user_decrypt_response(
-                self.decryption_contract,
-                id,
-                3,
-                user_shares[3].clone(),
-                signatures[3].clone(),
-                extra_data.clone(),
-            ),
-        ));
-        events.push((
-            Duration::from_millis(BLOCK_DELAY_2_MS),
-            build_individual_user_decrypt_response(
-                self.decryption_contract,
-                id,
-                4,
-                user_shares[4].clone(),
-                signatures[4].clone(),
-                extra_data.clone(),
-            ),
-        ));
-        events.push((
-            Duration::from_millis(BLOCK_DELAY_2_MS),
-            build_individual_user_decrypt_response(
-                self.decryption_contract,
-                id,
-                5,
-                user_shares[5].clone(),
-                signatures[5].clone(),
-                extra_data.clone(),
-            ),
-        ));
-
-        // Block N+3: 3 individual events (indexShare 6, 7, 8)
-        events.push((
-            Duration::from_millis(BLOCK_DELAY_3_MS),
-            build_individual_user_decrypt_response(
-                self.decryption_contract,
-                id,
-                6,
-                user_shares[6].clone(),
-                signatures[6].clone(),
-                extra_data.clone(),
-            ),
-        ));
-        events.push((
-            Duration::from_millis(BLOCK_DELAY_3_MS),
-            build_individual_user_decrypt_response(
-                self.decryption_contract,
-                id,
-                7,
-                user_shares[7].clone(),
-                signatures[7].clone(),
-                extra_data.clone(),
-            ),
-        ));
-        events.push((
-            Duration::from_millis(BLOCK_DELAY_3_MS),
-            build_individual_user_decrypt_response(
-                self.decryption_contract,
-                id,
-                8,
-                user_shares[8].clone(),
-                signatures[8].clone(),
-                extra_data.clone(),
-            ),
-        ));
-
-        // Block N+4: 1 consensus event
-        events.push((
-            Duration::from_millis(BLOCK_DELAY_4_MS),
-            build_user_decrypt_threshold_reached(self.decryption_contract, id),
-        ));
+        // Resolve per-event targets (cycle supplied list, default to All)
+        let event_targets = self.resolve_targets(events.len(), targets);
 
         // Create scheduled transaction with multiple events
-        let scheduled_tx =
-            ScheduledTransaction::with_multiple_events(Some(self.decryption_contract), events);
+        let scheduled_tx = ScheduledTransaction {
+            target_address: Some(self.decryption_contract),
+            response_events: events
+                .into_iter()
+                .zip(event_targets)
+                .map(|((delay, log), target)| (delay, log, target))
+                .collect(),
+        };
 
         // Create immediate response with request log and scheduled transaction
         let immediate_response = Response::Success {
@@ -347,7 +398,7 @@ impl FhevmMockWrapper {
                 Decryption::userDecryptionRequestCall::SELECTOR,
             ),
             immediate_response,
-            UsageLimit::Unlimited,
+            usage_limit,
         );
 
         debug!("Registered FHEVM user decryption pattern with multi-block scheduled responses");
@@ -369,15 +420,23 @@ impl FhevmMockWrapper {
     }
 
     /// Register public decryption that succeeds with the provided values
-    pub fn on_public_decrypt_success(&self, handles: Vec<B256>, values: Vec<u64>) {
+    pub fn on_public_decrypt_success(
+        &self,
+        handles: Vec<B256>,
+        values: Vec<u64>,
+        target: mock_server::SubscriptionTarget,
+    ) {
         // Set up readiness check patterns to return true (ready)
         self.set_readiness_success();
 
-        // Register the transaction pattern
+        // Register the transaction pattern with Once limit for redundancy tests
+        // (each pattern registration in a loop should be consumed once)
         self.register_decrypt_pattern(
             "public decryption success",
             self.decryption_contract,
             Decryption::publicDecryptionRequestCall::SELECTOR,
+            target,
+            UsageLimit::Once,
             |id, contract| {
                 let request_log = build_public_decrypt_request(contract, id, handles);
                 let response_log = build_public_decrypt_response(contract, id, values, true);
@@ -402,13 +461,25 @@ impl FhevmMockWrapper {
     }
 
     /// Register successful input proof verification with dynamic ID generation
-    pub fn on_input_proof_success(&self, user: Address, data: Bytes, count: usize) {
-        self.register_dynamic_input_proof_pattern(user, data, true, count);
+    pub fn on_input_proof_success(
+        &self,
+        user: Address,
+        data: Bytes,
+        count: usize,
+        target: mock_server::SubscriptionTarget,
+    ) {
+        self.register_dynamic_input_proof_pattern(user, data, true, count, target);
     }
 
     /// Register input proof rejection with dynamic ID generation
     pub fn on_input_proof_error(&self, user: Address, data: Bytes, count: usize) {
-        self.register_dynamic_input_proof_pattern(user, data, false, count);
+        self.register_dynamic_input_proof_pattern(
+            user,
+            data,
+            false,
+            count,
+            mock_server::SubscriptionTarget::All,
+        );
     }
 
     /// Register unique input proof patterns, each generating a different zkProofId
@@ -418,6 +489,7 @@ impl FhevmMockWrapper {
         data: Bytes,
         success: bool,
         count: usize,
+        target: mock_server::SubscriptionTarget,
     ) {
         for _i in 0..count {
             let id = self.next_zk_proof_id();
@@ -429,11 +501,14 @@ impl FhevmMockWrapper {
                 build_input_reject_response(self.input_proof_contract, id)
             };
 
-            let scheduled_tx = ScheduledTransaction::with_single_event(
-                Duration::from_millis(RESPONSE_DELAY_MS),
-                Some(self.input_proof_contract),
-                response_log,
-            );
+            let scheduled_tx = ScheduledTransaction {
+                target_address: Some(self.input_proof_contract),
+                response_events: vec![(
+                    Duration::from_millis(RESPONSE_DELAY_MS),
+                    response_log,
+                    target.clone(),
+                )],
+            };
 
             let response = Response::Success {
                 hash: Some(random_hash()),
@@ -473,6 +548,8 @@ impl FhevmMockWrapper {
             "user decryption error",
             self.decryption_contract,
             Decryption::userDecryptionRequestCall::SELECTOR,
+            mock_server::SubscriptionTarget::All,
+            UsageLimit::Once,
             |id, contract| {
                 let request_log = build_user_decrypt_request(contract, id, user, handles);
                 let response_log = build_user_decrypt_response(contract, id, vec![]); // Error response has empty decrypted shares
@@ -487,12 +564,42 @@ impl FhevmMockWrapper {
             "public decryption error",
             self.decryption_contract,
             Decryption::publicDecryptionRequestCall::SELECTOR,
+            mock_server::SubscriptionTarget::All,
+            UsageLimit::Once,
             |id, contract| {
                 let request_log = build_public_decrypt_request(contract, id, handles);
                 let response_log = build_public_decrypt_response(contract, id, vec![], false); // Error response uses success=false
                 (request_log, response_log)
             },
         );
+    }
+
+    /// Expand a target list to match the number of events by cycling.
+    ///
+    /// # Examples
+    ///
+    /// - Empty list → all events use `SubscriptionTarget::All` (default)
+    /// - One target → all events use that same target
+    /// - Multiple targets → cycle through them repeatedly
+    ///
+    /// ```text
+    /// resolve_targets(10, [Only([0]), Only([1])])
+    ///   → [Only([0]), Only([1]), Only([0]), Only([1]), Only([0]), ...]  (10 total)
+    /// ```
+    ///
+    /// This enables tests to simulate patterns like "events alternate between listener 0 and 1".
+    fn resolve_targets(
+        &self,
+        event_count: usize,
+        targets: Vec<mock_server::SubscriptionTarget>,
+    ) -> Vec<mock_server::SubscriptionTarget> {
+        if targets.is_empty() {
+            return vec![mock_server::SubscriptionTarget::All; event_count];
+        }
+        if targets.len() == 1 {
+            return vec![targets[0].clone(); event_count];
+        }
+        targets.into_iter().cycle().take(event_count).collect()
     }
 
     // Internal helper methods
@@ -504,13 +611,18 @@ impl FhevmMockWrapper {
         selector: [u8; 4],
         request_log: Log,
         response_log: Log,
+        target: mock_server::SubscriptionTarget,
+        usage_limit: UsageLimit,
     ) {
-        // Create scheduled transaction for delayed response using the inner response log
-        let scheduled_tx = ScheduledTransaction::with_single_event(
-            Duration::from_millis(RESPONSE_DELAY_MS),
-            Some(contract),
-            response_log,
-        );
+        // Create scheduled transaction for delayed response with target
+        let scheduled_tx = ScheduledTransaction {
+            target_address: Some(contract),
+            response_events: vec![(
+                Duration::from_millis(RESPONSE_DELAY_MS),
+                response_log,
+                target,
+            )],
+        };
 
         // Create immediate response with request log and scheduled transaction
         let immediate_response = Response::Success {
@@ -523,10 +635,10 @@ impl FhevmMockWrapper {
         self.json_rpc_server.on_transaction(
             matches_contract_and_selector_for_txn(contract, selector),
             immediate_response,
-            UsageLimit::Unlimited,
+            usage_limit,
         );
 
-        debug!("Registered FHEVM pattern with scheduled response");
+        debug!("Registered FHEVM pattern with scheduled response and subscription targeting");
     }
 }
 
@@ -559,12 +671,12 @@ fn build_event_log<T: SolEvent>(contract: Address, event: &T, topics: Vec<B256>)
 
 fn build_user_decrypt_request(
     contract: Address,
-    decryption_id: u64,
+    decryption_id: U256,
     user_address: Address,
     handles: Vec<B256>,
 ) -> Log {
     let request = Decryption::UserDecryptionRequest {
-        decryptionId: U256::from(decryption_id),
+        decryptionId: decryption_id,
         snsCtMaterials: create_sns_materials(handles),
         userAddress: user_address,
         publicKey: Bytes::from(vec![0x00; MOCK_PUBLIC_KEY_SIZE]),
@@ -576,21 +688,21 @@ fn build_user_decrypt_request(
         &request,
         vec![
             Decryption::UserDecryptionRequest::SIGNATURE_HASH,
-            B256::from(U256::from(decryption_id)),
+            B256::from(decryption_id),
         ],
     )
 }
 
 fn build_user_decrypt_response(
     contract: Address,
-    decryption_id: u64,
+    decryption_id: U256,
     decrypted_shares: Vec<Bytes>,
 ) -> Log {
     // For old-style responses, use the first share (or empty if none)
     let first_share = decrypted_shares.first().cloned().unwrap_or_default();
 
     let response = Decryption::UserDecryptionResponse {
-        decryptionId: U256::from(decryption_id),
+        decryptionId: decryption_id,
         indexShare: U256::from(0), // Default to index 0 for old-style responses
         userDecryptedShare: first_share,
         signature: Bytes::from(vec![0u8; MOCK_SIGNATURE_SIZE]),
@@ -602,15 +714,15 @@ fn build_user_decrypt_response(
         &response,
         vec![
             Decryption::UserDecryptionResponse::SIGNATURE_HASH,
-            B256::from(U256::from(decryption_id)),
+            B256::from(decryption_id),
             B256::from(U256::from(0)), // indexShare topic
         ],
     )
 }
 
-fn build_public_decrypt_request(contract: Address, decryption_id: u64, handles: Vec<B256>) -> Log {
+fn build_public_decrypt_request(contract: Address, decryption_id: U256, handles: Vec<B256>) -> Log {
     let request = Decryption::PublicDecryptionRequest {
-        decryptionId: U256::from(decryption_id),
+        decryptionId: decryption_id,
         snsCtMaterials: create_sns_materials(handles),
         extraData: Bytes::from(vec![0x00]),
     };
@@ -620,27 +732,27 @@ fn build_public_decrypt_request(contract: Address, decryption_id: u64, handles: 
         &request,
         vec![
             Decryption::PublicDecryptionRequest::SIGNATURE_HASH,
-            B256::from(U256::from(decryption_id)),
+            B256::from(decryption_id),
         ],
     )
 }
 
 fn build_public_decrypt_response(
     contract: Address,
-    decryption_id: u64,
+    decryption_id: U256,
     decrypted_values: Vec<u64>,
     success: bool,
 ) -> Log {
     let response = if success && !decrypted_values.is_empty() {
         Decryption::PublicDecryptionResponse {
-            decryptionId: U256::from(decryption_id),
+            decryptionId: decryption_id,
             decryptedResult: Bytes::from(decrypted_values[0].to_be_bytes().to_vec()),
             signatures: vec![Bytes::from(vec![0u8; MOCK_SIGNATURE_SIZE])],
             extraData: Bytes::default(),
         }
     } else {
         Decryption::PublicDecryptionResponse {
-            decryptionId: U256::from(decryption_id),
+            decryptionId: decryption_id,
             decryptedResult: Bytes::default(),
             signatures: vec![],
             extraData: Bytes::default(),
@@ -652,7 +764,7 @@ fn build_public_decrypt_response(
         &response,
         vec![
             Decryption::PublicDecryptionResponse::SIGNATURE_HASH,
-            B256::from(U256::from(decryption_id)),
+            B256::from(decryption_id),
             if success {
                 B256::from([1u8; 32])
             } else {
@@ -729,14 +841,14 @@ fn build_input_reject_response(contract: Address, request_id: u64) -> Log {
 /// Build individual user decryption response event using actual gateway bindings
 fn build_individual_user_decrypt_response(
     contract: Address,
-    decryption_id: u64,
+    decryption_id: U256,
     index_share: u64,
     user_decrypted_share: Bytes,
     signature: Bytes,
     extra_data: Bytes,
 ) -> Log {
     let response = Decryption::UserDecryptionResponse {
-        decryptionId: U256::from(decryption_id),
+        decryptionId: decryption_id,
         indexShare: U256::from(index_share),
         userDecryptedShare: user_decrypted_share,
         signature,
@@ -748,16 +860,16 @@ fn build_individual_user_decrypt_response(
         &response,
         vec![
             Decryption::UserDecryptionResponse::SIGNATURE_HASH,
-            B256::from(U256::from(decryption_id)),
+            B256::from(decryption_id),
             B256::from(U256::from(index_share)),
         ],
     )
 }
 
 /// Build consensus threshold reached event using the expected topic hash
-fn build_user_decrypt_threshold_reached(contract: Address, decryption_id: u64) -> Log {
+fn build_user_decrypt_threshold_reached(contract: Address, decryption_id: U256) -> Log {
     let response = Decryption::UserDecryptionResponseThresholdReached {
-        decryptionId: U256::from(decryption_id),
+        decryptionId: decryption_id,
     };
 
     build_event_log(
@@ -765,7 +877,7 @@ fn build_user_decrypt_threshold_reached(contract: Address, decryption_id: u64) -
         &response,
         vec![
             Decryption::UserDecryptionResponseThresholdReached::SIGNATURE_HASH,
-            B256::from(U256::from(decryption_id)),
+            B256::from(decryption_id),
         ],
     )
 }
@@ -836,7 +948,7 @@ mod tests {
         // Test ID generation
         let id1 = wrapper.next_decryption_id();
         let id2 = wrapper.next_decryption_id();
-        assert!(id2 > id1, "Decryption IDs should increment");
+        assert_ne!(id1, id2, "Decryption IDs should be unique");
 
         let proof_id1 = wrapper.next_zk_proof_id();
         let proof_id2 = wrapper.next_zk_proof_id();
@@ -856,15 +968,29 @@ mod tests {
         let test_data = Bytes::from("test proof data");
 
         // Test pattern setup methods don't panic
-        wrapper.on_user_decrypt_success(handles.clone(), user, Bytes::from("result"));
+        wrapper.on_user_decrypt_success(
+            handles.clone(),
+            user,
+            Bytes::from("result"),
+            mock_server::SubscriptionTarget::All,
+        );
         wrapper.on_user_decrypt_error(handles.clone(), user);
         wrapper.on_user_decrypt_revert("test reason");
 
-        wrapper.on_public_decrypt_success(handles.clone(), vec![42]);
+        wrapper.on_public_decrypt_success(
+            handles.clone(),
+            vec![42],
+            mock_server::SubscriptionTarget::All,
+        );
         wrapper.on_public_decrypt_error(handles.clone());
         wrapper.on_public_decrypt_revert("test reason");
 
-        wrapper.on_input_proof_success(user, test_data.clone(), 10);
+        wrapper.on_input_proof_success(
+            user,
+            test_data.clone(),
+            10,
+            mock_server::SubscriptionTarget::All,
+        );
         wrapper.on_input_proof_error(user, test_data, 10);
         wrapper.on_input_proof_revert("test reason");
     }

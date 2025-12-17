@@ -1,5 +1,6 @@
 mod common;
 
+use crate::common::redundancy::{common_redundancy_cases, expand_targets, RedundancyCase};
 use crate::common::utils::TestSetup;
 use crate::common::validation_helper::{
     expect_invalid_field, expect_malformed_json, expect_missing_field, expect_success,
@@ -9,6 +10,7 @@ use alloy::primitives::B256;
 use rand::{rng, Rng};
 use rstest::rstest;
 use serde_json::json;
+use std::collections::HashMap;
 use std::str::FromStr;
 
 mod constants {
@@ -68,9 +70,11 @@ async fn test_success_single_request() {
     let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
     let plaintext_values = helpers::random_plaintext_values(handles.len());
 
-    setup
-        .fhevm_mock
-        .on_public_decrypt_success(handles, plaintext_values);
+    setup.fhevm_mock.on_public_decrypt_success(
+        handles,
+        plaintext_values,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     test_endpoint(
         &helpers::v1_public_decrypt_url(&setup),
@@ -93,9 +97,11 @@ async fn test_success_concurrent_requests() {
 
     // Set up mock to handle multiple requests
     for _ in 1..=10 {
-        setup
-            .fhevm_mock
-            .on_public_decrypt_success(handles.clone(), plaintext_values.clone());
+        setup.fhevm_mock.on_public_decrypt_success(
+            handles.clone(),
+            plaintext_values.clone(),
+            ethereum_rpc_mock::SubscriptionTarget::All,
+        );
     }
 
     // Send multiple concurrent requests using test_endpoint
@@ -124,6 +130,57 @@ async fn test_success_concurrent_requests() {
     }
 
     setup.shutdown().await;
+}
+
+/// Listener redundancy for public decrypt with clear cases.
+#[tokio::test]
+#[cfg_attr(
+    not(feature = "long-running-tests"),
+    ignore = "Long-running test - run with --features long-running-tests"
+)]
+async fn test_listener_redundancy_public_decrypt_matrix() {
+    let cases: Vec<RedundancyCase> = common_redundancy_cases();
+    let mut setups: HashMap<usize, TestSetup> = HashMap::new();
+
+    for case in cases {
+        if let std::collections::hash_map::Entry::Vacant(e) = setups.entry(case.listener_count) {
+            let setup = TestSetup::new_with_listeners(case.listener_count)
+                .await
+                .expect("Failed to create test setup with listeners");
+            e.insert(setup);
+        }
+        let setup = setups
+            .get(&case.listener_count)
+            .expect("Missing test setup for listener count");
+
+        println!("public-decrypt redundancy case: {}", case.name);
+
+        let request_targets = expand_targets(case.requests, &case.targets_per_event);
+
+        for target in request_targets {
+            let payload = helpers::create_public_decrypt_payload();
+            let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+            let plaintext_values = helpers::random_plaintext_values(handles.len());
+
+            setup.fhevm_mock.on_public_decrypt_success(
+                handles.clone(),
+                plaintext_values.clone(),
+                target,
+            );
+
+            test_endpoint(
+                &helpers::v1_public_decrypt_url(setup),
+                payload,
+                |_| {},
+                expect_success(),
+            )
+            .await;
+        }
+    }
+
+    for setup in setups.into_values() {
+        setup.shutdown().await;
+    }
 }
 
 #[rstest]
@@ -279,12 +336,16 @@ async fn test_consecutive_duplicate_requests_succeed() {
     let plaintext_values = helpers::random_plaintext_values(handles.len());
 
     // Set up mock to handle both requests with identical responses
-    setup
-        .fhevm_mock
-        .on_public_decrypt_success(handles.clone(), plaintext_values.clone());
-    setup
-        .fhevm_mock
-        .on_public_decrypt_success(handles.clone(), plaintext_values.clone());
+    setup.fhevm_mock.on_public_decrypt_success(
+        handles.clone(),
+        plaintext_values.clone(),
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+    setup.fhevm_mock.on_public_decrypt_success(
+        handles.clone(),
+        plaintext_values.clone(),
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
 
     let client = reqwest::Client::new();
     let url = helpers::v1_public_decrypt_url(&setup);
