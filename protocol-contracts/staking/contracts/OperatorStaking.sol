@@ -170,9 +170,10 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
      * @param shares Amount of shares to redeem.
      * @param controller The controller address for the request.
      * @param ownerRedeem The owner of the shares.
+     * @return releaseTime The timestamp when the assets will be available for withdrawal.
      */
-    function requestRedeem(uint208 shares, address controller, address ownerRedeem) public virtual {
-        if (shares == 0) return;
+    function requestRedeem(uint208 shares, address controller, address ownerRedeem) public virtual returns (uint48) {
+        if (shares == 0) return type(uint48).max;
         require(controller != address(0), InvalidController());
         if (msg.sender != ownerRedeem) {
             _spendAllowance(ownerRedeem, msg.sender, shares);
@@ -196,6 +197,8 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         $._redeemRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
 
         emit RedeemRequest(controller, ownerRedeem, 0, msg.sender, shares, releaseTime);
+
+        return releaseTime;
     }
 
     /**
