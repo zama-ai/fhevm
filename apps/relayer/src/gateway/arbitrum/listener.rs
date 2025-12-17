@@ -15,7 +15,8 @@ use alloy::{
     network::AnyNetwork,
     primitives::Address,
     providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::{BlockNumberOrTag, Filter},
+    pubsub::{Subscription, SubscriptionStream},
+    rpc::types::{BlockNumberOrTag, Filter, Log},
     transports::ws::WebSocketConfig,
 };
 use async_trait::async_trait;
@@ -180,22 +181,15 @@ where
         let contract_addresses = vec![decryption_address, input_verification_address];
 
         // Create WebSocket provider
-        let provider = self.create_provider().await?;
+        let provider = Arc::new(self.create_provider().await?);
 
         // Resolve starting block with proper initialization
         let starting_block = self.resolve_starting_block(&provider).await?;
 
         // Create log subscription from determined starting point
-        let block_number_or_tag = BlockNumberOrTag::Number(starting_block);
-
-        let filter = Filter::new()
-            .from_block(block_number_or_tag)
-            .address(contract_addresses);
-
-        let sub = provider
-            .subscribe_logs(&filter)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to create log subscription: {}", e))?;
+        let sub = self
+            .create_subscription(&provider, &contract_addresses, starting_block)
+            .await?;
 
         info!("Subscription to gateway chain is successful. Listening for logs...");
         let mut subscription = sub.into_stream();
@@ -204,98 +198,131 @@ where
             "Starting Relayer Gateway Listener instance {}",
             self.instance_id
         );
+
+        // Process events until stream ends
+        let mut last_block = None;
+        self.process_events(&mut subscription, &mut last_block)
+            .await;
+
+        info!("Listener {} subscription stream ended", self.instance_id);
+        Ok(())
+    }
+
+    /// Process events from subscription stream. Returns when stream ends.
+    /// Updates last_block with the last successfully processed block number.
+    async fn process_events(
+        &self,
+        subscription: &mut SubscriptionStream<Log>,
+        last_block: &mut Option<u64>,
+    ) {
         loop {
-            tokio::select! {
-                event = subscription.next() => match event {
-                    Some(event_log) => {
-                        let tx_hash = event_log.transaction_hash.expect("Event log must have transaction hash");
+            match subscription.next().await {
+                Some(event_log) => {
+                    let tx_hash = event_log
+                        .transaction_hash
+                        .expect("Event log must have transaction hash");
 
-                        // Extract event details for logging
-                        let block_number = event_log.block_number.unwrap_or(0);
-                        let block_hash = event_log.block_hash
-                            .map(|h| format!("{:#x}", h))
-                            .unwrap_or_else(|| "0x0".to_string());
-                        let log_index = event_log.log_index.unwrap_or(0);
+                    // Extract event details for logging
+                    let block_number = event_log.block_number.unwrap_or(0);
+                    let block_hash = event_log
+                        .block_hash
+                        .map(|h| format!("{:#x}", h))
+                        .unwrap_or_else(|| "0x0".to_string());
+                    let log_index = event_log.log_index.unwrap_or(0);
 
-                        // Extract topics for logging
-                        let topic0 = event_log.topics()
-                            .first()
-                            .map(|t| format!("{:#x}", t))
-                            .unwrap_or_else(|| "none".to_string());
-                        let topic1 = event_log.topics()
-                            .get(1)
-                            .map(|t| format!("{:#x}", t))
-                            .unwrap_or_else(|| "none".to_string());
+                    // Extract topics for logging
+                    let topic0 = event_log
+                        .topics()
+                        .first()
+                        .map(|t| format!("{:#x}", t))
+                        .unwrap_or_else(|| "none".to_string());
+                    let topic1 = event_log
+                        .topics()
+                        .get(1)
+                        .map(|t| format!("{:#x}", t))
+                        .unwrap_or_else(|| "none".to_string());
 
-                        // Create deduplication key
-                        let dedup_key = EventKey {
-                            block_number,
-                            block_hash: event_log.block_hash.unwrap_or_default(),
-                            log_index,
-                        };
+                    // Create deduplication key
+                    let dedup_key = EventKey {
+                        block_number,
+                        block_hash: event_log.block_hash.unwrap_or_default(),
+                        log_index,
+                    };
 
-                        // Check deduplication - skip if already processed
-                        if !self.deduplicator.try_insert(dedup_key).await {
-                            debug!(
-                                "Listener {} skipping duplicate event: block={}, log_index={}, topic0={}",
-                                self.instance_id, block_number, log_index, topic0
-                            );
-                            continue;
-                        }
-
-                        info!(
-                            "Listener {} processing event: block={}, block_hash={}, log_index={}, topic0={}, topic1={}, tx_hash={:#x}",
-                            self.instance_id, block_number, block_hash, log_index, topic0, topic1, tx_hash
+                    // Check deduplication - skip if already processed
+                    if !self.deduplicator.try_insert(dedup_key).await {
+                        debug!(
+                            "Listener {} skipping duplicate event: block={}, log_index={}, topic0={}",
+                            self.instance_id, block_number, log_index, topic0
                         );
+                        continue;
+                    }
 
-                        let event = RelayerEvent::new(
-                            JobId::from_uuid_v7(self.orchestrator.new_internal_request_id()),
-                            ApiVersion {
-                                category: ApiCategory::PRODUCTION,
-                                number: 1,
-                            },
-                            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
-                                log: event_log.clone(),
-                                tx_hash
-                            }),
-                        );
-                        self.orchestrator.dispatch_event(event).await.unwrap_or_else(|e| {
-                            error!(
-                                error = %e,
-                                "dispatching event"
-                            );
+                    info!(
+                        "Listener {} processing event: block={}, block_hash={}, log_index={}, topic0={}, topic1={}, tx_hash={:#x}",
+                        self.instance_id, block_number, block_hash, log_index, topic0, topic1, tx_hash
+                    );
+
+                    let event = RelayerEvent::new(
+                        JobId::from_uuid_v7(self.orchestrator.new_internal_request_id()),
+                        ApiVersion {
+                            category: ApiCategory::PRODUCTION,
+                            number: 1,
+                        },
+                        RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+                            log: event_log.clone(),
+                            tx_hash,
+                        }),
+                    );
+                    self.orchestrator
+                        .dispatch_event(event)
+                        .await
+                        .unwrap_or_else(|e| {
+                            error!(error = %e, "dispatching event");
                         });
 
-                        if event_log.block_number.is_some() {
-                            // Update block progress - log error but don't stop processing
-                            if let Err(e) = self.block_number_repo
-                                .update_block_info(block_number, block_hash.clone(), self.instance_id)
-                                .await
-                            {
-                                error!(
-                                    block_number = %block_number,
-                                    block_hash = %block_hash,
-                                    error = %e,
-                                    "Failed to update block progress - continuing without persistence"
-                                );
-                                // Continue processing events even if we can't persist progress
-                                // This allows the service to keep running but logs the issue
-                            }
+                    if event_log.block_number.is_some() {
+                        // Update last_block for reconnection tracking
+                        *last_block = Some(block_number);
+
+                        // Update block progress - log error but don't stop processing
+                        if let Err(e) = self
+                            .block_number_repo
+                            .update_block_info(block_number, block_hash.clone(), self.instance_id)
+                            .await
+                        {
+                            error!(
+                                block_number = %block_number,
+                                block_hash = %block_hash,
+                                error = %e,
+                                "Failed to update block progress - continuing without persistence"
+                            );
                         }
                     }
-                    None => {
-                        info!("Listener {} subscription stream ended", self.instance_id);
-                        break;
-                    }
-                },
-                _ = tokio::signal::ctrl_c() => {
-                    info!("Received ctrl + c signal, stopping...");
-                    break;
                 }
-            };
+                None => {
+                    // Stream ended - return to allow reconnection
+                    return;
+                }
+            }
         }
+    }
 
-        Ok(())
+    /// Creates a log subscription for the given provider and starting block.
+    async fn create_subscription(
+        &self,
+        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
+        contract_addresses: &[Address],
+        starting_block: u64,
+    ) -> anyhow::Result<Subscription<Log>> {
+        let filter = Filter::new()
+            .from_block(BlockNumberOrTag::Number(starting_block))
+            .address(contract_addresses.to_vec());
+
+        provider
+            .subscribe_logs(&filter)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to create log subscription: {}", e))
     }
 
     async fn create_provider(&self) -> anyhow::Result<Arc<dyn Provider<AnyNetwork> + Send + Sync>> {
