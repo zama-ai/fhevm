@@ -2351,7 +2351,7 @@ dependencies = [
 
 [[package]]
 name = "fhevm-relayer"
-version = "0.8.0-rc.7"
+version = "0.8.0-rc.8"
 dependencies = [
  "alloy",
  "alloy-dyn-abi",
