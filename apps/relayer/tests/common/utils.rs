@@ -37,6 +37,17 @@ impl TestSetup {
         Self::new_with_config_path(Some(temp_config_path)).await
     }
 
+    /// Create test setup with low retry config (2 attempts × 100ms)
+    /// This config is used in tests for max retries exceeded scenarios.
+    #[allow(dead_code)]
+    pub async fn new_with_low_retries() -> eyre::Result<Self> {
+        // Create temp config with low retry settings
+        let temp_config_dir = TempDir::new()?;
+        let temp_config_path = create_low_retry_config(&temp_config_dir)?;
+
+        Self::new_with_config_path(Some(temp_config_path)).await
+    }
+
     /// Create isolated test setup with free ports and temp database
     #[allow(dead_code)]
     pub async fn new() -> eyre::Result<Self> {
@@ -257,6 +268,40 @@ fn create_fast_readiness_config(temp_dir: &TempDir) -> eyre::Result<std::path::P
                 retry["max_attempts"] = serde_yaml::Value::Number(serde_yaml::Number::from(4));
                 retry["retry_interval_ms"] =
                     serde_yaml::Value::Number(serde_yaml::Number::from(250));
+            }
+        }
+    }
+
+    // Serialize back to YAML and write to temp file
+    let modified_content = serde_yaml::to_string(&config)
+        .map_err(|e| eyre::eyre!("Failed to serialize modified config: {}", e))?;
+
+    std::fs::write(&temp_config_path, modified_content)
+        .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
+
+    Ok(temp_config_path)
+}
+
+/// Create a config file with low retry settings for tx_engine (2 attempts × 100ms)
+/// This config is used in tests for max retries exceeded scenarios.
+fn create_low_retry_config(temp_dir: &TempDir) -> eyre::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join("low_retry.yaml");
+
+    // Read the default config
+    let config_content = std::fs::read_to_string("config/local.yaml.example")
+        .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
+
+    // Parse YAML as a generic value
+    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
+        .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
+
+    // Modify the tx_engine retry settings to low values
+    if let Some(gateway) = config.get_mut("gateway") {
+        if let Some(tx_engine) = gateway.get_mut("tx_engine") {
+            if let Some(retry) = tx_engine.get_mut("retry") {
+                retry["max_attempts"] = serde_yaml::Value::Number(serde_yaml::Number::from(2));
+                retry["retry_interval_ms"] =
+                    serde_yaml::Value::Number(serde_yaml::Number::from(100));
             }
         }
     }

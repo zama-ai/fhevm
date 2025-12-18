@@ -4,6 +4,7 @@ use crate::common::utils::{
     assert_retry_after_header_present, create_timeout_test_config, TestSetup,
 };
 use alloy::primitives::B256;
+use ethereum_rpc_mock::Response;
 use fhevm_relayer::http::endpoints::v2::types::public_decrypt::{
     PublicDecryptPostResponseJson, PublicDecryptStatusResponseJson,
 };
@@ -13,12 +14,17 @@ use std::str::FromStr;
 use tempfile::TempDir;
 
 mod constants {
+    use alloy::sol_types::SolCall;
+
     pub const EXTRA_DATA: &str = "0x00";
 
     // Timeout test configuration
     pub const TIMEOUT_DURATION_SECS: u64 = 3;
     pub const CRON_INTERVAL_SECS: u64 = 1;
     pub const INITIAL_POLL_DELAY_MS: u64 = 500;
+
+    pub const PUBLIC_DECRYPT_SELECTOR: [u8; 4] =
+        fhevm_relayer::gateway::arbitrum::bindings::Decryption::publicDecryptionRequestCall::SELECTOR;
 }
 
 mod helpers {
@@ -68,12 +74,56 @@ mod helpers {
             })
             .collect()
     }
+
+    /// Submit POST request and return job_id
+    pub async fn submit_request(setup: &TestSetup, payload: &serde_json::Value) -> String {
+        let response = reqwest::Client::new()
+            .post(v2_public_decrypt_post_url(setup))
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(10))
+            .json(payload)
+            .send()
+            .await
+            .expect("Failed to send POST request");
+
+        assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
+        let post_response: PublicDecryptPostResponseJson = response
+            .json()
+            .await
+            .expect("Failed to parse POST response");
+        assert_eq!(post_response.status, "queued");
+        post_response.result.job_id
+    }
+
+    /// Poll GET endpoint until terminal state, return (status, body)
+    pub async fn poll_until_terminal(
+        setup: &TestSetup,
+        job_id: &str,
+    ) -> (reqwest::StatusCode, PublicDecryptStatusResponseJson) {
+        let client = reqwest::Client::new();
+        for _ in 0..10 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let response = client
+                .get(v2_public_decrypt_get_url(setup, job_id))
+                .timeout(std::time::Duration::from_secs(10))
+                .send()
+                .await
+                .expect("Failed to send GET request");
+
+            let status = response.status();
+            if status != reqwest::StatusCode::ACCEPTED {
+                let body: PublicDecryptStatusResponseJson =
+                    response.json().await.expect("Failed to parse GET response");
+                return (status, body);
+            }
+        }
+        panic!("Request did not reach terminal state in time");
+    }
 }
 
 #[tokio::test]
 async fn test_success_single_request() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
-
     let payload = helpers::create_public_decrypt_payload();
     let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
     let plaintext_values = helpers::random_plaintext_values(handles.len());
@@ -84,61 +134,122 @@ async fn test_success_single_request() {
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
-    // Step 1: POST request should return reference ID
-    let response = reqwest::Client::new()
-        .post(helpers::v2_public_decrypt_post_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(10))
-        .json(&payload)
-        .send()
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, "succeeded");
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_nonce_too_low_then_succeeds() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let payload = helpers::create_public_decrypt_payload();
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
+
+    // First attempt fails with nonce-too-low, second attempt succeeds
+    setup.fhevm_mock.queue_tx_responses_for_selector(
+        setup.fhevm_mock.decryption_contract,
+        constants::PUBLIC_DECRYPT_SELECTOR,
+        vec![Response::error("nonce too low".to_string())],
+    );
+    setup.fhevm_mock.on_public_decrypt_success(
+        handles.clone(),
+        plaintext_values,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, "succeeded");
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_nonce_too_high_then_succeeds() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let payload = helpers::create_public_decrypt_payload();
+    let handles = helpers::extract_ciphertext_handles_from_public_payload(&payload);
+    let plaintext_values = helpers::random_plaintext_values(handles.len());
+
+    // First attempt fails with nonce-too-high, second attempt succeeds
+    setup.fhevm_mock.queue_tx_responses_for_selector(
+        setup.fhevm_mock.decryption_contract,
+        constants::PUBLIC_DECRYPT_SELECTOR,
+        vec![Response::error("nonce too high".to_string())],
+    );
+    setup.fhevm_mock.on_public_decrypt_success(
+        handles.clone(),
+        plaintext_values,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, "succeeded");
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_max_retries_exceeded_fails() {
+    let setup = TestSetup::new_with_low_retries()
         .await
-        .expect("Failed to send POST request");
+        .expect("Failed to create test setup with low retries");
+    let payload = helpers::create_public_decrypt_payload();
 
-    assert_eq!(response.status(), reqwest::StatusCode::ACCEPTED);
-    assert_retry_after_header_present(&response);
+    // Set up readiness check to pass
+    setup.fhevm_mock.set_readiness_success();
 
-    let post_response: PublicDecryptPostResponseJson = response
-        .json()
-        .await
-        .expect("Failed to parse POST response");
+    // Queue more errors than max_attempts (3 errors > 2 max_attempts)
+    setup.fhevm_mock.queue_tx_responses_for_selector(
+        setup.fhevm_mock.decryption_contract,
+        constants::PUBLIC_DECRYPT_SELECTOR,
+        vec![
+            Response::error("nonce too low".to_string()),
+            Response::error("nonce too low".to_string()),
+            Response::error("nonce too low".to_string()),
+        ],
+    );
 
-    assert_eq!(post_response.status, "queued");
-    let job_id = &post_response.result.job_id;
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
-    // Step 2: GET request should eventually return completed result
-    // Give some time for processing
-    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+    assert_ne!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, "failed");
+    assert!(body.result.is_none());
 
-    let get_response = reqwest::Client::new()
-        .get(helpers::v2_public_decrypt_get_url(&setup, job_id))
-        .timeout(std::time::Duration::from_secs(10))
-        .send()
-        .await
-        .expect("Failed to send GET request");
+    setup.shutdown().await;
+}
 
-    let status = get_response.status();
+#[tokio::test]
+async fn test_transaction_revert_fails() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let payload = helpers::create_public_decrypt_payload();
 
-    // Check Retry-After header before consuming response
-    if status == reqwest::StatusCode::ACCEPTED {
-        assert_retry_after_header_present(&get_response);
-    }
+    // Configure readiness check to pass, then revert the transaction
+    setup.fhevm_mock.set_readiness_success();
+    setup
+        .fhevm_mock
+        .on_public_decrypt_revert("Insufficient permissions");
 
-    let get_body: PublicDecryptStatusResponseJson = get_response
-        .json()
-        .await
-        .expect("Failed to parse GET response");
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
-    // Should be either succeeded (200) or still queued (202)
-    match status {
-        reqwest::StatusCode::OK => {
-            assert_eq!(get_body.status, "succeeded");
-            assert!(get_body.result.is_some());
-        }
-        reqwest::StatusCode::ACCEPTED => {
-            assert_eq!(get_body.status, "queued");
-        }
-        _ => panic!("Unexpected status code: {}", status),
-    }
+    assert_ne!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, "failed");
+    assert!(body.result.is_none());
 
     setup.shutdown().await;
 }

@@ -133,6 +133,38 @@ impl FhevmMockWrapper {
         self.register_readiness_patterns(true);
     }
 
+    /// Queue a sequence of transaction responses for a contract + selector (first-match-wins, Once per response).
+    pub fn queue_tx_responses_for_selector(
+        &self,
+        contract: Address,
+        selector: [u8; 4],
+        responses: Vec<Response>,
+    ) {
+        for response in responses {
+            self.json_rpc_server.on_transaction(
+                matches_contract_and_selector_for_txn(contract, selector),
+                response,
+                UsageLimit::Once,
+            );
+        }
+    }
+
+    /// Queue call responses (e.g., estimateGas) for a contract + selector.
+    pub fn queue_call_responses_for_selector(
+        &self,
+        contract: Address,
+        selector: [u8; 4],
+        responses: Vec<Response>,
+    ) {
+        for response in responses {
+            self.json_rpc_server.on_call(
+                matches_contract_and_selector_for_call(contract, selector),
+                response,
+                UsageLimit::Once,
+            );
+        }
+    }
+
     /// Register readiness check patterns directly with the mock server
     fn register_readiness_patterns(&self, ready: bool) {
         let response_value = if ready {
