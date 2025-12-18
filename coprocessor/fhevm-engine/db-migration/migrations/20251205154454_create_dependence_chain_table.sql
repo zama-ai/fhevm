@@ -29,3 +29,7 @@ CREATE INDEX idx_dependence_chain_worker_id_and_dependence_chain_id
 CREATE INDEX idx_dependence_chain_processing_by_worker
     ON dependence_chain (worker_id)
     WHERE status = 'processing';
+
+CREATE INDEX idx_dependence_chain_processed_last_updated
+    ON dependence_chain (last_updated_at, dependence_chain_id)
+    WHERE status = 'processed';
