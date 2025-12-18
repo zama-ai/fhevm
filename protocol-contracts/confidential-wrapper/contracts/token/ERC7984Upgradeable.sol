@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 // ported openzeppelin-confidential-contracts/contracts/token/ERC7984/ERC7984.sol::ERC7984
 // so that it is upgradeable
 pragma solidity 0.8.27;

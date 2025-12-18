@@ -1,6 +1,5 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 // OpenZeppelin Contracts (last updated v5.4.0) (token/ERC20/ERC20.sol)
-
 pragma solidity ^0.8.27;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";

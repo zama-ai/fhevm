@@ -1,6 +1,5 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 // Source: https://raw.githubusercontent.com/OpenZeppelin/openzeppelin-confidential-contracts/3a8689021a89e5d9c3101280cb2cd9435cbf28f1/contracts/mocks/token/ERC7984ReceiverMock.sol
-
 pragma solidity 0.8.27;
 
 import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
