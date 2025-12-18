@@ -210,6 +210,7 @@ describe('OperatorStaking', function () {
   describe('redeem', async function () {
     it('simple redemption', async function () {
       await this.mock.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
+      const currentTimestamp = await time.latest();
       await expect(
         this.mock
           .connect(this.delegator1)
@@ -222,7 +223,7 @@ describe('OperatorStaking', function () {
           0,
           this.delegator1,
           ethers.parseEther('1'),
-          BigInt(await time.latest()) + (await this.protocolStaking.unstakeCooldownPeriod()),
+          BigInt(currentTimestamp) + 1n + (await this.protocolStaking.unstakeCooldownPeriod()),
         );
 
       await expect(this.mock.pendingRedeemRequest(0, this.delegator1)).to.eventually.eq(ethers.parseEther('1'));
