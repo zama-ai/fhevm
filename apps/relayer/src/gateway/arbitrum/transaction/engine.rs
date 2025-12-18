@@ -149,6 +149,51 @@ impl
         self.signer.address()
     }
 
+    pub async fn prepare_transaction(
+        &self,
+        target: Address,
+        calldata: Bytes,
+        // TODO: Remove value with None value.
+        value: Option<U256>,
+    ) -> Result<TransactionRequest, GatewayTxnError> {
+        // TODO: Check for allowance (this account or other accounts) for fees.
+        let code = self.provider.inner.get_code_at(target).await.map_err(|e| {
+            GatewayTxnError::TransactionFailed(format!("Failed to check contract code: {e}"))
+        })?;
+
+        if code.is_empty() {
+            metrics::track_engine_error(metrics::TransactionErrorType::InvalidAddress);
+            error!("No code at target address: {:?} !", target);
+            return Err(GatewayTxnError::InvalidAddress(format!(
+                "No code at target address: {target:#x}"
+            )));
+        }
+
+        let mut request = TransactionRequest::default()
+            .with_from(self.sender_address())
+            .with_to(target)
+            .with_input(calldata.clone())
+            .with_value(value.unwrap_or_default());
+
+        let gas_limit_estimate = match self.estimate_gas(target, calldata.clone(), value).await {
+            Ok(gas) => gas,
+            Err(e) => {
+                // If gas estimation fails with an unrecoverable error, we must not proceed.
+                warn!(
+                    "Gas estimation failed, transaction will not be sent: {:?}",
+                    e
+                );
+                return Err(GatewayTxnError::RpcError(
+                    "Could not estimate gas".to_string(),
+                ));
+            }
+        };
+        // TODO: Balance (of signer) before sending a transaction for gas with a buffer as we used in estimateGas
+        request = request.with_gas_limit(gas_limit_estimate);
+
+        Ok(request)
+    }
+
     pub async fn send_raw_transaction_sync(
         &self,
         target: Address,
@@ -288,7 +333,7 @@ impl
 
     // TODO: Add gas bump
     // TODO: Match all thoses errors code, and make a triage accordingly: https://ethereum-json-rpc.com/errors + Combine with parsing error message for get a clear triage.
-    async fn send_raw_transaction_sync_with_retries(
+    pub async fn send_raw_transaction_sync_with_retries(
         &self,
         mut tx: TransactionRequest,
     ) -> Result<AnyTransactionReceipt, GatewayTxnError> {

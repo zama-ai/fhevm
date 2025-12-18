@@ -83,9 +83,22 @@ impl TransactionHelper {
         metrics::transaction::transaction_broadcast(tx_metric_type);
 
         let transaction_start_time = Instant::now();
+        let request = self
+            .tx_engine
+            .prepare_transaction(target, calldata, None)
+            .await
+            .map_err(|error| {
+                metrics::transaction::transaction_failure(
+                    tx_metric_type,
+                    transaction_start_time.elapsed().as_millis() as f64,
+                );
+                EventProcessingError::from(error)
+            })?;
+
+        // TODO: Update the status to tx in-flight.
         let receipt = self
             .tx_engine
-            .send_raw_transaction_sync(target, calldata, None)
+            .send_raw_transaction_sync_with_retries(request)
             .await
             .map_err(|error| {
                 metrics::transaction::transaction_failure(
