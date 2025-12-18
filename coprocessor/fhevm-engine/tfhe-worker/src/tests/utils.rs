@@ -121,6 +121,8 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         dcid_ttl_sec: 30,
         disable_dcid_locking: true,
         dcid_timeslice_sec: 90,
+        dcid_cleanup_interval_sec: 0,
+        processed_dcid_ttl_sec: 0,
     };
 
     std::thread::spawn(move || {

@@ -101,16 +101,19 @@ async fn tfhe_worker_cycle(
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;
 
-    let mut dcid_mngr = dependence_chain::LockMngr::new_with_ttl(
+    let mut dcid_mngr = dependence_chain::LockMngr::new_with_conf(
         worker_id,
         pool.clone(),
         args.dcid_ttl_sec,
         args.disable_dcid_locking,
         Some(args.dcid_timeslice_sec),
+        Some(args.dcid_cleanup_interval_sec),
+        Some(args.processed_dcid_ttl_sec),
     );
 
     // Release all owned locks on startup to avoid stale locks
     dcid_mngr.release_all_owned_locks().await?;
+    dcid_mngr.do_cleanup().await?;
 
     #[cfg(feature = "bench")]
     populate_cache_with_tenant_keys(vec![1i32], &pool, &tenant_key_cache).await?;
@@ -153,6 +156,7 @@ async fn tfhe_worker_cycle(
         .await?;
         if transactions.is_empty() {
             dcid_mngr.release_current_lock(true).await?;
+            dcid_mngr.do_cleanup().await?;
 
             // Lock another dependence chain if available and
             // continue processing without waiting for notification
@@ -381,6 +385,9 @@ async fn query_for_work<'a>(
 
     // This query locks our work items so other worker doesn't select them.
     let mut s = tracer.start_with_context("query_work_items", loop_ctx);
+
+    let transaction_batch_size = args.work_items_batch_size;
+
     let started_at = SystemTime::now();
     let the_work = query!(
         "
@@ -424,7 +431,7 @@ WHERE c.transaction_id IN (
   )
 FOR UPDATE SKIP LOCKED            ",
         dependence_chain_id,
-        args.work_items_batch_size as i32,
+        transaction_batch_size as i32,
     )
     .fetch_all(trx.as_mut())
     .await
@@ -439,7 +446,7 @@ FOR UPDATE SKIP LOCKED            ",
     health_check.update_db_access();
     if the_work.is_empty() {
         if let Some(dependence_chain_id) = &dependence_chain_id {
-            warn!(target: "tfhe_worker", dcid = %hex::encode(dependence_chain_id), locking = ?locking_reason, "No work items found to process");
+            info!(target: "tfhe_worker", dcid = %hex::encode(dependence_chain_id), locking = ?locking_reason, "No work items found to process");
         }
         health_check.update_activity();
         return Ok((vec![], vec![]));

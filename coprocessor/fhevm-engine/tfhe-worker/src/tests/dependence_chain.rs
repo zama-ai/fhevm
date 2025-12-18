@@ -18,7 +18,7 @@ async fn test_acquire_next_lock() {
         .await
         .expect("Failed to connect to the database");
 
-    let dependence_chain_ids = insert_dependence_chains(&pool, NUM_SAMPLE_CHAINS)
+    let dependence_chain_ids = insert_sample_dcids(&pool, "updated", NUM_SAMPLE_CHAINS)
         .await
         .expect("inserted chains");
 
@@ -26,7 +26,8 @@ async fn test_acquire_next_lock() {
 
     for dependence_chain_id in dependence_chain_ids.iter() {
         info!(target: "deps_chain", ?dependence_chain_id, "Testing acquire_next_lock");
-        let mut mgr = LockMngr::new_with_ttl(Uuid::new_v4(), pool.clone(), 3600, false, None);
+        let mut mgr =
+            LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
 
         let (acquired, locking) = mgr.acquire_next_lock().await.unwrap();
         assert_eq!(acquired, Some(dependence_chain_id.clone()));
@@ -65,19 +66,19 @@ async fn test_work_stealing() {
         .await
         .expect("Failed to connect to the database");
 
-    let dependence_chain_ids = insert_dependence_chains(&pool, NUM_SAMPLE_CHAINS)
+    let dependence_chain_ids = insert_sample_dcids(&pool, "updated", NUM_SAMPLE_CHAINS)
         .await
         .expect("inserted chains");
 
     let mut workers = vec![];
-    let expiration_duration_secs = 1;
+    let lock_ttl_sec = 1;
 
     for dependence_chain_id in dependence_chain_ids.iter() {
         info!(?dependence_chain_id, "Testing acquire_next_lock");
 
         let worker = Uuid::new_v4();
         let mut mgr =
-            LockMngr::new_with_ttl(worker, pool.clone(), expiration_duration_secs, false, None);
+            LockMngr::new_with_conf(worker, pool.clone(), lock_ttl_sec, false, None, None, None);
         let acquired = mgr.acquire_next_lock().await.unwrap().0;
         assert_eq!(acquired, Some(dependence_chain_id.clone()));
 
@@ -97,10 +98,7 @@ async fn test_work_stealing() {
     }
 
     // Make sure the locks have expired
-    tokio::time::sleep(std::time::Duration::from_secs(
-        3 + expiration_duration_secs as u64,
-    ))
-    .await;
+    tokio::time::sleep(std::time::Duration::from_secs(3 + lock_ttl_sec as u64)).await;
 
     // Assert that we can re-acquire all locks due to work-stealing
     for _ in 0..NUM_SAMPLE_CHAINS {
@@ -182,32 +180,29 @@ async fn assert_locks_available(pool: &sqlx::PgPool, expected_locks_count: usize
     }
 }
 
-async fn insert_dependence_chains(
+async fn insert_sample_dcids(
     pool: &sqlx::PgPool,
+    status: &str,
     num_chains: usize,
 ) -> sqlx::Result<Vec<Vec<u8>>> {
     let mut out = Vec::with_capacity(num_chains);
 
     for i in 0..num_chains {
-        info!("Inserting dependence chain {}", i);
-        let dependence_chain_id = i.to_le_bytes().to_vec();
-
+        info!("Inserting dcid {}", i);
+        let dcid = i.to_le_bytes().to_vec();
         sqlx::query!(
             r#"
             INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at)
-            VALUES ($1, 'updated', NOW())
+            VALUES ($1, $2, NOW() - INTERVAL '1 minute')
             "#,
-            dependence_chain_id,
+            dcid,
+            status,
         )
         .execute(pool)
         .await?;
 
-        out.push(dependence_chain_id);
-
-        sleep(Duration::from_millis(100)).await;
+        out.push(dcid);
     }
-
-    assert_locks_available(pool, num_chains).await;
 
     Ok(out)
 }
@@ -223,7 +218,7 @@ async fn test_extend_or_release_lock() {
         .expect("Failed to connect to the database");
 
     // Insert a single dependence-chain row
-    let dependence_chain_id = insert_dependence_chains(&pool, 1)
+    let dependence_chain_id = insert_sample_dcids(&pool, "updated", 1)
         .await
         .expect("inserted chains")
         .first()
@@ -236,12 +231,14 @@ async fn test_extend_or_release_lock() {
     // where mark_as_processed is false
     for _ in 0..10 {
         info!(?dependence_chain_id, "Testing extend_or_release_lock");
-        let mut mgr = LockMngr::new_with_ttl(
+        let mut mgr = LockMngr::new_with_conf(
             Uuid::new_v4(),
             pool.clone(),
             2,
             false,
             Some(lock_timeslice_sec),
+            None,
+            None,
         );
         let acquired = mgr.acquire_next_lock().await.unwrap().0;
 
@@ -256,12 +253,14 @@ async fn test_extend_or_release_lock() {
         assert!(mgr.get_current_lock().is_none());
     }
 
-    let mut mgr = LockMngr::new_with_ttl(
+    let mut mgr = LockMngr::new_with_conf(
         Uuid::new_v4(),
         pool.clone(),
         2,
         false,
         Some(lock_timeslice_sec),
+        None,
+        None,
     );
     let acquired = mgr.acquire_next_lock().await.unwrap().0;
     assert_eq!(acquired, Some(dependence_chain_id.clone()));
@@ -272,6 +271,81 @@ async fn test_extend_or_release_lock() {
     let dcid = mgr.extend_or_release_current_lock(false).await.unwrap();
     assert!(dcid.is_some());
     assert!(mgr.get_current_lock().is_some());
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_extend_or_release_lock_2() {
+    let instance = setup().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    // Insert 2 dcids
+    let ids = insert_sample_dcids(&pool, "updated", 2)
+        .await
+        .expect("inserted chains");
+
+    let first_id: Vec<u8> = ids.first().cloned().unwrap();
+    let second_id: Vec<u8> = ids.get(1).cloned().unwrap();
+
+    let lock_timeslice_sec: u32 = 1;
+
+    info!(?first_id, "Testing extend_or_release_lock");
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        2,
+        false,
+        Some(lock_timeslice_sec),
+        None,
+        None,
+    );
+    let acquired = mgr.acquire_next_lock().await.unwrap().0;
+    assert_eq!(acquired, Some(first_id.clone()));
+
+    // Try to extend the lock after timeslice has been consumed
+    // where enable_timeslice_check is TRUE
+    sleep(Duration::from_secs(lock_timeslice_sec as u64 + 2)).await;
+    let dcid = mgr.extend_or_release_current_lock(true).await.unwrap();
+
+    assert!(dcid.is_none());
+    assert!(mgr.get_current_lock().is_none());
+
+    info!(?second_id, "Testing extend_or_release_lock");
+    let acquired = mgr.acquire_next_lock().await.unwrap().0;
+    assert_eq!(acquired, Some(second_id.clone()));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_cleanup() {
+    let instance = setup().await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    let inserted = insert_sample_dcids(&pool, "processed", NUM_SAMPLE_CHAINS)
+        .await
+        .expect("inserted chains")
+        .len();
+    let cleanup_age_threshold_sec = Some(30); // 30 seconds
+    let mut mgr = LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        2,
+        false,
+        None,
+        None,
+        cleanup_age_threshold_sec,
+    );
+
+    let deleted = mgr.do_cleanup().await.expect("cleanup failed");
+    assert_eq!(deleted, inserted as u64);
 }
 
 async fn setup() -> TestInstance {
