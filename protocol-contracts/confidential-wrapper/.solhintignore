@@ -1,3 +1,6 @@
 # directories
 **/artifacts
 **/node_modules
+
+# third-party contracts with their own license (original contract does not include a SPDX identifier)
+contracts/mocks/WETH9.sol
