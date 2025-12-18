@@ -634,6 +634,7 @@ async fn upload_transaction_graph_results<'a>(
                 UPDATE computations
                 SET is_completed = true, completed_at = CURRENT_TIMESTAMP
                 WHERE tenant_id = $1
+                AND is_completed = false
                 AND (output_handle, transaction_id) IN (
                     SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
                 )
