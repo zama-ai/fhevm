@@ -107,6 +107,15 @@ pub struct Args {
     #[arg(long, default_value_t = 90)]
     pub dcid_timeslice_sec: u32,
 
+    /// Time-to-live in seconds for processed dependence chains
+    /// Processed dependence chains older than this TTL will be deleted during idle time
+    #[arg(long, default_value_t = 48*60*60)] // Keep dcid not older than 48 hours
+    pub processed_dcid_ttl_sec: u32,
+
+    /// Interval in seconds for cleaning up expired dependence chain locks
+    #[arg(long, default_value_t = 3600)]
+    pub dcid_cleanup_interval_sec: u32,
+
     /// Log level for the application
     #[arg(
         long,

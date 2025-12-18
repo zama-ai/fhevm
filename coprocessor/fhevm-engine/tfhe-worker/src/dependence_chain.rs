@@ -5,16 +5,15 @@ use std::{fmt, sync::LazyLock, time::SystemTime};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-pub(crate) static ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER: LazyLock<IntCounter> =
-    LazyLock::new(|| {
-        register_int_counter!(
-            "coprocessor_tfhe_worker_dcid_counter",
-            "Number of acquired dependence chain IDs in tfhe-worker"
-        )
-        .unwrap()
-    });
+static ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_tfhe_worker_dcid_counter",
+        "Number of acquired dependence chain IDs in tfhe-worker"
+    )
+    .unwrap()
+});
 
-pub static ACQUIRE_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+static ACQUIRE_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
     register_histogram!(
         "coprocessor_tfhe_worker_query_acquire_dcid_seconds",
         "Histogram of query-time spent acquiring dependence chain IDs in tfhe-worker",
@@ -23,7 +22,7 @@ pub static ACQUIRE_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM: LazyLock<Histogram> = La
     .unwrap()
 });
 
-pub static EXTEND_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+static EXTEND_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
     register_histogram!(
         "coprocessor_tfhe_worker_query_extend_dcid_seconds",
         "Histogram of query-time spent extending dependence_chain lock in tfhe-worker",
@@ -31,6 +30,10 @@ pub static EXTEND_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM: LazyLock<Histogram> = Laz
     )
     .unwrap()
 });
+
+const CLEANUP_INTERVAL_SECS: u32 = 300;
+const CLEANUP_BATCH_SIZE: i64 = 1000;
+const CLEANUP_AGE_THRESHOLD_SECONDS: u32 = 48 * 60 * 60; // 48 hours
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LockingReason {
@@ -63,6 +66,10 @@ pub struct LockMngr {
     lock_ttl_sec: i64,
     lock_timeslice_sec: Option<i64>,
     disable_locking: bool,
+    cleanup_interval_sec: Option<u32>,
+    processed_dcid_ttl_sec: Option<u32>,
+
+    last_cleanup_at: Option<SystemTime>,
 }
 
 /// Dependence chain lock data
@@ -103,20 +110,27 @@ impl LockMngr {
             lock_ttl_sec: 30,
             lock_timeslice_sec: None,
             disable_locking: false,
+            last_cleanup_at: None,
+            cleanup_interval_sec: None,
+            processed_dcid_ttl_sec: None,
         }
     }
 
-    pub fn new_with_ttl(
+    pub fn new_with_conf(
         worker_id: Uuid,
         pool: sqlx::Pool<Postgres>,
         lock_ttl_sec: u32,
         disable_locking: bool,
         lock_timeslice_sec: Option<u32>,
+        cleanup_interval_sec: Option<u32>,
+        processed_dcid_ttl_sec: Option<u32>,
     ) -> Self {
         let mut mgr = Self::new(worker_id, pool);
         mgr.lock_ttl_sec = lock_ttl_sec as i64;
         mgr.disable_locking = disable_locking;
         mgr.lock_timeslice_sec = lock_timeslice_sec.map(|v| v as i64);
+        mgr.cleanup_interval_sec = cleanup_interval_sec;
+        mgr.processed_dcid_ttl_sec = processed_dcid_ttl_sec;
         mgr
     }
 
@@ -179,7 +193,6 @@ impl LockMngr {
         };
 
         self.lock.replace((row.clone(), SystemTime::now()));
-
         ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
 
         let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -200,8 +213,6 @@ impl LockMngr {
     /// If host-listener has marked the dependence chain as 'updated' in the meantime,
     /// we don't overwrite its status
     pub async fn release_all_owned_locks(&mut self) -> Result<u64, sqlx::Error> {
-        // Since UPDATE always aquire a row-level lock internally,
-        // this acts as atomic_exchange
         let rows = sqlx::query!(
             r#" 
             UPDATE dependence_chain
@@ -210,7 +221,7 @@ impl LockMngr {
                 lock_acquired_at = NULL,
                 lock_expires_at = NULL,
                 status = CASE 
-                        WHEN status = 'processing' THEN 'processed'
+                        WHEN status = 'processing' THEN 'updated'     -- revert to updated so it can be re-acquired
                         ELSE status
                         END
             WHERE worker_id = $1
@@ -220,8 +231,7 @@ impl LockMngr {
         .execute(&self.pool)
         .await?;
 
-        self.lock.take();
-
+        self.take_lock();
         info!(worker_id = %self.worker_id,
             count = rows.rows_affected(), "Released all locks");
 
@@ -248,6 +258,8 @@ impl LockMngr {
             }
         };
 
+        // Since UPDATE always aquire a row-level lock internally,
+        // this acts as atomic_exchange
         let rows = sqlx::query!(
             r#"
             UPDATE dependence_chain
@@ -274,8 +286,7 @@ impl LockMngr {
         .execute(&self.pool)
         .await?;
 
-        self.lock.take();
-
+        self.take_lock();
         info!(dcid = %hex::encode(&dep_chain_id), rows = rows.rows_affected(), mark_as_processed, "Released lock");
 
         Ok(rows.rows_affected())
@@ -382,7 +393,7 @@ impl LockMngr {
         let lock_expires_at = match row {
             Some(r) => r,
             None => {
-                self.lock.take();
+                self.take_lock();
                 error!(dcid = %hex::encode(&dependence_chain_id), "No lock extended");
                 return Ok(None);
             }
@@ -402,6 +413,33 @@ impl LockMngr {
         Ok(Some((dependence_chain_id, LockingReason::ExtendedLock)))
     }
 
+    pub async fn do_cleanup(&mut self) -> Result<u64, sqlx::Error> {
+        let should_run_cleanup = self
+            .last_cleanup_at
+            .map(|t| {
+                t.elapsed().is_ok_and(|d| {
+                    d.as_secs() as u32 >= self.cleanup_interval_sec.unwrap_or(CLEANUP_INTERVAL_SECS)
+                })
+            })
+            .unwrap_or(true);
+
+        let mut deleted = 0;
+
+        if should_run_cleanup {
+            self.last_cleanup_at = Some(SystemTime::now());
+            info!("Performing cleanup of old processed dependence chains");
+            deleted = delete_old_processed_dependence_chains(
+                &self.pool,
+                CLEANUP_BATCH_SIZE,
+                self.processed_dcid_ttl_sec
+                    .unwrap_or(CLEANUP_AGE_THRESHOLD_SECONDS),
+            )
+            .await?;
+        }
+
+        Ok(deleted)
+    }
+
     pub fn get_current_lock(&self) -> Option<DatabaseChainLock> {
         self.lock.as_ref().map(|(lock, _)| lock.clone())
     }
@@ -413,4 +451,52 @@ impl LockMngr {
     pub fn enabled(&self) -> bool {
         !self.disable_locking
     }
+
+    /// Clear the current lock without releasing it in the database
+    fn take_lock(&mut self) {
+        self.lock.take();
+    }
+}
+
+/// Delete old processed dependence chains from the database
+///
+/// - `limit` specifies the maximum number of DCIDs to delete
+/// - `threshold_sec` specifies the age threshold in seconds to avoid deleting recent DCIDs
+async fn delete_old_processed_dependence_chains(
+    pool: &sqlx::Pool<Postgres>,
+    limit: i64,
+    threshold_sec: u32,
+) -> Result<u64, sqlx::Error> {
+    if limit <= 0 {
+        debug!("Limit is zero or negative, skipping deletion");
+        return Ok(0);
+    }
+
+    let started_at = SystemTime::now();
+    let result = sqlx::query!(
+        r#"
+    WITH to_delete AS (
+        SELECT dependence_chain_id
+        FROM dependence_chain
+        WHERE status = 'processed'
+            AND last_updated_at < NOW() - make_interval(secs => $2)
+        ORDER BY last_updated_at ASC
+        LIMIT $1
+        FOR UPDATE SKIP LOCKED
+    )
+    DELETE FROM dependence_chain
+    USING to_delete
+    WHERE dependence_chain.dependence_chain_id = to_delete.dependence_chain_id
+    "#,
+        limit,
+        threshold_sec as i64
+    )
+    .execute(pool)
+    .await?;
+
+    let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
+    info!(rows_deleted = result.rows_affected(), query_elapsed = %elapsed, threshold_sec, 
+        "Deleted old processed dependence chains");
+
+    Ok(result.rows_affected())
 }
