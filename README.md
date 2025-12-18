@@ -165,7 +165,12 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 ## Support
 
-<a target="_blank" href="https://community.zama.ai">
+<a target="_blank" href="https://community.zama.ai"> 
+  
+### Security disclosure
+
+For security vulnerabilities, please follow the instructions in [SECURITY.md](./SECURITY.md).
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/.gitbook/assets/support-banner-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/.gitbook/assets/support-banner-light.png">
