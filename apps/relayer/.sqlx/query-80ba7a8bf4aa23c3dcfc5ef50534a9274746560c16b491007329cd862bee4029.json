@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                WITH stale_rows AS (\n                    SELECT id, updated_at\n                    FROM user_decrypt_req\n                    WHERE req_status = 'receipt_received'::req_status\n                      AND updated_at < NOW() - make_interval(secs => $1)\n                    FOR UPDATE SKIP LOCKED -- Prevent conflicts with other workers\n                ),\n                updated_rows AS (\n                    UPDATE user_decrypt_req\n                    SET req_status = 'timed_out'::req_status,\n                        err_reason = $2,\n                        updated_at = NOW()\n                    FROM stale_rows\n                    WHERE user_decrypt_req.id = stale_rows.id\n                    RETURNING user_decrypt_req.updated_at as new_updated_at, stale_rows.updated_at as old_updated_at\n                )\n                SELECT new_updated_at, old_updated_at FROM updated_rows\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "new_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "old_updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "80ba7a8bf4aa23c3dcfc5ef50534a9274746560c16b491007329cd862bee4029"
+}

@@ -46,15 +46,21 @@ impl Repositories {
     /// Create all repositories from storage configuration.
     pub async fn new(config: StorageConfig) -> anyhow::Result<Self> {
         let health_timeout = Duration::from_secs(config.sql_health_check_timeout_secs);
-        let pg_client = Arc::new(PgClient::new(config).await?);
+        let pg_client = Arc::new(PgClient::new(config.clone()).await?);
 
         Ok(Self {
             input_proof: Arc::new(InputProofRepository::new((*pg_client).clone())),
             public_decrypt: Arc::new(PublicDecryptRepository::new((*pg_client).clone())),
             user_decrypt: Arc::new(UserDecryptRepository::new((*pg_client).clone())),
             block_number: Arc::new(BlockNumberRepository::new((*pg_client).clone())),
-            timeout_repo: Arc::new(TimeoutRepository::new((*pg_client).clone())),
-            expiry_repo: Arc::new(ExpiryRepository::new((*pg_client).clone())),
+            timeout_repo: Arc::new(TimeoutRepository::new(
+                (*pg_client).clone(),
+                config.cron.clone(),
+            )),
+            expiry_repo: Arc::new(ExpiryRepository::new(
+                (*pg_client).clone(),
+                config.cron.clone(),
+            )),
             pg_client,
             health_timeout,
         })
@@ -69,8 +75,7 @@ impl Repositories {
     pub async fn register_background_workers(
         &self,
         orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        timeout_cron_interval: Duration,
-        expiry_cron_interval: Duration,
+        cron_config: crate::config::settings::CronConfig,
     ) -> anyhow::Result<()> {
         // Register DB pool monitor
         orchestrator
@@ -85,7 +90,7 @@ impl Repositories {
         orchestrator
             .spawn_task_and_wait_ready(
                 "timeout_worker",
-                create_timeout_worker_future((*self.pg_client).clone(), timeout_cron_interval),
+                create_timeout_worker_future((*self.pg_client).clone(), cron_config.clone()),
                 async { Ok(()) }, // Ready immediately
             )
             .await?;
@@ -94,7 +99,7 @@ impl Repositories {
         orchestrator
             .spawn_task_and_wait_ready(
                 "expiry_worker",
-                create_expiry_worker_future((*self.pg_client).clone(), expiry_cron_interval),
+                create_expiry_worker_future((*self.pg_client).clone(), cron_config.clone()),
                 async { Ok(()) }, // Ready immediately
             )
             .await?;

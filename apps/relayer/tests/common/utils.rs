@@ -55,7 +55,10 @@ impl TestSetup {
     }
 
     /// Create setup with optional custom config path
-    async fn new_with_config_path(config_path: Option<std::path::PathBuf>) -> eyre::Result<Self> {
+    #[allow(dead_code)]
+    pub async fn new_with_config_path(
+        config_path: Option<std::path::PathBuf>,
+    ) -> eyre::Result<Self> {
         // Get free ports for mock servers (they don't support :0 yet)
         let host_port = get_free_port()?;
         let gateway_port = get_free_port()?;
@@ -125,7 +128,7 @@ impl TestSetup {
 
         // Keep test pools small to avoid exhausting CI Postgres.
         settings.storage.app_pool.max_connections = 2;
-        settings.storage.cron_pool.max_connections = 1;
+        settings.storage.cron_pool.max_connections = 3;
         settings.storage.app_pool.min_connections = 0;
         settings.storage.cron_pool.min_connections = 0;
 
@@ -301,6 +304,51 @@ fn create_listener_config(
     Ok(temp_config_path)
 }
 
+/// Create a config file with fast timeout settings for testing timeout behavior
+/// Sets test_mock to false to enable background workers including timeout worker
+#[allow(dead_code)]
+pub fn create_timeout_test_config(
+    temp_dir: &TempDir,
+    timeout_secs: u64,
+    cron_interval_secs: u64,
+) -> eyre::Result<std::path::PathBuf> {
+    let temp_config_path = temp_dir.path().join("timeout_test.yaml");
+
+    // Read the default config
+    let config_content = std::fs::read_to_string("config/local.yaml.example")
+        .map_err(|e| eyre::eyre!("Failed to read default config: {}", e))?;
+
+    // Parse YAML as a generic value
+    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
+        .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
+
+    // Set test_mock to false to enable background workers
+    if let Some(global) = config.get_mut("global") {
+        global["test_mock"] = serde_yaml::Value::Bool(false);
+    }
+
+    // Modify the timeout settings
+    if let Some(storage) = config.get_mut("storage") {
+        if let Some(cron) = storage.get_mut("cron") {
+            cron["timeout_cron_interval"] =
+                serde_yaml::Value::String(format!("{}s", cron_interval_secs));
+            cron["public_decrypt_timeout"] =
+                serde_yaml::Value::String(format!("{}s", timeout_secs));
+            cron["user_decrypt_timeout"] = serde_yaml::Value::String(format!("{}s", timeout_secs));
+            cron["input_proof_timeout"] = serde_yaml::Value::String(format!("{}s", timeout_secs));
+        }
+    }
+
+    // Serialize back to YAML and write to temp file
+    let modified_content = serde_yaml::to_string(&config)
+        .map_err(|e| eyre::eyre!("Failed to serialize modified config: {}", e))?;
+
+    std::fs::write(&temp_config_path, modified_content)
+        .map_err(|e| eyre::eyre!("Failed to write temp config: {}", e))?;
+
+    Ok(temp_config_path)
+}
+
 /// Get a free port by binding to port 0
 /// This is needed for mock servers that don't support dynamic port allocation yet
 #[allow(dead_code)]
@@ -353,6 +401,118 @@ pub fn assert_retry_after_header_present(response: &reqwest::Response) {
     assert!(
         retry_after_header.is_some(),
         "202 response should have valid Retry-After header"
+    );
+}
+
+/// Common helper for testing v2 API timeout behavior
+/// Performs the full timeout test flow:
+/// 1. POST request → Assert 202 "queued" with job_id
+/// 2. Initial poll → Assert 202 "queued"
+/// 3. Wait for timeout to occur
+/// 4. Final poll → Assert 504 "failed" with error message
+#[allow(dead_code)]
+pub async fn test_v2_timeout_flow(
+    post_url: String,
+    get_url_fn: impl Fn(&str) -> String,
+    payload: serde_json::Value,
+    timeout_duration_secs: u64,
+    cron_interval_secs: u64,
+    initial_poll_delay_ms: u64,
+) {
+    let client = reqwest::Client::new();
+
+    // Step 1: POST request - should return 202 with job_id
+    let response = client
+        .post(&post_url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send POST request");
+
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::ACCEPTED,
+        "Expected 202 ACCEPTED from POST request"
+    );
+    let post_response: serde_json::Value = response
+        .json()
+        .await
+        .expect("Failed to parse POST response");
+
+    assert_eq!(
+        post_response["status"], "queued",
+        "Expected status 'queued', got response: {:?}",
+        post_response
+    );
+    let job_id = post_response["result"]["jobId"]
+        .as_str()
+        .unwrap_or_else(|| {
+            panic!(
+                "jobId should be present in response. Full response: {:?}",
+                post_response
+            )
+        });
+
+    // Step 2: Poll status - should initially return 202 "queued"
+    tokio::time::sleep(tokio::time::Duration::from_millis(initial_poll_delay_ms)).await;
+
+    let response = client
+        .get(get_url_fn(job_id))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .expect("Failed to GET status");
+
+    let response_status = response.status();
+    if response_status != reqwest::StatusCode::ACCEPTED {
+        let error_body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Could not read response body".to_string());
+        panic!(
+            "Expected 202 for queued request, got {}. Response body: {}",
+            response_status, error_body
+        );
+    }
+
+    let status: serde_json::Value = response.json().await.expect("Failed to parse status");
+    assert_eq!(status["status"], "queued");
+
+    // Step 3: Wait for timeout to occur (timeout + cron interval + buffer)
+    let wait_time =
+        tokio::time::Duration::from_secs(timeout_duration_secs + cron_interval_secs + 5);
+    tokio::time::sleep(wait_time).await;
+
+    // Step 4: Poll status - should now return 504 "failed"
+    let response = client
+        .get(get_url_fn(job_id))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .expect("Failed to GET status after timeout");
+
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::GATEWAY_TIMEOUT,
+        "Expected 504 Gateway Timeout"
+    );
+    let status: serde_json::Value = response
+        .json()
+        .await
+        .expect("Failed to parse timeout status");
+    assert_eq!(status["status"], "failed");
+    assert!(
+        status["error"].is_object(),
+        "Error details should be present for timeout"
+    );
+    let error_message = status["error"]["message"]
+        .as_str()
+        .expect("Error should have message field");
+    assert!(
+        error_message.contains("did not respond within the expected timeframe"),
+        "Error message should indicate timeout"
     );
 }
 

@@ -1,20 +1,23 @@
 use std::time::Instant;
 
-use crate::{metrics, store::sql::client::PgClient};
+use crate::{config::settings::CronConfig, metrics, store::sql::client::PgClient};
 use anyhow::Result;
 
 pub struct ExpiryRepository {
     pool: PgClient,
+    cron_config: CronConfig,
 }
 
 impl ExpiryRepository {
-    pub fn new(pool: PgClient) -> Self {
-        Self { pool }
+    pub fn new(pool: PgClient, cron_config: CronConfig) -> Self {
+        Self { pool, cron_config }
     }
 
-    // TODO: make the values configurables, and pass 7 days user-decryption and input proof to 1 day.
     pub async fn purge_stale_data(&self) -> Result<u64> {
         let mut total_deleted = 0;
+        let public_decrypt_expiry_secs = self.cron_config.public_decrypt_expiry.as_secs_f64();
+        let user_decrypt_expiry_secs = self.cron_config.user_decrypt_expiry.as_secs_f64();
+        let input_proof_expiry_secs = self.cron_config.input_proof_expiry.as_secs_f64();
 
         let mut conn = self.pool.get_cron_connection().await?;
         let query_start = Instant::now();
@@ -22,8 +25,9 @@ impl ExpiryRepository {
         let result = sqlx::query!(
             r#"
                 DELETE FROM public_decrypt_req 
-                WHERE updated_at < NOW() - INTERVAL '365 days'
-                "#
+                WHERE updated_at < NOW() - make_interval(secs => $1)
+                "#,
+            public_decrypt_expiry_secs
         )
         .execute(&mut *conn)
         .await;
@@ -42,8 +46,9 @@ impl ExpiryRepository {
         let result = sqlx::query!(
             r#"
                 DELETE FROM user_decrypt_share 
-                WHERE updated_at < NOW() - INTERVAL '7 days'
-                "#
+                WHERE updated_at < NOW() - make_interval(secs => $1)
+                "#,
+            user_decrypt_expiry_secs
         )
         .execute(&mut *conn)
         .await;
@@ -63,8 +68,9 @@ impl ExpiryRepository {
         let result = sqlx::query!(
             r#"
                 DELETE FROM user_decrypt_req 
-                WHERE updated_at < NOW() - INTERVAL '7 days'
-                "#
+                WHERE updated_at < NOW() - make_interval(secs => $1)
+                "#,
+            user_decrypt_expiry_secs
         )
         .execute(&mut *conn)
         .await;
@@ -84,8 +90,9 @@ impl ExpiryRepository {
         let result = sqlx::query!(
             r#"
                 DELETE FROM input_proof_req 
-                WHERE updated_at < NOW() - INTERVAL '7 days'
-                "#
+                WHERE updated_at < NOW() - make_interval(secs => $1)
+                "#,
+            input_proof_expiry_secs
         )
         .execute(&mut *conn)
         .await;

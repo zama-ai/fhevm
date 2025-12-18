@@ -96,11 +96,7 @@ pub async fn run_fhevm_relayer(
     if !settings.global.test_mock {
         // Register background workers with orchestrator (timeout, expiry cron jobs, and DB pool monitor)
         repositories
-            .register_background_workers(
-                &orchestrator,
-                settings.storage.cron.timeout_cron_interval,
-                settings.storage.cron.expiry_cron_interval,
-            )
+            .register_background_workers(&orchestrator, settings.storage.cron.clone())
             .await
             .map_err(|e| eyre::eyre!("Failed to register background workers: {}", e))?;
     }

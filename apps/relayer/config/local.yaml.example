@@ -105,9 +105,8 @@ storage:
   cron:
     # available settings: (d, h, m, s, ms)
     # 60s for interval check
-    timeout_cron_interval: "60s" 
-    
-    # TODO
+    timeout_cron_interval: "60s"
+
     # 30 mins timeout logic
     public_decrypt_timeout: "30m"
     user_decrypt_timeout: "30m"
@@ -116,7 +115,6 @@ storage:
     # 5 min interval for cleanup check
     expiry_cron_interval: "5m"
     
-    #TODO
     # Retention Policies
     public_decrypt_expiry: "365d"
     user_decrypt_expiry: "7d"

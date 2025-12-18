@@ -18,6 +18,7 @@
               "Enum": [
                 "queued",
                 "processing",
+                "tx_in_flight",
                 "receipt_received",
                 "completed",
                 "timed_out",
@@ -47,6 +48,7 @@
               "Enum": [
                 "queued",
                 "processing",
+                "tx_in_flight",
                 "receipt_received",
                 "completed",
                 "timed_out",

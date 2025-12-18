@@ -527,6 +527,28 @@ impl FhevmMockWrapper {
         }
     }
 
+    /// Register input proof request event only (for timeout testing)
+    /// Emits the request event but NO response event, causing the relayer to timeout
+    pub fn on_input_proof_request_only(&self, user: Address, data: Bytes) {
+        let id = self.next_zk_proof_id();
+        let request_log = build_input_request(self.input_proof_contract, id, user, data);
+
+        let response = Response::Success {
+            hash: Some(random_hash()),
+            data: crate::mock_server::ResponseData::Logs(vec![request_log]),
+            scheduled_transactions: vec![], // NO response event - will timeout
+        };
+
+        self.json_rpc_server.on_transaction(
+            matches_contract_and_selector_for_txn(
+                self.input_proof_contract,
+                InputVerification::verifyProofRequestCall::SELECTOR,
+            ),
+            response,
+            UsageLimit::Once,
+        );
+    }
+
     /// Register input proof that reverts
     pub fn on_input_proof_revert(&self, reason: &str) {
         self.json_rpc_server.on_transaction(
@@ -539,6 +561,36 @@ impl FhevmMockWrapper {
                 reason: Some(reason.to_string()),
             },
             UsageLimit::Unlimited,
+        );
+    }
+
+    /// Register public decryption request event only (for timeout testing)
+    /// Emits the request event but NO response event, causing the relayer to timeout
+    pub fn on_public_decrypt_request_only(&self, handles: Vec<B256>) {
+        // Set up readiness check to return true (ready)
+        self.set_readiness_success();
+
+        let id = self.next_decryption_id();
+        let request_log = build_public_decrypt_request(self.decryption_contract, id, handles);
+        self.register_request_only(
+            self.decryption_contract,
+            Decryption::publicDecryptionRequestCall::SELECTOR,
+            request_log,
+        );
+    }
+
+    /// Register user decryption request event only (for timeout testing)
+    /// Emits the request event but NO response event, causing the relayer to timeout
+    pub fn on_user_decrypt_request_only(&self, handles: Vec<B256>, user: Address) {
+        // Set up readiness check to return true (ready)
+        self.set_readiness_success();
+
+        let id = self.next_decryption_id();
+        let request_log = build_user_decrypt_request(self.decryption_contract, id, user, handles);
+        self.register_request_only(
+            self.decryption_contract,
+            Decryption::userDecryptionRequestCall::SELECTOR,
+            request_log,
         );
     }
 
@@ -639,6 +691,23 @@ impl FhevmMockWrapper {
         );
 
         debug!("Registered FHEVM pattern with scheduled response and subscription targeting");
+    }
+
+    /// Register request event only (for timeout testing)
+    /// Emits just the request event in transaction receipt, NO response event
+    fn register_request_only(&self, contract: Address, selector: [u8; 4], request_log: Log) {
+        let immediate_response = Response::Success {
+            hash: Some(random_hash()),
+            data: crate::mock_server::ResponseData::Logs(vec![request_log]),
+            scheduled_transactions: vec![], // NO response - will timeout
+        };
+
+        self.json_rpc_server.on_transaction(
+            matches_contract_and_selector_for_txn(contract, selector),
+            immediate_response,
+            UsageLimit::Once,
+        );
+        debug!("Registered FHEVM request-only pattern (no response, for timeout testing)");
     }
 }
 

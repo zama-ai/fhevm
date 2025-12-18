@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use crate::{
+    config::settings::CronConfig,
     metrics,
     store::sql::{client::PgClient, models::req_status_enum_model::ReqStatus},
 };
@@ -8,17 +9,16 @@ use anyhow::Result;
 
 pub struct TimeoutRepository {
     pool: PgClient,
+    cron_config: CronConfig,
 }
 
 impl TimeoutRepository {
-    pub fn new(pool: PgClient) -> Self {
-        Self { pool }
+    pub fn new(pool: PgClient, cron_config: CronConfig) -> Self {
+        Self { pool, cron_config }
     }
 
-    // TODO: Make the timeout configurable from settings for each of the values here.
-
     /// Returns the total number of rows moved to 'timed_out'.
-    /// Updates all requests that have been stuck in 'receipt_received' for > 30 minutes.
+    /// Updates all requests that have been stuck in 'receipt_received' for longer than configured timeout.
     pub async fn time_out_stale_requests(&self) -> Result<u64> {
         let mut total_affected = 0;
         const ERR_REASON: &str = "Gateway chain did not respond within the expected timeframe";
@@ -30,20 +30,22 @@ impl TimeoutRepository {
             let mut conn = self.pool.get_cron_connection().await?; // Metrics: Pool Wait
             let query_start = Instant::now();
 
+            let timeout_secs = self.cron_config.user_decrypt_timeout.as_secs_f64();
+
             // We use a CTE to capture the 'old_updated_at' before the update happens.
             let result = sqlx::query!(
                 r#"
                 WITH stale_rows AS (
-                    SELECT id, updated_at 
+                    SELECT id, updated_at
                     FROM user_decrypt_req
                     WHERE req_status = 'receipt_received'::req_status
-                      AND updated_at < NOW() - INTERVAL '30 minutes'
+                      AND updated_at < NOW() - make_interval(secs => $1)
                     FOR UPDATE SKIP LOCKED -- Prevent conflicts with other workers
                 ),
                 updated_rows AS (
                     UPDATE user_decrypt_req
-                    SET req_status = 'timed_out'::req_status, 
-                        err_reason = $1,
+                    SET req_status = 'timed_out'::req_status,
+                        err_reason = $2,
                         updated_at = NOW()
                     FROM stale_rows
                     WHERE user_decrypt_req.id = stale_rows.id
@@ -51,6 +53,7 @@ impl TimeoutRepository {
                 )
                 SELECT new_updated_at, old_updated_at FROM updated_rows
                 "#,
+                timeout_secs,
                 ERR_REASON
             )
             .fetch_all(&mut *conn)
@@ -65,7 +68,8 @@ impl TimeoutRepository {
             }
 
             let rows = result?;
-            total_affected += rows.len() as u64;
+            let count = rows.len() as u64;
+            total_affected += count;
 
             // Metrics: Status Transitions
             for row in rows {
@@ -86,19 +90,21 @@ impl TimeoutRepository {
             let mut conn = self.pool.get_cron_connection().await?;
             let query_start = Instant::now();
 
+            let timeout_secs = self.cron_config.public_decrypt_timeout.as_secs_f64();
+
             let result = sqlx::query!(
                 r#"
                 WITH stale_rows AS (
-                    SELECT id, updated_at 
+                    SELECT id, updated_at
                     FROM public_decrypt_req
                     WHERE req_status = 'receipt_received'::req_status
-                      AND updated_at < NOW() - INTERVAL '30 minutes'
+                      AND updated_at < NOW() - make_interval(secs => $1)
                     FOR UPDATE SKIP LOCKED
                 ),
                 updated_rows AS (
                     UPDATE public_decrypt_req
-                    SET req_status = 'timed_out'::req_status, 
-                        err_reason = $1,
+                    SET req_status = 'timed_out'::req_status,
+                        err_reason = $2,
                         updated_at = NOW()
                     FROM stale_rows
                     WHERE public_decrypt_req.id = stale_rows.id
@@ -106,6 +112,7 @@ impl TimeoutRepository {
                 )
                 SELECT new_updated_at, old_updated_at FROM updated_rows
                 "#,
+                timeout_secs,
                 ERR_REASON
             )
             .fetch_all(&mut *conn)
@@ -119,7 +126,8 @@ impl TimeoutRepository {
             }
 
             let rows = result?;
-            total_affected += rows.len() as u64;
+            let count = rows.len() as u64;
+            total_affected += count;
 
             for row in rows {
                 metrics::record_status_transition(
@@ -139,19 +147,21 @@ impl TimeoutRepository {
             let mut conn = self.pool.get_cron_connection().await?;
             let query_start = Instant::now();
 
+            let timeout_secs = self.cron_config.input_proof_timeout.as_secs_f64();
+
             let result = sqlx::query!(
                 r#"
                 WITH stale_rows AS (
-                    SELECT id, updated_at 
+                    SELECT id, updated_at
                     FROM input_proof_req
                     WHERE req_status = 'receipt_received'::req_status
-                      AND updated_at < NOW() - INTERVAL '30 minutes'
+                      AND updated_at < NOW() - make_interval(secs => $1)
                     FOR UPDATE SKIP LOCKED
                 ),
                 updated_rows AS (
                     UPDATE input_proof_req
-                    SET req_status = 'timed_out'::req_status, 
-                        err_reason = $1,
+                    SET req_status = 'timed_out'::req_status,
+                        err_reason = $2,
                         updated_at = NOW()
                     FROM stale_rows
                     WHERE input_proof_req.id = stale_rows.id
@@ -159,6 +169,7 @@ impl TimeoutRepository {
                 )
                 SELECT new_updated_at, old_updated_at FROM updated_rows
                 "#,
+                timeout_secs,
                 ERR_REASON
             )
             .fetch_all(&mut *conn)
@@ -172,7 +183,8 @@ impl TimeoutRepository {
             }
 
             let rows = result?;
-            total_affected += rows.len() as u64;
+            let count = rows.len() as u64;
+            total_affected += count;
 
             for row in rows {
                 metrics::record_status_transition(
