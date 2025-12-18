@@ -33,6 +33,9 @@ library FHE {
     /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
 
+    /// @notice Returned if the sender is not allowed to use the handle.
+    error SenderNotAllowedToUseHandle(bytes32 handle, address sender);
+
     /// @notice This event is emitted when public decryption has been successfully verified.
     event PublicDecryptionVerified(bytes32[] handlesList, bytes abiEncodedCleartexts);
 

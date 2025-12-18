@@ -537,9 +537,18 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
   let result = `
     /** 
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted e${fheType.type.toLowerCase()} integer.
+     * @dev If inputProof is empty, the externalE${fheType.type.toLowerCase()} inputHandle can be used as a regular e${fheType.type.toLowerCase()} handle if it
+     *      has already been verified and allowed to the sender. 
+     *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalE${fheType.type.toLowerCase()} inputHandle, bytes memory inputProof) internal returns (e${fheType.type.toLowerCase()}) {
-        return e${fheType.type.toLowerCase()}.wrap(Impl.verify(externalE${fheType.type.toLowerCase()}.unwrap(inputHandle), inputProof, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
+        if (inputProof.length!=0) {
+          return e${fheType.type.toLowerCase()}.wrap(Impl.verify(externalE${fheType.type.toLowerCase()}.unwrap(inputHandle), inputProof, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type}));
+        } else {
+          bytes32 inputBytes32 = externalE${fheType.type.toLowerCase()}.unwrap(inputHandle);
+          if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+          return e${fheType.type.toLowerCase()}.wrap(inputBytes32);
+        }
     }
 
     `;

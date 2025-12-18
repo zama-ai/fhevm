@@ -38,9 +38,9 @@ contract EthereumConfigTest is Test {
         assertTrue(cfg.CoprocessorAddress == ethCfg.CoprocessorAddress);
         assertTrue(cfg.KMSVerifierAddress == ethCfg.KMSVerifierAddress);
 
-        assertTrue(cfg.ACLAddress == address(0));
-        assertTrue(cfg.CoprocessorAddress == address(0));
-        assertTrue(cfg.KMSVerifierAddress == address(0));
+        assertTrue(cfg.ACLAddress == 0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6);
+        assertTrue(cfg.CoprocessorAddress == 0xD82385dADa1ae3E969447f20A3164F6213100e75);
+        assertTrue(cfg.KMSVerifierAddress == 0x77627828a55156b04Ac0DC0eb30467f1a552BB03);
     }
 
     function test_ZamaProtocolIdEthereum() public {
