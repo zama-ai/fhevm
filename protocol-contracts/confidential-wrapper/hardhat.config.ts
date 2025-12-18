@@ -79,7 +79,7 @@ const config: HardhatUserConfig = {
           // https://hardhat.org/hardhat-network/#solidity-optimizer-support
           optimizer: {
             enabled: true,
-            runs: 200,
+            runs: 800,
           },
           evmVersion: "cancun",
         },
@@ -88,14 +88,14 @@ const config: HardhatUserConfig = {
       {
         version: "0.6.6",
         settings: {
-          optimizer: { enabled: true, runs: 200 },
+          optimizer: { enabled: true, runs: 800 },
         },
       },
       // Used for Uniswap v2-core contracts used in mock contracts
       {
         version: "0.5.16",
         settings: {
-          optimizer: { enabled: true, runs: 200 },
+          optimizer: { enabled: true, runs: 800 },
         },
       },
     ]
