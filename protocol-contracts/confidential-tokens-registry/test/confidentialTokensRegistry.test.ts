@@ -38,6 +38,12 @@ describe('ConfidentialTokensRegistry', function () {
     });
   });
 
+  describe('deployment configuration', function () {
+    it('should have the correct initial owner', async function () {
+      expect(await this.registry.owner()).to.equal(this.owner.address);
+    });
+  });
+
   describe('registerConfidentialToken', function () {
     it('should register a confidential token', async function () {
       expect(await this.registry.getConfidentialTokenAddress(this.token1)).to.equal(ethers.ZeroAddress);

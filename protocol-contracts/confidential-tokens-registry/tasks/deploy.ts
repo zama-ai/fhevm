@@ -36,7 +36,7 @@ async function deployConfidentialTokensRegistry(hre: HardhatRuntimeEnvironment) 
     [
       `✅ Deployed ConfidentialTokensRegistry:`,
       `  - Proxy address: ${proxyAddress}`,
-      `  - Initial owner (deployer): ${deployer}`,
+      `  - Initial owner: ${initialOwner}`,
       `  - Deployed by deployer account: ${deployer}`,
       `  - Network: ${network.name}`,
       '',
