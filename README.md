@@ -163,6 +163,13 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 > We are open to collaborating and advancing the FHE space with our partners. If you have specific needs, please email us at hello@zama.ai.
 
+
+## Security Boundaries
+
+This project focuses on cryptographic correctness.
+Deployment security and key management remain the responsibility of integrators.
+
+
 ## Support
 
 <a target="_blank" href="https://community.zama.ai">
