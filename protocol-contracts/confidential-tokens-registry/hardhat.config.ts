@@ -14,7 +14,6 @@ import 'solidity-coverage';
 
 import './tasks/accounts';
 import './tasks/deploy';
-import './tasks/register';
 
 // Get the environment configuration from .env file
 //

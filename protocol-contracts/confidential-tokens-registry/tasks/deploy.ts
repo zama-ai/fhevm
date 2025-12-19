@@ -1,5 +1,6 @@
 import { task } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
+import { getRequiredEnvVar } from './utils/loadVariables';
 
 export const CONFIDENTIAL_TOKENS_REGISTRY_CONTRACT_NAME = 'ConfidentialTokensRegistry';
 export const CONFIDENTIAL_TOKENS_REGISTRY_PROXY_NAME = `${CONFIDENTIAL_TOKENS_REGISTRY_CONTRACT_NAME}_Proxy`;
@@ -14,12 +15,15 @@ async function deployConfidentialTokensRegistry(hre: HardhatRuntimeEnvironment) 
   const { deployer } = await getNamedAccounts();
   const deployerSigner = await ethers.getSigner(deployer);
 
+  // Get the initial owner address
+  const initialOwner = getRequiredEnvVar('INITIAL_OWNER');
+
   // Get the contract factory and deploy the proxy + the implementation
   const confidentialTokensRegistryFactory = await ethers.getContractFactory(
     CONFIDENTIAL_TOKENS_REGISTRY_CONTRACT_NAME,
     deployerSigner,
   );
-  const proxy = await upgrades.deployProxy(confidentialTokensRegistryFactory, [deployer], {
+  const proxy = await upgrades.deployProxy(confidentialTokensRegistryFactory, [initialOwner], {
     kind: 'uups',
     initializer: 'initialize',
   });

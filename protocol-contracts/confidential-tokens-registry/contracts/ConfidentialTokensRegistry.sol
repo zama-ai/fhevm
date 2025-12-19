@@ -152,7 +152,9 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
     }
 
     /**
-     * @notice Returns the address of the confidential token associated with a token.
+     * @notice Returns the address of the confidential token associated with a token. A null address
+     * is returned if no confidential token is associated with the token, meaning it either has
+     * never been registered or it has been revoked.
      * @param tokenAddress The address of the token.
      * @return The address of the confidential token.
      */
@@ -162,6 +164,8 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
 
     /**
      * @notice Returns the address of the token associated with a confidential token.
+     * A null address is returned if no token is associated with the confidential token, meaning
+     * it either has never been registered or it has been revoked.
      * @param confidentialTokenAddress The address of the confidential token.
      * @return The address of the token.
      */
@@ -170,8 +174,8 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
     }
 
     /**
-     * @notice Returns true if a confidential token is revoked, false otherwise. A revoked confidential token
-     * is not allowed to be associated with a token again.
+     * @notice Returns true if a confidential token is revoked, false otherwise. A revoked
+     * confidential token is not allowed to be associated with a token again.
      * @param confidentialTokenAddress The address of the confidential token.
      * @return True if the confidential token is revoked, false otherwise.
      */
