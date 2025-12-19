@@ -80,6 +80,8 @@ pub struct DatabaseChainLock {
     pub lock_acquired_at: Option<DateTime<Utc>>,
     pub lock_expires_at: Option<DateTime<Utc>>,
     pub last_updated_at: DateTime<Utc>,
+    pub block_height: Option<i64>,
+    pub block_timestamp: Option<DateTime<Utc>>,
     pub match_reason: String,
 }
 
@@ -96,6 +98,8 @@ impl fmt::Debug for DatabaseChainLock {
             .field("lock_acquired_at", &self.lock_acquired_at)
             .field("lock_expires_at", &self.lock_expires_at)
             .field("last_updated_at", &self.last_updated_at)
+            .field("block_height", &self.block_height)
+            .field("block_ts", &self.block_timestamp)
             .field("match_reason", &self.match_reason)
             .finish()
     }
@@ -162,6 +166,8 @@ impl LockMngr {
                             status = 'updated'      -- Marked as updated by host-listener
                             AND
                             worker_id IS NULL       -- Ensure no other workers own it
+                            AND
+                            dependency_count = 0    -- No pending dependencies
                         )                              
                     OR  (
                             lock_expires_at < NOW()  -- Work-stealing of expired locks
@@ -286,8 +292,29 @@ impl LockMngr {
         .execute(&self.pool)
         .await?;
 
+        let mut dependents_updated = 0;
+        if mark_as_processed {
+            // Get all dependents of a given dependence chain ID and decrement their dependency count
+            dependents_updated = sqlx::query!(
+                r#"
+                UPDATE dependence_chain
+                SET
+                    dependency_count = GREATEST(dependency_count - 1, 0)
+                WHERE dependence_chain_id = ANY (
+                    SELECT unnest(dependents)
+                    FROM dependence_chain
+                    WHERE dependence_chain_id = $1
+                )
+            "#,
+                dep_chain_id,
+            )
+            .execute(&self.pool)
+            .await?
+            .rows_affected();
+        }
+
         self.take_lock();
-        info!(dcid = %hex::encode(&dep_chain_id), rows = rows.rows_affected(), mark_as_processed, "Released lock");
+        info!(dcid = %hex::encode(&dep_chain_id), rows = rows.rows_affected(), mark_as_processed, dependents_updated,  "Released lock");
 
         Ok(rows.rows_affected())
     }
