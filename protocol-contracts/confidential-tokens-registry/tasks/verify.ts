@@ -5,14 +5,20 @@ import { task, types } from 'hardhat/config';
 // Example usage:
 // npx hardhat task:verifyConfidentialTokensRegistry --proxyAddress 0x1234567890123456789012345678901234567890 --network testnet
 task('task:verifyConfidentialTokensRegistry')
-  .addParam(
+  .addOptionalParam(
     'proxyAddress',
-    'The address of the confidential tokens registry proxy contract to verify',
-    '',
+    'The address of the confidential tokens registry proxy contract to verify. If not provided, the proxy address will be fetched from deployments.',
+    false,
     types.string,
   )
   .setAction(async function ({ proxyAddress }, hre) {
-    const { upgrades, run } = hre;
+    const { upgrades, run, deployments } = hre;
+    const { get } = deployments;
+
+    if (!proxyAddress) {
+      // Get the proxy address from deployments
+      proxyAddress = await get(CONFIDENTIAL_TOKENS_REGISTRY_PROXY_NAME);
+    }
 
     // Get the implementation address
     const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
