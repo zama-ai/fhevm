@@ -36,11 +36,11 @@ export GATEWAY_VERSION=${GATEWAY_VERSION:-"v0.10.2"}
 export HOST_VERSION=${HOST_VERSION:-"v0.10.2"}
 
 # Other services.
-export CORE_VERSION=${CORE_VERSION:-"v0.12.4"}
+export CORE_VERSION=${CORE_VERSION:-"v0.12.7"}
 export RELAYER_VERSION=${RELAYER_VERSION:-"v0.6.0"}
-# Test-suite docker image cannot be updated with 0.10.x releases because of the introduction a 
+# Test-suite docker image cannot be updated with 0.10.x releases because of the introduction a
 # breaking change in delegate user decryption tests in https://github.com/zama-ai/fhevm/pull/1092
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"1c70735"} 
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"1c70735"}
 
 
 function print_logo() {
