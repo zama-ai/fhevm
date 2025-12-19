@@ -115,6 +115,11 @@ _Learn more use cases in the [list of examples](https://docs.zama.ai/protocol/ex
   <a href="#about" > ↑ Back to top </a>
 </p>
 
+## Development Status
+
+The fhevm is under active development and interfaces may change between releases.
+Users should pin versions when building on top of it.
+
 ## Working with FHEVM
 ### Citations
 
