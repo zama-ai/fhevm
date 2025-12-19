@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+artifacts/
+cache/
+cache_forge/
+out/
+types/
+contracts-exposed/
+
+# Coverage
+coverage/
+coverage.json
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Deployment artifacts (keep deployments folder but ignore specific networks if needed)
+# deployments/
+
+# Typechain
+typechain-types/
+
+# Hardhat
+.openzeppelin/
+
+# Foundry
+broadcast/
+

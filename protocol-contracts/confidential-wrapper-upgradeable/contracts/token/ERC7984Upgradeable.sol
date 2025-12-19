@@ -12,7 +12,6 @@ import {IERC7984} from "openzeppelin-confidential-contracts/contracts/interfaces
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 
-
 /**
  * @dev Reference implementation for {IERC7984}.
  *
