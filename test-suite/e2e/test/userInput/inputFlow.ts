@@ -1,4 +1,4 @@
-import { expect } from 'chai';
+import { expect, assert } from 'chai';
 import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
@@ -52,8 +52,9 @@ describe('Input Flow', function () {
     const receipt = await tx.wait();
     expect(receipt.status).to.equal(1);
 
-    // User decrypt the result - should be 7 + 42 = 49.
     const handle = await this.contract.resUint64();
+
+    // User decrypt the result - should be 7 + 42 = 49.
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
     const decryptedValue = await userDecryptSingleHandle(
       handle,
@@ -64,5 +65,12 @@ describe('Input Flow', function () {
       publicKey,
     );
     expect(decryptedValue).to.equal(49n);
+
+    // Public decrypt the result - should be 49.
+    const res = await this.instances.alice.publicDecrypt([handle]);
+    const expectedRes = {
+      [handle]: 49n,
+    };
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 });
