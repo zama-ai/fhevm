@@ -9,7 +9,7 @@ contract BurnableRegulatedERC7984Upgradeable is RegulatedERC7984Upgradeable {
     function burn(
         externalEuint64 amount,
         bytes calldata inputProof
-    ) public virtual onlyRole(WRAPPER_ROLE) returns (euint64) {
-        return burn(FHE.fromExternal(amount, inputProof), msg.sender);
+    ) internal virtual returns (euint64) {
+        return _burn(_msgSender(), FHE.fromExternal(amount, inputProof));
     }
 }
