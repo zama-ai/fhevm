@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {RegulatedERC7984Upgradeable} from "../token/RegulatedERC7984Upgradeable.sol";
 import {EthereumConfigUpgradeable} from "../fhevm/EthereumConfigUpgradeable.sol";
-import {FHE, ebool, euint64 } from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, ebool, euint64, externalEuint64 } from "@fhevm/solidity/lib/FHE.sol";
 import {AdminProvider} from "../admin/AdminProvider.sol";
 import {FeeManager} from "../admin/FeeManager.sol";
 import {IWrapperReceiver} from "../interfaces/IWrapperReceiver.sol";
@@ -20,15 +20,12 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 /// @notice Wrapper contract for a single token type, providing wrapping/unwrapping functionality
 /// @dev Each wrapper handles exactly one underlying token (ERC20 or ETH) and one confidential token
 /// @custom:security-contact contact@zaiffer.org
-contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAdminRulesUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
+contract WrapperUpgradeable is RegulatedERC7984Upgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
-
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     /// @custom:storage-location erc7201:zaiffer.storage.Wrapper
     struct WrapperStorage {
         address _originalToken;
-        RegulatedERC7984Upgradeable _confidentialToken;
         IDeploymentCoordinator _deploymentCoordinator;
         uint256 _requestId;
         mapping(uint256 decryptionRequest => ReceiverEntry receiverEntry) _receivers;
@@ -90,10 +87,6 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
         euint64 burnAmount
     );
     event FinalizeUnwrapOperatorSet(address indexed holder, address indexed operator, uint48 until);
-    /// @dev The given gateway request ID `requestId` is invalid.
-    error ERC7984InvalidGatewayRequest(uint256 requestId);
-    /// @dev FHE.isSenderAllowed(encryptedValue) returned false
-    error SenderNotAllowed();
     /// @dev The caller is not authorized to finalize this unwrap request
     error UnauthorizedFinalizeUnwrapCaller(uint256 requestId, address caller, address unwrapInitiator);
 
@@ -103,21 +96,29 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
     }
 
     function initialize(
-        address originalToken_,
-        RegulatedERC7984Upgradeable confidentialToken_,
+        string memory name_,
+        string memory symbol_,
+        uint8 decimals_,
+        address admin_,
+        uint256 rate_,
         IDeploymentCoordinator deploymentCoordinator_,
-        address admin_
+        address originalToken_
     ) public initializer {
-        require(address(confidentialToken_) != address(0), ZeroAddressConfidentialToken());
+        RegulatedERC7984Upgradeable.initialize(
+            name_,
+            symbol_,
+            decimals_,
+            admin_,
+            rate_,
+            deploymentCoordinator_
+        );
+
         require(address(deploymentCoordinator_) != address(0), ZeroAddressDeploymentCoordinator());
 
-        __EthereumConfig_init();
-        __AccessControlDefaultAdminRules_init(0, admin_); // 0 delay for admin transfer
         __ReentrancyGuard_init();
 
         WrapperStorage storage $ = _getWrapperStorage();
         $._originalToken = originalToken_;
-        $._confidentialToken = confidentialToken_;
         $._deploymentCoordinator = deploymentCoordinator_;
         $._requestId = 0;
     }
@@ -125,21 +126,6 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
     function originalToken() public view returns (address) {
         WrapperStorage storage $ = _getWrapperStorage();
         return $._originalToken;
-    }
-
-    function confidentialToken() public view returns (RegulatedERC7984Upgradeable) {
-        WrapperStorage storage $ = _getWrapperStorage();
-        return $._confidentialToken;
-    }
-
-    function deploymentCoordinator() public view returns (IDeploymentCoordinator) {
-        WrapperStorage storage $ = _getWrapperStorage();
-        return $._deploymentCoordinator;
-    }
-
-    function adminProvider() public view returns (AdminProvider) {
-        WrapperStorage storage $ = _getWrapperStorage();
-        return $._deploymentCoordinator.adminProvider();
     }
 
     function requestId() public view returns (uint256) {
@@ -152,8 +138,6 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
         return $._receivers[requestId_];
     }
 
-    function _authorizeUpgrade(address) internal override onlyRole(UPGRADER_ROLE) {}
-
     /// @notice Wraps original tokens (ETH or ERC20) into confidential tokens
     /// @dev Handles fee-on-transfer tokens by tracking actual balances received
     /// @dev Protected against reentrancy attacks from ERC777 and other callback-enabled tokens
@@ -162,12 +146,12 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
     function wrap(address to_, uint256 amount_) external payable nonReentrant {
         WrapperStorage storage $ = _getWrapperStorage();
 
-        uint256 mintTxId = $._confidentialToken.nextTxId();
+        uint256 mintTxId = nextTxId();
         uint64 mintAmount;
         uint256 actualFeeReceived;
 
         uint256 baseFee = _getWrapFee(amount_, to_);
-        uint256 rate = $._confidentialToken.rate();
+        uint256 rate = rate();
         uint256 baseAmount = amount_ - baseFee;
         uint256 wrapDust = baseAmount % rate;
         uint256 transferAmount = baseAmount - wrapDust;  // == baseAmount / rate * rate
@@ -180,13 +164,13 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
             (mintAmount, actualFeeReceived) = _processERC20Deposit(transferAmount, totalFee);
         }
 
-        _mint(to_, mintAmount);
+        _mintWrappedTokens(to_, mintAmount);
         emit Wrapped(mintAmount, amount_, actualFeeReceived, to_, mintTxId);
     }
 
     function _processETHDeposit(uint256 transferAmount_, uint256 totalFee_) private returns (uint64 mintAmount, uint256 actualFeeReceived) {
         WrapperStorage storage $ = _getWrapperStorage();
-        uint256 rate = $._confidentialToken.rate();
+        uint256 rate = rate();
 
         mintAmount = SafeCast.toUint64(transferAmount_ / rate);
 
@@ -203,7 +187,7 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
         require(msg.value == 0, CannotReceiveEthForTokenWrap());
 
         WrapperStorage storage $ = _getWrapperStorage();
-        uint256 rate = $._confidentialToken.rate();
+        uint256 rate = rate();
         address feeRecipient = _getFeeRecipient();
 
         // Transfer and track wrapper balance
@@ -228,41 +212,90 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
         actualFeeReceived = IERC20($._originalToken).balanceOf(feeRecipient) - feeBalBefore;
     }
 
-    /// @notice Initiates unwrapping of confidential tokens back to original tokens (ETH or ERC20)
-    /// @dev This is the ERC7984 receiver callback, triggered when confidential tokens are transferred to this wrapper
-    /// @dev Security: Only accepts calls from the paired confidential token contract
-    /// @dev The unwrap flow is asynchronous: this function burns tokens and requests decryption, then finalizeUnwrap completes the transfer
-    /// @param from The address that initiated the confidential transfer (token holder)
-    /// @param amount The encrypted amount of confidential tokens to unwrap
-    /// @param data ABI-encoded (address to, address refund, bytes callbackData) where:
-    ///        - to: recipient address for the unwrapped original tokens (may be a contract like SwapV0)
-    ///        - refund: recipient address for refunded cTokens if unwrap fails (typically the user's address)
-    ///        - callbackData: optional data passed to IWrapperReceiver.onUnwrapFinalizedReceived if recipient is a contract
-    /// @return ebool(true) if unwrap was accepted and initiated, ebool(false) if rejected (wrong caller)
+    /// @dev Unwraps tokens from `from` and sends the underlying tokens to `to`. The caller must be `from`
+    /// or be an approved operator for `from`. `amount * rate()` underlying tokens are sent to `to`.
     ///
-    /// @dev Confidentiality
-    ///        - The unwrap amounts are publically decryptable. This is by design since those could be inferred from
-    ///          transferred underlyings at unwrap anyway.
-    function onConfidentialTransferReceived(
-        address /* operator */,
+    /// NOTE: The unwrap request created by this function must be finalized by calling {finalizeUnwrap}.
+    /// NOTE: The caller *must* already be approved by ACL for the given `amount`.
+    ///
+    function unwrap(address from, address to, euint64 amount) public virtual {
+        require(FHE.isAllowed(amount, msg.sender), ERC7984UnauthorizedUseOfEncryptedAmount(amount, msg.sender));
+        _unwrap(from, to, amount, to, new bytes(0));
+    }
+
+    /// @dev Variant of {unwrap} that passes an `inputProof` which approves the caller for the `encryptedAmount`
+    /// in the ACL.
+    ///
+    function unwrap(
         address from,
+        address to,
+        externalEuint64 encryptedAmount,
+        bytes calldata inputProof
+    ) public virtual {
+        _unwrap(from, to, FHE.fromExternal(encryptedAmount, inputProof), to, new bytes(0));
+    }
+
+    /// @dev Variant of {unwrap}. `refund` is used to send back unwrapped tokens to in case of unwrap failure.
+    ///
+    /// NOTE: The unwrap request created by this function must be finalized by calling {finalizeUnwrap}.
+    /// NOTE: The caller *must* already be approved by ACL for the given `amount`.
+    ///
+    function unwrapWithRefund(address from, address to, euint64 amount, address refund) public virtual {
+        require(FHE.isAllowed(amount, msg.sender), ERC7984UnauthorizedUseOfEncryptedAmount(amount, msg.sender));
+        _unwrap(from, to, amount, refund, new bytes(0));
+    }
+
+    /// @dev Variant of {unwrapWithRefund} that passes an `inputProof` which approves the caller for the `encryptedAmount`
+    /// in the ACL.
+    ///
+    function unwrapWithRefund(
+        address from,
+        address to,
+        externalEuint64 encryptedAmount,
+        bytes calldata inputProof,
+        address refund
+    ) public virtual {
+        _unwrap(from, to, FHE.fromExternal(encryptedAmount, inputProof), refund, new bytes(0));
+    }
+
+    /// @dev Variant of {unwrap}. if `to` has code, `IWrapperReceiver.onUnwrapFinalizedReceived` will be called.
+    /// `refund` is used to send back unwrapped tokens to in case the callback fails.
+    ///
+    /// NOTE: The unwrap request created by this function must be finalized by calling {finalizeUnwrap}.
+    /// NOTE: The caller *must* already be approved by ACL for the given `amount`.
+    ///
+    function unwrapAndCall(address from, address to, euint64 amount, address refund, bytes memory unwrapCallbackData) public virtual {
+        require(FHE.isAllowed(amount, msg.sender), ERC7984UnauthorizedUseOfEncryptedAmount(amount, msg.sender));
+        _unwrap(from, to, amount, refund, unwrapCallbackData);
+    }
+
+    /// @dev Variant of {unwrapAndCall} that passes an `inputProof` which approves the caller for the `encryptedAmount`
+    /// in the ACL.
+    ///
+    function unwrapAndCall(
+        address from,
+        address to,
+        externalEuint64 encryptedAmount,
+        bytes calldata inputProof,
+        address refund,
+        bytes memory unwrapCallbackData
+    ) public virtual {
+        _unwrap(from, to, FHE.fromExternal(encryptedAmount, inputProof), refund, unwrapCallbackData);
+    }
+
+    function _unwrap(
+        address from,
+        address to,
         euint64 amount,
-        bytes calldata data
-    ) external returns (ebool) {
+        address refund,
+        bytes memory unwrapCallbackData
+    ) internal returns (ebool) {
         WrapperStorage storage $ = _getWrapperStorage();
 
         require(FHE.isSenderAllowed(amount), SenderNotAllowed());
 
-        (address to, address refund, bytes memory unwrapCallbackData) = abi.decode(data, (address, address, bytes));
-
         ebool eReturnVal = FHE.asEbool(true);
         FHE.allowTransient(eReturnVal, msg.sender);
-        if (msg.sender != address($._confidentialToken)) {
-            eReturnVal = FHE.asEbool(false);
-            FHE.allowTransient(eReturnVal, msg.sender);
-            emit UnwrappedStarted(false, 0, $._confidentialToken.nextTxId(), to, refund, amount, FHE.asEuint64(0));
-            return eReturnVal;
-        }
 
         require(to != address(0), CannotSendToZeroAddress());
         require(refund != address(0), CannotSendToZeroAddress());
@@ -281,8 +314,8 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
     ) private {
         WrapperStorage storage $ = _getWrapperStorage();
 
-        uint256 txId = $._confidentialToken.nextTxId();
-        euint64 actualBurnAmount = $._confidentialToken.burn(amount, from);
+        uint256 txId = nextTxId();
+        euint64 actualBurnAmount = _burn(from, amount);
 
         FHE.makePubliclyDecryptable(amount);
         FHE.makePubliclyDecryptable(actualBurnAmount);
@@ -370,7 +403,7 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
     ) private returns (bool) {
         WrapperStorage storage $ = _getWrapperStorage();
 
-        uint256 rate = $._confidentialToken.rate();
+        uint256 rate = rate();
         uint64 feeAmount64 = _getUnwrapFee(params.actualBurnAmount, params.receiver.committedFeeBasisPoints);
         uint256 feeAmount256 = feeAmount64 * rate;
         uint256 unwrapAmount = params.actualBurnAmount * rate - feeAmount256;
@@ -390,13 +423,13 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
         bool unwrapSuccess = _transferUnderlying($._originalToken, params.receiver.to, unwrapAmount);
 
         // Reimbursement txId if unwrapSuccess is false
-        uint256 mintTxId = $._confidentialToken.nextTxId();
+        uint256 mintTxId = nextTxId();
 
         if (unwrapSuccess == false) {
             unwrapAmount = 0;
             if (feeSuccess == false) {
                 // Mint everything back to user if both transfers failed
-                _mint(params.receiver.refund, params.actualBurnAmount);
+                _mintWrappedTokens(params.receiver.refund, params.actualBurnAmount);
                 feeAmount256 = 0;
             } else {
                 // Mint principal back to user, protocol keeps fees, we'll handle
@@ -406,7 +439,7 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
                 // This ensures token parity is always maintained.
                 // Note that should the receiver accept tokens, this should never occur.
                 uint64 reimbursementAmount = params.actualBurnAmount - feeAmount64;
-                _mint(params.receiver.refund, reimbursementAmount);
+                _mintWrappedTokens(params.receiver.refund, reimbursementAmount);
             }
         }
 
@@ -438,21 +471,21 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
         WrapperStorage storage $ = _getWrapperStorage();
 
         // Reimbursement txId if actualBurnAmount > 0
-        uint256 mintTxId = $._confidentialToken.nextTxId();
+        uint256 mintTxId = nextTxId();
 
         if (actualBurnAmount > 0) {
-            _mint(receiver.to, actualBurnAmount);
+            _mintWrappedTokens(receiver.to, actualBurnAmount);
         }
         emit UnwrappedFinalized(requestId, false, false, actualBurnAmount, 0, 0, mintTxId);
     }
 
-    function _mint(address to_, uint64 amount_) private {
+    function _mintWrappedTokens(address to_, uint64 amount_) private {
         WrapperStorage storage $ = _getWrapperStorage();
 
         // Safety check: Verify minted supply won't overflow euint64
         require(uint256($._mintedSupply) + uint256(amount_) <= type(uint64).max, WrapperBalanceExceedsMaxSupply());
 
-        $._confidentialToken.mint(to_, amount_);
+        _mint(to_, FHE.asEuint64(amount_));
         $._mintedSupply += amount_;
     }
 

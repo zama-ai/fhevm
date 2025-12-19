@@ -2,35 +2,26 @@
 pragma solidity 0.8.27;
 
 import {WrapperUpgradeable} from "../wrapper/WrapperUpgradeable.sol";
-import {WrapperFactory} from "./WrapperFactory.sol";
 import {RegulatedERC7984Upgradeable} from "../token/RegulatedERC7984Upgradeable.sol";
-import {RegulatedERC7984UpgradeableFactory} from "./RegulatedERC7984UpgradeableFactory.sol";
 import {AdminProvider} from "../admin/AdminProvider.sol";
 import {FeeManager} from "../admin/FeeManager.sol";
 import {IDeploymentCoordinator} from "../interfaces/IDeploymentCoordinator.sol";
 import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @notice Coordinator that orchestrates deployment using specialized factories
 /// @dev Coordinates WrapperFactory and RegulatedERC7984UpgradeableFactory to deploy wrapper pairs
 /// @custom:security-contact contact@zaiffer.org
 contract DeploymentCoordinator is Ownable2Step {
     AdminProvider public adminProvider;
-    WrapperFactory public wrapperFactory;
-    RegulatedERC7984UpgradeableFactory public confidentialTokenFactory;
-
-    /// @notice Canonical implementation address for all RegulatedERC7984Upgradeable proxies
-    address public confidentialTokenImplementation;
 
     /// @notice Canonical implementation address for all WrapperUpgradeable proxies
     address public wrapperImplementation;
 
     /// @notice Mapping from original token address to deployed wrapper address (for compatibility)
     mapping(address originalToken => WrapperUpgradeable wrapper) public deployedWrappers;
-
-    /// @notice Mapping from original token address to deployed confidential token address (for compatibility)
-    mapping(address originalToken => RegulatedERC7984Upgradeable confidentialToken) public deployedConfidentialTokens;
 
     error ZeroAddressAdminProvider();
     error ZeroAddressWrapperFactory();
@@ -42,10 +33,9 @@ contract DeploymentCoordinator is Ownable2Step {
     error ImplementationNotSet();
     error TokenMustExist();
 
-    event WrapperPairDeployed(
+    event WrapperDeployed(
         address indexed originalToken,
         address indexed wrapper,
-        address indexed confidentialToken,
         string originalName,
         string originalSymbol,
         uint8 originalDecimals,
@@ -54,32 +44,26 @@ contract DeploymentCoordinator is Ownable2Step {
 
     event AdminProviderUpdated(address indexed oldAdminProvider, address indexed newAdminProvider);
     event WrapperFactoryUpdated(address indexed oldWrapperFactory, address indexed newWrapperFactory);
-    event ConfidentialTokenFactoryUpdated(address indexed oldConfidentialTokenFactory, address indexed newConfidentialTokenFactory);
-    event ConfidentialTokenImplementationUpdated(address indexed oldImplementation, address indexed newImplementation);
     event WrapperImplementationUpdated(address indexed oldImplementation, address indexed newImplementation);
 
     constructor(
         AdminProvider adminProvider_,
-        WrapperFactory wrapperFactory_,
-        RegulatedERC7984UpgradeableFactory confidentialTokenFactory_
+        address wrapperImplementation_
     ) Ownable(msg.sender) {
         require(address(adminProvider_) != address(0), ZeroAddressAdminProvider());
-        require(address(wrapperFactory_) != address(0), ZeroAddressWrapperFactory());
-        require(address(confidentialTokenFactory_) != address(0), ZeroAddressConfidentialTokenFactory());
+        require(address(wrapperImplementation_) != address(0), ZeroAddressImplementation());
 
         adminProvider = adminProvider_;
-        wrapperFactory = wrapperFactory_;
-        confidentialTokenFactory = confidentialTokenFactory_;
+        wrapperImplementation = wrapperImplementation_;
     }
 
     /// @notice Deploy a wrapper/cToken pair for a given token (maintains original interface)
     /// @param originalToken_ Address of the token to wrap (address(0) for ETH)
     /// @return wrapper Address of the deployed wrapper contract
-    /// @return confidentialToken Address of the deployed confidential token contract
     function deploy(address originalToken_)
         external
         payable
-        returns (WrapperUpgradeable wrapper,  RegulatedERC7984Upgradeable confidentialToken)
+        returns (WrapperUpgradeable wrapper)
     {
         // Get deploy fee from FeeManager
         uint64 requiredFee = _getDeployFee();
@@ -89,9 +73,6 @@ contract DeploymentCoordinator is Ownable2Step {
         require(originalToken_ == address(0) || originalToken_.code.length > 0, TokenMustExist());
 
         // Ensure canonical implementation is deployed
-        if (confidentialTokenImplementation == address(0)) {
-            confidentialTokenImplementation = address(new RegulatedERC7984Upgradeable());
-        }
         require(wrapperImplementation != address(0), ImplementationNotSet());
 
         // Deploy confidential token first using factory
@@ -99,27 +80,14 @@ contract DeploymentCoordinator is Ownable2Step {
         string memory originalSymbol;
         uint8 originalDecimals;
         (
-            confidentialToken,
+            wrapper,
             originalName,
             originalSymbol,
             originalDecimals
-        ) = _deployConfidentialTokenForAsset(originalToken_);
-
-        // Deploy wrapper using factory
-        wrapper = wrapperFactory.deployWrapper(
-            wrapperImplementation,
-            originalToken_,
-            confidentialToken,
-            IDeploymentCoordinator(address(this)),
-            adminProvider.owner()
-        );
-
-        // Set wrapper using WRAPPER_SETTER_ROLE (one-time only)
-        confidentialToken.setWrapper(address(wrapper));
+        ) = _deployWrapper(originalToken_);
 
         // Store mappings for compatibility
         deployedWrappers[originalToken_] = wrapper;
-        deployedConfidentialTokens[originalToken_] = confidentialToken;
 
         // Transfer deployment fee to fee recipient from FeeManager
         if (msg.value > 0) {
@@ -128,10 +96,9 @@ contract DeploymentCoordinator is Ownable2Step {
             require(success, FeeTransferFailed());
         }
 
-        emit WrapperPairDeployed(
+        emit WrapperDeployed(
             originalToken_,
             address(wrapper),
-            address(confidentialToken),
             originalName,
             originalSymbol,
             originalDecimals,
@@ -146,13 +113,6 @@ contract DeploymentCoordinator is Ownable2Step {
         return address(deployedWrappers[originalToken_]);
     }
 
-    /// @notice Get confidential token address for a token
-    /// @param originalToken_ Token address (address(0) for ETH)
-    /// @return Address of the confidential token, or address(0) if not deployed
-    function getConfidentialToken(address originalToken_) external view returns (address) {
-        return address(deployedConfidentialTokens[originalToken_]);
-    }
-
     /// @notice Check if wrapper exists for a token
     /// @param originalToken_ Token address (address(0) for ETH)
     /// @return True if wrapper exists
@@ -160,12 +120,11 @@ contract DeploymentCoordinator is Ownable2Step {
         return address(deployedWrappers[originalToken_]) != address(0);
     }
 
-    /// @notice Deploy confidential token for a given asset
+    /// @notice Deploy confidential token wrapper for a given asset
     /// @param originalToken_ Address of the original token
-    /// @return confidentialToken The deployed confidential token
-    function _deployConfidentialTokenForAsset(address originalToken_)
+    function _deployWrapper(address originalToken_)
         internal
-        returns (RegulatedERC7984Upgradeable confidentialToken, string memory originalName, string memory originalSymbol, uint8 originalDecimals)
+        returns (WrapperUpgradeable wrapper, string memory originalName, string memory originalSymbol, uint8 originalDecimals)
     {
         if (originalToken_ != address(0)) {
             originalName = _tryGetAssetName(originalToken_);
@@ -189,17 +148,21 @@ contract DeploymentCoordinator is Ownable2Step {
             rate = 1;
         }
 
-        confidentialToken = confidentialTokenFactory.deployConfidentialToken(
-            confidentialTokenImplementation,
-            string.concat("confidential ", originalName),
-            string.concat("c", originalSymbol),
-            tokenDecimals,
-            rate,
-            originalToken_,
-            IDeploymentCoordinator(address(this)),
-            adminProvider.owner(), // admin role goes directly to adminProvider owner
-            address(this) // coordinator gets WRAPPER_SETTER_ROLE for one-time setWrapper call
+        bytes memory data = abi.encodeCall(
+            WrapperUpgradeable.initialize,
+            (
+                string.concat("confidential ", originalName),
+                string.concat("c", originalSymbol),
+                tokenDecimals,
+                adminProvider.owner(),
+                rate,
+                IDeploymentCoordinator(address(this)),
+                originalToken_
+            )
         );
+
+        ERC1967Proxy proxy = new ERC1967Proxy(wrapperImplementation, data);
+        wrapper = WrapperUpgradeable(payable(address(proxy)));
     }
 
     /// @notice Get deploy fee from AdminProvider's FeeManager
@@ -328,26 +291,6 @@ contract DeploymentCoordinator is Ownable2Step {
         return string(result);
     }
 
-    /// @notice Accept ownership of the confidential token factory
-    function acceptConfidentialTokenFactoryOwnership() external onlyOwner {
-        confidentialTokenFactory.acceptOwnership();
-    }
-
-    /// @notice Accept ownership of the wrapper factory
-    function acceptWrapperFactoryOwnership() external onlyOwner {
-        wrapperFactory.acceptOwnership();
-    }
-
-    /// @notice Set the canonical implementation address for confidential tokens
-    /// @param implementation_ New implementation address
-    /// @dev Allows owner to set an externally deployed implementation
-    function setConfidentialTokenImplementation(address implementation_) external onlyOwner {
-        require(implementation_ != address(0), ZeroAddressImplementation());
-        address oldImplementation = confidentialTokenImplementation;
-        confidentialTokenImplementation = implementation_;
-        emit ConfidentialTokenImplementationUpdated(oldImplementation, implementation_);
-    }
-
     /// @notice Set the canonical implementation address for wrappers
     /// @param implementation_ New implementation address
     /// @dev Allows owner to set an externally deployed implementation
@@ -365,23 +308,5 @@ contract DeploymentCoordinator is Ownable2Step {
         address oldAdminProvider = address(adminProvider);
         adminProvider = adminProvider_;
         emit AdminProviderUpdated(oldAdminProvider, address(adminProvider_));
-    }
-
-    /// @notice Set the wrapper factory
-    /// @param wrapperFactory_ New wrapper factory address
-    function setWrapperFactory(WrapperFactory wrapperFactory_) external onlyOwner {
-        require(address(wrapperFactory_) != address(0), ZeroAddressWrapperFactory());
-        address oldWrapperFactory = address(wrapperFactory);
-        wrapperFactory = wrapperFactory_;
-        emit WrapperFactoryUpdated(oldWrapperFactory, address(wrapperFactory_));
-    }
-
-    /// @notice Set the confidential token factory
-    /// @param confidentialTokenFactory_ New confidential token factory address
-    function setConfidentialTokenFactory(RegulatedERC7984UpgradeableFactory confidentialTokenFactory_) external onlyOwner {
-        require(address(confidentialTokenFactory_) != address(0), ZeroAddressConfidentialTokenFactory());
-        address oldConfidentialTokenFactory = address(confidentialTokenFactory);
-        confidentialTokenFactory = confidentialTokenFactory_;
-        emit ConfidentialTokenFactoryUpdated(oldConfidentialTokenFactory, address(confidentialTokenFactory_));
     }
 }

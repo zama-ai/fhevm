@@ -23,11 +23,6 @@ interface FHEErrors {
     error InvalidRate();
 
     /**
-     * @notice Returned when wrapper has already been set.
-     */
-    error WrapperAlreadySet();
-
-    /**
      * @notice FHE.isSenderAllowed(encryptedValue) returned false
      */
     error SenderNotAllowed();
@@ -42,17 +37,13 @@ contract RegulatedERC7984Upgradeable is
     IERC20Errors,
     FHEErrors
 {
-    bytes32 public constant WRAPPER_ROLE = keccak256("WRAPPER_ROLE");
-    bytes32 public constant WRAPPER_SETTER_ROLE = keccak256("WRAPPER_SETTER_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
     /// @custom:storage-location erc7201:zaiffer.storage.RegulatedERC7984
     struct RegulatedERC7984Storage {
         uint256 _rate;
         uint256 _nextTxId;
-        address _underlying;
         uint8 _decimals;
-        bool _wrapperSet;
         IDeploymentCoordinator _deploymentCoordinator;
         address _tokenRegulator;
     }
@@ -83,15 +74,11 @@ contract RegulatedERC7984Upgradeable is
         uint8 decimals_,
         address admin_,
         uint256 rate_,
-        address underlying_,
-        IDeploymentCoordinator deploymentCoordinator_,
-        address wrapperSetter_
+        IDeploymentCoordinator deploymentCoordinator_
     ) public initializer {
         __EthereumConfig_init();
         __AccessControlDefaultAdminRules_init(0, admin_); // 0 delay for admin transfer
         __ERC7984_init(name_, symbol_, "");
-
-        _grantRole(WRAPPER_SETTER_ROLE, wrapperSetter_);
 
         // Validate rate bounds
         // For tokens with decimals <= 6: rate must be 1
@@ -105,7 +92,6 @@ contract RegulatedERC7984Upgradeable is
         $._rate = rate_;
         $._deploymentCoordinator = deploymentCoordinator_;
         $._nextTxId = 1;
-        $._underlying = underlying_;
 
        _setTotalSupply(FHE.asEuint64(0));
     }
@@ -118,12 +104,6 @@ contract RegulatedERC7984Upgradeable is
     function nextTxId() public view returns (uint256) {
         RegulatedERC7984Storage storage $ = _getRegulatedERC7984Storage();
         return $._nextTxId;
-    }
-
-    function underlying() public view returns (address) {
-        RegulatedERC7984Storage storage $ = _getRegulatedERC7984Storage();
-
-        return $._underlying;
     }
 
     function decimals() public view override returns (uint8) {
@@ -168,46 +148,7 @@ contract RegulatedERC7984Upgradeable is
         emit TokenRegulatorUpdated(oldRegulator, newRegulator);
     }
 
-    function burn(euint64 amount, address proxyingFor) public virtual onlyRole(WRAPPER_ROLE) returns (euint64) {
-        require(FHE.isSenderAllowed(amount), SenderNotAllowed());
-        address from = _msgSender();
-        uint256 txId = nextTxId();
-
-        euint64 balance = confidentialBalanceOf(from);
-        ebool isBurnable = FHE.le(amount, balance);
-        euint64 burnAmount = FHE.select(isBurnable, amount, FHE.asEuint64(0));
-
-        euint64 burned = _burn(from, burnAmount);
-
-        FHE.allow(burned, proxyingFor);
-
-        emit BurnInfo(proxyingFor, burned, txId);
-
-        return burned;
-    }
-
-    function mint(address to, uint64 amount) public virtual onlyRole(WRAPPER_ROLE) {
-        uint256 txId = nextTxId();
-
-        _mint(to, FHE.asEuint64(amount));
-
-        emit MintInfo(to, amount, txId);
-    }
-
-    /// @notice Set the wrapper address and grant it WRAPPER_ROLE (can only be called once)
-    /// @param wrapper_ Address of the wrapper contract
-    function setWrapper(address wrapper_) external onlyRole(WRAPPER_SETTER_ROLE) {
-        RegulatedERC7984Storage storage $ = _getRegulatedERC7984Storage();
-
-        if ($._wrapperSet) {
-            revert WrapperAlreadySet();
-        }
-
-        $._wrapperSet = true;
-        _grantRole(WRAPPER_ROLE, wrapper_);
-    }
-
-    function _authorizeUpgrade(address) internal override onlyRole(UPGRADER_ROLE) {}
+    function _authorizeUpgrade(address) internal virtual override onlyRole(UPGRADER_ROLE) {}
 
     /**
      * @notice Check if an address is sanctioned.
