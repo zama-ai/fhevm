@@ -27,6 +27,9 @@ library FHE {
     /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
 
+    /// @notice Returned if the sender is not allowed to use the handle.
+    error SenderNotAllowedToUseHandle(bytes32 handle, address sender);
+
     /// @notice This event is emitted when public decryption has been successfully verified.
     event PublicDecryptionVerified(bytes32[] handlesList, bytes abiEncodedCleartexts);
 
@@ -8441,9 +8444,18 @@ library FHE {
 
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted ebool integer.
+     * @dev If inputProof is empty, the externalEbool inputHandle can be used as a regular ebool handle if it
+     *      has already been verified and allowed to the sender.
+     *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEbool inputHandle, bytes memory inputProof) internal returns (ebool) {
-        return ebool.wrap(Impl.verify(externalEbool.unwrap(inputHandle), inputProof, FheType.Bool));
+        if (inputProof.length != 0) {
+            return ebool.wrap(Impl.verify(externalEbool.unwrap(inputHandle), inputProof, FheType.Bool));
+        } else {
+            bytes32 inputBytes32 = externalEbool.unwrap(inputHandle);
+            if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            return ebool.wrap(inputBytes32);
+        }
     }
 
     /**
@@ -8455,9 +8467,18 @@ library FHE {
 
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint8 integer.
+     * @dev If inputProof is empty, the externalEuint8 inputHandle can be used as a regular euint8 handle if it
+     *      has already been verified and allowed to the sender.
+     *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint8 inputHandle, bytes memory inputProof) internal returns (euint8) {
-        return euint8.wrap(Impl.verify(externalEuint8.unwrap(inputHandle), inputProof, FheType.Uint8));
+        if (inputProof.length != 0) {
+            return euint8.wrap(Impl.verify(externalEuint8.unwrap(inputHandle), inputProof, FheType.Uint8));
+        } else {
+            bytes32 inputBytes32 = externalEuint8.unwrap(inputHandle);
+            if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            return euint8.wrap(inputBytes32);
+        }
     }
 
     /**
@@ -8469,9 +8490,18 @@ library FHE {
 
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint16 integer.
+     * @dev If inputProof is empty, the externalEuint16 inputHandle can be used as a regular euint16 handle if it
+     *      has already been verified and allowed to the sender.
+     *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint16 inputHandle, bytes memory inputProof) internal returns (euint16) {
-        return euint16.wrap(Impl.verify(externalEuint16.unwrap(inputHandle), inputProof, FheType.Uint16));
+        if (inputProof.length != 0) {
+            return euint16.wrap(Impl.verify(externalEuint16.unwrap(inputHandle), inputProof, FheType.Uint16));
+        } else {
+            bytes32 inputBytes32 = externalEuint16.unwrap(inputHandle);
+            if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            return euint16.wrap(inputBytes32);
+        }
     }
 
     /**
@@ -8483,9 +8513,18 @@ library FHE {
 
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint32 integer.
+     * @dev If inputProof is empty, the externalEuint32 inputHandle can be used as a regular euint32 handle if it
+     *      has already been verified and allowed to the sender.
+     *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint32 inputHandle, bytes memory inputProof) internal returns (euint32) {
-        return euint32.wrap(Impl.verify(externalEuint32.unwrap(inputHandle), inputProof, FheType.Uint32));
+        if (inputProof.length != 0) {
+            return euint32.wrap(Impl.verify(externalEuint32.unwrap(inputHandle), inputProof, FheType.Uint32));
+        } else {
+            bytes32 inputBytes32 = externalEuint32.unwrap(inputHandle);
+            if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            return euint32.wrap(inputBytes32);
+        }
     }
 
     /**
@@ -8497,9 +8536,18 @@ library FHE {
 
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint64 integer.
+     * @dev If inputProof is empty, the externalEuint64 inputHandle can be used as a regular euint64 handle if it
+     *      has already been verified and allowed to the sender.
+     *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint64 inputHandle, bytes memory inputProof) internal returns (euint64) {
-        return euint64.wrap(Impl.verify(externalEuint64.unwrap(inputHandle), inputProof, FheType.Uint64));
+        if (inputProof.length != 0) {
+            return euint64.wrap(Impl.verify(externalEuint64.unwrap(inputHandle), inputProof, FheType.Uint64));
+        } else {
+            bytes32 inputBytes32 = externalEuint64.unwrap(inputHandle);
+            if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            return euint64.wrap(inputBytes32);
+        }
     }
 
     /**
@@ -8511,9 +8559,18 @@ library FHE {
 
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint128 integer.
+     * @dev If inputProof is empty, the externalEuint128 inputHandle can be used as a regular euint128 handle if it
+     *      has already been verified and allowed to the sender.
+     *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint128 inputHandle, bytes memory inputProof) internal returns (euint128) {
-        return euint128.wrap(Impl.verify(externalEuint128.unwrap(inputHandle), inputProof, FheType.Uint128));
+        if (inputProof.length != 0) {
+            return euint128.wrap(Impl.verify(externalEuint128.unwrap(inputHandle), inputProof, FheType.Uint128));
+        } else {
+            bytes32 inputBytes32 = externalEuint128.unwrap(inputHandle);
+            if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            return euint128.wrap(inputBytes32);
+        }
     }
 
     /**
@@ -8525,9 +8582,18 @@ library FHE {
 
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted eaddress integer.
+     * @dev If inputProof is empty, the externalEaddress inputHandle can be used as a regular eaddress handle if it
+     *      has already been verified and allowed to the sender.
+     *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEaddress inputHandle, bytes memory inputProof) internal returns (eaddress) {
-        return eaddress.wrap(Impl.verify(externalEaddress.unwrap(inputHandle), inputProof, FheType.Uint160));
+        if (inputProof.length != 0) {
+            return eaddress.wrap(Impl.verify(externalEaddress.unwrap(inputHandle), inputProof, FheType.Uint160));
+        } else {
+            bytes32 inputBytes32 = externalEaddress.unwrap(inputHandle);
+            if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            return eaddress.wrap(inputBytes32);
+        }
     }
 
     /**
@@ -8539,9 +8605,18 @@ library FHE {
 
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint256 integer.
+     * @dev If inputProof is empty, the externalEuint256 inputHandle can be used as a regular euint256 handle if it
+     *      has already been verified and allowed to the sender.
+     *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint256 inputHandle, bytes memory inputProof) internal returns (euint256) {
-        return euint256.wrap(Impl.verify(externalEuint256.unwrap(inputHandle), inputProof, FheType.Uint256));
+        if (inputProof.length != 0) {
+            return euint256.wrap(Impl.verify(externalEuint256.unwrap(inputHandle), inputProof, FheType.Uint256));
+        } else {
+            bytes32 inputBytes32 = externalEuint256.unwrap(inputHandle);
+            if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            return euint256.wrap(inputBytes32);
+        }
     }
 
     /**
