@@ -10,7 +10,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor
     environment:
       - KEY_ID=${FHE_KEY_ID}
     command:
@@ -30,7 +30,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor
     command:
       - host_listener
       - --database-url=${DATABASE_URL}
@@ -54,7 +54,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor
     command:
       - host_listener_poller
       - --database-url=${DATABASE_URL}
@@ -82,7 +82,7 @@ services:
       timeout: 5s
       retries: 3
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor
     command:
       - gw_listener
       - --database-url=${DATABASE_URL}
@@ -108,7 +108,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor
     command:
       - tfhe_worker
       - --run-bg-worker
@@ -134,7 +134,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor
     command:
       - zkproof_worker
       - --database-url=${DATABASE_URL}
@@ -158,7 +158,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
@@ -195,7 +195,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}

@@ -12,6 +12,6 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.test-suite.local
+      - ../env/staging/.env.test-suite
     command:
       - tail -f /dev/null
