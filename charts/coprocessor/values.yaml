@@ -444,7 +444,7 @@ tfheWorker:
     - --run-bg-worker=true
     - --worker-polling-interval-ms=10000
     - --work-items-batch-size=100  # scheduling changed
-    - --dependence-chains-per-batch=100
+    - --dependence-chains-per-batch=100  # Deprecated. To be removed in a future release.
     - --tenant-key-cache-size=32
     - --coprocessor-fhe-threads=64  # scheduling changed
     - --tokio-threads=16  # scheduling changed
@@ -464,8 +464,7 @@ tfheWorker:
     # Unique worker identifier (valid UUID v4 format)
     # If not set, defaults to a random UUID generated at startup
     - --worker-id=$(WORKER_ID)
-    # Time-to-live (in seconds) for dependence chain locks
-    - --dcid-ttl-sec=30
+    - --dcid-ttl-sec=30  # Time-to-live (in seconds) for dependence chain locks
     # Disable dependence chain ID locking
     # WARNING: May cause multiple workers to process the same DCID concurrently
     # Defaults to false
@@ -473,15 +472,11 @@ tfheWorker:
     # Time slice (in seconds) for processing a single dependence chain
     # Locks are released if processing exceeds this duration
     - --dcid-timeslice-sec=90
-    # Time-to-live (in seconds) for processed dependence chains
     # Processed DCIDs older than this value are cleaned up
     # Defaults to 48 hours (172800 seconds)
+    # Time-to-live (in seconds) for processed dependence chains
     - --processed-dcid-ttl-sec=172800
-    # Interval (in seconds) for cleaning up expired DCID locks
-    # Defaults to 1 hour
-    - --dcid-cleanup-interval-sec=3600
-  
-
+    - --dcid-cleanup-interval-sec=3600  # Interval (in seconds) for cleaning up expired DCID locks
 
   # Service ports configuration
   ports:
