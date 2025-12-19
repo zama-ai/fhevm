@@ -511,7 +511,7 @@ async fn upload_transaction_graph_results<'a>(
     handles_to_update.append(unneeded_handles);
 
     // Traverse computations that have been scheduled and
-    // upload their results/errors
+    // upload their results/errors.
     let mut cts_to_insert = vec![];
     let mut uncomputable = vec![];
     for result in graph_results.into_iter() {
