@@ -455,6 +455,46 @@ Protocol contracts implement the economic and governance layer of the FHEVM ecos
 - `host-contracts/hardhat.config.ts` - Hardhat configuration
 - `.github/workflows/` - CI pipeline definitions
 
+#### CI/CD Pipeline & GitHub Actions
+
+FHEVM's CI/CD infrastructure consists of **40+ GitHub Actions workflows** organized by component domain, ensuring quality through multi-layered testing, comprehensive security scanning, and automated deployment. The pipeline architecture mirrors the codebase structure, with workflows grouped by component (coprocessor, contracts, infrastructure) to enable efficient parallel execution and path-based filtering.
+
+**Workflow Organization by Component Domain**
+
+| Component Domain | Workflow Count | Test Types | Build Outputs | Key Workflows |
+|-----------------|----------------|------------|---------------|---------------|
+| Coprocessor (Rust) | 14 | Unit (Cargo), GPU, Benchmarks, Listeners | 7 Docker images | `coprocessor-cargo-tests`, `coprocessor-benchmark-cpu`, `coprocessor-docker-build` |
+| Gateway Contracts | 5 | Hardhat, Deployment, Upgrade, Integrity | Docker image | `gateway-contracts-hardhat-tests`, `gateway-contracts-deployment-tests` |
+| Host Contracts | 5 | Hardhat, Foundry, Slither, Deployment | Docker image, npm package | `host-contracts-hardhat-forge-tests`, `host-contracts-slither-analysis` |
+| Test Suite | 5 | E2E (13 scenarios), Operators, Orchestration | Docker images | `test-suite-e2e-tests`, `test-suite-e2e-tests-mq` (merge queue) |
+| KMS Connector | 3 | Cargo, Dependency analysis | Docker images | `kms-connector-tests`, `kms-connector-docker-build` |
+| Library Solidity | 2 | Hardhat | npm package | `library-solidity-tests`, `library-solidity-publish` |
+| Protocol Contracts | 2 | Hardhat (Wrapper, Staking) | - | `protocol-contracts-confidential-wrapper-tests` |
+| Charts (Helm) | 2 | Linting | Helm charts (OCI) | `charts-helm-checks`, `charts-helm-release` |
+| Golden Images | 2 | - | Base Docker images (Node.js, Rust) | `golden-container-images-docker-build-nodejs` |
+| SDK (Rust) | 1 | Cargo | - | `sdk-rust-sdk-tests` |
+| Cross-cutting | 2 | CodeQL (4 languages), PR linting | - | `codeql`, `common-pull-request-lint` |
+
+Workflows follow a **component-based naming convention** (`{component}-{subcomponent}-{operation}.yml`) that enables clear categorization and filtering. Path-based filtering using `dorny/paths-filter` ensures workflows run only when relevant files change, optimizing CI resource usage and execution time.
+
+**Multi-Layered Testing Strategy**
+
+| Test Layer | Scope | Tooling | Trigger | Duration | Example Workflows |
+|-----------|-------|---------|---------|----------|-------------------|
+| **Unit Tests** | Component-level logic | Cargo (Rust), Hardhat (Solidity), Foundry (Solidity) | PR, push to main | 3-8 min | `coprocessor-cargo-tests`, `gateway-contracts-hardhat-tests`, `host-contracts-hardhat-forge-tests` |
+| **Integration Tests** | Docker-based component interaction | docker-compose, LocalStack, PostgreSQL | PR (path-filtered) | 5-12 min | `coprocessor-cargo-listener-tests`, `gateway-contracts-deployment-tests` |
+| **E2E Tests** | Full-stack validation with fhevm-cli | 13 test scenarios: pause/unpause, input proofs, decryption, ERC20, random operators, host listener polling | PR to main/release, workflow_dispatch | 15-25 min | `test-suite-e2e-tests`, `test-suite-e2e-tests-mq`, `test-suite-e2e-operators-tests` |
+| **Security Scans** | Vulnerability detection | CodeQL (Actions/JS/Python/Rust), Slither (Solidity), Dependabot | Scheduled (weekdays 5:30 AM UTC), PR | 10-20 min | `codeql`, `host-contracts-slither-analysis`, `*-dependency-analysis` |
+| **Benchmarks** | Performance validation | Custom Rust benchmarks, CPU/GPU profiling, Slab platform integration | Manual (workflow_dispatch) | 20-45 min | `coprocessor-benchmark-cpu`, `coprocessor-benchmark-gpu` |
+
+**Security Scanning**: CodeQL runs on a scheduled basis (weekdays at 05:30 UTC) analyzing Actions, JavaScript/TypeScript, Python, and Rust code for security vulnerabilities. Slither performs static analysis on Solidity contracts (configured for solc v0.8.24) during PR builds. Dependabot monitors Cargo and GitHub Actions dependencies for security updates. Workflow syntax is validated via Actionlint configuration (`.github/actionlint.yaml`).
+
+**Build and Publish**: Docker images are published to multiple registries (**ghcr.io** and **cgr.dev**) with SLSA provenance attestation for supply chain security. Build workflows use **Zama's shared CI template** (`zama-ai/ci-templates`) for consistency. The `re-tag-docker-image` workflow optimizes builds by reusing previous image tags when source files haven't changed, reducing unnecessary rebuilds for dependent components. Smart contract packages are published to npm with OIDC authentication and provenance enabled.
+
+**Release Management**: The Mergify merge queue (`.mergify.yml`) enforces strict quality gates with **batch size 3**, **squash merge** strategy, and **12-hour checks timeout**. All PRs must pass the E2E test suite (`run-e2e-tests / fhevm-e2e-test`) before merging. The queue uses **rebase update** method to ensure linear history. CODEOWNERS (`.github/CODEOWNERS`) enforces component-based review requirements, with specialized teams for coprocessor (`@zama-ai/fhevm-coprocessor`), gateway/contracts (`@zama-ai/fhevm-gateway`), and DevOps oversight for release workflows (`@zama-ai/fhevm-devops`). Automated changelog generation categorizes changes into Breaking Changes, New features, Improvements, and Fixes (`.github/release.yml`).
+
+**Key Patterns**: All workflows implement **concurrency control** to cancel redundant PR runs while preserving main branch execution. **Permissions minimization** follows the principle of least privilege, granting only necessary permissions per job (actions:read, contents:read, packages:write, security-events:write). Actions are **pinned to specific commit SHAs** for supply chain security. Runner sizing is optimized per workload: `ubuntu-latest` for lightweight tasks, `large_ubuntu_16` for resource-intensive tests, `large_ubuntu_32` for E2E tests, and `gpu_ubuntu-22.04` for GPU benchmarks.
+
 [TODO: Testing infrastructure deep-dive - Document the mock FHE system, test fixtures, and E2E testing patterns]
 
 [TODO: Deployment guide - Document the Helm charts and Kubernetes deployment process]

@@ -90,7 +90,133 @@ Located in `/.github/workflows/`:
 
 **[TODO: Deployment guide]** - Document the Helm charts, Kubernetes deployment process, configuration options, and operational best practices.
 
-**[TODO: Docker compose stack]** - Detail the test-suite docker-compose setup, how components interact, and how to debug issues in local development.
+### E2E Testing Patterns
+
+FHEVM's E2E tests validate complete encrypted workflows from input encryption through FHE computation to decryption. Unlike unit tests with mocked FHE operations, E2E tests run against two local Anvil chains orchestrated by Docker Compose, verifying actual cryptographic operations. Tests use the Mocha framework with Hardhat, following a fixture pattern that separates deployment logic from test assertions.
+
+#### Two-Chain Architecture
+
+E2E tests require two independent EVM chains:
+
+- **Host Chain** (ID: 12345, port 8545): Runs FHEVM contracts, ACL, and application logic
+- **Gateway Chain** (ID: 54321, port 8546): Manages KMS nodes, decryption requests, and input verification
+
+This separation mirrors production architecture where FHE infrastructure is isolated from application contracts. Both chains communicate via contract address registration stored in a shared Docker volume (`addresses-volume`), enabling tests to bridge operations across chains.
+
+```
+┌─────────────────────┐         ┌──────────────────────┐
+│ Host Chain          │         │ Gateway Chain        │
+│ (12345:8545)        │◄───────►│ (54321:8546)         │
+│ - FHEVM Contracts   │         │ - KMS                │
+│ - ACL               │         │ - Input Verifier     │
+└─────────────────────┘         └──────────────────────┘
+         │                               │
+         └───────────────────────────────┘
+            Shared addresses-volume
+```
+
+#### Docker Compose Infrastructure
+
+**Gateway Stack** (`gateway-contracts/docker-compose.yml`): Deploys 9 services including `anvil-node` (port 8546), contract deployments (`deploy-gateway-contracts`), host chain registration (`add-host-chains`), and cryptographic setup (`trigger-keygen`, `trigger-crsgen`).
+
+**Host Stack** (`host-contracts/docker-compose.yml`): Deploys 3 services including `anvil-node` (port 8545), FHEVM contracts (`fhevm-sc-deploy`), and pauser configuration.
+
+Services use `depends_on` with `service_completed_successfully` to enforce deployment order:
+
+```yaml
+deploy-gateway-contracts:
+  depends_on:
+    anvil-node:
+      condition: service_started
+    deploy-mocked-zama-oft:
+      condition: service_completed_successfully
+  volumes:
+    - addresses-volume:/app/addresses  # Shared contract discovery
+```
+
+#### Test Anatomy
+
+Tests follow a consistent pattern with fixtures handling deployment and test files containing assertions:
+
+```typescript
+// From test-suite/e2e/test/encryptedERC20/EncryptedERC20.ts:10-20
+describe('EncryptedERC20', function () {
+  before(async function () {
+    await initSigners(2);  // Initialize named test accounts
+    this.signers = await getSigners();
+  });
+
+  beforeEach(async function () {
+    const contract = await deployEncryptedERC20Fixture();
+    this.contractAddress = await contract.getAddress();
+    this.erc20 = contract;
+    this.instances = await createInstances(this.signers);
+  });
+});
+```
+
+**Named Signers**: Tests use pre-defined accounts (alice, bob, carol, dave, eve, fred) with automatic fauceting via `initSigners()`. See `host-contracts/test/signers.ts:10-16` for the interface definition.
+
+**Fixture Pattern**: Deployment logic lives in separate files:
+
+```typescript
+// From test-suite/e2e/test/encryptedERC20/EncryptedERC20.fixture.ts:6-14
+export async function deployEncryptedERC20Fixture() {
+  const signers = await getSigners();
+  const contractFactory = await ethers.getContractFactory('EncryptedERC20');
+  const contract = await contractFactory.connect(signers.alice)
+    .deploy('Naraggara', 'NARA');
+  await contract.waitForDeployment();
+  return contract;
+}
+```
+
+**Typical Test Flow**: Mint → Encrypt Input → Execute → Decrypt → Verify. See `test-suite/e2e/test/encryptedERC20/EncryptedERC20.ts:58-103` for a complete transfer example using encrypted amounts.
+
+#### Running Tests
+
+```bash
+# Run all E2E tests
+cd test-suite/e2e
+./run-tests.sh
+
+# Run specific test pattern
+./run-tests.sh -g "transfer tokens"
+
+# Verbose output for debugging
+./run-tests.sh -v -g "pattern"
+
+# Target specific network (default: staging = chain 12345)
+./run-tests.sh -n staging -g "pattern"
+```
+
+**Configuration**: Tests use the `staging` network (chain ID 12345) with Mocha timeout set to 300000ms (5 minutes) to accommodate slow FHE operations. See `test-suite/e2e/hardhat.config.ts:75-88`.
+
+#### Common Issues & Debugging
+
+| Issue | Symptom | Solution |
+|-------|---------|----------|
+| **Address Not Found** | `Cannot read address` error | Verify `addresses-volume` mounted; ensure `docker compose up` completed successfully |
+| **Chain ID Mismatch** | Tests fail with wrong chain ID | Check `.env` has `CHAIN_ID_GATEWAY=54321`; verify `RPC_URL` points to correct port |
+| **Faucet Failure** | `account sequence mismatch` | Retry logic handles automatically; restart Docker if persistent |
+| **Test Timeout** | Exceeded 300000ms | Normal for complex FHE operations; increase timeout in `hardhat.config.ts` if needed |
+| **Relayer Connection** | Failed to connect to relayer | Verify `RELAYER_URL` in `.env`; check gateway services running via `docker compose ps` |
+
+**Debugging Commands**:
+```bash
+# View service logs
+docker compose logs deploy-gateway-contracts
+
+# Inspect shared volume
+docker volume inspect fhevm_addresses-volume
+
+# Verify chain ID
+curl http://localhost:8545 -X POST \
+  -H "Content-Type: application/json" \
+  --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
+```
+
+**Pro Tips**: Use `-g "pattern"` to isolate failing tests. Check `test-suite/e2e/test/instance.ts` for required environment variables. Test times of 30+ seconds are normal for FHE operations.
 
 **[TODO: CI/CD pipeline]** - Explain the GitHub Actions workflows, testing strategy, and release process.
 
