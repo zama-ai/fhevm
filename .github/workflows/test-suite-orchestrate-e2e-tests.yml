@@ -59,7 +59,8 @@ jobs:
       - test-suite-docker-build
     if: ${{ success() || failure() }}
     env:
-      COMMIT_HASH: ${{ github.event.pull_request.head.sha || github.sha }}
+      PREVIOUS_COMMIT_HASH: ${{ github.event.pull_request.base.sha }}
+      NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
     runs-on: ubuntu-latest
     outputs:
@@ -73,13 +74,15 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v0.8.0
         with:
           script: |
-            const commitHash = process.env.COMMIT_HASH;
-            console.log(`Commit hash: ${commitHash}`)
+            const previousCommitHash = process.env.PREVIOUS_COMMIT_HASH;
+            const newCommitHash = process.env.NEW_COMMIT_HASH;
+            console.log(`Previous commit hash: ${previousCommitHash}`)
+            console.log(`New commit hash: ${newCommitHash}`)
             console.log(`Docker build results: ${process.env.DOCKER_BUILD_RESULTS}`)
 
             const dockerBuildResults = JSON.parse(process.env.DOCKER_BUILD_RESULTS);
             function getImageTagIfBuilt(key, build_result) {
-              let imageTag = dockerBuildResults[key].outputs[build_result] === 'success' ? commitHash : '';
+              let imageTag = dockerBuildResults[key].outputs[build_result] === 'success' ? newCommitHash : previousCommitHash;
               console.log(`Assigning image tag '${imageTag}' for ${key}`);
               return imageTag;
             }
