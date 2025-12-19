@@ -297,16 +297,29 @@ impl LockMngr {
         let mut dependents_updated = 0;
         if mark_as_processed {
             // Get all dependents of a given dependence chain ID and decrement their dependency count
+            // If any dependent's dependency count reaches zero, notify work_available
             dependents_updated = sqlx::query!(
                 r#"
-                UPDATE dependence_chain
-                SET
-                    dependency_count = GREATEST(dependency_count - 1, 0)
-                WHERE dependence_chain_id = ANY (
-                    SELECT unnest(dependents)
-                    FROM dependence_chain
-                    WHERE dependence_chain_id = $1
+                WITH updated AS (
+                    UPDATE dependence_chain
+                    SET
+                        dependency_count = GREATEST(dependency_count - 1, 0)
+                    WHERE dependence_chain_id = ANY (
+                        SELECT unnest(dependents)
+                        FROM dependence_chain
+                        WHERE dependence_chain_id = $1
+                    )
+                        RETURNING dependence_chain_id, dependency_count
+                ),
+                ready_dcid_available AS (
+                    SELECT 1
+                    FROM updated
+                    WHERE dependency_count = 0
+                    LIMIT 1
                 )
+                SELECT
+                    pg_notify('work_available', '')
+                FROM   ready_dcid_available;
             "#,
                 dep_chain_id,
             )
