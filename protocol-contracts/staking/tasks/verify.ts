@@ -63,25 +63,26 @@ task('task:verifyAllProtocolStakingContracts').setAction(async function (_, hre)
 // Example usage:
 // npx hardhat task:verifyOperatorStaking --network testnet
 task('task:verifyOperatorStaking').setAction(async function (_, hre) {
-  const { run } = hre;
+  const { run, upgrades } = hre;
 
-  // Get the first operator staking address
+  // Get the first operator staking proxy address
   // Since all operator staking contracts share the same implementation, we only have to
   // verify one of them
-  const operatorStakingAddress = (await getAllOperatorStakingAddresses(hre))[0];
+  const operatorStakingProxyAddress = (await getAllOperatorStakingAddresses(hre))[0];
 
-  // Get the constructor arguments for the first KMS operator staking contract
-  const kmsTokenName = getRequiredEnvVar(`OPERATOR_STAKING_KMS_TOKEN_NAME_0`);
-  const kmsTokenSymbol = getRequiredEnvVar(`OPERATOR_STAKING_KMS_TOKEN_SYMBOL_0`);
-  const kmsOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_KMS_OWNER_ADDRESS_0`);
+  // Get the implementation address
+  const implementationAddress = await upgrades.erc1967.getImplementationAddress(operatorStakingProxyAddress);
 
-  // Get the protocol staking KMS proxy address
-  const protocolStakingKMSProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
-
-  console.log(`Verifying operator staking contract at ${operatorStakingAddress}...\n`);
+  console.log(`Verifying operator staking proxy contract at ${operatorStakingProxyAddress}...\n`);
   await run('verify:verify', {
-    address: operatorStakingAddress,
-    constructorArguments: [kmsTokenName, kmsTokenSymbol, protocolStakingKMSProxyAddress, kmsOwnerAddress],
+    address: operatorStakingProxyAddress,
+    constructorArguments: [],
+  });
+
+  console.log(`Verifying operator staking implementation contract at ${implementationAddress}...\n`);
+  await run('verify:verify', {
+    address: implementationAddress,
+    constructorArguments: [],
   });
 });
 
