@@ -289,7 +289,7 @@ impl std::fmt::Debug for ComponentNode {
 pub struct DFComponentGraph {
     pub graph: Dag<ComponentNode, ComponentEdge>,
     pub needed_map: HashMap<Handle, Vec<NodeIndex>>,
-    pub allowed_map: HashMap<Handle, NodeIndex>,
+    pub produced: HashMap<Handle, Vec<(NodeIndex, Handle)>>,
     pub results: Vec<DFGTxResult>,
 }
 impl DFComponentGraph {
@@ -300,19 +300,36 @@ impl DFComponentGraph {
         // Gather handles produced within the graph
         for (producer, tx) in self.graph.node_references() {
             for r in tx.results.iter() {
-                self.allowed_map.insert(r.clone(), producer);
+                self.produced
+                    .entry(r.clone())
+                    .and_modify(|p| p.push((producer, tx.transaction_id.clone())))
+                    .or_insert(vec![(producer, tx.transaction_id.clone())]);
             }
         }
         // Identify all dependence pairs (producer, consumer)
         let mut dependence_pairs = vec![];
         for (consumer, tx) in self.graph.node_references() {
             for i in tx.inputs.keys() {
-                if let Some(producer) = self.allowed_map.get(i) {
-                    if *producer == consumer {
-                        warn!(target: "scheduler", { },
+                if let Some(producer) = self.produced.get(i) {
+                    // If this handle is produced within this same transaction
+                    if let Some((prod_idx, _)) =
+                        producer.iter().find(|(_, tid)| *tid == tx.transaction_id)
+                    {
+                        if *prod_idx == consumer {
+                            warn!(target: "scheduler", { },
 			       "Self-dependence on node");
+                        } else {
+                            dependence_pairs.push((*prod_idx, consumer));
+                        }
+                    } else if producer.len() > 1 {
+                        error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()),
+							  count =  ?producer.len() },
+				   "Handle collision for computation output");
+                    } else if producer.is_empty() {
+                        error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()) },
+				   "Missing producer for handle");
                     } else {
-                        dependence_pairs.push((*producer, consumer));
+                        dependence_pairs.push((producer[0].0, consumer));
                     }
                 } else {
                     self.needed_map
@@ -410,49 +427,63 @@ impl DFComponentGraph {
         result: Result<TaskResult>,
         edges: &Dag<(), ComponentEdge>,
     ) -> Result<()> {
-        if let Some(producer) = self.allowed_map.get(handle).cloned() {
-            let mut save_result = true;
-            if let Ok(ref result) = result {
-                save_result = result.is_allowed;
-                // Traverse immediate dependents and add this result as an input
-                for edge in edges.edges_directed(producer, Direction::Outgoing) {
-                    let dependent_tx_index = edge.target();
-                    let dependent_tx = self
-                        .graph
-                        .node_weight_mut(dependent_tx_index)
-                        .ok_or(SchedulerError::DataflowGraphError)?;
-                    dependent_tx.inputs.entry(handle.to_vec()).and_modify(|v| {
-                        *v = Some(DFGTxInput::Value((result.ct.clone(), result.is_allowed)))
-                    });
-                }
+        if let Some(producer) = self.produced.get(handle).cloned() {
+            if producer.is_empty() {
+                error!(target: "scheduler", { output_handle = ?hex::encode(handle) },
+		       "Missing producer for handle");
             } else {
-                // If this result was an error, mark this transaction
-                // and all its dependents as uncomputable, we will
-                // skip them during scheduling
-                self.set_uncomputable(producer, edges)?;
-            }
-            // Finally add the output (either error or compressed
-            // ciphertext) to the graph's outputs
-            if save_result {
-                let producer_tx = self
-                    .graph
-                    .node_weight_mut(producer)
-                    .ok_or(SchedulerError::DataflowGraphError)?;
-                if let Ok(ref r) = result {
-                    if r.compressed_ct.is_none() {
-                        error!(target: "scheduler", {handle = ?hex::encode(handle) }, "Missing compressed ciphertext in task result");
-                        return Err(SchedulerError::SchedulerError.into());
+                let mut prod_idx = producer[0].0;
+                if let Ok(ref result) = result {
+                    if let Some((pid, _)) = producer
+                        .iter()
+                        .find(|(_, tid)| *tid == result.transaction_id)
+                    {
+                        prod_idx = *pid;
                     }
                 }
-                self.results.push(DFGTxResult {
-                    transaction_id: producer_tx.transaction_id.clone(),
-                    handle: handle.to_vec(),
-                    compressed_ct: result.map(|rok| {
-                        // Safe to unwrap as this is checked above
-                        let cct = rok.compressed_ct.unwrap();
-                        (cct.0, cct.1)
-                    }),
-                });
+                let mut save_result = true;
+                if let Ok(ref result) = result {
+                    save_result = result.is_allowed;
+                    // Traverse immediate dependents and add this result as an input
+                    for edge in edges.edges_directed(prod_idx, Direction::Outgoing) {
+                        let dependent_tx_index = edge.target();
+                        let dependent_tx = self
+                            .graph
+                            .node_weight_mut(dependent_tx_index)
+                            .ok_or(SchedulerError::DataflowGraphError)?;
+                        dependent_tx.inputs.entry(handle.to_vec()).and_modify(|v| {
+                            *v = Some(DFGTxInput::Value((result.ct.clone(), result.is_allowed)))
+                        });
+                    }
+                } else {
+                    // If this result was an error, mark this transaction
+                    // and all its dependents as uncomputable, we will
+                    // skip them during scheduling
+                    self.set_uncomputable(prod_idx, edges)?;
+                }
+                // Finally add the output (either error or compressed
+                // ciphertext) to the graph's outputs
+                if save_result {
+                    let producer_tx = self
+                        .graph
+                        .node_weight_mut(prod_idx)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
+                    if let Ok(ref r) = result {
+                        if r.compressed_ct.is_none() {
+                            error!(target: "scheduler", {handle = ?hex::encode(handle) }, "Missing compressed ciphertext in task result");
+                            return Err(SchedulerError::SchedulerError.into());
+                        }
+                    }
+                    self.results.push(DFGTxResult {
+                        transaction_id: producer_tx.transaction_id.clone(),
+                        handle: handle.to_vec(),
+                        compressed_ct: result.map(|rok| {
+                            // Safe to unwrap as this is checked above
+                            let cct = rok.compressed_ct.unwrap();
+                            (cct.0, cct.1)
+                        }),
+                    });
+                }
             }
         }
         Ok(())
