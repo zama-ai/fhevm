@@ -181,9 +181,6 @@ jobs:
       contents: 'read' # Required to checkout repository code
       packages: 'write' # Required to publish Docker images
       id-token: 'write' # Required for OIDC authentication
-    secrets: &re-tag-image-secrets
-      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
-      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/kms-connector/db-migration"
@@ -195,7 +192,6 @@ jobs:
     if: |
       needs.check-changes.outputs.changes-gw-listener != 'true' && github.event_name == 'push'
     permissions: *re-tag-image-permissions
-    secrets: *re-tag-image-secrets
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/kms-connector/gw-listener"
@@ -207,7 +203,6 @@ jobs:
     if: |
       needs.check-changes.outputs.changes-kms-worker != 'true' && github.event_name == 'push'
     permissions: *re-tag-image-permissions
-    secrets: *re-tag-image-secrets
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/kms-connector/kms-worker"
@@ -219,7 +214,6 @@ jobs:
     if: |
       needs.check-changes.outputs.changes-tx-sender != 'true' && github.event_name == 'push'
     permissions: *re-tag-image-permissions
-    secrets: *re-tag-image-secrets
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/kms-connector/tx-sender"

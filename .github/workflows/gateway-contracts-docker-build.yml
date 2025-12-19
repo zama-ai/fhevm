@@ -86,9 +86,6 @@ jobs:
       contents: 'read' # Required to checkout repository code
       packages: 'write' # Required to publish Docker images
       id-token: 'write' # Required for OIDC authentication
-    secrets:
-      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
-      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/gateway-contracts"

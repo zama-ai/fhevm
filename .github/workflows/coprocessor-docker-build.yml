@@ -264,9 +264,6 @@ jobs:
       contents: 'read' # Required to checkout repository code
       packages: 'write' # Required to publish Docker images
       id-token: 'write' # Required for OIDC authentication
-    secrets: &re-tag-image-secrets
-      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
-      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/coprocessor/db-migration"
@@ -278,7 +275,6 @@ jobs:
     if: |
       needs.check-changes.outputs.changes-gw-listener != 'true' && github.event_name == 'push'
     permissions: *re-tag-image-permissions
-    secrets: *re-tag-image-secrets
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/coprocessor/gw-listener"
@@ -290,7 +286,6 @@ jobs:
     if: |
       needs.check-changes.outputs.changes-host-listener != 'true' && github.event_name == 'push'
     permissions: *re-tag-image-permissions
-    secrets: *re-tag-image-secrets
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/coprocessor/host-listener"
@@ -302,7 +297,6 @@ jobs:
     if: |
       needs.check-changes.outputs.changes-sns-worker != 'true' && github.event_name == 'push'
     permissions: *re-tag-image-permissions
-    secrets: *re-tag-image-secrets
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/coprocessor/sns-worker"
@@ -314,7 +308,6 @@ jobs:
     if: |
       needs.check-changes.outputs.changes-tfhe-worker != 'true' && github.event_name == 'push'
     permissions: *re-tag-image-permissions
-    secrets: *re-tag-image-secrets
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/coprocessor/tfhe-worker"
@@ -326,7 +319,6 @@ jobs:
     if: |
       needs.check-changes.outputs.changes-tx-sender != 'true' && github.event_name == 'push'
     permissions: *re-tag-image-permissions
-    secrets: *re-tag-image-secrets
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/coprocessor/tx-sender"
@@ -338,7 +330,6 @@ jobs:
     if: |
       needs.check-changes.outputs.changes-zkproof-worker != 'true' && github.event_name == 'push'
     permissions: *re-tag-image-permissions
-    secrets: *re-tag-image-secrets
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/coprocessor/zkproof-worker"

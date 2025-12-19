@@ -15,11 +15,6 @@ on:
         description: 'New tag or commit of the image'
         type: string
         required: true
-    secrets:
-      CGR_USERNAME:
-        required: true
-      CGR_PASSWORD:
-        required: true
 
 permissions: {}
 
@@ -76,13 +71,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to Chainguard Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-        with:
-          registry: cgr.dev
-          username: ${{ secrets.CGR_USERNAME }}
-          password: ${{ secrets.CGR_PASSWORD }}
 
       - name: Re-tag docker image
         env:
