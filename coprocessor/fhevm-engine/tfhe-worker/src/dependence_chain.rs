@@ -171,6 +171,8 @@ impl LockMngr {
                         )                              
                     OR  (
                             lock_expires_at < NOW()  -- Work-stealing of expired locks
+                            AND
+                            dependency_count = 0     -- No pending dependencies
                         )
                 ORDER BY last_updated_at ASC        -- FIFO
                 FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
@@ -441,6 +443,10 @@ impl LockMngr {
     }
 
     pub async fn do_cleanup(&mut self) -> Result<u64, sqlx::Error> {
+        if self.disable_locking {
+            return Ok(0);
+        }
+
         let should_run_cleanup = self
             .last_cleanup_at
             .map(|t| {

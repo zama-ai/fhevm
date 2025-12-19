@@ -373,7 +373,10 @@ async fn query_for_work<'a>(
         };
 
     if deps_chain_mngr.enabled() && dependence_chain_id.is_none() {
+        // No dependence chain to lock, so no work to do
+        health_check.update_db_access();
         health_check.update_activity();
+        info!(target: "tfhe_worker", "No dcid found to process");
         return Ok((vec![], vec![]));
     }
 
