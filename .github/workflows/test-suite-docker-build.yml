@@ -21,6 +21,9 @@ on:
     types:
       - published
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions: {}
 
@@ -75,3 +78,18 @@ jobs:
       image-name: "fhevm/test-suite/e2e"
       docker-file: "./test-suite/e2e/Dockerfile"
       app-cache-dir: "fhevm-test-suite-e2e"
+
+  re-tag-image:
+    needs: check-changes
+    if: |
+      needs.check-changes.outputs.changes-e2e-docker != 'true' && github.event_name == 'push'
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/test-suite/e2e"
+      previous-tag-or-commit: ${{ github.event.before }}
+      new-tag-or-commit: ${{ github.event.after }}

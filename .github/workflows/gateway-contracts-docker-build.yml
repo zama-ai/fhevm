@@ -21,6 +21,9 @@ on:
     types:
       - published
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions: {}
 
@@ -73,3 +76,18 @@ jobs:
       image-name: "fhevm/gateway-contracts"
       docker-file: "./gateway-contracts/Dockerfile"
       app-cache-dir: "fhevm-gateway-contracts"
+
+  re-tag-image:
+    needs: check-changes
+    if: |
+      needs.check-changes.outputs.changes-gw-contracts != 'true' && github.event_name == 'push'
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/gateway-contracts"
+      previous-tag-or-commit: ${{ github.event.before }}
+      new-tag-or-commit: ${{ github.event.after }}
