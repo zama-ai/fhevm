@@ -86,7 +86,64 @@ Located in `/.github/workflows/`:
 
 ## Areas for Deeper Documentation
 
-**[TODO: Testing infrastructure deep-dive]** - Document the mock FHE system, test fixtures, E2E testing patterns, and how to write effective tests for confidential contracts.
+### Mock FHE System Architecture
+
+The mock FHE system enables rapid development and testing by simulating FHE operations without cryptographic overhead. This two-layer architecture—Solidity mock contracts and TypeScript simulation libraries—maintains full API compatibility with real FHEVM while reducing test execution time from minutes to seconds. Developers can compute test coverage (only possible in mocked mode), use Hardhat debugging tools (`evm_snapshot`, `evm_revert`), and iterate quickly before final validation on real FHEVM infrastructure.
+
+#### Solidity Mock Contracts
+
+Located in `/gateway-contracts/contracts/mocks/`, seven mock contracts simulate the gateway protocol layer:
+
+**DecryptionMock.sol** - Simulates public and user-initiated decryption workflows, emitting `PublicDecryptionRequest/Response` and `UserDecryptionRequest/Response` events. Uses counter with bits 248+ reserved: `1 << 248` for public, `2 << 248` for user decryptions.
+
+**KMSGenerationMock.sol** - Mocks Key Management System operations including keygen, CRS generation, and key resharing. Counter reserves: `3 << 248` (PrepKeygen), `4 << 248` (Key), `5 << 248` (CRS), `6 << 248` (KeyReshare).
+
+**InputVerificationMock.sol** - Simulates ZK proof verification for encrypted user inputs, emitting `VerifyProofRequest/Response` events with simple incremental counter.
+
+**GatewayConfigMock.sol**, **CiphertextCommitsMock.sol**, **MultichainACLMock.sol**, **ProtocolPaymentMock.sol** - Mock configuration, ciphertext storage, cross-chain ACL, and payment protocol respectively.
+
+These contracts emit events identical to real gateway contracts but perform no actual cryptographic operations. The bit-shifting counter pattern prevents ID collisions between different operation types while maintaining protocol compatibility.
+
+#### TypeScript Mocking Layer
+
+The `fhevmjsMocked.ts` library (mirrored in `/host-contracts/test/` and `/library-solidity/test/`) provides client-side encryption simulation:
+
+**createEncryptedInputMocked(contractAddress, userAddress)** - Builder pattern for encrypted inputs supporting all types (`addBool`, `add8`, `add16`, `add32`, `add64`, `add128`, `addAddress`, `add256`). Implementation at `/host-contracts/test/fhevmjsMocked.ts:61-100` packs values in big-endian format, appends 32 random bytes to simulate encryption noise, prepends type byte (ebool=0, euint8=2, euint16=3, etc.), then generates handles via Keccak256 hash combined with index and chain ID.
+
+**createUintToUint8ArrayFunction(numBits)** - Core encryption simulator converts plaintext numbers into encrypted-looking buffers with type information and random padding, maintaining the appearance of real FHE ciphertexts without computational cost.
+
+**userDecryptRequestMocked()** - Immediately returns decrypted values after validating EIP-712 signatures and ACL permissions, bypassing asynchronous coprocessor workflows.
+
+**computeInputSignaturesCopro() / coprocSign()** - Simulates coprocessor signatures using EIP-712 typed data, enabling tests to verify signature validation logic.
+
+#### Development Workflow
+
+**Fast Iteration**: Run `pnpm test` for full test suite completion in seconds instead of minutes. Tests written for mocked mode run unchanged on real FHEVM—same JavaScript, same Solidity.
+
+**Coverage Computation**: Execute `pnpm coverage` to generate coverage reports via `solidity-coverage` (only functional in mocked mode). Open `coverage/index.html` to identify untested branches. Tag tests using `evm_snapshot` with `[skip-on-coverage]` suffix to avoid `solidity-coverage` limitations.
+
+**Final Validation**: Before deployment, validate with real FHEVM using `pnpm test:hardhat` to ensure cryptographic operations behave correctly. Mock tests catch logic errors; real FHEVM tests catch cryptographic integration issues.
+
+**Debugging**: Mocked mode supports full Hardhat toolchain including `evm_mine`, `evm_snapshot`, `evm_revert`, and standard Ethereum JSON-RPC methods unavailable on FHEVM nodes.
+
+#### Mock vs Real FHE Comparison
+
+| Aspect | Mock Mode | Real FHEVM |
+|--------|-----------|------------|
+| **Test Duration** | Seconds (full suite) | Minutes per test |
+| **Encryption** | Random bytes + type byte | TFHE-rs cryptographic encryption |
+| **Decryption** | Immediate return | Async coprocessor processing |
+| **Infrastructure** | Local Hardhat node | FHEVM node + coprocessor + KMS |
+| **Coverage** | Computable via `solidity-coverage` | Not computable |
+| **Debugging** | Full Hardhat toolchain | Limited RPC methods |
+| **Use Case** | Development, unit tests, coverage | Pre-deployment validation, E2E |
+
+**Key Implementation Files:**
+- `/gateway-contracts/contracts/mocks/*.sol` - Seven Solidity mock contracts (DecryptionMock, KMSGenerationMock, InputVerificationMock, GatewayConfigMock, CiphertextCommitsMock, MultichainACLMock, ProtocolPaymentMock)
+- `/host-contracts/test/fhevmjsMocked.ts` - TypeScript mocking library (432 lines)
+- `/library-solidity/test/fhevmjsMocked.ts` - Mirrored TypeScript implementation (484 lines)
+- `/gateway-contracts/test/mocks/mocks.ts` - Mock contract test suite (451 lines)
+- `/docs/solidity-guides/mocked.md` - Developer user guide for mocked mode
 
 **[TODO: Deployment guide]** - Document the Helm charts, Kubernetes deployment process, configuration options, and operational best practices.
 
