@@ -270,7 +270,184 @@ Use HCU tracking to:
 - `host-contracts/hardhat.config.ts` - Hardhat network and testing configuration
 - `library-solidity/foundry.toml` - Foundry testing configuration
 
-**[TODO: Deployment guide]** - Document the Helm charts, Kubernetes deployment process, configuration options, and operational best practices.
+### Deployment Guide Deep-Dive
+
+FHEVM's deployment infrastructure enables production Kubernetes deployments through Helm charts. This section details the chart architecture, deployment workflow, configuration patterns, and operational best practices for running FHEVM at scale.
+
+#### Helm Chart Architecture
+
+The FHEVM stack deploys through **5 specialized Helm charts** that can be installed independently or combined:
+
+| Chart | Version | Purpose | Key Components |
+|-------|---------|---------|----------------|
+| **anvil-node** | v0.5.0 | Local Ethereum blockchain for development/testing | StatefulSet with persistent storage, single replica |
+| **contracts** | v0.7.5 | Smart contract deployment for Gateway and Host chains | Deployment Jobs with Helm hooks, ConfigMap for addresses |
+| **coprocessor** | v0.7.8 | Core FHE computation and event processing | 10+ components: listeners, TFHE/ZK workers, tx-sender |
+| **kms-connector** | v1.3.1 | Key Management Service bridge for Gateway chain | Gateway listener, KMS worker, transaction sender |
+| **coprocessor-sql-exporter** | v1.0.0 | Prometheus metrics exporter for database monitoring | SQL exporter with ServiceMonitor |
+
+**Chart Structure:** Each chart follows standard Helm organization with `Chart.yaml` (metadata), `values.yaml` (configuration defaults), and `templates/` (Kubernetes manifests). All images are hosted at `ghcr.io/zama-ai/fhevm/`.
+
+**Deployment Dependencies:** The typical deployment order is: (1) anvil-node (if using local blockchain), (2) contracts (gateway and host), (3) coprocessor and kms-connector (can run in parallel), (4) coprocessor-sql-exporter (optional monitoring).
+
+#### Core Deployment Patterns
+
+**Configuration Management:** FHEVM charts follow a **secrets-first pattern** where sensitive configuration is injected from Kubernetes Secrets:
+
+```yaml
+# Database configuration in coprocessor values.yaml
+database:
+  secret:
+    name: coprocessor-db-url
+    key: coprocessor-db-url
+    value: "postgresql://user:pass@host:5432/coprocessor"
+
+# Injected into containers as environment variables
+env:
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: coprocessor-db-url
+        key: coprocessor-db-url
+```
+
+**Required Secrets:** Before deployment, create these Kubernetes secrets in your target namespace:
+- `coprocessor-db-url` - Database connection string
+- `coprocessor-api-key` - API authentication for coprocessor endpoints
+- `coprocessor-key` - Coprocessor cryptographic key
+- `kms-connector-tx-sender` - Transaction sender wallet credentials
+- `registry-credentials` - Docker registry authentication (if using private registry)
+
+**Initialization with Helm Hooks:** The charts use Helm hooks to ensure proper initialization order. For example, the contracts chart uses a `pre-install` hook to run database migrations before deploying main services:
+
+```yaml
+annotations:
+  helm.sh/hook: pre-install
+  helm.sh/hook-weight: "-1"
+```
+
+This ensures database schemas exist before services attempt connections. The coprocessor chart similarly uses hooks for secret initialization and configuration setup.
+
+#### Production Deployment
+
+**Installing Charts:** Charts are distributed via OCI registry. Basic installation workflow:
+
+```bash
+# Authenticate to chart registry
+helm registry login ghcr.io/zama-ai/fhevm/charts
+
+# Install coprocessor with custom values
+helm install coprocessor oci://ghcr.io/zama-ai/fhevm/charts/coprocessor \
+  --version 0.7.8 \
+  --namespace fhevm \
+  --values custom-values.yaml
+
+# Install contracts for gateway and host chains
+helm install contracts oci://ghcr.io/zama-ai/fhevm/charts/contracts \
+  --version 0.7.5 \
+  --namespace fhevm \
+  --set scDeploy.enabled=true
+```
+
+**Component Configuration:** Enable or disable components via `.enabled` flags in values.yaml:
+
+```yaml
+# Coprocessor components (can selectively enable)
+hostListener:
+  enabled: true
+  replicas: 1
+
+hostListenerPoller:
+  enabled: false  # Alternative polling-based listener
+
+tfheWorker:
+  enabled: true
+  replicas: 2
+
+zkProofWorker:
+  enabled: true
+
+txSender:
+  enabled: true
+```
+
+**Horizontal Pod Autoscaling:** Compute-intensive workers support HPA for automatic scaling:
+
+```yaml
+tfheWorker:
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+      scaleUp:
+        stabilizationWindowSeconds: 60
+```
+
+**Observability:** All services expose Prometheus metrics on port 9100. Enable ServiceMonitors for automatic Prometheus scraping:
+
+```yaml
+tfheWorker:
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+```
+
+**Resource Configuration:** Set resource requests/limits based on workload. Default pattern:
+
+```yaml
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+```
+
+Adjust for production: TFHE workers benefit from higher CPU limits (2000m+), while listeners need minimal resources.
+
+#### Operational Best Practices
+
+| Practice | Implementation | Reference |
+|----------|---------------|-----------|
+| **Monitoring** | ServiceMonitor resources + Prometheus scraping on port 9100 | `coprocessor/templates/*-service-monitor.yaml` |
+| **Health Checks** | Liveness/readiness probes on HTTP port 8080 (`/healthz`, `/liveness`) | `values.yaml` probe configuration |
+| **Scaling** | HPA with custom scale-up/scale-down behavior for workers | `tfheWorker.hpa`, `zkProofWorker.hpa` |
+| **Security** | Non-root containers (`runAsNonRoot: true`, `runAsUser: 10000`), RBAC via ServiceAccounts | `scDeploy.securityContext` |
+| **Persistence** | StatefulSets for stateful services (anvil-node), PVCs for Jobs (contract deployment) | `anvil-statefulset.yaml`, `sc-deploy-pvc.yaml` |
+| **Rolling Updates** | Controlled rollout: `maxSurge: 1`, `maxUnavailable: 0` for zero-downtime deployments | Deployment strategy configuration |
+
+**Development vs. Production:**
+- **Development**: Use anvil-node chart for local blockchain, single replicas, minimal resources, disable ServiceMonitors
+- **Production**: External RPC endpoints, multiple replicas with HPA, higher resource limits, enable all monitoring, configure node affinity for GPU nodes (if using accelerated FHE)
+
+**Troubleshooting:**
+- Check pod logs: `kubectl logs -n fhevm <pod-name>`
+- View events: `kubectl get events -n fhevm --sort-by='.lastTimestamp'`
+- Check Helm release status: `helm status coprocessor -n fhevm`
+- Verify secrets exist: `kubectl get secrets -n fhevm`
+
+**Operational Monitoring:** Key metrics to track:
+- `allowed_handles_txn_sent` - Transaction submission rate
+- `computations_completion` - FHE computation throughput
+- `ciphertexts` - Pending ciphertexts in database
+- Worker replica count and CPU utilization (for HPA tuning)
+
+#### Key Deployment Files
+
+| File | Purpose |
+|------|---------|
+| `charts/coprocessor/values.yaml` | Core FHE computation configuration with 10+ components (listeners, workers, tx-sender) |
+| `charts/contracts/values.yaml` | Smart contract deployment for Gateway and Host chains, includes upgrade workflows |
+| `charts/kms-connector/values.yaml` | Key Management Service bridge configuration, AWS KMS integration support |
+| `charts/kms-connector/README.md` | Comprehensive deployment guide with Helm commands and configuration examples |
+| `charts/anvil-node/values.yaml` | Local Ethereum blockchain for development, configurable block time and chain ID |
+| `charts/coprocessor/templates/coprocessor-tfhe-worker-deployment.yaml` | TFHE worker deployment pattern with HPA and ServiceMonitor |
+| `charts/contracts/templates/sc-deploy-job.yaml` | Smart contract deployment Job with Helm hooks for initialization order |
 
 **[TODO: Docker compose stack]** - Detail the test-suite docker-compose setup, how components interact, and how to debug issues in local development.
 
