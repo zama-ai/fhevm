@@ -20,5 +20,6 @@ contract TestInput is E2ECoprocessorConfig {
         resUint64 = FHE.add(input, trivial42);
         FHE.allowThis(resUint64);
         FHE.allow(resUint64, msg.sender);
+        FHE.makePubliclyDecryptable(resUint64);
     }
 }
