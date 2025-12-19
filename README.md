@@ -37,6 +37,12 @@ FHEVM ensures both confidentiality and composability, with the following guarant
 - **No impact on existing dApps and state:** Encrypted state co-exists alongside public one, and doesn't impact existing dApps.
 <br></br>
 
+## Repository Scope
+
+This repository contains the core smart contract logic and tooling for fhevm.
+Client SDKs and integration examples are maintained separately.
+
+
 ### Table of contents
 
 - [About](#about)
