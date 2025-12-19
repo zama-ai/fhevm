@@ -192,11 +192,12 @@ async fn insert_sample_dcids(
         let dcid = i.to_le_bytes().to_vec();
         sqlx::query!(
             r#"
-            INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at)
-            VALUES ($1, $2, NOW() - INTERVAL '1 minute')
+            INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, block_timestamp, block_height)
+            VALUES ($1, $2, NOW() - INTERVAL '1 minute', NOW() - INTERVAL '5 minute', $3)
             "#,
             dcid,
             status,
+            i as i64,
         )
         .execute(pool)
         .await?;
