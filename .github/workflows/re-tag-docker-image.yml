@@ -1,0 +1,94 @@
+name: re-tag-docker-image
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: 'The name of the image to re-tag'
+        type: string
+        required: true
+      previous-tag-or-commit:
+        description: 'Previous tag or commit of the image'
+        type: string
+        required: true
+      new-tag-or-commit:
+        description: 'New tag or commit of the image'
+        type: string
+        required: true
+    secrets:
+      CGR_USERNAME:
+        required: true
+      CGR_PASSWORD:
+        required: true
+
+permissions: {}
+
+jobs:
+  prepare-image-tags:
+    name: prepare-image-tags
+    runs-on: ubuntu-latest
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+    env:
+      PREVIOUS_TAG_OR_COMMIT: ${{ inputs.previous-tag-or-commit }}
+      NEW_TAG_OR_COMMIT: ${{ inputs.new-tag-or-commit }}
+    outputs:
+      previous-tag: ${{ steps.set-tag.outputs.previous-tag }}
+      new-tag: ${{ steps.set-tag.outputs.new-tag }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+      - id: set-tag
+        run: |
+          # If input is a commit hash (40 chars) shorten it. Otherwise, use as-is.
+          if [[ "$PREVIOUS_TAG_OR_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            PREVIOUS_TAG=$(git rev-parse --short "$PREVIOUS_TAG_OR_COMMIT")
+          else
+            PREVIOUS_TAG="$PREVIOUS_TAG_OR_COMMIT"
+          fi
+
+          if [[ "$NEW_TAG_OR_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            NEW_TAG=$(git rev-parse --short "$NEW_TAG_OR_COMMIT")
+          else
+            NEW_TAG="$NEW_TAG_OR_COMMIT"
+          fi
+
+          echo "previous-tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
+          echo "new-tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+
+  re-tag-image:
+    name: re-tag-image
+    needs: prepare-image-tags
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Chainguard Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
+      - name: Re-tag docker image
+        env:
+          IMAGE_NAME: ${{ inputs.image-name }}
+          PREVIOUS_TAG: ${{ needs.prepare-image-tags.outputs.previous-tag }}
+          NEW_TAG: ${{ needs.prepare-image-tags.outputs.new-tag }}
+        run: |
+          echo "Creating new tag $NEW_TAG for existing image $IMAGE_NAME:$PREVIOUS_TAG"
+          docker buildx imagetools create "ghcr.io/zama-ai/$IMAGE_NAME:$PREVIOUS_TAG" --tag "ghcr.io/zama-ai/$IMAGE_NAME:$NEW_TAG"

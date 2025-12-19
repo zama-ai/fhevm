@@ -68,6 +68,9 @@ on:
         description: "Enable/disable build for Coprocessor's ZKProof Worker"
         type: boolean
         default: true
+  push:
+    branches:
+      - main
 
 permissions: {}
 
@@ -251,3 +254,93 @@ jobs:
       image-name: "fhevm/coprocessor/zkproof-worker"
       docker-file: "coprocessor/fhevm-engine/zkproof-worker/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-zkproof-worker"
+
+  re-tag-db-migration-image:
+    needs: check-changes
+    if: |
+      needs.check-changes.outputs.changes-db-migration != 'true' && github.event_name == 'push'
+    permissions: &re-tag-image-permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    secrets: &re-tag-image-secrets
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/db-migration"
+      previous-tag-or-commit: ${{ github.event.before }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  re-tag-gw-listener-image:
+    needs: check-changes
+    if: |
+      needs.check-changes.outputs.changes-gw-listener != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    secrets: *re-tag-image-secrets
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/gw-listener"
+      previous-tag-or-commit: ${{ github.event.before }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  re-tag-host-listener-image:
+    needs: check-changes
+    if: |
+      needs.check-changes.outputs.changes-host-listener != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    secrets: *re-tag-image-secrets
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/host-listener"
+      previous-tag-or-commit: ${{ github.event.before }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  re-tag-sns-worker-image:
+    needs: check-changes
+    if: |
+      needs.check-changes.outputs.changes-sns-worker != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    secrets: *re-tag-image-secrets
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/sns-worker"
+      previous-tag-or-commit: ${{ github.event.before }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  re-tag-tfhe-worker-image:
+    needs: check-changes
+    if: |
+      needs.check-changes.outputs.changes-tfhe-worker != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    secrets: *re-tag-image-secrets
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/tfhe-worker"
+      previous-tag-or-commit: ${{ github.event.before }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  re-tag-tx-sender-image:
+    needs: check-changes
+    if: |
+      needs.check-changes.outputs.changes-tx-sender != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    secrets: *re-tag-image-secrets
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/tx-sender"
+      previous-tag-or-commit: ${{ github.event.before }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  re-tag-zkproof-worker-image:
+    needs: check-changes
+    if: |
+      needs.check-changes.outputs.changes-zkproof-worker != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    secrets: *re-tag-image-secrets
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/zkproof-worker"
+      previous-tag-or-commit: ${{ github.event.before }}
+      new-tag-or-commit: ${{ github.event.after }}
