@@ -5,7 +5,7 @@ import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { getRegistryFixture } from './utils/loadFixture';
 import { createRandomAddress } from './utils/inputs';
 
-describe('ConfidentialTokensRegistry', function () {
+describe('ConfidentialTokenWrappersRegistry', function () {
   before(async function () {
     // Deploy an ERC7984Mock
     async function deployERC7984Mock(label: string) {

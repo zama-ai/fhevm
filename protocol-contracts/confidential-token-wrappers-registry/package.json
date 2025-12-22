@@ -1,6 +1,6 @@
 {
-  "name": "confidential-tokens-registry",
-  "description": "Confidential Tokens Registry",
+  "name": "confidential-token-wrappers-registry",
+  "description": "Confidential Token Wrappers Registry",
   "version": "0.1.0",
   "keywords": [
     "fhevm",

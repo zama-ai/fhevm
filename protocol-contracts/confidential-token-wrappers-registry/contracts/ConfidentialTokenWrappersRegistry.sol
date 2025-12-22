@@ -6,12 +6,12 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /**
- * @title ConfidentialTokensRegistry
+ * @title ConfidentialTokenWrappersRegistry
  * @notice A registry contract to map ERC20 token addresses to their corresponding ERC7984
  * confidential fhevm wrapper addresses, also called confidential tokens.
  * @dev This contract allows an owner to register new entries and flag revoked ones.
  */
-contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable {
+contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgradeable {
     /// @notice Struct to represent a (token, confidential token, is revoked) tuple.
     struct ConfidentialTokenPair {
         /// @notice The address of the token.
@@ -22,8 +22,8 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
         bool isRevoked;
     }
 
-    /// @custom:storage-location erc7201:fhevm_protocol.storage.ConfidentialTokensRegistry
-    struct ConfidentialTokensRegistryStorage {
+    /// @custom:storage-location erc7201:fhevm_protocol.storage.ConfidentialTokenWrappersRegistry
+    struct ConfidentialTokenWrappersRegistryStorage {
         /// @notice Mapping from token address to confidential token address.
         mapping(address tokenAddress => address confidentialTokenAddress) _tokensToConfidentialTokens;
         /// @notice Mapping from confidential token address to token address.
@@ -36,9 +36,9 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
         ConfidentialTokenPair[] _tokenConfidentialTokenPairs;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("fhevm_protocol.storage.ConfidentialTokensRegistry")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant CONFIDENTIAL_TOKENS_REGISTRY_STORAGE_LOCATION =
-        0x25094496394205337c7da64eaca0c35bf780125467d04de96cd0ee9b701d6c00;
+    // keccak256(abi.encode(uint256(keccak256("fhevm_protocol.storage.ConfidentialTokenWrappersRegistry")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant CONFIDENTIAL_TOKEN_WRAPPERS_REGISTRY_STORAGE_LOCATION =
+        0xc361bd0b1d7584416623b46edb98317525b8de8e557ab49cee21f14d6752da00;
 
     /// @notice Error thrown when the token address is zero.
     error TokenZeroAddress();
@@ -80,7 +80,7 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
     }
 
     /**
-     * @notice Initialize the ConfidentialTokensRegistry contract.
+     * @notice Initialize the ConfidentialTokenWrappersRegistry contract.
      * @param initialOwner The initial owner of the contract.
      */
     function initialize(address initialOwner) public initializer {
@@ -116,7 +116,7 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
             revert TokenAlreadyAssociatedWithConfidentialToken(tokenAddress, existingConfidentialTokenAddress);
         }
 
-        ConfidentialTokensRegistryStorage storage $ = _getConfidentialTokensRegistryStorage();
+        ConfidentialTokenWrappersRegistryStorage storage $ = _getConfidentialTokenWrappersRegistryStorage();
 
         // Register the token and confidential token mappings.
         $._tokensToConfidentialTokens[tokenAddress] = confidentialTokenAddress;
@@ -155,7 +155,7 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
             revert NoTokenAssociatedWithConfidentialToken(confidentialTokenAddress);
         }
 
-        ConfidentialTokensRegistryStorage storage $ = _getConfidentialTokensRegistryStorage();
+        ConfidentialTokenWrappersRegistryStorage storage $ = _getConfidentialTokenWrappersRegistryStorage();
 
         $._revokedConfidentialTokens[confidentialTokenAddress] = true;
 
@@ -173,7 +173,7 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
      * @return The address of the confidential token.
      */
     function getConfidentialTokenAddress(address tokenAddress) public view returns (bool, address) {
-        address confidentialTokenAddress = _getConfidentialTokensRegistryStorage()._tokensToConfidentialTokens[
+        address confidentialTokenAddress = _getConfidentialTokenWrappersRegistryStorage()._tokensToConfidentialTokens[
             tokenAddress
         ];
         bool isRevoked = isConfidentialTokenRevoked(confidentialTokenAddress);
@@ -189,7 +189,7 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
      */
     function getTokenAddress(address confidentialTokenAddress) public view returns (bool, address) {
         bool isRevoked = isConfidentialTokenRevoked(confidentialTokenAddress);
-        address tokenAddress = _getConfidentialTokensRegistryStorage()._confidentialTokensToTokens[
+        address tokenAddress = _getConfidentialTokenWrappersRegistryStorage()._confidentialTokensToTokens[
             confidentialTokenAddress
         ];
         return (isRevoked, tokenAddress);
@@ -202,7 +202,7 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
      * @return The array of (token address, confidential token address, is revoked) tuples.
      */
     function getTokenConfidentialTokenPairs() public view returns (ConfidentialTokenPair[] memory) {
-        return _getConfidentialTokensRegistryStorage()._tokenConfidentialTokenPairs;
+        return _getConfidentialTokenWrappersRegistryStorage()._tokenConfidentialTokenPairs;
     }
 
     /**
@@ -211,7 +211,7 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
      * @return True if the confidential token has been revoked, false otherwise.
      */
     function isConfidentialTokenRevoked(address confidentialTokenAddress) public view returns (bool) {
-        return _getConfidentialTokensRegistryStorage()._revokedConfidentialTokens[confidentialTokenAddress];
+        return _getConfidentialTokenWrappersRegistryStorage()._revokedConfidentialTokens[confidentialTokenAddress];
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
@@ -239,13 +239,13 @@ contract ConfidentialTokensRegistry is Ownable2StepUpgradeable, UUPSUpgradeable 
         }
     }
 
-    function _getConfidentialTokensRegistryStorage()
+    function _getConfidentialTokenWrappersRegistryStorage()
         private
         pure
-        returns (ConfidentialTokensRegistryStorage storage $)
+        returns (ConfidentialTokenWrappersRegistryStorage storage $)
     {
         assembly {
-            $.slot := CONFIDENTIAL_TOKENS_REGISTRY_STORAGE_LOCATION
+            $.slot := CONFIDENTIAL_TOKEN_WRAPPERS_REGISTRY_STORAGE_LOCATION
         }
     }
 }

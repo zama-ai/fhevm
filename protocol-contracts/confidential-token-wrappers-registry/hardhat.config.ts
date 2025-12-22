@@ -51,8 +51,8 @@ task('test', 'Runs the test suite for tasks with environment variables from .env
       // Compile the contracts
       await hre.run('compile');
 
-      // Deploy ConfidentialTokensRegistry contract
-      await hre.run('task:deployConfidentialTokensRegistry');
+      // Deploy ConfidentialTokenWrappersRegistry contract
+      await hre.run('task:deployConfidentialTokenWrappersRegistry');
     } else {
       console.log('Skipping contracts setup.');
     }
