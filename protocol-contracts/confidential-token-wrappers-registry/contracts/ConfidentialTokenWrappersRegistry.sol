@@ -7,8 +7,8 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /**
  * @title ConfidentialTokenWrappersRegistry
- * @notice A registry contract to map ERC20 token addresses to their corresponding ERC7984
- * confidential fhevm wrapper addresses, also called confidential tokens.
+ * @notice  registry contract mapping ERC-20 tokens to their corresponding confidential FHEVM wrapper
+ * extensions of ERC-7984.
  * @dev This contract allows an owner to register new entries and flag revoked ones.
  */
 contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgradeable {
