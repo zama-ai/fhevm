@@ -9,7 +9,8 @@ data:
   deploy-contracts.sh: |
     #!/bin/bash
     set -eo pipefail
-    
+
+    {{- if .Values.scDeploy.configmap.create }}
     create_configmap() {
       configmap_name="${1}"
       if [[ -z "$configmap_name" ]]; then
@@ -77,6 +78,7 @@ data:
       exit 0
     fi
     {{- end }}
+    {{- end }}
 
     echo "executing deploy commands"
     {{- range .Values.scDeploy.deployCommands }}
@@ -104,8 +106,10 @@ data:
     {{- if .Values.scDeploy.verifyContracts }}
     npx --no-install hardhat verify:verify || true
     {{- end }}
+    {{- if .Values.scDeploy.configmap.create }}
     echo "adding the current contracts version to the configmap"
     kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"{{ .Values.scDeploy.image.tag }}\"}}"
+    {{- end }}
   upgrade-contracts.sh: |
     #!/bin/bash
     set -eo pipefail
@@ -121,6 +125,8 @@ data:
     {{- range .Values.scUpgrade.upgradeCommands }}
     {{ . | nindent 4 }}
     {{- end }}
+    {{- if .Values.scDeploy.configmap.create }}
     echo "updating the contracts version to the configmap"
     CONFIGMAP_NAME="{{ .Values.scDeploy.configmap.name }}"
     kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"{{ .Values.scDeploy.image.tag }}\"}}"
+    {{- end }}
