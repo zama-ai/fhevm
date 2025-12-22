@@ -23,6 +23,7 @@
     "@nomicfoundation/hardhat-network-helpers": "^1.1.0",
     "@nomicfoundation/hardhat-verify": "^2.1.0",
     "@openzeppelin/hardhat-upgrades": "^3.9.1",
+    "@openzeppelin/confidential-contracts": "^0.3.0",
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",
     "@types/chai": "^4.3.20",

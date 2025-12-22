@@ -35,21 +35,3 @@ task('task:verifyConfidentialTokensRegistry')
       constructorArguments: [],
     });
   });
-
-// Verify the confidential tokens registry contract using environment variables
-// Example usage:
-// npx hardhat task:verifyConfidentialTokensRegistryFromEnv --network testnet
-task('task:verifyConfidentialTokensRegistryFromEnv').setAction(async function (_, hre) {
-  const { get } = hre.deployments;
-
-  // Get the proxy address from deployments
-  const proxyAddress = await get(CONFIDENTIAL_TOKENS_REGISTRY_PROXY_NAME);
-
-  // Verify the contract
-  try {
-    console.log('Verifying confidential tokens registry contract...');
-    await hre.run('task:verifyConfidentialTokensRegistry', { proxyAddress });
-  } catch (error) {
-    console.error('An error occurred:', error);
-  }
-});
