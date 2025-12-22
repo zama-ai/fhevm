@@ -55,6 +55,10 @@ fn scan_transactions(logs: &[LogTfhe]) -> Vec<Transaction> {
         tx.size += 1;
         let log_inputs = tfhe_inputs_handle(&log.event);
         for input in log_inputs {
+            if tx.output_handle.contains(&input) {
+                // self dependency, ignore, assuming logs are ordered in tx
+                continue;
+            }
             tx.input_handle.push(input);
         }
         if let Some(output) = tfhe_result_handle(&log.event) {
@@ -71,7 +75,7 @@ fn scan_transactions(logs: &[LogTfhe]) -> Vec<Transaction> {
 }
 
 fn tx_of_handle(
-    ordered_txs: &mut [Transaction],
+    ordered_txs: &[Transaction],
 ) -> (
     HashMap<Handle, TransactionHash>,
     HashMap<Handle, HashSet<TransactionHash>>,
@@ -83,7 +87,17 @@ fn tx_of_handle(
         for handle in &tx.allowed_handle {
             handle_creator.insert(*handle, tx.tx_hash);
         }
+    }
+    for tx in ordered_txs {
         for handle in &tx.input_handle {
+            if tx.output_handle.contains(handle) {
+                // self dependency, ignore
+                continue;
+            }
+            if !handle_creator.contains_key(handle) {
+                // non allowed handle, could be from past chain
+                continue;
+            }
             match handle_consumer.entry(*handle) {
                 Entry::Vacant(e) => {
                     let mut set = HashSet::new();
