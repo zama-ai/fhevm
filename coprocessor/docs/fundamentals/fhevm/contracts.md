@@ -32,16 +32,15 @@ Data in the ACL contract grows indefinitely as new ciphertexts are produced. We 
 
 ## KMSVerifier Contract
 
-The [KMSVerifier](../../../contracts/contracts/KMSVerifier.sol) contract allows any dApp to verify a received decryption. This contract exposes a function `verifyDecryptionEIP712KMSSignatures` which receives the decryption result and signatures coming from the TKMS.
+The [KMSVerifier](../../../../host-contracts/contracts/KMSVerifier.sol) contract allows any dApp to verify a received decryption. This contract exposes a function `verifyDecryptionEIP712KMSSignatures` which receives the decryption result and signatures coming from the TKMS.
 
 KMS signers addresses are stored and updated in the contract.
 
-The KMSVerifier contract is also responsible for checking the signatures of KMS signers when a user is inputing a new ciphertext, since this process involves the user firstly sending a ZKPoK to be verified by the KMS nodes. If the proof verifies successfully at the KMS, each KMS signer will sign a hash of the new user input and the signatures will be returned to the user, who will then be able to input new handles onchain. This is done via the `verifyInputEIP712KMSSignatures` function.
-
 ## InputVerifier Contract
 
-The InputVerifier checks the coprocessors accounts' signatures which include the computed handles (the KMS signatures only include the hash of the packed ciphertext, not the handles).
-We trust the handles computation done by the coprocessors before using them in transactions onchain.
+The [InputVerifier](../../../../host-contracts/contracts/InputVerifier.sol) contract is responsible for verifying signatures when a user is inputting a new ciphertext. When a user submits an encrypted input, they first send a ZKPoK (Zero-Knowledge Proof of Knowledge) to be verified by the coprocessor nodes. If the proof verifies successfully, each coprocessor signer will sign a hash of the computed handles and the signatures will be returned to the user. The user can then input new handles onchain by providing these signatures.
+
+This is done via the `verifyInput` function, which checks the coprocessors accounts' signatures including the computed handles. We trust the handles computation done by the coprocessors before using them in transactions onchain.
 
 ## HCULimit Contract
 
