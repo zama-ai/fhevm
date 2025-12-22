@@ -240,6 +240,57 @@ impl PublicDecryptRepository {
     }
 
     // TRANSACTION REQUESTS.
+    /// Update req_status to 'tx_in_flight' by int_job_id.
+    /// Returns the number of rows affected (1 if found, 0 if not).
+    pub async fn update_status_to_tx_in_flight(&self, int_job_id_bytes: &[u8]) -> SqlResult<u64> {
+        let mut conn = self.pool.get_app_connection().await?;
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
+            r#"
+            WITH old AS (
+                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $1
+            ),
+            upd AS (
+                UPDATE public_decrypt_req
+                SET req_status = 'tx_in_flight'::req_status
+                WHERE int_job_id = $1
+                RETURNING req_status, updated_at
+            )
+            SELECT
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
+            FROM old, upd
+            "#,
+            int_job_id_bytes
+        )
+        .fetch_optional(&mut *conn)
+        .await;
+
+        match &result {
+            Ok(_) => {
+                metrics::observe_query(metrics::Table::PublicDecryptReq, query_start.elapsed())
+            }
+            Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
+        }
+
+        let record = result?;
+
+        if let Some(r) = record {
+            metrics::record_status_transition(
+                metrics::RequestType::PublicDecrypt,
+                r.old_status,
+                ReqStatus::TxInFlight,
+                r.old_updated_at,
+                r.new_updated_at,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
+    }
+
     /// Updating the req_status to receipt_received, gw_req_tx_hash, gw_reference_id by int_job_id
     /// Returns the number of rows affected (should be 1 or retry).
     pub async fn update_status_to_receipt_received_on_tx_success(

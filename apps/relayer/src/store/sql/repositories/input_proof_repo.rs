@@ -77,6 +77,55 @@ impl InputProofRepository {
         Ok(result)
     }
 
+    /// Update req_status to 'tx_in_flight' by int_request_id.
+    /// Returns number of rows affected.
+    pub async fn update_status_to_tx_in_flight(&self, int_request_id: Uuid) -> SqlResult<u64> {
+        let mut conn = self.pool.get_app_connection().await?;
+
+        let query_start = Instant::now();
+        let result = sqlx::query!(
+            r#"
+            WITH old AS (
+                SELECT req_status, updated_at FROM input_proof_req WHERE int_request_id = $1
+            ),
+            upd AS (
+                UPDATE input_proof_req
+                SET req_status = 'tx_in_flight'::req_status
+                WHERE int_request_id = $1
+                RETURNING req_status, updated_at
+            )
+            SELECT
+                old.req_status as "old_status!: ReqStatus",
+                old.updated_at as "old_updated_at!",
+                upd.updated_at as "new_updated_at!"
+            FROM old, upd
+            "#,
+            int_request_id
+        )
+        .fetch_optional(&mut *conn)
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+
+        let record = result?;
+
+        if let Some(r) = record {
+            metrics::record_status_transition(
+                metrics::RequestType::InputProof,
+                r.old_status,
+                ReqStatus::TxInFlight,
+                r.old_updated_at,
+                r.new_updated_at,
+            );
+            Ok(1)
+        } else {
+            Ok(0)
+        }
+    }
+
     // update the status to 'receipt_recieved' + gw_req_tx_hash + gw_reference_id by int_request_id
     /// Update req_status to 'receipt_received', set tx hash and gw_ref_id by int_request_id.
     /// Returns number of rows affected.

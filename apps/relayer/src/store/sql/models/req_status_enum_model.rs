@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub enum ReqStatus {
     Queued,
     Processing,
+    #[sqlx(rename = "tx_in_flight")]
+    TxInFlight,
     #[sqlx(rename = "receipt_received")]
     ReceiptReceived,
     Completed,
@@ -22,6 +24,7 @@ impl ReqStatus {
         &[
             ReqStatus::Queued,
             ReqStatus::Processing,
+            ReqStatus::TxInFlight,
             ReqStatus::ReceiptReceived,
             ReqStatus::Completed,
             ReqStatus::TimedOut,
@@ -35,6 +38,7 @@ impl ReqStatus {
         match self {
             ReqStatus::Queued => "queued",
             ReqStatus::Processing => "processing",
+            ReqStatus::TxInFlight => "tx_in_flight",
             ReqStatus::ReceiptReceived => "receipt_received",
             ReqStatus::Completed => "completed",
             ReqStatus::TimedOut => "timed_out",

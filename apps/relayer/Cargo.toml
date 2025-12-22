@@ -58,6 +58,7 @@ validator = { version = "0.20.0", features = ["derive"] }
 sqlx = { version = "0.8.6", features = ["chrono", "macros", "postgres", "runtime-tokio", "uuid"] }
 chrono = { version = "0.4.42", features = ["serde"] }
 humantime = "2.3.0"
+governor = "0.10.4"
 
 [build-dependencies]
 built = { version = "0.8", features = [

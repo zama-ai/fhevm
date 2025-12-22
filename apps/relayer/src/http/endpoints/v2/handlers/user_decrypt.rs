@@ -308,7 +308,10 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         )
                             .into_response()
                     }
-                    ReqStatus::Queued | ReqStatus::Processing | ReqStatus::ReceiptReceived => {
+                    ReqStatus::Queued
+                    | ReqStatus::Processing
+                    | ReqStatus::TxInFlight
+                    | ReqStatus::ReceiptReceived => {
                         // Request is still in progress, return 202 immediately
                         info!("Request still in progress, returning queued status");
                         (
