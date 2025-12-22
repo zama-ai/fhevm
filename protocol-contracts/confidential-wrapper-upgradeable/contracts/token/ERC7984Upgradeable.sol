@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-// ported openzeppelin-confidential-contracts/contracts/token/ERC7984/ERC7984.sol::ERC7984
-// so that it is upgradeable
 pragma solidity 0.8.27;
 
 import {FHE, externalEuint64, ebool, euint64} from "@fhevm/solidity/lib/FHE.sol";
@@ -14,6 +12,9 @@ import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 
 /**
  * @dev Reference implementation for {IERC7984}.
+ *
+ * This implementation is fully based on OpenZeppelin's implementation of ERC7984 (last updated v0.3.0)
+ * and modifies it to be upgradeable.
  *
  * This contract implements a fungible token where balances and transfers are encrypted using the Zama fhEVM,
  * providing confidentiality to users. Token amounts are stored as encrypted, unsigned integers (`euint64`)

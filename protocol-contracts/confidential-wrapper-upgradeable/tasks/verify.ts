@@ -10,7 +10,6 @@ task('task:verifyConfidentialWrapper')
   .setAction(async function ({ proxyAddress }, hre) {
     const { upgrades, run } = hre;
 
-    // Get the implementation address
     const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
 
     console.log(`Verifying confidential wrapper proxy contract at ${proxyAddress}...\n`);
@@ -26,23 +25,27 @@ task('task:verifyConfidentialWrapper')
     });
   });
 
-// Verify the confidential wrapper contract using environment variables
+// Verify all confidential wrapper contracts
+// Since all confidential wrapper contracts share the same implementation, we normally only have to
+// verify one of them. However, since they are proxied, verifying all of them has the benefit of linking
+// the proxies with their implementation on Etherscan.
 // Example usage:
-// npx hardhat task:verifyConfidentialWrapperFromEnv --network testnet
-task('task:verifyConfidentialWrapperFromEnv').setAction(async function (_, hre) {
-  const { get } = hre.deployments;
+// npx hardhat task:verifyAllConfidentialWrappers --network testnet
+task('task:verifyAllConfidentialWrappers').setAction(async function (_, hre) {
+  const { run, deployments } = hre;
+  const { get } = deployments;
 
-  // Get the symbol from environment variable
-  const symbol = getRequiredEnvVar('CONFIDENTIAL_WRAPPER_SYMBOL');
+  // Get the number of confidential wrappers from environment variable
+  const numWrappers = parseInt(getRequiredEnvVar('CONFIDENTIAL_WRAPPER_NUM_WRAPPERS'));
 
-  // Get the proxy address from deployments
-  const proxyAddress = await get(getConfidentialWrapperProxyName(symbol));
+  for (let i = 0; i < numWrappers; i++) {
+    // Get the symbol from environment variable
+    const symbol = getRequiredEnvVar(`CONFIDENTIAL_WRAPPER_SYMBOL_${i}`);
 
-  // Verify the contract
-  try {
-    console.log('Verifying confidential wrapper contract...');
-    await hre.run('task:verifyConfidentialWrapper', { proxyAddress });
-  } catch (error) {
-    console.error('An error occurred:', error);
+    // Get the proxy address from deployments
+    const proxyAddress = await get(getConfidentialWrapperProxyName(symbol));
+
+    // Verify the confidential wrapper contract
+    await run('task:verifyConfidentialWrapper', { proxyAddress });
   }
 });

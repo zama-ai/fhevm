@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Confidential Contracts (last updated v0.3.0) (token/ERC7984/extensions/ERC7984ERC20Wrapper.sol)
-
 pragma solidity ^0.8.27;
 
 import {FHE, externalEuint64, euint64} from "@fhevm/solidity/lib/FHE.sol";
@@ -220,6 +218,10 @@ abstract contract ERC7984ERC20WrapperUpgradeable is ERC7984Upgradeable, IERC1363
 
         ERC7984ERC20WrapperStorage storage $ = _getERC7984ERC20WrapperStorage();
         assert($._unwrapRequests[burntAmount] == address(0));
+
+        // WARNING: Storing unwrap requests in a mapping from cipher-text to address assumes that
+        // cipher-texts are unique--this holds here but is not always true. Be cautious when assuming
+        // cipher-text uniqueness.
         $._unwrapRequests[burntAmount] = to;
 
         emit UnwrapRequested(to, burntAmount);
