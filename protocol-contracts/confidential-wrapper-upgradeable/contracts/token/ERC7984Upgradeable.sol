@@ -2,11 +2,11 @@
 pragma solidity 0.8.27;
 
 import {FHE, externalEuint64, ebool, euint64} from "@fhevm/solidity/lib/FHE.sol";
-import {FHESafeMath} from "openzeppelin-confidential-contracts/contracts/utils/FHESafeMath.sol";
-import {ERC7984Utils} from "openzeppelin-confidential-contracts/contracts/token/ERC7984/utils/ERC7984Utils.sol";
+import {FHESafeMath} from "@openzeppelin/confidential-contracts/utils/FHESafeMath.sol";
+import {ERC7984Utils} from "@openzeppelin/confidential-contracts/token/ERC7984/utils/ERC7984Utils.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ContextUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
-import {IERC7984} from "openzeppelin-confidential-contracts/contracts/interfaces/IERC7984.sol";
+import {IERC7984} from "@openzeppelin/confidential-contracts/interfaces/IERC7984.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 

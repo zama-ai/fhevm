@@ -22,7 +22,7 @@
     "@fhevm/solidity": "^0.9.1",
     "@openzeppelin/contracts": "^5.1.0",
     "@openzeppelin/contracts-upgradeable": "^5.1.0",
-    "openzeppelin-confidential-contracts": "github:RegisGraptin/openzeppelin-confidential-contracts#60e815a49fb694854dfb966584f439e941fa51bb"
+    "@openzeppelin/confidential-contracts": "^0.3.0"
   },
   "devDependencies": {
     "@fhevm/hardhat-plugin": "^0.3.0-1",
