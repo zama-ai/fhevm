@@ -1,7 +1,7 @@
 use crate::config::settings::GatewayConfig;
 use crate::gateway::arbitrum::transaction::engine::{CustomFillers, TransactionEngine};
 use crate::orchestrator::HealthCheck;
-use crate::{core::errors::EventProcessingError, metrics};
+use crate::{core::errors::EventProcessingError, core::job_id::JobId, metrics};
 use alloy::network::AnyTransactionReceipt;
 use alloy::network::Ethereum;
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
@@ -51,6 +51,23 @@ impl fmt::Display for TransactionType {
     }
 }
 
+#[async_trait::async_trait]
+pub trait TxLifecycleHooks: Send + Sync {
+    async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError>;
+
+    async fn on_receipt_received(
+        &self,
+        job_id: &JobId,
+        receipt: &TxResult,
+    ) -> Result<(), EventProcessingError>;
+
+    async fn on_failure(
+        &self,
+        job_id: &JobId,
+        err_reason: &str,
+    ) -> Result<(), EventProcessingError>;
+}
+
 impl TransactionHelper {
     pub fn new(config: GatewayConfig, tx_engine: Arc<GatewayTransactionEngine>) -> Self {
         Self {
@@ -62,16 +79,20 @@ impl TransactionHelper {
         }
     }
 
-    pub async fn send_raw_transaction_sync<F>(
+    pub async fn send_raw_transaction_sync<F, H>(
         &self,
         transaction_type: TransactionType,
+        job_id: JobId,
+        hook: &H,
         target: Address,
         prepare_calldata: F,
     ) -> Result<TxResult, EventProcessingError>
     where
         F: Fn() -> Result<Bytes, EventProcessingError>,
+        H: TxLifecycleHooks + ?Sized,
     {
         let calldata = prepare_calldata()?;
+        let tx_metric_type = transaction_type.as_metrics_type();
 
         info!(
             operation = %transaction_type,
@@ -79,35 +100,45 @@ impl TransactionHelper {
             "Preparing transaction"
         );
 
-        let tx_metric_type = transaction_type.as_metrics_type();
         metrics::transaction::transaction_broadcast(tx_metric_type);
 
         let transaction_start_time = Instant::now();
-        let request = self
+        let request = match self
             .tx_engine
             .prepare_transaction(target, calldata, None)
             .await
-            .map_err(|error| {
+        {
+            Ok(req) => req,
+            Err(error) => {
                 metrics::transaction::transaction_failure(
                     tx_metric_type,
                     transaction_start_time.elapsed().as_millis() as f64,
                 );
-                EventProcessingError::from(error)
-            })?;
+                let _ = hook.on_failure(&job_id, &error.to_string()).await?;
+                return Err(EventProcessingError::from(error));
+            }
+        };
 
-        // TODO: Update the status to tx in-flight.
-        let receipt = self
+        // updating tx with tx_in_flight status.
+        hook.on_tx_in_flight(&job_id).await?;
+
+        let receipt = match self
             .tx_engine
             .send_raw_transaction_sync_with_retries(request)
             .await
-            .map_err(|error| {
+        {
+            Ok(rec) => rec,
+            Err(error) => {
                 metrics::transaction::transaction_failure(
                     tx_metric_type,
                     transaction_start_time.elapsed().as_millis() as f64,
                 );
-                EventProcessingError::from(error)
-            })?;
+                let _ = hook.on_failure(&job_id, &error.to_string()).await?;
+                return Err(EventProcessingError::from(error));
+            }
+        };
 
+        hook.on_receipt_received(&job_id, &receipt).await?;
         metrics::transaction::transaction_confirmed(
             tx_metric_type,
             transaction_start_time.elapsed().as_millis() as f64,

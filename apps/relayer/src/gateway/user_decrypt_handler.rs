@@ -11,7 +11,10 @@ use crate::{
     gateway::{
         arbitrum::{
             bindings::Decryption,
-            transaction::helper::{TransactionHelper, TransactionType},
+            transaction::{
+                helper::{TransactionHelper, TransactionType, TxResult},
+                TxLifecycleHooks,
+            },
             ComputeCalldata,
         },
         readiness_checker::{ReadinessCheckError, ReadinessChecker},
@@ -205,11 +208,10 @@ impl GatewayHandler {
             event.job_id
         );
 
-        let (user_decryption_id, tx_hash) = self.send_to_gateway(decrypt_request.clone()).await?;
-
-        info!("User decrypt request sent to gateway for {}", event.job_id);
-        self.store_request_receipt(decrypt_request, user_decryption_id, tx_hash)
+        let job_id_hash = decrypt_request.content_hash();
+        self.send_to_gateway(decrypt_request.clone(), job_id_hash)
             .await?;
+        info!("User decrypt request sent to gateway for {}", event.job_id);
         Ok(())
     }
 
@@ -219,28 +221,21 @@ impl GatewayHandler {
     async fn send_to_gateway(
         &self,
         user_decrypt_request: UserDecryptRequest,
-    ) -> Result<(U256, TxHash), EventProcessingError> {
+        job_id_hash: [u8; 32],
+    ) -> Result<(), EventProcessingError> {
         let decryption_address = self.decryption_address;
 
-        let receipt = self
-            .tx_helper
+        self.tx_helper
             .send_raw_transaction_sync(
                 TransactionType::UserDecryptRequest,
+                JobId::from_sha256_hash(job_id_hash),
+                self,
                 decryption_address,
                 || ComputeCalldata::user_decryption_req(user_decrypt_request.clone()),
             )
             .await?;
 
-        // Extract gateway reference ID from the UserDecryptionRequest event
-        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
-            Decryption::UserDecryptionRequest,
-        >(
-            &receipt,
-            Decryption::UserDecryptionRequest::SIGNATURE_HASH,
-            |event| event.decryptionId,
-        )?;
-
-        Ok((gw_reference_id, receipt.transaction_hash))
+        Ok(())
     }
 
     /// Decodes individual share response from Gateway event log.
@@ -496,32 +491,6 @@ impl GatewayHandler {
             })
     }
 
-    /// Stores transaction receipt in database after successful Gateway submission.
-    ///
-    /// Updates request status to "receipt_received" with gateway reference ID.
-    async fn store_request_receipt(
-        &self,
-        decrypt_request: UserDecryptRequest,
-        user_decryption_id: U256,
-        tx_hash: TxHash,
-    ) -> Result<(), EventProcessingError> {
-        let job_id_hash = decrypt_request.content_hash();
-        let tx_hash_str = format!("{:?}", tx_hash);
-        self.user_decrypt_repo
-            .update_status_to_receipt_received_on_tx_success(
-                &job_id_hash[..],
-                &tx_hash_str,
-                user_decryption_id,
-            )
-            .await
-            .map(|_| ())
-            .map_err(|e| EventProcessingError::SqlOperationFailed {
-                operation: "user_decrypt.update_status_to_receipt_received_on_tx_success"
-                    .to_string(),
-                reason: e.to_string(),
-            })
-    }
-
     /// Handles errors during user decrypt processing.
     ///
     /// - SqlOperationFailed: Log + notify user
@@ -543,30 +512,8 @@ impl GatewayHandler {
                 error!(
                     job_id = %event.job_id,
                     error = ?tx_error,
-                    "Transaction failed - updating database and notifying user"
+                    "Transaction failed - status updated in helper, notifying user"
                 );
-
-                if let RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
-                    ref decrypt_request,
-                    ..
-                }) = event.data
-                {
-                    let job_id_hash = decrypt_request.content_hash();
-                    let err_reason = format!("Transaction Failed: {}", error);
-
-                    // TODO(mano): Review if nested error logging is necessary or can be simplified
-                    if let Err(db_err) = self
-                        .user_decrypt_repo
-                        .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
-                        .await
-                    {
-                        error!(
-                            job_id = %event.job_id,
-                            db_error = %db_err,
-                            "Failed to update failure status in database"
-                        );
-                    }
-                }
             }
 
             EventProcessingError::ReadinessCheckFailed => {
@@ -639,6 +586,84 @@ impl GatewayHandler {
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
             error!(?e, "Failed to dispatch error event");
         }
+    }
+}
+
+#[async_trait]
+impl TxLifecycleHooks for GatewayHandler {
+    async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError> {
+        let hash =
+            job_id
+                .as_sha256_hash()
+                .ok_or_else(|| EventProcessingError::ValidationFailed {
+                    field: "job_id".to_string(),
+                    reason: "Expected SHA256 hash for user decrypt".to_string(),
+                })?;
+
+        self.user_decrypt_repo
+            .update_status_to_tx_in_flight(&hash[..])
+            .await
+            .map(|_| ())
+            .map_err(|e| EventProcessingError::SqlOperationFailed {
+                operation: "user_decrypt.update_status_to_tx_in_flight".to_string(),
+                reason: e.to_string(),
+            })
+    }
+
+    async fn on_receipt_received(
+        &self,
+        job_id: &JobId,
+        receipt: &TxResult,
+    ) -> Result<(), EventProcessingError> {
+        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
+            Decryption::UserDecryptionRequest,
+        >(
+            receipt,
+            Decryption::UserDecryptionRequest::SIGNATURE_HASH,
+            |event| event.decryptionId,
+        )?;
+
+        let tx_hash = format!("{:?}", receipt.transaction_hash);
+        let hash =
+            job_id
+                .as_sha256_hash()
+                .ok_or_else(|| EventProcessingError::ValidationFailed {
+                    field: "job_id".to_string(),
+                    reason: "Expected SHA256 hash for user decrypt".to_string(),
+                })?;
+
+        self.user_decrypt_repo
+            .update_status_to_receipt_received_on_tx_success(&hash[..], &tx_hash, gw_reference_id)
+            .await
+            .map(|_| ())
+            .map_err(|e| EventProcessingError::SqlOperationFailed {
+                operation: "user_decrypt.update_status_to_receipt_received_on_tx_success"
+                    .to_string(),
+                reason: e.to_string(),
+            })
+    }
+
+    async fn on_failure(
+        &self,
+        job_id: &JobId,
+        err_reason: &str,
+    ) -> Result<(), EventProcessingError> {
+        let hash =
+            job_id
+                .as_sha256_hash()
+                .ok_or_else(|| EventProcessingError::ValidationFailed {
+                    field: "job_id".to_string(),
+                    reason: "Expected SHA256 hash for user decrypt".to_string(),
+                })?;
+
+        self.user_decrypt_repo
+            .update_status_to_failure_on_tx_failed(&hash[..], err_reason)
+            .await
+            .map(|_| ())
+            .map_err(|e| EventProcessingError::SqlOperationFailed {
+                operation: "user_decrypt.update_status_to_failure_on_tx_failed".to_string(),
+                reason: e.to_string(),
+            })
     }
 }
 

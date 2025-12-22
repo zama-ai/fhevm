@@ -8,8 +8,14 @@ use crate::{
         },
         job_id::JobId,
     },
-    gateway::arbitrum::transaction::helper::{TransactionHelper, TransactionType},
-    gateway::arbitrum::{bindings::InputVerification, ComputeCalldata},
+    gateway::arbitrum::{
+        bindings::InputVerification,
+        transaction::{
+            helper::{TransactionHelper, TransactionType, TxResult},
+            TxLifecycleHooks,
+        },
+        ComputeCalldata,
+    },
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
@@ -137,10 +143,17 @@ impl InputProofGatewayHandler {
             event.job_id
         );
 
-        let (input_verification_id, tx_hash) = self.send_to_gateway(&input_proof_request).await?;
-        info!("Input proof request sent to gateway for {}", event.job_id);
-        self.store_request_receipt(event, input_verification_id, tx_hash)
+        let int_request_id = event.job_id.as_uuid_v7().ok_or_else(|| {
+            error!(job_id = %event.job_id, "job_id is not uuid");
+            EventProcessingError::ValidationFailed {
+                field: "job_id".to_string(),
+                reason: "not a valid UUID".to_string(),
+            }
+        })?;
+
+        self.send_to_gateway(&input_proof_request, int_request_id)
             .await?;
+        info!("Input proof request sent to gateway for {}", event.job_id);
         Ok(())
     }
 
@@ -150,6 +163,7 @@ impl InputProofGatewayHandler {
     async fn send_to_gateway(
         &self,
         input_proof_request: &InputProofRequest,
+        int_request_id: uuid::Uuid,
     ) -> Result<(U256, TxHash), EventProcessingError> {
         let input_verification_address =
             Address::from_str(&self.contracts.input_verification_address).map_err(|_| {
@@ -167,6 +181,8 @@ impl InputProofGatewayHandler {
             .tx_helper
             .send_raw_transaction_sync(
                 TransactionType::InputRequest,
+                JobId::from_uuid_v7(int_request_id),
+                self,
                 input_verification_address,
                 || {
                     ComputeCalldata::verify_proof_req(
@@ -320,39 +336,6 @@ impl InputProofGatewayHandler {
         Ok(())
     }
 
-    /// Stores transaction receipt in database after successful Gateway submission.
-    ///
-    /// Updates request status to "receipt_received" with gateway reference ID.
-    async fn store_request_receipt(
-        &self,
-        event: RelayerEvent,
-        input_verification_id: U256,
-        tx_hash: TxHash,
-    ) -> Result<(), EventProcessingError> {
-        let int_request_id = event.job_id.as_uuid_v7().ok_or_else(|| {
-            error!(job_id = %event.job_id, "job_id is not uuid");
-            EventProcessingError::ValidationFailed {
-                field: "job_id".to_string(),
-                reason: "not a valid UUID".to_string(),
-            }
-        })?;
-
-        let tx_hash_str = format!("{:?}", tx_hash);
-        self.input_proof_repo
-            .update_input_proof_status_to_receipt_received(
-                int_request_id,
-                &tx_hash_str,
-                input_verification_id,
-            )
-            .await
-            .map_err(|e| EventProcessingError::SqlOperationFailed {
-                operation: "input_proof.update_input_proof_status_to_receipt_received".to_string(),
-                reason: e.to_string(),
-            })?;
-
-        Ok(())
-    }
-
     /// Handles errors during input proof processing.
     ///
     /// - SqlOperationFailed: Log + notify user
@@ -374,15 +357,8 @@ impl InputProofGatewayHandler {
                 error!(
                     job_id = %event.job_id,
                     error = ?tx_error,
-                    "Transaction failed - updating database and notifying user"
+                    "Transaction failed - helper updated tx to error, notifying user"
                 );
-
-                if let Some(uuid) = event.job_id.as_uuid_v7() {
-                    let _ = self
-                        .input_proof_repo
-                        .update_status_to_failure(uuid, &error.to_string())
-                        .await;
-                }
             }
 
             _ => {
@@ -415,5 +391,79 @@ impl InputProofGatewayHandler {
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
             error!(?e, "Failed to dispatch error event");
         }
+    }
+}
+
+#[async_trait]
+impl TxLifecycleHooks for InputProofGatewayHandler {
+    async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError> {
+        let uuid = job_id
+            .as_uuid_v7()
+            .ok_or_else(|| EventProcessingError::ValidationFailed {
+                field: "job_id".to_string(),
+                reason: "Expected UUID for input proof".to_string(),
+            })?;
+
+        self.input_proof_repo
+            .update_status_to_tx_in_flight(uuid)
+            .await
+            .map(|_| ())
+            .map_err(|e| EventProcessingError::SqlOperationFailed {
+                operation: "input_proof.update_status_to_tx_in_flight".to_string(),
+                reason: e.to_string(),
+            })
+    }
+
+    async fn on_receipt_received(
+        &self,
+        job_id: &JobId,
+        receipt: &TxResult,
+    ) -> Result<(), EventProcessingError> {
+        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
+            InputVerification::VerifyProofRequest,
+        >(
+            receipt,
+            InputVerification::VerifyProofRequest::SIGNATURE_HASH,
+            |event| event.zkProofId,
+        )?;
+
+        let tx_hash = format!("{:?}", receipt.transaction_hash);
+        let uuid = job_id
+            .as_uuid_v7()
+            .ok_or_else(|| EventProcessingError::ValidationFailed {
+                field: "job_id".to_string(),
+                reason: "Expected UUID for input proof".to_string(),
+            })?;
+
+        self.input_proof_repo
+            .update_input_proof_status_to_receipt_received(uuid, &tx_hash, gw_reference_id)
+            .await
+            .map(|_| ())
+            .map_err(|e| EventProcessingError::SqlOperationFailed {
+                operation: "input_proof.update_input_proof_status_to_receipt_received".to_string(),
+                reason: e.to_string(),
+            })
+    }
+
+    async fn on_failure(
+        &self,
+        job_id: &JobId,
+        err_reason: &str,
+    ) -> Result<(), EventProcessingError> {
+        let uuid = job_id
+            .as_uuid_v7()
+            .ok_or_else(|| EventProcessingError::ValidationFailed {
+                field: "job_id".to_string(),
+                reason: "Expected UUID for input proof".to_string(),
+            })?;
+
+        self.input_proof_repo
+            .update_status_to_failure(uuid, err_reason)
+            .await
+            .map(|_| ())
+            .map_err(|e| EventProcessingError::SqlOperationFailed {
+                operation: "input_proof.update_status_to_failure".to_string(),
+                reason: e.to_string(),
+            })
     }
 }
