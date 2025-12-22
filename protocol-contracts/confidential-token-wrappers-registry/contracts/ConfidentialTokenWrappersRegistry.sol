@@ -13,13 +13,13 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
  */
 contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgradeable {
     /// @notice Struct to represent a (token, confidential token, is revoked) tuple.
-    struct ConfidentialTokenPair {
+    struct TokenWrapperPair {
         /// @notice The address of the token.
         address tokenAddress;
         /// @notice The address of the confidential token.
         address confidentialTokenAddress;
-        /// @notice If the confidential token has been revoked.
-        bool isRevoked;
+        /// @notice If the confidential token is valid, ie has not been revoked yet.
+        bool isValid;
     }
 
     /// @custom:storage-location erc7201:fhevm_protocol.storage.ConfidentialTokenWrappersRegistry
@@ -28,17 +28,20 @@ contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgra
         mapping(address tokenAddress => address confidentialTokenAddress) _tokensToConfidentialTokens;
         /// @notice Mapping from confidential token address to token address.
         mapping(address confidentialTokenAddress => address tokenAddress) _confidentialTokensToTokens;
-        /// @notice If a confidential token has been revoked.
-        mapping(address confidentialTokenAddress => bool isRevoked) _revokedConfidentialTokens;
+        /// @notice If a confidential token is valid, i.e not revoked.
+        mapping(address confidentialTokenAddress => bool isValid) _validConfidentialTokens;
         /// @notice Index of registered tokens.
         mapping(address tokenAddress => uint256 index) _tokenIndex;
-        /// @notice Registered token and confidential token pairs.
-        ConfidentialTokenPair[] _tokenConfidentialTokenPairs;
+        /// @notice Registered token and confidential token wrapper pairs.
+        TokenWrapperPair[] _tokenConfidentialTokenPairs;
     }
 
     // keccak256(abi.encode(uint256(keccak256("fhevm_protocol.storage.ConfidentialTokenWrappersRegistry")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant CONFIDENTIAL_TOKEN_WRAPPERS_REGISTRY_STORAGE_LOCATION =
         0xc361bd0b1d7584416623b46edb98317525b8de8e557ab49cee21f14d6752da00;
+
+    /// @notice Error thrown when fromIndex is greater or equal to toIndex.
+    error FromIndexGreaterOrEqualToIndex(uint256 fromIndex, uint256 toIndex);
 
     /// @notice Error thrown when the token address is zero.
     error TokenZeroAddress();
@@ -64,9 +67,6 @@ contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgra
 
     /// @notice Error thrown when no token is associated with a confidential token.
     error NoTokenAssociatedWithConfidentialToken(address confidentialTokenAddress);
-
-    /// @notice Error thrown when a confidential token is not revoked.
-    error ConfidentialTokenNotRevoked(address confidentialTokenAddress);
 
     /// @notice Emitted when a token is registered and associated with a confidential token.
     event ConfidentialTokenRegistered(address indexed tokenAddress, address indexed confidentialTokenAddress);
@@ -123,14 +123,16 @@ contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgra
         $._confidentialTokensToTokens[confidentialTokenAddress] = tokenAddress;
 
         // Register the token and confidential token pairs in the array and keep track of their indexes.
+        $._tokenIndex[tokenAddress] = $._tokenConfidentialTokenPairs.length;
         $._tokenConfidentialTokenPairs.push(
-            ConfidentialTokenPair({
+            TokenWrapperPair({
                 tokenAddress: tokenAddress,
                 confidentialTokenAddress: confidentialTokenAddress,
-                isRevoked: false
+                isValid: true
             })
         );
-        $._tokenIndex[tokenAddress] = $._tokenConfidentialTokenPairs.length - 1;
+
+        $._validConfidentialTokens[confidentialTokenAddress] = true;
 
         emit ConfidentialTokenRegistered(tokenAddress, confidentialTokenAddress);
     }
@@ -144,24 +146,24 @@ contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgra
             revert ConfidentialTokenZeroAddress();
         }
 
-        // The confidential token must not be already revoked.
-        if (isConfidentialTokenRevoked(confidentialTokenAddress)) {
-            revert RevokedConfidentialToken(confidentialTokenAddress);
-        }
-
         // The confidential token must be associated with a token.
         (, address tokenAddress) = getTokenAddress(confidentialTokenAddress);
         if (tokenAddress == address(0)) {
             revert NoTokenAssociatedWithConfidentialToken(confidentialTokenAddress);
         }
 
+        // The confidential token must not be already revoked.
+        if (!isConfidentialTokenValid(confidentialTokenAddress)) {
+            revert RevokedConfidentialToken(confidentialTokenAddress);
+        }
+
         ConfidentialTokenWrappersRegistryStorage storage $ = _getConfidentialTokenWrappersRegistryStorage();
 
-        $._revokedConfidentialTokens[confidentialTokenAddress] = true;
+        $._validConfidentialTokens[confidentialTokenAddress] = false;
 
         // Set token's confidential token address to zero to indicate that it has been revoked.
         uint256 index = $._tokenIndex[tokenAddress];
-        $._tokenConfidentialTokenPairs[index].isRevoked = true;
+        $._tokenConfidentialTokenPairs[index].isValid = false;
 
         emit ConfidentialTokenRevoked(tokenAddress, confidentialTokenAddress);
     }
@@ -169,49 +171,101 @@ contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgra
      * @notice Returns the address of the confidential token associated with a token. A null address
      * is returned if no confidential token has been registered for the token.
      * @param tokenAddress The address of the token.
-     * @return True if the confidential token has been revoked, false otherwise.
+     * @return True if the confidential token is valid, ie non-revoked, false otherwise.
      * @return The address of the confidential token.
      */
     function getConfidentialTokenAddress(address tokenAddress) public view returns (bool, address) {
         address confidentialTokenAddress = _getConfidentialTokenWrappersRegistryStorage()._tokensToConfidentialTokens[
             tokenAddress
         ];
-        bool isRevoked = isConfidentialTokenRevoked(confidentialTokenAddress);
-        return (isRevoked, confidentialTokenAddress);
+        bool isValid = isConfidentialTokenValid(confidentialTokenAddress);
+        return (isValid, confidentialTokenAddress);
     }
 
     /**
      * @notice Returns the address of the token associated with a confidential token.
      * A null address is returned if the confidential token has not been registered for any token.
      * @param confidentialTokenAddress The address of the confidential token.
-     * @return True if the confidential token has been revoked, false otherwise.
+     * @return True if the confidential token is valid, ie non-revoked, false otherwise.
      * @return The address of the token.
      */
     function getTokenAddress(address confidentialTokenAddress) public view returns (bool, address) {
-        bool isRevoked = isConfidentialTokenRevoked(confidentialTokenAddress);
+        bool isValid = isConfidentialTokenValid(confidentialTokenAddress);
         address tokenAddress = _getConfidentialTokenWrappersRegistryStorage()._confidentialTokensToTokens[
             confidentialTokenAddress
         ];
-        return (isRevoked, tokenAddress);
+        return (isValid, tokenAddress);
     }
 
     /**
-     * @notice Returns the array of (token address, confidential token address, is revoked) tuples.
-     * A tuple containing a revoked confidential token is kept in the array and addresses are not
-     * affected, only the isRevoked flag is set to true.
-     * @return The array of (token address, confidential token address, is revoked) tuples.
+     * @notice Returns the index of the registered token in the array of
+     * (tokenAddress, confidentialTokenAddress, isValid) tuples.
+     * Will raise an error if token has not been registered yet.
+     * @param tokenAddress The address of the token.
+     * @return The index of the token.
      */
-    function getTokenConfidentialTokenPairs() public view returns (ConfidentialTokenPair[] memory) {
+    function getTokenIndex(address tokenAddress) public view returns (uint256) {
+        uint256 tokenIndex = _getConfidentialTokenWrappersRegistryStorage()._tokenIndex[tokenAddress];
+        return tokenIndex;
+    }
+
+    /**
+     * @notice Returns the array of (tokenAddress, confidentialTokenAddress, isValid) tuples.
+     * A tuple containing a revoked confidential token is kept in the array and addresses are not
+     * affected, only the isValid flag is set to false.
+     * @dev Warning: might run out-of-gas if used inside a transaction, rather than an offchain view call.
+     * In a contract, use a safer alternative: getTokenConfidentialTokenPairsSlice or getTokenConfidentialTokenPair.
+     * @return The array of (tokenAddress, confidentialTokenAddress, isValid) tuples.
+     */
+    function getTokenConfidentialTokenPairs() public view returns (TokenWrapperPair[] memory) {
         return _getConfidentialTokenWrappersRegistryStorage()._tokenConfidentialTokenPairs;
     }
 
     /**
-     * @notice Returns true if a confidential token has been revoked, false otherwise.
-     * @param confidentialTokenAddress The address of the confidential token.
-     * @return True if the confidential token has been revoked, false otherwise.
+     * @notice Returns a slice of the array of (tokenAddress, confidentialTokenAddress, isValid) tuples,
+     *  from fromIndex (included) to toIndex (excluded).
+     * A tuple containing a revoked confidential token is kept in the array and addresses are not
+     * affected, only the isValid flag is set to false.
+     * @return A slice of the array of (tokenAddress, confidentialTokenAddress, isValid) tuples.
      */
-    function isConfidentialTokenRevoked(address confidentialTokenAddress) public view returns (bool) {
-        return _getConfidentialTokenWrappersRegistryStorage()._revokedConfidentialTokens[confidentialTokenAddress];
+    function getTokenConfidentialTokenPairsSlice(
+        uint256 fromIndex,
+        uint256 toIndex
+    ) public view returns (TokenWrapperPair[] memory) {
+        if (toIndex <= fromIndex) revert FromIndexGreaterOrEqualToIndex(fromIndex, toIndex);
+        TokenWrapperPair[] memory slice = new TokenWrapperPair[](toIndex - fromIndex);
+        uint256 sliceLen = toIndex - fromIndex;
+        for (uint256 i = 0; i < sliceLen; i++) {
+            slice[i] = _getConfidentialTokenWrappersRegistryStorage()._tokenConfidentialTokenPairs[fromIndex + i];
+        }
+        return slice;
+    }
+
+    /**
+     * @notice Returns the (tokenAddress, confidentialTokenAddress, isValid) tuples at index.
+     * A tuple containing a revoked confidential token is kept in the array and addresses are not
+     * affected, only the isValid flag is set to false.
+     * @return The (tokenAddress, confidentialTokenAddress, isValid) tuple.
+     */
+    function getTokenConfidentialTokenPair(uint256 index) public view returns (TokenWrapperPair memory) {
+        return _getConfidentialTokenWrappersRegistryStorage()._tokenConfidentialTokenPairs[index];
+    }
+
+    /**
+     * @notice Returns the number of stored (tokenAddress, confidentialTokenAddress, isValid) tuples.
+     * @return The length of the array of (tokenAddress, confidentialTokenAddress, isValid) tuples.
+     */
+    function getTokenConfidentialTokenPairsLength() public view returns (uint256) {
+        return _getConfidentialTokenWrappersRegistryStorage()._tokenConfidentialTokenPairs.length;
+    }
+
+    /**
+     * @notice Returns true if a confidential token has not been revoked, false otherwise.
+     * @param confidentialTokenAddress The address of the confidential token.
+     * @return True if the confidential token is valid, false otherwise.
+     */
+    function isConfidentialTokenValid(address confidentialTokenAddress) public view returns (bool) {
+        return _getConfidentialTokenWrappersRegistryStorage()._validConfidentialTokens[confidentialTokenAddress];
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
