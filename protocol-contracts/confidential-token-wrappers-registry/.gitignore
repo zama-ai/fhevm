@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+artifacts/
+cache/
+cache_forge/
+out/
+types/
+
+# Coverage
+coverage/
+coverage.json
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
