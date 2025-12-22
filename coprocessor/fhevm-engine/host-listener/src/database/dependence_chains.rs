@@ -364,8 +364,20 @@ mod tests {
         static HANDLE_COUNTER: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(1);
         let id =
-            HANDLE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Handle::with_last_byte(id as u8)
+            HANDLE_COUNTER.fetch_add(10000, std::sync::atomic::Ordering::SeqCst);
+        Handle::from_slice(&[
+            // 32 bytes
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0,
+            (id >> 56) as u8,
+            (id >> 48) as u8,
+            (id >> 40) as u8,
+            (id >> 32) as u8,
+            (id >> 24) as u8,
+            (id >> 16) as u8,
+            (id >> 8) as u8,
+            id as u8,
+        ])
     }
 
     fn input_handle(logs: &mut Vec<LogTfhe>, tx: TransactionHash) -> Handle {
@@ -657,6 +669,23 @@ mod tests {
         assert_eq!(cache.read().await.len(), 2);
     }
 
+
+    #[tokio::test]
+    async fn test_dependence_chains_duplicated_trivial_encrypt() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(1);
+        let tx2 = TransactionHash::with_last_byte(2);
+        let va_1 = input_handle(&mut logs, tx1);
+        let vb_1 = op1(va_1, &mut logs, tx1);
+        let va_2 = input_shared_handle(&mut logs, va_1, tx2);
+        let vb_2 = op2(vb_1,va_2, &mut logs, tx2);
+        let chains = dependence_chains(&mut logs, &cache).await;
+        assert_eq!(chains.len(), 1);
+    }
+
     #[tokio::test]
     async fn test_dependence_chains_2_local_non_allowed_handle() {
         let cache = ChainCache::new(lru::LruCache::new(
@@ -675,4 +704,43 @@ mod tests {
         assert_eq!(chains.len(), 2);
         assert_eq!(cache.read().await.len(), 0);
     }
+
+    #[tokio::test]
+    async fn test_dependence_chains_auction() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let mut logs = vec![];
+        let mut past_handles = vec![];
+        let shared_handle = new_handle();
+        for tx_id in 0..1 {
+            for chain in 1..=6 {
+                let tx_hash =
+                        TransactionHash::with_last_byte(chain * 10 + tx_id);
+                if tx_id == 0 {
+                    let past_chain = past_chain(chain);
+                    let past_chain_hash = past_chain.hash;
+                    cache.write().await.put(
+                        Handle::with_last_byte(100 + chain as u8),
+                        past_chain_hash,
+                    );
+                    past_handles.push((Handle::with_last_byte(100 + chain as u8), input_handle(&mut logs, tx_hash)));
+                }
+                let (v0_a, v0_b) = past_handles[chain as usize - 1];
+                let v0 =  input_handle(&mut logs, tx_hash);
+                let v0_bis = input_shared_handle(&mut logs, shared_handle, tx_hash);
+                let v0 = op2(v0, v0_bis, &mut logs, tx_hash);
+                let v1 = op2(v0_a, v0, &mut logs, tx_hash);
+                let v2 = op2(v0_b, v0_a, &mut logs, tx_hash);
+                let v3 = op2(v1, v2, &mut logs, tx_hash);
+                // let v4 = op2(v3, shared_handle, &mut logs, tx_hash);
+                past_handles[chain as usize - 1] = (v2, v3);
+            }
+        }
+        eprintln!("Logs: {:?}", logs);
+        let chains = dependence_chains(&mut logs, &cache).await;
+        assert_eq!(chains.len(), 6);
+        // assert_eq!(cache.read().await.len(), 66);
+    }
+
 }
