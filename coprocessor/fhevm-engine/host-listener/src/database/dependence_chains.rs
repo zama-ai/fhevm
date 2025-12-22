@@ -363,12 +363,34 @@ mod tests {
     fn new_handle() -> Handle {
         static HANDLE_COUNTER: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(1);
-        let id =
-            HANDLE_COUNTER.fetch_add(10000, std::sync::atomic::Ordering::SeqCst);
+        let id = HANDLE_COUNTER
+            .fetch_add(10000, std::sync::atomic::Ordering::SeqCst);
         Handle::from_slice(&[
             // 32 bytes
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
             (id >> 56) as u8,
             (id >> 48) as u8,
             (id >> 40) as u8,
@@ -669,7 +691,6 @@ mod tests {
         assert_eq!(cache.read().await.len(), 2);
     }
 
-
     #[tokio::test]
     async fn test_dependence_chains_duplicated_trivial_encrypt() {
         let cache = ChainCache::new(lru::LruCache::new(
@@ -681,7 +702,7 @@ mod tests {
         let va_1 = input_handle(&mut logs, tx1);
         let vb_1 = op1(va_1, &mut logs, tx1);
         let va_2 = input_shared_handle(&mut logs, va_1, tx2);
-        let vb_2 = op2(vb_1,va_2, &mut logs, tx2);
+        let vb_2 = op2(vb_1, va_2, &mut logs, tx2);
         let chains = dependence_chains(&mut logs, &cache).await;
         assert_eq!(chains.len(), 1);
     }
@@ -716,7 +737,7 @@ mod tests {
         for tx_id in 0..1 {
             for chain in 1..=6 {
                 let tx_hash =
-                        TransactionHash::with_last_byte(chain * 10 + tx_id);
+                    TransactionHash::with_last_byte(chain * 10 + tx_id);
                 if tx_id == 0 {
                     let past_chain = past_chain(chain);
                     let past_chain_hash = past_chain.hash;
@@ -724,11 +745,15 @@ mod tests {
                         Handle::with_last_byte(100 + chain as u8),
                         past_chain_hash,
                     );
-                    past_handles.push((Handle::with_last_byte(100 + chain as u8), input_handle(&mut logs, tx_hash)));
+                    past_handles.push((
+                        Handle::with_last_byte(100 + chain as u8),
+                        input_handle(&mut logs, tx_hash),
+                    ));
                 }
                 let (v0_a, v0_b) = past_handles[chain as usize - 1];
-                let v0 =  input_handle(&mut logs, tx_hash);
-                let v0_bis = input_shared_handle(&mut logs, shared_handle, tx_hash);
+                let v0 = input_handle(&mut logs, tx_hash);
+                let v0_bis =
+                    input_shared_handle(&mut logs, shared_handle, tx_hash);
                 let v0 = op2(v0, v0_bis, &mut logs, tx_hash);
                 let v1 = op2(v0_a, v0, &mut logs, tx_hash);
                 let v2 = op2(v0_b, v0_a, &mut logs, tx_hash);
@@ -742,5 +767,4 @@ mod tests {
         assert_eq!(chains.len(), 6);
         // assert_eq!(cache.read().await.len(), 66);
     }
-
 }

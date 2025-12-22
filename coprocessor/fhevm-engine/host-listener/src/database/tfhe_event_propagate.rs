@@ -922,31 +922,132 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
         | E::FheNeg(C::FheNeg { ct, .. })
         | E::FheNot(C::FheNot { ct, .. }) => vec![*ct],
 
-        E::FheAdd(C::FheAdd { lhs, rhs, scalarByte, ..})
-        | E::FheBitAnd(C::FheBitAnd { lhs, rhs, scalarByte, .. })
-        | E::FheBitOr(C::FheBitOr { lhs, rhs, scalarByte, .. })
-        | E::FheBitXor(C::FheBitXor { lhs, rhs, scalarByte, .. })
-        | E::FheDiv(C::FheDiv { lhs, rhs, scalarByte, ..})
-        | E::FheMax(C::FheMax { lhs, rhs, scalarByte, ..})
-        | E::FheMin(C::FheMin { lhs, rhs, scalarByte, .. })
-        | E::FheMul(C::FheMul { lhs, rhs, scalarByte, .. })
-        | E::FheRem(C::FheRem { lhs, rhs, scalarByte, .. })
-        | E::FheRotl(C::FheRotl { lhs, rhs, scalarByte, .. })
-        | E::FheRotr(C::FheRotr { lhs, rhs, scalarByte, .. })
-        | E::FheShl(C::FheShl { lhs, rhs, scalarByte, .. })
-        | E::FheShr(C::FheShr { lhs, rhs, scalarByte, .. })
-        | E::FheSub(C::FheSub { lhs, rhs, scalarByte, .. })
-        | E::FheEq(C::FheEq { lhs, rhs, scalarByte, .. })
-        | E::FheGe(C::FheGe { lhs, rhs, scalarByte, .. })
-        | E::FheGt(C::FheGt { lhs, rhs, scalarByte, .. })
-        | E::FheLe(C::FheLe { lhs, rhs, scalarByte, .. })
-        | E::FheLt(C::FheLt { lhs, rhs, scalarByte, .. })
-        | E::FheNe(C::FheNe { lhs, rhs, scalarByte, .. }) =>
+        E::FheAdd(C::FheAdd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitAnd(C::FheBitAnd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitOr(C::FheBitOr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitXor(C::FheBitXor {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheDiv(C::FheDiv {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMax(C::FheMax {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMin(C::FheMin {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMul(C::FheMul {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRem(C::FheRem {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotl(C::FheRotl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotr(C::FheRotr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShl(C::FheShl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShr(C::FheShr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheSub(C::FheSub {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheEq(C::FheEq {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGe(C::FheGe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGt(C::FheGt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLe(C::FheLe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLt(C::FheLt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheNe(C::FheNe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        }) => {
             if scalarByte.const_is_zero() {
                 vec![*lhs, *rhs]
             } else {
                 vec![*lhs]
             }
+        }
 
         E::FheIfThenElse(C::FheIfThenElse {
             control,
