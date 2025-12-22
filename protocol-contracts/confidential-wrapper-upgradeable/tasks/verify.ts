@@ -36,14 +36,14 @@ task('task:verifyAllConfidentialWrappers').setAction(async function (_, hre) {
   const { get } = deployments;
 
   // Get the number of confidential wrappers from environment variable
-  const numWrappers = parseInt(getRequiredEnvVar('CONFIDENTIAL_WRAPPER_NUM_WRAPPERS'));
+  const numWrappers = parseInt(getRequiredEnvVar('NUM_CONFIDENTIAL_WRAPPERS'));
 
   for (let i = 0; i < numWrappers; i++) {
-    // Get the symbol from environment variable
-    const symbol = getRequiredEnvVar(`CONFIDENTIAL_WRAPPER_SYMBOL_${i}`);
+    // Get the name from environment variable
+    const name = getRequiredEnvVar(`CONFIDENTIAL_WRAPPER_NAME_${i}`);
 
     // Get the proxy address from deployments
-    const proxyAddress = await get(getConfidentialWrapperProxyName(symbol));
+    const proxyAddress = await get(getConfidentialWrapperProxyName(name));
 
     // Verify the confidential wrapper contract
     await run('task:verifyConfidentialWrapper', { proxyAddress });

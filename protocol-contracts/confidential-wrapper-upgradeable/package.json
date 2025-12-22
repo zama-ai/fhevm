@@ -25,6 +25,8 @@
     "openzeppelin-confidential-contracts": "github:RegisGraptin/openzeppelin-confidential-contracts#60e815a49fb694854dfb966584f439e941fa51bb"
   },
   "devDependencies": {
+    "@fhevm/hardhat-plugin": "^0.3.0-1",
+    "@zama-fhe/relayer-sdk": "0.3.0-6",
     "rimraf": "^6.0.1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
     "@nomicfoundation/hardhat-ethers": "^3.1.0",
@@ -44,6 +46,7 @@
     "hardhat-deploy": "^0.11.45",
     "hardhat-gas-reporter": "^2.3.0",
     "hardhat-ignore-warnings": "^0.2.11",
+    "hardhat-exposed": "^0.3.15",
     "mocha": "^11.7.1",
     "prettier": "^3.6.2",
     "prettier-plugin-solidity": "^2.1.0",

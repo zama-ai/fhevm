@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ERC7984ERC20WrapperUpgradeable} from "./extensions/ERC7984ERC20WrapperUpgradeable.sol";
+import {ZamaEthereumConfigUpgradeable} from "./fhevm/ZamaEthereumConfigUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
@@ -15,7 +16,12 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
  * WARNING: Minting assumes the full amount of the underlying token transfer has been received, hence some non-standard
  * tokens such as fee-on-transfer or other deflationary-type tokens are not supported by this wrapper.
  */
-contract ConfidentialWrapper is ERC7984ERC20WrapperUpgradeable, UUPSUpgradeable, Ownable2StepUpgradeable {
+contract ConfidentialWrapper is
+    ERC7984ERC20WrapperUpgradeable,
+    ZamaEthereumConfigUpgradeable,
+    UUPSUpgradeable,
+    Ownable2StepUpgradeable
+{
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -30,6 +36,7 @@ contract ConfidentialWrapper is ERC7984ERC20WrapperUpgradeable, UUPSUpgradeable,
     ) public initializer {
         __ERC7984_init(name_, symbol_, contractURI_);
         __ERC7984ERC20Wrapper_init(underlying_);
+        __ZamaEthereumConfig_init();
         __Ownable_init(owner_);
         __Ownable2Step_init();
     }

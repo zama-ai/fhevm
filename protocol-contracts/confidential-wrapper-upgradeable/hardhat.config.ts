@@ -8,10 +8,12 @@ import { existsSync } from 'fs';
 import 'hardhat-deploy';
 import 'hardhat-gas-reporter';
 import 'hardhat-ignore-warnings';
-import { task, types } from 'hardhat/config';
+import '@fhevm/hardhat-plugin';
+import { task } from 'hardhat/config';
 import { HardhatUserConfig, HttpNetworkAccountsUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 import 'solidity-coverage';
+import 'hardhat-exposed';
 
 import './tasks/accounts';
 import './tasks/deploy';
@@ -46,26 +48,14 @@ if (accounts == null) {
 }
 
 // Run the test suite with environment variables from `.env.example`
-task('test', 'Runs the test suite with environment variables from .env.example')
-  .addOptionalParam('skipSetup', 'Set to true to skip setup tasks', false, types.boolean)
-  .setAction(async (taskArgs, hre, runSuper) => {
-    // Load `.env.example`
-    const envExamplePath = resolve(__dirname, '.env.example');
-    if (existsSync(envExamplePath)) {
-      dotenv.config({ path: envExamplePath, override: true });
-    }
-
-    if (!taskArgs.skipSetup) {
-      // Compile the contracts
-      await hre.run('compile');
-
-      // Deploy the confidential wrapper contract
-      await hre.run('task:deployConfidentialWrapper');
-    } else {
-      console.log('Skipping contracts setup.');
-    }
-    await runSuper();
-  });
+task('test', 'Runs the test suite with environment variables from .env.example').setAction(async (_, hre, runSuper) => {
+  // Load `.env.example`
+  const envExamplePath = resolve(__dirname, '.env.example');
+  if (existsSync(envExamplePath)) {
+    dotenv.config({ path: envExamplePath, override: true });
+  }
+  await runSuper();
+});
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -112,6 +102,10 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     apiKey: process.env.ETHERSCAN_API_KEY!,
+  },
+  exposed: {
+    imports: true,
+    initializers: true,
   },
 };
 

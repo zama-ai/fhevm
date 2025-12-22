@@ -2,6 +2,8 @@ import { getRequiredEnvVar } from './utils/loadVariables';
 import { task } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
+export const CONTRACT_NAME = 'ConfidentialWrapper';
+
 // Get the deployment name for a confidential wrapper
 export function getConfidentialWrapperName(tokenName: string): string {
   return `ConfidentialWrapper_${tokenName}`;
@@ -31,8 +33,8 @@ async function deployConfidentialWrapper(
   const { deployer } = await getNamedAccounts();
 
   // Deploy the proxy contract
-  const ConfidentialWrapper = await ethers.getContractFactory('ConfidentialWrapper');
-  const proxy = await upgrades.deployProxy(ConfidentialWrapper, [name, symbol, contractUri, underlying, owner], {
+  const confidentialWrapperFactory = await ethers.getContractFactory(CONTRACT_NAME);
+  const proxy = await upgrades.deployProxy(confidentialWrapperFactory, [name, symbol, contractUri, underlying, owner], {
     initializer: 'initialize',
     kind: 'uups',
   });
@@ -52,7 +54,7 @@ async function deployConfidentialWrapper(
 
   // Save the deployment artifacts
   const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
-  const artifact = await getArtifact(getConfidentialWrapperName(name));
+  const artifact = await getArtifact(CONTRACT_NAME);
   await save(getConfidentialWrapperProxyName(name), { address: proxyAddress, abi: artifact.abi });
   await save(getConfidentialWrapperImplName(name), { address: implementationAddress, abi: artifact.abi });
 }
@@ -64,7 +66,7 @@ task('task:deployAllConfidentialWrappers').setAction(async function (_, hre) {
   console.log('Deploying confidential wrapper contracts...');
 
   // Get the number of confidential wrappers from environment variable
-  const numWrappers = parseInt(getRequiredEnvVar('CONFIDENTIAL_WRAPPER_NUM_WRAPPERS'));
+  const numWrappers = parseInt(getRequiredEnvVar('NUM_CONFIDENTIAL_WRAPPERS'));
 
   for (let i = 0; i < numWrappers; i++) {
     // Get the name from environment variable
