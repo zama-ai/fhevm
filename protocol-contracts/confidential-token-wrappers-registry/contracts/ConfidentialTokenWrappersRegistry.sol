@@ -223,7 +223,7 @@ contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgra
 
     /**
      * @notice Returns a slice of the array of (tokenAddress, confidentialTokenAddress, isValid) tuples,
-     *  from fromIndex to toIndex.
+     *  from fromIndex (included) to toIndex (excluded).
      * A tuple containing a revoked confidential token is kept in the array and addresses are not
      * affected, only the isValid flag is set to false.
      * @return A slice of the array of (tokenAddress, confidentialTokenAddress, isValid) tuples.
@@ -234,8 +234,9 @@ contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgra
     ) public view returns (TokenWrapperPair[] memory) {
         if (toIndex <= fromIndex) revert FromIndexGreaterOrEqualToIndex(fromIndex, toIndex);
         TokenWrapperPair[] memory slice = new TokenWrapperPair[](toIndex - fromIndex);
-        for (uint256 i = fromIndex; i < toIndex; i++) {
-            slice[i] = _getConfidentialTokenWrappersRegistryStorage()._tokenConfidentialTokenPairs[i];
+        uint256 sliceLen = toIndex - fromIndex;
+        for (uint256 i = 0; i < sliceLen; i++) {
+            slice[i] = _getConfidentialTokenWrappersRegistryStorage()._tokenConfidentialTokenPairs[fromIndex + i];
         }
         return slice;
     }
