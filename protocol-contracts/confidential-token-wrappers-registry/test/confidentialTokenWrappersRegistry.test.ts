@@ -66,12 +66,12 @@ describe('ConfidentialTokenWrappersRegistry', function () {
         .withArgs(this.token1, this.confidentialToken1);
 
       expect(await this.registry.getConfidentialTokenAddress(this.token1)).to.deep.equal([
-        false,
+        true,
         this.confidentialToken1,
       ]);
-      expect(await this.registry.getTokenAddress(this.confidentialToken1)).to.deep.equal([false, this.token1]);
+      expect(await this.registry.getTokenAddress(this.confidentialToken1)).to.deep.equal([true, this.token1]);
       expect(await this.registry.getTokenConfidentialTokenPairs()).to.deep.equal([
-        [this.token1, this.confidentialToken1, false],
+        [this.token1, this.confidentialToken1, true],
       ]);
     });
 
@@ -115,12 +115,12 @@ describe('ConfidentialTokenWrappersRegistry', function () {
       await this.registry.connect(this.owner).registerConfidentialToken(this.token1, this.confidentialToken1);
 
       expect(await this.registry.getConfidentialTokenAddress(this.token1)).to.deep.equal([
-        false,
+        true,
         this.confidentialToken1,
       ]);
-      expect(await this.registry.getTokenAddress(this.confidentialToken1)).to.deep.equal([false, this.token1]);
+      expect(await this.registry.getTokenAddress(this.confidentialToken1)).to.deep.equal([true, this.token1]);
       expect(await this.registry.getTokenConfidentialTokenPairs()).to.deep.equal([
-        [this.token1, this.confidentialToken1, false],
+        [this.token1, this.confidentialToken1, true],
       ]);
 
       await expect(this.registry.connect(this.owner).registerConfidentialToken(this.token1, this.confidentialToken2))
@@ -132,12 +132,12 @@ describe('ConfidentialTokenWrappersRegistry', function () {
       await this.registry.connect(this.owner).registerConfidentialToken(this.token1, this.confidentialToken1);
 
       expect(await this.registry.getConfidentialTokenAddress(this.token1)).to.deep.equal([
-        false,
+        true,
         this.confidentialToken1,
       ]);
-      expect(await this.registry.getTokenAddress(this.confidentialToken1)).to.deep.equal([false, this.token1]);
+      expect(await this.registry.getTokenAddress(this.confidentialToken1)).to.deep.equal([true, this.token1]);
       expect(await this.registry.getTokenConfidentialTokenPairs()).to.deep.equal([
-        [this.token1, this.confidentialToken1, false],
+        [this.token1, this.confidentialToken1, true],
       ]);
 
       await expect(this.registry.connect(this.owner).registerConfidentialToken(this.token2, this.confidentialToken1))
@@ -153,29 +153,29 @@ describe('ConfidentialTokenWrappersRegistry', function () {
 
     it('should revoke a confidential token', async function () {
       expect(await this.registry.getConfidentialTokenAddress(this.token1)).to.deep.equal([
-        false,
-        this.confidentialToken1,
-      ]);
-      expect(await this.registry.getTokenAddress(this.confidentialToken1)).to.deep.equal([false, this.token1]);
-      expect(await this.registry.getTokenConfidentialTokenPairs()).to.deep.equal([
-        [this.token1, this.confidentialToken1, false],
-      ]);
-
-      expect(await this.registry.isConfidentialTokenRevoked(this.confidentialToken1)).to.equal(false);
-
-      await expect(this.registry.connect(this.owner).revokeConfidentialToken(this.confidentialToken1))
-        .to.emit(this.registry, 'ConfidentialTokenRevoked')
-        .withArgs(this.token1, this.confidentialToken1);
-
-      expect(await this.registry.isConfidentialTokenRevoked(this.confidentialToken1)).to.equal(true);
-
-      expect(await this.registry.getConfidentialTokenAddress(this.token1)).to.deep.equal([
         true,
         this.confidentialToken1,
       ]);
       expect(await this.registry.getTokenAddress(this.confidentialToken1)).to.deep.equal([true, this.token1]);
       expect(await this.registry.getTokenConfidentialTokenPairs()).to.deep.equal([
         [this.token1, this.confidentialToken1, true],
+      ]);
+
+      expect(await this.registry.isConfidentialTokenValid(this.confidentialToken1)).to.equal(true);
+
+      await expect(this.registry.connect(this.owner).revokeConfidentialToken(this.confidentialToken1))
+        .to.emit(this.registry, 'ConfidentialTokenRevoked')
+        .withArgs(this.token1, this.confidentialToken1);
+
+      expect(await this.registry.isConfidentialTokenValid(this.confidentialToken1)).to.equal(false);
+
+      expect(await this.registry.getConfidentialTokenAddress(this.token1)).to.deep.equal([
+        false,
+        this.confidentialToken1,
+      ]);
+      expect(await this.registry.getTokenAddress(this.confidentialToken1)).to.deep.equal([false, this.token1]);
+      expect(await this.registry.getTokenConfidentialTokenPairs()).to.deep.equal([
+        [this.token1, this.confidentialToken1, false],
       ]);
     });
 
@@ -194,7 +194,7 @@ describe('ConfidentialTokenWrappersRegistry', function () {
     it('should revert if confidential token is already revoked', async function () {
       await this.registry.connect(this.owner).revokeConfidentialToken(this.confidentialToken1);
 
-      expect(await this.registry.isConfidentialTokenRevoked(this.confidentialToken1)).to.equal(true);
+      expect(await this.registry.isConfidentialTokenValid(this.confidentialToken1)).to.equal(false);
 
       await expect(this.registry.connect(this.owner).revokeConfidentialToken(this.confidentialToken1))
         .to.be.revertedWithCustomError(this.registry, 'RevokedConfidentialToken')
