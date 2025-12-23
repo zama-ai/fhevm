@@ -51,4 +51,3 @@ task('task:deployERC20Mock')
 
     console.log('✅ ERC20Mock contract deployed\n');
   });
-
