@@ -33,7 +33,6 @@ interface FHEErrors {
     error SenderNotAllowed();
 }
 
-/// @custom:security-contact contact@zaiffer.org
 contract RegulatedERC7984Upgradeable is
     EthereumConfigUpgradeable,
     AccessControlDefaultAdminRulesUpgradeable,
@@ -46,7 +45,7 @@ contract RegulatedERC7984Upgradeable is
     bytes32 public constant WRAPPER_SETTER_ROLE = keccak256("WRAPPER_SETTER_ROLE");
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
-    /// @custom:storage-location erc7201:zaiffer.storage.RegulatedERC7984
+    /// @custom:storage-location erc7201:fhevm_protocol.storage.RegulatedERC7984Upgradeable
     struct RegulatedERC7984Storage {
         uint256 _rate;
         uint256 _nextTxId;
@@ -62,9 +61,9 @@ contract RegulatedERC7984Upgradeable is
     event BurnInfo(address indexed from, euint64 amount, uint256 txId);
     event TokenRegulatorUpdated(address indexed oldRegulator, address indexed newRegulator);
 
-    // keccak256(abi.encode(uint256(keccak256("zaiffer.storage.RegulatedERC7984")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("fhevm_protocol.storage.RegulatedERC7984Upgradeable")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant RegulatedERC7984StorageLocation =
-        0x825f52e2e3e00f0b167e52d69cfe92f4ec69b657f7c0aaefb00a7607a3ca0100;
+        0xcc8a4a6cb7b3b3a240a6fcc38bbc04e47277693a6df926d7fbe7d8ab14047700;
 
     function _getRegulatedERC7984Storage() internal pure returns (RegulatedERC7984Storage storage $) {
         assembly {

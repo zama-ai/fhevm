@@ -19,13 +19,12 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 
 /// @notice Wrapper contract for a single token type, providing wrapping/unwrapping functionality
 /// @dev Each wrapper handles exactly one underlying token (ERC20 or ETH) and one confidential token
-/// @custom:security-contact contact@zaiffer.org
 contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAdminRulesUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
 
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
-    /// @custom:storage-location erc7201:zaiffer.storage.Wrapper
+    /// @custom:storage-location erc7201:fhevm_protocol.storage.WrapperUpgradeable
     struct WrapperStorage {
         address _originalToken;
         RegulatedERC7984Upgradeable _confidentialToken;
@@ -52,9 +51,9 @@ contract WrapperUpgradeable is EthereumConfigUpgradeable, AccessControlDefaultAd
         ReceiverEntry receiver;
     }
 
-    // keccak256(abi.encode(uint256(keccak256("zaiffer.storage.Wrapper")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("fhevm_protocol.storage.WrapperUpgradeable")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant WrapperStorageLocation =
-        0x13479f93871f24bad5cbd972b5250a5ad213f4c22829c24117e4b54f246a4500;
+        0x812a3d77013acbada8464f047e5fa491bdfb84f48165495c145bceee3607d700;
 
     function _getWrapperStorage() internal pure returns (WrapperStorage storage $) {
         assembly {
