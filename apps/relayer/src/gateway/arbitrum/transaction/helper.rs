@@ -114,7 +114,7 @@ impl TransactionHelper {
                     tx_metric_type,
                     transaction_start_time.elapsed().as_millis() as f64,
                 );
-                let _ = hook.on_failure(&job_id, &error.to_string()).await?;
+                hook.on_failure(&job_id, &error.to_string()).await?;
                 return Err(EventProcessingError::from(error));
             }
         };
@@ -133,7 +133,7 @@ impl TransactionHelper {
                     tx_metric_type,
                     transaction_start_time.elapsed().as_millis() as f64,
                 );
-                let _ = hook.on_failure(&job_id, &error.to_string()).await?;
+                hook.on_failure(&job_id, &error.to_string()).await?;
                 return Err(EventProcessingError::from(error));
             }
         };
