@@ -246,12 +246,16 @@ fn grouping_to_chains(ordered_txs: &mut [Transaction]) -> OrderedChains {
     let mut ordered_chains_hash = Vec::with_capacity(ordered_txs.len());
     for tx in ordered_txs.iter_mut() {
         let mut dependencies = Vec::with_capacity(tx.input_tx.len());
+        let mut dependencies_seen = HashSet::with_capacity(tx.input_tx.len());
         for dep_hash in &tx.input_tx {
             let linear_chain = used_tx
                 .get(dep_hash)
                 .map(|tx| tx.linear_chain)
                 .unwrap_or(*dep_hash); // if not in used_tx, it is a past chain
-            dependencies.push(linear_chain);
+            if !dependencies_seen.contains(&linear_chain) {
+                dependencies.push(linear_chain);
+                dependencies_seen.insert(linear_chain);
+            }
         }
         let is_linear = tx.input_tx.len() == 1 && tx.output_tx.len() <= 1;
         if is_linear {
@@ -625,6 +629,9 @@ mod tests {
         assert_eq!(chains[0].before_size, 0);
         assert_eq!(chains[1].before_size, 0);
         assert_eq!(chains[2].before_size, 2);
+        assert_eq!(chains[0].dependencies.len(), 0);
+        assert_eq!(chains[1].dependencies.len(), 0);
+        assert_eq!(chains[2].dependencies.len(), 2);
     }
 
     fn past_chain(last_byte: u8) -> Chain {
@@ -724,7 +731,7 @@ mod tests {
         let va_1 = input_handle(&mut logs, tx1);
         let vb_1 = op1(va_1, &mut logs, tx1);
         let va_2 = input_shared_handle(&mut logs, va_1, tx2);
-        let vb_2 = op2(vb_1, va_2, &mut logs, tx2);
+        let _vb_2 = op2(vb_1, va_2, &mut logs, tx2);
         let chains = dependence_chains(&mut logs, &cache).await;
         assert_eq!(chains.len(), 1);
     }
@@ -764,11 +771,11 @@ mod tests {
                     let past_chain = past_chain(chain);
                     let past_chain_hash = past_chain.hash;
                     cache.write().await.put(
-                        Handle::with_last_byte(100 + chain as u8),
+                        Handle::with_last_byte(100 + chain),
                         past_chain_hash,
                     );
                     past_handles.push((
-                        Handle::with_last_byte(100 + chain as u8),
+                        Handle::with_last_byte(100 + chain),
                         input_handle(&mut logs, tx_hash),
                     ));
                 }

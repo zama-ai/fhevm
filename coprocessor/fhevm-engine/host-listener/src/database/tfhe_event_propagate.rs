@@ -770,6 +770,8 @@ impl Database {
         }
         let chains_hash =
             chains.iter().map(|c| c.hash.to_vec()).collect::<Vec<_>>();
+        let dependency_counts =
+            chains.iter().map(|c| c.dependencies.len() as i64).collect::<Vec<_>>();
         let timestamps: Vec<PrimitiveDateTime> = chains
             .iter()
             .map(|c| {
@@ -783,15 +785,17 @@ impl Database {
             INSERT INTO dependence_chain(
                 dependence_chain_id,
                 status,
-                last_updated_at
+                last_updated_at,
+                dependency_count
             )
-            SELECT dcid, 'updated' AS status, ts as last_updated_at
-            FROM unnest($1::bytea[], $2::timestamp[]) AS t(dcid, ts)
+            SELECT dcid, 'updated' AS status, ts as last_updated_at, dependency_count
+            FROM unnest($1::bytea[], $2::timestamp[], $3::bigint[]) AS t(dcid, ts, dependency_count)
             ON CONFLICT (dependence_chain_id) DO UPDATE
             SET status = 'updated'
             "#,
             &chains_hash,
             &timestamps,
+            &dependency_counts
         );
         query.execute(tx.deref_mut()).await?;
         Ok(())
