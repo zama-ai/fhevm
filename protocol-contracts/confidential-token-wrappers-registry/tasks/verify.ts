@@ -3,7 +3,7 @@ import { task, types } from 'hardhat/config';
 
 // Verify a confidential wrapper contract
 // Example usage:
-// npx hardhat task:verifyConfidentialTokenWrappersRegistry --proxyAddress 0x1234567890123456789012345678901234567890 --network testnet
+// npx hardhat task:verifyConfidentialTokenWrappersRegistry --proxy-address 0x1234567890123456789012345678901234567890 --network testnet
 task('task:verifyConfidentialTokenWrappersRegistry')
   .addOptionalParam(
     'proxyAddress',

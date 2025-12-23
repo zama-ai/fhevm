@@ -22,3 +22,8 @@ coverage.json
 # OS
 .DS_Store
 
+# Deployments
+deployments/
+
+# OpenZeppelin
+.openzeppelin/

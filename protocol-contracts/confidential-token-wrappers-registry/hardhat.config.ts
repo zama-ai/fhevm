@@ -14,6 +14,9 @@ import 'solidity-coverage';
 
 import './tasks/accounts';
 import './tasks/deploy';
+import './tasks/verify';
+import './tasks/mocks/deployMocks';
+import './tasks/mocks/verify';
 
 // Get the environment configuration from .env file
 //
