@@ -160,7 +160,8 @@ pub async fn ingest_block_logs(
 
     db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
     if at_least_one_insertion {
-        db.update_dependence_chain(&mut tx, chains).await?;
+        db.update_dependence_chain(&mut tx, chains, block_timestamp)
+            .await?;
     }
     tx.commit().await
 }

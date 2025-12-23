@@ -17,6 +17,7 @@ use sqlx::{PgPool, Postgres};
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
+use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
 use tracing::error;
 use tracing::info;
@@ -99,7 +100,7 @@ pub struct LogTfhe {
     pub transaction_hash: Option<TransactionHash>,
     pub is_allowed: bool,
     pub block_number: u64,
-    pub block_timestamp: sqlx::types::time::PrimitiveDateTime,
+    pub block_timestamp: PrimitiveDateTime,
     pub dependence_chain: TransactionHash,
 }
 
@@ -762,11 +763,21 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         chains: OrderedChains,
+        block_timestamp: PrimitiveDateTime,
     ) -> Result<(), SqlxError> {
         if chains.is_empty() {
             return Ok(());
         }
-        let chains = chains.iter().map(|d| d.hash.to_vec()).collect::<Vec<_>>();
+        let chains_hash =
+            chains.iter().map(|c| c.hash.to_vec()).collect::<Vec<_>>();
+        let timestamps: Vec<PrimitiveDateTime> = chains
+            .iter()
+            .map(|c| {
+                block_timestamp.saturating_add(TimeDuration::microseconds(
+                    c.before_size as i64,
+                ))
+            })
+            .collect();
         let query = sqlx::query!(
             r#"
             INSERT INTO dependence_chain(
@@ -774,12 +785,17 @@ impl Database {
                 status,
                 last_updated_at
             )
-            VALUES (unnest($1::bytea[]), 'updated', statement_timestamp())
+            SELECT dcid, 'updated' AS status, ts as last_updated_at
+            FROM unnest($1::bytea[], $2::timestamp[]) AS t(dcid, ts)
             ON CONFLICT (dependence_chain_id) DO UPDATE
-            SET status = EXCLUDED.status,
-                last_updated_at = EXCLUDED.last_updated_at
+            SET status = 'updated',
+                last_updated_at = GREATEST(
+                    dependence_chain.last_updated_at,
+                    EXCLUDED.last_updated_at
+                )
             "#,
-            &chains,
+            &chains_hash,
+            &timestamps,
         );
         query.execute(tx.deref_mut()).await?;
         Ok(())

@@ -32,7 +32,7 @@ impl Transaction {
             input_tx: HashSet::with_capacity(3),
             output_tx: HashSet::with_capacity(3),
             linear_chain: tx_hash, //  before coallescing linear tx chains
-            size: 1,
+            size: 0,
         }
     }
 }
@@ -603,6 +603,9 @@ mod tests {
         assert_eq!(logs[3].dependence_chain, tx1);
         assert_eq!(logs[4].dependence_chain, tx3);
         assert_eq!(cache.read().await.len(), 3);
+        assert_eq!(chains[0].before_size, 0);
+        assert_eq!(chains[1].before_size, 0);
+        assert_eq!(chains[2].before_size, 2);
     }
 
     fn past_chain(last_byte: u8) -> Chain {
@@ -765,6 +768,6 @@ mod tests {
         eprintln!("Logs: {:?}", logs);
         let chains = dependence_chains(&mut logs, &cache).await;
         assert_eq!(chains.len(), 6);
-        // assert_eq!(cache.read().await.len(), 66);
+        assert!(chains.iter().all(|c| c.before_size == 0));
     }
 }
