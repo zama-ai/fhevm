@@ -69,13 +69,17 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
+    // ChainID must be specified in order to be able to verify contracts using the fhevm hardhat plugin
     mainnet: {
       url: process.env.MAINNET_RPC_URL || '',
       accounts,
+      chainId: 1,
     },
+    // ChainID must be specified in order to be able to verify contracts using the fhevm hardhat plugin
     testnet: {
       url: process.env.SEPOLIA_RPC_URL || '',
       accounts,
+      chainId: 11155111,
     },
     hardhat: {
       // Need this to avoid deployment issues in test
