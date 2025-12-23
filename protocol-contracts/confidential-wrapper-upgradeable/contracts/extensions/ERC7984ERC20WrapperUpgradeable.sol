@@ -4,6 +4,7 @@
 pragma solidity ^0.8.27;
 
 import {FHE, externalEuint64, euint64} from "@fhevm/solidity/lib/FHE.sol";
+import {IERC1363Receiver} from "@openzeppelin/contracts/interfaces/IERC1363Receiver.sol";
 import {ContextUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 import {IERC1363Receiver} from "@openzeppelin/contracts/interfaces/IERC1363Receiver.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -18,12 +19,13 @@ import {IERC7984ERC20Wrapper} from "../interfaces/IERC7984ERC20Wrapper.sol";
 /**
  * @title ERC7984ERC20WrapperUpgradeable
  * @dev An upgradeable wrapper contract built on top of {ERC7984Upgradeable} that allows wrapping an `ERC20` token
- * into an `ERC7984` token.
+ * into an `ERC7984` token. The wrapper contract implements the `IERC1363Receiver` interface
+ * which allows users to transfer `ERC1363` tokens directly to the wrapper with a callback to wrap the tokens.
  *
  * WARNING: Minting assumes the full amount of the underlying token transfer has been received, hence some non-standard
  * tokens such as fee-on-transfer or other deflationary-type tokens are not supported by this wrapper.
  */
-abstract contract ERC7984ERC20WrapperUpgradeable is ERC7984Upgradeable, IERC7984ERC20Wrapper {
+abstract contract ERC7984ERC20WrapperUpgradeable is ERC7984Upgradeable, IERC7984ERC20Wrapper, IERC1363Receiver {
     /// @custom:storage-location erc7201:fhevm_protocol.storage.ERC7984ERC20WrapperUpgradeable
     struct ERC7984ERC20WrapperStorage {
         IERC20 _underlying;

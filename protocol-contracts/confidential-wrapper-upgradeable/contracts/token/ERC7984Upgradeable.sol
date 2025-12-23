@@ -7,10 +7,9 @@ import {FHE, externalEuint64, ebool, euint64} from "@fhevm/solidity/lib/FHE.sol"
 import {FHESafeMath} from "@openzeppelin/confidential-contracts/utils/FHESafeMath.sol";
 import {ERC7984Utils} from "@openzeppelin/confidential-contracts/token/ERC7984/utils/ERC7984Utils.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {ContextUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 import {IERC7984} from "@openzeppelin/confidential-contracts/interfaces/IERC7984.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
+import {ERC165Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
 
 /**
  * @dev Reference implementation for {IERC7984}.
@@ -30,11 +29,11 @@ import {ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
  * - Transfer and call pattern
  * - Safe overflow/underflow handling for FHE operations
  */
-abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7984, ERC165 {
+abstract contract ERC7984Upgradeable is Initializable, IERC7984, ERC165Upgradeable {
     /// @custom:storage-location erc7201:fhevm_protocol.storage.ERC7984Upgradeable
     struct ERC7984Storage {
         mapping(address holder => euint64 balance) _balances;
-        mapping(address holder => mapping(address operator => uint48 validUntilTimestamp)) _operators;
+        mapping(address holder => mapping(address spender => uint48 validUntilTimestamp)) _operators;
         euint64 _totalSupply;
         string _name;
         string _symbol;
@@ -146,7 +145,7 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
 
     /// @inheritdoc IERC7984
     function setOperator(address operator, uint48 until) public virtual {
-        _setOperator(_msgSender(), operator, until);
+        _setOperator(msg.sender, operator, until);
     }
 
     /// @inheritdoc IERC7984
@@ -155,13 +154,13 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
         externalEuint64 encryptedAmount,
         bytes calldata inputProof
     ) public virtual returns (euint64) {
-        return _transfer(_msgSender(), to, FHE.fromExternal(encryptedAmount, inputProof));
+        return _transfer(msg.sender, to, FHE.fromExternal(encryptedAmount, inputProof));
     }
 
     /// @inheritdoc IERC7984
     function confidentialTransfer(address to, euint64 amount) public virtual returns (euint64) {
-        require(FHE.isAllowed(amount, _msgSender()), ERC7984UnauthorizedUseOfEncryptedAmount(amount, _msgSender()));
-        return _transfer(_msgSender(), to, amount);
+        require(FHE.isAllowed(amount, msg.sender), ERC7984UnauthorizedUseOfEncryptedAmount(amount, msg.sender));
+        return _transfer(msg.sender, to, amount);
     }
 
     /// @inheritdoc IERC7984
@@ -171,9 +170,9 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
         externalEuint64 encryptedAmount,
         bytes calldata inputProof
     ) public virtual returns (euint64 transferred) {
-        require(isOperator(from, _msgSender()), ERC7984UnauthorizedSpender(from, _msgSender()));
+        require(isOperator(from, msg.sender), ERC7984UnauthorizedSpender(from, msg.sender));
         transferred = _transfer(from, to, FHE.fromExternal(encryptedAmount, inputProof));
-        FHE.allowTransient(transferred, _msgSender());
+        FHE.allowTransient(transferred, msg.sender);
     }
 
     /// @inheritdoc IERC7984
@@ -182,10 +181,10 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
         address to,
         euint64 amount
     ) public virtual returns (euint64 transferred) {
-        require(FHE.isAllowed(amount, _msgSender()), ERC7984UnauthorizedUseOfEncryptedAmount(amount, _msgSender()));
-        require(isOperator(from, _msgSender()), ERC7984UnauthorizedSpender(from, _msgSender()));
+        require(FHE.isAllowed(amount, msg.sender), ERC7984UnauthorizedUseOfEncryptedAmount(amount, msg.sender));
+        require(isOperator(from, msg.sender), ERC7984UnauthorizedSpender(from, msg.sender));
         transferred = _transfer(from, to, amount);
-        FHE.allowTransient(transferred, _msgSender());
+        FHE.allowTransient(transferred, msg.sender);
     }
 
     /// @inheritdoc IERC7984
@@ -195,8 +194,8 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
         bytes calldata inputProof,
         bytes calldata data
     ) public virtual returns (euint64 transferred) {
-        transferred = _transferAndCall(_msgSender(), to, FHE.fromExternal(encryptedAmount, inputProof), data);
-        FHE.allowTransient(transferred, _msgSender());
+        transferred = _transferAndCall(msg.sender, to, FHE.fromExternal(encryptedAmount, inputProof), data);
+        FHE.allowTransient(transferred, msg.sender);
     }
 
     /// @inheritdoc IERC7984
@@ -205,9 +204,9 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
         euint64 amount,
         bytes calldata data
     ) public virtual returns (euint64 transferred) {
-        require(FHE.isAllowed(amount, _msgSender()), ERC7984UnauthorizedUseOfEncryptedAmount(amount, _msgSender()));
-        transferred = _transferAndCall(_msgSender(), to, amount, data);
-        FHE.allowTransient(transferred, _msgSender());
+        require(FHE.isAllowed(amount, msg.sender), ERC7984UnauthorizedUseOfEncryptedAmount(amount, msg.sender));
+        transferred = _transferAndCall(msg.sender, to, amount, data);
+        FHE.allowTransient(transferred, msg.sender);
     }
 
     /// @inheritdoc IERC7984
@@ -218,9 +217,9 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
         bytes calldata inputProof,
         bytes calldata data
     ) public virtual returns (euint64 transferred) {
-        require(isOperator(from, _msgSender()), ERC7984UnauthorizedSpender(from, _msgSender()));
+        require(isOperator(from, msg.sender), ERC7984UnauthorizedSpender(from, msg.sender));
         transferred = _transferAndCall(from, to, FHE.fromExternal(encryptedAmount, inputProof), data);
-        FHE.allowTransient(transferred, _msgSender());
+        FHE.allowTransient(transferred, msg.sender);
     }
 
     /// @inheritdoc IERC7984
@@ -230,10 +229,10 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
         euint64 amount,
         bytes calldata data
     ) public virtual returns (euint64 transferred) {
-        require(FHE.isAllowed(amount, _msgSender()), ERC7984UnauthorizedUseOfEncryptedAmount(amount, _msgSender()));
-        require(isOperator(from, _msgSender()), ERC7984UnauthorizedSpender(from, _msgSender()));
+        require(FHE.isAllowed(amount, msg.sender), ERC7984UnauthorizedUseOfEncryptedAmount(amount, msg.sender));
+        require(isOperator(from, msg.sender), ERC7984UnauthorizedSpender(from, msg.sender));
         transferred = _transferAndCall(from, to, amount, data);
-        FHE.allowTransient(transferred, _msgSender());
+        FHE.allowTransient(transferred, msg.sender);
     }
 
     /**
@@ -245,12 +244,12 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
      */
     function requestDiscloseEncryptedAmount(euint64 encryptedAmount) public virtual {
         require(
-            FHE.isAllowed(encryptedAmount, _msgSender()),
-            ERC7984UnauthorizedUseOfEncryptedAmount(encryptedAmount, _msgSender())
+            FHE.isAllowed(encryptedAmount, msg.sender),
+            ERC7984UnauthorizedUseOfEncryptedAmount(encryptedAmount, msg.sender)
         );
 
         FHE.makePubliclyDecryptable(encryptedAmount);
-        emit AmountDiscloseRequested(encryptedAmount, _msgSender());
+        emit AmountDiscloseRequested(encryptedAmount, msg.sender);
     }
 
     /**
@@ -304,7 +303,7 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
         euint64 sent = _transfer(from, to, amount);
 
         // Perform callback
-        ebool success = ERC7984Utils.checkOnTransferReceived(_msgSender(), from, to, sent, data);
+        ebool success = ERC7984Utils.checkOnTransferReceived(msg.sender, from, to, sent, data);
 
         // Try to refund if callback fails
         euint64 refund = _update(to, from, FHE.select(success, FHE.asEuint64(0), sent));
@@ -349,8 +348,10 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
         emit ConfidentialTransfer(from, to, transferred);
     }
 
-    /// @inheritdoc ERC165
-    function supportsInterface(bytes4 interfaceId) public view virtual override(IERC165, ERC165) returns (bool) {
+    /// @inheritdoc ERC165Upgradeable
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view virtual override(IERC165, ERC165Upgradeable) returns (bool) {
         return interfaceId == type(IERC7984).interfaceId || super.supportsInterface(interfaceId);
     }
 }
