@@ -43,9 +43,11 @@ pub type ChainHash = TransactionHash;
 pub struct Chain {
     pub hash: ChainHash,
     pub dependencies: Vec<ChainHash>,
+    pub dependents: Vec<ChainHash>,
     pub allowed_handle: Vec<Handle>,
     pub size: usize,
     pub before_size: usize,
+    pub new_chain: bool,
 }
 pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
 pub type OrderedChains = Vec<Chain>;
@@ -764,40 +766,43 @@ impl Database {
         tx: &mut Transaction<'_>,
         chains: OrderedChains,
         block_timestamp: PrimitiveDateTime,
+        block_summary: &BlockSummary,
     ) -> Result<(), SqlxError> {
-        if chains.is_empty() {
-            return Ok(());
-        }
-        let chains_hash =
-            chains.iter().map(|c| c.hash.to_vec()).collect::<Vec<_>>();
-        let dependency_counts =
-            chains.iter().map(|c| c.dependencies.len() as i64).collect::<Vec<_>>();
-        let timestamps: Vec<PrimitiveDateTime> = chains
-            .iter()
-            .map(|c| {
-                block_timestamp.saturating_add(TimeDuration::microseconds(
-                    c.before_size as i64,
-                ))
-            })
-            .collect();
-        let query = sqlx::query!(
-            r#"
-            INSERT INTO dependence_chain(
-                dependence_chain_id,
-                status,
+        for chain in chains {
+            let last_updated_at = block_timestamp.saturating_add(
+                TimeDuration::microseconds(chain.before_size as i64),
+            );
+            let dependents = chain
+                .dependents
+                .iter()
+                .map(|h| h.to_vec())
+                .collect::<Vec<_>>();
+            sqlx::query!(
+                r#"
+                INSERT INTO dependence_chain(
+                    dependence_chain_id,
+                    status,
+                    last_updated_at,
+                    dependency_count,
+                    dependents,
+                    block_hash,
+                    block_height
+                ) VALUES (
+                  $1, 'updated', $2::timestamp, $3, $4, $5, $6
+                )
+                ON CONFLICT (dependence_chain_id) DO UPDATE
+                SET status = 'updated'
+                "#,
+                chain.hash.to_vec(),
                 last_updated_at,
-                dependency_count
+                chain.dependencies.len() as i64,
+                &dependents,
+                block_summary.hash.to_vec(),
+                block_summary.number as i64,
             )
-            SELECT dcid, 'updated' AS status, ts as last_updated_at, dependency_count
-            FROM unnest($1::bytea[], $2::timestamp[], $3::bigint[]) AS t(dcid, ts, dependency_count)
-            ON CONFLICT (dependence_chain_id) DO UPDATE
-            SET status = 'updated'
-            "#,
-            &chains_hash,
-            &timestamps,
-            &dependency_counts
-        );
-        query.execute(tx.deref_mut()).await?;
+            .execute(tx.deref_mut())
+            .await?;
+        }
         Ok(())
     }
 }

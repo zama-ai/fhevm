@@ -274,7 +274,9 @@ fn grouping_to_chains(ordered_txs: &mut [Transaction]) -> OrderedChains {
                         size: 0,
                         before_size: 0,
                         dependencies: vec![],
+                        dependents: vec![],
                         allowed_handle: tx.allowed_handle.clone(), // needed to publish in cache
+                        new_chain: false,
                     };
                     ordered_chains_hash.push(new_chain.hash);
                     e.insert(new_chain);
@@ -296,13 +298,32 @@ fn grouping_to_chains(ordered_txs: &mut [Transaction]) -> OrderedChains {
                 size: tx.size,
                 before_size,
                 dependencies,
+                dependents: vec![],
                 allowed_handle: tx.allowed_handle.clone(),
+                new_chain: true,
             };
             ordered_chains_hash.push(new_chain.hash);
             chains.insert(new_chain.hash, new_chain);
         }
         if !tx.output_tx.is_empty() {
             used_tx.insert(tx.tx_hash, tx);
+        }
+    }
+    // compute dependents field
+    for chain_hash in ordered_chains_hash.iter() {
+        let Some(chain) = chains.get(chain_hash) else {
+            continue;
+        };
+        if !chain.new_chain {
+            continue;
+        }
+        for dep in chain.dependencies.clone() {
+            if let Some(dep_chain) = chains.get_mut(&dep) {
+                if !dep_chain.new_chain {
+                    continue;
+                }
+                dep_chain.dependents.push(*chain_hash);
+            }
         }
     }
     ordered_chains_hash
@@ -632,15 +653,20 @@ mod tests {
         assert_eq!(chains[0].dependencies.len(), 0);
         assert_eq!(chains[1].dependencies.len(), 0);
         assert_eq!(chains[2].dependencies.len(), 2);
+        assert_eq!(chains[0].dependents, vec![tx3]);
+        assert_eq!(chains[1].dependents, vec![tx3]);
+        assert!(chains[2].dependents.is_empty());
     }
 
     fn past_chain(last_byte: u8) -> Chain {
         Chain {
             hash: TransactionHash::with_last_byte(last_byte),
             dependencies: vec![],
+            dependents: vec![],
             size: 1,
             before_size: 0,
             allowed_handle: vec![],
+            new_chain: false,
         }
     }
 
