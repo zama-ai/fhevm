@@ -96,7 +96,7 @@ const config: HardhatUserConfig = {
   },
   gasReporter: {
     currency: 'USD',
-    enabled: !!process.env.REPORT_GAS,
+    enabled: process.env.REPORT_GAS === 'true',
     showMethodSig: true,
     includeBytecodeInJSON: true,
   },
