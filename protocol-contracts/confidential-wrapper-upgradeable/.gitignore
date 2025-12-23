@@ -41,3 +41,5 @@ typechain-types/
 # Foundry
 broadcast/
 
+# Fhevm
+fhevmTemp/

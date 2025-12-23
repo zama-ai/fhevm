@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+// Ported from https://github.com/OpenZeppelin/openzeppelin-confidential-contracts/blob/f0914b66f9f3766915403587b1ef1432d53054d3/contracts/mocks/token/ERC20Mock.sol
+// (0.3.0 version)
 pragma solidity ^0.8.20;
 
 import {ERC20, ERC1363} from "@openzeppelin/contracts/token/ERC20/extensions/ERC1363.sol";

@@ -1,3 +1,6 @@
+// Ported from https://github.com/OpenZeppelin/openzeppelin-confidential-contracts/blob/f0914b66f9f3766915403587b1ef1432d53054d3/test/token/ERC7984/extensions/ERC7984Wrapper.test.ts
+// (0.3.0 version)
+
 import { ConfidentialWrapper } from '../types';
 import { FhevmType } from '@fhevm/hardhat-plugin';
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';

@@ -1,43 +1,25 @@
-// ported from: https://github.com/OpenZeppelin/openzeppelin-confidential-contracts/blob/e70062127e25cf17a8ecac2fda31320ae71c57d0/test/token/ERC7984/ERC7984.test.ts
+// Ported from https://github.com/OpenZeppelin/openzeppelin-confidential-contracts/blob/f0914b66f9f3766915403587b1ef1432d53054d3/test/token/ERC7984/ERC7984.test.ts
+// (0.3.0 version)
 
-import { expect } from 'chai';
+import { IERC165__factory, IERC7984__factory } from '../types';
+import { allowHandle } from './utils/accounts';
+import { getFunctions, getInterfaceId } from './utils/interface';
 import { FhevmType } from '@fhevm/hardhat-plugin';
-import { ethers, fhevm, upgrades } from 'hardhat';
-import hre from 'hardhat';
-import fs from 'fs';
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
-import { Addressable, Log, Signer } from 'ethers';
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import { expect } from 'chai';
+import hre, { ethers, fhevm } from 'hardhat';
 import { getRequiredEnvVar } from '../tasks/utils/loadVariables';
-import type { ERC7984Upgradeable } from '../types';
-import type { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
-
-export async function getAclAddress() {
-  return (await fhevm.getRelayerMetadata()).ACLAddress;
-}
-
-async function allowHandle(hre: HardhatRuntimeEnvironment, from: Signer, to: Addressable, handle: string) {
-  const acl_abi = JSON.parse(
-    fs.readFileSync('node_modules/@fhevm/host-contracts/artifacts/contracts/ACL.sol/ACL.json', 'utf8'),
-  ).abi;
-  const aclContract = (await hre.ethers.getContractAt(acl_abi, await getAclAddress())) as any;
-
-  await aclContract.connect(from).allow(handle, to);
-}
 
 const name = getRequiredEnvVar('CONFIDENTIAL_WRAPPER_NAME_0');
 const symbol = getRequiredEnvVar('CONFIDENTIAL_WRAPPER_SYMBOL_0');
-const contractURI = getRequiredEnvVar('CONFIDENTIAL_WRAPPER_CONTRACT_URI_0');
+const uri = getRequiredEnvVar('CONFIDENTIAL_WRAPPER_CONTRACT_URI_0');
 
 describe('ERC7984', function () {
   beforeEach(async function () {
     const accounts = await ethers.getSigners();
-
     const [holder, recipient, operator] = accounts;
 
-    const ERC7984UpgradeableMock = await ethers.getContractFactory('ERC7984UpgradeableMock');
-    const erc7984MockUpgradeable = await upgrades.deployProxy(ERC7984UpgradeableMock, [name, symbol, contractURI]);
-    await erc7984MockUpgradeable.waitForDeployment();
-    console.log(`✅ ERC7984MockUpgradeable deployed to:`, erc7984MockUpgradeable.target);
+    const erc7984MockUpgradeable = await ethers.deployContract('$ERC7984UpgradeableMock', [name, symbol, uri]);
 
     this.accounts = accounts.slice(3);
     this.holder = holder;
@@ -50,7 +32,9 @@ describe('ERC7984', function () {
       .add64(1000)
       .encrypt();
 
-    await this.token.connect(this.holder).mint(this.holder, encryptedInput.handles[0], encryptedInput.inputProof);
+    await this.token
+      .connect(this.holder)
+      ['$_mint(address,bytes32,bytes)'](this.holder, encryptedInput.handles[0], encryptedInput.inputProof);
   });
 
   describe('deployment configuration', function () {
@@ -63,21 +47,36 @@ describe('ERC7984', function () {
     });
 
     it('should have the correct contractURI', async function () {
-      expect(await this.token.contractURI()).to.equal(contractURI);
+      expect(await this.token.contractURI()).to.equal(uri);
     });
 
     it('cannot call init twice', async function () {
-      await expect(this.token.initialize(name, symbol, contractURI)).to.be.revertedWithCustomError(
+      await expect(this.token.initialize(name, symbol, uri)).to.be.revertedWithCustomError(
         this.token,
         'InvalidInitialization',
       );
     });
 
     it('cannot call init unchained twice', async function () {
-      await expect(this.token.initialize(name, symbol, contractURI)).to.be.revertedWithCustomError(
+      await expect(this.token.initialize(name, symbol, uri)).to.be.revertedWithCustomError(
         this.token,
         'InvalidInitialization',
       );
+    });
+  });
+
+  describe('ERC165', async function () {
+    it('should support interface', async function () {
+      const erc7984Functions = [IERC7984__factory, IERC165__factory].flatMap(interfaceFactory =>
+        getFunctions(interfaceFactory),
+      );
+      const erc165Functions = getFunctions(IERC165__factory);
+      for (let functions of [erc7984Functions, erc165Functions]) {
+        expect(await this.token.supportsInterface(getInterfaceId(functions))).is.true;
+      }
+    });
+    it('should not support interface', async function () {
+      expect(await this.token.supportsInterface('0xbadbadba')).is.false;
     });
   });
 
@@ -106,7 +105,9 @@ describe('ERC7984', function () {
             .add64(1000)
             .encrypt();
 
-          await this.token.connect(this.holder).mint(this.holder, encryptedInput.handles[0], encryptedInput.inputProof);
+          await this.token
+            .connect(this.holder)
+            ['$_mint(address,bytes32,bytes)'](this.holder, encryptedInput.handles[0], encryptedInput.inputProof);
         }
 
         const balanceOfHandleHolder = await this.token.confidentialBalanceOf(this.holder);
@@ -115,10 +116,10 @@ describe('ERC7984', function () {
         ).to.eventually.equal(existingUser ? 2000 : 1000);
 
         // Check total supply
-        // const totalSupplyHandle = await this.token.confidentialTotalSupply();
-        // await expect(
-        //   fhevm.userDecryptEuint(FhevmType.euint64, totalSupplyHandle, this.token.target, this.holder),
-        // ).to.eventually.equal(existingUser ? 2000 : 1000);
+        const totalSupplyHandle = await this.token.confidentialTotalSupply();
+        await expect(
+          fhevm.userDecryptEuint(FhevmType.euint64, totalSupplyHandle, this.token.target, this.holder),
+        ).to.eventually.equal(existingUser ? 2000 : 1000);
       });
     }
 
@@ -129,7 +130,9 @@ describe('ERC7984', function () {
         .encrypt();
 
       await expect(
-        this.token.connect(this.holder).mint(ethers.ZeroAddress, encryptedInput.handles[0], encryptedInput.inputProof),
+        this.token
+          .connect(this.holder)
+          ['$_mint(address,bytes32,bytes)'](ethers.ZeroAddress, encryptedInput.handles[0], encryptedInput.inputProof),
       )
         .to.be.revertedWithCustomError(this.token, 'ERC7984InvalidReceiver')
         .withArgs(ethers.ZeroAddress);
@@ -146,7 +149,9 @@ describe('ERC7984', function () {
           .add64(burnAmount)
           .encrypt();
 
-        await this.token.connect(this.holder).burn(this.holder, encryptedInput.handles[0], encryptedInput.inputProof);
+        await this.token
+          .connect(this.holder)
+          ['$_burn(address,bytes32,bytes)'](this.holder, encryptedInput.handles[0], encryptedInput.inputProof);
 
         const balanceOfHandleHolder = await this.token.confidentialBalanceOf(this.holder);
         await expect(
@@ -154,10 +159,10 @@ describe('ERC7984', function () {
         ).to.eventually.equal(sufficientBalance ? 600 : 1000);
 
         // Check total supply
-        // const totalSupplyHandle = await this.token.confidentialTotalSupply();
-        // await expect(
-        //   fhevm.userDecryptEuint(FhevmType.euint64, totalSupplyHandle, this.token.target, this.holder),
-        // ).to.eventually.equal(sufficientBalance ? 600 : 1000);
+        const totalSupplyHandle = await this.token.confidentialTotalSupply();
+        await expect(
+          fhevm.userDecryptEuint(FhevmType.euint64, totalSupplyHandle, this.token.target, this.holder),
+        ).to.eventually.equal(sufficientBalance ? 600 : 1000);
       });
     }
 
@@ -168,7 +173,9 @@ describe('ERC7984', function () {
         .encrypt();
 
       await expect(
-        this.token.connect(this.holder).burn(ethers.ZeroAddress, encryptedInput.handles[0], encryptedInput.inputProof),
+        this.token
+          .connect(this.holder)
+          ['$_burn(address,bytes32,bytes)'](ethers.ZeroAddress, encryptedInput.handles[0], encryptedInput.inputProof),
       )
         .to.be.revertedWithCustomError(this.token, 'ERC7984InvalidSender')
         .withArgs(ethers.ZeroAddress);
@@ -188,8 +195,8 @@ describe('ERC7984', function () {
         if (!asSender) {
           for (const withCallback of [false, true]) {
             describe(withCallback ? 'with callback' : 'without callback', function () {
-              let encryptedInput: { handles: Uint8Array[]; inputProof: Uint8Array };
-              let params: (string | Uint8Array)[];
+              let encryptedInput: any;
+              let params: any;
 
               beforeEach(async function () {
                 encryptedInput = await fhevm
@@ -209,7 +216,7 @@ describe('ERC7984', function () {
               });
 
               it('without operator approval should fail', async function () {
-                await this.token.connect(this.holder).setOperator(this.operator, 0);
+                await this.token.$_setOperator(this.holder, this.operator, 0);
 
                 await expect(
                   this.token
@@ -297,7 +304,7 @@ describe('ERC7984', function () {
                   'confidentialTransferFrom(address,address,bytes32,bytes)'
                 ](this.holder.address, this.recipient.address, encryptedInput.handles[0], encryptedInput.inputProof);
             }
-            const transferEvent = (await tx.wait())!.logs.filter((log: Log) => log.address === this.token.target)[0];
+            const transferEvent = (await tx.wait()).logs.filter((log: any) => log.address === this.token.target)[0];
             expect(transferEvent.args[0]).to.equal(this.holder.address);
             expect(transferEvent.args[1]).to.equal(this.recipient.address);
 
@@ -335,29 +342,23 @@ describe('ERC7984', function () {
         describe(`using ${usingTransferFrom ? 'confidentialTransferFrom' : 'confidentialTransfer'} ${
           withCallback ? 'with callback' : ''
         }`, function () {
-          async function callTransfer(
-            contract: ERC7984Upgradeable,
-            from: HardhatEthersSigner,
-            to: HardhatEthersSigner,
-            amount: bigint,
-            sender: HardhatEthersSigner = from,
-          ) {
-            const functionParams: any = [to, amount];
+          async function callTransfer(contract: any, from: any, to: any, amount: any, sender: any = from) {
+            let functionParams = [to, amount];
 
             if (withCallback) {
               functionParams.push('0x');
               if (usingTransferFrom) {
                 functionParams.unshift(from);
-                await (contract as any).connect(sender).confidentialTransferFromAndCall(...functionParams);
+                await contract.connect(sender).confidentialTransferFromAndCall(...functionParams);
               } else {
-                await (contract as any).connect(sender).confidentialTransferAndCall(...functionParams);
+                await contract.connect(sender).confidentialTransferAndCall(...functionParams);
               }
             } else {
               if (usingTransferFrom) {
                 functionParams.unshift(from);
-                await (contract as any).connect(sender).confidentialTransferFrom(...functionParams);
+                await contract.connect(sender).confidentialTransferFrom(...functionParams);
               } else {
-                await (contract as any).connect(sender).confidentialTransfer(...functionParams);
+                await contract.connect(sender).confidentialTransfer(...functionParams);
               }
             }
           }
@@ -385,7 +386,7 @@ describe('ERC7984', function () {
 
             await this.token
               .connect(this.holder)
-              ['mint(address,bytes32,bytes)'](this.recipient, encryptedInput.handles[0], encryptedInput.inputProof);
+              ['$_mint(address,bytes32,bytes)'](this.recipient, encryptedInput.handles[0], encryptedInput.inputProof);
 
             const recipientBalanceHandle = await this.token.confidentialBalanceOf(this.recipient);
             await expect(callTransfer(this.token, this.holder, this.recipient, recipientBalanceHandle))
@@ -429,7 +430,7 @@ describe('ERC7984', function () {
         this.token
           .connect(this.holder)
           [
-            'transfer(address,address,bytes32,bytes)'
+            '$_transfer(address,address,bytes32,bytes)'
           ](ethers.ZeroAddress, this.recipient.address, encryptedInput.handles[0], encryptedInput.inputProof),
       )
         .to.be.revertedWithCustomError(this.token, 'ERC7984InvalidSender')
@@ -465,8 +466,8 @@ describe('ERC7984', function () {
         ).to.eventually.equal(callbackSuccess ? 0 : 1000);
 
         // Verify event contents
-        await expect(tx).to.emit(this.recipientContract, 'ConfidentialTransferCallback').withArgs(callbackSuccess);
-        const transferEvents = (await tx.wait())!.logs.filter((log: Log) => log.address === this.token.target);
+        expect(tx).to.emit(this.recipientContract, 'ConfidentialTransferCallback').withArgs(callbackSuccess);
+        const transferEvents = (await tx.wait()).logs.filter((log: any) => log.address === this.token.target);
 
         const outboundTransferEvent = transferEvents[0];
         const inboundTransferEvent = transferEvents[1];
@@ -526,7 +527,7 @@ describe('ERC7984', function () {
   describe('disclose', function () {
     let expectedAmount: any;
     let expectedHandle: any;
-    let requester: any;
+    let requester: HardhatEthersSigner | undefined;
 
     beforeEach(async function () {
       expectedAmount = undefined;
@@ -594,29 +595,21 @@ describe('ERC7984', function () {
 
       const publicDecryptResults = await fhevm.publicDecrypt([expectedHandle]);
 
-      const tx = await this.token
-        .connect(this.holder)
-        .discloseEncryptedAmount(
-          expectedHandle,
-          publicDecryptResults.abiEncodedClearValues,
-          publicDecryptResults.decryptionProof,
-        );
-      await tx.wait();
-
-      // Check that event was correctly emitted
-      const eventFilter = this.token.filters.AmountDisclosed();
-      const discloseEvent = (await this.token.queryFilter(eventFilter))[0];
-      expect(discloseEvent.args[0]).to.equal(expectedHandle);
-      expect(discloseEvent.args[1]).to.equal(expectedAmount);
-    });
-  });
-
-  describe('decimals', function () {
-    it('returns token decimals', async function () {
-      expect(await this.token.decimals()).to.equal(6);
+      await expect(
+        this.token
+          .connect(this.holder)
+          .discloseEncryptedAmount(
+            expectedHandle,
+            publicDecryptResults.abiEncodedClearValues,
+            publicDecryptResults.decryptionProof,
+          ),
+      )
+        .to.emit(this.token, 'AmountDisclosed')
+        .withArgs(expectedHandle, expectedAmount);
     });
   });
 });
+/* eslint-enable no-unexpected-multiline */
 
 function generateReencryptionErrorMessage(handle: string, account: string): string {
   return `User ${account} is not authorized to user decrypt handle ${handle}`;
