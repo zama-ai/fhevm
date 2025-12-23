@@ -10,6 +10,7 @@ import { ethers, fhevm, upgrades } from 'hardhat';
 import { getRequiredEnvVar } from '../tasks/utils/loadVariables';
 import { Addressable } from 'ethers';
 import { CONTRACT_NAME } from '../tasks/deploy';
+import { createRandomAddress } from './utils/inputs';
 
 // Get values of the first confidential wrapper from the environment variables
 const name = getRequiredEnvVar('CONFIDENTIAL_WRAPPER_NAME_0');
@@ -37,7 +38,7 @@ describe('ERC7984Wrapper', function () {
 
   beforeEach(async function () {
     const accounts = await ethers.getSigners();
-    const [holder, recipient, operator] = accounts;
+    const [holder, recipient, operator, anyone] = accounts;
 
     const token = await ethers.deployContract(erc20contractName, [erc20mockName, erc20mockSymbol, erc20mockDecimals]);
     const confidentialWrapperProxy = await deployConfidentialWrapper(token.target);
@@ -48,9 +49,19 @@ describe('ERC7984Wrapper', function () {
     this.token = token;
     this.operator = operator;
     this.wrapper = confidentialWrapperProxy;
+    this.anyone = anyone;
 
     await this.token.$_mint(this.holder.address, ethers.parseUnits('1000', 18));
     await this.token.connect(this.holder).approve(this.wrapper, ethers.MaxUint256);
+  });
+
+  describe('Access Control', function () {
+    it('should not upgrade if not authorized', async function () {
+      const fakeContractAddress = createRandomAddress();
+      await expect(
+        this.wrapper.connect(this.anyone).upgradeToAndCall(fakeContractAddress, '0x'),
+      ).to.be.revertedWithCustomError(this.wrapper, 'OwnableUnauthorizedAccount');
+    });
   });
 
   describe('Wrap', async function () {
