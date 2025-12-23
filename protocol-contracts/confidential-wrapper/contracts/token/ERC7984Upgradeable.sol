@@ -61,6 +61,9 @@ abstract contract ERC7984Upgradeable is Initializable, ContextUpgradeable, IERC7
      */
     error ERC7984UnauthorizedUseOfEncryptedAmount(euint64 amount, address user);
 
+    /// @dev The given caller `caller` is not authorized for the current operation.
+    error ERC7984UnauthorizedCaller(address caller);
+
     /// @dev The given gateway request ID `requestId` is invalid.
     error ERC7984InvalidGatewayRequest(uint256 requestId);
 
