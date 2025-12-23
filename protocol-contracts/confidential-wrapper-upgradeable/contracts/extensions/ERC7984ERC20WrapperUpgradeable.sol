@@ -11,17 +11,19 @@ import {IERC20Metadata} from "@openzeppelin/contracts/interfaces/IERC20Metadata.
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ERC7984Upgradeable} from "../token/ERC7984Upgradeable.sol";
+import {IERC7984} from "@openzeppelin/confidential-contracts/interfaces/IERC7984.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC7984ERC20Wrapper} from "../interfaces/IERC7984ERC20Wrapper.sol";
 
 /**
  * @title ERC7984ERC20WrapperUpgradeable
  * @dev An upgradeable wrapper contract built on top of {ERC7984Upgradeable} that allows wrapping an `ERC20` token
- * into an `ERC7984` token. The wrapper contract implements the `IERC1363Receiver` interface
- * which allows users to transfer `ERC1363` tokens directly to the wrapper with a callback to wrap the tokens.
+ * into an `ERC7984` token.
  *
  * WARNING: Minting assumes the full amount of the underlying token transfer has been received, hence some non-standard
  * tokens such as fee-on-transfer or other deflationary-type tokens are not supported by this wrapper.
  */
-abstract contract ERC7984ERC20WrapperUpgradeable is ERC7984Upgradeable, IERC1363Receiver {
+abstract contract ERC7984ERC20WrapperUpgradeable is ERC7984Upgradeable, IERC7984ERC20Wrapper {
     /// @custom:storage-location erc7201:fhevm_protocol.storage.ERC7984ERC20WrapperUpgradeable
     struct ERC7984ERC20WrapperStorage {
         IERC20 _underlying;
@@ -85,31 +87,27 @@ abstract contract ERC7984ERC20WrapperUpgradeable is ERC7984Upgradeable, IERC1363
 
         // transfer excess back to the sender
         uint256 excess = amount % rate();
-        if (excess > 0) SafeERC20.safeTransfer(underlying(), from, excess);
+        if (excess > 0) SafeERC20.safeTransfer(IERC20(underlying()), from, excess);
 
         // return magic value
         return IERC1363Receiver.onTransferReceived.selector;
     }
 
     /**
-     * @dev Wraps amount `amount` of the underlying token into a confidential token and sends it to
-     * `to`. Tokens are exchanged at a fixed rate specified by {rate} such that `amount / rate()` confidential
-     * tokens are sent. Amount transferred in is rounded down to the nearest multiple of {rate}.
+     * @dev See {IERC7984ERC20Wrapper-wrap}. Tokens are exchanged at a fixed rate specified by {rate} such that
+     * `amount / rate()` confidential tokens are sent. The amount transferred in is rounded down to the nearest
+     * multiple of {rate}.
      */
-    function wrap(address to, uint256 amount) public virtual {
+    function wrap(address to, uint256 amount) public virtual override {
         // take ownership of the tokens
-        SafeERC20.safeTransferFrom(underlying(), msg.sender, address(this), amount - (amount % rate()));
+        SafeERC20.safeTransferFrom(IERC20(underlying()), msg.sender, address(this), amount - (amount % rate()));
 
         // mint confidential token
         _mint(to, FHE.asEuint64(SafeCast.toUint64(amount / rate())));
     }
 
     /**
-     * @dev Unwraps tokens from `from` and sends the underlying tokens to `to`. The caller must be `from`
-     * or be an approved operator for `from`. `amount * rate()` underlying tokens are sent to `to`.
-     *
-     * NOTE: The unwrap request created by this function must be finalized by calling {finalizeUnwrap}.
-     * NOTE: The caller *must* already be approved by ACL for the given `amount`.
+     * @dev Unwrap without passing an input proof. See {unwrap-address-address-bytes32-bytes} for more details.
      */
     function unwrap(address from, address to, euint64 amount) public virtual {
         require(FHE.isAllowed(amount, msg.sender), ERC7984UnauthorizedUseOfEncryptedAmount(amount, msg.sender));
@@ -117,24 +115,25 @@ abstract contract ERC7984ERC20WrapperUpgradeable is ERC7984Upgradeable, IERC1363
     }
 
     /**
-     * @dev Variant of {unwrap} that passes an `inputProof` which approves the caller for the `encryptedAmount`
-     * in the ACL.
+     * @dev See {IERC7984ERC20Wrapper-unwrap}. `amount * rate()` underlying tokens are sent to `to`.
+     *
+     * NOTE: The unwrap request created by this function must be finalized by calling {finalizeUnwrap}.
      */
     function unwrap(
         address from,
         address to,
         externalEuint64 encryptedAmount,
         bytes calldata inputProof
-    ) public virtual {
+    ) public virtual override {
         _unwrap(from, to, FHE.fromExternal(encryptedAmount, inputProof));
     }
 
-    /// @dev Fills an unwrap request for a given cipher-text `burntAmount` with the `cleartextAmount` and `decryptionProof`.
+    /// @inheritdoc IERC7984ERC20Wrapper
     function finalizeUnwrap(
         euint64 burntAmount,
         uint64 burntAmountCleartext,
         bytes calldata decryptionProof
-    ) public virtual {
+    ) public virtual override {
         ERC7984ERC20WrapperStorage storage $ = _getERC7984ERC20WrapperStorage();
         address to = $._unwrapRequests[burntAmount];
         require(to != address(0), InvalidUnwrapRequest(burntAmount));
@@ -147,13 +146,13 @@ abstract contract ERC7984ERC20WrapperUpgradeable is ERC7984Upgradeable, IERC1363
 
         FHE.checkSignatures(handles, cleartexts, decryptionProof);
 
-        SafeERC20.safeTransfer(underlying(), to, burntAmountCleartext * rate());
+        SafeERC20.safeTransfer(IERC20(underlying()), to, burntAmountCleartext * rate());
 
         emit UnwrapFinalized(to, burntAmount, burntAmountCleartext);
     }
 
     /// @inheritdoc ERC7984Upgradeable
-    function decimals() public view virtual override returns (uint8) {
+    function decimals() public view virtual override(IERC7984, ERC7984Upgradeable) returns (uint8) {
         ERC7984ERC20WrapperStorage storage $ = _getERC7984ERC20WrapperStorage();
         return $._decimals;
     }
@@ -167,10 +166,17 @@ abstract contract ERC7984ERC20WrapperUpgradeable is ERC7984Upgradeable, IERC1363
         return $._rate;
     }
 
-    /// @dev Returns the address of the underlying ERC-20 token that is being wrapped.
-    function underlying() public view returns (IERC20) {
+    /// @inheritdoc IERC7984ERC20Wrapper
+    function underlying() public view virtual override returns (address) {
         ERC7984ERC20WrapperStorage storage $ = _getERC7984ERC20WrapperStorage();
-        return $._underlying;
+        return address($._underlying);
+    }
+
+    /// @inheritdoc IERC165
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view virtual override(IERC165, ERC7984Upgradeable) returns (bool) {
+        return interfaceId == type(IERC7984ERC20Wrapper).interfaceId || super.supportsInterface(interfaceId);
     }
 
     /**
@@ -182,7 +188,7 @@ abstract contract ERC7984ERC20WrapperUpgradeable is ERC7984Upgradeable, IERC1363
      * on {finalizeUnwrap}.
      */
     function totalSupply() public view virtual returns (uint256) {
-        return underlying().balanceOf(address(this)) / rate();
+        return IERC20(underlying()).balanceOf(address(this)) / rate();
     }
 
     /// @dev Returns the maximum total supply of wrapped tokens supported by the encrypted datatype.
