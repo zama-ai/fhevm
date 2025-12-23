@@ -145,7 +145,7 @@ async fn tfhe_worker_cycle(
         s.end();
 
         // Query for transactions to execute, and if relevant the associated keys
-        let (mut transactions, mut unneeded_handles) = query_for_work(
+        let (mut transactions, mut unneeded_handles, has_more_work) = query_for_work(
             args,
             &health_check,
             &mut trx,
@@ -154,7 +154,11 @@ async fn tfhe_worker_cycle(
             &loop_ctx,
         )
         .await?;
-        if transactions.is_empty() {
+        if has_more_work {
+            // We've fetched work, so we'll poll again without waiting
+            // for a notification after this cycle.
+            immedially_poll_more_work = true;
+        } else {
             dcid_mngr.release_current_lock(true).await?;
             dcid_mngr.do_cleanup().await?;
 
@@ -172,10 +176,6 @@ async fn tfhe_worker_cycle(
             s.end();
 
             continue;
-        } else {
-            // We've fetched work, so we'll poll again without waiting
-            // for a notification after this cycle.
-            immedially_poll_more_work = true;
         }
         query_tenants_and_keys(
             &transactions,
@@ -359,7 +359,7 @@ async fn query_for_work<'a>(
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<
-    (Vec<(i32, Vec<ComponentNode>)>, Vec<(Handle, Handle)>),
+    (Vec<(i32, Vec<ComponentNode>)>, Vec<(Handle, Handle)>, bool),
     Box<dyn std::error::Error + Send + Sync>,
 > {
     let mut s = tracer.start_with_context("query_dependence_chain", loop_ctx);
@@ -377,7 +377,7 @@ async fn query_for_work<'a>(
         health_check.update_db_access();
         health_check.update_activity();
         info!(target: "tfhe_worker", "No dcid found to process");
-        return Ok((vec![], vec![]));
+        return Ok((vec![], vec![], false));
     }
 
     s.set_attribute(KeyValue::new(
@@ -452,7 +452,7 @@ FOR UPDATE SKIP LOCKED            ",
             info!(target: "tfhe_worker", dcid = %hex::encode(dependence_chain_id), locking = ?locking_reason, "No work items found to process");
         }
         health_check.update_activity();
-        return Ok((vec![], vec![]));
+        return Ok((vec![], vec![], false));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
@@ -536,7 +536,7 @@ FOR UPDATE SKIP LOCKED            ",
         transactions.push((*tenant_id, tenant_transactions));
     }
     s_prep.end();
-    Ok((transactions, unneeded_handles))
+    Ok((transactions, unneeded_handles, true))
 }
 
 async fn build_transaction_graph_and_execute<'a>(
