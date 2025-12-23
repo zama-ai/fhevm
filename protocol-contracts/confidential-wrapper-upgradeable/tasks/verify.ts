@@ -4,7 +4,7 @@ import { task, types } from 'hardhat/config';
 
 // Verify a confidential wrapper contract
 // Example usage:
-// npx hardhat task:verifyConfidentialWrapper --proxyAddress 0x1234567890123456789012345678901234567890 --network testnet
+// npx hardhat task:verifyConfidentialWrapper --proxy-address 0x1234567890123456789012345678901234567890 --network testnet
 task('task:verifyConfidentialWrapper')
   .addParam('proxyAddress', 'The address of the confidential wrapper proxy contract to verify', '', types.string)
   .setAction(async function ({ proxyAddress }, hre) {
@@ -42,10 +42,14 @@ task('task:verifyAllConfidentialWrappers').setAction(async function (_, hre) {
     // Get the name from environment variable
     const name = getRequiredEnvVar(`CONFIDENTIAL_WRAPPER_NAME_${i}`);
 
-    // Get the proxy address from deployments
-    const proxyAddress = await get(getConfidentialWrapperProxyName(name));
+    try {
+      // Get the proxy address from deployments
+      const proxyAddress = await get(getConfidentialWrapperProxyName(name));
 
-    // Verify the confidential wrapper contract
-    await run('task:verifyConfidentialWrapper', { proxyAddress });
+      // Verify the confidential wrapper contract
+      await run('task:verifyConfidentialWrapper', { proxyAddress: proxyAddress.address });
+    } catch (error) {
+      console.error('An error occurred:', error);
+    }
   }
 });

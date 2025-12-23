@@ -36,6 +36,9 @@ npm-debug.log*
 typechain-types/
 
 # Hardhat
+deployments/
+
+# OpenZeppelin
 .openzeppelin/
 
 # Foundry
