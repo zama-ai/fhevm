@@ -444,8 +444,7 @@ contract SwapV0 is IWrapperReceiver, Ownable2Step {
         address outputUnderlying = (tokenOut == weth) ? address(0) : tokenOut;
         WrapperUpgradeable wrapperOut = coordinator.deployedWrappers(outputUnderlying);
 
-        RegulatedERC7984Upgradeable cTokenOut = wrapperOut.confidentialToken();
-        uint256 wrapTxId = cTokenOut.nextTxId();
+        uint256 wrapTxId = wrapperOut.nextTxId();
 
         if (tokenOut == weth) {
             // ETH output: send ETH value to wrapper
@@ -484,7 +483,7 @@ contract SwapV0 is IWrapperReceiver, Ownable2Step {
     ) internal returns (bool) {
         WrapperUpgradeable wrapperIn = WrapperUpgradeable(payable(msg.sender));
 
-        uint256 wrapTxId = wrapperIn.confidentialToken().nextTxId();
+        uint256 wrapTxId = wrapperIn.nextTxId();
 
         // ETH refund
         if (wrapperIn.originalToken() == address(0)) {
