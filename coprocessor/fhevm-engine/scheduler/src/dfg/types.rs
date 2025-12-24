@@ -5,6 +5,7 @@ pub struct TaskResult {
     pub ct: SupportedFheCiphertexts,
     pub compressed_ct: Option<(i16, Vec<u8>)>,
     pub is_allowed: bool,
+    pub transaction_id: Handle,
 }
 pub struct DFGTxResult {
     pub handle: Handle,

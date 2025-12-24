@@ -473,6 +473,7 @@ fn execute_partition(
                         ct: v.0,
                         compressed_ct: if node.is_allowed { v.1 } else { None },
                         is_allowed: node.is_allowed,
+                        transaction_id: tid.clone(),
                     }),
                 );
             }
