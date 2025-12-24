@@ -1,0 +1,87 @@
+name: tag-image
+
+on:
+  push:
+    branches:
+      - feat/add-wizcli
+
+jobs:
+  scan-and-tag:
+    strategy:
+      max-parallel: 4
+      matrix:
+        include:
+        - image: zama-ai/fhevm/coprocessor/tfhe-worker
+          tag: v0.10.9
+        - image: zama-ai/fhevm/coprocessor/host-listener
+          tag: v0.10.9
+        - image: zama-ai/fhevm/coprocessor/zkproof-worker
+          tag: v0.10.6
+        - image: zama-ai/fhevm/coprocessor/sns-worker
+          tag: v0.10.6
+        - image: zama-ai/fhevm/coprocessor/gw-listener
+          tag: v0.10.5
+        - image: zama-ai/fhevm/coprocessor/db-migration
+          tag: v0.10.9
+        - image: zama-ai/fhevm/coprocessor/tx-sender
+          tag: v0.10.5
+        - image: zama-ai/fhevm/kms-connector/kms-worker
+          tag: v0.10.8
+        - image: zama-ai/fhevm/kms-connector/gw-listener
+          tag: v0.10.8
+        - image: zama-ai/fhevm/kms-connector/tx-sender
+          tag: v0.10.8
+        - image: zama-ai/fhevm/kms-connector/db-migration
+          tag: v0.10.8
+        - image: zama-ai/fhevm/gateway-contracts
+          tag: v0.10.0
+        - image: zama-ai/fhevm/host-contracts
+          tag: v0.10.0
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Login to registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_READ_TOKEN }}
+
+      - name: Install Wiz CLI
+        run: |
+          curl -Lo wizcli https://downloads.wiz.io/v1/wizcli/latest/wizcli-linux-amd64
+          # Verify binary before installing
+          # Step1: Download Wiz CLI public key and import it
+          curl -Lo public_key.asc https://downloads.wiz.io/wizcli/public_key.asc
+          gpg --import public_key.asc
+          # Step 2: Download files to perform signature verification:
+          curl -Lo /tmp/wizcli-sha256 https://downloads.wiz.io/v1/wizcli/latest/wizcli-linux-amd64-sha256
+          curl -Lo /tmp/wizcli-sha256.sig https://downloads.wiz.io/v1/wizcli/latest/wizcli-linux-amd64-sha256.sig
+          # Step 3: Verify signature:
+          gpg --verify /tmp/wizcli-sha256.sig /tmp/wizcli-sha256
+          # Step 4: Verify SHA256 (execute this from the same directory where Wiz CLI binary is located):
+          echo "$(cat /tmp/wizcli-sha256) wizcli" | sha256sum --check
+          chmod +x wizcli
+
+      - name: Tag image
+        env:
+          WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+          WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+          IMAGE: ${{ matrix.image }}
+          TAG: ${{ matrix.tag }}
+        run: |
+          docker pull --platform linux/amd64 ghcr.io/$IMAGE:$TAG
+          HASH=$(docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/$IMAGE:$TAG | cut -d '@' -f2)
+          echo "Hash found: $HASH"
+          docker tag ghcr.io/$IMAGE:$TAG hub.zama.org/zama-protocol/$IMAGE:$TAG
+          docker tag ghcr.io/$IMAGE:$TAG hub.zama.org/internal/$IMAGE:$TAG
+          ./wizcli docker scan -i ghcr.io/$IMAGE:$TAG
+          ./wizcli docker tag -i ghcr.io/$IMAGE:$TAG --digest $HASH
+          ./wizcli docker scan -i hub.zama.org/zama-protocol/$IMAGE:$TAG
+          ./wizcli docker tag -i hub.zama.org/zama-protocol/$IMAGE:$TAG --digest $HASH
+          ./wizcli docker scan -i hub.zama.org/internal/$IMAGE:$TAG
+          ./wizcli docker tag -i hub.zama.org/internal/$IMAGE:$TAG --digest $HASH
+
