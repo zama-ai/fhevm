@@ -18,7 +18,7 @@ Otherwise:
 
 🟨 Go to [**Development Guides**](hardhat/README.md) to set up your local environment with Hardhat or Foundry and deploy FHEVM contracts.
 
-🟨 Go to [**Migration Guide**](migration.md) if you're upgrading from a previous version to v0.7.
+🟨 Go to [**Migration Guide**](migration.md) if you're upgrading from a previous version to the latest.
 
 ## Help center
 
