@@ -46,6 +46,11 @@ async function deployConfidentialWrapper(
     [
       `✅ Deployed ${name} ConfidentialWrapper:`,
       `  - Confidential wrapper proxy address:  ${proxyAddress}`,
+      `  - name: ${name}`,
+      `  - symbol: ${symbol}`,
+      `  - contract URI: ${contractUri}`,
+      `  - underlying: ${underlying}`,
+      `  - owner: ${owner}`,
       `  - Deployed by deployer account: ${deployer}`,
       `  - Network: ${hre.network.name}`,
       '',

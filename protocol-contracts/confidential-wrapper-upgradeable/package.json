@@ -19,14 +19,14 @@
     "hardhat"
   ],
   "dependencies": {
-    "@fhevm/solidity": "^0.9.1",
+    "@fhevm/solidity": "^0.10.0",
     "@openzeppelin/contracts": "^5.1.0",
     "@openzeppelin/contracts-upgradeable": "^5.1.0",
     "@openzeppelin/confidential-contracts": "^0.3.0"
   },
   "devDependencies": {
-    "@fhevm/hardhat-plugin": "^0.3.0-1",
-    "@zama-fhe/relayer-sdk": "0.3.0-6",
+    "@fhevm/hardhat-plugin": "^0.3.0-4",
+    "@zama-fhe/relayer-sdk": "0.3.0-8",
     "rimraf": "^6.0.1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
     "@nomicfoundation/hardhat-ethers": "^3.1.0",
@@ -66,5 +66,8 @@
     "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "test": "hardhat test",
     "test:sepolia": "hardhat test --network sepolia"
+  },
+  "overrides": {
+    "@fhevm/solidity": "^0.10.0"
   }
 }
