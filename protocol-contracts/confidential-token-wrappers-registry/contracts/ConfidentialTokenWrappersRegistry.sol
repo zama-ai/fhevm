@@ -68,6 +68,9 @@ contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgra
     /// @notice Error thrown when no token is associated with a confidential token.
     error NoTokenAssociatedWithConfidentialToken(address confidentialTokenAddress);
 
+    /// @notice Error thrown when a token has not been registered yet.
+    error TokenNotRegistered(address tokenAddress);
+
     /// @notice Emitted when a token is registered and associated with a confidential token.
     event ConfidentialTokenRegistered(address indexed tokenAddress, address indexed confidentialTokenAddress);
 
@@ -200,11 +203,17 @@ contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgra
     /**
      * @notice Returns the index of the registered token in the array of
      * (tokenAddress, confidentialTokenAddress, isValid) tuples.
-     * Will raise an error if token has not been registered yet.
+     * It will raise an error if the token has not been registered yet.
      * @param tokenAddress The address of the token.
      * @return The index of the token.
      */
     function getTokenIndex(address tokenAddress) public view returns (uint256) {
+        ConfidentialTokenWrappersRegistryStorage storage $ = _getConfidentialTokenWrappersRegistryStorage();
+        (, address confidentialTokenAddress) = getConfidentialTokenAddress(tokenAddress);
+        if (confidentialTokenAddress == address(0)) {
+            revert TokenNotRegistered(tokenAddress);
+        }
+
         uint256 tokenIndex = _getConfidentialTokenWrappersRegistryStorage()._tokenIndex[tokenAddress];
         return tokenIndex;
     }

@@ -90,7 +90,7 @@ describe('ConfidentialTokenWrappersRegistry', function () {
       ]);
     });
 
-    it.only('should register many confidential tokens', async function () {
+    it('should register many confidential tokens', async function () {
       await this.registry.connect(this.owner).registerConfidentialToken(this.token1, this.confidentialToken1);
       await this.registry.connect(this.owner).registerConfidentialToken(this.token2, this.confidentialToken2);
       await this.registry.connect(this.owner).registerConfidentialToken(this.token3, this.confidentialToken3);
@@ -256,6 +256,15 @@ describe('ConfidentialTokenWrappersRegistry', function () {
       await expect(this.registry.connect(this.owner).revokeConfidentialToken(this.confidentialToken2))
         .to.be.revertedWithCustomError(this.registry, 'NoTokenAssociatedWithConfidentialToken')
         .withArgs(this.confidentialToken2);
+    });
+
+    describe('getTokenIndex', function () {
+      it('should revert if token has not been registered', async function () {
+        const randomTokenAddress = createRandomAddress();
+        await expect(this.registry.getTokenIndex(randomTokenAddress))
+          .to.be.revertedWithCustomError(this.registry, 'TokenNotRegistered')
+          .withArgs(randomTokenAddress);
+      });
     });
   });
 });
