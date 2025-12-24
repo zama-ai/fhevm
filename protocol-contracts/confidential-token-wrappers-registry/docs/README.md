@@ -10,7 +10,7 @@ The **Confidential Token Wrappers Registry** is an on-chain directory that maps 
 - **TokenWrapperPair**: A pair of a token and its confidential wrapper.
 - **Valid**: A valid confidential wrapper has been verified by the registry owner and can be used to wrap and unwrap tokens from the underlying token.
 - **Invalid**: An invalid confidential wrapper has been revoked by the registry owner and should not be used to wrap and unwrap tokens from the underlying token.
-- **Owner**: The owner of the registry.
+- **Owner**: The owner of the registry. In the FHEVM protocol, this is a DAO governance contract handled by Zama.
 
 ## Quick Start
 
