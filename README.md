@@ -178,3 +178,7 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Security Scope
+
+Security assumptions are limited to the documented threat model and supported use cases.
