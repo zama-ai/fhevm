@@ -292,7 +292,6 @@ async fn query_ciphertexts<'a>(
         error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
         err
     })?;
-
     s.end();
     // index ciphertexts in hashmap
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
@@ -559,6 +558,12 @@ async fn build_transaction_graph_and_execute<'a>(
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
     let ciphertext_map =
         query_ciphertexts(&cts_to_query, *tenant_id, trx, tracer, loop_ctx).await?;
+    // Check if we retrieved all needed CTs - if not, we may not want to proceed to execution
+    if cts_to_query.len() != ciphertext_map.len() {
+        warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - ciphertext_map.len()) }, "some inputs are missing to execute the dependence chain");
+        return Ok(tx_graph);
+    }
+
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
         tx_graph.add_input(
             &handle,
