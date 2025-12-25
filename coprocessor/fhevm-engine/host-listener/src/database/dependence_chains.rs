@@ -176,10 +176,13 @@ fn topological_order(ordered_txs: &mut Vec<Transaction>) {
         .map(|tx| (tx.tx_hash, tx.clone()))
         .collect::<HashMap<_, _>>();
     let mut done_tx = HashSet::with_capacity(ordered_txs.len());
+    let mut stacked_tx = HashSet::with_capacity(ordered_txs.len());
     let mut stack = Vec::new();
     let mut reordered = Vec::with_capacity(ordered_txs.len());
     for tx in ordered_txs.iter() {
+        stacked_tx.clear();
         stack.push(tx.tx_hash);
+        stacked_tx.insert(tx.tx_hash);
         while let Some(tx_hash) = stack.pop() {
             if done_tx.contains(&tx_hash) {
                 continue;
@@ -204,8 +207,18 @@ fn topological_order(ordered_txs: &mut Vec<Transaction>) {
                 reordered.push(tx_hash);
                 done_tx.insert(tx_hash);
             } else {
+                for unseen_tx_hash in unseen.iter() {
+                    error!("Reordering transaction: tx {:?} depends on unseen tx {:?}", tx, txs.get(unseen_tx_hash));
+                    if stacked_tx.contains(unseen_tx_hash) {
+                        error!("Fake cyclic dependency detected for transaction {:?}, cutting", tx_hash);
+                    }
+                    reordered.push(tx_hash);
+                    done_tx.insert(tx_hash);
+                    continue;
+                }
                 stack.push(tx_hash);
-                stack.extend(unseen);
+                stack.extend(unseen.clone());
+                stacked_tx.extend(unseen);
             }
         }
     }
