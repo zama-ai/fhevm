@@ -248,16 +248,18 @@ fn grouping_to_chains(ordered_txs: &mut [Transaction]) -> OrderedChains {
         let mut dependencies = Vec::with_capacity(tx.input_tx.len());
         let mut dependencies_seen = HashSet::with_capacity(tx.input_tx.len());
         for dep_hash in &tx.input_tx {
-            let linear_chain = used_tx
-                .get(dep_hash)
-                .map(|tx| tx.linear_chain)
-                .unwrap_or(*dep_hash); // if not in used_tx, it is a past chain
-            if !dependencies_seen.contains(&linear_chain) {
-                dependencies.push(linear_chain);
-                dependencies_seen.insert(linear_chain);
+            // Only record dependences within the block as we don't
+            // have a clean way of handling cross-block dependences
+            if let Some(linear_chain) =
+                used_tx.get(dep_hash).map(|tx| tx.linear_chain)
+            {
+                if !dependencies_seen.contains(&linear_chain) {
+                    dependencies.push(linear_chain);
+                    dependencies_seen.insert(linear_chain);
+                }
             }
         }
-        let is_linear = tx.input_tx.len() == 1 && tx.output_tx.len() <= 1;
+        let is_linear = dependencies.len() == 1 && tx.output_tx.len() <= 1;
         if is_linear {
             tx.linear_chain = dependencies[0];
             match chains.entry(tx.linear_chain) {
@@ -309,7 +311,7 @@ fn grouping_to_chains(ordered_txs: &mut [Transaction]) -> OrderedChains {
             used_tx.insert(tx.tx_hash, tx);
         }
     }
-    // compute dependents field
+    // compute dependents field - only limited to within a block for now
     for chain_hash in ordered_chains_hash.iter() {
         let Some(chain) = chains.get(chain_hash) else {
             continue;
