@@ -173,6 +173,11 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 </picture>
 </a>
 
+## Support
+
+Please use GitHub Issues to report bugs or request features.
+Community support may be limited.
+
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
 
 <p align="right">
