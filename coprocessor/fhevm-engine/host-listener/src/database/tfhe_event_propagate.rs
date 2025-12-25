@@ -788,11 +788,7 @@ impl Database {
             SELECT dcid, 'updated' AS status, ts as last_updated_at
             FROM unnest($1::bytea[], $2::timestamp[]) AS t(dcid, ts)
             ON CONFLICT (dependence_chain_id) DO UPDATE
-            SET status = 'updated',
-                last_updated_at = GREATEST(
-                    dependence_chain.last_updated_at,
-                    EXCLUDED.last_updated_at
-                )
+            SET status = 'updated'
             "#,
             &chains_hash,
             &timestamps,
