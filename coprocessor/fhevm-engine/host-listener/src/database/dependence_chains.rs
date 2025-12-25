@@ -156,9 +156,15 @@ async fn fill_tx_dependence_maps(
 fn topological_order(ordered_txs: &mut Vec<Transaction>) {
     let mut seen_tx: HashSet<TransactionHash> =
         HashSet::with_capacity(ordered_txs.len());
+    let txs_set: HashSet<TransactionHash> =
+        ordered_txs.clone().iter().map(|tx| tx.tx_hash).collect();
     let mut is_already_sorted = true;
     for tx in ordered_txs.iter() {
         for input_tx in &tx.input_tx {
+            if !txs_set.contains(input_tx) {
+                // previous block tx, already seen
+                continue;
+            }
             if !seen_tx.contains(input_tx) {
                 is_already_sorted = false;
                 error!("Out of order transaction detected: tx {:?} depends on tx {:?} which is later in the block", tx.tx_hash, input_tx);
