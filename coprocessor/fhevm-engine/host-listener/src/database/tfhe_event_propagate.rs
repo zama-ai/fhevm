@@ -791,7 +791,11 @@ impl Database {
                   $1, 'updated', $2::timestamp, $3, $4, $5, $6
                 )
                 ON CONFLICT (dependence_chain_id) DO UPDATE
-                SET status = 'updated'
+                SET status = 'updated',
+                    last_updated_at = CASE
+                        WHEN dependence_chain.status = 'processed' THEN EXCLUDED.last_updated_at
+                        ELSE dependence_chain.last_updated_at
+                    END
                 "#,
                 chain.hash.to_vec(),
                 last_updated_at,
