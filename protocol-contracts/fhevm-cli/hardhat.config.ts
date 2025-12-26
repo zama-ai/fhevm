@@ -1,4 +1,3 @@
-// Add the FHEVM Hardhat plugin here!
 import "@fhevm/hardhat-plugin";
 import "@nomicfoundation/hardhat-chai-matchers";
 import "@nomicfoundation/hardhat-ethers";
@@ -13,7 +12,6 @@ const config: HardhatUserConfig = {
   solidity: {
     version: "0.8.28",
     settings: {
-      // ⚠️ FHEVM requires at least the "cancun" EVM version
       evmVersion: "cancun",
     },
   },
