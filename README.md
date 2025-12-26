@@ -175,6 +175,13 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
 
+## Quick context
+
+This repository contains core building blocks for experimenting with Fully Homomorphic Encryption (FHE) on EVM-compatible environments.
+
+The focus is on research, experimentation, and early developer tooling rather than production-ready deployments.
+
+
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
