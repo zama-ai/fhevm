@@ -208,7 +208,6 @@ contract ConfidentialTokenWrappersRegistry is Ownable2StepUpgradeable, UUPSUpgra
      * @return The index of the token.
      */
     function getTokenIndex(address tokenAddress) public view returns (uint256) {
-        ConfidentialTokenWrappersRegistryStorage storage $ = _getConfidentialTokenWrappersRegistryStorage();
         (, address confidentialTokenAddress) = getConfidentialTokenAddress(tokenAddress);
         if (confidentialTokenAddress == address(0)) {
             revert TokenNotRegistered(tokenAddress);
