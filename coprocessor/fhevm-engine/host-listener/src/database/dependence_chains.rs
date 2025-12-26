@@ -1,7 +1,8 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use tracing::{debug, error};
+use tracing::{debug, error, info};
+use union_find::{QuickUnionUf, UnionBySize, UnionFind};
 
 use crate::database::tfhe_event_propagate::{
     tfhe_inputs_handle, tfhe_result_handle, ChainHash,
@@ -238,7 +239,106 @@ fn topological_order(ordered_txs: &mut Vec<Transaction>) {
     }
 }
 
-fn grouping_to_chains(ordered_txs: &mut [Transaction]) -> OrderedChains {
+async fn grouping_to_chains_connex(
+    ordered_txs: &mut [Transaction],
+) -> OrderedChains {
+    let mut uf = QuickUnionUf::<UnionBySize>::new(ordered_txs.len());
+    let mut tx_index = HashMap::with_capacity(ordered_txs.len());
+    let tx_hash = ordered_txs.iter().map(|tx| tx.tx_hash).collect::<Vec<_>>();
+    for (index, tx_hash) in tx_hash.iter().enumerate() {
+        tx_index.insert(tx_hash, index);
+    }
+    // create connected components of current block
+    for (key, tx) in ordered_txs.iter().enumerate() {
+        for dep_hash in &tx.input_tx {
+            let Some(&dep_key) = tx_index.get(dep_hash) else {
+                // from previous block
+                continue;
+            };
+            uf.union(key, dep_key);
+            info!(
+                "Union tx {:?} with dep tx {:?} to {:?} {:?}",
+                tx.tx_hash,
+                dep_hash,
+                uf.find(key),
+                uf.get(key)
+            );
+        }
+    }
+    let mut txs_component = Vec::with_capacity(ordered_txs.len());
+    for key in 0..ordered_txs.len() {
+        txs_component.push(uf.find(key));
+    }
+    // list components past chains dependencies
+    let mut past_chains_deps: HashMap<usize, HashSet<TransactionHash>> =
+        HashMap::new();
+    for (key, tx) in ordered_txs.iter_mut().enumerate() {
+        for dep_hash in &tx.input_tx {
+            if tx_index.get(dep_hash).is_none() {
+                // from previous block
+                let component = txs_component[key];
+                match past_chains_deps.entry(component) {
+                    Entry::Occupied(mut e) => {
+                        e.get_mut().insert(*dep_hash);
+                    }
+                    Entry::Vacant(e) => {
+                        let set = HashSet::from([*dep_hash]);
+                        e.insert(set);
+                    }
+                }
+            }
+        }
+    }
+    let mut ordered_chains_hash = Vec::with_capacity(ordered_txs.len());
+    let mut chains: HashMap<ChainHash, Chain> =
+        HashMap::with_capacity(ordered_txs.len());
+    // create chain from component or merge to 1 past chain
+    for (index, tx) in ordered_txs.iter_mut().enumerate() {
+        let component = txs_component[index];
+        let mut component_hash = tx_hash[component];
+        let mut new_chain = true;
+        if let Some(chains) = past_chains_deps.get(&component) {
+            if chains.len() == 1 {
+                info!(
+                    " Merging component {:?} into past chains {:?} ",
+                    component, chains
+                );
+                component_hash =
+                    chains.iter().next().cloned().unwrap_or(component_hash);
+                new_chain = false;
+            };
+        };
+        tx.linear_chain = component_hash;
+        match chains.entry(component_hash) {
+            Entry::Occupied(mut e) => {
+                let c = e.get_mut();
+                c.size += tx.size;
+                c.allowed_handle.extend(tx.allowed_handle.iter());
+            }
+            Entry::Vacant(e) => {
+                ordered_chains_hash.push(tx.linear_chain);
+                let new_chain = Chain {
+                    hash: tx.linear_chain,
+                    size: tx.size,
+                    before_size: 0,
+                    dependencies: vec![],
+                    dependents: vec![],
+                    allowed_handle: tx.allowed_handle.clone(),
+                    new_chain,
+                };
+                e.insert(new_chain);
+            }
+        }
+    }
+    ordered_chains_hash
+        .iter()
+        .filter_map(|hash| chains.remove(hash))
+        .collect()
+}
+
+fn grouping_to_chains_no_fork(
+    ordered_txs: &mut [Transaction],
+) -> OrderedChains {
     let mut used_tx: HashMap<TransactionHash, &Transaction> =
         HashMap::with_capacity(ordered_txs.len());
     let mut chains: HashMap<ChainHash, Chain> =
@@ -337,12 +437,17 @@ fn grouping_to_chains(ordered_txs: &mut [Transaction]) -> OrderedChains {
 pub async fn dependence_chains(
     logs: &mut [LogTfhe],
     past_chains: &ChainCache,
+    connex: bool,
 ) -> OrderedChains {
     let mut ordered_txs = scan_transactions(logs);
     fill_tx_dependence_maps(ordered_txs.as_mut_slice(), past_chains).await;
     debug!("Transactions: {:?}", ordered_txs);
     topological_order(&mut ordered_txs);
-    let chains = grouping_to_chains(&mut ordered_txs);
+    let chains = if connex {
+        grouping_to_chains_connex(&mut ordered_txs).await
+    } else {
+        grouping_to_chains_no_fork(&mut ordered_txs)
+    };
     // propagate to logs
     let txs = ordered_txs
         .iter()
@@ -408,9 +513,9 @@ mod tests {
 
     fn new_handle() -> Handle {
         static HANDLE_COUNTER: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(1);
-        let id = HANDLE_COUNTER
-            .fetch_add(10000, std::sync::atomic::Ordering::SeqCst);
+            std::sync::atomic::AtomicU64::new(1000);
+        let id =
+            HANDLE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Handle::from_slice(&[
             // 32 bytes
             0,
@@ -554,7 +659,7 @@ mod tests {
         let tx1 = TransactionHash::with_last_byte(0);
         let v0 = input_handle(&mut logs, tx1);
         let _v1 = op1(v0, &mut logs, tx1);
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert_eq!(chains.len(), 1);
         assert!(logs.iter().all(|log| log.dependence_chain == tx1));
         assert_eq!(cache.read().await.len(), 1);
@@ -573,7 +678,7 @@ mod tests {
         let _vb_1 = op1(va_1, &mut logs, tx1);
         let va_2 = input_handle(&mut logs, tx2);
         let _vb_2 = op1(va_2, &mut logs, tx2);
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert_eq!(chains.len(), 2);
         assert!(logs[0..2].iter().all(|log| log.dependence_chain == tx1));
         assert!(logs[2..4].iter().all(|log| log.dependence_chain == tx2));
@@ -597,7 +702,7 @@ mod tests {
         let line = logs.pop().unwrap();
         logs.insert(0, line);
 
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert_eq!(chains.len(), 1);
         assert!(logs.iter().all(|log| log.dependence_chain == tx1));
         assert_eq!(cache.read().await.len(), 3);
@@ -618,10 +723,10 @@ mod tests {
         let va_2 = input_handle(&mut logs, tx2);
         let vb_2 = op1(va_2, &mut logs, tx2);
         let _vc_1 = op2(vb_1, vb_2, &mut logs, tx3);
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert!(logs[0..2].iter().all(|log| log.dependence_chain == tx1));
         assert!(logs[2..4].iter().all(|log| log.dependence_chain == tx2));
-        assert!(logs[5..].iter().all(|log| log.dependence_chain == tx3));
+        assert!(logs[4..].iter().all(|log| log.dependence_chain == tx3));
         assert_eq!(chains.len(), 3);
         assert_eq!(cache.read().await.len(), 3);
     }
@@ -641,7 +746,7 @@ mod tests {
         let vb_2 = op1(va_2, &mut logs, tx2);
         let vb_1 = op1(va_1, &mut logs, tx1);
         let _vc_1 = op2(vb_1, vb_2, &mut logs, tx3);
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert_eq!(chains.len(), 3);
         assert_eq!(logs[0].dependence_chain, tx1);
         assert_eq!(logs[1].dependence_chain, tx2);
@@ -684,7 +789,7 @@ mod tests {
         cache.write().await.put(past_handle, past_chain_hash);
         let tx1 = TransactionHash::with_last_byte(1);
         let _va_1 = op1(past_handle, &mut logs, tx1);
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert_eq!(chains.len(), 1);
         assert!(chains.iter().all(|chain| chain.hash == past_chain_hash));
         assert!(logs
@@ -702,7 +807,7 @@ mod tests {
         let past_handle = new_handle();
         let tx1 = TransactionHash::with_last_byte(1);
         let _va_1 = op1(past_handle, &mut logs, tx1);
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert_eq!(chains.len(), 1);
         assert!(chains.iter().all(|chain| chain.hash == tx1));
         assert!(logs.iter().all(|log| log.dependence_chain == tx1));
@@ -722,7 +827,7 @@ mod tests {
         let mut logs = vec![];
         let va_1 = input_handle(&mut logs, tx1);
         let _vb_1 = op2(past_handle, va_1, &mut logs, tx1);
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert_eq!(chains.len(), 1);
         assert!(chains.iter().all(|chain| chain.hash == past_chain_hash));
         assert!(logs
@@ -743,7 +848,7 @@ mod tests {
         let _vb_1 = op1(va_1, &mut logs, tx1);
         let _va_2 = input_shared_handle(&mut logs, va_1, tx2);
         let _vb_2 = op1(va_1, &mut logs, tx2);
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert_eq!(chains.len(), 2);
         assert_eq!(cache.read().await.len(), 2);
     }
@@ -760,7 +865,7 @@ mod tests {
         let vb_1 = op1(va_1, &mut logs, tx1);
         let va_2 = input_shared_handle(&mut logs, va_1, tx2);
         let _vb_2 = op2(vb_1, va_2, &mut logs, tx2);
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert_eq!(chains.len(), 1);
     }
 
@@ -778,7 +883,7 @@ mod tests {
         let va_2 = input_handle(&mut logs, tx2);
         let _vb_2 = op1(va_2, &mut logs, tx2);
         logs[3].is_allowed = false;
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert_eq!(chains.len(), 2);
         assert_eq!(cache.read().await.len(), 0);
     }
@@ -819,9 +924,101 @@ mod tests {
                 past_handles[chain as usize - 1] = (v2, v3);
             }
         }
-        eprintln!("Logs: {:?}", logs);
-        let chains = dependence_chains(&mut logs, &cache).await;
+        let chains = dependence_chains(&mut logs, &cache, false).await;
         assert_eq!(chains.len(), 6);
         assert!(chains.iter().all(|c| c.before_size == 0));
+    }
+
+    #[tokio::test]
+    async fn test_dependence_chains_2_local_chain_connex() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(0);
+        let tx2 = TransactionHash::with_last_byte(1);
+
+        let va_1 = input_handle(&mut logs, tx1);
+        let _vb_1 = op1(va_1, &mut logs, tx1);
+        let va_2 = input_handle(&mut logs, tx2);
+        let _vb_2 = op1(va_2, &mut logs, tx2);
+        let chains = dependence_chains(&mut logs, &cache, true).await;
+        assert_eq!(chains.len(), 2);
+        assert!(logs[0..2].iter().all(|log| log.dependence_chain == tx1));
+        assert!(logs[2..4].iter().all(|log| log.dependence_chain == tx2));
+        assert_eq!(cache.read().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_dependence_chains_2_local_chain_mixed_connex() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(0);
+        let tx2 = TransactionHash::with_last_byte(1);
+        let tx3 = TransactionHash::with_last_byte(2);
+        let va_1 = input_handle(&mut logs, tx1);
+        let vb_1 = op1(va_1, &mut logs, tx1);
+        let va_2 = input_handle(&mut logs, tx2);
+        let vb_2 = op1(va_2, &mut logs, tx2);
+        let _vc_1 = op2(vb_1, vb_2, &mut logs, tx3);
+        let chains = dependence_chains(&mut logs, &cache, true).await;
+        assert_eq!(chains.len(), 1);
+        assert!(logs[0..5].iter().all(|log| log.dependence_chain == tx3));
+        assert_eq!(cache.read().await.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_dependence_chains_2_local_chain_mixed_1_past_connex() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let past_chain = past_chain(0);
+        let past_chain_hash = past_chain.hash;
+        cache
+            .write()
+            .await
+            .put(Handle::with_last_byte(0), past_chain_hash);
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(1);
+        let tx2 = TransactionHash::with_last_byte(2);
+        let tx3 = TransactionHash::with_last_byte(3);
+        let vb_1 = op1(past_chain_hash, &mut logs, tx1);
+        let va_2 = input_handle(&mut logs, tx2);
+        let vb_2 = op1(va_2, &mut logs, tx2);
+        let _vc_1 = op2(vb_1, vb_2, &mut logs, tx3);
+        let chains = dependence_chains(&mut logs, &cache, true).await;
+        assert_eq!(chains.len(), 1);
+        assert!(logs[0..4]
+            .iter()
+            .all(|log| log.dependence_chain == past_chain_hash));
+        assert_eq!(cache.read().await.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_dependence_chains_2_local_chain_mixed_2_past_connex() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let past_chain1 = past_chain(100);
+        let past_chain_hash1 = past_chain1.hash;
+        let past_chain2 = past_chain(101);
+        let past_chain_hash2 = past_chain2.hash;
+        let past_handle1 = new_handle();
+        let past_handle2 = new_handle();
+        cache.write().await.put(past_handle1, past_chain_hash1);
+        cache.write().await.put(past_handle2, past_chain_hash2);
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(2);
+        let tx2 = TransactionHash::with_last_byte(3);
+        let tx3 = TransactionHash::with_last_byte(4);
+        let vb_1 = op1(past_handle1, &mut logs, tx1);
+        let vb_2 = op1(past_handle2, &mut logs, tx2);
+        let _vc_1 = op2(vb_1, vb_2, &mut logs, tx3);
+        let chains = dependence_chains(&mut logs, &cache, true).await;
+        assert_eq!(chains.len(), 1);
+        assert!(logs[0..3].iter().all(|log| log.dependence_chain == tx3));
+        assert_eq!(cache.read().await.len(), 5);
     }
 }
