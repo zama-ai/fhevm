@@ -279,10 +279,6 @@ impl LockMngr {
                     WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
                     WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
                     ELSE status
-                END,
-                last_updated_at = CASE
-                    WHEN status = 'processing' THEN NOW()
-                    ELSE last_updated_at
                 END
             WHERE worker_id = $1
             AND dependence_chain_id = $2
