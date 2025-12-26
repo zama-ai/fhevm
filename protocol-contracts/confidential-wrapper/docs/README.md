@@ -12,13 +12,13 @@ The **Confidential Wrapper** is a smart contract that wraps standard ERC-20 toke
 - **Operator**: An address authorized to transfer confidential tokens on behalf of another address.
 - **Owner**: The owner of the wrapper contract. In the FHEVM protocol, this is initially set to a DAO governance contract handled by Zama. Ownership will then be transferred to the underlying token's owner.
 - **Registry**: The registry contract that maps ERC-20 tokens to their corresponding confidential wrappers. More information [here](../../confidential-token-wrappers-registry/docs/README.md).
-- **ACL**: The ACL contract that manages the ACL permissions for encrypted amounts. More information in the [FHEVM library documentation](https://docs.zama.org/protocol/protocol/overview/library#access-control).
+- **ACL**: The Access Control List (ACL) contract that manages the permissions for encrypted amounts. More information in the [FHEVM library documentation](https://docs.zama.org/protocol/protocol/overview/library#access-control).
 - **Input proof**: A proof that the encrypted amount is valid. More information in the [`relayer-sdk` documentation](https://docs.zama.org/protocol/relayer-sdk-guides/fhevm-relayer/input).
 - **Public decryption**: A request to publicly decrypt an encrypted amount. More information in the [`relayer-sdk` documentation](https://docs.zama.org/protocol/relayer-sdk-guides/fhevm-relayer/decryption/public-decryption).
 
 ## Quick Start
 
-> ⚠️ **Decimal conversion:** The wrapper enforces a maximum of **6 decimals** for the confidential token. When wrapping, amounts are rounded down and excess tokens are refunded.
+> ⚠️ **Decimal conversion:** The wrapper enforces a maximum number of decimals for the confidential token. When wrapping, amounts are rounded down and excess tokens are refunded. Currently, this maximum is set to **6 decimals** only. See [Maximum number of decimals](#maximum-number-of-decimals) for more information.
 
 > ⚠️ **Unsupported tokens:** Non-standard tokens such as fee-on-transfer or any deflationary-type tokens are NOT supported.
 
@@ -102,17 +102,17 @@ This finalizes the unwrap request by sending the corresponding amount of underly
 #### Direct transfer
 
 ```solidity
-token.confidentialTransfer(to, encryptedAmount, inputProof);
+wrapper.confidentialTransfer(to, encryptedAmount, inputProof);
 
-token.confidentialTransfer(to, encryptedAmount);
+wrapper.confidentialTransfer(to, encryptedAmount);
 ```
 
 #### Operator-based transfer
 
 ```solidity
-token.confidentialTransferFrom(from, to, encryptedAmount, inputProof);
+wrapper.confidentialTransferFrom(from, to, encryptedAmount, inputProof);
 
-token.confidentialTransferFrom(from, to, encryptedAmount);
+wrapper.confidentialTransferFrom(from, to, encryptedAmount);
 ```
 
 Considerations:
@@ -123,9 +123,9 @@ Considerations:
 The callback can be used along an ERC-7984 receiver contract.
 
 ```solidity
-token.confidentialTransferAndCall(to, encryptedAmount, inputProof, callbackData);
+wrapper.confidentialTransferAndCall(to, encryptedAmount, inputProof, callbackData);
 
-token.confidentialTransferAndCall(to, encryptedAmount, callbackData);
+wrapper.confidentialTransferAndCall(to, encryptedAmount, callbackData);
 ```
 
 #### Operator-based transfer with callback
@@ -133,9 +133,9 @@ token.confidentialTransferAndCall(to, encryptedAmount, callbackData);
 The callback can be used along an ERC-7984 receiver contract.
 
 ```solidity
-token.confidentialTransferFromAndCall(from, to, encryptedAmount, inputProof, callbackData);
+wrapper.confidentialTransferFromAndCall(from, to, encryptedAmount, inputProof, callbackData);
 
-token.confidentialTransferFromAndCall(from, to, encryptedAmount, callbackData);
+wrapper.confidentialTransferFromAndCall(from, to, encryptedAmount, callbackData);
 ```
 
 Considerations:
@@ -193,10 +193,10 @@ Delegate transfer capabilities with time-based expiration:
 
 ```solidity
 // Grant operator permission until a specific timestamp
-token.setOperator(operatorAddress, validUntilTimestamp);
+wrapper.setOperator(operatorAddress, validUntilTimestamp);
 
 // Check if an address is an authorized operator
-bool isAuthorized = token.isOperator(holder, spender);
+bool isAuthorized = wrapper.isOperator(holder, spender);
 ```
 
 ### Amount disclosure
@@ -205,10 +205,10 @@ Optionally reveal encrypted amounts publicly:
 
 ```solidity
 // Request disclosure (initiates async decryption)
-token.requestDiscloseEncryptedAmount(encryptedAmount);
+wrapper.requestDiscloseEncryptedAmount(encryptedAmount);
 
 // Complete disclosure with proof
-token.discloseEncryptedAmount(encryptedAmount, cleartextAmount, decryptionProof);
+wrapper.discloseEncryptedAmount(encryptedAmount, cleartextAmount, decryptionProof);
 ```
 
 ### Check ACL permissions
@@ -276,6 +276,33 @@ Transfer functions with `euint64` (not `externalEuint64`) require the caller to 
 ### Ciphertext uniqueness assumption
 
 The unwrap mechanism stores requests in a mapping keyed by ciphertext and the current implementation assumes these ciphertexts are unique. This holds in this very specific case but be aware of this architectural decision as it is **NOT** true in the general case.
+
+### Maximum number of decimals
+
+The maximum number of decimals `_maxDecimals()` for the confidential token is currently set to **6 decimals** only. This is due to FHE limitations as confidential balances must be represented by the euint64 encrypted datatype. 
+
+It is possible that future implementations of the wrapper set a higher `_maxDecimals()` value to better suit the needs of the underlying token. For example, cWBTC might require 8 decimals since using only 6 would make the smallest unit impractically expensive.
+
+At deployment, the confidential wrapper sets its number of decimals as: 
+- the number of decimals of the underlying token if it is less than `_maxDecimals()`
+- `_maxDecimals()` otherwise
+
+**Example with `_maxDecimals()` set to 6**
+| Underlying Decimals | Wrapper Decimals | Example |
+|---------------------|------------------|---------|
+| 18  | 6 | ZAMA/cZAMA
+| 6 | 6 | USDT/cUSDT
+| 2 | 2 | GUSD/cGUSD
+
+Once a confidential wrapper contract is deployed, this number cannot be updated. It can be viewed with the following view function:
+
+```solidity
+wrapper.decimals();
+```
+
+### Maximum total supply
+
+The maximum total supply for the confidential token is currently set to `type(uint64).max` (`2^64 - 1`) due to FHE limitations.
 
 ---
 
