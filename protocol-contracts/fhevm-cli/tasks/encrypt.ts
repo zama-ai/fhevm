@@ -1,4 +1,3 @@
-import { FhevmType, FhevmTypeEuint } from "@fhevm/hardhat-plugin";
 import "dotenv/config";
 import { task, types } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
@@ -6,23 +5,6 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 function convertToHexString(uint8Array: Uint8Array): string {
   return "0x" + Buffer.from(uint8Array).toString("hex");
 }
-
-// eg use: `npx hardhat task:userDecrypt --handle 0x980769a416dbe44044fac20626c9521085a3ba57acff00000000000000010500 --contract-address 0xb1A7026C28cB91604FB7B1669f060aB74A30c255 --encrypted-type euint64 --network mainnet`
-task("task:userDecrypt")
-  .addParam("handle", "Ciphertext handle to user decrypt", undefined, types.string)
-  .addParam("contractAddress", "Contract address for which the handle is allowed", undefined, types.string)
-  .addOptionalParam("encryptedType", "Fhevm type to use for user decryption", "euint64", types.string)
-  .setAction(async function ({ handle, contractAddress, encryptedType }, hre: HardhatRuntimeEnvironment) {
-    await hre.fhevm.initializeCLIApi();
-    const signer = new hre.ethers.Wallet(process.env.PRIVATE_KEY!);
-    const userDecryptedHandle = await hre.fhevm.userDecryptEuint(
-      FhevmType[encryptedType as keyof typeof FhevmType] as FhevmTypeEuint,
-      handle,
-      contractAddress,
-      signer,
-    );
-    console.log(`User decrypted value for handle ${handle} is: `, userDecryptedHandle);
-  });
 
 // eg use: `npx hardhat task:encryptInput --input-value 600000 --user-address 0x22162CEAac09F115797A2ca29C96119B8bf63666 --contract-address 0xb1A7026C28cB91604FB7B1669f060aB74A30c255 --encrypted-type euint64 --network mainnet`
 // eg use: `npx hardhat task:encryptInput --input-value true --user-address 0x22162CEAac09F115797A2ca29C96119B8bf63666--contract-address 0xb1A7026C28cB91604FB7B1669f060aB74A30c255 --encrypted-type ebool  --network mainnet`
@@ -77,17 +59,6 @@ task("task:encryptInput")
         );
     }
     const encryptedAmount = await input.encrypt();
-    console.log("Ciphertext handle: ", convertToHexString(encryptedAmount.handles[0]));
+    console.log(`Ciphertext handle for input ${inputValue}: `, convertToHexString(encryptedAmount.handles[0]));
     console.log("InputProof: ", convertToHexString(encryptedAmount.inputProof));
-  });
-
-// eg use: `npx hardhat task:publicDecrypt --handle 0xb5681d0dae644b3ef76aa161b78e61cca125e9aed6ff00000000000000010500 --network mainnet`
-task("task:publicDecrypt")
-  .addParam("handle", "Ciphertext handle to public decrypt", undefined, types.string)
-  .setAction(async function ({ handle }, hre: HardhatRuntimeEnvironment) {
-    await hre.fhevm.initializeCLIApi();
-    const publicDecryptedHandle = await hre.fhevm.publicDecrypt([handle]);
-    console.log(`Public decrypted value for handle ${handle} is: `, publicDecryptedHandle.clearValues[handle]);
-    console.log(`Abi-encoded cleartext value for handle ${handle} is: `, publicDecryptedHandle.abiEncodedClearValues);
-    console.log(`DecryptionProof value for handle ${handle} is: `, publicDecryptedHandle.decryptionProof);
   });

@@ -5,7 +5,9 @@ import "@nomicfoundation/hardhat-ethers";
 import "dotenv/config";
 import { HardhatUserConfig } from "hardhat/config";
 
-import "./tasks/fhevmCLI";
+import "./tasks/encrypt";
+import "./tasks/publicDecrypt";
+import "./tasks/userDecrypt";
 
 const config: HardhatUserConfig = {
   solidity: {
