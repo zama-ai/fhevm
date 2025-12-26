@@ -207,6 +207,7 @@ async fn tfhe_worker_cycle(
                 &tenant_key_cache,
                 &health_check,
                 &mut trx,
+                &dcid_mngr,
                 &tracer,
                 &loop_ctx,
             )
@@ -544,6 +545,7 @@ async fn build_transaction_graph_and_execute<'a>(
     tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
+    dcid_mngr: &dependence_chain::LockMngr,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<DFComponentGraph, Box<dyn std::error::Error + Send + Sync>> {
@@ -560,8 +562,13 @@ async fn build_transaction_graph_and_execute<'a>(
         query_ciphertexts(&cts_to_query, *tenant_id, trx, tracer, loop_ctx).await?;
     // Check if we retrieved all needed CTs - if not, we may not want to proceed to execution
     if cts_to_query.len() != ciphertext_map.len() {
-        warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - ciphertext_map.len()) }, "some inputs are missing to execute the dependence chain");
-        return Ok(tx_graph);
+        if let Some(dcid_lock) = dcid_mngr.get_current_lock() {
+            warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - ciphertext_map.len()), dcid = %hex::encode(dcid_lock.dependence_chain_id) },
+	      "some inputs are missing to execute the dependence chain");
+        }
+        // Do not stop execution, we will allow the scheduler to run
+        // and complete as many operations as can be computed given
+        // the inputs fetched
     }
 
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
