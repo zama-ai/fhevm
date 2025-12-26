@@ -3,7 +3,8 @@ import "dotenv/config";
 import { task, types } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 
-// eg use: `npx hardhat task:userDecrypt --handle 0x980769a416dbe44044fac20626c9521085a3ba57acff00000000000000010500 --contract-address 0xb1A7026C28cB91604FB7B1669f060aB74A30c255 --encrypted-type euint64 --network mainnet`
+// Example usage:
+// npx hardhat task:userDecrypt --handle 0x980769a416dbe44044fac20626c9521085a3ba57acff00000000000000010500 --contract-address 0xb1A7026C28cB91604FB7B1669f060aB74A30c255 --encrypted-type euint64 --network mainnet
 task("task:userDecrypt")
   .addParam("handle", "Ciphertext handle to user decrypt", undefined, types.string)
   .addParam("contractAddress", "Contract address for which the handle is allowed", undefined, types.string)

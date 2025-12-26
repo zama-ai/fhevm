@@ -2,7 +2,8 @@ import "dotenv/config";
 import { task, types } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 
-// eg use: `npx hardhat task:publicDecrypt --handle 0xb5681d0dae644b3ef76aa161b78e61cca125e9aed6ff00000000000000010500 --network mainnet`
+// Example usage:
+// npx hardhat task:publicDecrypt --handle 0xb5681d0dae644b3ef76aa161b78e61cca125e9aed6ff00000000000000010500 --network mainnet
 task("task:publicDecrypt")
   .addParam("handle", "Ciphertext handle to public decrypt", undefined, types.string)
   .setAction(async function ({ handle }, hre: HardhatRuntimeEnvironment) {

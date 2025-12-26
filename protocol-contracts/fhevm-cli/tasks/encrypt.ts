@@ -6,9 +6,10 @@ function convertToHexString(uint8Array: Uint8Array): string {
   return "0x" + Buffer.from(uint8Array).toString("hex");
 }
 
-// eg use: `npx hardhat task:encryptInput --input-value 600000 --user-address 0x22162CEAac09F115797A2ca29C96119B8bf63666 --contract-address 0xb1A7026C28cB91604FB7B1669f060aB74A30c255 --encrypted-type euint64 --network mainnet`
-// eg use: `npx hardhat task:encryptInput --input-value true --user-address 0x22162CEAac09F115797A2ca29C96119B8bf63666--contract-address 0xb1A7026C28cB91604FB7B1669f060aB74A30c255 --encrypted-type ebool  --network mainnet`
-// eg use: `npx hardhat task:encryptInput --input-value 0xc0ffee254729296a45a3885639AC7E10F9d54979 --user-address 0x22162CEAac09F115797A2ca29C96119B8bf63666 --contract-address 0xb1A7026C28cB91604FB7B1669f060aB74A30c255 --encrypted-type eaddress --network mainnet`
+// Example usage:
+// npx hardhat task:encryptInput --input-value 600000 --user-address 0x22162CEAac09F115797A2ca29C96119B8bf63666 --contract-address 0xb1A7026C28cB91604FB7B1669f060aB74A30c255 --encrypted-type euint64 --network mainnet
+// npx hardhat task:encryptInput --input-value true --user-address 0x22162CEAac09F115797A2ca29C96119B8bf63666--contract-address 0xb1A7026C28cB91604FB7B1669f060aB74A30c255 --encrypted-type ebool  --network mainnet
+// npx hardhat task:encryptInput --input-value 0xc0ffee254729296a45a3885639AC7E10F9d54979 --user-address 0x22162CEAac09F115797A2ca29C96119B8bf63666 --contract-address 0xb1A7026C28cB91604FB7B1669f060aB74A30c255 --encrypted-type eaddress --network mainnet
 task("task:encryptInput")
   .addParam(
     "inputValue",
