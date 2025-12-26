@@ -31,12 +31,12 @@ Zama provides a registry contract that maps ERC-20 tokens to their corresponding
 **Important:** Prior to wrapping, the confidential wrapper contract must be approved by the `msg.sender` on the underlying token.
 
 ```solidity
-wrapper.wrap(recipientAddress, amount);
+wrapper.wrap(to, amount);
 ```
 
-The wrapper will mint the corresponding confidential token to the `recipientAddress` and refund the excess tokens to the `msg.sender` (due to decimal conversion). Considerations:
+The wrapper will mint the corresponding confidential token to the `to` address and refund the excess tokens to the `msg.sender` (due to decimal conversion). Considerations:
 - `amount` must be a value using the same decimal precision as the underlying token.
-- `recipientAddress` must not be the zero address.
+- `to` must not be the zero address.
 
 > ℹ️ **Low amount handling:** If the amount is less than the rate, the wrapping will succeed but the recipient will receive 0 confidential tokens and the excess tokens will be refunded to the `msg.sender`.
 
@@ -47,19 +47,21 @@ Unwrapping is a **two-step asynchronous process**: an `unwrap` must be first mad
 
 #### 1) Unwrap request
 
+> ⚠️ **Unsupported `from`:** Accounts with a zero balance that have never held tokens cannot be the `from` address in unwrap requests.
+
 ##### With input proof
 
-> ℹ️ **Input proof:** To unwrap any amount of confidential tokens, the `fromAddress` must first create an encrypted input to generate an `encryptedAmount` (`externalEuint64`) along its `inputProof`. The amount to be encrypted must use the same decimal precision as the confidential wrapper. More information in the [`relayer-sdk` documentation](https://docs.zama.org/protocol/relayer-sdk-guides/fhevm-relayer/input).
+> ℹ️ **Input proof:** To unwrap any amount of confidential tokens, the `from` address must first create an encrypted input to generate an `encryptedAmount` (`externalEuint64`) along its `inputProof`. The amount to be encrypted must use the same decimal precision as the confidential wrapper. More information in the [`relayer-sdk` documentation](https://docs.zama.org/protocol/relayer-sdk-guides/fhevm-relayer/input).
 
 ```solidity
-wrapper.unwrap(fromAddress, recipientAddress, encryptedAmount, inputProof);
+wrapper.unwrap(from, to, encryptedAmount, inputProof);
 ```
 
-Alternatively, an unwrap request can be made without an input proof if the encrypted amount (`euint64`) is known to `fromAddress`. For example, this can be the confidential balance of `fromAddress`.
+Alternatively, an unwrap request can be made without an input proof if the encrypted amount (`euint64`) is known to `from`. For example, this can be the confidential balance of `from`.
 
-This requests an unwrap request of `encryptedAmount` confidential tokens from `fromAddress`. Considerations:
-- `msg.sender` must be `fromAddress` or an approved operator for `fromAddress`.
-- `fromAddress` mut not be the zero address.
+This requests an unwrap request of `encryptedAmount` confidential tokens from `from`. Considerations:
+- `msg.sender` must be `from` or an approved operator for `from`.
+- `from` mut not be the zero address.
 - `encryptedAmount` will be burned in the request.
 - **NO** transfer of underlying tokens is made in this request.
 
@@ -71,10 +73,10 @@ event UnwrapRequested(address indexed receiver, euint64 amount);
 
 ###### Without input proof
 
-Alternatively, an unwrap request can be made without an input proof if the encrypted amount (`euint64`) is known to `fromAddress`. For example, this can be the confidential balance of `fromAddress`.
+Alternatively, an unwrap request can be made without an input proof if the encrypted amount (`euint64`) is known to `from`. For example, this can be the confidential balance of `from`.
 
 ```solidity
-wrapper.unwrap(fromAddress, recipientAddress, encryptedAmount);
+wrapper.unwrap(from, to, encryptedAmount);
 ```
 
 On top of the above unwrap request considerations:
@@ -83,17 +85,19 @@ On top of the above unwrap request considerations:
 
 #### 2) Finalize unwrap
 
-> ℹ️ **Public decryption:** The encrypted burned amount emitted by the `UnwrapRequested` event must be publicly decrypted to get the `cleartextAmount` along its `decryptionProof`. More information in the [`relayer-sdk` documentation](https://docs.zama.org/protocol/relayer-sdk-guides/fhevm-relayer/decryption/public-decryption).
+> ℹ️ **Public decryption:** The encrypted burned amount `burntAmount` emitted by the `UnwrapRequested` event must be publicly decrypted to get the `cleartextAmount` along its `decryptionProof`. More information in the [`relayer-sdk` documentation](https://docs.zama.org/protocol/relayer-sdk-guides/fhevm-relayer/decryption/public-decryption).
 
 ```solidity
 wrapper.finalizeUnwrap(burntAmount, cleartextAmount, decryptionProof);
 ```
 
-This finalizes the unwrap request by sending the corresponding amount of underlying tokens to the `recipientAddress` defined in the `unwrap` request.
+This finalizes the unwrap request by sending the corresponding amount of underlying tokens to the `to` defined in the `unwrap` request.
 
 ### Transfer confidential tokens
 
 > ℹ️ **Transfer with input proof:** Similarly to the unwrap process, transfers can be made with or without an input proof and the encrypted amount must be approved by the ACL for the `msg.sender`.
+
+> ⚠️ **Unsupported `from`:** Accounts with a zero balance that have never held tokens cannot be the `from` address in confidential transfers.
 
 #### Direct transfer
 
@@ -112,7 +116,7 @@ token.confidentialTransferFrom(from, to, encryptedAmount);
 ```
 
 Considerations:
-- `msg.sender` must be `fromAddress` or an approved operator for `fromAddress`.
+- `msg.sender` must be `from` or an approved operator for `from`.
 
 #### Transfer with callback
 
@@ -135,7 +139,7 @@ token.confidentialTransferFromAndCall(from, to, encryptedAmount, callbackData);
 ```
 
 Considerations:
-- `msg.sender` must be `fromAddress` or an approved operator for `fromAddress`.
+- `msg.sender` must be `from` or an approved operator for `from`.
 
 ### Check the conversion rate and decimals
 
@@ -156,6 +160,8 @@ uint8 wrapperDecimals = wrapper.decimals();
 #### Non-confidential total supply
 
 The wrapper exposes a non-confidential view of the total supply, computed from the underlying ERC20 balance held by the wrapper contract. This value may be higher than `confidentialTotalSupply()` if tokens are sent directly to the wrapper outside of the wrapping process.
+
+> ℹ️ **Total Value Shielded (TVS):** This view function is useful for getting a good approximation of the wrapper's Total Value Shielded (TVS).
 
 ```solidity
 uint256 nonConfidentialSupply = wrapper.totalSupply();
@@ -267,13 +273,9 @@ Transfer functions with `euint64` (not `externalEuint64`) require the caller to 
 
 ## Important Considerations
 
-### Zero balance requirement
-
-Accounts with a zero balance that have never held tokens cannot be the `from` address in transfers. This will revert with `ERC7984ZeroBalance`.
-
 ### Ciphertext uniqueness assumption
 
-The unwrap mechanism stores requests in a mapping keyed by ciphertext. The current implementation assumes ciphertexts are unique. This holds in practice but be aware of this architectural decision as it is not true in the general case.
+The unwrap mechanism stores requests in a mapping keyed by ciphertext and the current implementation assumes these ciphertexts are unique. This holds in this very specific case but be aware of this architectural decision as it is **NOT** true in the general case.
 
 ---
 
