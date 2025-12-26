@@ -173,6 +173,15 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 </picture>
 </a>
 
+## Learning notes
+
+Understanding this repository requires familiarity with:
+- basic EVM concepts
+- encrypted computation models
+- experimental developer workflows
+
+The codebase is expected to evolve rapidly.
+
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
 
 <p align="right">
