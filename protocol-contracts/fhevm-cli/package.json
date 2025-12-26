@@ -7,12 +7,15 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
+    "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
   },
   "devDependencies": {
     "@fhevm/hardhat-plugin": "^0.3.0-4",
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
     "dotenv": "^17.2.3",
-    "hardhat": "^2.28.0"
+    "hardhat": "^2.28.0",
+    "prettier": "^3.6.2"
   }
 }
