@@ -173,6 +173,13 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 </picture>
 </a>
 
+## Project scope
+
+This project explores privacy-preserving computation using FHE primitives.
+
+It is intended for researchers and developers who want to experiment with encrypted computation on EVM-compatible chains, not as a production-ready framework.
+
+
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
 
 <p align="right">
