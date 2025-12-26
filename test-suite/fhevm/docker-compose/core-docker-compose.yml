@@ -4,7 +4,7 @@ services:
     container_name: kms-core
     image: ghcr.io/zama-ai/kms/core-service:${CORE_VERSION}
     env_file:
-      - ../env/staging/.env.core.local
+      - ../env/staging/.env.core
     entrypoint:
       - /bin/sh
       - -c
