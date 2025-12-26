@@ -2,7 +2,7 @@
   "name": "fhevm-cli",
   "version": "1.0.0",
   "description": "",
-  "license": "ISC",
+  "license": "BSD-3-Clause-Clear",
   "author": "",
   "type": "commonjs",
   "main": "index.js",
