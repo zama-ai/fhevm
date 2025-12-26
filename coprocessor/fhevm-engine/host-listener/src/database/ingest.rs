@@ -134,7 +134,8 @@ pub async fn ingest_block_logs(
     }
 
     let chains =
-        dependence_chains(&mut tfhe_event_log, &db.dependence_chain).await;
+        dependence_chains(&mut tfhe_event_log, &db.dependence_chain, true)
+            .await;
 
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
