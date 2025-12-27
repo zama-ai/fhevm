@@ -1,6 +1,6 @@
 import { TransactionReceipt } from "ethers";
 import { ethers, fhevm } from "hardhat";
-import { BurnableRegulatedERC7984Upgradeable, DeploymentCoordinator, FeeManager, RegulatedERC7984Upgradeable, TestERC20, WrapperUpgradeable } from "../types";
+import { BurnableRegulatedERC7984Upgradeable, DeploymentCoordinator, FeeManager, RegulatedERC7984Upgradeable, SwapV0, TestERC20, UniswapV2Router02, WrapperUpgradeable } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { FhevmType } from "@fhevm/hardhat-plugin";
 import { expect } from "chai";
@@ -71,7 +71,7 @@ export const getWrappedEvent = (receipt: TransactionReceipt | null) =>
 export const getWrapDeployedEvent = (receipt: TransactionReceipt | null) =>
   getEventFromABI(
     receipt,
-    "event WrapperPairDeployed(address indexed originalToken, address indexed wrapper, address indexed confidentialToken, string originalName, string originalSymbol, uint8 originalDecimals, address deployer)",
+    "event WrapperDeployed(address indexed originalToken, address indexed wrapper, string originalName, string originalSymbol, uint8 originalDecimals, address deployer)",
   );
 
 export const getBatchTransferEvent = (receipt: TransactionReceipt | null) =>
@@ -166,13 +166,12 @@ export const deployConfidentialToken = async (coordinator: DeploymentCoordinator
   const deployToken = await coordinator.connect(signer).deploy(erc20, { value: deployTokenFee });
   const receipt = await deployToken.wait();
 
-  const cTokenAddress = await coordinator.getConfidentialToken(erc20);
   const wrapperAddress = await coordinator.getWrapper(erc20);
   const wrapper = await ethers.getContractAt("WrapperUpgradeable", wrapperAddress);
 
   return {
-    cTokenAddress,
-    cToken: await ethers.getContractAt("RegulatedERC7984Upgradeable", cTokenAddress),
+    cTokenAddress: wrapperAddress,
+    cToken: await ethers.getContractAt("RegulatedERC7984Upgradeable", wrapperAddress),
     wrapperAddress,
     wrapper,
     receipt,
@@ -190,13 +189,12 @@ export const deployConfidentialETH = async (coordinator: DeploymentCoordinator, 
   const deployToken = await coordinator.connect(signer).deploy(ethers.ZeroAddress, { value: deployTokenFee });
   const receipt = await deployToken.wait();
 
-  const cEthAddress = await coordinator.getConfidentialToken(ethers.ZeroAddress);
   const wrapperAddress = await coordinator.getWrapper(ethers.ZeroAddress);
   const wrapper = await ethers.getContractAt("WrapperUpgradeable", wrapperAddress);
 
   return {
-    cEthAddress,
-    cEth: await ethers.getContractAt("RegulatedERC7984Upgradeable", cEthAddress),
+    cEthAddress: wrapperAddress,
+    cEth: await ethers.getContractAt("RegulatedERC7984Upgradeable", wrapperAddress),
     wrapperAddress,
     wrapper,
     receipt,
@@ -209,8 +207,7 @@ export const wrapETH = async (coordinator: DeploymentCoordinator, amount: bigint
   const wrapper = await ethers.getContractAt("WrapperUpgradeable", wrapperAddress);
 
   // Get the confidential token to access its rate
-  const cTokenAddress = await coordinator.getConfidentialToken(ethers.ZeroAddress);
-  const cToken = await ethers.getContractAt("RegulatedERC7984Upgradeable", cTokenAddress);
+  const cToken = await ethers.getContractAt("RegulatedERC7984Upgradeable", wrapperAddress);
   const rate = await cToken.rate();
 
   // Calculate scaled amount and fee based on scaled amount
@@ -239,8 +236,7 @@ export const wrapERC20 = async (
   const wrapper = await ethers.getContractAt("WrapperUpgradeable", wrapperAddress);
 
   // Get the confidential token to access its rate
-  const cTokenAddress = await coordinator.getConfidentialToken(await erc20.getAddress());
-  const cToken = await ethers.getContractAt("RegulatedERC7984Upgradeable", cTokenAddress);
+  const cToken = await ethers.getContractAt("RegulatedERC7984Upgradeable", wrapperAddress);
   const rate = await cToken.rate();
 
   // Calculate scaled amount and fee based on scaled amount
@@ -288,27 +284,18 @@ export const unwrapToken = async (
   refund?: string,
   callbackData?: string,
 ) => {
-  const cTokenAddress = await wrapper.confidentialToken();
-  const cToken = await ethers.getContractAt("RegulatedERC7984Upgradeable", cTokenAddress);
-
   const unwrapFee = await getUnwrapFee(wrapper, amount);
 
   const encryptedUnwrapAmount = await fhevm
-    .createEncryptedInput(await cToken.getAddress(), signer.address)
+    .createEncryptedInput(await wrapper.getAddress(), signer.address)
     .add64(amount)
     .encrypt();
 
-  const abiCoder = new ethers.AbiCoder();
-  const data = abiCoder.encode(
-    ["address", "address", "bytes"],
-    [recipient, refund || recipient, callbackData || "0x"],
-  )
-
-  const unwrapTx = await cToken.connect(signer)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-    await wrapper.getAddress(),
+  const unwrapTx = await wrapper.connect(signer)["unwrap(address,address,bytes32,bytes)"](
+    signer,
+    recipient,
     encryptedUnwrapAmount.handles[0],
     encryptedUnwrapAmount.inputProof,
-    data,
   );
   const unwrapReceipt = await unwrapTx.wait();
 
@@ -404,10 +391,9 @@ export const verifyWrapperBacking = async (
   // Get addresses from wrapper
   const wrapperAddress = await wrapper.getAddress();
   const underlyingTokenAddress = await wrapper.originalToken();
-  const cTokenAddress = await wrapper.confidentialToken();
 
   // Get cToken contract
-  const cToken = await ethers.getContractAt("RegulatedERC7984Upgradeable", cTokenAddress);
+  const cToken = await ethers.getContractAt("RegulatedERC7984Upgradeable", wrapperAddress);
 
   // Get wrapper's balance of underlying token
   let wrapperBalance: bigint;
@@ -490,3 +476,54 @@ export const finalizeUnwrapFromReceipt = async (
 
   return await finalizeUnwrapTx.wait();
 };
+
+export const swap = async (
+  swapAmount: bigint,
+  wrapper: WrapperUpgradeable,
+  router: UniswapV2Router02,
+  swapV0: SwapV0,
+  path: string[],
+  sender: HardhatEthersSigner,
+  callbackData?: string,
+  refund?: string,
+  to?: string,
+  from?: string,
+) => {
+  if (from === undefined) {
+    from = sender.address
+  }
+  if (to === undefined) {
+    to = sender.address
+  }
+  if (refund === undefined) {
+    refund = sender.address
+  }
+  const encryptedTransferAmount = await fhevm
+    .createEncryptedInput(await wrapper.getAddress(), sender.address)
+    .add64(swapAmount)
+    .encrypt();
+
+  if (callbackData === undefined) {
+    const abiCoder = new ethers.AbiCoder();
+    callbackData = abiCoder.encode(
+      ["tuple(address, uint256, address[], uint256, address)"],
+      [[
+        await router.getAddress(),
+        0,
+        path,
+        Math.floor(Date.now() / 1000) + 6000,
+        to,
+      ]]
+    );
+  }
+
+  const unwrapTx = await wrapper.connect(sender)["unwrapAndCall(address,address,bytes32,bytes,address,bytes)"](
+    from,
+    await swapV0.getAddress(),
+    encryptedTransferAmount.handles[0],
+    encryptedTransferAmount.inputProof,
+    refund,
+    callbackData,
+  );
+  return await unwrapTx.wait();
+}

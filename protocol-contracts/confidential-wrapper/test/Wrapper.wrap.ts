@@ -144,11 +144,6 @@ describe("Wrapper Fee Handling", function () {
       // Wrapper received transferAmount in ETH
       expect(wrapperEthAfter - wrapperEthBefore).to.equal(transferAmount, "Wrapper should hold transferAmount in ETH");
 
-      // CHECK: Mint events
-      const mintEvents = getMintEvent(wrapReceipt);
-      expect(mintEvents.length).to.equal(1, "Should have 1 mint event (no fee mint in cETH)");
-      expect(mintEvents[0].args[1]).to.equal(expectedMintAmount);
-
       // CHECK: Wrapped event (for ETH, actualFeeReceived = totalFee)
       const wrappedEvents = getWrappedEvent(wrapReceipt);
 
@@ -317,11 +312,6 @@ describe("Wrapper Fee Handling", function () {
       const totalUsdcReceived = (royaltiesUsdcAfter - royaltiesUsdcBefore) + (wrapperUsdcAfter - wrapperUsdcBefore);
       expect(totalUsdcMoved).to.equal(totalUsdcReceived, "All USDC should be accounted for");
 
-      // CHECK: Mint events
-      const mintEvents = getMintEvent(wrapReceipt);
-      expect(mintEvents.length).to.equal(1, "Should have 1 mint event");
-      expect(mintEvents[0].args[1]).to.equal(expectedMintAmount);
-
       // CHECK: Wrapped event (for standard ERC20, actualFeeReceived = totalFee)
       const wrappedEvents = getWrappedEvent(wrapReceipt);
       expect(wrappedEvents.length).to.equal(1);
@@ -484,11 +474,6 @@ describe("Wrapper Fee Handling", function () {
       // VERIFY: Total accounting (considering fee-on-transfer loss)
       const totalOut = (wrapperAfter - wrapperBefore) + (royaltiesAfter - royaltiesBefore) + (feeCollectorAfter - feeCollectorBefore);
       expect(aliceBefore - aliceAfter).to.equal(totalOut, "All tokens should be accounted for");
-
-      // CHECK: Mint events
-      const mintEvents = getMintEvent(wrapReceipt);
-      expect(mintEvents.length).to.equal(1, "Should have 1 mint event");
-      expect(mintEvents[0].args[1]).to.equal(expectedMintAmount);
 
       // CHECK: Wrapped event (for fee-on-transfer tokens, actualFeeReceived < totalFee)
       const wrappedEvents = getWrappedEvent(wrapReceipt);

@@ -97,19 +97,6 @@ describe("Wrapper Unwrap Flow", function () {
         + (unwrapFinalizedReceipt?.gasPrice ?? 0n) * (unwrapFinalizedReceipt?.gasUsed ?? 0n)
       );
 
-      // CHECK: burn event
-      const burnEvents = getBurnEvent(unwrapReceipt);
-      expect(burnEvents.length).to.be.equal(1);
-      expect(burnEvents[0].args[0]).to.equal(signers.alice.address);
-      const burnAmountHandle = burnEvents[0].args[1];
-      const burnAmount = await fhevm.userDecryptEuint(
-        FhevmType.euint64,
-        burnAmountHandle,
-        cEth,
-        signers.alice,
-      );
-      expect(burnAmount).to.be.equal(aliceCEthBalance);
-
       // CHECK: unwrap started event
       const unwrapStartedEvents = getUnwrapStartedEvent(unwrapReceipt);
       expect(unwrapStartedEvents.length).to.be.equal(1);
@@ -972,11 +959,11 @@ describe("Wrapper Unwrap Flow", function () {
         .add64(aliceCTokenBalance)
         .encrypt();
 
-      const unwrapTx = await cToken.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapper.getAddress(),
+      const unwrapTx = await wrapper.connect(signers.alice)["unwrap(address,address,bytes32,bytes)"](
+        signers.alice,
+        signers.alice,
         encryptedUnwrapAmount.handles[0],
         encryptedUnwrapAmount.inputProof,
-        data,
       );
       const unwrapReceipt = await unwrapTx.wait();
 
@@ -1102,67 +1089,6 @@ describe("Wrapper Unwrap Flow", function () {
       // CHECK: Wrapper backing invariant
       await verifyWrapperBacking(wrapper);
     })
-
-    it("should reject unwrap from wrong confidential token", async function () {
-      const usdt = await deployTestERC20Fixture("USDT");
-      const usdtMintTx = await usdt.mint(signers.alice, ethers.parseUnits("100000", 6));
-      await usdtMintTx.wait();
-
-      // DEPLOY first confidential token + wrapper
-      const { cToken: cToken1, cTokenAddress: cToken1Address, wrapper: wrapper1, wrapperAddress: wrapper1Address } =
-        await deployConfidentialToken(coordinator, usdc, signers.alice);
-      const wrapAmount = BigInt(100000);
-      await wrapERC20(coordinator, usdc, wrapAmount, signers.alice.address, signers.alice);
-
-      // DEPLOY second confidential token (different wrapper)
-      const { cToken: cToken2, cTokenAddress: cToken2Address } =
-        await deployConfidentialToken(coordinator, usdt, signers.alice);
-      await wrapERC20(coordinator, usdt, wrapAmount, signers.alice.address, signers.alice);
-
-      // Get initial balances
-      const alice1BalanceBefore = await getEncryptedBalance(cToken1, signers.alice, cToken1Address);
-      const alice2BalanceBefore = await getEncryptedBalance(cToken2, signers.alice, cToken2Address);
-      const wrapper1UsdcBefore = await usdc.balanceOf(wrapper1Address);
-
-      // Attempt to unwrap cToken2 to wrapper1 (wrong wrapper)
-      // This should fail the msg.sender check since msg.sender will be cToken2, not cToken1
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [signers.alice.address, signers.alice.address, "0x"]
-      );
-
-      const encryptedUnwrapAmount = await fhevm
-        .createEncryptedInput(await cToken2.getAddress(), signers.alice.address)
-        .add64(42)
-        .encrypt();
-
-      const tx = await cToken2.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        wrapper1Address,
-        encryptedUnwrapAmount.handles[0],
-        encryptedUnwrapAmount.inputProof,
-        data,
-      );
-      const receipt = await tx.wait();
-
-      // CHECK: UnwrappedStarted event shows rejection (returnVal = false, requestId = 0)
-      const unwrapStartedEvents = getUnwrapStartedEvent(receipt);
-      expect(unwrapStartedEvents.length).to.equal(1);
-      expect(unwrapStartedEvents[0].args[0]).to.equal(false, "returnVal should be false");
-      expect(unwrapStartedEvents[0].args[1]).to.equal(0n, "requestId should be 0");
-
-      // CHECK: Alice's balances unchanged (transfer was rejected)
-      const alice1BalanceAfter = await getEncryptedBalance(cToken1, signers.alice, cToken1Address);
-      const alice2BalanceAfter = await getEncryptedBalance(cToken2, signers.alice, cToken2Address);
-      expect(alice1BalanceAfter).to.equal(alice1BalanceBefore, "cToken1 balance should be unchanged");
-      expect(alice2BalanceAfter).to.equal(alice2BalanceBefore, "cToken2 balance should be unchanged");
-
-      // CHECK: Wrapper USDC balance unchanged
-      const wrapper1UsdcAfter = await usdc.balanceOf(wrapper1Address);
-      expect(wrapper1UsdcAfter).to.equal(wrapper1UsdcBefore, "Wrapper USDC balance should be unchanged");
-
-      // VERIFY: Wrapper backing invariant maintained for both wrappers
-      await verifyWrapperBacking(wrapper1);
-    });
   });
 
   describe("Callback Return Value Handling", function () {
@@ -1189,21 +1115,19 @@ describe("Wrapper Unwrap Flow", function () {
 
       // START unwrap to the receiver mock
       const callbackData = ethers.AbiCoder.defaultAbiCoder().encode(["string"], ["test-data"]);
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [receiverMockAddress, signers.alice.address, callbackData]
-      );
 
       const encryptedUnwrapAmount = await fhevm
         .createEncryptedInput(cTokenAddress, signers.alice.address)
         .add64(aliceCTokenBalance)
         .encrypt();
 
-      const unwrapTx = await cToken.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapper.getAddress(),
+      const unwrapTx = await wrapper.connect(signers.alice)["unwrapAndCall(address,address,bytes32,bytes,address,bytes)"](
+        signers.alice,
+        receiverMockAddress,
         encryptedUnwrapAmount.handles[0],
         encryptedUnwrapAmount.inputProof,
-        data,
+        signers.alice,
+        callbackData,
       );
       const unwrapReceipt = await unwrapTx.wait();
 
@@ -1267,21 +1191,19 @@ describe("Wrapper Unwrap Flow", function () {
 
       // START unwrap to the receiver mock
       const callbackData = ethers.AbiCoder.defaultAbiCoder().encode(["string"], ["test-data"]);
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [receiverMockAddress, signers.alice.address, callbackData]
-      );
 
       const encryptedUnwrapAmount = await fhevm
         .createEncryptedInput(cTokenAddress, signers.alice.address)
         .add64(aliceCTokenBalance)
         .encrypt();
 
-      const unwrapTx = await cToken.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapper.getAddress(),
+      const unwrapTx = await wrapper.connect(signers.alice)["unwrapAndCall(address,address,bytes32,bytes,address,bytes)"](
+        signers.alice,
+        receiverMockAddress,
         encryptedUnwrapAmount.handles[0],
         encryptedUnwrapAmount.inputProof,
-        data,
+        signers.alice,
+        callbackData,
       );
       const unwrapReceipt = await unwrapTx.wait();
 
@@ -1332,9 +1254,9 @@ describe("Wrapper Unwrap Flow", function () {
       const aliceCTokenBalance = await getEncryptedBalance(cToken, signers.alice, cTokenAddress);
 
       // START unwrap to EOA (alice)
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [signers.alice.address, signers.alice.address, "0x"]
+      const callbackData = ethers.AbiCoder.defaultAbiCoder().encode(
+        ["bytes"],
+        ["0x"]
       );
 
       const encryptedUnwrapAmount = await fhevm
@@ -1342,11 +1264,13 @@ describe("Wrapper Unwrap Flow", function () {
         .add64(aliceCTokenBalance)
         .encrypt();
 
-      const unwrapTx = await cToken.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapper.getAddress(),
+      const unwrapTx = await wrapper.connect(signers.alice)["unwrapAndCall(address,address,bytes32,bytes,address,bytes)"](
+        signers.alice,
+        signers.alice,
         encryptedUnwrapAmount.handles[0],
         encryptedUnwrapAmount.inputProof,
-        data,
+        signers.alice,
+        callbackData,
       );
       const unwrapReceipt = await unwrapTx.wait();
 
@@ -1393,8 +1317,8 @@ describe("Wrapper Unwrap Flow", function () {
 
       // START unwrap with 0 amount (will fail)
       const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [signers.alice.address, signers.alice.address, "0x"]
+        ["bytes"],
+        ["0x"]
       );
 
       // Unwrap more than balance
@@ -1403,10 +1327,12 @@ describe("Wrapper Unwrap Flow", function () {
         .add64(10)
         .encrypt();
 
-      const unwrapTx = await cToken.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapper.getAddress(),
+      const unwrapTx = await wrapper.connect(signers.alice)["unwrapAndCall(address,address,bytes32,bytes,address,bytes)"](
+        signers.alice,
+        signers.alice,
         encryptedUnwrapAmount.handles[0],
         encryptedUnwrapAmount.inputProof,
+        await wrapper.getAddress(),
         data,
       );
       const unwrapReceipt = await unwrapTx.wait();
@@ -1484,22 +1410,16 @@ describe("Wrapper Unwrap Flow", function () {
 
       const aliceCUsdcBalance = await getEncryptedBalance(cToken, signers.alice, cTokenAddress);
 
-      // START unwrap (alice initiates)
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [signers.alice.address, signers.alice.address, "0x"]
-      );
-
       const encryptedUnwrapAmount = await fhevm
         .createEncryptedInput(cTokenAddress, signers.alice.address)
         .add64(aliceCUsdcBalance)
         .encrypt();
 
-      const unwrapTx = await cToken.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapper.getAddress(),
+      const unwrapTx = await wrapper.connect(signers.alice)["unwrap(address,address,bytes32,bytes)"](
+        signers.alice,
+        signers.alice,
         encryptedUnwrapAmount.handles[0],
         encryptedUnwrapAmount.inputProof,
-        data,
       );
       const unwrapReceipt = await unwrapTx.wait();
 
@@ -1569,22 +1489,16 @@ describe("Wrapper Unwrap Flow", function () {
 
       const aliceCUsdcBalance = await getEncryptedBalance(cToken, signers.alice, cTokenAddress);
 
-      // START unwrap (alice initiates)
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [signers.alice.address, signers.alice.address, "0x"]
-      );
-
       const encryptedUnwrapAmount = await fhevm
         .createEncryptedInput(cTokenAddress, signers.alice.address)
         .add64(aliceCUsdcBalance)
         .encrypt();
 
-      const unwrapTx = await cToken.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapper.getAddress(),
+      const unwrapTx = await wrapper.connect(signers.alice)["unwrap(address,address,bytes32,bytes)"](
+        signers.alice,
+        signers.alice,
         encryptedUnwrapAmount.handles[0],
         encryptedUnwrapAmount.inputProof,
-        data,
       );
       const unwrapReceipt = await unwrapTx.wait();
 
@@ -1631,21 +1545,16 @@ describe("Wrapper Unwrap Flow", function () {
       const aliceCUsdcBalance = await getEncryptedBalance(cToken, signers.alice, cTokenAddress);
 
       // START unwrap (alice initiates)
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [signers.alice.address, signers.alice.address, "0x"]
-      );
-
       const encryptedUnwrapAmount = await fhevm
         .createEncryptedInput(cTokenAddress, signers.alice.address)
         .add64(aliceCUsdcBalance)
         .encrypt();
 
-      const unwrapTx = await cToken.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapper.getAddress(),
+      const unwrapTx = await wrapper.connect(signers.alice)["unwrap(address,address,bytes32,bytes)"](
+        signers.alice,
+        signers.alice,
         encryptedUnwrapAmount.handles[0],
         encryptedUnwrapAmount.inputProof,
-        data,
       );
       const unwrapReceipt = await unwrapTx.wait();
 
@@ -1743,21 +1652,16 @@ describe("Wrapper Unwrap Flow", function () {
       const aliceCEthBalance = await getEncryptedBalance(cEth, signers.alice, cEthAddress);
 
       // START unwrap (alice initiates)
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [signers.alice.address, signers.alice.address, "0x"]
-      );
-
       const encryptedUnwrapAmount = await fhevm
         .createEncryptedInput(cEthAddress, signers.alice.address)
         .add64(aliceCEthBalance)
         .encrypt();
 
-      const unwrapTx = await cEth.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapper.getAddress(),
+      const unwrapTx = await wrapper.connect(signers.alice)["unwrap(address,address,bytes32,bytes)"](
+        signers.alice,
+        signers.alice,
         encryptedUnwrapAmount.handles[0],
         encryptedUnwrapAmount.inputProof,
-        data,
       );
       const unwrapReceipt = await unwrapTx.wait();
 

@@ -70,18 +70,14 @@ describe("Wrapper Refund Address Tests", function () {
         .add64(unwrapAmount)
         .encrypt();
 
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [rejectAddress, signers.bob.address, "0x"] // to=reject, refund=bob
-      );
-
-      const unwrapTx = await cToken
+      const unwrapTx = await wrapper
         .connect(signers.alice)
-        ["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-          await wrapper.getAddress(),
+        ["unwrapWithRefund(address,address,bytes32,bytes,address)"](
+          signers.alice,
+          rejectAddress,
           encryptedUnwrapAmount.handles[0],
           encryptedUnwrapAmount.inputProof,
-          data
+          signers.bob,
         );
       const unwrapReceipt = await unwrapTx.wait();
 
@@ -153,18 +149,14 @@ describe("Wrapper Refund Address Tests", function () {
         .add64(unwrapAmount)
         .encrypt();
 
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [rejectAddress, signers.bob.address, "0x"]
-      );
-
-      const unwrapTx = await cToken
+      const unwrapTx = await wrapper
         .connect(signers.alice)
-        ["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-          await wrapper.getAddress(),
+        ["unwrapWithRefund(address,address,bytes32,bytes,address)"](
+          signers.alice,
+          rejectAddress,
           encryptedUnwrapAmount.handles[0],
           encryptedUnwrapAmount.inputProof,
-          data
+          signers.bob,
         );
       const unwrapReceipt = await unwrapTx.wait();
 
@@ -212,18 +204,16 @@ describe("Wrapper Refund Address Tests", function () {
         .add64(unwrapAmount)
         .encrypt();
 
-      const data = ethers.AbiCoder.defaultAbiCoder().encode(
-        ["address", "address", "bytes"],
-        [ethers.ZeroAddress, signers.alice.address, "0x"] // to = zero address
-      );
-
       await expect(
-        cToken.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-          await wrapper.getAddress(),
-          encryptedUnwrapAmount.handles[0],
-          encryptedUnwrapAmount.inputProof,
-          data
-        )
+        wrapper
+          .connect(signers.alice)
+          ["unwrapWithRefund(address,address,bytes32,bytes,address)"](
+            signers.alice,
+            ethers.ZeroAddress,
+            encryptedUnwrapAmount.handles[0],
+            encryptedUnwrapAmount.inputProof,
+            signers.bob,
+          )
       ).to.be.revertedWithCustomError(wrapper, "CannotSendToZeroAddress");
     });
 
@@ -246,12 +236,15 @@ describe("Wrapper Refund Address Tests", function () {
       );
 
       await expect(
-        cToken.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-          await wrapper.getAddress(),
-          encryptedUnwrapAmount.handles[0],
-          encryptedUnwrapAmount.inputProof,
-          data
-        )
+        wrapper
+          .connect(signers.alice)
+          ["unwrapWithRefund(address,address,bytes32,bytes,address)"](
+            signers.alice,
+            signers.alice,
+            encryptedUnwrapAmount.handles[0],
+            encryptedUnwrapAmount.inputProof,
+            ethers.ZeroAddress,
+          )
       ).to.be.revertedWithCustomError(wrapper, "CannotSendToZeroAddress");
     });
   });
@@ -278,13 +271,14 @@ describe("Wrapper Refund Address Tests", function () {
         [signers.alice.address, signers.bob.address, "0x"] // refund = bob
       );
 
-      const unwrapTx = await cToken
+      const unwrapTx = await wrapper
         .connect(signers.alice)
-        ["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-          await wrapper.getAddress(),
+        ["unwrapWithRefund(address,address,bytes32,bytes,address)"](
+          signers.alice,
+          signers.alice.address,
           encryptedUnwrapAmount.handles[0],
           encryptedUnwrapAmount.inputProof,
-          data
+          signers.bob,
         );
       const unwrapReceipt = await unwrapTx.wait();
 

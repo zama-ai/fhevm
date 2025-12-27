@@ -29,36 +29,19 @@ describe("WrapperUpgradeable - Initialize Validation", function () {
   });
 
   describe("Zero Address Validation", function () {
-    it("should revert when confidentialToken_ is zero address", async function () {
-      const originalToken = ethers.ZeroAddress; // ETH wrapper
-      const implAddress = await wrapperImplementation.getAddress();
-
-      // Create initialize call data with zero address for confidentialToken
-      const initData = wrapperImplementation.interface.encodeFunctionData("initialize", [
-        originalToken,
-        ethers.ZeroAddress, // confidentialToken_ = zero address
-        await adminProvider.getAddress(),
-        signers.deployer.address
-      ]);
-
-      // Deploy proxy with initialization
-      const proxyFactory = await ethers.getContractFactory("ERC1967Proxy");
-
-      await expect(
-        proxyFactory.deploy(implAddress, initData)
-      ).to.be.revertedWithCustomError(wrapperImplementation, "ZeroAddressConfidentialToken");
-    });
-
     it("should revert when deploymentCoordinator_ is zero address", async function () {
       const originalToken = ethers.ZeroAddress; // ETH wrapper
       const implAddress = await wrapperImplementation.getAddress();
 
       // Create initialize call data with zero address for adminProvider
-      const initData = wrapperImplementation.interface.encodeFunctionData("initialize", [
-        originalToken,
-        await cToken.getAddress(),
+      const initData = wrapperImplementation.interface.encodeFunctionData("initialize(string,string,uint8,address,uint256,address,address)", [
+        "name",
+        "symbol",
+        6,
+        await adminProvider.getAddress(),
+        1,
         ethers.ZeroAddress, // deploymentCoordinator_ = zero address
-        signers.deployer.address
+        originalToken,
       ]);
 
       // Deploy proxy with initialization
@@ -74,11 +57,14 @@ describe("WrapperUpgradeable - Initialize Validation", function () {
       const implAddress = await wrapperImplementation.getAddress();
 
       // Create initialize call data with zero addresses for both
-      const initData = wrapperImplementation.interface.encodeFunctionData("initialize", [
-        originalToken,
-        ethers.ZeroAddress, // confidentialToken_ = zero address
+      const initData = wrapperImplementation.interface.encodeFunctionData("initialize(string,string,uint8,address,uint256,address,address)", [
+        "name",
+        "symbol",
+        6,
         ethers.ZeroAddress, // adminProvider_ = zero address
-        signers.deployer.address
+        1,
+        ethers.ZeroAddress, // deploymentCoordinator_ = zero address
+        originalToken,
       ]);
 
       // Deploy proxy with initialization
@@ -87,7 +73,7 @@ describe("WrapperUpgradeable - Initialize Validation", function () {
       // Should revert with the first check (confidentialToken)
       await expect(
         proxyFactory.deploy(implAddress, initData)
-      ).to.be.revertedWithCustomError(wrapperImplementation, "ZeroAddressConfidentialToken");
+      ).to.be.revertedWithCustomError(wrapperImplementation, "AccessControlInvalidDefaultAdmin");
     });
 
     it("should allow originalToken_ to be zero address (ETH wrapper)", async function () {
@@ -96,11 +82,14 @@ describe("WrapperUpgradeable - Initialize Validation", function () {
       const coordinator = signers.deployer.address;
 
       // Create initialize call data with zero address for originalToken (valid for ETH)
-      const initData = wrapperImplementation.interface.encodeFunctionData("initialize", [
-        ethers.ZeroAddress, // originalToken_ = zero address (ETH)
-        await cToken.getAddress(),
+      const initData = wrapperImplementation.interface.encodeFunctionData("initialize(string,string,uint8,address,uint256,address,address)", [
+        "name",
+        "symbol",
+        6,
+        await adminProvider.getAddress(),
+        1,
         coordinator,
-        signers.deployer.address
+        ethers.ZeroAddress, // originalToken_ = zero address (ETH)
       ]);
 
       // Deploy proxy with initialization
@@ -113,7 +102,6 @@ describe("WrapperUpgradeable - Initialize Validation", function () {
 
       // Verify initialization succeeded
       expect(await wrapper.originalToken()).to.equal(ethers.ZeroAddress);
-      expect(await wrapper.confidentialToken()).to.equal(await cToken.getAddress());
       expect(await wrapper.deploymentCoordinator()).to.equal(coordinator);
     });
   });
@@ -122,11 +110,16 @@ describe("WrapperUpgradeable - Initialize Validation", function () {
     it("should prevent calling initialize twice on the same proxy", async function () {
       const implAddress = await wrapperImplementation.getAddress();
 
-      const initData = wrapperImplementation.interface.encodeFunctionData("initialize", [
-        ethers.ZeroAddress,
-        await cToken.getAddress(),
+      const coordinator = signers.deployer.address;
+
+      const initData = wrapperImplementation.interface.encodeFunctionData("initialize(string,string,uint8,address,uint256,address,address)", [
+        "name",
+        "symbol",
+        6,
         await adminProvider.getAddress(),
-        signers.deployer.address
+        1,
+        coordinator,
+        ethers.ZeroAddress, // originalToken_ = zero address (ETH)
       ]);
 
       const proxyFactory = await ethers.getContractFactory("ERC1967Proxy");
@@ -137,11 +130,14 @@ describe("WrapperUpgradeable - Initialize Validation", function () {
 
       // Try to initialize again
       await expect(
-        wrapper.initialize(
-          ethers.ZeroAddress,
-          await cToken.getAddress(),
+        wrapper["initialize(string,string,uint8,address,uint256,address,address)"](
+          "name",
+          "symbol",
+          6,
           await adminProvider.getAddress(),
-          signers.deployer.address
+          1,
+          coordinator,
+          ethers.ZeroAddress, // originalToken_ = zero address (ETH)
         )
       ).to.be.revertedWithCustomError(wrapper, "InvalidInitialization");
     });
@@ -151,11 +147,16 @@ describe("WrapperUpgradeable - Initialize Validation", function () {
     it("should return empty ReceiverEntry for non-existent requestId", async function () {
       const implAddress = await wrapperImplementation.getAddress();
 
-      const initData = wrapperImplementation.interface.encodeFunctionData("initialize", [
-        ethers.ZeroAddress,
-        await cToken.getAddress(),
+      const coordinator = signers.deployer.address;
+
+      const initData = wrapperImplementation.interface.encodeFunctionData("initialize(string,string,uint8,address,uint256,address,address)", [
+        "name",
+        "symbol",
+        6,
         await adminProvider.getAddress(),
-        signers.deployer.address
+        1,
+        coordinator,
+        ethers.ZeroAddress, // originalToken_ = zero address (ETH)
       ]);
 
       const proxyFactory = await ethers.getContractFactory("ERC1967Proxy");

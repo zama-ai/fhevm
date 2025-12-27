@@ -9,9 +9,9 @@ import {
 } from "./utils";
 import { getSigners, Signers } from "./signers";
 
-import type { TestERC20, AdminProvider, DeploymentCoordinator, WrapperFactory, RegulatedERC7984UpgradeableFactory } from "../types";
+import type { TestERC20, AdminProvider, DeploymentCoordinator } from "../types";
 import { MAX_DECIMALS } from "./constants";
-import { deployAdminProviderFixture, deployConfidentialTokenFactoryFixture, deployERC20InvalidDecimalsFixture, deployERC20NoDecimalsFixture, deployTestERC20Fixture, deployWrapperFactoryFixture, deployWrapperFixture } from "./fixtures";
+import { deployAdminProviderFixture, deployERC20InvalidDecimalsFixture, deployERC20NoDecimalsFixture, deployTestERC20Fixture, deployWrapperFixture } from "./fixtures";
 
 
 async function deployFixture(signers: Signers) {
@@ -58,13 +58,9 @@ describe("Wrapper", function () {
     it("should configure the right permissions", async function () {
       await deployConfidentialToken(coordinator, usdc, signers.alice);
 
-      const cUsdcAddress = await coordinator.getConfidentialToken(usdcAddress);
-      const cUsdc = await ethers.getContractAt("RegulatedERC7984Upgradeable", cUsdcAddress);
       const wrapperAddress = await coordinator.getWrapper(usdcAddress);
-      const wrapper = await ethers.getContractAt("Wrapper", wrapperAddress);
+      const cUsdc = await ethers.getContractAt("RegulatedERC7984Upgradeable", wrapperAddress);
 
-      expect(await cUsdc.hasRole(await cUsdc.DEFAULT_ADMIN_ROLE(), wrapperAddress)).to.equal(false);
-      expect(await cUsdc.hasRole(await cUsdc.WRAPPER_ROLE(), wrapperAddress)).to.equal(true);
       expect(await cUsdc.hasRole(await cUsdc.DEFAULT_ADMIN_ROLE(), await adminProvider.owner())).to.equal(true);
       expect(await cUsdc.hasRole(await cUsdc.DEFAULT_ADMIN_ROLE(), coordinatorAddress)).to.equal(false);
     });
@@ -107,9 +103,6 @@ describe("Wrapper", function () {
       ).to.not.be.reverted;
 
       // Verify deployment was successful
-      const cUsdcAddress = await coordinator.getConfidentialToken(usdcAddress);
-      expect(cUsdcAddress).to.not.equal(ethers.ZeroAddress);
-
       const wrapperAddress = await coordinator.getWrapper(usdcAddress);
       expect(wrapperAddress).to.not.equal(ethers.ZeroAddress);
     });
@@ -126,11 +119,10 @@ describe("Wrapper", function () {
       expect(wrapDeployedEvent.length).to.be.equal(1);
       expect(wrapDeployedEvent[0].args[0]).to.be.equal(ethers.ZeroAddress);
       expect(wrapDeployedEvent[0].args[1]).to.be.equal(wrapperAddress);
-      expect(wrapDeployedEvent[0].args[2]).to.be.equal(cEthAddress);
-      expect(wrapDeployedEvent[0].args[3]).to.be.equal("Ethereum");
-      expect(wrapDeployedEvent[0].args[4]).to.be.equal("ETH");
-      expect(wrapDeployedEvent[0].args[5]).to.be.equal(18);
-      expect(wrapDeployedEvent[0].args[6]).to.be.equal(signers.alice);
+      expect(wrapDeployedEvent[0].args[2]).to.be.equal("Ethereum");
+      expect(wrapDeployedEvent[0].args[3]).to.be.equal("ETH");
+      expect(wrapDeployedEvent[0].args[4]).to.be.equal(18);
+      expect(wrapDeployedEvent[0].args[5]).to.be.equal(signers.alice);
     });
 
     for (const originalDecimals of [5, 6, 18]) {
@@ -148,10 +140,9 @@ describe("Wrapper", function () {
 
         const { receipt } = await deployConfidentialToken(coordinator, erc20, signers.alice);
 
-        const cErc20Address = await coordinator.getConfidentialToken(erc20Address);
-        const cErc20 = await ethers.getContractAt("RegulatedERC7984Upgradeable", cErc20Address);
         const wrapperAddress = await coordinator.getWrapper(erc20Address);
-        const wrapper = await ethers.getContractAt("Wrapper", wrapperAddress);
+        const cErc20 = await ethers.getContractAt("RegulatedERC7984Upgradeable", wrapperAddress);
+        const wrapper = await ethers.getContractAt("WrapperUpgradeable", wrapperAddress);
 
         expect(await cErc20.name()).to.equal(`confidential ${originalName}`);
         expect(await cErc20.symbol()).to.equal(`c${originalSymbol}`);
@@ -162,18 +153,16 @@ describe("Wrapper", function () {
         }
 
         expect(await cErc20.hasRole(await cErc20.DEFAULT_ADMIN_ROLE(), wrapperAddress)).to.equal(false);
-        expect(await cErc20.hasRole(await cErc20.WRAPPER_ROLE(), wrapperAddress)).to.equal(true);
         expect(await cErc20.regulator()).to.equal(await adminProvider.regulator());
 
         const wrapDeployedEvent = getWrapDeployedEvent(receipt);
         expect(wrapDeployedEvent.length).to.be.equal(1);
         expect(wrapDeployedEvent[0].args[0]).to.be.equal(erc20Address);
         expect(wrapDeployedEvent[0].args[1]).to.be.equal(wrapperAddress);
-        expect(wrapDeployedEvent[0].args[2]).to.be.equal(cErc20Address);
-        expect(wrapDeployedEvent[0].args[3]).to.be.equal(originalName);
-        expect(wrapDeployedEvent[0].args[4]).to.be.equal(originalSymbol);
-        expect(wrapDeployedEvent[0].args[5]).to.be.equal(originalDecimals);
-        expect(wrapDeployedEvent[0].args[6]).to.be.equal(signers.alice);
+        expect(wrapDeployedEvent[0].args[2]).to.be.equal(originalName);
+        expect(wrapDeployedEvent[0].args[3]).to.be.equal(originalSymbol);
+        expect(wrapDeployedEvent[0].args[4]).to.be.equal(originalDecimals);
+        expect(wrapDeployedEvent[0].args[5]).to.be.equal(signers.alice);
       });
     }
 
@@ -188,13 +177,10 @@ describe("Wrapper", function () {
 
     it("should deploy tokens with admin provider from wrapper", async function () {
       // Deploy a confidential token
-      await deployConfidentialToken(coordinator, usdc, signers.alice);
-
-      const cUsdcAddress = await coordinator.getConfidentialToken(usdcAddress);
-      const cUsdc = await ethers.getContractAt("RegulatedERC7984Upgradeable", cUsdcAddress);
+      const { wrapper } = await deployConfidentialToken(coordinator, usdc, signers.alice);
 
       // Verify the token has the same admin provider as the coordinator
-      expect(await cUsdc.adminProvider()).to.equal(await coordinator.adminProvider());
+      expect(await wrapper.adminProvider()).to.equal(await coordinator.adminProvider());
     });
 
     it("should revert on fee transfer failure", async function () {
@@ -235,7 +221,6 @@ describe("Wrapper", function () {
 
         // Verify no wrapper or cToken was deployed
         expect(await coordinator.getWrapper(nonExistentTokenAddress)).to.equal(ethers.ZeroAddress);
-        expect(await coordinator.getConfidentialToken(nonExistentTokenAddress)).to.equal(ethers.ZeroAddress);
         expect(await coordinator.wrapperExists(nonExistentTokenAddress)).to.equal(false);
       });
 
@@ -256,50 +241,29 @@ describe("Wrapper", function () {
 
   describe("Constructor Validation", function () {
     it("should revert if admin provider is zero address", async function () {
-      const WrapperFactoryContract = await ethers.getContractFactory("WrapperFactory");
-      const RegulatedERC7984UpgradeableFactoryContract = await ethers.getContractFactory("RegulatedERC7984UpgradeableFactory");
       const DeploymentCoordinatorContract = await ethers.getContractFactory("DeploymentCoordinator");
 
-      const wrapperFactory = await WrapperFactoryContract.deploy();
-      const confidentialTokenFactory = await RegulatedERC7984UpgradeableFactoryContract.deploy();
+      const wrapperUpgradeableFactory = await ethers.getContractFactory("WrapperUpgradeable");
+      const wrapperImplementation = await wrapperUpgradeableFactory.deploy();
+      await wrapperImplementation.waitForDeployment();
 
       await expect(
         DeploymentCoordinatorContract.deploy(
           ethers.ZeroAddress, // adminProvider
-          wrapperFactory,
-          confidentialTokenFactory
+          wrapperImplementation,
         )
       ).to.be.revertedWithCustomError(DeploymentCoordinatorContract, "ZeroAddressAdminProvider");
     });
 
-    it("should revert if wrapper factory is zero address", async function () {
-      const RegulatedERC7984UpgradeableFactoryContract = await ethers.getContractFactory("RegulatedERC7984UpgradeableFactory");
+    it("should revert if wrapper implementation is zero address", async function () {
       const DeploymentCoordinatorContract = await ethers.getContractFactory("DeploymentCoordinator");
-
-      const confidentialTokenFactory = await RegulatedERC7984UpgradeableFactoryContract.deploy();
 
       await expect(
         DeploymentCoordinatorContract.deploy(
           adminProvider,
-          ethers.ZeroAddress, // wrapperFactory
-          confidentialTokenFactory
+          ethers.ZeroAddress // wrapper implementation
         )
-      ).to.be.revertedWithCustomError(DeploymentCoordinatorContract, "ZeroAddressWrapperFactory");
-    });
-
-    it("should revert if confidential token factory is zero address", async function () {
-      const WrapperFactoryContract = await ethers.getContractFactory("WrapperFactory");
-      const DeploymentCoordinatorContract = await ethers.getContractFactory("DeploymentCoordinator");
-
-      const wrapperFactory = await WrapperFactoryContract.deploy();
-
-      await expect(
-        DeploymentCoordinatorContract.deploy(
-          adminProvider,
-          wrapperFactory,
-          ethers.ZeroAddress // confidentialTokenFactory
-        )
-      ).to.be.revertedWithCustomError(DeploymentCoordinatorContract, "ZeroAddressConfidentialTokenFactory");
+      ).to.be.revertedWithCustomError(DeploymentCoordinatorContract, "ZeroAddressImplementation");
     });
   });
 
@@ -368,60 +332,6 @@ describe("Wrapper", function () {
       await expect(
         coordinator.setAdminProvider(ethers.ZeroAddress)
       ).to.be.revertedWithCustomError(coordinator, "ZeroAddressAdminProvider");
-    });
-
-    it("should allow owner to set wrapperFactory and emit event", async function () {
-      const { wrapperFactoryAddress: newWrapperFactoryAddress } = await deployWrapperFactoryFixture();
-
-      const oldWrapperFactory = await coordinator.wrapperFactory();
-      const tx = await coordinator.setWrapperFactory(newWrapperFactoryAddress);
-
-      await expect(tx)
-        .to.emit(coordinator, "WrapperFactoryUpdated")
-        .withArgs(oldWrapperFactory, newWrapperFactoryAddress);
-
-      expect(await coordinator.wrapperFactory()).to.equal(newWrapperFactoryAddress);
-    });
-
-    it("should revert when non-owner tries to set wrapperFactory", async function () {
-      const { wrapperFactoryAddress: newWrapperFactoryAddress } = await deployWrapperFactoryFixture();
-
-      await expect(
-        coordinator.connect(signers.alice).setWrapperFactory(newWrapperFactoryAddress)
-      ).to.be.revertedWithCustomError(coordinator, "OwnableUnauthorizedAccount");
-    });
-
-    it("should revert when setting wrapperFactory to zero address", async function () {
-      await expect(
-        coordinator.setWrapperFactory(ethers.ZeroAddress)
-      ).to.be.revertedWithCustomError(coordinator, "ZeroAddressWrapperFactory");
-    });
-
-    it("should allow owner to set confidentialTokenFactory and emit event", async function () {
-      const { confidentialTokenFactoryAddress: newConfidentialTokenFactoryAddress } = await deployConfidentialTokenFactoryFixture();
-
-      const oldConfidentialTokenFactory = await coordinator.confidentialTokenFactory();
-      const tx = await coordinator.setConfidentialTokenFactory(newConfidentialTokenFactoryAddress);
-
-      await expect(tx)
-        .to.emit(coordinator, "ConfidentialTokenFactoryUpdated")
-        .withArgs(oldConfidentialTokenFactory, newConfidentialTokenFactoryAddress);
-
-      expect(await coordinator.confidentialTokenFactory()).to.equal(newConfidentialTokenFactoryAddress);
-    });
-
-    it("should revert when non-owner tries to set confidentialTokenFactory", async function () {
-      const { confidentialTokenFactoryAddress: newConfidentialTokenFactoryAddress } = await deployConfidentialTokenFactoryFixture();
-
-      await expect(
-        coordinator.connect(signers.alice).setConfidentialTokenFactory(newConfidentialTokenFactoryAddress)
-      ).to.be.revertedWithCustomError(coordinator, "OwnableUnauthorizedAccount");
-    });
-
-    it("should revert when setting confidentialTokenFactory to zero address", async function () {
-      await expect(
-        coordinator.setConfidentialTokenFactory(ethers.ZeroAddress)
-      ).to.be.revertedWithCustomError(coordinator, "ZeroAddressConfidentialTokenFactory");
     });
   });
 
@@ -515,130 +425,6 @@ describe("Wrapper", function () {
     });
   });
 
-  describe("setConfidentialTokenImplementation", function () {
-    it("should deploy new tokens with updated implementation after calling setConfidentialTokenImplementation", async function () {
-      // Deploy first token with default implementation
-      await deployConfidentialToken(coordinator, usdc, signers.alice);
-      const cUsdcAddress = await coordinator.getConfidentialToken(usdcAddress);
-
-      // Get implementation of first token
-      const implementationSlot = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
-      const impl1 = await ethers.provider.getStorage(cUsdcAddress, implementationSlot);
-      const impl1Address = "0x" + impl1.slice(26);
-
-      // Deploy V2 implementation
-      const RegulatedERC7984V2 = await ethers.getContractFactory("RegulatedERC7984UpgradeableV2Mock");
-      const v2Impl = await RegulatedERC7984V2.deploy();
-      await v2Impl.waitForDeployment();
-      const v2ImplAddress = await v2Impl.getAddress();
-
-      // Update coordinator's canonical implementation to V2
-      await coordinator.setConfidentialTokenImplementation(v2ImplAddress);
-
-      // Verify coordinator now points to V2 implementation
-      expect(await coordinator.confidentialTokenImplementation()).to.equal(v2ImplAddress);
-
-      // Deploy second token (USDT) - should use V2 implementation
-      const usdt = await deployTestERC20Fixture("USDT");
-      const usdtAddress = await usdt.getAddress();
-      await deployConfidentialToken(coordinator, usdt, signers.alice);
-      const cUsdtAddress = await coordinator.getConfidentialToken(usdtAddress);
-
-      // Get implementation of second token
-      const impl2 = await ethers.provider.getStorage(cUsdtAddress, implementationSlot);
-      const impl2Address = "0x" + impl2.slice(26);
-
-      // Verify second token uses V2 implementation
-      expect(impl2Address.toLowerCase()).to.equal(v2ImplAddress.toLowerCase());
-
-      // Verify first token still uses V1 implementation (unchanged)
-      const impl1After = await ethers.provider.getStorage(cUsdcAddress, implementationSlot);
-      const impl1AfterAddress = "0x" + impl1After.slice(26);
-      expect(impl1AfterAddress.toLowerCase()).to.equal(impl1Address.toLowerCase());
-      expect(impl1AfterAddress.toLowerCase()).to.not.equal(v2ImplAddress.toLowerCase());
-
-      // Verify V2 functionality works on second token
-      const cUsdtV2 = await ethers.getContractAt("RegulatedERC7984UpgradeableV2Mock", cUsdtAddress);
-      expect(await cUsdtV2.counter()).to.equal(0);
-      await cUsdtV2.incrementCounter();
-      expect(await cUsdtV2.counter()).to.equal(1);
-
-      // Verify first token does NOT have V2 functionality (still V1)
-      const cUsdcAsV2 = await ethers.getContractAt("RegulatedERC7984UpgradeableV2Mock", cUsdcAddress);
-      await expect(cUsdcAsV2.counter()).to.be.reverted;
-    });
-
-    it("should prevent non-owner from calling setConfidentialTokenImplementation", async function () {
-      const RegulatedERC7984V2 = await ethers.getContractFactory("RegulatedERC7984UpgradeableV2Mock");
-      const v2Impl = await RegulatedERC7984V2.deploy();
-      await v2Impl.waitForDeployment();
-      const v2ImplAddress = await v2Impl.getAddress();
-
-      await expect(
-        coordinator.connect(signers.alice).setConfidentialTokenImplementation(v2ImplAddress)
-      ).to.be.revertedWithCustomError(coordinator, "OwnableUnauthorizedAccount")
-        .withArgs(signers.alice.address);
-    });
-
-    it("should revert when setting zero address as implementation", async function () {
-      await expect(
-        coordinator.setConfidentialTokenImplementation(ethers.ZeroAddress)
-      ).to.be.revertedWithCustomError(coordinator, "ZeroAddressImplementation");
-    });
-  });
-
-  describe("Upgrade deployed RegulatedERC7984Upgradeable contract", function () {
-    it("should allow upgrading with UPGRADER_ROLE", async function () {
-      await deployConfidentialToken(coordinator, usdc, signers.alice);
-
-      const cUsdcAddress = await coordinator.getConfidentialToken(usdcAddress);
-      const cUsdc = await ethers.getContractAt("RegulatedERC7984Upgradeable", cUsdcAddress);
-
-      // Admin provider owner has DEFAULT_ADMIN_ROLE
-      const adminProviderOwner = await adminProvider.owner();
-
-      // Grant UPGRADER_ROLE to bob
-      await ethers.provider.send("hardhat_impersonateAccount", [adminProviderOwner]);
-      const adminSigner = await ethers.getSigner(adminProviderOwner);
-      const UPGRADER_ROLE = await cUsdc.UPGRADER_ROLE();
-      await cUsdc.connect(adminSigner).grantRole(UPGRADER_ROLE, signers.bob.address);
-      await ethers.provider.send("hardhat_stopImpersonatingAccount", [adminProviderOwner]);
-
-      const RegulatedERC7984UpgradeableV2Mock = await ethers.getContractFactory("RegulatedERC7984UpgradeableV2Mock");
-      const newImpl = await RegulatedERC7984UpgradeableV2Mock.deploy();
-      await newImpl.waitForDeployment();
-
-      // Bob with UPGRADER_ROLE can upgrade
-      const tx = await cUsdc.connect(signers.bob).upgradeToAndCall(await newImpl.getAddress(), "0x");
-      await tx.wait();
-
-      const cUsdcV2 = await ethers.getContractAt("RegulatedERC7984UpgradeableV2Mock", cUsdcAddress);
-      await cUsdcV2.connect(signers.bob).incrementCounter();
-      expect(await cUsdcV2.counter()).to.equal(1);
-    });
-
-    it("should NOT allow upgrading without UPGRADER_ROLE", async function () {
-      await deployConfidentialToken(coordinator, usdc, signers.alice);
-
-      const cUsdcAddress = await coordinator.getConfidentialToken(usdcAddress);
-      const cUsdc = await ethers.getContractAt("RegulatedERC7984Upgradeable", cUsdcAddress);
-
-      const UPGRADER_ROLE = await cUsdc.UPGRADER_ROLE();
-      expect(await cUsdc.hasRole(UPGRADER_ROLE, signers.alice.address)).to.equal(false);
-
-      const RegulatedERC7984UpgradeableV2Mock = await ethers.getContractFactory("RegulatedERC7984UpgradeableV2Mock");
-      const newImpl = await RegulatedERC7984UpgradeableV2Mock.deploy();
-      await newImpl.waitForDeployment();
-
-      await expect(
-        cUsdc.connect(signers.alice).upgradeToAndCall(await newImpl.getAddress(), "0x")
-      ).to.be.revertedWithCustomError(
-        cUsdc,
-        "AccessControlUnauthorizedAccount",
-      ).withArgs(signers.alice.address, UPGRADER_ROLE);
-    });
-  });
-
   describe("Non-Standard ERC20 Token Support", function () {
     describe("ERC20 with bytes32 name/symbol (like MKR)", function () {
       it("should deploy wrapper for token with bytes32 metadata", async function () {
@@ -674,9 +460,9 @@ describe("Wrapper", function () {
         // Verify event contains correct metadata
         const wrapDeployedEvent = getWrapDeployedEvent(receipt);
         expect(wrapDeployedEvent.length).to.equal(1);
-        expect(wrapDeployedEvent[0].args[3]).to.equal("Maker");
-        expect(wrapDeployedEvent[0].args[4]).to.equal("MKR");
-        expect(wrapDeployedEvent[0].args[5]).to.equal(18);
+        expect(wrapDeployedEvent[0].args[2]).to.equal("Maker");
+        expect(wrapDeployedEvent[0].args[3]).to.equal("MKR");
+        expect(wrapDeployedEvent[0].args[4]).to.equal(18);
       });
 
       it("should handle bytes32 metadata with trailing zeros", async function () {
@@ -724,8 +510,8 @@ describe("Wrapper", function () {
 
         // Verify event uses fallback names
         const wrapDeployedEvent = getWrapDeployedEvent(receipt);
-        expect(wrapDeployedEvent[0].args[3]).to.equal(expectedName);
-        expect(wrapDeployedEvent[0].args[4]).to.equal(expectedSymbol);
+        expect(wrapDeployedEvent[0].args[2]).to.equal(expectedName);
+        expect(wrapDeployedEvent[0].args[3]).to.equal(expectedSymbol);
       });
     });
 
@@ -752,8 +538,8 @@ describe("Wrapper", function () {
 
         // Verify event uses fallback names
         const wrapDeployedEvent = getWrapDeployedEvent(receipt);
-        expect(wrapDeployedEvent[0].args[3]).to.equal(expectedName);
-        expect(wrapDeployedEvent[0].args[4]).to.equal(expectedSymbol);
+        expect(wrapDeployedEvent[0].args[2]).to.equal(expectedName);
+        expect(wrapDeployedEvent[0].args[3]).to.equal(expectedSymbol);
       });
     });
 
@@ -781,9 +567,9 @@ describe("Wrapper", function () {
 
         // Verify event uses fallback names
         const wrapDeployedEvent = getWrapDeployedEvent(receipt);
-        expect(wrapDeployedEvent[0].args[3]).to.equal(expectedName);
-        expect(wrapDeployedEvent[0].args[4]).to.equal(expectedSymbol);
-        expect(wrapDeployedEvent[0].args[5]).to.equal(18); // Fallback decimals
+        expect(wrapDeployedEvent[0].args[2]).to.equal(expectedName);
+        expect(wrapDeployedEvent[0].args[3]).to.equal(expectedSymbol);
+        expect(wrapDeployedEvent[0].args[4]).to.equal(18); // Fallback decimals
       });
     });
 
@@ -798,8 +584,8 @@ describe("Wrapper", function () {
         expect(await cToken.decimals()).to.equal(MAX_DECIMALS);
 
         const wrapDeployedEvent = getWrapDeployedEvent(receipt);
+        expect(wrapDeployedEvent[0].args[2]).to.equal("USDC");
         expect(wrapDeployedEvent[0].args[3]).to.equal("USDC");
-        expect(wrapDeployedEvent[0].args[4]).to.equal("USDC");
       });
     });
 
@@ -837,8 +623,8 @@ describe("Wrapper", function () {
 
         // Verify event uses fallback names
         const wrapDeployedEvent = getWrapDeployedEvent(receipt);
-        expect(wrapDeployedEvent[0].args[3]).to.equal(expectedName);
-        expect(wrapDeployedEvent[0].args[4]).to.equal(expectedSymbol);
+        expect(wrapDeployedEvent[0].args[2]).to.equal(expectedName);
+        expect(wrapDeployedEvent[0].args[3]).to.equal(expectedSymbol);
       });
 
       it("should handle address with leading zeros correctly", async function () {
@@ -965,7 +751,6 @@ describe("Wrapper", function () {
       expect(await wrapperV2.counter()).to.equal(1);
 
       // Verify original functionality still works
-      expect(await wrapper.confidentialToken()).to.equal(await cToken.getAddress());
       expect(await wrapper.originalToken()).to.equal(await usdc.getAddress());
     });
 
@@ -1058,11 +843,14 @@ describe("Wrapper", function () {
       const { cToken } = await deployConfidentialToken(coordinator, usdc, signers.alice);
 
       await expect(
-        wrapperImpl.initialize(
+        wrapperImpl["initialize(string,string,uint8,address,uint256,address,address)"](
+          "name",
+          "symbol",
+          6,
+          await adminProvider.getAddress(),
+          1,
+          await coordinator.getAddress(),
           await usdc.getAddress(),
-          cToken,
-          adminProvider,
-          signers.deployer.address
         )
       ).to.be.revertedWithCustomError(WrapperUpgradeableFactory, "InvalidInitialization");
     });

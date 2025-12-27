@@ -20,7 +20,6 @@ describe("TransferBatcher", function () {
 
   beforeEach(async () => {
     ({ cErc20, cErc20Address, adminProvider } = await deployConfidentialErc20Fixture(signers));
-    await cErc20.grantRole(await cErc20.WRAPPER_ROLE(), signers.deployer);
     ({transferBatcher, transferBatcherAddress} = await deployTransferBatcherFixture(signers.deployer, adminProvider));
   });
 
@@ -367,7 +366,6 @@ describe("TransferBatcher", function () {
     it("should prevent cross-token transaction ID collision", async function () {
       // Deploy a second confidential token
       const { cErc20: cErc20B, cErc20Address: cErc20AddressB } = await deployConfidentialErc20Fixture(signers);
-      await cErc20B.grantRole(await cErc20B.WRAPPER_ROLE(), signers.deployer);
 
       // Alias for clarity
       const cErc20A = cErc20;

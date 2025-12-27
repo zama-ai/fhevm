@@ -91,7 +91,7 @@ export async function deployConfidentialErc20Fixture(signers: Signers, adminProv
   const adminProviderAddress = await adminProvider.getAddress();
   const { coordinator } = await deployCoordinator(signers, adminProvider);
 
-  const ERC7984 = await ethers.getContractFactory("RegulatedERC7984Upgradeable");
+  const ERC7984 = await ethers.getContractFactory("RegulatedERC7984MintableUpgradeable");
   const underlyingAddress = underlying ? await underlying.getAddress() : ethers.ZeroAddress;
   const cErc20 = await upgrades.deployProxy(ERC7984, [
     "Naraggara",
@@ -99,14 +99,9 @@ export async function deployConfidentialErc20Fixture(signers: Signers, adminProv
     6,
     signers.deployer.address, // admin
     1, // rate
-    underlyingAddress,
     await coordinator.getAddress(),
-    signers.deployer.address // wrapperSetter (deployer will call setWrapper if needed)
   ]);
   await cErc20.waitForDeployment();
-  if (deployerIsWrapper) {
-    await cErc20.setWrapper(signers.deployer.address);
-  }
   const cErc20Address = await cErc20.getAddress();
 
   return { cErc20, cErc20Address, adminProvider, adminProviderAddress };
@@ -142,54 +137,22 @@ export async function deployBurnableConfidentialErc20Fixture(signers: Signers, a
 }
 
 
-export async function deployWrapperFactoryFixture(owner?: HardhatEthersSigner) {
-  const wrapperFactory = (await ethers.getContractFactory("WrapperFactory")) as WrapperFactory__factory;
-  const deployedWrapperFactory = (await wrapperFactory.deploy()) as WrapperFactory;
-  const wrapperFactoryAddress = await deployedWrapperFactory.getAddress();
-
-  if (owner) {
-    await deployedWrapperFactory.transferOwnership(await owner.getAddress());
-  }
-
-  return { wrapperFactory: deployedWrapperFactory, wrapperFactoryAddress };
-}
-
-export async function deployConfidentialTokenFactoryFixture(owner?: HardhatEthersSigner) {
-  const confidentialTokenFactory = (await ethers.getContractFactory("RegulatedERC7984UpgradeableFactory")) as ConfidentialTokenFactory__factory;
-  const deployedConfidentialTokenFactory = (await confidentialTokenFactory.deploy()) as ConfidentialTokenFactory;
-  const confidentialTokenFactoryAddress = await deployedConfidentialTokenFactory.getAddress();
-
-  if (owner) {
-    await deployedConfidentialTokenFactory.transferOwnership(await owner.getAddress());
-  }
-
-  return { confidentialTokenFactory: deployedConfidentialTokenFactory, confidentialTokenFactoryAddress };
-}
-
 export async function deployCoordinator(signers: Signers, adminProvider?: AdminProvider) {
   if (!adminProvider) {
       ({ adminProvider } = await deployAdminProviderFixture(signers));
   }
 
-  const { confidentialTokenFactory } = await deployConfidentialTokenFactoryFixture();
-  const { wrapperFactory } = await deployWrapperFactoryFixture();
+  const wrapperUpgradeableFactory = await ethers.getContractFactory("WrapperUpgradeable");
+  const wrapperImplementation = await wrapperUpgradeableFactory.deploy();
+  await wrapperImplementation.waitForDeployment();
 
   const coordinatorFactory = (await ethers.getContractFactory("DeploymentCoordinator")) as DeploymentCoordinator__factory;
   const coordinator = (await coordinatorFactory.deploy(
     adminProvider,
-    wrapperFactory,
-    confidentialTokenFactory
+    wrapperImplementation,
   )) as DeploymentCoordinator;
 
-  // Set coordinator as owner of both factories (using 2-step ownership transfer)
-  await confidentialTokenFactory.transferOwnership(await coordinator.getAddress());
-  await wrapperFactory.transferOwnership(await coordinator.getAddress());
-
-  // Accept ownership from the coordinator side
-  await coordinator.acceptConfidentialTokenFactoryOwnership();
-  await coordinator.acceptWrapperFactoryOwnership();
-
-  return { adminProvider, coordinator, confidentialTokenFactory, wrapperFactory };
+  return { adminProvider, coordinator };
 }
 
 export async function deployWrapperFixture(signers: Signers) {

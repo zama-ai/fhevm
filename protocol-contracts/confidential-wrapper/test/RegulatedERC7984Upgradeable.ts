@@ -1,5 +1,5 @@
 import { ethers, fhevm, upgrades } from "hardhat";
-import { RegulatedERC7984Upgradeable, AdminProvider } from "../types";
+import { RegulatedERC7984Upgradeable, AdminProvider, RegulatedERC7984MintableUpgradeable } from "../types";
 import { expect } from "chai";
 import { getMintEvent, getBurnEvent, getTransferInfoEvent, getConfidentialBalance, getTransferFeeInfoEvent, checkTotalSupply, getTokenRegulatorUpdatedEvent } from "./utils";
 import { getSigners, Signers } from "./signers";
@@ -11,7 +11,7 @@ describe("RegulatedERC7984Upgradeable", function () {
   let signers: Signers;
   let adminProvider: AdminProvider;
   let adminProviderAddress: string;
-  let cErc20: RegulatedERC7984Upgradeable;
+  let cErc20: RegulatedERC7984MintableUpgradeable;
   let cErc20Address: string;
 
   before(async function () {
@@ -20,7 +20,6 @@ describe("RegulatedERC7984Upgradeable", function () {
 
   beforeEach(async () => {
     ({ cErc20, cErc20Address, adminProvider, adminProviderAddress } = await deployConfidentialErc20Fixture(signers));
-    await cErc20.grantRole(await cErc20.WRAPPER_ROLE(), signers.deployer);
   });
 
   describe("initializer", function () {
@@ -30,7 +29,6 @@ describe("RegulatedERC7984Upgradeable", function () {
       expect(await cErc20.decimals()).to.equal(6);
       expect(await cErc20.rate()).to.equal(1);
       expect(await cErc20.adminProvider()).to.equal(adminProvider);
-
 
       const totalSupplyHandle = await cErc20.confidentialTotalSupply();
 
@@ -43,7 +41,7 @@ describe("RegulatedERC7984Upgradeable", function () {
 
     it("cannot call initialize twice", async function () {
       await expect(
-        cErc20.initialize("Naraggara", "NARA", 6, signers.deployer.address, 1, ethers.ZeroAddress, adminProviderAddress, signers.deployer.address),
+        cErc20.initialize("Naraggara", "NARA", 6, signers.deployer.address, 1, ethers.ZeroAddress),
       ).to.be.revertedWithCustomError(cErc20, "InvalidInitialization");
     });
 
@@ -56,8 +54,6 @@ describe("RegulatedERC7984Upgradeable", function () {
           signers.deployer.address,
           0, // Invalid rate: 0
           ethers.ZeroAddress,
-          adminProviderAddress,
-          signers.deployer.address // wrapperSetter
       ];
       await expect(
         upgrades.deployProxy(RegulatedERC7984Factory, initializerParams)
@@ -75,8 +71,6 @@ describe("RegulatedERC7984Upgradeable", function () {
           signers.deployer.address,
           invalidRate, // Invalid rate: exceeds 10^24
           ethers.ZeroAddress,
-          adminProviderAddress,
-          signers.deployer.address // wrapperSetter
       ];
       await expect(
         upgrades.deployProxy(RegulatedERC7984Factory, initializerParams)
@@ -92,8 +86,6 @@ describe("RegulatedERC7984Upgradeable", function () {
           signers.deployer.address,
           1, // Valid rate for 6 decimals
           ethers.ZeroAddress,
-          adminProviderAddress,
-          signers.deployer.address // wrapperSetter
       ];
       const newCErc20 = await upgrades.deployProxy(RegulatedERC7984Factory, initializerParams)
       await newCErc20.waitForDeployment();
@@ -110,8 +102,6 @@ describe("RegulatedERC7984Upgradeable", function () {
           signers.deployer.address,
           rate, // Valid rate for 18 decimal original token
           ethers.ZeroAddress,
-          adminProviderAddress,
-          signers.deployer.address // wrapperSetter
       ];
       const newCErc20 = await upgrades.deployProxy(RegulatedERC7984Factory, initializerParams)
       await newCErc20.waitForDeployment();
@@ -129,8 +119,6 @@ describe("RegulatedERC7984Upgradeable", function () {
           signers.deployer.address,
           maxRate, // Maximum valid rate for 30 decimal original token
           ethers.ZeroAddress,
-          adminProviderAddress,
-          signers.deployer.address // wrapperSetter
       ];
       const newCErc20 = await upgrades.deployProxy(RegulatedERC7984Factory, initializerParams)
       await newCErc20.waitForDeployment();
@@ -149,229 +137,10 @@ describe("RegulatedERC7984Upgradeable", function () {
           signers.deployer.address,
           1,
           ethers.ZeroAddress,
-          adminProviderAddress,
-          signers.deployer.address // wrapperSetter
         )
       ).to.be.revertedWithCustomError(RegulatedERC7984Factory, "InvalidInitialization");
     });
   })
-
-  describe("setWrapper", function () {
-    it("should allow WRAPPER_SETTER_ROLE to set wrapper once", async function () {
-      // Deploy a fresh token without wrapper set
-      const RegulatedERC7984Factory = await ethers.getContractFactory("RegulatedERC7984Upgradeable");
-      const initializerParams = [
-          "Test Token",
-          "TEST",
-          6,
-          signers.deployer.address, // admin
-          1,
-          ethers.ZeroAddress,
-          await adminProvider.getAddress(),
-          signers.alice.address // alice gets WRAPPER_SETTER_ROLE
-      ];
-      const newCErc20 = await upgrades.deployProxy(RegulatedERC7984Factory, initializerParams);
-      await newCErc20.waitForDeployment();
-
-      // Alice (WRAPPER_SETTER_ROLE) should be able to set wrapper
-      await newCErc20.connect(signers.alice).setWrapper(signers.bob.address);
-
-      // Verify bob now has WRAPPER_ROLE
-      expect(await newCErc20.hasRole(await newCErc20.WRAPPER_ROLE(), signers.bob.address)).to.equal(true);
-    });
-
-    it("should revert with WrapperAlreadySet when trying to set wrapper twice", async function () {
-      // Deploy a fresh token without wrapper set
-      const RegulatedERC7984Factory = await ethers.getContractFactory("RegulatedERC7984Upgradeable");
-      const initializerParams = [
-          "Test Token",
-          "TEST",
-          6,
-          signers.deployer.address, // admin
-          1,
-          ethers.ZeroAddress,
-          await adminProvider.getAddress(),
-          signers.alice.address // alice gets WRAPPER_SETTER_ROLE
-      ];
-      const newCErc20 = await upgrades.deployProxy(RegulatedERC7984Factory, initializerParams);
-      await newCErc20.waitForDeployment();
-
-      // Alice sets wrapper first time
-      await newCErc20.connect(signers.alice).setWrapper(signers.bob.address);
-
-      // Try to set wrapper second time - should revert
-      await expect(
-        newCErc20.connect(signers.alice).setWrapper(signers.charlie.address)
-      ).to.be.revertedWithCustomError(newCErc20, "WrapperAlreadySet");
-    });
-
-    it("should prevent non-WRAPPER_SETTER_ROLE from calling setWrapper", async function () {
-      // Deploy a fresh token without wrapper set
-      const RegulatedERC7984Factory = await ethers.getContractFactory("RegulatedERC7984Upgradeable");
-      const initializerParams = [
-          "Test Token",
-          "TEST",
-          6,
-          signers.deployer.address, // admin
-          1,
-          ethers.ZeroAddress,
-          await adminProvider.getAddress(),
-          signers.alice.address // only alice gets WRAPPER_SETTER_ROLE
-      ];
-      const newCErc20 = await upgrades.deployProxy(RegulatedERC7984Factory, initializerParams);
-      await newCErc20.waitForDeployment();
-
-      // Bob (without WRAPPER_SETTER_ROLE) should not be able to set wrapper
-      const WRAPPER_SETTER_ROLE = await newCErc20.WRAPPER_SETTER_ROLE();
-      await expect(
-        newCErc20.connect(signers.bob).setWrapper(signers.charlie.address)
-      ).to.be.revertedWithCustomError(newCErc20, "AccessControlUnauthorizedAccount")
-        .withArgs(signers.bob.address, WRAPPER_SETTER_ROLE);
-    });
-  });
-
-  describe("mint", function () {
-    it("should mint correct amount and emit event", async function () {
-      const amount = 1000;
-      const txId = await cErc20.nextTxId();
-      const isRoyalty = true;
-      const transaction = await cErc20.mint(signers.alice, amount);
-      const receipt = await transaction.wait();
-
-      await checkTotalSupply(cErc20, amount);
-
-      const events = getMintEvent(receipt);
-
-      expect(events.length).to.be.equal(1);
-      const event = events[0];
-      expect(event.args[0]).to.be.equal(signers.alice);
-      expect(event.args[1]).to.be.equal(amount);
-      expect(event.args[2]).to.be.equal(txId);
-
-      // Reencrypt Alice's balance from Alice
-      const balanceHandleAlice = await cErc20.confidentialBalanceOf(signers.alice);
-      const balanceAliceFromAlice = await fhevm.userDecryptEuint(
-        FhevmType.euint64,
-        balanceHandleAlice,
-        cErc20Address,
-        signers.alice,
-      );
-
-      expect(balanceAliceFromAlice).to.equal(amount);
-
-      // Reencrypt Alice's balance from regulator
-      const balanceAliceFromAdmin = await fhevm.userDecryptEuint(
-        FhevmType.euint64,
-        balanceHandleAlice,
-        cErc20Address,
-        signers.regulator,
-      );
-
-      expect(balanceAliceFromAdmin).to.equal(amount);
-    });
-
-    it("should prevent minting to sanctioned address", async function () {
-      const { sanctionsList } = await deploySanctionsListFixture();
-      const { adminProvider } = await deployAdminProviderFixture(signers, sanctionsList);
-      const { cErc20 } = await deployConfidentialErc20Fixture(signers, adminProvider);
-
-      // Add alice to sanctions list
-      await sanctionsList.addToSanctionsList([signers.alice.address]);
-
-      // Try to mint to sanctioned address
-      await expect(
-        cErc20.mint(signers.alice.address, 1000)
-      ).to.be.revertedWithCustomError(cErc20, "SanctionedAddress")
-        .withArgs(signers.alice.address);
-    });
-
-    it("should allow minting to non-sanctioned address", async function () {
-      const { sanctionsList } = await deploySanctionsListFixture();
-      const { adminProvider } = await deployAdminProviderFixture(signers, sanctionsList);
-      const { cErc20 } = await deployConfidentialErc20Fixture(signers, adminProvider);
-
-      // Sanction someone else, not alice
-      await sanctionsList.addToSanctionsList([signers.bob.address]);
-
-      // Should be able to mint to alice (not sanctioned)
-      await expect(
-        cErc20.mint(signers.alice.address, 1000)
-      ).to.not.be.reverted;
-    });
-
-    it("should work without sanctions list", async function () {
-      // Use the regular fixture without sanctions list
-      await expect(
-        cErc20.mint(signers.alice.address, 1000)
-      ).to.not.be.reverted;
-    });
-
-    it("should only allow WRAPPER_ROLE to mint tokens", async function () {
-      await expect(
-        cErc20.connect(signers.alice).mint(signers.alice, 1000)
-      ).to.be.revertedWithCustomError(cErc20, "AccessControlUnauthorizedAccount")
-        .withArgs(signers.alice.address, await cErc20.WRAPPER_ROLE());
-    });
-  });
-
-  describe("burn", function () {
-    it("should burn correct amount and emit event", async function () {
-      const { burnableCErc20, burnableCErc20Address } = await deployBurnableConfidentialErc20Fixture(signers);
-
-      const amount = 1000;
-      const txId = await burnableCErc20.nextTxId();
-      const isRoyalty = false;
-
-      await burnableCErc20.mint(signers.deployer, amount);
-
-      const encryptedAmount = await fhevm
-        .createEncryptedInput(burnableCErc20Address, signers.deployer.address)
-        .add64(amount)
-        .encrypt();
-
-      const transaction = await burnableCErc20
-        .connect(signers.deployer)
-        ["burn(bytes32,bytes)"]
-        (encryptedAmount.handles[0], encryptedAmount.inputProof);
-      const receipt = await transaction.wait();
-
-      await checkTotalSupply(cErc20, 0);
-
-      const events = getBurnEvent(receipt);
-      expect(events.length).to.be.equal(1);
-      const burnEvent = events[0];
-      expect(burnEvent.args[0]).to.equal(signers.deployer);
-      expect(burnEvent.args[2]).to.equal(txId + BigInt(1));
-      const burnAmountHandle = burnEvent.args[1];
-
-      const burnAmount = await fhevm.userDecryptEuint(
-        FhevmType.euint64,
-        burnAmountHandle,
-        burnableCErc20Address,
-        signers.deployer,
-      );
-      expect(burnAmount).to.be.equal(amount);
-
-      expect(await getConfidentialBalance(burnableCErc20, signers.deployer)).to.equal(0);
-    });
-
-    it("should only allow WRAPPER_ROLE to burn tokens", async function () {
-      const { burnableCErc20, burnableCErc20Address } = await deployBurnableConfidentialErc20Fixture(signers);
-
-      const encryptedAmount = await fhevm
-        .createEncryptedInput(burnableCErc20Address, signers.alice.address)
-        .add64(100)
-        .encrypt();
-
-      const transaction = burnableCErc20
-        .connect(signers.alice)
-        ["burn(bytes32,bytes)"]
-        (encryptedAmount.handles[0], encryptedAmount.inputProof);
-
-      await expect(transaction).to.be.revertedWithCustomError(cErc20, "AccessControlUnauthorizedAccount")
-        .withArgs(signers.alice.address, await cErc20.WRAPPER_ROLE());
-    });
-  });
 
   describe("confidentialTransfer", function () {
     it("should transfer tokens between two users without fees", async function () {

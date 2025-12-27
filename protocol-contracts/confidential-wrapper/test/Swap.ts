@@ -3,7 +3,7 @@ import { AdminProvider, MaliciousWrapper, MaliciousWrapperAttacker, DeploymentCo
 import { deployConfidentialErc20Fixture, deploySwapV0Fixture, deployTestERC20Fixture, deployUniswapFactoryFixture, deployWrapperFixture } from "./fixtures";
 import { getSigners, Signers } from "./signers";
 import { ethers, fhevm } from "hardhat";
-import { deployConfidentialToken, getConfidentialBalance, getFeeManager, getSwapEvent, getSwapStartedEvent, getTxHashes, getUnwrapFee, getUnwrapFinalizedEvent, wrapERC20, finalizeUnwrapFromReceipt } from "./utils";
+import { deployConfidentialToken, getConfidentialBalance, getFeeManager, getSwapEvent, getSwapStartedEvent, getTxHashes, getUnwrapFee, getUnwrapFinalizedEvent, wrapERC20, finalizeUnwrapFromReceipt, swap } from "./utils";
 import { expect } from "chai";
 
 
@@ -38,6 +38,8 @@ async function addLiquidity(
 async function getSwapFinalizedReceipt(transferReceipt: any, wrapper: Wrapper, signer: HardhatEthersSigner) {
     return await finalizeUnwrapFromReceipt(transferReceipt, wrapper, signer);
 }
+
+
 
 
 describe("Uniswap V2 Swap Test", function () {
@@ -89,10 +91,6 @@ describe("Uniswap V2 Swap Test", function () {
     const balanceCTokenBBefore = await getConfidentialBalance(cTokenB, signers.alice);
 
     const transferAmount = BigInt(1_000);
-    const encryptedTransferAmount = await fhevm
-      .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-      .add64(transferAmount)
-      .encrypt();
 
     const path = [await tokenA.getAddress(), await tokenB.getAddress()];
 
@@ -109,33 +107,14 @@ describe("Uniswap V2 Swap Test", function () {
     // Get the next transaction IDs before the swap for event verification
     const expectedWrapTxId = await cTokenB.nextTxId();
 
-    const abiCoder = new ethers.AbiCoder();
-    const callbackData = abiCoder.encode(
-      ["tuple(address, uint256, address[], uint256, address)"],
-      [[
-        await router.getAddress(),
-        0,
+    const transferReceipt = await swap(
+        transferAmount,
+        wrapperA,
+        router,
+        swapV0,
         path,
-        Math.floor(Date.now() / 1000) + 6000,
-        signers.alice.address,
-      ]]
+        signers.alice,
     )
-    const data = abiCoder.encode(
-      ["address", "address", "bytes"],
-      [
-        await swapV0.getAddress(),
-        signers.alice.address,
-        callbackData,
-      ]
-    )
-
-    const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-      await wrapperA.getAddress(),
-      encryptedTransferAmount.handles[0],
-      encryptedTransferAmount.inputProof,
-      data,
-    )
-    const transferReceipt = await transferTx.wait();
 
     const finalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
 
@@ -166,10 +145,6 @@ describe("Uniswap V2 Swap Test", function () {
     const balanceCTokenBBefore = await getConfidentialBalance(cTokenB, signers.alice);
 
     const transferAmount = BigInt(1_000);
-    const encryptedTransferAmount = await fhevm
-      .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-      .add64(transferAmount)
-      .encrypt();
 
     const path = [await tokenA.getAddress(), await tokenB.getAddress()];
 
@@ -191,22 +166,16 @@ describe("Uniswap V2 Swap Test", function () {
         signers.alice.address,
       ]]
     )
-    const data = abiCoder.encode(
-      ["address", "address", "bytes"],
-      [
-        await swapV0.getAddress(),
-        signers.bob.address,
+    const transferReceipt = await swap(
+        transferAmount,
+        wrapperA,
+        router,
+        swapV0,
+        path,
+        signers.alice,
         callbackData,
-      ]
+        signers.bob.address,
     )
-
-    const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-      await wrapperA.getAddress(),
-      encryptedTransferAmount.handles[0],
-      encryptedTransferAmount.inputProof,
-      data,
-    )
-    const transferReceipt = await transferTx.wait();
 
     // Bob finalizes the unwrap (not Alice) - this tests that refunds go to the finalizer
     const finalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
@@ -221,7 +190,7 @@ describe("Uniswap V2 Swap Test", function () {
     expect(swapEvent.args.success).to.equal(false);
     expect(swapEvent.args.path).to.deep.equal(path);
     expect(swapEvent.args.unwrapTxId).to.equal(unwrapFinalizedEvents[0].args.requestId);
-    expect(swapEvent.args.wrapTxId).to.equal(5); // wrap transaction for reimbursement
+    expect(swapEvent.args.wrapTxId).to.equal(3); // wrap transaction for reimbursement
     expect(swapEvent.args.errorReasonString).to.equal("UniswapV2Router: EXPIRED");
     expect(swapEvent.args.errorLowLevelData).to.equal("0x");
 
@@ -278,10 +247,6 @@ describe("Uniswap V2 Swap Test", function () {
     await feeManager.setUnwrapFeeBasisPoints(100); // 1%
 
     const transferAmount = BigInt(10_000);
-    const encryptedTransferAmount = await fhevm
-      .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-      .add64(transferAmount)
-      .encrypt();
 
     const path = [await tokenA.getAddress(), await tokenB.getAddress()];
 
@@ -292,33 +257,14 @@ describe("Uniswap V2 Swap Test", function () {
     const swapOutAmountWithFeeWaiver = swapOutAmountsWithFeeWaiver[swapOutAmountsWithFeeWaiver.length - 1];
     const expectedAmountCTokenBOut = swapOutAmountWithFeeWaiver; // No wrap fee either
 
-    const abiCoder = new ethers.AbiCoder();
-    const callbackData = abiCoder.encode(
-      ["tuple(address, uint256, address[], uint256, address)"],
-      [[
-        await router.getAddress(),
-        0,
+    const transferReceipt = await swap(
+        transferAmount,
+        wrapperA,
+        router,
+        swapV0,
         path,
-        Math.floor(Date.now() / 1000) + 6000,
-        signers.alice.address,
-      ]]
-    );
-    const data = abiCoder.encode(
-      ["address", "address", "bytes"],
-      [
-        await swapV0.getAddress(),
-        signers.alice.address,
-        callbackData,
-      ]
-    );
-
-    const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-      await wrapperA.getAddress(),
-      encryptedTransferAmount.handles[0],
-      encryptedTransferAmount.inputProof,
-      data,
-    );
-    const transferReceipt = await transferTx.wait();
+        signers.alice,
+    )
 
     await finalizeUnwrapFromReceipt(transferReceipt, wrapperA, signers.alice);
 
@@ -364,40 +310,17 @@ describe("Uniswap V2 Swap Test", function () {
       expect(approvalBefore).to.equal(1000);
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cUsdtLikeTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await usdtLikeTokenA.getAddress(), await tokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          cUsdtLikeWrapperA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cUsdtLikeTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await cUsdtLikeWrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+      )
 
       // Should succeed despite existing approval (forceApprove handles it)
       await finalizeUnwrapFromReceipt(transferReceipt, cUsdtLikeWrapperA, signers.alice);
@@ -425,40 +348,17 @@ describe("Uniswap V2 Swap Test", function () {
       expect(approvalBefore).to.equal(1000);
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await tokenA.getAddress(), await usdtLikeTokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+      )
 
       // Should succeed - forceApprove handles the non-zero approval by resetting to 0 first
       // Without forceApprove, this would revert with ApprovalFromNonZeroToNonZero error
@@ -488,40 +388,17 @@ describe("Uniswap V2 Swap Test", function () {
       expect(approvalBefore).to.equal(1000);
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cUsdtLikeTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await usdtLikeTokenA.getAddress(), await tokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperUsdtA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) - 1, // Expired deadline to force swap failure
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cUsdtLikeTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperUsdtA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+      )
 
       // Should succeed - forceApprove handles the non-zero approval by resetting to 0 first
       // Without forceApprove, this would revert with ApprovalFromNonZeroToNonZero error
@@ -541,41 +418,21 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceCTokenBBefore = await getConfidentialBalance(cTokenB, signers.alice);
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       // Create path that starts with tokenB instead of tokenA (cTokenA.underlying())
       const invalidPath = [await tokenB.getAddress(), await tokenA.getAddress()];
 
       const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           invalidPath,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
+          signers.alice,
+          undefined,
           signers.bob.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+      )
 
       // Bob finalizes the unwrap - refund should go to Bob
       const swapFinalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
@@ -629,44 +486,23 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceBobCTokenCBefore = 0n;
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenC.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       // Create path with tokenC (no wrapper at coordinator level) as input
       const invalidPath = [await tokenC.getAddress(), await tokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
-          invalidPath,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.bob.address,
-          callbackData,
-        ]
-      );
-
       // Try to swap cTokenC with path that starts with tokenC
       // This should fail because cTokenC does not have a wrapper with
       // the configured coordinator
-      const transferTx = await cTokenC.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperC.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperC,
+          router,
+          swapV0,
+          invalidPath,
+          signers.alice,
+          undefined,
+          signers.bob.address,
+      )
 
       // Bob finalizes the unwrap - refund should go to Bob
       await expect(getSwapFinalizedReceipt(transferReceipt, wrapperC, signers.alice)).to.be.revertedWithCustomError(swapV0, "UnknownWrapper");
@@ -685,7 +521,6 @@ describe("Uniswap V2 Swap Test", function () {
       // deploy a confidential token without a wrapper. Athough path[-1] matches the cToken's
       // underlying, the lack of wrapper will make the swap fail and refund.
       const { cErc20: cTokenC } = await deployConfidentialErc20Fixture(signers, adminProvider, tokenC);
-      await cTokenC.mint(signers.alice, 100_000_000_000);
 
       // Whitelist tokenC so we can test the wrapper validation (not token whitelist validation)
       await swapV0.addTokenToWhitelist(await tokenC.getAddress());
@@ -697,41 +532,20 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceBobCTokenABefore = 0n;
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       // Create path with tokenC (no wrapper) as output
       const invalidPath = [await tokenA.getAddress(), await tokenC.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           invalidPath,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
+          signers.alice,
+          undefined,
           signers.bob.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+      )
 
       // Bob finalizes the unwrap - refund should go to Bob
       const swapFinalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
@@ -774,10 +588,6 @@ describe("Uniswap V2 Swap Test", function () {
         const balanceBobCTokenABefore = 0n;
 
         const transferAmount = BigInt(1_000);
-        const encryptedTransferAmount = await fhevm
-          .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-          .add64(transferAmount)
-          .encrypt();
 
         await router.factory()
 
@@ -789,33 +599,16 @@ describe("Uniswap V2 Swap Test", function () {
         // Create path tokenA -> tokenC (no liquidity, so getAmountsOut will fail)
         const invalidPath = [await tokenA.getAddress(), await tokenC.getAddress()];
 
-        const abiCoder = new ethers.AbiCoder();
-        const callbackData = abiCoder.encode(
-          ["tuple(address, uint256, address[], uint256, address)"],
-          [[
-            await router.getAddress(),
-            0,
+        const receipt = await swap(
+            transferAmount,
+            wrapperA,
+            router,
+            swapV0,
             invalidPath,
-            Math.floor(Date.now() / 1000) + 6000,
-            signers.alice.address,
-          ]]
-        );
-        const data = abiCoder.encode(
-          ["address", "address", "bytes"],
-          [
-            await swapV0.getAddress(),
+            signers.alice,
+            undefined,
             signers.bob.address,
-            callbackData,
-          ]
-        );
-
-        const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-          await wrapperA.getAddress(),
-          encryptedTransferAmount.handles[0],
-          encryptedTransferAmount.inputProof,
-          data,
-        );
-        const receipt = await transferTx.wait();
+        )
 
         // Bob finalizes the unwrap - refund should go to Bob
         const swapFinalizedReceipt = await getSwapFinalizedReceipt(receipt, wrapperA, signers.alice);
@@ -916,38 +709,14 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceCTokenCBefore = 0n;
 
       const transferAmount = BigInt(1);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
-
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+      )
 
       const finalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
 
@@ -978,10 +747,6 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceBobCTokenABefore = 0n;
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await tokenA.getAddress(), await tokenB.getAddress()];
 
@@ -996,22 +761,17 @@ describe("Uniswap V2 Swap Test", function () {
           ethers.ZeroAddress, // address(0) as recipient - this is the vulnerability
         ]]
       );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.bob.address, // Bob is the refundTo address
-          callbackData,
-        ]
-      );
 
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
+          path,
+          signers.alice,
+          callbackData,
+          signers.bob.address,
+      )
 
       // Bob finalizes the unwrap - refund should go to Bob
       const swapFinalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
@@ -1051,10 +811,6 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceBobCTokenABefore = 0n;
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await tokenA.getAddress(), await tokenB.getAddress()];
 
@@ -1069,22 +825,17 @@ describe("Uniswap V2 Swap Test", function () {
           signers.alice.address,
         ]]
       );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.bob.address,
-          callbackData,
-        ]
-      );
 
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
+          path,
+          signers.alice,
+          callbackData,
+          signers.bob.address,
+      )
 
       // Bob finalizes the unwrap - should receive refund because router not whitelisted
       const swapFinalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
@@ -1180,10 +931,6 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceCTokenBBefore = await getConfidentialBalance(cTokenB, signers.alice);
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cFOT.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await feeToken.getAddress(), await tokenB.getAddress()];
 
@@ -1198,15 +945,17 @@ describe("Uniswap V2 Swap Test", function () {
           signers.alice.address,
         ]]
       );
-      const data = abiCoder.encode(["address", "address", "bytes"], [await swapV0.getAddress(), signers.bob.address, callbackData]);
 
-      const transferTx = await cFOT.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperFOT.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data
-      );
-      const transferReceipt = await transferTx.wait();
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperFOT,
+          router,
+          swapV0,
+          path,
+          signers.alice,
+          callbackData,
+          signers.bob.address,
+      )
 
       // KEY TEST: Bob finalizes the unwrap - refund should go to Bob (not Alice)
       // This should succeed now (with the fix) - SwapV0 checks actual balance and only wraps what it has
@@ -1363,40 +1112,20 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceCTokenBBefore = await getConfidentialBalance(cTokenB, signers.alice);
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await tokenA.getAddress(), await tokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.bob.address, // Bob is the recipient
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address, // Alice is refundTo
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+          undefined,
+          undefined,
+          signers.bob.address,  // to
+      )
 
       // Get sanctions list and sanction Bob BEFORE finalization
       const adminProviderAddress = await coordinator.adminProvider();
@@ -1437,40 +1166,20 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceCTokenABefore = await getConfidentialBalance(cTokenA, signers.alice);
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await tokenA.getAddress(), await tokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.bob.address, // Bob is the recipient
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.charlie.address, // Charlie is refundTo
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+          undefined,
+          signers.charlie.address,  // refund
+          signers.bob.address,  // to
+      )
 
       // Get sanctions list and sanction BOTH Bob and Charlie BEFORE finalization
       const adminProviderAddress = await coordinator.adminProvider();
@@ -1536,23 +1245,17 @@ describe("Uniswap V2 Swap Test", function () {
           signers.bob.address,
         ]]
       );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address, // Alice is refundTo
-          callbackData,
-        ]
-      );
 
       // Phase 1: confidentialTransferAndCall (burns tokens, stores callback data)
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
+      const unwrapTx = await wrapperA.connect(signers.alice)["unwrapAndCall(address,address,bytes32,bytes,address,bytes)"](
+        signers.alice,
+        await swapV0.getAddress(),
         encryptedTransferAmount.handles[0],
         encryptedTransferAmount.inputProof,
-        data,
+        signers.alice,
+        callbackData,
       );
-      const transferReceipt = await transferTx.wait();
+      const transferReceipt = await unwrapTx.wait();
 
       // Sanction Bob AFTER phase 1 but BEFORE phase 2
       const adminProviderAddress = await coordinator.adminProvider();
@@ -1702,40 +1405,17 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceCTokenBBefore = await getConfidentialBalance(cTokenB, signers.alice);
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await tokenA.getAddress(), await tokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+      )
 
       const swapFinalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
       const swapEvents = getSwapEvent(swapFinalizedReceipt);
@@ -1761,40 +1441,17 @@ describe("Uniswap V2 Swap Test", function () {
       await swapV0.addTokenToWhitelist(await tokenA.getAddress());
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await tokenA.getAddress(), await tokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+      )
 
       const swapFinalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
       const swapEvents = getSwapEvent(swapFinalizedReceipt);
@@ -1811,40 +1468,17 @@ describe("Uniswap V2 Swap Test", function () {
       await swapV0.addTokenToWhitelist(await tokenB.getAddress());
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await tokenA.getAddress(), await tokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+      )
 
       const swapFinalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
       const swapEvents = getSwapEvent(swapFinalizedReceipt);
@@ -1868,41 +1502,18 @@ describe("Uniswap V2 Swap Test", function () {
       // TokenA and tokenB are already whitelisted from beforeEach, just don't whitelist tokenC
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       // Multi-hop path: A -> C -> B (C is not whitelisted)
       const path = [await tokenA.getAddress(), await tokenC.getAddress(), await tokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+      )
 
       const swapFinalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
       const swapEvents = getSwapEvent(swapFinalizedReceipt);
@@ -1919,40 +1530,17 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceCTokenBBefore = await getConfidentialBalance(cTokenB, signers.alice);
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       const path = [await tokenA.getAddress(), await tokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+      )
 
       const swapFinalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
       const swapEvents = getSwapEvent(swapFinalizedReceipt);
@@ -1986,41 +1574,18 @@ describe("Uniswap V2 Swap Test", function () {
       const balanceCTokenBBefore = await getConfidentialBalance(cTokenB, signers.alice);
 
       const transferAmount = BigInt(1_000);
-      const encryptedTransferAmount = await fhevm
-        .createEncryptedInput(await cTokenA.getAddress(), signers.alice.address)
-        .add64(transferAmount)
-        .encrypt();
 
       // Multi-hop path: A -> C -> B
       const path = [await tokenA.getAddress(), await tokenC.getAddress(), await tokenB.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
+      const transferReceipt = await swap(
+          transferAmount,
+          wrapperA,
+          router,
+          swapV0,
           path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+          signers.alice,
+      )
 
       const swapFinalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
       const swapEvents = getSwapEvent(swapFinalizedReceipt);

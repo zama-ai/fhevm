@@ -3,7 +3,7 @@ import { AdminProvider, DeploymentCoordinator, RegulatedERC7984Upgradeable, Swap
 import { deploySwapV0Fixture, deployTestERC20Fixture, deployUniswapFactoryFixture, deployWrapperFixture } from "./fixtures";
 import { getSigners, Signers } from "./signers";
 import { ethers, fhevm } from "hardhat";
-import { deployConfidentialToken, deployConfidentialETH, getConfidentialBalance, getFeeManager, getSwapEvent, getUnwrapFee, getUnwrapFinalizedEvent, getUnwrapStartedEvent, wrapERC20, wrapETH, finalizeUnwrapFromReceipt } from "./utils";
+import { deployConfidentialToken, deployConfidentialETH, getConfidentialBalance, getFeeManager, getSwapEvent, getUnwrapFee, getUnwrapFinalizedEvent, getUnwrapStartedEvent, wrapERC20, wrapETH, finalizeUnwrapFromReceipt, swap } from "./utils";
 import { expect } from "chai";
 
 
@@ -39,11 +39,11 @@ async function getSwapFinalizedReceipt(transferReceipt: any, wrapper: WrapperUpg
 
 async function getCTokensFromPath(coordinator: DeploymentCoordinator, router: UniswapV2Router02, path: string[]) {
     const tokenInAddress = path[0] === await router.WETH() ? ethers.ZeroAddress : path[0];
-    const cTokenInAddress = await coordinator.deployedConfidentialTokens(tokenInAddress);
+    const cTokenInAddress = await coordinator.deployedWrappers(tokenInAddress);
     const cTokenIn = await ethers.getContractAt("RegulatedERC7984Upgradeable", cTokenInAddress);
 
     const tokenOutAddress = path[path.length - 1] === await router.WETH() ? ethers.ZeroAddress : path[path.length - 1];
-    const cTokenOutAddress = await coordinator.deployedConfidentialTokens(tokenOutAddress);
+    const cTokenOutAddress = await coordinator.deployedWrappers(tokenOutAddress);
     const cTokenOut = await ethers.getContractAt("RegulatedERC7984Upgradeable", cTokenOutAddress);
 
     return {cTokenIn, cTokenOut};
@@ -179,33 +179,14 @@ describe("SwapV0 ETH Support", function () {
       const path = [await weth.getAddress(), await tokenA.getAddress()];
       const expectedAmountOut = await getAmountOut(coordinator, router, path, transferAmount);
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
-          path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cETH.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperETH.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+      const transferReceipt = await swap(
+        transferAmount,
+        wrapperETH,
+        router,
+        swapV0,
+        path,
+        signers.alice,
+      )
 
       const finalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperETH, signers.alice);
 
@@ -254,22 +235,17 @@ describe("SwapV0 ETH Support", function () {
           signers.alice.address,
         ]]
       );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.bob.address, // Bob is refundTo
-          callbackData,
-        ]
-      );
 
-      const transferTx = await cETH.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperETH.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+      const transferReceipt = await swap(
+        transferAmount,
+        wrapperETH,
+        router,
+        swapV0,
+        path,
+        signers.alice,
+        callbackData,
+        signers.bob.address,
+      )
 
       // Bob finalizes the unwrap - refund should go to Bob
       const finalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperETH, signers.alice);
@@ -304,33 +280,14 @@ describe("SwapV0 ETH Support", function () {
       // Invalid path: should be WETH -> tokenA, but using tokenA -> tokenA
       const invalidPath = [await tokenA.getAddress(), await tokenA.getAddress()];
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
-          invalidPath,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cETH.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperETH.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+      const transferReceipt = await swap(
+        transferAmount,
+        wrapperETH,
+        router,
+        swapV0,
+        invalidPath,
+        signers.alice,
+      )
 
       const finalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperETH, signers.alice);
 
@@ -357,33 +314,14 @@ describe("SwapV0 ETH Support", function () {
       const path = [await tokenA.getAddress(), await weth.getAddress()];
       const expectedAmountOut = await getAmountOut(coordinator, router, path, transferAmount);
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
-          path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+      const transferReceipt = await swap(
+        transferAmount,
+        wrapperA,
+        router,
+        swapV0,
+        path,
+        signers.alice,
+      )
 
       const finalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
 
@@ -431,22 +369,17 @@ describe("SwapV0 ETH Support", function () {
           signers.alice.address,
         ]]
       );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.bob.address, // Bob is refundTo
-          callbackData,
-        ]
-      );
 
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+      const transferReceipt = await swap(
+        transferAmount,
+        wrapperA,
+        router,
+        swapV0,
+        path,
+        signers.alice,
+        callbackData,
+        signers.bob.address,
+      )
 
       // Bob finalizes the unwrap - refund should go to Bob
       const finalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
@@ -552,33 +485,14 @@ describe("SwapV0 ETH Support", function () {
       ];
       const expectedAmountOut = await getAmountOut(coordinator, router, path, transferAmount);
 
-      const abiCoder = new ethers.AbiCoder();
-      const callbackData = abiCoder.encode(
-        ["tuple(address, uint256, address[], uint256, address)"],
-        [[
-          await router.getAddress(),
-          0,
-          path,
-          Math.floor(Date.now() / 1000) + 6000,
-          signers.alice.address,
-        ]]
-      );
-      const data = abiCoder.encode(
-        ["address", "address", "bytes"],
-        [
-          await swapV0.getAddress(),
-          signers.alice.address,
-          callbackData,
-        ]
-      );
-
-      const transferTx = await cTokenA.connect(signers.alice)["confidentialTransferAndCall(address,bytes32,bytes,bytes)"](
-        await wrapperA.getAddress(),
-        encryptedTransferAmount.handles[0],
-        encryptedTransferAmount.inputProof,
-        data,
-      );
-      const transferReceipt = await transferTx.wait();
+      const transferReceipt = await swap(
+        transferAmount,
+        wrapperA,
+        router,
+        swapV0,
+        path,
+        signers.alice,
+      )
 
       const finalizedReceipt = await getSwapFinalizedReceipt(transferReceipt, wrapperA, signers.alice);
 
