@@ -24,7 +24,7 @@ use crate::{
 };
 use std::str::FromStr;
 
-use alloy::primitives::{Address, FixedBytes, TxHash, U256};
+use alloy::primitives::{Address, FixedBytes, TxHash};
 
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
@@ -164,7 +164,7 @@ impl InputProofGatewayHandler {
         &self,
         input_proof_request: &InputProofRequest,
         int_request_id: uuid::Uuid,
-    ) -> Result<(U256, TxHash), EventProcessingError> {
+    ) -> Result<(), EventProcessingError> {
         let input_verification_address =
             Address::from_str(&self.contracts.input_verification_address).map_err(|_| {
                 EventProcessingError::ConfigError(AppConfigError::InvalidAddress(
@@ -177,8 +177,7 @@ impl InputProofGatewayHandler {
             input_verification_address
         );
 
-        let receipt = self
-            .tx_helper
+        self.tx_helper
             .send_raw_transaction_sync(
                 TransactionType::InputRequest,
                 JobId::from_uuid_v7(int_request_id),
@@ -196,16 +195,7 @@ impl InputProofGatewayHandler {
             )
             .await?;
 
-        // Extract gateway reference ID from the VerifyProofRequest event
-        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
-            InputVerification::VerifyProofRequest,
-        >(
-            &receipt,
-            InputVerification::VerifyProofRequest::SIGNATURE_HASH,
-            |event| event.zkProofId,
-        )?;
-
-        Ok((gw_reference_id, receipt.transaction_hash))
+        Ok(())
     }
 
     /// Processes accepted input proof response from Gateway.
