@@ -86,7 +86,7 @@ impl TransactionHelper {
         hook: &H,
         target: Address,
         prepare_calldata: F,
-    ) -> Result<TxResult, EventProcessingError>
+    ) -> Result<(), EventProcessingError>
     where
         F: Fn() -> Result<Bytes, EventProcessingError>,
         H: TxLifecycleHooks + ?Sized,
@@ -152,7 +152,7 @@ impl TransactionHelper {
             "Transaction confirmed"
         );
 
-        Ok(receipt)
+        Ok(())
     }
 
     /// Extract gateway reference ID from receipt by finding and decoding the specified event
