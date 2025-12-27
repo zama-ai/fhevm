@@ -43,12 +43,20 @@ async fn test_tx_helper() {
     // TODO: return tx-nonce used
     // Most generally we should return information about the tx itself
     // since lots of important stuff will come from the provider fillers
-    let result = tx_service
-        .send_raw_transaction_sync(
+    let tx_request = match tx_service
+        .prepare_transaction(
             random_target_address,
             Bytes::from(FixedBytes::from(U256::ZERO)),
             None,
         )
+        .await
+    {
+        Ok(rec) => rec,
+        Err(_error) => return,
+    };
+
+    let result = tx_service
+        .send_raw_transaction_sync_with_retries(tx_request)
         .await;
 
     println!(
