@@ -306,51 +306,6 @@ async fn query_ciphertexts<'a>(
     Ok(ciphertext_map)
 }
 
-// Update uncomputable ops schedule orders
-async fn update_uncomputable_handles<'a>(
-    uncomputable: Vec<(Handle, Handle)>,
-    tenant_id: i32,
-    trx: &mut sqlx::Transaction<'a, Postgres>,
-    tracer: &opentelemetry::global::BoxedTracer,
-    loop_ctx: &opentelemetry::Context,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut s = tracer.start_with_context("update_unschedulable_computations", loop_ctx);
-    let (handles, transactions): (Vec<_>, Vec<_>) = uncomputable.into_iter().unzip();
-
-    s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
-    s.set_attributes(
-        handles
-            .iter()
-            .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
-    );
-    s.set_attributes(
-        transactions
-            .iter()
-            .map(|tid| KeyValue::new("transaction_id", format!("0x{}", hex::encode(tid)))),
-    );
-    let _ = query!(
-        "
-        UPDATE computations
-           SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
-               uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT
-         WHERE tenant_id = $1
-           AND (output_handle, transaction_id) IN (
-              SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
-           )
-        ",
-        tenant_id,
-        &handles,
-	&transactions
-    )
-        .execute(trx.as_mut())
-        .await.map_err(|err| {
-            error!(target: "tfhe_worker", { tenant_id = tenant_id, error = %err }, "error while marking computations as unschedulable");
-            err
-        })?;
-    s.end();
-    Ok(())
-}
-
 async fn query_for_work<'a>(
     args: &crate::daemon_cli::Args,
     health_check: &crate::health_check::HealthCheck,
@@ -418,19 +373,6 @@ WHERE c.transaction_id IN (
       ORDER BY created_at
       LIMIT $2
     ) as c_creation_order
-   UNION
-    SELECT DISTINCT
-      c_schedule_order.transaction_id
-    FROM (
-      SELECT transaction_id
-      FROM computations 
-      WHERE is_completed = FALSE
-        AND is_error = FALSE
-        AND is_allowed = TRUE
-        AND ($1::bytea IS NULL OR dependence_chain_id = $1)
-      ORDER BY schedule_order
-      LIMIT $2
-    ) as c_schedule_order
   )
 FOR UPDATE SKIP LOCKED            ",
         dependence_chain_id,
@@ -631,7 +573,6 @@ async fn upload_transaction_graph_results<'a>(
     // Traverse computations that have been scheduled and
     // upload their results/errors.
     let mut cts_to_insert = vec![];
-    let mut uncomputable = vec![];
     for result in graph_results.into_iter() {
         match result.compressed_ct {
             Ok((db_type, db_bytes)) => {
@@ -680,11 +621,8 @@ async fn upload_transaction_graph_results<'a>(
                         err,
                         CoprocessorError::SchedulerError(SchedulerError::MissingInputs)
                     ) {
-                        uncomputable.push((result.handle.clone(), result.transaction_id.clone()));
                         // Make sure we don't mark this as an error since this simply means that the
                         // inputs weren't available when we tried scheduling these operations.
-                        // Setting them as uncomputable will postpone them with an exponential backoff
-                        // and they will be retried later.
                         continue;
                     }
                 }
@@ -770,7 +708,6 @@ async fn upload_transaction_graph_results<'a>(
 
     s.end();
 
-    update_uncomputable_handles(uncomputable, *tenant_id, trx, tracer, loop_ctx).await?;
     Ok(())
 }
 
