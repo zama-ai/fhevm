@@ -155,6 +155,8 @@ hostListener:
     - --health-port=8080
     - --dependence-cache-size=128
     - --reorg-maximum-duration-in-blocks=50
+    # - --dependence-by-connexity
+    # - --dependence-cross-block
 
     ### Catchup parameters (optional)
     # - --catchup-margin
