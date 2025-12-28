@@ -214,11 +214,15 @@ fn topological_order(ordered_txs: &mut Vec<Transaction>) {
                 reordered.push(tx_hash);
                 done_tx.insert(tx_hash);
             } else {
+                let mut cut_cycle = false;
                 for unseen_tx_hash in unseen.iter() {
                     error!("Reordering transaction: tx {:?} depends on unseen tx {:?}", tx, txs.get(unseen_tx_hash));
                     if stacked_tx.contains(unseen_tx_hash) {
                         error!("Fake cyclic dependency detected for transaction {:?}, cutting", tx_hash);
+                        cut_cycle = true;
                     }
+                }
+                if cut_cycle {
                     reordered.push(tx_hash);
                     done_tx.insert(tx_hash);
                     continue;
