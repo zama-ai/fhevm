@@ -175,6 +175,11 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
 
+## Getting help
+
+If you have questions or run into issues, please use GitHub Issues to ask for help or report problems.
+
+
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
