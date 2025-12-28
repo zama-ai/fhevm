@@ -42,6 +42,8 @@ pub async fn ingest_block_logs(
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
+    dependence_by_connexity: bool,
+    dependence_cross_block: bool,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
     let mut is_allowed = HashSet::<Handle>::new();
@@ -133,9 +135,13 @@ pub async fn ingest_block_logs(
             };
     }
 
-    let chains =
-        dependence_chains(&mut tfhe_event_log, &db.dependence_chain, true)
-            .await;
+    let chains = dependence_chains(
+        &mut tfhe_event_log,
+        &db.dependence_chain,
+        dependence_by_connexity,
+        dependence_cross_block,
+    )
+    .await;
 
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;

@@ -108,6 +108,20 @@ pub struct Args {
 
     #[arg(
         long,
+        default_value_t = false,
+        help = "Dependence chain are connected components"
+    )]
+    pub dependence_by_connexity: bool,
+
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Dependence chain are across blocks"
+    )]
+    pub dependence_cross_block: bool,
+
+    #[arg(
+        long,
         default_value = "50",
         help = "Maximum duration in blocks to detect reorgs"
     )]
@@ -876,6 +890,7 @@ async fn db_insert_block(
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
+    args: &Args,
 ) -> anyhow::Result<()> {
     info!(
         block = ?block_logs.summary,
@@ -891,6 +906,8 @@ async fn db_insert_block(
             block_logs,
             acl_contract_address,
             tfhe_contract_address,
+            args.dependence_by_connexity,
+            args.dependence_cross_block,
         )
         .await;
         let Err(err) = res else {
@@ -1053,6 +1070,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &block_logs,
                 &acl_contract_address,
                 &tfhe_contract_address,
+                &args,
             )
             .await;
             if status.is_err() {
