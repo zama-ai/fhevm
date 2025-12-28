@@ -481,6 +481,7 @@ FOR UPDATE SKIP LOCKED            ",
     Ok((transactions, unneeded_handles, true))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_transaction_graph_and_execute<'a>(
     tenant_id: &i32,
     tenant_txs: &mut Vec<ComponentNode>,

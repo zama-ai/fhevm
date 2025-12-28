@@ -274,7 +274,7 @@ async fn grouping_to_chains_connex(
         HashMap::new();
     for (key, tx) in ordered_txs.iter_mut().enumerate() {
         for dep_hash in &tx.input_tx {
-            if tx_index.get(dep_hash).is_none() {
+            if !tx_index.contains_key(dep_hash) {
                 // from previous block
                 let component = txs_component[key];
                 match past_chains_deps.entry(component) {
