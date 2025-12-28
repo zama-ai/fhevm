@@ -153,8 +153,12 @@ hostListener:
     - --initial-block-time=12  # it can switch to real blockTime when data is available
     - --log-level=INFO
     - --health-port=8080
-    - --dependence-cache-size=128
     - --reorg-maximum-duration-in-blocks=50
+
+    ### Dependence chains parameters
+    # - --dependence-cache-size=10000
+    # - --dependence-by-connexity   # Whether to build connected components or linear chains
+    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default no)
 
     ### Catchup parameters (optional)
     # - --catchup-margin

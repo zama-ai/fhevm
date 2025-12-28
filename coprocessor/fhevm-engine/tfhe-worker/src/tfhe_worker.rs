@@ -207,6 +207,7 @@ async fn tfhe_worker_cycle(
                 &tenant_key_cache,
                 &health_check,
                 &mut trx,
+                &dcid_mngr,
                 &tracer,
                 &loop_ctx,
             )
@@ -292,7 +293,6 @@ async fn query_ciphertexts<'a>(
         error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
         err
     })?;
-
     s.end();
     // index ciphertexts in hashmap
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
@@ -304,51 +304,6 @@ async fn query_ciphertexts<'a>(
         );
     }
     Ok(ciphertext_map)
-}
-
-// Update uncomputable ops schedule orders
-async fn update_uncomputable_handles<'a>(
-    uncomputable: Vec<(Handle, Handle)>,
-    tenant_id: i32,
-    trx: &mut sqlx::Transaction<'a, Postgres>,
-    tracer: &opentelemetry::global::BoxedTracer,
-    loop_ctx: &opentelemetry::Context,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut s = tracer.start_with_context("update_unschedulable_computations", loop_ctx);
-    let (handles, transactions): (Vec<_>, Vec<_>) = uncomputable.into_iter().unzip();
-
-    s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
-    s.set_attributes(
-        handles
-            .iter()
-            .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
-    );
-    s.set_attributes(
-        transactions
-            .iter()
-            .map(|tid| KeyValue::new("transaction_id", format!("0x{}", hex::encode(tid)))),
-    );
-    let _ = query!(
-        "
-        UPDATE computations
-           SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
-               uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT
-         WHERE tenant_id = $1
-           AND (output_handle, transaction_id) IN (
-              SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
-           )
-        ",
-        tenant_id,
-        &handles,
-	&transactions
-    )
-        .execute(trx.as_mut())
-        .await.map_err(|err| {
-            error!(target: "tfhe_worker", { tenant_id = tenant_id, error = %err }, "error while marking computations as unschedulable");
-            err
-        })?;
-    s.end();
-    Ok(())
 }
 
 async fn query_for_work<'a>(
@@ -418,19 +373,6 @@ WHERE c.transaction_id IN (
       ORDER BY created_at
       LIMIT $2
     ) as c_creation_order
-   UNION
-    SELECT DISTINCT
-      c_schedule_order.transaction_id
-    FROM (
-      SELECT transaction_id
-      FROM computations 
-      WHERE is_completed = FALSE
-        AND is_error = FALSE
-        AND is_allowed = TRUE
-        AND ($1::bytea IS NULL OR dependence_chain_id = $1)
-      ORDER BY schedule_order
-      LIMIT $2
-    ) as c_schedule_order
   )
 FOR UPDATE SKIP LOCKED            ",
         dependence_chain_id,
@@ -539,12 +481,14 @@ FOR UPDATE SKIP LOCKED            ",
     Ok((transactions, unneeded_handles, true))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_transaction_graph_and_execute<'a>(
     tenant_id: &i32,
     tenant_txs: &mut Vec<ComponentNode>,
     tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
+    dcid_mngr: &dependence_chain::LockMngr,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<DFComponentGraph, Box<dyn std::error::Error + Send + Sync>> {
@@ -559,6 +503,17 @@ async fn build_transaction_graph_and_execute<'a>(
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
     let ciphertext_map =
         query_ciphertexts(&cts_to_query, *tenant_id, trx, tracer, loop_ctx).await?;
+    // Check if we retrieved all needed CTs - if not, we may not want to proceed to execution
+    if cts_to_query.len() != ciphertext_map.len() {
+        if let Some(dcid_lock) = dcid_mngr.get_current_lock() {
+            warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - ciphertext_map.len()), dcid = %hex::encode(dcid_lock.dependence_chain_id) },
+	      "some inputs are missing to execute the dependence chain");
+        }
+        // Do not stop execution, we will allow the scheduler to run
+        // and complete as many operations as can be computed given
+        // the inputs fetched
+    }
+
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
         tx_graph.add_input(
             &handle,
@@ -619,7 +574,6 @@ async fn upload_transaction_graph_results<'a>(
     // Traverse computations that have been scheduled and
     // upload their results/errors.
     let mut cts_to_insert = vec![];
-    let mut uncomputable = vec![];
     for result in graph_results.into_iter() {
         match result.compressed_ct {
             Ok((db_type, db_bytes)) => {
@@ -668,11 +622,8 @@ async fn upload_transaction_graph_results<'a>(
                         err,
                         CoprocessorError::SchedulerError(SchedulerError::MissingInputs)
                     ) {
-                        uncomputable.push((result.handle.clone(), result.transaction_id.clone()));
                         // Make sure we don't mark this as an error since this simply means that the
                         // inputs weren't available when we tried scheduling these operations.
-                        // Setting them as uncomputable will postpone them with an exponential backoff
-                        // and they will be retried later.
                         continue;
                     }
                 }
@@ -758,7 +709,6 @@ async fn upload_transaction_graph_results<'a>(
 
     s.end();
 
-    update_uncomputable_handles(uncomputable, *tenant_id, trx, tracer, loop_ctx).await?;
     Ok(())
 }
 
