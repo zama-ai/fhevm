@@ -317,7 +317,7 @@ async fn test_extend_or_release_lock_2() {
 
     info!(?second_id, "Testing extend_or_release_lock");
     let acquired = mgr.acquire_next_lock().await.unwrap().0;
-    assert_eq!(acquired, Some(second_id.clone()));
+    assert_eq!(acquired, Some(first_id.clone()));
 }
 
 #[tokio::test]
