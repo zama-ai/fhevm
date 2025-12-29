@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                WITH updated AS (\n                    UPDATE dependence_chain\n                    SET\n                        dependency_count = GREATEST(dependency_count - 1, 0)\n                    WHERE dependence_chain_id = ANY (\n                        SELECT unnest(dependents)\n                        FROM dependence_chain\n                        WHERE dependence_chain_id = $1\n                    )\n                        RETURNING dependence_chain_id, dependency_count\n                ),\n                ready_dcid_available AS (\n                    SELECT 1\n                    FROM updated\n                    WHERE dependency_count = 0\n                    LIMIT 1\n                )\n                SELECT\n                    pg_notify('work_available', '')\n                FROM   ready_dcid_available;\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pg_notify",
+        "type_info": "Void"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ce25e817abead7c5a3a71ab88f8d4832119716c070bcb5b19a5cd338b6d30006"
+}
