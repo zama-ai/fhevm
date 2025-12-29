@@ -1,5 +1,5 @@
 import { getRequiredEnvVar } from './utils/loadVariables';
-import { task } from 'hardhat/config';
+import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 export const CONTRACT_NAME = 'ConfidentialWrapper';
@@ -64,6 +64,25 @@ async function deployConfidentialWrapper(
   await save(getConfidentialWrapperImplName(name), { address: implementationAddress, abi: artifact.abi });
 }
 
+// Deploy a confidential wrapper contract 
+// Example usage:
+// npx hardhat task:deployConfidentialWrapper \
+// --name "ZAMA" \
+// --symbol "cZAMA" \
+// --contract-uri 'data:application/json;utf8,{"name":"Confidential ZAMA","symbol":"cZAMA","description":"Confidential wrapper of ZAMA shielding it into a confidential token"}' \
+// --underlying "0x1234567890123456789012345678901234567890" \
+// --owner "0x1234567890123456789012345678901234567890" \
+// --network testnet
+task('task:deployConfidentialWrapper')
+  .addParam('name', 'The name of the confidential wrapper contract to deploy', undefined, types.string)
+  .addParam('symbol', 'The symbol of the confidential wrapper contract to deploy', undefined, types.string)
+  .addParam('contractUri', 'The contract URI of the confidential wrapper contract to deploy', undefined, types.string)
+  .addParam('underlying', 'The underlying token address of the confidential wrapper contract to deploy', undefined, types.string)
+  .addParam('owner', 'The owner address of the confidential wrapper contract to deploy', undefined, types.string)
+  .setAction(async function ({ name, symbol, contractUri, underlying, owner }, hre) {
+    await deployConfidentialWrapper(name, symbol, contractUri, underlying, owner, hre);
+  });
+
 // Deploy all confidential wrapper contracts
 // Example usage:
 // npx hardhat task:deployAllConfidentialWrappers --network testnet
@@ -81,7 +100,7 @@ task('task:deployAllConfidentialWrappers').setAction(async function (_, hre) {
     const underlying = getRequiredEnvVar(`CONFIDENTIAL_WRAPPER_UNDERLYING_ADDRESS_${i}`);
     const owner = getRequiredEnvVar(`CONFIDENTIAL_WRAPPER_OWNER_ADDRESS_${i}`);
 
-    await deployConfidentialWrapper(name, symbol, contractUri, underlying, owner, hre);
+    await hre.run('task:deployConfidentialWrapper', { name, symbol, contractUri, underlying, owner });
   }
 
   console.log('✅ All confidential wrapper contracts deployed\n');
