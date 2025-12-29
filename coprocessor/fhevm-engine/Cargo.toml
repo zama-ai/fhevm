@@ -32,7 +32,7 @@ alloy-provider = { version = "1.1.2", default-features = false, features = [
     "ws",
     "anvil-node",
 ] }
-alloy-primitives = "1.4.1"
+alloy-primitives = "1.5.2"
 async-trait = "0.1.88"
 axum = "0.7"
 tower-http = { version = "0.5", features = ["trace"] }
