@@ -94,7 +94,11 @@ task('task:verifyAllOperatorStakingContracts').setAction(async function (_, hre)
   const operatorStakingProxyAddresses = await getAllOperatorStakingAddresses(hre);
 
   for (const proxyAddress of operatorStakingProxyAddresses) {
-    await hre.run('task:verifyOperatorStaking', { proxyAddress });
+    try {
+      await hre.run('task:verifyOperatorStaking', { proxyAddress });
+    } catch (error) {
+      console.error('An error occurred:', error);
+    }
   }
 });
 
