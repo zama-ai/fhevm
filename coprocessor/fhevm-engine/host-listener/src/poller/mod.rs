@@ -368,7 +368,11 @@ async fn ingest_with_retry(
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
     loop {
-        match ingest_block_logs(chain_id, db, block_logs, &acl, &tfhe).await {
+        match ingest_block_logs(
+            chain_id, db, block_logs, &acl, &tfhe, false, false,
+        )
+        .await
+        {
             Ok(_) => return Ok(errors),
             Err(err) => {
                 errors += 1;
