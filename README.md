@@ -178,3 +178,10 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Project Scope
+
+This repository focuses on providing core building blocks for fully homomorphic
+execution in EVM-compatible environments. It is intended for developers working
+on privacy-preserving smart contracts and related tooling.
+
