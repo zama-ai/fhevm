@@ -32,8 +32,8 @@ contract OperatorRewarder {
     uint256 private _lastClaimTotalAssetsPlusPaidRewards;
     uint256 private _totalRewardsPaid;
     int256 private _totalVirtualRewardsPaid;
-    mapping(address => int256) private _rewardsPaid;
-    mapping(address => address) private _authorizedClaimers;
+    mapping(address account => int256 rewardsPaid) private _rewardsPaid;
+    mapping(address receiver => address claimer) private _authorizedClaimers;
 
     /// @notice Emitted when the beneficiary is transferred.
     event BeneficiaryTransferred(address oldBeneficiary, address newBeneficiary);

@@ -38,9 +38,9 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         IERC20 _asset;
         address _rewarder;
         uint256 _totalSharesInRedemption;
-        mapping(address => uint256) _sharesReleased;
-        mapping(address => Checkpoints.Trace208) _redeemRequests;
-        mapping(address => mapping(address => bool)) _operator;
+        mapping(address controller => uint256 sharesReleased) _sharesReleased;
+        mapping(address controller => Checkpoints.Trace208 redeemRequests) _redeemRequests;
+        mapping(address controller => mapping(address operator => bool approved)) _operator;
     }
 
     // keccak256(abi.encode(uint256(keccak256("fhevm_protocol.storage.OperatorStaking")) - 1)) & ~bytes32(uint256(0xff))
