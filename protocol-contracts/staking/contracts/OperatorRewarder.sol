@@ -40,7 +40,7 @@ contract OperatorRewarder {
      * @param oldBeneficiary The previous beneficiary address.
      * @param newBeneficiary The new beneficiary address.
      */
-    event BeneficiaryTransferred(address oldBeneficiary, address newBeneficiary);
+    event BeneficiaryTransferred(address indexed oldBeneficiary, address indexed newBeneficiary);
 
     /// @notice Emitted when the contract is shut down.
     event Shutdown();
@@ -64,7 +64,7 @@ contract OperatorRewarder {
      * @param receiver The address that will receive the rewards.
      * @param claimer The address authorized to claim rewards on behalf of the receiver.
      */
-    event ClaimerAuthorized(address receiver, address claimer);
+    event ClaimerAuthorized(address indexed receiver, address indexed claimer);
 
     /// @notice Error for invalid claimer address.
     error InvalidClaimer(address claimer);

@@ -76,7 +76,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
      * @param oldRewarder The previous rewarder contract address.
      * @param newRewarder The new rewarder contract address.
      */
-    event RewarderSet(address oldRewarder, address newRewarder);
+    event RewarderSet(address indexed oldRewarder, address indexed newRewarder);
 
     /// @dev Thrown when the caller is not the ProtocolStaking's owner.
     error CallerNotProtocolStakingOwner(address caller);
