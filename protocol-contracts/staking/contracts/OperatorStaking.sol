@@ -75,6 +75,9 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
     /// @dev Thrown when the controller address is not valid (e.g., zero address).
     error InvalidController();
 
+    /// @dev Thrown when trying to redeem with no assets to withdraw from ProtocolStaking.
+    error NoAssetsToWithdraw();
+
     modifier onlyOwner() {
         require(msg.sender == owner(), CallerNotProtocolStakingOwner(msg.sender));
         _;
@@ -190,8 +193,11 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
                 IERC20(asset()).balanceOf(address(this)) + protocolStaking_.awaitingRelease(address(this))
             );
 
+        // Revert if no assets to withdraw to prevent zero-amount unstake from advancing release time.
+        require(assetsToWithdraw > 0, NoAssetsToWithdraw());
+
         (, uint48 lastReleaseTime, uint208 controllerSharesRedeemed) = $._redeemRequests[controller].latestCheckpoint();
-        uint48 releaseTime = protocolStaking_.unstake(SafeCast.toUint256(SignedMath.max(assetsToWithdraw, 0)));
+        uint48 releaseTime = protocolStaking_.unstake(SafeCast.toUint256(assetsToWithdraw));
         assert(releaseTime >= lastReleaseTime); // should never happen
         $._redeemRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
 

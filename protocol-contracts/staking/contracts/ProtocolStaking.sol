@@ -75,6 +75,8 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     error TransferDisabled();
     /// @dev The unstake cooldown period is invalid.
     error InvalidUnstakeCooldownPeriod();
+    /// @dev The unstake amount is zero.
+    error ZeroUnstakeAmount();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -107,6 +109,8 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @param amount The amount of tokens to stake.
      */
     function stake(uint256 amount) public {
+        if (amount == 0) return;
+
         _mint(msg.sender, amount);
         IERC20(stakingToken()).safeTransferFrom(msg.sender, address(this), amount);
 
@@ -120,11 +124,14 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * WARNING: Unstake release times are strictly increasing per account even if the cooldown period
      * is reduced. For a given account to fully realize the reduction in cooldown period, they may need
      * to wait up to `OLD_COOLDOWN_PERIOD - NEW_COOLDOWN_PERIOD` seconds after the cooldown period is updated.
+     * NOTE: Unstake amount must be greater than zero to prevent zero-amount unstake from advancing release time.
      *
      * @param amount The amount of tokens to unstake.
      * @return releaseTime The timestamp when the unstaked tokens can be released.
      */
     function unstake(uint256 amount) public returns (uint48) {
+        require(amount > 0, ZeroUnstakeAmount());
+
         _burn(msg.sender, amount);
 
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();

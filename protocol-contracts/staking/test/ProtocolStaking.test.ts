@@ -117,6 +117,11 @@ describe('Protocol Staking', function () {
       await expect(this.mock.balanceOf(this.staker1)).to.eventually.equal(ethers.parseEther('100'));
     });
 
+    it('zero stake should return early without state changes', async function () {
+      await expect(this.mock.connect(this.staker1).stake(0)).to.not.emit(this.mock, 'TokensStaked');
+      await expect(this.mock.balanceOf(this.staker1)).to.eventually.equal(0);
+    });
+
     it("should not reward accounts that aren't eligible", async function () {
       await this.mock.connect(this.staker1).stake(ethers.parseEther('100'));
 
@@ -211,6 +216,13 @@ describe('Protocol Staking', function () {
         .to.emit(this.mock, 'TokensUnstaked')
         .withArgs(this.staker1, ethers.parseEther('50'), anyValue)
         .to.not.emit(this.token, 'Transfer');
+    });
+
+    it('zero unstake should revert', async function () {
+      await expect(this.mock.connect(this.staker1).unstake(0)).to.be.revertedWithCustomError(
+        this.mock,
+        'ZeroUnstakeAmount',
+      );
     });
 
     describe('Release', function () {

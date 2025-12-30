@@ -479,20 +479,15 @@ describe('OperatorStaking', function () {
       await this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1);
       await this.protocolStaking.slash(this.mock, ethers.parseEther('1'));
 
-      await timeIncreaseNoMine(30);
-
+      // Should revert when there are no assets to withdraw from ProtocolStaking.
       await expect(
         this.mock.connect(this.delegator2).requestRedeem(ethers.parseEther('1'), this.delegator2, this.delegator2),
-      )
-        .to.emit(this.protocolStaking, 'TokensUnstaked')
-        .withArgs(this.mock, 0, anyValue);
+      ).to.be.revertedWithCustomError(this.mock, 'NoAssetsToWithdraw');
 
-      await time.increase(30);
+      // Cooldown period is completed, only delegator1 can redeem now.
+      await time.increase(60);
       await expect(this.mock.maxRedeem(this.delegator2)).to.eventually.eq(0);
       await expect(this.mock.maxRedeem(this.delegator1)).to.eventually.eq(ethers.parseEther('1'));
-
-      await time.increase(30);
-      await expect(this.mock.maxRedeem(this.delegator2)).to.eventually.eq(ethers.parseEther('1'));
     });
 
     it('symmetrically passes on losses from withdrawal balance', async function () {
