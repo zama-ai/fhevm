@@ -276,7 +276,7 @@ contract OperatorRewarder {
      * @param receiver The receiver address.
      * @return The claimer address.
      */
-    function claimer(address receiver) public view returns (address) {
+    function claimer(address receiver) public view virtual returns (address) {
         address authorizedClaimer = _authorizedClaimers[receiver];
         return authorizedClaimer == address(0) ? receiver : authorizedClaimer;
     }
@@ -285,7 +285,7 @@ contract OperatorRewarder {
      * @notice Returns the staking token address.
      * @return The IERC20 staking token.
      */
-    function token() public view returns (IERC20) {
+    function token() public view virtual returns (IERC20) {
         return _token;
     }
 
@@ -293,7 +293,7 @@ contract OperatorRewarder {
      * @notice Returns the ProtocolStaking contract address.
      * @return The ProtocolStaking contract.
      */
-    function protocolStaking() public view returns (ProtocolStaking) {
+    function protocolStaking() public view virtual returns (ProtocolStaking) {
         return _protocolStaking;
     }
 
@@ -301,7 +301,7 @@ contract OperatorRewarder {
      * @notice Returns the OperatorStaking contract address.
      * @return The OperatorStaking contract.
      */
-    function operatorStaking() public view returns (OperatorStaking) {
+    function operatorStaking() public view virtual returns (OperatorStaking) {
         return _operatorStaking;
     }
 
@@ -309,7 +309,7 @@ contract OperatorRewarder {
      * @notice Returns true if contract is shutdown.
      * @return True if shutdown, false otherwise.
      */
-    function isShutdown() public view returns (bool) {
+    function isShutdown() public view virtual returns (bool) {
         return _shutdown;
     }
 
@@ -317,7 +317,7 @@ contract OperatorRewarder {
      * @notice Returns the maximum fee in basis points that the beneficiary can set.
      * @return Fee in basis points.
      */
-    function maxFeeBasisPoints() public view returns (uint16) {
+    function maxFeeBasisPoints() public view virtual returns (uint16) {
         return _maxFeeBasisPoints;
     }
 
@@ -325,7 +325,7 @@ contract OperatorRewarder {
      * @notice Returns the fee in basis points.
      * @return Fee in basis points.
      */
-    function feeBasisPoints() public view returns (uint16) {
+    function feeBasisPoints() public view virtual returns (uint16) {
         return _feeBasisPoints;
     }
 
@@ -370,7 +370,7 @@ contract OperatorRewarder {
      * @param to The address to transfer the tokens to.
      * @param amount The amount of tokens to transfer.
      */
-    function _doTransferOut(address to, uint256 amount) internal {
+    function _doTransferOut(address to, uint256 amount) internal virtual {
         IERC20 token_ = token();
         if (amount > token_.balanceOf(address(this))) {
             protocolStaking().claimRewards(address(_operatorStaking));
@@ -454,7 +454,7 @@ contract OperatorRewarder {
      * - the total rewards paid to the delegators (total paid rewards)
      * @return Total assets plus earned rewards plus paid rewards.
      */
-    function _totalAssetsPlusPaidRewards() internal view returns (uint256) {
+    function _totalAssetsPlusPaidRewards() internal view virtual returns (uint256) {
         return
             token().balanceOf(address(this)) +
             (isShutdown() ? 0 : protocolStaking().earned(address(operatorStaking()))) +
@@ -474,7 +474,7 @@ contract OperatorRewarder {
      * @param totalAssetsPlusPaidRewards The total assets plus earned rewards plus paid rewards.
      * @return Amount of unpaid fee.
      */
-    function _unpaidFee(uint256 totalAssetsPlusPaidRewards) internal view returns (uint256) {
+    function _unpaidFee(uint256 totalAssetsPlusPaidRewards) internal view virtual returns (uint256) {
         uint256 totalAssetsPlusPaidRewardsDelta = totalAssetsPlusPaidRewards - _lastClaimTotalAssetsPlusPaidRewards;
         return (totalAssetsPlusPaidRewardsDelta * feeBasisPoints()) / 10_000;
     }
@@ -492,7 +492,7 @@ contract OperatorRewarder {
      * - paid virtual rewards: a pool of "virtual" rewards that account for changes in the weight distribution
      *  Note: the `mulDiv` rounds down: floor(totalRewards * share / total)
      */
-    function _allocation(uint256 share, uint256 total) private view returns (uint256) {
+    function _allocation(uint256 share, uint256 total) internal view virtual returns (uint256) {
         return
             SafeCast.toUint256(SafeCast.toInt256(historicalReward()) + _totalVirtualRewardsPaid).mulDiv(share, total);
     }

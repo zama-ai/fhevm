@@ -119,7 +119,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         address beneficiary_,
         uint16 initialMaxFeeBasisPoints_,
         uint16 initialFeeBasisPoints_
-    ) public initializer {
+    ) public virtual initializer {
         __ERC20_init(name, symbol);
 
         OperatorStakingStorage storage $ = _getOperatorStakingStorage();
@@ -414,7 +414,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         return _getOperatorStakingStorage()._operator[controller][operator];
     }
 
-    function _doTransferOut(address to, uint256 amount) internal {
+    function _doTransferOut(address to, uint256 amount) internal virtual {
         IERC20 asset_ = IERC20(asset());
         if (amount > asset_.balanceOf(address(this))) {
             protocolStaking().release(address(this));
@@ -445,7 +445,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         emit IERC4626.Deposit(caller, receiver, assets, shares);
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
 
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view virtual returns (uint256) {
         // Shares in redemption have not yet received assets, so we need to account for them in the conversion.
@@ -471,7 +471,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         return 0;
     }
 
-    function _getOperatorStakingStorage() private pure returns (OperatorStakingStorage storage $) {
+    function _getOperatorStakingStorage() internal pure returns (OperatorStakingStorage storage $) {
         assembly {
             $.slot := OPERATOR_STAKING_STORAGE_LOCATION
         }
