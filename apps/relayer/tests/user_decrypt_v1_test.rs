@@ -622,9 +622,9 @@ async fn test_error_malformed_json(#[case] malformed_json: &str) {
     setup.shutdown().await;
 }
 
-/// Test readiness check failure returns 504 Gateway Timeout with correct message
+/// Test readiness check failure returns 503 Service Unavailable with correct message
 #[tokio::test]
-async fn test_readiness_check_failure_returns_504() {
+async fn test_readiness_check_failure_returns_503() {
     // Use fast readiness config (4 attempts × 250ms = ~1s total)
     let setup = TestSetup::new_with_fast_readiness()
         .await
@@ -651,11 +651,11 @@ async fn test_readiness_check_failure_returns_504() {
         .await
         .expect("Failed to send HTTP request");
 
-    // Verify we get 504 Gateway Timeout
+    // Verify we get 503 Service Unavailable
     assert_eq!(
         response.status(),
-        reqwest::StatusCode::GATEWAY_TIMEOUT,
-        "Expected 504 Gateway Timeout status code"
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "Expected 503 Service Unavailable status code"
     );
 
     // Verify error message

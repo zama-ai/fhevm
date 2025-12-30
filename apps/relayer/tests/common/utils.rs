@@ -454,7 +454,7 @@ pub fn assert_retry_after_header_present(response: &reqwest::Response) {
 /// 1. POST request → Assert 202 "queued" with job_id
 /// 2. Initial poll → Assert 202 "queued"
 /// 3. Wait for timeout to occur
-/// 4. Final poll → Assert 504 "failed" with error message
+/// 4. Final poll → Assert 503 "failed" with error message
 #[allow(dead_code)]
 pub async fn test_v2_timeout_flow(
     post_url: String,
@@ -530,7 +530,7 @@ pub async fn test_v2_timeout_flow(
         tokio::time::Duration::from_secs(timeout_duration_secs + cron_interval_secs + 5);
     tokio::time::sleep(wait_time).await;
 
-    // Step 4: Poll status - should now return 504 "failed"
+    // Step 4: Poll status - should now return 503 "failed"
     let response = client
         .get(get_url_fn(job_id))
         .timeout(std::time::Duration::from_secs(10))
@@ -540,8 +540,8 @@ pub async fn test_v2_timeout_flow(
 
     assert_eq!(
         response.status(),
-        reqwest::StatusCode::GATEWAY_TIMEOUT,
-        "Expected 504 Gateway Timeout"
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "Expected 503 Gateway Timeout"
     );
     let status: serde_json::Value = response
         .json()

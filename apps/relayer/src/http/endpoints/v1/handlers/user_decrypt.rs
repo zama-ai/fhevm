@@ -249,7 +249,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                         (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
                                     }
                                     EventProcessingError::ReadinessCheckFailed => (
-                                        StatusCode::GATEWAY_TIMEOUT,
+                                        StatusCode::SERVICE_UNAVAILABLE,
                                         Json(UserDecryptErrorResponseJson {
                                             message: READINESS_CHECK_TIMEOUT_MSG.to_string(),
                                         }),

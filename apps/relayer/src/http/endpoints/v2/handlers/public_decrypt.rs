@@ -1,9 +1,5 @@
 use super::super::types::error::{
-    RelayerV2ApiError400NoDetails,
-    RelayerV2ApiError404,
-    RelayerV2ApiError500,
-    RelayerV2ApiError504,
-    // TODO: Import RelayerV2ApiError503 when implementing 503 errors for gateway/upstream related errors
+    RelayerV2ApiError400NoDetails, RelayerV2ApiError404, RelayerV2ApiError500, RelayerV2ApiError503,
 };
 use super::super::types::public_decrypt::{
     PublicDecryptPostResponseJson, PublicDecryptQueuedResult, PublicDecryptResponseJson,
@@ -296,12 +292,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             }
                         };
                         (
-                            StatusCode::GATEWAY_TIMEOUT,
+                            StatusCode::SERVICE_UNAVAILABLE,
                             Json(PublicDecryptStatusResponseJson {
                                 status: "failed".to_string(),
                                 request_id: request_id.to_string(),
                                 result: None,
-                                error: Some(RelayerV2ApiError504::response_timed_out(&error_msg)),
+                                error: Some(RelayerV2ApiError503::response_timed_out(&error_msg)),
                             }),
                         )
                             .into_response()
@@ -408,7 +404,7 @@ where
         (status = 400, description = "Request failed", body = PublicDecryptStatusResponseJson),
         (status = 404, description = "Request not found", body = PublicDecryptStatusResponseJson),
         (status = 500, description = "Internal server error", body = PublicDecryptStatusResponseJson),
-        (status = 504, description = "Request timed out", body = PublicDecryptStatusResponseJson),
+        (status = 503, description = "Request timed out", body = PublicDecryptStatusResponseJson),
     ),
     tag = "Public Decrypt v2"
 )]

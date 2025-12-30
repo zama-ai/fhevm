@@ -1,9 +1,5 @@
 use super::super::types::error::{
-    RelayerV2ApiError400NoDetails,
-    RelayerV2ApiError404,
-    RelayerV2ApiError500,
-    RelayerV2ApiError504,
-    // TODO: Import RelayerV2ApiError503 when implementing 503 errors for gateway/upstream related errors
+    RelayerV2ApiError400NoDetails, RelayerV2ApiError404, RelayerV2ApiError500, RelayerV2ApiError503,
 };
 use super::super::types::input_proof::{
     InputProofPostResponseJson, InputProofQueuedResult, InputProofResponseJson,
@@ -295,12 +291,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             }
                         };
                         (
-                            StatusCode::GATEWAY_TIMEOUT,
+                            StatusCode::SERVICE_UNAVAILABLE,
                             Json(InputProofStatusResponseJson {
                                 status: "failed".to_string(),
                                 request_id: request_id.to_string(),
                                 result: None,
-                                error: Some(RelayerV2ApiError504::response_timed_out(&error_msg)),
+                                error: Some(RelayerV2ApiError503::response_timed_out(&error_msg)),
                             }),
                         )
                             .into_response()
@@ -407,7 +403,7 @@ where
         (status = 400, description = "Request failed", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
         (status = 404, description = "Request not found", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
         (status = 500, description = "Internal server error", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
-        (status = 504, description = "Request timed out", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
+        (status = 503, description = "Request timed out", body = crate::http::endpoints::v2::types::input_proof::InputProofStatusResponseJson),
     ),
     tag = "Input Proof v2"
 )]

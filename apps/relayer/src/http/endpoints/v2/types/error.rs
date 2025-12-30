@@ -37,13 +37,11 @@ pub struct RelayerV2ApiError500 {
 
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 pub struct RelayerV2ApiError503 {
-    pub label: String, // 'protocol_paused' | 'gateway_not_reachable'
-    pub message: String,
-}
-
-#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
-pub struct RelayerV2ApiError504 {
-    pub label: String, // 'readiness_check_timed_out' | 'response_timed_out'
+    // Gateway chain timeout errors are rendered as 503 instead of 504 because
+    // CloudFlare overrides 504 errors with its own error page which cannot be
+    // disabled in our setup. Labels include: 'protocol_paused', 'gateway_not_reachable',
+    // 'readiness_check_timed_out', 'response_timed_out'
+    pub label: String,
     pub message: String,
 }
 
@@ -106,7 +104,6 @@ impl RelayerV2ApiError400NoDetails {
     }
 }
 
-// TODO: Implement helper functions for 503 errors when needed
 impl RelayerV2ApiError503 {
     #[allow(dead_code)]
     pub fn protocol_paused(message: &str) -> Value {
@@ -125,11 +122,9 @@ impl RelayerV2ApiError503 {
         })
         .unwrap()
     }
-}
 
-impl RelayerV2ApiError504 {
     pub fn readiness_check_timed_out(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError504 {
+        serde_json::to_value(RelayerV2ApiError503 {
             label: "readiness_check_timed_out".to_string(),
             message: message.to_string(),
         })
@@ -137,7 +132,7 @@ impl RelayerV2ApiError504 {
     }
 
     pub fn response_timed_out(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError504 {
+        serde_json::to_value(RelayerV2ApiError503 {
             label: "response_timed_out".to_string(),
             message: message.to_string(),
         })

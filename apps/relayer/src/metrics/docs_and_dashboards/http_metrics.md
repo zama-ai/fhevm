@@ -205,7 +205,7 @@ The dashboard is structured to provide a Global Health view first, followed by d
 
 #### Panel 20: General 5xx Errors (Gateway/Timeout)
 
-- **Description**: All server-side errors (502, 503, 504), excluding 500.
+- **Description**: All server-side errors (502, 503), excluding 500.
 - **Query**:
   ```promql
   sum by (endpoint, version) (rate(relayer_http_responses_total{status=~"5..", status!="500"}[5m]))
