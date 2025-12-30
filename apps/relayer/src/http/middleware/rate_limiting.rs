@@ -7,6 +7,8 @@ use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::GlobalKeyExtractor, GovernorError,
     GovernorLayer,
 };
+use tracing::warn;
+use uuid::Uuid;
 
 /// Custom error handler for rate limiting that returns structured JSON responses.
 pub fn create_rate_limit_error_handler(
@@ -28,11 +30,27 @@ pub fn create_rate_limit_error_handler(
         // Convert to seconds for Retry-After header (rounded up)
         let retry_after_seconds = total_ms.div_ceil(1000); // Round up to nearest second
 
-        AppResponse::<()>::rate_limited(
-            "Too many requests at relayer HTTP server",
+        // Generate unique request ID for this rate limited request
+        let request_id = Uuid::new_v4();
+
+        // Log rate limiting event with request_id for correlation and observability.
+        // This matches the user-facing message about "high load" and enables tracking
+        // of rate-limited requests in server logs.
+        warn!(
+            request_id = %request_id,
+            retry_after_secs = retry_after_seconds,
+            "Server experiencing high load - rate limit applied"
+        );
+
+        let mut response = AppResponse::<()>::rate_limited(
+            "Server is currently experiencing high load. Please retry after the specified time",
             &retry_after_seconds.to_string(), // Pass as seconds string for header
-        )
-        .into_response()
+        );
+
+        // Set the request ID on the response (will appear in JSON body)
+        response.set_request_id(&request_id.to_string());
+
+        response.into_response()
     }
 }
 

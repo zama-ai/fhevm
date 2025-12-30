@@ -140,6 +140,7 @@ struct BatchResult {
     rate_limit_post_endpoints_requests: u32,
     error_requests: u32,
     retry_after_header_count: u32, // Count of 429 responses that had Retry-After header
+    valid_body_count: u32,         // Count of 429 responses with valid body (request_id + label)
 }
 
 async fn execute_batch(
@@ -164,7 +165,7 @@ async fn execute_batch(
                 .send()
                 .await;
 
-            let (status, has_valid_retry_after_header) = match &res {
+            let (status, has_valid_retry_after_header, has_valid_body) = match res {
                 Ok(response) => {
                     let status = response.status().as_u16();
                     let has_valid_retry_after = if status == 429 {
@@ -179,12 +180,44 @@ async fn execute_batch(
                     } else {
                         true // Non-429 responses don't need Retry-After header
                     };
-                    (status, has_valid_retry_after)
+
+                    let has_valid_body = if status == 429 {
+                        // Parse and validate JSON body for 429 responses
+                        match response.json::<serde_json::Value>().await {
+                            Ok(json) => {
+                                let error = json.get("error");
+                                let has_request_id = error
+                                    .and_then(|e| e.get("request_id"))
+                                    .and_then(|id| id.as_str())
+                                    .map(|id| !id.is_empty())
+                                    .unwrap_or(false);
+
+                                let has_correct_label = error
+                                    .and_then(|e| e.get("label"))
+                                    .and_then(|l| l.as_str())
+                                    .map(|l| l == "rate_limited")
+                                    .unwrap_or(false);
+
+                                has_request_id && has_correct_label
+                            }
+                            Err(_) => false,
+                        }
+                    } else {
+                        true // Non-429 responses don't need body validation
+                    };
+
+                    (status, has_valid_retry_after, has_valid_body)
                 }
-                Err(_) => (0, false),
+                Err(_) => (0, false, false),
             };
 
-            (i, status, res.is_ok(), has_valid_retry_after_header)
+            (
+                i,
+                status,
+                status > 0,
+                has_valid_retry_after_header,
+                has_valid_body,
+            )
         });
 
         all_tasks.push(task);
@@ -203,15 +236,19 @@ async fn execute_batch(
     let mut rate_limit_post_endpoints_requests = 0;
     let mut error_requests = 0;
     let mut retry_after_header_count = 0;
+    let mut valid_body_count = 0;
 
     for result in results {
-        if let Ok((_request_id, status, _success, has_valid_retry_after)) = result {
+        if let Ok((_request_id, status, _success, has_valid_retry_after, has_valid_body)) = result {
             match status {
                 200 => successful_requests += 1,
                 429 => {
                     rate_limit_post_endpoints_requests += 1;
                     if has_valid_retry_after {
                         retry_after_header_count += 1;
+                    }
+                    if has_valid_body {
+                        valid_body_count += 1;
                     }
                 }
                 _ => error_requests += 1,
@@ -226,6 +263,7 @@ async fn execute_batch(
         rate_limit_post_endpoints_requests,
         error_requests,
         retry_after_header_count,
+        valid_body_count,
     }
 }
 
@@ -243,7 +281,7 @@ async fn execute_get_batch(client: &reqwest::Client, url: &str, batch: &Batch) -
                 .send()
                 .await;
 
-            let (status, has_valid_retry_after_header) = match &res {
+            let (status, has_valid_retry_after_header, has_valid_body) = match res {
                 Ok(response) => {
                     let status = response.status().as_u16();
                     let has_valid_retry_after = if status == 429 {
@@ -258,12 +296,44 @@ async fn execute_get_batch(client: &reqwest::Client, url: &str, batch: &Batch) -
                     } else {
                         true // Non-429 responses don't need Retry-After header
                     };
-                    (status, has_valid_retry_after)
+
+                    let has_valid_body = if status == 429 {
+                        // Parse and validate JSON body for 429 responses
+                        match response.json::<serde_json::Value>().await {
+                            Ok(json) => {
+                                let error = json.get("error");
+                                let has_request_id = error
+                                    .and_then(|e| e.get("request_id"))
+                                    .and_then(|id| id.as_str())
+                                    .map(|id| !id.is_empty())
+                                    .unwrap_or(false);
+
+                                let has_correct_label = error
+                                    .and_then(|e| e.get("label"))
+                                    .and_then(|l| l.as_str())
+                                    .map(|l| l == "rate_limited")
+                                    .unwrap_or(false);
+
+                                has_request_id && has_correct_label
+                            }
+                            Err(_) => false,
+                        }
+                    } else {
+                        true // Non-429 responses don't need body validation
+                    };
+
+                    (status, has_valid_retry_after, has_valid_body)
                 }
-                Err(_) => (0, false),
+                Err(_) => (0, false, false),
             };
 
-            (i, status, res.is_ok(), has_valid_retry_after_header)
+            (
+                i,
+                status,
+                status > 0,
+                has_valid_retry_after_header,
+                has_valid_body,
+            )
         });
 
         all_tasks.push(task);
@@ -282,15 +352,19 @@ async fn execute_get_batch(client: &reqwest::Client, url: &str, batch: &Batch) -
     let mut rate_limit_post_endpoints_requests = 0;
     let mut error_requests = 0;
     let mut retry_after_header_count = 0;
+    let mut valid_body_count = 0;
 
     for result in results {
-        if let Ok((_request_id, status, _success, has_valid_retry_after)) = result {
+        if let Ok((_request_id, status, _success, has_valid_retry_after, has_valid_body)) = result {
             match status {
                 200 => successful_requests += 1,
                 429 => {
                     rate_limit_post_endpoints_requests += 1;
                     if has_valid_retry_after {
                         retry_after_header_count += 1;
+                    }
+                    if has_valid_body {
+                        valid_body_count += 1;
                     }
                 }
                 _ => error_requests += 1,
@@ -305,6 +379,7 @@ async fn execute_get_batch(client: &reqwest::Client, url: &str, batch: &Batch) -
         rate_limit_post_endpoints_requests,
         error_requests,
         retry_after_header_count,
+        valid_body_count,
     }
 }
 
@@ -331,10 +406,11 @@ async fn run_scenario(
         let result = execute_batch(&client, &url, payload, batch).await;
 
         println!(
-            "    Results: {} successful, {} rate limited ({} with valid Retry-After), {} errors",
+            "    Results: {} successful, {} rate limited ({} with valid Retry-After, {} with valid body), {} errors",
             result.successful_requests,
             result.rate_limit_post_endpoints_requests,
             result.retry_after_header_count,
+            result.valid_body_count,
             result.error_requests
         );
 
@@ -489,6 +565,16 @@ fn validate_scenario_results(scenario: &TestScenario, results: &[BatchResult]) {
             result.rate_limit_post_endpoints_requests,
             result.retry_after_header_count
         );
+
+        // Validate that ALL 429 responses have valid body (request_id + label="rate_limited")
+        assert_eq!(
+            result.rate_limit_post_endpoints_requests, result.valid_body_count,
+            "Scenario '{}', Batch {}: ALL 429 responses must have valid body (request_id + label='rate_limited'). Got {} 429s but only {} with valid body",
+            scenario.name,
+            batch_idx + 1,
+            result.rate_limit_post_endpoints_requests,
+            result.valid_body_count
+        );
     }
 }
 
@@ -609,10 +695,11 @@ async fn run_get_scenario(
         let result = execute_get_batch(&client, url, batch).await;
 
         println!(
-            "    Results: {} successful, {} rate limited ({} with valid Retry-After), {} errors",
+            "    Results: {} successful, {} rate limited ({} with valid Retry-After, {} with valid body), {} errors",
             result.successful_requests,
             result.rate_limit_post_endpoints_requests,
             result.retry_after_header_count,
+            result.valid_body_count,
             result.error_requests
         );
 
