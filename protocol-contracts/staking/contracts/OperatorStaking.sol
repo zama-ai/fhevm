@@ -47,10 +47,23 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
     bytes32 private constant OPERATOR_STAKING_STORAGE_LOCATION =
         0x7fc851282090a0d8832502c48739eac98a0856539351f17cb5d5950c860fd200;
 
-    /// @dev Emitted when an operator is set or unset for a controller.
+    /**
+     * @dev Emitted when an operator is set or unset for a controller.
+     * @param controller The controller address.
+     * @param operator The operator address.
+     * @param approved True if the operator is approved, false if revoked.
+     */
     event OperatorSet(address indexed controller, address indexed operator, bool approved);
 
-    /// @dev Emitted when a redeem request is made.
+    /**
+     * @dev Emitted when a redeem request is made.
+     * @param controller The controller address for the redeem request.
+     * @param owner The owner of the shares being redeemed.
+     * @param requestId The unique identifier for the redeem request.
+     * @param sender The address that initiated the redeem request.
+     * @param shares The number of shares requested to redeem.
+     * @param releaseTime The timestamp when the shares can be released.
+     */
     event RedeemRequest(
         address indexed controller,
         address indexed owner,
@@ -60,7 +73,11 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         uint48 releaseTime
     );
 
-    /// @dev Emitted when the rewarder contract is set.
+    /**
+     * @dev Emitted when the rewarder contract is set.
+     * @param oldRewarder The previous rewarder contract address.
+     * @param newRewarder The new rewarder contract address.
+     */
     event RewarderSet(address oldRewarder, address newRewarder);
 
     /// @dev Thrown when the caller is not the ProtocolStaking's owner.

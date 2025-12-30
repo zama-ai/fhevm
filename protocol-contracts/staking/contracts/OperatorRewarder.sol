@@ -35,19 +35,35 @@ contract OperatorRewarder {
     mapping(address => int256) private _rewardsPaid;
     mapping(address => address) private _authorizedClaimers;
 
-    /// @notice Emitted when the beneficiary is transferred.
+    /**
+     * @notice Emitted when the beneficiary is transferred.
+     * @param oldBeneficiary The previous beneficiary address.
+     * @param newBeneficiary The new beneficiary address.
+     */
     event BeneficiaryTransferred(address oldBeneficiary, address newBeneficiary);
 
     /// @notice Emitted when the contract is shut down.
     event Shutdown();
 
-    /// @notice Emitted when the maximum fee is updated.
+    /**
+     * @notice Emitted when the maximum fee is updated.
+     * @param oldFee The previous maximum fee in basis points.
+     * @param newFee The new maximum fee in basis points.
+     */
     event MaxFeeUpdated(uint16 oldFee, uint16 newFee);
 
-    /// @notice Emitted when the fee is updated.
+    /**
+     * @notice Emitted when the fee is updated.
+     * @param oldFee The previous fee in basis points.
+     * @param newFee The new fee in basis points.
+     */
     event FeeUpdated(uint16 oldFee, uint16 newFee);
 
-    /// @notice Emitted when an address is authorized to claim rewards on behalf of the receiver address.
+    /**
+     * @notice Emitted when an address is authorized to claim rewards on behalf of the receiver address.
+     * @param receiver The address that will receive the rewards.
+     * @param claimer The address authorized to claim rewards on behalf of the receiver.
+     */
     event ClaimerAuthorized(address receiver, address claimer);
 
     /// @notice Error for invalid claimer address.
@@ -326,6 +342,10 @@ contract OperatorRewarder {
         return SafeCast.toUint256(SignedMath.max(0, allocation - _rewardsPaid[account]));
     }
 
+    /**
+     * @notice Returns the total historical rewards distributed (including total assets) minus unpaid fees.
+     * @return The total historical rewards amount.
+     */
     function historicalReward() public view virtual returns (uint256) {
         uint256 totalAssetsPlusPaidRewards = _totalAssetsPlusPaidRewards();
         return totalAssetsPlusPaidRewards - _unpaidFee(totalAssetsPlusPaidRewards);
