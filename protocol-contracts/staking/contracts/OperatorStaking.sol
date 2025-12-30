@@ -59,7 +59,6 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
      * @dev Emitted when a redeem request is made.
      * @param controller The controller address for the redeem request.
      * @param owner The owner of the shares being redeemed.
-     * @param requestId The unique identifier for the redeem request.
      * @param sender The address that initiated the redeem request.
      * @param shares The number of shares requested to redeem.
      * @param releaseTime The timestamp when the shares can be released.
@@ -67,7 +66,6 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
     event RedeemRequest(
         address indexed controller,
         address indexed owner,
-        uint256 indexed requestId,
         address sender,
         uint256 shares,
         uint48 releaseTime
@@ -217,7 +215,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         assert(releaseTime >= lastReleaseTime); // should never happen
         $._redeemRequests[controller].push(releaseTime, controllerSharesRedeemed + shares);
 
-        emit RedeemRequest(controller, ownerRedeem, 0, msg.sender, shares, releaseTime);
+        emit RedeemRequest(controller, ownerRedeem, msg.sender, shares, releaseTime);
 
         return releaseTime;
     }

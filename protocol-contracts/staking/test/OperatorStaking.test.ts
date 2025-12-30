@@ -226,7 +226,6 @@ describe('OperatorStaking', function () {
         .withArgs(
           this.delegator1,
           this.delegator1,
-          0,
           this.delegator1,
           ethers.parseEther('1'),
           BigInt(currentTimestamp) + 1n + (await this.protocolStaking.unstakeCooldownPeriod()),
@@ -258,8 +257,16 @@ describe('OperatorStaking', function () {
     it('should not redeem twice', async function () {
       await this.mock.connect(this.delegator2).deposit(ethers.parseEther('5'), this.delegator2);
       await this.mock.connect(this.delegator1).deposit(ethers.parseEther('10'), this.delegator1);
-      await this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1);
-      await this.mock.connect(this.delegator2).requestRedeem(ethers.parseEther('1'), this.delegator2, this.delegator2);
+      await expect(
+        this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1),
+      )
+        .to.emit(this.mock, 'RedeemRequest')
+        .withArgs(this.delegator1, this.delegator1, this.delegator1, ethers.parseEther('1'), anyValue);
+      await expect(
+        this.mock.connect(this.delegator2).requestRedeem(ethers.parseEther('1'), this.delegator2, this.delegator2),
+      )
+        .to.emit(this.mock, 'RedeemRequest')
+        .withArgs(this.delegator2, this.delegator2, this.delegator2, ethers.parseEther('1'), anyValue);
 
       await timeIncreaseNoMine(60);
 
@@ -285,7 +292,11 @@ describe('OperatorStaking', function () {
 
     it('should revert on redeem more than available', async function () {
       await this.mock.connect(this.delegator1).deposit(ethers.parseEther('10'), this.delegator1);
-      await this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1);
+      await expect(
+        this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1),
+      )
+        .to.emit(this.mock, 'RedeemRequest')
+        .withArgs(this.delegator1, this.delegator1, this.delegator1, ethers.parseEther('1'), anyValue);
 
       await timeIncreaseNoMine(10);
       await expect(this.mock.connect(this.delegator1).redeem(ethers.parseEther('1'), this.delegator1, this.delegator1))
@@ -295,7 +306,11 @@ describe('OperatorStaking', function () {
 
     it('should be able to redeem a second time', async function () {
       await this.mock.connect(this.delegator1).deposit(ethers.parseEther('10'), this.delegator1);
-      await this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1);
+      await expect(
+        this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1),
+      )
+        .to.emit(this.mock, 'RedeemRequest')
+        .withArgs(this.delegator1, this.delegator1, this.delegator1, ethers.parseEther('1'), anyValue);
 
       await timeIncreaseNoMine(60);
 
@@ -303,7 +318,11 @@ describe('OperatorStaking', function () {
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.delegator1, ethers.parseEther('1'));
 
-      await this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('2'), this.delegator1, this.delegator1);
+      await expect(
+        this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('2'), this.delegator1, this.delegator1),
+      )
+        .to.emit(this.mock, 'RedeemRequest')
+        .withArgs(this.delegator1, this.delegator1, this.delegator1, ethers.parseEther('2'), anyValue);
 
       await timeIncreaseNoMine(60);
 
@@ -315,7 +334,11 @@ describe('OperatorStaking', function () {
     it('via separate controller', async function () {
       const controller = this.accounts[0];
       await this.mock.connect(this.delegator1).deposit(ethers.parseEther('10'), this.delegator1);
-      await this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), controller, this.delegator1);
+      await expect(
+        this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), controller, this.delegator1),
+      )
+        .to.emit(this.mock, 'RedeemRequest')
+        .withArgs(controller, this.delegator1, this.delegator1, ethers.parseEther('1'), anyValue);
 
       await timeIncreaseNoMine(60);
 
@@ -344,7 +367,11 @@ describe('OperatorStaking', function () {
       await this.mock.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
       await this.mock.connect(this.delegator1).approve(approvedActor, ethers.parseEther('1'));
 
-      await this.mock.connect(approvedActor).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1);
+      await expect(
+        this.mock.connect(approvedActor).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1),
+      )
+        .to.emit(this.mock, 'RedeemRequest')
+        .withArgs(this.delegator1, this.delegator1, approvedActor, ethers.parseEther('1'), anyValue);
     });
 
     it('should fail via unapproved actor', async function () {
@@ -364,13 +391,23 @@ describe('OperatorStaking', function () {
       await this.mock.connect(this.delegator2).deposit(ethers.parseEther('1'), this.delegator2);
       await this.mock.connect(delegator3).deposit(ethers.parseEther('1'), delegator3);
 
-      await this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1);
+      await expect(
+        this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1),
+      )
+        .to.emit(this.mock, 'RedeemRequest')
+        .withArgs(this.delegator1, this.delegator1, this.delegator1, ethers.parseEther('1'), anyValue);
       await timeIncreaseNoMine(30);
 
-      await this.mock.connect(this.delegator2).requestRedeem(ethers.parseEther('1'), this.delegator2, this.delegator2);
+      await expect(
+        this.mock.connect(this.delegator2).requestRedeem(ethers.parseEther('1'), this.delegator2, this.delegator2),
+      )
+        .to.emit(this.mock, 'RedeemRequest')
+        .withArgs(this.delegator2, this.delegator2, this.delegator2, ethers.parseEther('1'), anyValue);
 
       await this.protocolStaking.connect(this.admin).setUnstakeCooldownPeriod(30);
-      await this.mock.connect(delegator3).requestRedeem(ethers.parseEther('1'), delegator3, delegator3);
+      await expect(this.mock.connect(delegator3).requestRedeem(ethers.parseEther('1'), delegator3, delegator3))
+        .to.emit(this.mock, 'RedeemRequest')
+        .withArgs(delegator3, delegator3, delegator3, ethers.parseEther('1'), anyValue);
 
       // delegator 3 will need to wait 59 seconds
 
@@ -397,9 +434,11 @@ describe('OperatorStaking', function () {
       });
 
       it('should be allowed to redeem on behalf of authorized controller', async function () {
-        await this.mock
-          .connect(this.delegator1)
-          .requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1);
+        await expect(
+          this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1),
+        )
+          .to.emit(this.mock, 'RedeemRequest')
+          .withArgs(this.delegator1, this.delegator1, this.delegator1, ethers.parseEther('1'), anyValue);
 
         await timeIncreaseNoMine(60);
 
@@ -409,9 +448,11 @@ describe('OperatorStaking', function () {
       });
 
       it('should not be allowed to redeem on behalf of other controller', async function () {
-        await this.mock
-          .connect(this.delegator1)
-          .requestRedeem(ethers.parseEther('1'), this.delegator2, this.delegator1);
+        await expect(
+          this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('1'), this.delegator2, this.delegator1),
+        )
+          .to.emit(this.mock, 'RedeemRequest')
+          .withArgs(this.delegator2, this.delegator1, this.delegator1, ethers.parseEther('1'), anyValue);
 
         await timeIncreaseNoMine(60);
 
