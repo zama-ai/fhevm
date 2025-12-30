@@ -302,7 +302,7 @@ async fn grouping_to_chains_connex(
         let mut component_hash = tx_hash[component];
         let mut new_chain = true;
         if let Some(chains) = past_chains_deps.get(&component) {
-            if chains.len() == 1 {
+            if !chains.is_empty() {
                 info!(
                     " Merging component {:?} into past chains {:?} ",
                     component, chains
