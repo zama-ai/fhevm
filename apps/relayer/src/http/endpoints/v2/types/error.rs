@@ -102,6 +102,14 @@ impl RelayerV2ApiError400NoDetails {
         })
         .unwrap()
     }
+
+    pub fn invalid_signature(message: &str) -> Value {
+        serde_json::to_value(RelayerV2ApiError400NoDetails {
+            label: "invalid_signature".to_string(),
+            message: message.to_string(),
+        })
+        .unwrap()
+    }
 }
 
 impl RelayerV2ApiError503 {
@@ -109,6 +117,24 @@ impl RelayerV2ApiError503 {
     pub fn protocol_paused(message: &str) -> Value {
         serde_json::to_value(RelayerV2ApiError503 {
             label: "protocol_paused".to_string(),
+            message: message.to_string(),
+        })
+        .unwrap()
+    }
+
+    #[allow(dead_code)]
+    pub fn insufficient_balance(message: &str) -> Value {
+        serde_json::to_value(RelayerV2ApiError503 {
+            label: "insufficient_balance".to_string(),
+            message: message.to_string(),
+        })
+        .unwrap()
+    }
+
+    #[allow(dead_code)]
+    pub fn insufficient_allowance(message: &str) -> Value {
+        serde_json::to_value(RelayerV2ApiError503 {
+            label: "insufficient_allowance".to_string(),
             message: message.to_string(),
         })
         .unwrap()

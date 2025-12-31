@@ -8,6 +8,7 @@ use prometheus::{
 use std::fmt;
 
 use crate::config::settings::MetricsConfig;
+use crate::gateway::utils::RevertReason;
 
 // 1.TODO: Track latency of the transaction sending (histogram buckets with 100ms ... up to 1000ms, 1200, ... 1500ms, 2000ms..)
 // Track the status of failure after max retries (Counter + Critical alerting !!!!)
@@ -64,9 +65,9 @@ pub fn init_transaction_metrics(registry: &Registry, config: MetricsConfig) {
         transaction_errors_total: register_counter_vec_with_registry!(
             Opts::new(
                 "relayer_transaction_errors_total",
-                "Specific count of transaction errors by type"
+                "Specific count of transaction errors by type, revert category, and request type"
             ),
-            &["error_type"],
+            &["error_type", "revert_category", "request_type"],
             registry
         )
         .unwrap(),
@@ -193,12 +194,49 @@ pub fn transaction_failure(transaction_type: TransactionType, duration_millis: f
         .observe(duration_secs);
 }
 
-/// Call this SPECIFICALLY when an error occurs during the process.
+/// Call this SPECIFICALLY when an error occurs during the process with optional revert category and request type.
 /// You can call this multiple times per transaction (e.g. 3 nonce errors before success).
-pub fn track_engine_error(error_type: TransactionErrorType) {
+pub fn track_engine_error_with_label(
+    error_type: TransactionErrorType,
+    revert_category: Option<&str>,
+    request_type: Option<&str>,
+) {
     let metrics = TRANSACTION_METRICS.get().expect("Metrics not initialized");
+    let category = revert_category.unwrap_or("");
+    let req_type = request_type.unwrap_or("unknown");
     metrics
         .transaction_errors_total
-        .with_label_values(&[error_type.as_str()])
+        .with_label_values(&[error_type.as_str(), category, req_type])
         .inc();
+}
+
+/// Call this SPECIFICALLY when an error occurs during the process (without revert category).
+/// You can call this multiple times per transaction (e.g. 3 nonce errors before success).
+pub fn track_engine_error(error_type: TransactionErrorType) {
+    track_engine_error_with_label(error_type, None, None);
+}
+
+// Metric labels for revert reasons (for alerting)
+pub const REVERT_INSUFFICIENT_BALANCE: &str = "insufficient_balance";
+pub const REVERT_INSUFFICIENT_ALLOWANCE: &str = "insufficient_allowance";
+pub const REVERT_CONTRACT_PAUSED: &str = "contract_paused";
+pub const REVERT_INVALID_SIGNATURE: &str = "invalid_signature";
+pub const REVERT_UNKNOWN: &str = "unknown";
+
+/// Track a contract revert by reason with request type context (for alerting)
+/// This is called from gateway handler on_failure hooks
+pub fn track_revert_with_request_type(reason: RevertReason, request_type: &str) {
+    let label = match reason {
+        RevertReason::InsufficientBalance => REVERT_INSUFFICIENT_BALANCE,
+        RevertReason::InsufficientAllowance => REVERT_INSUFFICIENT_ALLOWANCE,
+        RevertReason::ContractPaused => REVERT_CONTRACT_PAUSED,
+        RevertReason::InvalidSignature => REVERT_INVALID_SIGNATURE,
+        RevertReason::Unknown => REVERT_UNKNOWN,
+    };
+
+    track_engine_error_with_label(
+        TransactionErrorType::Reverted,
+        Some(label),
+        Some(request_type),
+    );
 }

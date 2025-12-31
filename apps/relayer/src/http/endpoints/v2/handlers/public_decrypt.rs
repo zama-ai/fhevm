@@ -38,6 +38,45 @@ use uuid::Uuid;
 
 pub type PublicDecryptResponse = AppResponse<PublicDecryptPostResponseJson>;
 
+/// Helper to classify error messages and return appropriate HTTP status and error response
+///
+/// Parses error selector from message, classifies the revert reason,
+/// and returns appropriate HTTP status and error response.
+fn classify_error(error_msg: &str) -> (StatusCode, serde_json::Value) {
+    use crate::gateway::utils::{classify_revert_selector, extract_revert_selector, RevertReason};
+
+    // Parse selector and classify revert reason
+    let reason = if let Some(selector) = extract_revert_selector(error_msg) {
+        classify_revert_selector(&selector)
+    } else {
+        RevertReason::Unknown
+    };
+
+    // Map to HTTP response
+    match reason {
+        RevertReason::ContractPaused => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            RelayerV2ApiError503::protocol_paused(error_msg),
+        ),
+        RevertReason::InsufficientBalance => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            RelayerV2ApiError503::insufficient_balance(error_msg),
+        ),
+        RevertReason::InsufficientAllowance => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            RelayerV2ApiError503::insufficient_allowance(error_msg),
+        ),
+        RevertReason::InvalidSignature => (
+            StatusCode::BAD_REQUEST,
+            RelayerV2ApiError400NoDetails::invalid_signature(error_msg),
+        ),
+        RevertReason::Unknown => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            RelayerV2ApiError500::internal_server_error(error_msg),
+        ),
+    }
+}
+
 pub struct PublicDecryptHandler<D>
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
@@ -356,15 +395,17 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         let error_msg = response_model
                             .err_reason
                             .unwrap_or("Unknown error".to_string());
+
+                        // Classify the error to determine appropriate status code and label
+                        let (status_code, error_value) = classify_error(&error_msg);
+
                         (
-                            StatusCode::BAD_REQUEST,
+                            status_code,
                             Json(PublicDecryptStatusResponseJson {
                                 status: "failed".to_string(),
                                 request_id: request_id.to_string(),
                                 result: None,
-                                error: Some(RelayerV2ApiError400NoDetails::validation_error(
-                                    &error_msg,
-                                )),
+                                error: Some(error_value),
                             }),
                         )
                             .into_response()

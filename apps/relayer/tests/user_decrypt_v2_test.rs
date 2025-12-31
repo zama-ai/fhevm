@@ -27,6 +27,14 @@ mod constants {
 
     pub const USER_DECRYPT_SELECTOR: [u8; 4] =
         fhevm_relayer::gateway::arbitrum::bindings::Decryption::userDecryptionRequestCall::SELECTOR;
+
+    // Contract error selectors for testing error classification
+    // These match the selectors in src/gateway/arbitrum/transaction/contract_error_parser.rs
+    pub const REVERT_ENFORCED_PAUSE: &str = "execution reverted: 0xd93c0665";
+    pub const REVERT_INVALID_SIGNATURE: &str = "execution reverted: 0x2a873d27";
+    pub const REVERT_INSUFFICIENT_BALANCE: &str = "execution reverted: 0xe450d38c";
+    pub const REVERT_INSUFFICIENT_ALLOWANCE: &str = "execution reverted: 0xfb8f41b2";
+    pub const REVERT_UNKNOWN_SELECTOR: &str = "execution reverted: 0x12345678";
 }
 
 mod helpers {
@@ -638,8 +646,9 @@ async fn test_max_retries_exceeded_fails() {
     setup.shutdown().await;
 }
 
+/// Test contract paused (EnforcedPause 0xd93c0665) returns HTTP 503 with label "protocol_paused"
 #[tokio::test]
-async fn test_transaction_revert_fails() {
+async fn test_contract_paused_returns_503() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let contract_address = helpers::random_address();
     let user_address = helpers::random_address();
@@ -649,18 +658,160 @@ async fn test_transaction_revert_fails() {
         user_address,
     );
 
-    // Configure readiness check to pass, then revert the transaction
     setup.fhevm_mock.set_readiness_success();
     setup
         .fhevm_mock
-        .on_user_decrypt_revert("Insufficient permissions");
+        .on_user_decrypt_revert(constants::REVERT_ENFORCED_PAUSE);
 
     let job_id = helpers::submit_request(&setup, &payload).await;
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
-    assert_ne!(status, reqwest::StatusCode::OK);
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body.status, "failed");
     assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.get("label").and_then(|v| v.as_str()),
+        Some("protocol_paused"),
+        "Expected label 'protocol_paused' for EnforcedPause error"
+    );
+
+    setup.shutdown().await;
+}
+
+/// Test invalid signature (0x2a873d27) returns HTTP 400 with label "invalid_signature"
+#[tokio::test]
+async fn test_invalid_signature_returns_400() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let contract_address = helpers::random_address();
+    let user_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    setup.fhevm_mock.set_readiness_success();
+    setup
+        .fhevm_mock
+        .on_user_decrypt_revert(constants::REVERT_INVALID_SIGNATURE);
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
+    assert_eq!(body.status, "failed");
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.get("label").and_then(|v| v.as_str()),
+        Some("invalid_signature"),
+        "Expected label 'invalid_signature' for InvalidUserSignature error"
+    );
+
+    setup.shutdown().await;
+}
+
+/// Test insufficient balance (ERC20InsufficientBalance 0xe450d38c) returns HTTP 503 with label "insufficient_balance"
+#[tokio::test]
+async fn test_insufficient_balance_returns_503() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let contract_address = helpers::random_address();
+    let user_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    setup.fhevm_mock.set_readiness_success();
+    setup
+        .fhevm_mock
+        .on_user_decrypt_revert(constants::REVERT_INSUFFICIENT_BALANCE);
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body.status, "failed");
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.get("label").and_then(|v| v.as_str()),
+        Some("insufficient_balance"),
+        "Expected label 'insufficient_balance' for ERC20InsufficientBalance error"
+    );
+
+    setup.shutdown().await;
+}
+
+/// Test insufficient allowance (ERC20InsufficientAllowance 0xfb8f41b2) returns HTTP 503 with label "insufficient_allowance"
+#[tokio::test]
+async fn test_insufficient_allowance_returns_503() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let contract_address = helpers::random_address();
+    let user_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    setup.fhevm_mock.set_readiness_success();
+    setup
+        .fhevm_mock
+        .on_user_decrypt_revert(constants::REVERT_INSUFFICIENT_ALLOWANCE);
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body.status, "failed");
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.get("label").and_then(|v| v.as_str()),
+        Some("insufficient_allowance"),
+        "Expected label 'insufficient_allowance' for ERC20InsufficientAllowance error"
+    );
+
+    setup.shutdown().await;
+}
+
+/// Test unknown selector returns HTTP 500 with label "internal_server_error"
+#[tokio::test]
+async fn test_unknown_selector_returns_500() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let contract_address = helpers::random_address();
+    let user_address = helpers::random_address();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    setup.fhevm_mock.set_readiness_success();
+    setup
+        .fhevm_mock
+        .on_user_decrypt_revert(constants::REVERT_UNKNOWN_SELECTOR);
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(body.status, "failed");
+    assert!(body.result.is_none());
+
+    let error = body.error.as_ref().expect("Error should be present");
+    assert_eq!(
+        error.get("label").and_then(|v| v.as_str()),
+        Some("internal_server_error"),
+        "Expected label 'internal_server_error' for unknown selector error"
+    );
 
     setup.shutdown().await;
 }

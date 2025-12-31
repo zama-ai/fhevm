@@ -19,6 +19,7 @@ use crate::{
             ComputeCalldata,
         },
         readiness_check::readiness_throttler::{PublicDecryptReadinessTask, ReadinessSender},
+        utils::{classify_revert_selector, extract_revert_selector},
     },
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
@@ -583,6 +584,12 @@ impl TxLifecycleHooks for GatewayHandler {
         job_id: &JobId,
         err_reason: &str,
     ) -> Result<(), EventProcessingError> {
+        // Only track revert metrics if we can extract a selector (means it's actually a revert)
+        if let Some(selector) = extract_revert_selector(err_reason) {
+            let reason = classify_revert_selector(&selector);
+            crate::metrics::transaction::track_revert_with_request_type(reason, "public_decrypt");
+        }
+
         let hash =
             job_id
                 .as_sha256_hash()

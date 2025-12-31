@@ -8,14 +8,17 @@ use crate::{
         },
         job_id::JobId,
     },
-    gateway::arbitrum::{
-        bindings::InputVerification,
-        transaction::{
-            helper::{TransactionHelper, TransactionType, TxResult},
-            tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
-            TxLifecycleHooks,
+    gateway::{
+        arbitrum::{
+            bindings::InputVerification,
+            transaction::{
+                helper::{TransactionHelper, TransactionType, TxResult},
+                tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
+                TxLifecycleHooks,
+            },
+            ComputeCalldata,
         },
-        ComputeCalldata,
+        utils::{classify_revert_selector, extract_revert_selector},
     },
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
@@ -467,6 +470,12 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
         job_id: &JobId,
         err_reason: &str,
     ) -> Result<(), EventProcessingError> {
+        // Only track revert metrics if we can extract a selector (means it's actually a revert)
+        if let Some(selector) = extract_revert_selector(err_reason) {
+            let reason = classify_revert_selector(&selector);
+            crate::metrics::transaction::track_revert_with_request_type(reason, "input_proof");
+        }
+
         let uuid = job_id
             .as_uuid_v7()
             .ok_or_else(|| EventProcessingError::ValidationFailed {
