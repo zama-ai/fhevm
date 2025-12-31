@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE dependence_chain\n            SET\n                worker_id = NULL,\n                lock_acquired_at = NULL,\n                lock_expires_at = NULL,\n                last_updated_at = CASE\n                    WHEN $4::bool THEN NOW()\n                    ELSE last_updated_at\n                END,\n                status = CASE\n                    WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed\n                    WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired\n                    ELSE status\n                END\n            WHERE worker_id = $1\n            AND dependence_chain_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ce012c18cb4235d4360e48ee960903533671298627d85c29bfb0d24d5190f294"
+}

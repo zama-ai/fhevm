@@ -270,18 +270,18 @@ impl LockMngr {
 
         // Since UPDATE always aquire a row-level lock internally,
         // this acts as atomic_exchange
-        let rows = if let Some(update_at) = update_at {
-            // Add an epsilon to differentiate this chain being
-            // released from others in the same block.
-            let update_at = update_at.saturating_add(time::Duration::microseconds(1));
-            sqlx::query!(
+        let update_at = update_at.is_some();
+        let rows = sqlx::query!(
             r#"
             UPDATE dependence_chain
             SET
                 worker_id = NULL,
                 lock_acquired_at = NULL,
                 lock_expires_at = NULL,
-                last_updated_at = $4::timestamp,
+                last_updated_at = CASE
+                    WHEN $4::bool THEN NOW()
+                    ELSE last_updated_at
+                END,
                 status = CASE
                     WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
                     WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
@@ -296,30 +296,7 @@ impl LockMngr {
 	    update_at,
         )
         .execute(&self.pool)
-        .await?
-        } else {
-            sqlx::query!(
-            r#"
-            UPDATE dependence_chain
-            SET
-                worker_id = NULL,
-                lock_acquired_at = NULL,
-                lock_expires_at = NULL,
-                status = CASE
-                    WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
-                    WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
-                    ELSE status
-                END
-            WHERE worker_id = $1
-            AND dependence_chain_id = $2
-            "#,
-            self.worker_id,
-            dep_chain_id,
-            mark_as_processed,
-        )
-        .execute(&self.pool)
-        .await?
-        };
+        .await?;
 
         let mut dependents_updated = 0;
         if mark_as_processed {
