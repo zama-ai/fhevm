@@ -116,6 +116,11 @@ pub struct Args {
     #[arg(long, default_value_t = 3600)]
     pub dcid_cleanup_interval_sec: u32,
 
+    /// Maximum number of worker cycles allowed without progress on a
+    /// dependence chain
+    #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 2)]
+    pub dcid_max_no_progress_cycles: u32,
+
     /// Log level for the application
     #[arg(
         long,

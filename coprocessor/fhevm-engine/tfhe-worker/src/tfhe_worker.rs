@@ -20,6 +20,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
 };
+use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -118,6 +119,7 @@ async fn tfhe_worker_cycle(
     #[cfg(feature = "bench")]
     populate_cache_with_tenant_keys(vec![1i32], &pool, &tenant_key_cache).await?;
     let mut immedially_poll_more_work = false;
+    let mut no_progress_cycles = 0;
     loop {
         // only if previous iteration had no work done do the wait
         if !immedially_poll_more_work {
@@ -145,7 +147,7 @@ async fn tfhe_worker_cycle(
         s.end();
 
         // Query for transactions to execute, and if relevant the associated keys
-        let (mut transactions, _, has_more_work) = query_for_work(
+        let (mut transactions, earliest_computation, has_more_work) = query_for_work(
             args,
             &health_check,
             &mut trx,
@@ -159,7 +161,7 @@ async fn tfhe_worker_cycle(
             // for a notification after this cycle.
             immedially_poll_more_work = true;
         } else {
-            dcid_mngr.release_current_lock(true).await?;
+            dcid_mngr.release_current_lock(true, None).await?;
             dcid_mngr.do_cleanup().await?;
 
             // Lock another dependence chain if available and
@@ -212,7 +214,7 @@ async fn tfhe_worker_cycle(
                 &loop_ctx,
             )
             .await?;
-            upload_transaction_graph_results(
+            let has_progressed = upload_transaction_graph_results(
                 tenant_id,
                 &mut tx_graph,
                 &mut trx,
@@ -221,6 +223,20 @@ async fn tfhe_worker_cycle(
                 &loop_ctx,
             )
             .await?;
+            if has_progressed {
+                no_progress_cycles = 0;
+            } else {
+                no_progress_cycles += 1;
+                if no_progress_cycles >= args.dcid_max_no_progress_cycles {
+                    // If we're not making progress on this dependence
+                    // chain, update the last_updated_at field and
+                    // release the lock so we can try to execute
+                    // another chain.
+                    dcid_mngr
+                        .release_current_lock(false, Some(earliest_computation))
+                        .await?;
+                }
+            }
         }
         s.end();
         trx.commit().await?;
@@ -313,7 +329,7 @@ async fn query_for_work<'a>(
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<
-    (Vec<(i32, Vec<ComponentNode>)>, Vec<(Handle, Handle)>, bool),
+    (Vec<(i32, Vec<ComponentNode>)>, PrimitiveDateTime, bool),
     Box<dyn std::error::Error + Send + Sync>,
 > {
     let mut s = tracer.start_with_context("query_dependence_chain", loop_ctx);
@@ -331,7 +347,7 @@ async fn query_for_work<'a>(
         health_check.update_db_access();
         health_check.update_activity();
         info!(target: "tfhe_worker", "No dcid found to process");
-        return Ok((vec![], vec![], false));
+        return Ok((vec![], PrimitiveDateTime::MAX, false));
     }
 
     s.set_attribute(KeyValue::new(
@@ -357,7 +373,8 @@ SELECT
   c.is_scalar,
   c.is_allowed, 
   c.dependence_chain_id,
-  c.transaction_id
+  c.transaction_id,
+  c.created_at
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
@@ -393,11 +410,12 @@ FOR UPDATE SKIP LOCKED            ",
             info!(target: "tfhe_worker", dcid = %hex::encode(dependence_chain_id), locking = ?locking_reason, "No work items found to process");
         }
         health_check.update_activity();
-        return Ok((vec![], vec![], false));
+        return Ok((vec![], PrimitiveDateTime::MAX, false));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
-         locking = ?locking_reason }, "Processing work items");
+				   locking = ?locking_reason }, "Processing work items");
+    let mut earliest_created_at = the_work.first().unwrap().created_at;
     // Make sure we process each tenant independently to avoid
     // setting different keys from different tenants in the worker
     // threads
@@ -417,7 +435,6 @@ FOR UPDATE SKIP LOCKED            ",
     }
     // Traverse transactions and build transaction nodes
     let mut transactions: Vec<(i32, Vec<ComponentNode>)> = vec![];
-    let mut unneeded_handles: Vec<(Handle, Handle)> = vec![];
     for (tenant_id, work_by_transaction) in work_by_tenant_by_transaction.iter() {
         let mut tenant_transactions: Vec<ComponentNode> = vec![];
         for (transaction_id, txwork) in work_by_transaction.iter() {
@@ -469,15 +486,17 @@ FOR UPDATE SKIP LOCKED            ",
                     inputs,
                     is_allowed: w.is_allowed,
                 });
+                if w.created_at < earliest_created_at {
+                    earliest_created_at = w.created_at;
+                }
             }
-            let (mut components, mut unneeded) = build_component_nodes(ops, transaction_id)?;
+            let (mut components, _) = build_component_nodes(ops, transaction_id)?;
             tenant_transactions.append(&mut components);
-            unneeded_handles.append(&mut unneeded);
         }
         transactions.push((*tenant_id, tenant_transactions));
     }
     s_prep.end();
-    Ok((transactions, unneeded_handles, true))
+    Ok((transactions, earliest_created_at, true))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -563,10 +582,11 @@ async fn upload_transaction_graph_results<'a>(
     deps_mngr: &mut dependence_chain::LockMngr,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(bool), Box<dyn std::error::Error + Send + Sync>> {
     // Get computation results
     let graph_results = tx_graph.get_results();
     let mut handles_to_update = vec![];
+    let mut res = false;
 
     // Traverse computations that have been scheduled and
     // upload their results/errors.
@@ -705,8 +725,9 @@ async fn upload_transaction_graph_results<'a>(
                     err
                 })?;
         s.end();
+        res = true;
     }
-    Ok(())
+    Ok(res)
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use sqlx::Postgres;
 use std::{fmt, sync::LazyLock, time::SystemTime};
+use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -252,6 +253,7 @@ impl LockMngr {
     pub async fn release_current_lock(
         &mut self,
         mark_as_processed: bool,
+        update_at: Option<PrimitiveDateTime>,
     ) -> Result<u64, sqlx::Error> {
         if self.disable_locking {
             debug!("Locking is disabled, skipping release_current_lock");
@@ -268,7 +270,35 @@ impl LockMngr {
 
         // Since UPDATE always aquire a row-level lock internally,
         // this acts as atomic_exchange
-        let rows = sqlx::query!(
+        let rows = if let Some(update_at) = update_at {
+            // Add an epsilon to differentiate this chain being
+            // released from others in the same block.
+            let update_at = update_at.saturating_add(time::Duration::microseconds(1));
+            sqlx::query!(
+            r#"
+            UPDATE dependence_chain
+            SET
+                worker_id = NULL,
+                lock_acquired_at = NULL,
+                lock_expires_at = NULL,
+                last_updated_at = $4::timestamp,
+                status = CASE
+                    WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
+                    WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
+                    ELSE status
+                END
+            WHERE worker_id = $1
+            AND dependence_chain_id = $2
+            "#,
+            self.worker_id,
+            dep_chain_id,
+            mark_as_processed,
+	    update_at,
+        )
+        .execute(&self.pool)
+        .await?
+        } else {
+            sqlx::query!(
             r#"
             UPDATE dependence_chain
             SET
@@ -288,7 +318,8 @@ impl LockMngr {
             mark_as_processed,
         )
         .execute(&self.pool)
-        .await?;
+        .await?
+        };
 
         let mut dependents_updated = 0;
         if mark_as_processed {
@@ -405,7 +436,7 @@ impl LockMngr {
 
                 // Release the lock instead of extending it as the timeslice's been consumed
                 // Do not mark as processed so it can be re-acquired
-                self.release_current_lock(false).await?;
+                self.release_current_lock(false, None).await?;
                 return Ok(None);
             }
         }
