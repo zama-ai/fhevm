@@ -21,6 +21,7 @@ struct Transaction {
     output_tx: HashSet<TransactionHash>,
     linear_chain: TransactionHash,
     size: usize,
+    tx_topo_oder_in_block: usize,
 }
 
 impl Transaction {
@@ -34,6 +35,7 @@ impl Transaction {
             output_tx: HashSet::with_capacity(3),
             linear_chain: tx_hash, //  before coallescing linear tx chains
             size: 0,
+            tx_topo_oder_in_block: 0,
         }
     }
 }
@@ -235,10 +237,13 @@ fn topological_order(ordered_txs: &mut Vec<Transaction>) {
     }
     ordered_txs.clear();
     debug!("Reordered txs: {:?}", reordered);
+    let mut topo_order_position = 0;
     for tx_hash in reordered.iter() {
-        let Some(tx) = txs.remove(tx_hash) else {
+        let Some(mut tx) = txs.remove(tx_hash) else {
             continue;
         };
+        tx.tx_topo_oder_in_block = topo_order_position;
+        topo_order_position += tx.size;
         ordered_txs.push(tx);
     }
 }
@@ -469,6 +474,9 @@ pub async fn dependence_chains(
         let tx_hash = log.transaction_hash.unwrap_or_default();
         if let Some(tx) = txs.get(&tx_hash) {
             log.dependence_chain = tx.linear_chain;
+            log.block_timestamp = log.block_timestamp.saturating_add(
+                time::Duration::microseconds(tx.tx_topo_oder_in_block as i64),
+            );
         } else {
             // past chain
             log.dependence_chain = tx_hash;
