@@ -390,7 +390,7 @@ WHERE c.transaction_id IN (
       LIMIT $2
     ) as c_creation_order
   )
-FOR UPDATE SKIP LOCKED            ",
+        ",
         dependence_chain_id,
         transaction_batch_size as i32,
     )
@@ -582,7 +582,7 @@ async fn upload_transaction_graph_results<'a>(
     deps_mngr: &mut dependence_chain::LockMngr,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
-) -> Result<(bool), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     // Get computation results
     let graph_results = tx_graph.get_results();
     let mut handles_to_update = vec![];
