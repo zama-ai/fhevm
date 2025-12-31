@@ -294,7 +294,7 @@ impl Database {
                 schedule_order,
                 is_completed
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamp, $9::timestamp, $10)
             ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
             "#,
             tenant_id as i32,
