@@ -227,11 +227,12 @@ async fn tfhe_worker_cycle(
                 no_progress_cycles = 0;
             } else {
                 no_progress_cycles += 1;
-                if no_progress_cycles >= args.dcid_max_no_progress_cycles {
+                if no_progress_cycles > args.dcid_max_no_progress_cycles {
                     // If we're not making progress on this dependence
                     // chain, update the last_updated_at field and
                     // release the lock so we can try to execute
                     // another chain.
+                    info!(target: "tfhe_worker", "no progress on dependence chain, releasing");
                     dcid_mngr
                         .release_current_lock(false, Some(earliest_computation))
                         .await?;
@@ -676,7 +677,7 @@ async fn upload_transaction_graph_results<'a>(
             Vec<_>,
             (Vec<_>, (Vec<_>, (Vec<_>, Vec<_>))),
 	) = cts_to_insert.into_iter().unzip();
-        let _ = query!(
+        let cts_inserted = query!(
 			"
                     INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
                     SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::BYTEA[], $4::SMALLINT[], $5::SMALLINT[])
@@ -687,13 +688,14 @@ async fn upload_transaction_graph_results<'a>(
 			.await.map_err(|err| {
                     error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while inserting new ciphertexts");
                     err
-                })?;
+                })?.rows_affected();
         // Notify all workers that new ciphertext is inserted
         // For now, it's only the SnS workers that are listening for these events
         let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
             .execute(trx.as_mut())
             .await?;
         s.end();
+        res |= cts_inserted > 0;
     }
 
     if !handles_to_update.is_empty() {
@@ -705,7 +707,7 @@ async fn upload_transaction_graph_results<'a>(
                 .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
         );
         let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
-        let _ = query!(
+        let comp_updated = query!(
                 "
                 UPDATE computations
                 SET is_completed = true, completed_at = CURRENT_TIMESTAMP
@@ -723,9 +725,9 @@ async fn upload_transaction_graph_results<'a>(
             .await.map_err(|err| {
                     error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while updating computations as completed");
                     err
-                })?;
+                })?.rows_affected();
         s.end();
-        res = true;
+        res |= comp_updated > 0;
     }
     Ok(res)
 }
