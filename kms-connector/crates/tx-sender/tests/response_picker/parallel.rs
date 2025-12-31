@@ -101,8 +101,10 @@ async fn test_parallel_response_picking(request_str: &str) -> anyhow::Result<()>
 }
 
 async fn init_response_picker(db: Pool<Postgres>) -> anyhow::Result<DbKmsResponsePicker> {
-    let mut config = Config::default().await;
-    config.responses_batch_size = 1;
+    let config = Config {
+        responses_batch_size: 1,
+        ..Default::default()
+    };
     DbKmsResponsePicker::connect(db, &config).await
 }
 

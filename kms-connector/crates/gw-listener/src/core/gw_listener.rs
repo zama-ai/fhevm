@@ -371,7 +371,7 @@ impl GatewayListener<GatewayProvider> {
         cancel_token: CancellationToken,
     ) -> anyhow::Result<(Self, State<GatewayProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
+        let provider = connect_to_gateway(config.gateway_url.clone(), config.chain_id).await?;
 
         let state = State::new(
             db_pool.clone(),

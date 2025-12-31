@@ -15,7 +15,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
-use std::{str::FromStr, sync::Once, time::Duration};
+use std::{sync::Once, time::Duration};
 use tracing::{info, warn};
 
 /// The number of connection retry to connect to the database or the Gateway RPC node.
@@ -63,7 +63,7 @@ pub type WalletGatewayProviderFillers = JoinFill<
 
 /// Tries to establish the connection with a RPC node of the Gateway.
 pub async fn connect_to_gateway(
-    gateway_url: &str,
+    gateway_url: Url,
     chain_id: u64,
 ) -> anyhow::Result<GatewayProvider> {
     connect_to_gateway_inner(gateway_url, || {
@@ -74,7 +74,7 @@ pub async fn connect_to_gateway(
 
 /// Tries to establish the connection with a RPC node of the Gateway, with a `WalletFiller`.
 pub async fn connect_to_gateway_with_wallet(
-    gateway_url: &str,
+    gateway_url: Url,
     chain_id: u64,
     wallet: KmsWallet,
 ) -> anyhow::Result<WalletGatewayProvider> {
@@ -91,7 +91,7 @@ pub async fn connect_to_gateway_with_wallet(
 
 /// Tries to establish the connection with a RPC node of the Gateway.
 async fn connect_to_gateway_inner<L, F>(
-    gateway_url: &str,
+    gateway_url: Url,
     provider_builder_new: impl Fn() -> ProviderBuilder<L, F>,
 ) -> anyhow::Result<F::Provider>
 where
@@ -105,8 +105,6 @@ where
             .unwrap()
     });
 
-    let gateway_url =
-        Url::from_str(gateway_url).map_err(|e| anyhow!("Invalid Gateway URL: {e}"))?;
     let provider = provider_builder_new().connect_http(gateway_url);
     info!("Connected to Gateway's RPC node successfully");
     Ok(provider)
