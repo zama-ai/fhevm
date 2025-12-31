@@ -29,17 +29,51 @@ interface IInputVerifier {
  * @notice   This contract implements symbolic execution on the blockchain and one of its
  *           main responsibilities is to deterministically generate ciphertext handles.
  * @dev      This contract is deployed using an UUPS proxy.
+ *
+ *           ## scalarByte Convention
+ *           Binary operators accept a `scalarByte` parameter that indicates whether the
+ *           right-hand side operand is encrypted or plaintext:
+ *           - `0x00`: Both operands are encrypted ciphertexts (ciphertext-ciphertext operation)
+ *           - `0x01`: The right operand (rhs) is a plaintext scalar (ciphertext-plaintext operation)
+ *           Values greater than `0x01` will revert with `ScalarByteIsNotBoolean()`.
+ *           Ciphertext-plaintext operations are generally faster and consume less gas.
+ *
+ *           ## Supported Types (supportedTypes Bitmask)
+ *           Each operator defines which `FheType` values it supports using a bitmask.
+ *           The bitmask is constructed by summing powers of 2 for each supported type:
+ *           ```
+ *           supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16)) + ...
+ *           ```
+ *           Validation is performed via: `(1 << uint8(typeCt)) & supportedTypes != 0`
+ *           If the input type is not in the bitmask, the operation reverts with `UnsupportedType()`.
+ *
+ *           ## Comparison Operators
+ *           All comparison operators (fheEq, fheNe, fheGe, fheGt, fheLe, fheLt) return `FheType.Bool`
+ *           regardless of the input operand types. This is because comparisons inherently produce
+ *           boolean results (true/false), not values of the input type.
+ *
+ *           ## Division and Remainder
+ *           The `fheDiv` and `fheRem` operations only support scalar (plaintext) divisors.
+ *           Attempting to use an encrypted divisor will revert with `IsNotScalar()`.
+ *           Division by zero reverts with `DivisionByZero()`.
  */
 contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @notice         Returned when the handle is not allowed in the ACL for the account.
-    /// @param handle   Handle.
-    /// @param account  Address of the account.
+    /// @dev            Triggered when `acl.isAllowed(handle, msg.sender)` returns false.
+    ///                 The caller must have been granted access via `acl.allow()` or `acl.allowTransient()`.
+    /// @param handle   Handle that the caller attempted to use.
+    /// @param account  Address of the account that lacks permission.
     error ACLNotAllowed(bytes32 handle, address account);
 
     /// @notice Returned when the FHE operator attempts to divide by zero.
+    /// @dev    Triggered in `fheDiv` and `fheRem` when `rhs == 0` and `scalarByte == 0x01`.
+    ///         Only applies to scalar division since ciphertext-ciphertext division is not supported.
     error DivisionByZero();
 
     /// @notice Returned if two types are not compatible for this operation.
+    /// @dev    Triggered in binary operations when `scalarByte == 0x00` (both operands are ciphertexts)
+    ///         and `_typeOf(lhs) != _typeOf(rhs)`. Both ciphertext operands must have the same FheType.
+    ///         Also triggered in `fheIfThenElse` when the ifTrue and ifFalse branch types differ.
     error IncompatibleTypes();
 
     /// @notice Returned if the length of the bytes is not as expected.
@@ -49,6 +83,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     error InvalidType();
 
     /// @notice Returned if operation is supported only for a scalar (functions fheDiv/fheRem).
+    /// @dev    Triggered in `fheDiv` and `fheRem` when `scalarByte != 0x01`.
+    ///         Division and remainder operations only support plaintext (scalar) divisors due to FHE constraints.
+    ///         Ciphertext-ciphertext division is computationally infeasible in FHE.
     error IsNotScalar();
 
     /// @notice Returned if the upper bound for generating randomness is not a power of two.
@@ -63,6 +100,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     error SecondOperandIsNotScalar();
 
     /// @notice Returned if the type is not supported for this operation.
+    /// @dev    Triggered when the input handle's FheType is not in the operator's `supportedTypes` bitmask.
+    ///         Each operator defines which types it supports. For example, `fheAdd` supports Uint8-Uint128
+    ///         but not Bool, Uint160, or Uint256. Check the specific operator's documentation for supported types.
     error UnsupportedType();
 
     /// @notice Returned if the upper bound is above the max value of the underlying type.
@@ -164,11 +204,21 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice              Computes FHEAdd operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEAdd operation (homomorphic addition).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128.
+     *                      NOT supported: Bool, Uint160, Uint256.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (always encrypted ciphertext).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, this is an encrypted
+     *                      handle; if `scalarByte == 0x01`, this is a plaintext scalar value.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -183,11 +233,22 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHESub operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHESub operation (homomorphic subtraction).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128.
+     *                      NOT supported: Bool, Uint160, Uint256.
+     *                      Note: Since we use unsigned integers, subtraction wraps around on underflow.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (always encrypted ciphertext).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, this is an encrypted
+     *                      handle; if `scalarByte == 0x01`, this is a plaintext scalar value.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -202,11 +263,22 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEMul operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEMul operation (homomorphic multiplication).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128.
+     *                      NOT supported: Bool, Uint160, Uint256.
+     *                      Note: Multiplication wraps around on overflow (unchecked arithmetic).
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (always encrypted ciphertext).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, this is an encrypted
+     *                      handle; if `scalarByte == 0x01`, this is a plaintext scalar value.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheMul(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -221,11 +293,24 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEDiv operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEDiv operation (homomorphic division by plaintext).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128.
+     *                      NOT supported: Bool, Uint160, Uint256.
+     *
+     *                      **IMPORTANT**: Division only supports plaintext (scalar) divisors.
+     *                      The `scalarByte` parameter MUST be `0x01`. Ciphertext-ciphertext division
+     *                      is not supported due to FHE computational constraints.
+     *
+     *                      Possible reverts:
+     *                      - `IsNotScalar`: When `scalarByte != 0x01` (encrypted divisor attempted)
+     *                      - `DivisionByZero`: When `rhs == 0`
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *
+     * @param lhs           Left-hand side operand handle (encrypted dividend).
+     * @param rhs           Right-hand side operand (plaintext scalar divisor, must be non-zero).
+     * @param scalarByte    MUST be `0x01` (plaintext divisor required).
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
@@ -242,11 +327,24 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHERem operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHERem operation (homomorphic remainder/modulo by plaintext).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128.
+     *                      NOT supported: Bool, Uint160, Uint256.
+     *
+     *                      **IMPORTANT**: Remainder only supports plaintext (scalar) divisors.
+     *                      The `scalarByte` parameter MUST be `0x01`. Ciphertext-ciphertext remainder
+     *                      is not supported due to FHE computational constraints.
+     *
+     *                      Possible reverts:
+     *                      - `IsNotScalar`: When `scalarByte != 0x01` (encrypted divisor attempted)
+     *                      - `DivisionByZero`: When `rhs == 0`
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *
+     * @param lhs           Left-hand side operand handle (encrypted dividend).
+     * @param rhs           Right-hand side operand (plaintext scalar divisor, must be non-zero).
+     * @param scalarByte    MUST be `0x01` (plaintext divisor required).
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
@@ -263,11 +361,20 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEBitAnd operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEBitAnd operation (homomorphic bitwise AND).
+     * @dev                 Supported types: Bool, Uint8, Uint16, Uint32, Uint64, Uint128, Uint256.
+     *                      NOT supported: Uint160.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (always encrypted ciphertext).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheBitAnd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
@@ -284,11 +391,20 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEBitOr operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEBitOr operation (homomorphic bitwise OR).
+     * @dev                 Supported types: Bool, Uint8, Uint16, Uint32, Uint64, Uint128, Uint256.
+     *                      NOT supported: Uint160.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (always encrypted ciphertext).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheBitOr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
@@ -305,11 +421,20 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEBitXor operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEBitXor operation (homomorphic bitwise XOR).
+     * @dev                 Supported types: Bool, Uint8, Uint16, Uint32, Uint64, Uint128, Uint256.
+     *                      NOT supported: Uint160.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (always encrypted ciphertext).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheBitXor(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
@@ -326,11 +451,21 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEShl operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEShl operation (homomorphic left shift).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128, Uint256.
+     *                      NOT supported: Bool, Uint160.
+     *                      Shifts the bits of lhs to the left by rhs positions.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (value to shift).
+     * @param rhs           Right-hand side operand (shift amount). If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheShl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -346,11 +481,21 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEShr operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEShr operation (homomorphic right shift).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128, Uint256.
+     *                      NOT supported: Bool, Uint160.
+     *                      Shifts the bits of lhs to the right by rhs positions.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (value to shift).
+     * @param rhs           Right-hand side operand (shift amount). If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheShr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -366,11 +511,22 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHERotl operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHERotl operation (homomorphic rotate left).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128, Uint256.
+     *                      NOT supported: Bool, Uint160.
+     *                      Rotates the bits of lhs to the left by rhs positions (bits shifted out
+     *                      on the left re-enter on the right).
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (value to rotate).
+     * @param rhs           Right-hand side operand (rotation amount). If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheRotl(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -386,11 +542,22 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHERotr operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHERotr operation (homomorphic rotate right).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128, Uint256.
+     *                      NOT supported: Bool, Uint160.
+     *                      Rotates the bits of lhs to the right by rhs positions (bits shifted out
+     *                      on the right re-enter on the left).
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (value to rotate).
+     * @param rhs           Right-hand side operand (rotation amount). If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheRotr(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -406,11 +573,23 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEEq operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEEq operation (homomorphic equality comparison).
+     * @dev                 Supported input types: Bool, Uint8, Uint16, Uint32, Uint64, Uint128, Uint160, Uint256.
+     *
+     *                      **IMPORTANT**: The result type is ALWAYS `FheType.Bool` regardless of input types.
+     *                      This is because equality comparison inherently produces a boolean result (true/false).
+     *                      For example, comparing two `euint64` values still returns an `ebool`.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (encrypted value to compare).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of type `FheType.Bool` (always ebool, not the input type).
      */
     function fheEq(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
@@ -428,11 +607,22 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHENe operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHENe operation (homomorphic not-equal comparison).
+     * @dev                 Supported input types: Bool, Uint8, Uint16, Uint32, Uint64, Uint128, Uint160, Uint256.
+     *
+     *                      **IMPORTANT**: The result type is ALWAYS `FheType.Bool` regardless of input types.
+     *                      This is because inequality comparison inherently produces a boolean result (true/false).
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (encrypted value to compare).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of type `FheType.Bool` (always ebool, not the input type).
      */
     function fheNe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
@@ -450,11 +640,23 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEGe operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEGe operation (homomorphic greater-than-or-equal comparison).
+     * @dev                 Supported input types: Uint8, Uint16, Uint32, Uint64, Uint128.
+     *                      NOT supported: Bool, Uint160, Uint256.
+     *
+     *                      **IMPORTANT**: The result type is ALWAYS `FheType.Bool` regardless of input types.
+     *                      Ordering comparisons (>=, >, <=, <) are only supported for integer types, not Bool.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (encrypted value to compare).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of type `FheType.Bool` (always ebool, not the input type).
      */
     function fheGe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -469,11 +671,22 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEGt operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEGt operation (homomorphic greater-than comparison).
+     * @dev                 Supported input types: Uint8, Uint16, Uint32, Uint64, Uint128.
+     *                      NOT supported: Bool, Uint160, Uint256.
+     *
+     *                      **IMPORTANT**: The result type is ALWAYS `FheType.Bool` regardless of input types.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (encrypted value to compare).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of type `FheType.Bool` (always ebool, not the input type).
      */
     function fheGt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -488,11 +701,22 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHELe operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHELe operation (homomorphic less-than-or-equal comparison).
+     * @dev                 Supported input types: Uint8, Uint16, Uint32, Uint64, Uint128.
+     *                      NOT supported: Bool, Uint160, Uint256.
+     *
+     *                      **IMPORTANT**: The result type is ALWAYS `FheType.Bool` regardless of input types.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (encrypted value to compare).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of type `FheType.Bool` (always ebool, not the input type).
      */
     function fheLe(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -507,11 +731,22 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHELt operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHELt operation (homomorphic less-than comparison).
+     * @dev                 Supported input types: Uint8, Uint16, Uint32, Uint64, Uint128.
+     *                      NOT supported: Bool, Uint160, Uint256.
+     *
+     *                      **IMPORTANT**: The result type is ALWAYS `FheType.Bool` regardless of input types.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (encrypted value to compare).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of type `FheType.Bool` (always ebool, not the input type).
      */
     function fheLt(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -526,11 +761,21 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEMin operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEMin operation (homomorphic minimum).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128.
+     *                      NOT supported: Bool, Uint160, Uint256.
+     *                      Returns the smaller of the two values.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (always encrypted ciphertext).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheMin(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -545,11 +790,21 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEMax operation.
-     * @param lhs           LHS.
-     * @param rhs           RHS.
-     * @param scalarByte    Scalar byte.
-     * @return result       Result.
+     * @notice              Computes FHEMax operation (homomorphic maximum).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128.
+     *                      NOT supported: Bool, Uint160, Uint256.
+     *                      Returns the larger of the two values.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `lhs` or `rhs`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *                      - `IncompatibleTypes`: When `scalarByte == 0x00` and lhs/rhs types differ
+     *                      - `ScalarByteIsNotBoolean`: When `scalarByte > 0x01`
+     *
+     * @param lhs           Left-hand side operand handle (always encrypted ciphertext).
+     * @param rhs           Right-hand side operand. If `scalarByte == 0x00`, encrypted; if `0x01`, plaintext.
+     * @param scalarByte    `0x00` for ciphertext-ciphertext operation, `0x01` for ciphertext-plaintext.
+     * @return result       Result handle of the same FheType as the lhs operand.
      */
     function fheMax(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -564,9 +819,18 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHENeg operation.
-     * @param ct            Ct
-     * @return result       Result.
+     * @notice              Computes FHENeg operation (homomorphic negation).
+     * @dev                 Supported types: Uint8, Uint16, Uint32, Uint64, Uint128, Uint256.
+     *                      NOT supported: Bool, Uint160.
+     *                      Returns the two's complement negation (modular opposite) of the value.
+     *                      Since we use unsigned integers, `-x` is equivalent to `2^n - x` where n is the bit width.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `ct`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *
+     * @param ct            Ciphertext handle to negate.
+     * @return result       Result handle of the same FheType as the input.
      */
     function fheNeg(bytes32 ct) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
@@ -582,9 +846,17 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHENot operation.
-     * @param ct            Ct
-     * @return result       Result.
+     * @notice              Computes FHENot operation (homomorphic bitwise NOT).
+     * @dev                 Supported types: Bool, Uint8, Uint16, Uint32, Uint64, Uint128, Uint256.
+     *                      NOT supported: Uint160.
+     *                      Flips all bits of the value. For ebool, this acts as logical NOT.
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for `ct`
+     *                      - `UnsupportedType`: Input type not in supported types
+     *
+     * @param ct            Ciphertext handle to apply NOT operation.
+     * @return result       Result handle of the same FheType as the input.
      */
     function fheNot(bytes32 ct) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
@@ -601,11 +873,20 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     }
 
     /**
-     * @notice              Computes FHEIfThenElse operation.
-     * @param control       Control value.
-     * @param ifTrue        If true.
-     * @param ifFalse       If false.
-     * @return result       Result.
+     * @notice              Computes FHEIfThenElse operation (homomorphic ternary/select).
+     * @dev                 Supported types for ifTrue/ifFalse: Bool, Uint8, Uint16, Uint32, Uint64, Uint128, Uint160, Uint256.
+     *                      The `control` parameter MUST be of type `FheType.Bool` (ebool).
+     *                      This is the encrypted equivalent of: `control ? ifTrue : ifFalse`
+     *
+     *                      Possible reverts:
+     *                      - `ACLNotAllowed`: Caller lacks ACL permission for any of the three inputs
+     *                      - `UnsupportedType`: If `control` is not ebool, or ifTrue type not supported
+     *                      - `IncompatibleTypes`: If `ifTrue` and `ifFalse` have different types
+     *
+     * @param control       Control value (MUST be encrypted boolean - ebool).
+     * @param ifTrue        Value to return if control is true (encrypted).
+     * @param ifFalse       Value to return if control is false (encrypted).
+     * @return result       Result handle of the same FheType as ifTrue/ifFalse.
      */
     function fheIfThenElse(bytes32 control, bytes32 ifTrue, bytes32 ifFalse) public virtual returns (bytes32 result) {
         uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
@@ -802,6 +1083,28 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         result = result | bytes32(uint256(HANDLE_VERSION));
     }
 
+    /**
+     * @dev     Validates that the handle's FheType is in the `supportedTypes` bitmask and returns the type.
+     *
+     *          ## How the Bitmask Works
+     *          The bitmask is constructed by summing powers of 2 for each supported FheType:
+     *          ```
+     *          supportedTypes = (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16)) + ...
+     *          ```
+     *
+     *          For example, if `FheType.Uint8 = 2` and `FheType.Uint16 = 3`, then:
+     *          - `(1 << 2) = 4` (binary: 0100)
+     *          - `(1 << 3) = 8` (binary: 1000)
+     *          - `supportedTypes = 12` (binary: 1100)
+     *
+     *          ## Validation
+     *          We check if the type is supported via: `(1 << uint8(typeCt)) & supportedTypes != 0`
+     *          If the bit for the input type is not set in the mask, this reverts with `UnsupportedType()`.
+     *
+     * @param handle          Handle to validate.
+     * @param supportedTypes  Bitmask of supported FheType values.
+     * @return typeCt         The FheType of the handle (extracted from byte 30).
+     */
     function _verifyAndReturnType(
         bytes32 handle,
         uint256 supportedTypes
@@ -810,6 +1113,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if ((1 << uint8(typeCt)) & supportedTypes == 0) revert UnsupportedType();
     }
 
+    /**
+     * @dev     Internal helper for unary operations (fheNeg, fheNot).
+     *          Verifies ACL permission, computes the result handle, and grants transient access.
+     *
+     * @param op      The operator enum value (e.g., Operators.fheNeg).
+     * @param ct      The input ciphertext handle.
+     * @return result The computed result handle.
+     */
     function _unaryOp(Operators op, bytes32 ct) internal virtual returns (bytes32 result) {
         if (!acl.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         result = keccak256(abi.encodePacked(op, ct, acl, block.chainid));
@@ -818,6 +1129,26 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         acl.allowTransient(result, msg.sender);
     }
 
+    /**
+     * @dev     Internal helper for binary operations.
+     *          Handles both ciphertext-ciphertext and ciphertext-plaintext operations based on `scalar`.
+     *
+     *          ## scalar Parameter (scalarByte)
+     *          - `0x00`: Both lhs and rhs are encrypted ciphertexts. ACL is checked for both.
+     *                    Types must match or `IncompatibleTypes` is thrown.
+     *          - `0x01`: lhs is encrypted, rhs is a plaintext scalar value. Only lhs ACL is checked.
+     *                    No type check on rhs since it's plaintext.
+     *          - `> 0x01`: Reverts with `ScalarByteIsNotBoolean()`.
+     *
+     *          Ciphertext-plaintext operations are generally faster and consume less gas.
+     *
+     * @param op          The operator enum value (e.g., Operators.fheAdd).
+     * @param lhs         Left-hand side ciphertext handle.
+     * @param rhs         Right-hand side: ciphertext handle if scalar=0x00, plaintext if scalar=0x01.
+     * @param scalar      Indicates if rhs is plaintext (0x01) or ciphertext (0x00).
+     * @param resultType  The FheType for the result handle.
+     * @return result     The computed result handle.
+     */
     function _binaryOp(
         Operators op,
         bytes32 lhs,
