@@ -291,9 +291,10 @@ impl Database {
                 transaction_id,
                 is_allowed,
                 created_at,
-                schedule_order
+                schedule_order,
+                is_completed
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10)
             ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
             "#,
             tenant_id as i32,
@@ -305,6 +306,7 @@ impl Database {
             log.transaction_hash.map(|txh| txh.to_vec()),
             log.is_allowed,
             log.block_timestamp,
+            !log.is_allowed,
         );
         query
             .execute(tx.deref_mut())
