@@ -59,6 +59,7 @@ sqlx = { version = "0.8.6", features = ["chrono", "macros", "postgres", "runtime
 chrono = { version = "0.4.42", features = ["serde"] }
 humantime = "2.3.0"
 governor = "0.10.4"
+indexmap = "2.12.1"
 
 [build-dependencies]
 built = { version = "0.8", features = [
