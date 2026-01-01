@@ -481,6 +481,7 @@ tfheWorker:
     # Time-to-live (in seconds) for processed dependence chains
     - --processed-dcid-ttl-sec=172800
     - --dcid-cleanup-interval-sec=3600  # Interval (in seconds) for cleaning up expired DCID locks
+    - --dcid-max-no-progress-cycles=2   # Worker cycles without progress before releasing
 
   # Service ports configuration
   ports:
