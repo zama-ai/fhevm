@@ -1,7 +1,10 @@
 use crate::{
-    core::event::{ApiCategory, ApiVersion, InputProofEventData, RelayerEvent, RelayerEventData},
+    core::event::{
+        ApiCategory, ApiVersion, InputProofEventData, PublicDecryptEventData, RelayerEvent,
+        RelayerEventData, UserDecryptEventData,
+    },
     gateway::arbitrum::transaction::{
-        helper::TransactionHelper,
+        helper::{TransactionHelper, TransactionType},
         pool::{GatewayTask, Mempool},
     },
     orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
@@ -94,9 +97,17 @@ impl GatewayTxProcessor {
                 "GatewayTxProcessor: Failed to submit transaction"
             );
 
-            // TODO: dispatch failed event for all different structures.
-            let next_event_data: RelayerEventData =
-                RelayerEventData::InputProof(InputProofEventData::Failed { error: e });
+            let next_event_data: RelayerEventData = match task.transaction_type {
+                TransactionType::InputRequest => {
+                    RelayerEventData::InputProof(InputProofEventData::Failed { error: e })
+                }
+                TransactionType::PublicDecryptRequest => {
+                    RelayerEventData::PublicDecrypt(PublicDecryptEventData::Failed { error: e })
+                }
+                TransactionType::UserDecryptRequest => {
+                    RelayerEventData::UserDecrypt(UserDecryptEventData::Failed { error: e })
+                }
+            };
 
             let next_event = RelayerEvent::new(
                 task.job_id,
@@ -108,9 +119,12 @@ impl GatewayTxProcessor {
             );
 
             if let Err(e) = arc_dispatcher.dispatch_event(next_event).await {
-                error!(?e, "Failed to dispatch input proof response event");
+                error!(?e, "CRITICAL: Failed to dispatch processor response event");
             } else {
-                info!("Input proof response successfully sent for {}", task.job_id);
+                info!(
+                    "Processor event response successfully sent for {}",
+                    task.job_id
+                );
             }
         }
     }

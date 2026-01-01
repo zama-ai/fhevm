@@ -174,11 +174,6 @@ impl InputProofGatewayHandler {
                 ))
             })?;
 
-        info!(
-            "input_verification_address used for input request {:?}",
-            input_verification_address
-        );
-
         // PRE-CALCULATE CALLDATA
         let calldata_bytes = ComputeCalldata::verify_proof_req(
             input_proof_request.contract_chain_id,
@@ -204,7 +199,6 @@ impl InputProofGatewayHandler {
         info!(job_id = %job_id, "Enqueuing input proof request to Mempool");
 
         // PUSH TO QUEUE
-        // This is non-blocking (async but fast) and resilient.
         self.mempool.push(task).await;
 
         Ok(())
