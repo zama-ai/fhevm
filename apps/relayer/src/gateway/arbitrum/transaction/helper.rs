@@ -1,5 +1,7 @@
 use crate::config::settings::GatewayConfig;
-use crate::gateway::arbitrum::transaction::engine::{CustomFillers, TransactionEngine};
+use crate::gateway::arbitrum::transaction::engine::{
+    CustomFillers, GatewayTxnError, TransactionEngine,
+};
 use crate::orchestrator::HealthCheck;
 use crate::{core::errors::EventProcessingError, core::job_id::JobId, metrics};
 use alloy::network::AnyTransactionReceipt;
@@ -101,6 +103,11 @@ impl TransactionHelper {
         );
 
         metrics::transaction::transaction_broadcast(tx_metric_type);
+
+        // TODO REMOVE: TEST OF ERROR !
+        let error: GatewayTxnError = GatewayTxnError::TransactionFailed("Test mode.".to_string());
+        hook.on_failure(&job_id, &error.to_string()).await?;
+        return Err(EventProcessingError::from(error));
 
         let transaction_start_time = Instant::now();
         let request = match self

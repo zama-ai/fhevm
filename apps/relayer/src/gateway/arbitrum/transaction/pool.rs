@@ -57,16 +57,17 @@ pub trait MempoolItem: Send + Sync + 'static + std::fmt::Debug {
 #[derive(Clone)]
 pub struct Mempool<T> {
     // The transport layer. Wrapped in RwLock to allow hot-swapping on failure.
-    sender: Arc<RwLock<UnboundedSender<T>>>,
+    sender: Arc<RwLock<UnboundedSender<String>>>,
 
     // The receiving end. Protected by Mutex to ensure single-consumer exclusive access.
     // Wrapped in Option so we can "take" it during the run loop.
-    receiver: Arc<Mutex<Option<UnboundedReceiver<T>>>>,
+    receiver: Arc<Mutex<Option<UnboundedReceiver<String>>>>,
 
-    // The "Sidecar" state. Tracks which IDs are pending and their insertion order.
+    // The "Sidecar" state. Tracks which transactions are pending and their insertion order.
     // IndexMap allows O(1) lookup of "Position in Queue".
     // Use of RwLock for making thread access safe, cannot use Dashmap here for O(1) lookups.
-    tracker: Arc<RwLock<IndexMap<String, ()>>>,
+    // holds the data, This survives if the channel dies.
+    tracker: Arc<RwLock<IndexMap<String, T>>>,
 
     // Shared metric for total enqueued items (redundant with tracker, but faster for simple len)
     queue_len: Arc<AtomicUsize>,
@@ -77,7 +78,7 @@ pub struct Mempool<T> {
 
 impl<T> Mempool<T>
 where
-    T: MempoolItem,
+    T: MempoolItem + Clone,
 {
     pub fn new(tps: u32) -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();
@@ -98,7 +99,7 @@ where
     /// - Tries to send to the channel.
     /// - If worker/channel is dead, loops and waits for the worker to self-heal.
     #[instrument(skip(self, item), fields(id = %item.get_id()))]
-    pub async fn push(&self, mut item: T) {
+    pub async fn push(&self, item: T) {
         let id = item.get_id();
 
         // Register in Tracker (Preserves Order & Deduplicates)
@@ -108,31 +109,27 @@ where
                 warn!("Item already exists in mempool, ignoring duplicate push");
                 return;
             }
-            tracker.insert(id.clone(), ());
+            tracker.insert(id.clone(), item);
         }
 
         self.queue_len.fetch_add(1, Ordering::Relaxed);
 
-        // Reliable Transport Loop
+        // 2. Send SIGNAL (ID) to the Channel
+        self.send_signal(id).await;
+    }
+
+    /// Internal helper to handle the reliable signaling loop
+    async fn send_signal(&self, id: String) {
+        let mut current_id = id;
         loop {
-            // Acquire current sender (Read lock is cheap)
             let sender = self.sender.read().await.clone();
-
-            // Try to send
-            match sender.send(item) {
-                Ok(_) => {
-                    return;
-                }
+            match sender.send(current_id) {
+                Ok(_) => return,
                 Err(return_err) => {
-                    // Channel is closed (Worker died)
-                    // We recover the item so it is not lost.
-                    item = return_err.0;
-
-                    error!("Mempool disconnected (worker down). Retrying in 1s...");
-
-                    // Wait for Consumer to call refresh_channel()
-                    // The item stays safely in memory in this variable 'item'
-                    // until a new worker/channel is established.
+                    // Channel dead. We kept the ID.
+                    // The DATA is safe in the map.
+                    current_id = return_err.0;
+                    error!("Mempool signal broken. Retrying...");
                     tokio::time::sleep(Duration::from_millis(1000)).await;
                 }
             }
@@ -203,9 +200,20 @@ where
 
         info!("Mempool worker loop active.");
 
-        // Supervisor Loop
-        while let Some(item) = receiver.recv().await {
-            let id = item.get_id();
+        // Supervisor loop
+        while let Some(id) = receiver.recv().await {
+            // 1. RECOVERY: Fetch Data from the Tracker
+            // We use shift_remove to take ownership of the data.
+            // If the map is empty (already processed), we skip.
+            let item_opt = {
+                let mut tracker = self.tracker.write().await;
+                tracker.shift_remove(&id)
+            };
+
+            let Some(item) = item_opt else {
+                // This happens if we had a duplicate ID signal or it was processed already.
+                continue;
+            };
 
             // Rate Limit
             limiter.until_ready().await;

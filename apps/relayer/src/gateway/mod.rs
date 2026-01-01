@@ -14,6 +14,8 @@ pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 
 use crate::config::settings::Settings;
 use crate::core::event::RelayerEvent;
+use crate::gateway::arbitrum::transaction::pool::{GatewayTask, Mempool};
+use crate::gateway::arbitrum::transaction::processor::GatewayTxProcessor;
 use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
 use crate::store::sql::repositories::Repositories;
 use alloy::primitives::Address;
@@ -46,6 +48,14 @@ pub async fn initialize_gateway(
         tx_engine_gateway.into(),
     ));
 
+    // Create mempool
+    // TODO: Change with config settings.
+    let mempool = Arc::new(Mempool::<GatewayTask>::new(20));
+
+    // Spawn gateway task
+    // TODO: Move in the orchestrator.
+    GatewayTxProcessor::spawn(mempool.clone(), gateway_tx_helper.clone());
+
     // Create ReadinessChecker to be shared by decrypt handlers
     let readiness_checker = Arc::new(ReadinessChecker::new(&settings.gateway)?);
 
@@ -57,6 +67,7 @@ pub async fn initialize_gateway(
     InputProofGatewayHandler::new(
         orchestrator.clone(),
         gateway_tx_helper.clone(),
+        mempool.clone(),
         settings.gateway.contracts.clone(),
         repositories.input_proof.clone(),
     );

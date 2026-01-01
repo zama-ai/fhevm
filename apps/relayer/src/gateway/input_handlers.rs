@@ -12,6 +12,7 @@ use crate::{
         bindings::InputVerification,
         transaction::{
             helper::{TransactionHelper, TransactionType, TxResult},
+            pool::{DynTxHook, GatewayTask, Mempool},
             TxLifecycleHooks,
         },
         ComputeCalldata,
@@ -35,6 +36,7 @@ use tracing::{error, info, instrument, warn};
 pub struct InputProofGatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     tx_helper: Arc<TransactionHelper>,
+    mempool: Arc<Mempool<GatewayTask>>,
     contracts: ContractConfig,
     input_proof_repo: Arc<InputProofRepository>,
 }
@@ -43,12 +45,14 @@ impl InputProofGatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         tx_helper: Arc<TransactionHelper>,
+        mempool: Arc<Mempool<GatewayTask>>,
         contracts: ContractConfig,
         input_proof_repo: Arc<InputProofRepository>,
     ) -> Arc<Self> {
         let handler = Arc::new(Self {
             dispatcher: Arc::clone(&dispatcher),
             tx_helper,
+            mempool,
             contracts,
             input_proof_repo,
         });
@@ -177,6 +181,55 @@ impl InputProofGatewayHandler {
             input_verification_address
         );
 
+        // PRE-CALCULATE CALLDATA
+        let calldata_bytes = ComputeCalldata::verify_proof_req(
+            input_proof_request.contract_chain_id,
+            input_proof_request.contract_address,
+            input_proof_request.user_address,
+            input_proof_request.ciphetext_with_zk_proof.clone(),
+            input_proof_request.extra_data.clone(),
+        )?;
+
+        let job_id = JobId::from_uuid_v7(int_request_id);
+
+        // CONSTRUCT TASK
+        let task = GatewayTask {
+            id: int_request_id.to_string(), // Used for Queue tracking/dedup
+            job_id: job_id.clone(),
+            transaction_type: TransactionType::InputRequest,
+            target: input_verification_address,
+            calldata: calldata_bytes,
+            // We clone self (cheap Arc clone) and wrap it
+            hook: DynTxHook(Arc::new(self.clone())),
+        };
+
+        info!(job_id = %job_id, "Enqueuing input proof request to Mempool");
+
+        // PUSH TO QUEUE
+        // This is non-blocking (async but fast) and resilient.
+        self.mempool.push(task).await;
+
+        Ok(())
+    }
+
+    /*
+    async fn send_to_gateway(
+        &self,
+        input_proof_request: &InputProofRequest,
+        int_request_id: uuid::Uuid,
+    ) -> Result<(), EventProcessingError> {
+        let input_verification_address =
+            Address::from_str(&self.contracts.input_verification_address).map_err(|_| {
+                EventProcessingError::ConfigError(AppConfigError::InvalidAddress(
+                    "contracts.input_verification_address".to_owned(),
+                ))
+            })?;
+
+        info!(
+            "input_verification_address used for input request {:?}",
+            input_verification_address
+        );
+
         self.tx_helper
             .send_raw_transaction_sync(
                 TransactionType::InputRequest,
@@ -196,7 +249,7 @@ impl InputProofGatewayHandler {
             .await?;
 
         Ok(())
-    }
+    } */
 
     /// Processes accepted input proof response from Gateway.
     ///
