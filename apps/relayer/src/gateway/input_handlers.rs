@@ -35,7 +35,6 @@ use tracing::{error, info, instrument, warn};
 #[derive(Clone)]
 pub struct InputProofGatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    tx_helper: Arc<TransactionHelper>,
     mempool: Arc<Mempool<GatewayTask>>,
     contracts: ContractConfig,
     input_proof_repo: Arc<InputProofRepository>,
@@ -44,14 +43,12 @@ pub struct InputProofGatewayHandler {
 impl InputProofGatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        tx_helper: Arc<TransactionHelper>,
         mempool: Arc<Mempool<GatewayTask>>,
         contracts: ContractConfig,
         input_proof_repo: Arc<InputProofRepository>,
     ) -> Arc<Self> {
         let handler = Arc::new(Self {
             dispatcher: Arc::clone(&dispatcher),
-            tx_helper,
             mempool,
             contracts,
             input_proof_repo,
@@ -85,6 +82,7 @@ impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
                     self.send_input_proof_request(event.clone(), input_proof_request.clone())
                         .await
                 }
+                InputProofEventData::Failed { error } => Err(error.clone()),
                 _ => {
                     warn!("unexpected event received in input handler");
                     return;
@@ -195,7 +193,7 @@ impl InputProofGatewayHandler {
         // CONSTRUCT TASK
         let task = GatewayTask {
             id: int_request_id.to_string(), // Used for Queue tracking/dedup
-            job_id: job_id.clone(),
+            job_id,
             transaction_type: TransactionType::InputRequest,
             target: input_verification_address,
             calldata: calldata_bytes,
@@ -211,45 +209,6 @@ impl InputProofGatewayHandler {
 
         Ok(())
     }
-
-    /*
-    async fn send_to_gateway(
-        &self,
-        input_proof_request: &InputProofRequest,
-        int_request_id: uuid::Uuid,
-    ) -> Result<(), EventProcessingError> {
-        let input_verification_address =
-            Address::from_str(&self.contracts.input_verification_address).map_err(|_| {
-                EventProcessingError::ConfigError(AppConfigError::InvalidAddress(
-                    "contracts.input_verification_address".to_owned(),
-                ))
-            })?;
-
-        info!(
-            "input_verification_address used for input request {:?}",
-            input_verification_address
-        );
-
-        self.tx_helper
-            .send_raw_transaction_sync(
-                TransactionType::InputRequest,
-                JobId::from_uuid_v7(int_request_id),
-                self,
-                input_verification_address,
-                || {
-                    ComputeCalldata::verify_proof_req(
-                        input_proof_request.contract_chain_id,
-                        input_proof_request.contract_address,
-                        input_proof_request.user_address,
-                        input_proof_request.ciphetext_with_zk_proof.clone(),
-                        input_proof_request.extra_data.clone(),
-                    )
-                },
-            )
-            .await?;
-
-        Ok(())
-    } */
 
     /// Processes accepted input proof response from Gateway.
     ///

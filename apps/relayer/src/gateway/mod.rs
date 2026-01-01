@@ -53,8 +53,11 @@ pub async fn initialize_gateway(
     let mempool = Arc::new(Mempool::<GatewayTask>::new(20));
 
     // Spawn gateway task
-    // TODO: Move in the orchestrator.
-    GatewayTxProcessor::spawn(mempool.clone(), gateway_tx_helper.clone());
+    GatewayTxProcessor::spawn(
+        mempool.clone(),
+        gateway_tx_helper.clone(),
+        orchestrator.clone(),
+    );
 
     // Create ReadinessChecker to be shared by decrypt handlers
     let readiness_checker = Arc::new(ReadinessChecker::new(&settings.gateway)?);
@@ -66,7 +69,6 @@ pub async fn initialize_gateway(
     // Initialize all gateway components (each handles its own orchestrator registration)
     InputProofGatewayHandler::new(
         orchestrator.clone(),
-        gateway_tx_helper.clone(),
         mempool.clone(),
         settings.gateway.contracts.clone(),
         repositories.input_proof.clone(),

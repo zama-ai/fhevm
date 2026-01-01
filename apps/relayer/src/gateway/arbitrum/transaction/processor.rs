@@ -1,10 +1,14 @@
-use crate::gateway::arbitrum::transaction::{
-    helper::TransactionHelper,
-    pool::{GatewayTask, Mempool},
+use crate::{
+    core::event::{ApiCategory, ApiVersion, InputProofEventData, RelayerEvent, RelayerEventData},
+    gateway::arbitrum::transaction::{
+        helper::TransactionHelper,
+        pool::{GatewayTask, Mempool},
+    },
+    orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
 };
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 /// The Processor is responsible for bridging the Mempool (Queue) and the TransactionHelper (Executor).
 pub struct GatewayTxProcessor;
@@ -15,6 +19,7 @@ impl GatewayTxProcessor {
     pub fn spawn(
         mempool: Arc<Mempool<GatewayTask>>,
         tx_helper: Arc<TransactionHelper>,
+        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     ) -> tokio::task::JoinHandle<()> {
         info!("Spawning Gateway Transaction Processor (Supervisor Mode)...");
 
@@ -29,6 +34,7 @@ impl GatewayTxProcessor {
                 // The originals stay alive in this outer loop scope.
                 let mp_runner = mempool.clone();
                 let helper_runner = tx_helper.clone();
+                let dispatcher_runner = dispatcher.clone();
 
                 // Run the consumer.
                 // This function contains its own recovery logic, so it should technically run forever.
@@ -36,9 +42,10 @@ impl GatewayTxProcessor {
                 mp_runner
                     .run_consumer(move |task: GatewayTask| {
                         let helper = helper_runner.clone();
+                        let dispatcher = dispatcher_runner.clone();
 
                         async move {
-                            Self::process_single_task(helper, task).await;
+                            Self::process_single_task(helper, task, dispatcher).await;
                         }
                     })
                     .await;
@@ -53,7 +60,14 @@ impl GatewayTxProcessor {
     }
 
     /// Internal logic to process a single task.
-    async fn process_single_task(helper: Arc<TransactionHelper>, task: GatewayTask) {
+    async fn process_single_task(
+        helper: Arc<TransactionHelper>,
+        task: GatewayTask,
+        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    ) {
+        // declare dispatcher
+        let arc_dispatcher = Arc::clone(&dispatcher);
+
         // Dereference hook
         let hook_ref = &*task.hook.0;
 
@@ -65,21 +79,39 @@ impl GatewayTxProcessor {
         let result = helper
             .send_raw_transaction_sync(
                 task.transaction_type,
-                task.job_id.clone(),
+                task.job_id,
                 hook_ref,
                 task.target,
                 calldata_fn,
             )
             .await;
 
-        // TODO: Change error manager here, we need to dispatch error properly
-        // Log Infrastructure Errors
+        // Error dispatcher.
         if let Err(e) = result {
             error!(
                 job_id = %task.job_id,
                 error = ?e,
                 "GatewayTxProcessor: Failed to submit transaction"
             );
+
+            // TODO: dispatch failed event for all different structures.
+            let next_event_data: RelayerEventData =
+                RelayerEventData::InputProof(InputProofEventData::Failed { error: e });
+
+            let next_event = RelayerEvent::new(
+                task.job_id,
+                ApiVersion {
+                    category: ApiCategory::PRODUCTION,
+                    number: 1,
+                },
+                next_event_data,
+            );
+
+            if let Err(e) = arc_dispatcher.dispatch_event(next_event).await {
+                error!(?e, "Failed to dispatch input proof response event");
+            } else {
+                info!("Input proof response successfully sent for {}", task.job_id);
+            }
         }
     }
 }
