@@ -48,6 +48,7 @@ pub struct Chain {
     pub size: usize,
     pub before_size: usize,
     pub new_chain: bool,
+    pub tail_out_count: usize,
 }
 pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
 pub type OrderedChains = Vec<Chain>;

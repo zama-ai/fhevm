@@ -334,6 +334,7 @@ async fn grouping_to_chains_connex(
                     dependents: vec![],
                     allowed_handle: tx.allowed_handle.clone(),
                     new_chain,
+                    tail_out_count: tx.output_tx.len(),
                 };
                 e.insert(new_chain);
             }
@@ -355,7 +356,8 @@ fn grouping_to_chains_no_fork(
         HashMap::with_capacity(ordered_txs.len());
     let mut ordered_chains_hash = Vec::with_capacity(ordered_txs.len());
     for tx in ordered_txs.iter_mut() {
-        let mut dependencies = Vec::with_capacity(tx.input_tx.len());
+        let mut block_dependencies = Vec::with_capacity(tx.input_tx.len());
+        let mut outer_dependencies = Vec::with_capacity(tx.input_tx.len());
         let mut dependencies_seen = HashSet::with_capacity(tx.input_tx.len());
         for dep_hash in &tx.input_tx {
             // Only record dependences within the block as we don't
@@ -364,25 +366,45 @@ fn grouping_to_chains_no_fork(
                 used_tx.get(dep_hash).map(|tx| tx.linear_chain)
             {
                 if !dependencies_seen.contains(&linear_chain) {
-                    dependencies.push(linear_chain);
+                    block_dependencies.push(linear_chain);
                     dependencies_seen.insert(linear_chain);
                 }
             } else if across_blocks {
                 // if not in used_tx, it is a past chain
                 if !dependencies_seen.contains(dep_hash) {
-                    dependencies.push(*dep_hash);
+                    outer_dependencies.push(*dep_hash);
                     dependencies_seen.insert(*dep_hash);
                 }
             }
         }
-        let is_linear = dependencies.len() == 1 && tx.output_tx.len() <= 1;
+        let mut is_linear =
+            (block_dependencies.len() + outer_dependencies.len()) == 1;
+        // In case we're considering attaching this Tx to a chain,
+        // check that it doesn't have siblings (fork)
         if is_linear {
-            tx.linear_chain = dependencies[0];
+            let chain = if !block_dependencies.is_empty() {
+                block_dependencies[0]
+            } else {
+                outer_dependencies[0]
+            };
+            if let Some(ancestor) = chains.get(&chain) {
+                if ancestor.tail_out_count != 1 {
+                    is_linear = false;
+                }
+            }
+        }
+        if is_linear {
+            tx.linear_chain = if !block_dependencies.is_empty() {
+                block_dependencies[0]
+            } else {
+                outer_dependencies[0]
+            };
             match chains.entry(tx.linear_chain) {
                 // extend the existing chain from same block
                 Entry::Occupied(mut e) => {
                     let c = e.get_mut();
                     c.size += tx.size;
+                    c.tail_out_count = tx.output_tx.len();
                     c.allowed_handle.extend(tx.allowed_handle.iter());
                 }
                 // extend the existing chain from past block, dummy values, just for a timestamp update
@@ -395,6 +417,7 @@ fn grouping_to_chains_no_fork(
                         dependents: vec![],
                         allowed_handle: tx.allowed_handle.clone(), // needed to publish in cache
                         new_chain: false,
+                        tail_out_count: tx.output_tx.len(), // Always updated as count of tail
                     };
                     ordered_chains_hash.push(new_chain.hash);
                     e.insert(new_chain);
@@ -402,7 +425,7 @@ fn grouping_to_chains_no_fork(
             }
         } else {
             let mut before_size = 0;
-            for dep in &dependencies {
+            for dep in &block_dependencies {
                 before_size = before_size.max(
                     chains
                         .get(dep)
@@ -410,15 +433,16 @@ fn grouping_to_chains_no_fork(
                         .unwrap_or(0),
                 );
             }
-            debug!("Creating new chain for tx {:?} with dependencies {:?}, before_size {}", tx, dependencies, before_size);
+            debug!("Creating new chain for tx {:?} with block dependencies {:?}, outer dependencies {:?}, before_size {}", tx, block_dependencies, outer_dependencies, before_size);
             let new_chain = Chain {
                 hash: tx.tx_hash,
                 size: tx.size,
                 before_size,
-                dependencies,
+                dependencies: block_dependencies,
                 dependents: vec![],
                 allowed_handle: tx.allowed_handle.clone(),
                 new_chain: true,
+                tail_out_count: tx.output_tx.len(),
             };
             ordered_chains_hash.push(new_chain.hash);
             chains.insert(new_chain.hash, new_chain);
@@ -796,6 +820,7 @@ mod tests {
             before_size: 0,
             allowed_handle: vec![],
             new_chain: false,
+            tail_out_count: 0,
         }
     }
 
