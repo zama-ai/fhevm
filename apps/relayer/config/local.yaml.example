@@ -44,7 +44,7 @@ gateway:
     retry:
       max_attempts: 100
       retry_interval_ms: 500
-    transaction_throttler_s: 20
+    transaction_throttler_secs: 20
   readiness_checker:
     max_concurrency: 100
     retry:

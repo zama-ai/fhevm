@@ -29,9 +29,9 @@ impl fmt::Debug for DynTxHook {
     }
 }
 
-/// The actual unit of work submitted to the Mempool.
+/// The actual unit of work submitted to the Throttler.
 #[derive(Debug, Clone)]
-pub struct GatewayTask {
+pub struct GatewayTxTask {
     pub id: String,
     pub job_id: JobId,
     pub transaction_type: TransactionType,
@@ -40,22 +40,22 @@ pub struct GatewayTask {
     pub hook: DynTxHook,
 }
 
-impl MempoolItem for GatewayTask {
+impl MemoryThrottlerItem for GatewayTxTask {
     fn get_id(&self) -> String {
         self.id.clone()
     }
 }
 
-// MEMPOOL ABSTRACTIONS
+// THROTTLER ABSTRACTIONS
 
-/// Items in the Mempool must implement this to be tracked by ID.
-pub trait MempoolItem: Send + Sync + 'static + std::fmt::Debug {
+/// Items in the Throttler must implement this to be tracked by ID.
+pub trait MemoryThrottlerItem: Send + Sync + 'static + std::fmt::Debug {
     fn get_id(&self) -> String;
 }
 
 /// A throttled, self-healing, in-memory queue with observability.
 #[derive(Clone)]
-pub struct Mempool<T> {
+pub struct MemoryThrottler<T> {
     // The transport layer. Wrapped in RwLock to allow hot-swapping on failure.
     sender: Arc<RwLock<UnboundedSender<String>>>,
 
@@ -76,9 +76,9 @@ pub struct Mempool<T> {
     tps: u32,
 }
 
-impl<T> Mempool<T>
+impl<T> MemoryThrottler<T>
 where
-    T: MempoolItem + Clone,
+    T: MemoryThrottlerItem + Clone,
 {
     pub fn new(tps: u32) -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();
@@ -106,7 +106,7 @@ where
         {
             let mut tracker = self.tracker.write().await;
             if tracker.contains_key(&id) {
-                warn!("Item already exists in mempool, ignoring duplicate push");
+                warn!("Item already exists in throttler, ignoring duplicate push");
                 return;
             }
             tracker.insert(id.clone(), item);
@@ -129,7 +129,7 @@ where
                     // Channel dead. We kept the ID.
                     // The DATA is safe in the map.
                     current_id = return_err.0;
-                    error!("Mempool signal broken. Retrying...");
+                    error!("Throttler signal broken. Retrying...");
                     tokio::time::sleep(Duration::from_millis(1000)).await;
                 }
             }
@@ -147,7 +147,7 @@ where
         Fut: Future<Output = ()> + Send + 'static,
     {
         info!(
-            "Mempool consumer starting with rate limit: {} TPS",
+            "Throttler consumer starting with rate limit: {} TPS",
             self.tps
         );
 
@@ -160,12 +160,12 @@ where
             // Handle Exit
             match result {
                 Ok(_) => {
-                    info!("Mempool consumer stopped gracefully.");
+                    info!("Throttler consumer stopped gracefully.");
                     break;
                 }
                 Err(e) => {
                     error!(
-                        "Mempool consumer crashed or channel closed: {:#}. Restarting...",
+                        "Throttler consumer crashed or channel closed: {:#}. Restarting...",
                         e
                     );
 
@@ -198,7 +198,7 @@ where
         let quota = Quota::per_second(burst).allow_burst(burst);
         let limiter = Arc::new(RateLimiter::direct(quota));
 
-        info!("Mempool worker loop active.");
+        info!("Throttler worker loop active.");
 
         // Supervisor loop
         while let Some(id) = receiver.recv().await {
@@ -264,7 +264,7 @@ where
         *rx_guard = Some(new_rx);
         drop(rx_guard);
 
-        info!("Mempool channel refreshed and ready.");
+        info!("Throttler channel refreshed and ready.");
     }
 
     // OBSERVABILITY
@@ -303,7 +303,7 @@ mod tests {
         should_panic: bool,
     }
 
-    impl MempoolItem for MockTask {
+    impl MemoryThrottlerItem for MockTask {
         fn get_id(&self) -> String {
             self.id.clone()
         }
@@ -312,11 +312,11 @@ mod tests {
     // --- Test 1: Basic Push and FIFO Order ---
     #[tokio::test]
     async fn test_fifo_ordering() {
-        let mempool = Mempool::<MockTask>::new(100);
+        let throttler = MemoryThrottler::<MockTask>::new(100);
         let processed_ids = Arc::new(Mutex::new(Vec::new()));
 
         // Spawn Consumer
-        let mp_cons = mempool.clone();
+        let mp_cons = throttler.clone();
         let ids_cons = processed_ids.clone();
         tokio::spawn(async move {
             mp_cons
@@ -330,19 +330,19 @@ mod tests {
         });
 
         // Push Items
-        mempool
+        throttler
             .push(MockTask {
                 id: "1".into(),
                 should_panic: false,
             })
             .await;
-        mempool
+        throttler
             .push(MockTask {
                 id: "2".into(),
                 should_panic: false,
             })
             .await;
-        mempool
+        throttler
             .push(MockTask {
                 id: "3".into(),
                 should_panic: false,
@@ -354,74 +354,74 @@ mod tests {
 
         let results = processed_ids.lock().await.clone();
         assert_eq!(results, vec!["1", "2", "3"]);
-        assert_eq!(mempool.len(), 0);
+        assert_eq!(throttler.len(), 0);
     }
 
     // --- Test 2: Deduplication ---
     #[tokio::test]
     async fn test_deduplication() {
-        let mempool = Mempool::<MockTask>::new(100);
+        let throttler = MemoryThrottler::<MockTask>::new(100);
 
         // Push same ID twice
-        mempool
+        throttler
             .push(MockTask {
                 id: "A".into(),
                 should_panic: false,
             })
             .await;
-        mempool
+        throttler
             .push(MockTask {
                 id: "A".into(),
                 should_panic: false,
             })
             .await;
 
-        assert_eq!(mempool.len(), 1);
-        assert!(mempool.contains("A").await);
+        assert_eq!(throttler.len(), 1);
+        assert!(throttler.contains("A").await);
     }
 
     // --- Test 3: Observability & Positioning ---
     #[tokio::test]
     async fn test_observability() {
-        let mempool = Mempool::<MockTask>::new(1); // Very slow consumer to queue items up
+        let throttler = MemoryThrottler::<MockTask>::new(1); // Very slow consumer to queue items up
 
         // We do NOT spawn a consumer, so items sit in the queue
-        mempool
+        throttler
             .push(MockTask {
                 id: "A".into(),
                 should_panic: false,
             })
             .await;
-        mempool
+        throttler
             .push(MockTask {
                 id: "B".into(),
                 should_panic: false,
             })
             .await;
-        mempool
+        throttler
             .push(MockTask {
                 id: "C".into(),
                 should_panic: false,
             })
             .await;
 
-        assert_eq!(mempool.len(), 3);
-        assert_eq!(mempool.get_position("A").await, Some(0));
-        assert_eq!(mempool.get_position("B").await, Some(1));
-        assert_eq!(mempool.get_position("C").await, Some(2));
-        assert_eq!(mempool.get_position("Z").await, None);
+        assert_eq!(throttler.len(), 3);
+        assert_eq!(throttler.get_position("A").await, Some(0));
+        assert_eq!(throttler.get_position("B").await, Some(1));
+        assert_eq!(throttler.get_position("C").await, Some(2));
+        assert_eq!(throttler.get_position("Z").await, None);
 
-        let ids = mempool.get_queued_ids().await;
+        let ids = throttler.get_queued_ids().await;
         assert_eq!(ids, vec!["A", "B", "C"]);
     }
 
     // --- Test 4: Task Isolation (Panic Recovery) ---
     #[tokio::test]
     async fn test_panic_resilience() {
-        let mempool = Mempool::<MockTask>::new(50);
+        let throttler = MemoryThrottler::<MockTask>::new(50);
         let processed_count = Arc::new(AtomicUsize::new(0));
 
-        let mp_cons = mempool.clone();
+        let mp_cons = throttler.clone();
         let counter = processed_count.clone();
 
         tokio::spawn(async move {
@@ -438,19 +438,19 @@ mod tests {
                 .await;
         });
 
-        mempool
+        throttler
             .push(MockTask {
                 id: "good_1".into(),
                 should_panic: false,
             })
             .await;
-        mempool
+        throttler
             .push(MockTask {
                 id: "bad".into(),
                 should_panic: true,
             })
             .await; // Should crash sub-task
-        mempool
+        throttler
             .push(MockTask {
                 id: "good_2".into(),
                 should_panic: false,
@@ -461,7 +461,7 @@ mod tests {
 
         // "bad" crashed, but "good_2" should still process
         assert_eq!(processed_count.load(Ordering::Relaxed), 2);
-        assert_eq!(mempool.len(), 0);
+        assert_eq!(throttler.len(), 0);
     }
 
     // --- Test 5: Self-Healing Consumer Restart ---
@@ -472,14 +472,14 @@ mod tests {
         // Instead, we verify the refresh_channel mechanism works by manually triggering it
         // and ensuring flow continues.
 
-        let mempool = Mempool::<MockTask>::new(50);
+        let throttler = MemoryThrottler::<MockTask>::new(50);
         let processed = Arc::new(AtomicBool::new(false));
 
         // Manually break the channel to simulate a dead state
-        mempool.refresh_channel().await;
+        throttler.refresh_channel().await;
 
         // Spawn consumer (should pick up the new channel)
-        let mp_cons = mempool.clone();
+        let mp_cons = throttler.clone();
         let p = processed.clone();
         tokio::spawn(async move {
             mp_cons
@@ -495,7 +495,7 @@ mod tests {
         sleep(Duration::from_millis(50)).await;
 
         // Push item
-        mempool
+        throttler
             .push(MockTask {
                 id: "recover".into(),
                 should_panic: false,
@@ -518,10 +518,10 @@ mod tests {
         // - Next 10 items: Throttled (1 every 100ms)
         // Total expected time for 20 items: ~1.0 seconds (plus small overhead)
         let tps = 10;
-        let mempool = Mempool::<MockTask>::new(tps);
+        let throttler = MemoryThrottler::<MockTask>::new(tps);
         let processed_count = Arc::new(AtomicUsize::new(0));
 
-        let mp_cons = mempool.clone();
+        let mp_cons = throttler.clone();
         let counter = processed_count.clone();
 
         tokio::spawn(async move {
@@ -540,7 +540,7 @@ mod tests {
         let start_time = std::time::Instant::now();
 
         for i in 0..total_items {
-            mempool
+            throttler
                 .push(MockTask {
                     id: format!("{}", i),
                     should_panic: false,
@@ -585,11 +585,11 @@ mod tests {
         // (20 tps * 5s) + 20 burst + buffer = ~150 items
         let total_items_to_push = 150;
 
-        // 1. Setup Mempool
-        let mempool = Mempool::<MockTask>::new(tps);
+        // 1. Setup throttler
+        let throttler = MemoryThrottler::<MockTask>::new(tps);
         let processed_count = Arc::new(AtomicUsize::new(0));
 
-        let mp_cons = mempool.clone();
+        let mp_cons = throttler.clone();
         let counter = processed_count.clone();
 
         // 2. Spawn Consumer
@@ -607,7 +607,7 @@ mod tests {
         // Blast the queue with items (Instant because it's unbounded)
         let start_push = std::time::Instant::now();
         for i in 0..total_items_to_push {
-            mempool
+            throttler
                 .push(MockTask {
                     id: format!("load_{}", i),
                     should_panic: false,
@@ -664,11 +664,11 @@ mod tests {
     // --- Test 8: Full Crash & Recovery Cycle ---
     #[tokio::test]
     async fn test_consumer_crash_and_recovery() {
-        let mempool = Mempool::<MockTask>::new(50);
+        let throttler = MemoryThrottler::<MockTask>::new(50);
         let processed_ids = Arc::new(Mutex::new(Vec::new()));
 
         // Spawn the Long-Running Consumer
-        let mp_cons = mempool.clone();
+        let mp_cons = throttler.clone();
         let ids_clone = processed_ids.clone();
 
         // We spawn this and expect it to live forever, even through crashes
@@ -685,7 +685,7 @@ mod tests {
         });
 
         // Phase 1: Normal Operation
-        mempool
+        throttler
             .push(MockTask {
                 id: "tx_1".into(),
                 should_panic: false,
@@ -702,10 +702,10 @@ mod tests {
         // The *running* consumer (holding the old receiver) will see the channel close (return None).
         // It should catch this, log "Restarting...", and loop back to claim the NEW receiver.
         info!("--- SIMULATING CHANNEL CRASH ---");
-        mempool.refresh_channel().await;
+        throttler.refresh_channel().await;
 
         // -------------------
-        // When we call `mempool.refresh_channel()` manually in the test, we create "Channel B".
+        // When we call `throttler.refresh_channel()` manually in the test, we create "Channel B".
         // The Consumer (background task) sees the old "Channel A" die, wakes up, and
         // triggers its own self-healing logic: it calls `refresh_channel()` again to create "Channel C".
         //
@@ -726,7 +726,7 @@ mod tests {
         // This push goes to the NEW channel.
         // If the consumer successfully restarted, it should have claimed the NEW receiver.
         info!("--- PUSHING POST-CRASH TASK ---");
-        mempool
+        throttler
             .push(MockTask {
                 id: "tx_after_crash".into(),
                 should_panic: false,
@@ -746,10 +746,10 @@ mod tests {
     #[tokio::test]
     async fn test_consumer_crash_recovery_deterministic() {
         // Setup
-        let mempool = Mempool::<MockTask>::new(50);
+        let throttler = MemoryThrottler::<MockTask>::new(50);
         let processed_ids = Arc::new(Mutex::new(Vec::new()));
 
-        let mp_cons = mempool.clone();
+        let mp_cons = throttler.clone();
         let ids_clone = processed_ids.clone();
 
         tokio::spawn(async move {
@@ -765,7 +765,7 @@ mod tests {
         });
 
         // Initial Push
-        mempool
+        throttler
             .push(MockTask {
                 id: "tx_init".into(),
                 should_panic: false,
@@ -782,7 +782,7 @@ mod tests {
 
         // TRIGGER CRASH
         info!("--- SIMULATING CRASH ---");
-        mempool.refresh_channel().await;
+        throttler.refresh_channel().await;
 
         // THE PROBE LOOP (The "No Wait" Solution)
         // Instead of sleeping 1s, we keep pushing "Probes" until the system heals.
@@ -793,7 +793,7 @@ mod tests {
             let probe_id = format!("probe_{}", probe_idx);
 
             info!("Sending {}", probe_id);
-            mempool
+            throttler
                 .push(MockTask {
                     id: probe_id.clone(),
                     should_panic: false,
@@ -813,7 +813,7 @@ mod tests {
         // Now that we PROVED the system is stable (probe got through),
         // we push the transaction we actually care about.
         info!("--- PUSHING CRITICAL TASK ---");
-        mempool
+        throttler
             .push(MockTask {
                 id: "tx_critical".into(),
                 should_panic: false,

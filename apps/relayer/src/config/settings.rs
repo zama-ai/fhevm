@@ -84,7 +84,7 @@ pub struct TxEngineConfig {
     pub private_key: String,
     pub max_concurrency: u16,
     pub retry: RetrySettings,
-    pub transaction_throttler_s: u32,
+    pub transaction_throttler_secs: u32,
 }
 
 #[derive(Debug, Deserialize, Clone)]

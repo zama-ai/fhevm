@@ -12,7 +12,7 @@ use crate::{
         bindings::InputVerification,
         transaction::{
             helper::{TransactionHelper, TransactionType, TxResult},
-            pool::{DynTxHook, GatewayTask, Mempool},
+            throttler::{DynTxHook, GatewayTxTask, MemoryThrottler},
             TxLifecycleHooks,
         },
         ComputeCalldata,
@@ -35,7 +35,7 @@ use tracing::{error, info, instrument, warn};
 #[derive(Clone)]
 pub struct InputProofGatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    mempool: Arc<Mempool<GatewayTask>>,
+    tx_throttler: Arc<MemoryThrottler<GatewayTxTask>>,
     contracts: ContractConfig,
     input_proof_repo: Arc<InputProofRepository>,
 }
@@ -43,13 +43,13 @@ pub struct InputProofGatewayHandler {
 impl InputProofGatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        mempool: Arc<Mempool<GatewayTask>>,
+        tx_throttler: Arc<MemoryThrottler<GatewayTxTask>>,
         contracts: ContractConfig,
         input_proof_repo: Arc<InputProofRepository>,
     ) -> Arc<Self> {
         let handler = Arc::new(Self {
             dispatcher: Arc::clone(&dispatcher),
-            mempool,
+            tx_throttler,
             contracts,
             input_proof_repo,
         });
@@ -186,7 +186,7 @@ impl InputProofGatewayHandler {
         let job_id = JobId::from_uuid_v7(int_request_id);
 
         // CONSTRUCT TASK
-        let task = GatewayTask {
+        let task = GatewayTxTask {
             id: int_request_id.to_string(), // Used for Queue tracking/dedup
             job_id,
             transaction_type: TransactionType::InputRequest,
@@ -196,10 +196,10 @@ impl InputProofGatewayHandler {
             hook: DynTxHook(Arc::new(self.clone())),
         };
 
-        info!(job_id = %job_id, "Enqueuing input proof request to Mempool");
+        info!(job_id = %job_id, "Enqueuing input proof request to tx throttler");
 
         // PUSH TO QUEUE
-        self.mempool.push(task).await;
+        self.tx_throttler.push(task).await;
 
         Ok(())
     }

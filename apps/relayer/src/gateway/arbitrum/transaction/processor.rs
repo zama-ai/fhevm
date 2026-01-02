@@ -5,7 +5,7 @@ use crate::{
     },
     gateway::arbitrum::transaction::{
         helper::{TransactionHelper, TransactionType},
-        pool::{GatewayTask, Mempool},
+        throttler::{GatewayTxTask, MemoryThrottler},
     },
     orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
 };
@@ -13,59 +13,79 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info};
 
-/// The Processor is responsible for bridging the Mempool (Queue) and the TransactionHelper (Executor).
+/// The Processor is responsible for bridging the throttler (Queue) and the TransactionHelper (Executor).
 pub struct GatewayTxProcessor;
 
 impl GatewayTxProcessor {
-    /// Spawns the background worker.
-    /// Includes a "Supervisor Loop" to ensure the task persists indefinitely.
-    pub fn spawn(
-        mempool: Arc<Mempool<GatewayTask>>,
+    /// Spawns the background worker with a Supervisor Loop.
+    ///
+    /// This function registers the task with the Orchestrator.
+    /// 1. It runs `run_consumer` which has internal self-healing for channel/logic errors.
+    /// 2. If `run_consumer` ever exits (e.g. panic unwinding or logic bug), the outer loop restarts it.
+    /// 3. It only stops when the Orchestrator initiates a shutdown.
+    pub async fn orchestrator_spawn_task(
+        throttler: Arc<MemoryThrottler<GatewayTxTask>>,
         tx_helper: Arc<TransactionHelper>,
-        dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    ) -> tokio::task::JoinHandle<()> {
-        info!("Spawning Gateway Transaction Processor (Supervisor Mode)...");
+        orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+    ) -> anyhow::Result<()> {
+        let task_name = "gateway_tx_processor";
 
-        tokio::spawn(async move {
+        // Clone Arcs for the long-running task
+        let throttler_runner = throttler.clone();
+        let helper_runner = tx_helper.clone();
+        let orchestrator_runner = orchestrator.clone();
+
+        // Define the Supervisor Task
+        let task_future = async move {
+            info!("GatewayTxProcessor supervisor started.");
+
             // SUPERVISOR LOOP
-            // This loop ensures that if run_consumer EVER returns (which it shouldn't),
-            // we log it, wait a bit, and restart it immediately.
+            // This loop ensures that if run_consumer EVER returns, we restart it.
             loop {
                 info!("Starting GatewayTxProcessor consumer loop...");
 
-                // We clone the Arcs here to pass them into the consumer closure
-                // The originals stay alive in this outer loop scope.
-                let mp_runner = mempool.clone();
-                let helper_runner = tx_helper.clone();
-                let dispatcher_runner = dispatcher.clone();
+                // Clone inner refs for the consumer closure
+                let mp = throttler_runner.clone();
+                let helper = helper_runner.clone();
+                let dispatcher = orchestrator_runner.clone();
 
                 // Run the consumer.
-                // This function contains its own recovery logic, so it should technically run forever.
-                // If it returns, it means we hit a logic state that broke the internal loop.
-                mp_runner
-                    .run_consumer(move |task: GatewayTask| {
-                        let helper = helper_runner.clone();
-                        let dispatcher = dispatcher_runner.clone();
+                // This function blocks indefinitely unless a critical error occurs.
+                mp.run_consumer(move |task: GatewayTxTask| {
+                    let helper = helper.clone();
+                    let dispatcher = dispatcher.clone();
 
-                        async move {
-                            Self::process_single_task(helper, task, dispatcher).await;
-                        }
-                    })
-                    .await;
+                    async move {
+                        Self::process_single_task(helper, task, dispatcher).await;
+                    }
+                })
+                .await;
 
-                // If we reach this line, something unexpected happened.
+                // If we reach this line, the consumer exited. This is unexpected.
                 error!("CRITICAL: GatewayTxProcessor consumer loop exited unexpectedly! Restarting in 5 seconds...");
 
-                // Prevent a tight loop CPU spike if it keeps crashing instantly
+                // Prevent CPU spin loop in case of instant crash loop
                 tokio::time::sleep(Duration::from_secs(5)).await;
             }
-        })
+        };
+
+        // Define Readiness (Ready immediately)
+        let ready_future = async { Ok(()) };
+
+        // Register with Orchestrator
+        // This ensures the task is tracked and killed properly on shutdown.
+        orchestrator
+            .spawn_task_and_wait_ready(task_name, task_future, ready_future)
+            .await?;
+
+        info!("Gateway Transaction Processor spawned and registered.");
+        Ok(())
     }
 
     /// Internal logic to process a single task.
     async fn process_single_task(
         helper: Arc<TransactionHelper>,
-        task: GatewayTask,
+        task: GatewayTxTask,
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     ) {
         // declare dispatcher

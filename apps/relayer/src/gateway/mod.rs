@@ -14,8 +14,8 @@ pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 
 use crate::config::settings::Settings;
 use crate::core::event::RelayerEvent;
-use crate::gateway::arbitrum::transaction::pool::{GatewayTask, Mempool};
 use crate::gateway::arbitrum::transaction::processor::GatewayTxProcessor;
+use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, MemoryThrottler};
 use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
 use crate::store::sql::repositories::Repositories;
 use alloy::primitives::Address;
@@ -50,16 +50,17 @@ pub async fn initialize_gateway(
 
     // Create mempool
     // TODO: Change with config settings.
-    let mempool = Arc::new(Mempool::<GatewayTask>::new(
-        settings.gateway.tx_engine.transaction_throttler_s,
+    let tx_throttler = Arc::new(MemoryThrottler::<GatewayTxTask>::new(
+        settings.gateway.tx_engine.transaction_throttler_secs,
     ));
 
     // Spawn gateway task
-    GatewayTxProcessor::spawn(
-        mempool.clone(),
+    GatewayTxProcessor::orchestrator_spawn_task(
+        tx_throttler.clone(),
         gateway_tx_helper.clone(),
         orchestrator.clone(),
-    );
+    )
+    .await?;
 
     // Create ReadinessChecker to be shared by decrypt handlers
     let readiness_checker = Arc::new(ReadinessChecker::new(&settings.gateway)?);
@@ -71,14 +72,14 @@ pub async fn initialize_gateway(
     // Initialize all gateway components (each handles its own orchestrator registration)
     InputProofGatewayHandler::new(
         orchestrator.clone(),
-        mempool.clone(),
+        tx_throttler.clone(),
         settings.gateway.contracts.clone(),
         repositories.input_proof.clone(),
     );
 
     PublicDecryptGatewayHandler::new(
         orchestrator.clone(),
-        mempool.clone(),
+        tx_throttler.clone(),
         readiness_checker.clone(),
         decryption_address,
         repositories.public_decrypt.clone(),
@@ -86,7 +87,7 @@ pub async fn initialize_gateway(
 
     UserDecryptGatewayHandler::new(
         orchestrator.clone(),
-        mempool.clone(),
+        tx_throttler.clone(),
         readiness_checker,
         decryption_address,
         settings.gateway.contracts.user_decrypt_shares_threshold as usize,

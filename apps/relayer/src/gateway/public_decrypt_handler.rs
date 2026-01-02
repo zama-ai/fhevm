@@ -13,7 +13,7 @@ use crate::{
             bindings::Decryption,
             transaction::{
                 helper::{TransactionHelper, TransactionType, TxResult},
-                pool::{DynTxHook, GatewayTask, Mempool},
+                throttler::{DynTxHook, GatewayTxTask, MemoryThrottler},
                 TxLifecycleHooks,
             },
             ComputeCalldata,
@@ -35,7 +35,7 @@ use tracing::{error, info, instrument, warn};
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    mempool: Arc<Mempool<GatewayTask>>,
+    tx_throttler: Arc<MemoryThrottler<GatewayTxTask>>,
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
@@ -44,14 +44,14 @@ pub struct GatewayHandler {
 impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        mempool: Arc<Mempool<GatewayTask>>,
+        tx_throttler: Arc<MemoryThrottler<GatewayTxTask>>,
         readiness_checker: Arc<ReadinessChecker>,
         decryption_address: Address,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
     ) -> Arc<Self> {
         let handler = Arc::new(Self {
             dispatcher: Arc::clone(&dispatcher),
-            mempool,
+            tx_throttler,
             readiness_checker,
             decryption_address,
             public_decrypt_repo,
@@ -221,7 +221,7 @@ impl GatewayHandler {
 
         let job_id = JobId::from_sha256_hash(job_id_hash);
 
-        let task = GatewayTask {
+        let task = GatewayTxTask {
             id: job_id.to_string(), // Used for Queue tracking/dedup
             job_id,
             transaction_type: TransactionType::PublicDecryptRequest,
@@ -230,9 +230,9 @@ impl GatewayHandler {
             hook: DynTxHook(Arc::new(self.clone())),
         };
 
-        info!(job_id = %job_id, "Enqueuing public decrypt request to Mempool");
+        info!(job_id = %job_id, "Enqueuing public decrypt request to tx throttler");
 
-        self.mempool.push(task).await;
+        self.tx_throttler.push(task).await;
 
         Ok(())
     }
