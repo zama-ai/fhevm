@@ -96,7 +96,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 }
                 PublicDecryptEventData::Failed { error } => Err(error.clone()),
                 _ => {
-                    warn!("unexpected event received in input handler");
+                    warn!("unexpected event received in public decrypt handler");
                     return;
                 }
             },
@@ -227,7 +227,6 @@ impl GatewayHandler {
             transaction_type: TransactionType::PublicDecryptRequest,
             target: decryption_address,
             calldata: calldata_bytes,
-            // We clone self (cheap Arc clone) and wrap it
             hook: DynTxHook(Arc::new(self.clone())),
         };
 

@@ -84,7 +84,7 @@ pub async fn initialize_gateway(
 
     UserDecryptGatewayHandler::new(
         orchestrator.clone(),
-        gateway_tx_helper.clone(),
+        mempool.clone(),
         readiness_checker,
         decryption_address,
         settings.gateway.contracts.user_decrypt_shares_threshold as usize,

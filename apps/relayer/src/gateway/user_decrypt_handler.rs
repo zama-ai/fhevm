@@ -13,6 +13,7 @@ use crate::{
             bindings::Decryption,
             transaction::{
                 helper::{TransactionHelper, TransactionType, TxResult},
+                pool::{DynTxHook, GatewayTask, Mempool},
                 TxLifecycleHooks,
             },
             ComputeCalldata,
@@ -20,7 +21,7 @@ use crate::{
         readiness_checker::{ReadinessCheckError, ReadinessChecker},
     },
     orchestrator::{
-        traits::{EventDispatcher, EventHandler, HandlerRegistry},
+        traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
         ContentHasher, Orchestrator, TokioEventDispatcher,
     },
     store::sql::{
@@ -35,7 +36,7 @@ use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, U256};
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, instrument, warn};
 
 impl From<&HandleContractPair> for Decryption::CtHandleContractPair {
     fn from(pair: &HandleContractPair) -> Self {
@@ -49,7 +50,7 @@ impl From<&HandleContractPair> for Decryption::CtHandleContractPair {
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    tx_helper: Arc<TransactionHelper>,
+    mempool: Arc<Mempool<GatewayTask>>,
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
     user_decrypt_repo: Arc<UserDecryptRepository>,
@@ -59,7 +60,7 @@ pub struct GatewayHandler {
 impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        tx_helper: Arc<TransactionHelper>,
+        mempool: Arc<Mempool<GatewayTask>>,
         readiness_checker: Arc<ReadinessChecker>,
         decryption_address: Address,
         user_decrypt_shares_threshold: usize,
@@ -67,7 +68,7 @@ impl GatewayHandler {
     ) -> Arc<Self> {
         let handler = Arc::new(Self {
             dispatcher: Arc::clone(&dispatcher),
-            tx_helper,
+            mempool,
             readiness_checker,
             decryption_address,
             user_decrypt_repo,
@@ -90,30 +91,34 @@ impl GatewayHandler {
 
 #[async_trait]
 impl EventHandler<RelayerEvent> for GatewayHandler {
+    #[instrument(skip_all, fields(event_type=%event.event_name(), job_id=%event.job_id()))]
     async fn handle_event(&self, event: RelayerEvent) {
-        match &event.data {
-            RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
-                ref decrypt_request,
-                ..
-            }) => {
-                info!("Processing user decrypt request {}", event.job_id);
+        let result: Result<_, EventProcessingError> = match &event.data {
+            RelayerEventData::UserDecrypt(user_decrypt_event) => match user_decrypt_event {
+                UserDecryptEventData::ReqRcvdFromUser {
+                    ref decrypt_request,
+                    ..
+                } => {
+                    info!("Processing user decrypt request {}", event.job_id);
+                    async {
+                        self.check_readiness(decrypt_request).await?;
+                        info!("Readiness validation passed for {}", event.job_id);
 
-                let result = async {
-                    self.check_readiness(decrypt_request).await?;
-                    info!("Readiness validation passed for {}", event.job_id);
+                        let job_id_hash = decrypt_request.content_hash();
+                        self.mark_processing(job_id_hash).await?;
 
-                    let job_id_hash = decrypt_request.content_hash();
-                    self.mark_processing(job_id_hash).await?;
-
-                    self.send_user_decrypt_request(event.clone(), decrypt_request.clone())
-                        .await
+                        self.send_user_decrypt_request(event.clone(), decrypt_request.clone())
+                            .await
+                    }
+                    .await
                 }
-                .await;
-
-                if let Err(e) = result {
-                    self.handle_error(event, e).await;
+                UserDecryptEventData::Failed { error } => Err(error.clone()),
+                _ => {
+                    warn!("unexpected event received in user decrypt handler");
+                    return;
                 }
-            }
+            },
+
             RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
                 ref log,
                 tx_hash,
@@ -127,29 +132,32 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     match topic0_fixed {
                         topic if topic == individual_response_topic => {
                             info!("Processing share response for request {}", event.job_id);
-                            let result = self
-                                .decode_share_from_log(log, event.clone(), *tx_hash)
-                                .await;
-
-                            if let Err(e) = result {
-                                self.handle_error(event, e).await;
-                            }
+                            self.decode_share_from_log(log, event.clone(), *tx_hash)
+                                .await
                         }
                         topic if topic == consensus_topic => {
                             info!("Processing consensus response for request {}", event.job_id);
                             self.update_consensus_hash(log, event.clone(), *tx_hash)
                                 .await;
+                            return;
                         }
                         _ => {
                             debug!(
                                 "Ignoring event: received topic {:?}, expected individual {:?} or consensus {:?}",
                                 topic0_fixed, individual_response_topic, consensus_topic
                             );
+                            return;
                         }
                     }
-                };
+                } else {
+                    return;
+                }
             }
-            _ => {}
+            _ => return,
+        };
+
+        if let Err(e) = result {
+            self.handle_error(event, e).await;
         }
     }
 }
@@ -225,15 +233,22 @@ impl GatewayHandler {
     ) -> Result<(), EventProcessingError> {
         let decryption_address = self.decryption_address;
 
-        self.tx_helper
-            .send_raw_transaction_sync(
-                TransactionType::UserDecryptRequest,
-                JobId::from_sha256_hash(job_id_hash),
-                self,
-                decryption_address,
-                || ComputeCalldata::user_decryption_req(user_decrypt_request.clone()),
-            )
-            .await?;
+        let calldata_bytes = ComputeCalldata::user_decryption_req(user_decrypt_request.clone())?;
+
+        let job_id = JobId::from_sha256_hash(job_id_hash);
+
+        let task = GatewayTask {
+            id: job_id.to_string(), // Used for Queue tracking/dedup
+            job_id,
+            transaction_type: TransactionType::UserDecryptRequest, // Important to dispatch errors.
+            target: decryption_address,
+            calldata: calldata_bytes,
+            hook: DynTxHook(Arc::new(self.clone())),
+        };
+
+        info!(job_id = %job_id, "Enqueuing user decrypt request to Mempool");
+
+        self.mempool.push(task).await;
 
         Ok(())
     }
