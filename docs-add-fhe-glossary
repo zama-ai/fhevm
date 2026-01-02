@@ -1,0 +1,10 @@
+# FHE Glossary
+
+**FHE (Fully Homomorphic Encryption)**  
+A form of encryption that allows computation on encrypted data.
+
+**Encrypted Smart Contract**  
+A smart contract that processes encrypted inputs without revealing plaintext.
+
+**Ciphertext**  
+Encrypted data that cannot be read without a secret key.
