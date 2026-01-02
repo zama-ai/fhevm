@@ -37,6 +37,8 @@ const RETRY_GET_BLOCK_DELAY_IN_MS: u64 = 100;
 
 const DEFAULT_BLOCK_TIME: u64 = 12;
 
+const TIMEOUT_GET_LOGS_WEBSOCKET: u64 = 120;
+
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
@@ -296,13 +298,27 @@ impl InfiniteLogIter {
             Ok(provider) => provider,
             Err(_) => anyhow::bail!("Cannot get a provider"),
         };
-        provider.get_logs(&filter).await.map_err(|err| {
-            if eth_rpc_err::too_much_blocks_or_events(&err) {
-                anyhow::anyhow!("Too much blocks or events: {err}")
-            } else {
-                anyhow::anyhow!("Cannot get logs for {filter:?} due to {err}")
+        // Timeout to prevent hanging indefinitely on buggy node
+        match tokio::time::timeout(
+            Duration::from_secs(TIMEOUT_GET_LOGS_WEBSOCKET),
+            provider.get_logs(&filter),
+        )
+        .await
+        {
+            Err(_) => {
+                anyhow::bail!("Timeout getting range logs for {filter:?}")
             }
-        })
+            Ok(Err(err)) => {
+                if eth_rpc_err::too_much_blocks_or_events(&err) {
+                    anyhow::bail!("Too much blocks or events: {err}")
+                } else {
+                    anyhow::bail!(
+                        "Cannot get range logs for {filter:?} due to {err}"
+                    )
+                }
+            }
+            Ok(Ok(logs)) => Ok(logs),
+        }
     }
 
     async fn deduce_block_summary(
@@ -551,10 +567,25 @@ impl InfiniteLogIter {
                 error!("No provider, inconsistent state");
                 return Err(anyhow::anyhow!("No provider, inconsistent state"));
             };
-            let logs = provider.get_logs(&filter).await;
-            match logs {
-                Ok(logs) => return Ok(logs),
-                Err(err) => {
+            match tokio::time::timeout(
+                Duration::from_secs(TIMEOUT_GET_LOGS_WEBSOCKET),
+                provider.get_logs(&filter),
+            )
+            .await
+            {
+                Err(_) => {
+                    error!(
+                        block_hash = ?block_hash,
+                        "Timeout getting logs for block {block_hash}, retrying",
+                    );
+                    tokio::time::sleep(Duration::from_millis(
+                        RETRY_GET_LOGS_DELAY_IN_MS,
+                    ))
+                    .await;
+                    continue;
+                }
+                Ok(Ok(logs)) => return Ok(logs),
+                Ok(Err(err)) => {
                     error!(
                         block_hash = ?block_hash,
                         error = %err,
