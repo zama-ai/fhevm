@@ -1,3 +1,8 @@
+## Repository Scope
+
+This repository contains core components for building encrypted smart contracts
+using Fully Homomorphic Encryption (FHE) on the EVM.
+
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/.gitbook/assets/fhevm-header-dark.png">
