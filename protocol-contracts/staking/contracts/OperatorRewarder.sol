@@ -419,7 +419,13 @@ contract OperatorRewarder {
 
     function _unpaidFee(uint256 totalAssetsPlusPaidRewards) internal view returns (uint256) {
         uint256 totalAssetsPlusPaidRewardsDelta = totalAssetsPlusPaidRewards - _lastClaimTotalAssetsPlusPaidRewards;
-        return (totalAssetsPlusPaidRewardsDelta * feeBasisPoints()) / 10_000;
+
+        // Use ceiling instead of floor to avoid extra rewarding delegators when computing allocations.
+        // Although floor is the correct behavior for calculating the fee to pay to the beneficiary,
+        // delegator allocations would be slightly higher than expected as it is based on total
+        // accumulated rewards subtracted by this unpaid fee amount, reversing the rounding direction.
+        // This could prevent the last depositor (or the beneficiary) from claiming their rewards.
+        return totalAssetsPlusPaidRewardsDelta.mulDiv(feeBasisPoints(), 10_000, Math.Rounding.Ceil);
     }
 
     /// @dev Compute total allocation based on number of shares and total shares. Must take paid rewards into account after.
