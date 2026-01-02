@@ -45,8 +45,8 @@ pub struct Chain {
     pub dependencies: Vec<ChainHash>,
     pub dependents: Vec<ChainHash>,
     pub allowed_handle: Vec<Handle>,
-    pub size: usize,
-    pub before_size: usize,
+    pub size: u64,
+    pub before_size: u64,
     pub new_chain: bool,
 }
 pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
@@ -103,6 +103,7 @@ pub struct LogTfhe {
     pub is_allowed: bool,
     pub block_number: u64,
     pub block_timestamp: PrimitiveDateTime,
+    pub tx_depth_size: u64,
     pub dependence_chain: TransactionHash,
 }
 
@@ -294,7 +295,7 @@ impl Database {
                 schedule_order,
                 is_completed
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamp, $9::timestamp, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9::timestamp, $10)
             ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
             "#,
             tenant_id as i32,
@@ -305,7 +306,10 @@ impl Database {
             log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()),
             log.is_allowed,
-            log.block_timestamp,
+            log.block_timestamp
+                .saturating_add(time::Duration::microseconds(
+                    log.tx_depth_size as i64
+                )),
             !log.is_allowed,
         );
         query

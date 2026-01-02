@@ -293,7 +293,7 @@ impl LockMngr {
             self.worker_id,
             dep_chain_id,
             mark_as_processed,
-	    update_at,
+	        update_at,
         )
         .execute(&self.pool)
         .await?

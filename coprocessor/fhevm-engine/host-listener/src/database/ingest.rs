@@ -110,6 +110,7 @@ pub async fn ingest_block_logs(
                     // updated in the next loop and dependence_chains
                     is_allowed: false,
                     dependence_chain: Default::default(),
+                    tx_depth_size: 0,
                 };
                 tfhe_event_log.push(log);
                 continue;

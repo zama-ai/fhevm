@@ -163,6 +163,7 @@ async fn tfhe_worker_cycle(
         } else {
             dcid_mngr.release_current_lock(true, None).await?;
             dcid_mngr.do_cleanup().await?;
+            no_progress_cycles = 0;
 
             // Lock another dependence chain if available and
             // continue processing without waiting for notification
@@ -227,7 +228,7 @@ async fn tfhe_worker_cycle(
                 no_progress_cycles = 0;
             } else {
                 no_progress_cycles += 1;
-                if no_progress_cycles > args.dcid_max_no_progress_cycles {
+                if no_progress_cycles >= args.dcid_max_no_progress_cycles {
                     // If we're not making progress on this dependence
                     // chain, update the last_updated_at field and
                     // release the lock so we can try to execute
@@ -375,11 +376,11 @@ SELECT
   c.is_allowed, 
   c.dependence_chain_id,
   c.transaction_id,
-  c.created_at
+  c.schedule_order
 FROM computations c
 WHERE c.transaction_id IN (
     SELECT DISTINCT
-      c_creation_order.transaction_id
+      c_schedule_order.transaction_id
     FROM (
       SELECT transaction_id
       FROM computations 
@@ -387,9 +388,9 @@ WHERE c.transaction_id IN (
         AND is_error = FALSE
         AND is_allowed = TRUE
         AND ($1::bytea IS NULL OR dependence_chain_id = $1)
-      ORDER BY created_at
+      ORDER BY schedule_order ASC
       LIMIT $2
-    ) as c_creation_order
+    ) as c_schedule_order
   )
         ",
         dependence_chain_id,
@@ -415,8 +416,8 @@ WHERE c.transaction_id IN (
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
-				   locking = ?locking_reason }, "Processing work items");
-    let mut earliest_created_at = the_work.first().unwrap().created_at;
+				    locking = ?locking_reason }, "Processing work items");
+    let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
     // Make sure we process each tenant independently to avoid
     // setting different keys from different tenants in the worker
     // threads
@@ -487,9 +488,6 @@ WHERE c.transaction_id IN (
                     inputs,
                     is_allowed: w.is_allowed,
                 });
-                if w.created_at < earliest_created_at {
-                    earliest_created_at = w.created_at;
-                }
             }
             let (mut components, _) = build_component_nodes(ops, transaction_id)?;
             tenant_transactions.append(&mut components);
@@ -497,7 +495,7 @@ WHERE c.transaction_id IN (
         transactions.push((*tenant_id, tenant_transactions));
     }
     s_prep.end();
-    Ok((transactions, earliest_created_at, true))
+    Ok((transactions, earliest_schedule_order, true))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -673,10 +671,10 @@ async fn upload_transaction_graph_results<'a>(
             }),
         );
         #[allow(clippy::type_complexity)]
-	let (tenant_ids, (handles, (ciphertexts, (ciphertext_versions, ciphertext_types)))): (
-            Vec<_>,
-            (Vec<_>, (Vec<_>, (Vec<_>, Vec<_>))),
-	) = cts_to_insert.into_iter().unzip();
+        let (tenant_ids, (handles, (ciphertexts, (ciphertext_versions, ciphertext_types)))): (
+                Vec<_>,
+                (Vec<_>, (Vec<_>, (Vec<_>, Vec<_>))),
+        ) = cts_to_insert.into_iter().unzip();
         let cts_inserted = query!(
 			"
                     INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)

@@ -234,6 +234,7 @@ pub async fn generate_trivial_encrypt(
         block_number: 1,
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: transaction_hash,
+        tx_depth_size: 0,
     };
     let mut tx = listener_event_to_db.new_transaction().await?;
     listener_event_to_db
@@ -417,6 +418,7 @@ pub async fn insert_tfhe_event(
         block_number: 1,
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: transaction_hash,
+        tx_depth_size: 0,
     };
     listener_event_to_db
         .insert_tfhe_event(&mut tx, &log)
