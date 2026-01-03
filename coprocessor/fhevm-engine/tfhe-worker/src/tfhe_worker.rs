@@ -488,6 +488,9 @@ WHERE c.transaction_id IN (
                     inputs,
                     is_allowed: w.is_allowed,
                 });
+                if w.schedule_order < earliest_schedule_order {
+                    earliest_schedule_order = w.schedule_order;
+                }
             }
             let (mut components, _) = build_component_nodes(ops, transaction_id)?;
             tenant_transactions.append(&mut components);
