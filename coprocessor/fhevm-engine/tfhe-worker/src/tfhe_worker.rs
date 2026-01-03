@@ -335,7 +335,6 @@ async fn query_for_work<'a>(
     Box<dyn std::error::Error + Send + Sync>,
 > {
     let mut s = tracer.start_with_context("query_dependence_chain", loop_ctx);
-
     // Lock dependence chain
     let (dependence_chain_id, locking_reason) =
         match deps_chain_mngr.extend_or_release_current_lock(true).await? {
@@ -343,7 +342,6 @@ async fn query_for_work<'a>(
             Some((id, reason)) => (Some(id), reason),
             None => deps_chain_mngr.acquire_next_lock().await?,
         };
-
     if deps_chain_mngr.enabled() && dependence_chain_id.is_none() {
         // No dependence chain to lock, so no work to do
         health_check.update_db_access();
@@ -351,18 +349,14 @@ async fn query_for_work<'a>(
         info!(target: "tfhe_worker", "No dcid found to process");
         return Ok((vec![], PrimitiveDateTime::MAX, false));
     }
-
     s.set_attribute(KeyValue::new(
         "dependence_chain_id",
         format!("{:?}", dependence_chain_id.as_ref().map(hex::encode)),
     ));
     s.end();
 
-    // This query locks our work items so other worker doesn't select them.
     let mut s = tracer.start_with_context("query_work_items", loop_ctx);
-
     let transaction_batch_size = args.work_items_batch_size;
-
     let started_at = SystemTime::now();
     let the_work = query!(
         "

@@ -271,9 +271,6 @@ impl LockMngr {
         // Since UPDATE always aquire a row-level lock internally,
         // this acts as atomic_exchange
         let rows = if let Some(update_at) = update_at {
-            // Add an epsilon to differentiate this chain being
-            // released from others in the same block.
-            let update_at = update_at.saturating_add(time::Duration::microseconds(1));
             sqlx::query!(
             r#"
             UPDATE dependence_chain
@@ -293,7 +290,7 @@ impl LockMngr {
             self.worker_id,
             dep_chain_id,
             mark_as_processed,
-	        update_at,
+	    update_at,
         )
         .execute(&self.pool)
         .await?
