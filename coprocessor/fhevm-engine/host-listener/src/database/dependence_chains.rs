@@ -117,6 +117,7 @@ fn tx_of_handle(
 
 async fn fill_tx_dependence_maps(
     txs: &mut HashMap<TransactionHash, Transaction>,
+    used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
     past_chains: &ChainCache,
 ) {
     // handle to tx maps
@@ -132,11 +133,31 @@ async fn fill_tx_dependence_maps(
             if let Some(dep_tx) = handle_creator.get(input_handle) {
                 // intra block
                 tx.input_tx.insert(*dep_tx);
+                used_txs_chains
+                    .entry(*dep_tx)
+                    .and_modify(|v| {
+                        v.insert(tx.tx_hash);
+                    })
+                    .or_insert({
+                        let mut h = HashSet::new();
+                        h.insert(tx.tx_hash);
+                        h
+                    });
             } else if let Some(dep_tx_hash) =
                 past_chains.write().await.get(input_handle)
             {
                 // extra block, this is directly a chain hash
                 tx.input_tx.insert(*dep_tx_hash);
+                used_txs_chains
+                    .entry(*dep_tx_hash)
+                    .and_modify(|v| {
+                        v.insert(tx.tx_hash);
+                    })
+                    .or_insert({
+                        let mut h = HashSet::new();
+                        h.insert(tx.tx_hash);
+                        h
+                    });
             }
         }
         // this tx is used by consumer_tx
@@ -363,6 +384,7 @@ async fn grouping_to_chains_connex(
 
 fn grouping_to_chains_no_fork(
     ordered_txs: &mut [Transaction],
+    used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
     across_blocks: bool,
 ) -> OrderedChains {
     let mut used_tx: HashMap<TransactionHash, &Transaction> =
@@ -370,8 +392,13 @@ fn grouping_to_chains_no_fork(
     let mut chains: HashMap<ChainHash, Chain> =
         HashMap::with_capacity(ordered_txs.len());
     let mut ordered_chains_hash = Vec::with_capacity(ordered_txs.len());
+    let block_tx_hashes = ordered_txs
+        .iter()
+        .map(|tx| tx.tx_hash)
+        .collect::<HashSet<_>>();
     for tx in ordered_txs.iter_mut() {
-        let mut dependencies = Vec::with_capacity(tx.input_tx.len());
+        let mut dependencies_block = Vec::with_capacity(tx.input_tx.len());
+        let mut dependencies_outer = Vec::with_capacity(tx.input_tx.len());
         let mut dependencies_seen = HashSet::with_capacity(tx.input_tx.len());
         for dep_hash in &tx.input_tx {
             // Only record dependences within the block as we don't
@@ -380,20 +407,60 @@ fn grouping_to_chains_no_fork(
                 used_tx.get(dep_hash).map(|tx| tx.linear_chain)
             {
                 if !dependencies_seen.contains(&linear_chain) {
-                    dependencies.push(linear_chain);
+                    if block_tx_hashes.contains(&linear_chain) {
+                        dependencies_block.push(linear_chain);
+                    } else if across_blocks {
+                        dependencies_outer.push(linear_chain);
+                    }
                     dependencies_seen.insert(linear_chain);
                 }
             } else if across_blocks {
                 // if not in used_tx, it is a past chain
                 if !dependencies_seen.contains(dep_hash) {
-                    dependencies.push(*dep_hash);
+                    dependencies_outer.push(*dep_hash);
                     dependencies_seen.insert(*dep_hash);
                 }
             }
         }
-        let is_linear = dependencies.len() == 1 && tx.output_tx.len() <= 1;
+        // A chain is linear if there's no joins on the current
+        // transaction and if the current transaction is not a
+        // descendant of a fork
+        // 1. Test for joins
+        let mut is_linear =
+            (dependencies_block.len() + dependencies_outer.len()) == 1;
+        // 2. Test for forks
         if is_linear {
-            tx.linear_chain = dependencies[0];
+            let unique_parent = if dependencies_block.is_empty() {
+                dependencies_outer[0]
+            } else {
+                dependencies_block[0]
+            };
+            if let Some(siblings) = used_txs_chains.get_mut(&unique_parent) {
+                for s in siblings.clone().iter() {
+                    // If one sibling is already within a chain, this
+                    // chain could be the same as another in the
+                    // siblings set, so both dependences are then
+                    // covered by the same chain.
+                    if let Some(linear_chain) =
+                        used_tx.get(s).map(|tx| tx.linear_chain)
+                    {
+                        siblings.remove(s);
+                        siblings.insert(linear_chain);
+                    }
+                }
+                // If there is only one descendant for the unique
+                // ancestor or all descendents are in a single
+                // dependence chain as a totally ordered set, then the
+                // linear chain continues
+                is_linear = siblings.len() == 1;
+            }
+        }
+        if is_linear {
+            tx.linear_chain = if dependencies_block.is_empty() {
+                dependencies_outer[0]
+            } else {
+                dependencies_block[0]
+            };
             match chains.entry(tx.linear_chain) {
                 // extend the existing chain from same block
                 Entry::Occupied(mut e) => {
@@ -418,7 +485,7 @@ fn grouping_to_chains_no_fork(
             }
         } else {
             let mut before_size = 0;
-            for dep in &dependencies {
+            for dep in &dependencies_block {
                 before_size = before_size.max(
                     chains
                         .get(dep)
@@ -426,12 +493,13 @@ fn grouping_to_chains_no_fork(
                         .unwrap_or(0),
                 );
             }
-            debug!("Creating new chain for tx {:?} with dependencies {:?}, before_size {}", tx, dependencies, before_size);
+            debug!("Creating new chain for tx {:?} with block dependencies {:?}, outer dependencies {:?}, before_size {}",
+		   tx, dependencies_block, dependencies_outer, before_size);
             let new_chain = Chain {
                 hash: tx.tx_hash,
                 size: tx.size,
                 before_size,
-                dependencies,
+                dependencies: dependencies_block,
                 dependents: vec![],
                 allowed_handle: tx.allowed_handle.clone(),
                 new_chain: true,
@@ -473,13 +541,21 @@ pub async fn dependence_chains(
     across_blocks: bool,
 ) -> OrderedChains {
     let (ordered_hash, mut txs) = scan_transactions(logs);
-    fill_tx_dependence_maps(&mut txs, past_chains).await;
+    let mut used_txs_chains: HashMap<
+        TransactionHash,
+        HashSet<TransactionHash>,
+    > = HashMap::with_capacity(txs.len());
+    fill_tx_dependence_maps(&mut txs, &mut used_txs_chains, past_chains).await;
     debug!("Transactions: {:?}", txs.values());
     let mut ordered_txs = topological_order(ordered_hash, txs);
     let chains = if connex {
         grouping_to_chains_connex(&mut ordered_txs).await
     } else {
-        grouping_to_chains_no_fork(&mut ordered_txs, across_blocks)
+        grouping_to_chains_no_fork(
+            &mut ordered_txs,
+            &mut used_txs_chains,
+            across_blocks,
+        )
     };
     // propagate to logs
     let txs = ordered_txs
@@ -1063,5 +1139,47 @@ mod tests {
         assert_eq!(chains.len(), 1);
         assert!(logs[0..3].iter().all(|log| log.dependence_chain == tx3));
         assert_eq!(cache.read().await.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_past_chain_fork() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let past_chain1 = past_chain(100);
+        let past_chain_hash1 = past_chain1.hash;
+        let past_handle1 = new_handle();
+        cache.write().await.put(past_handle1, past_chain_hash1);
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(2);
+        let tx2 = TransactionHash::with_last_byte(3);
+        let _h1 = op1(past_handle1, &mut logs, tx1);
+        let _h2 = op1(past_handle1, &mut logs, tx2);
+        let chains = dependence_chains(&mut logs, &cache, false, true).await;
+        assert_eq!(chains.len(), 2);
+        assert!(logs[0].dependence_chain == tx1);
+        assert!(logs[1].dependence_chain == tx2);
+        assert_eq!(cache.read().await.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_current_block_fork() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let past_handle1 = new_handle();
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(2);
+        let tx2 = TransactionHash::with_last_byte(3);
+        let tx3 = TransactionHash::with_last_byte(4);
+        let h1 = op1(past_handle1, &mut logs, tx1);
+        let _h2 = op1(h1, &mut logs, tx2);
+        let _h3 = op1(h1, &mut logs, tx3);
+        let chains = dependence_chains(&mut logs, &cache, false, true).await;
+        assert_eq!(chains.len(), 3);
+        assert!(logs[0].dependence_chain == tx1);
+        assert!(logs[1].dependence_chain == tx2);
+        assert!(logs[2].dependence_chain == tx3);
+        assert_eq!(cache.read().await.len(), 3);
     }
 }
