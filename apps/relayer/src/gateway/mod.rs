@@ -48,15 +48,15 @@ pub async fn initialize_gateway(
         tx_engine_gateway.into(),
     ));
 
-    // Create mempool
-    // TODO: Change with config settings.
-    let tx_throttler = Arc::new(MemoryThrottler::<GatewayTxTask>::new(
-        settings.gateway.tx_engine.transaction_throttler_secs,
-    ));
+    // Create throttler.
+    let (tx_throttler, tx_worker) = MemoryThrottler::<GatewayTxTask>::new(
+        settings.gateway.tx_engine.tx_throttler_capacity,
+        settings.gateway.tx_engine.tx_throttler_per_secs,
+    );
 
     // Spawn gateway task
     GatewayTxProcessor::orchestrator_spawn_task(
-        tx_throttler.clone(),
+        tx_worker,
         gateway_tx_helper.clone(),
         orchestrator.clone(),
     )

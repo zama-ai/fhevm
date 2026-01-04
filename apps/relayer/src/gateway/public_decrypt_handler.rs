@@ -35,7 +35,7 @@ use tracing::{error, info, instrument, warn};
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    tx_throttler: Arc<MemoryThrottler<GatewayTxTask>>,
+    tx_throttler: MemoryThrottler<GatewayTxTask>,
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
@@ -44,7 +44,7 @@ pub struct GatewayHandler {
 impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        tx_throttler: Arc<MemoryThrottler<GatewayTxTask>>,
+        tx_throttler: MemoryThrottler<GatewayTxTask>,
         readiness_checker: Arc<ReadinessChecker>,
         decryption_address: Address,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
@@ -232,7 +232,18 @@ impl GatewayHandler {
 
         info!(job_id = %job_id, "Enqueuing public decrypt request to tx throttler");
 
-        self.tx_throttler.push(task).await;
+        // PUSH TO QUEUE
+        // Catch error from here and pass the request to failure.
+        // This case MUST never happen on this flow.
+        // The request should never be injected in the system, and bounced after the cache check if the queue is full.
+        match self.tx_throttler.push(task).await {
+            Ok(()) => {}
+            Err(_err) => {
+                return Err(EventProcessingError::ProtocolOverwhelmed(
+                    "Relayer is full, retry later.".to_string(),
+                ));
+            }
+        };
 
         Ok(())
     }

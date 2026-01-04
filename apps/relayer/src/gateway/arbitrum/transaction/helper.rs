@@ -8,7 +8,7 @@ use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::providers::{Provider, RootProvider};
 use alloy::sol_types::SolEvent;
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::fmt::{self, Debug};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::info;

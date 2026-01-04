@@ -56,6 +56,12 @@ pub enum EventProcessingError {
 
     #[error("{}", crate::core::errors::READINESS_CHECK_TIMEOUT_MSG)]
     ReadinessCheckFailed,
+
+    #[error("Relayer internal queue is full")]
+    QueueFull,
+
+    #[error("Protocol Overwhelmed: {0}")]
+    ProtocolOverwhelmed(String),
 }
 
 impl From<GatewayTxnError> for EventProcessingError {

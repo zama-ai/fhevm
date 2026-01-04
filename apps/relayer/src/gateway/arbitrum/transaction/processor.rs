@@ -5,55 +5,45 @@ use crate::{
     },
     gateway::arbitrum::transaction::{
         helper::{TransactionHelper, TransactionType},
-        throttler::{GatewayTxTask, MemoryThrottler},
+        throttler::{GatewayTxTask, ThrottlerWorker},
     },
     orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
 };
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::{error, info};
 
 /// The Processor is responsible for bridging the throttler (Queue) and the TransactionHelper (Executor).
 pub struct GatewayTxProcessor;
 
 impl GatewayTxProcessor {
-    /// Spawns the background worker with a Supervisor Loop.
+    /// Spawns the background worker.
     ///
-    /// This function registers the task with the Orchestrator.
-    /// 1. It runs `run_consumer` which has internal self-healing for channel/logic errors.
-    /// 2. If `run_consumer` ever exits (e.g. panic unwinding or logic bug), the outer loop restarts it.
-    /// 3. It only stops when the Orchestrator initiates a shutdown.
+    /// It registers with the Orchestrator so it starts/stops cleanly with the application.
+    /// It delegates the infinite loop logic to `throttler.run_consumer`.
     pub async fn orchestrator_spawn_task(
-        throttler: Arc<MemoryThrottler<GatewayTxTask>>,
+        throttler_worker: ThrottlerWorker<GatewayTxTask>,
         tx_helper: Arc<TransactionHelper>,
         orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     ) -> anyhow::Result<()> {
         let task_name = "gateway_tx_processor";
 
-        // Clone Arcs for the long-running task
-        let throttler_runner = throttler.clone();
-        let helper_runner = tx_helper.clone();
+        // Prepare Arcs for the background task
         let orchestrator_runner = orchestrator.clone();
 
-        // Define the Supervisor Task
+        println!("Getting into the gateway processor !!! LETS GOOOO..");
+
+        // The Task Future
         let task_future = async move {
-            info!("GatewayTxProcessor supervisor started.");
+            info!("GatewayTxProcessor started.");
 
-            // SUPERVISOR LOOP
-            // This loop ensures that if run_consumer EVER returns, we restart it.
-            loop {
-                info!("Starting GatewayTxProcessor consumer loop...");
-
-                // Clone inner refs for the consumer closure
-                let mp = throttler_runner.clone();
-                let helper = helper_runner.clone();
-                let dispatcher = orchestrator_runner.clone();
-
-                // Run the consumer.
-                // This function blocks indefinitely unless a critical error occurs.
-                mp.run_consumer(move |task: GatewayTxTask| {
-                    let helper = helper.clone();
-                    let dispatcher = dispatcher.clone();
+            // We run the consumer.
+            // This function contains the infinite loop reading from the channel.
+            // It will only exit if the application shuts down or the channel is explicitly closed.
+            throttler_worker
+                .run_consumer(move |task: GatewayTxTask| {
+                    // Clone dependencies for the individual task execution
+                    let helper = tx_helper.clone();
+                    let dispatcher = orchestrator_runner.clone();
 
                     async move {
                         Self::process_single_task(helper, task, dispatcher).await;
@@ -61,44 +51,38 @@ impl GatewayTxProcessor {
                 })
                 .await;
 
-                // If we reach this line, the consumer exited. This is unexpected.
-                error!("CRITICAL: GatewayTxProcessor consumer loop exited unexpectedly! Restarting in 5 seconds...");
-
-                // Prevent CPU spin loop in case of instant crash loop
-                tokio::time::sleep(Duration::from_secs(5)).await;
-            }
+            info!("GatewayTxProcessor stopped.");
         };
 
         // Define Readiness (Ready immediately)
         let ready_future = async { Ok(()) };
 
         // Register with Orchestrator
-        // This ensures the task is tracked and killed properly on shutdown.
         orchestrator
             .spawn_task_and_wait_ready(task_name, task_future, ready_future)
             .await?;
 
-        info!("Gateway Transaction Processor spawned and registered.");
         Ok(())
     }
 
     /// Internal logic to process a single task.
+    ///
+    /// If this function fails (returns Err), it handles the error by dispatching a failure event.
+    /// It does NOT crash the main worker loop.
     async fn process_single_task(
         helper: Arc<TransactionHelper>,
         task: GatewayTxTask,
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     ) {
-        // declare dispatcher
-        let arc_dispatcher = Arc::clone(&dispatcher);
-
         // Dereference hook
         let hook_ref = &*task.hook.0;
 
-        // Adapt Calldata
+        // Adapt Calldata for the helper closure
         let calldata_bytes = task.calldata.clone();
         let calldata_fn = move || Ok(calldata_bytes.clone());
 
-        // Execute
+        // Execute Transaction
+        // If this fails, it returns Err. It does NOT panic.
         let result = helper
             .send_raw_transaction_sync(
                 task.transaction_type,
@@ -109,7 +93,7 @@ impl GatewayTxProcessor {
             )
             .await;
 
-        // Error dispatcher.
+        // Handle Errors (Dispatch Event)
         if let Err(e) = result {
             error!(
                 job_id = %task.job_id,
@@ -117,6 +101,7 @@ impl GatewayTxProcessor {
                 "GatewayTxProcessor: Failed to submit transaction"
             );
 
+            // Construct the failure event data based on transaction type
             let next_event_data: RelayerEventData = match task.transaction_type {
                 TransactionType::InputRequest => {
                     RelayerEventData::InputProof(InputProofEventData::Failed { error: e })
@@ -129,6 +114,8 @@ impl GatewayTxProcessor {
                 }
             };
 
+            // Create the new event
+            // NOTE: change api version here with gateway task.
             let next_event = RelayerEvent::new(
                 task.job_id,
                 ApiVersion {
@@ -138,11 +125,12 @@ impl GatewayTxProcessor {
                 next_event_data,
             );
 
-            if let Err(e) = arc_dispatcher.dispatch_event(next_event).await {
-                error!(?e, "CRITICAL: Failed to dispatch processor response event");
+            // Dispatch
+            if let Err(dispatch_err) = dispatcher.dispatch_event(next_event).await {
+                error!(error = ?dispatch_err, "CRITICAL: Failed to dispatch processor failure event");
             } else {
                 info!(
-                    "Processor event response successfully sent for {}",
+                    "Processor event failure response successfully sent for {}",
                     task.job_id
                 );
             }

@@ -22,6 +22,7 @@ pub struct GatewayConfig {
 impl GatewayConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         self.blockchain_rpc.validate()?;
+        self.tx_engine.validate()?;
         Ok(())
     }
 }
@@ -84,7 +85,26 @@ pub struct TxEngineConfig {
     pub private_key: String,
     pub max_concurrency: u16,
     pub retry: RetrySettings,
-    pub transaction_throttler_secs: u32,
+    pub tx_throttler_per_secs: u32,
+    pub tx_throttler_capacity: usize,
+}
+
+impl TxEngineConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        if self.tx_throttler_capacity == 0 {
+            return Err(AppConfigError::Config(format!(
+                "Tx throttler capacity should be superior to 0: {}",
+                self.tx_throttler_capacity
+            )));
+        }
+        if self.tx_throttler_per_secs == 0 {
+            return Err(AppConfigError::Config(format!(
+                "Tx throttler capacity should be superior to 0: {}",
+                self.tx_throttler_capacity
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
