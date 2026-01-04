@@ -1,0 +1,9 @@
+# Glossary
+
+**FHE (Fully Homomorphic Encryption)** — Encryption that allows computation on encrypted data.
+
+**FHEVM** — A virtual machine enabling smart contracts over encrypted values.
+
+**Ciphertext** — Encrypted data produced by an FHE scheme.
+
+This glossary is intended for readers new to FHE concepts.
