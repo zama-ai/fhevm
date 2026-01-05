@@ -10,7 +10,7 @@ sudo apt install -y protobuf-compiler build-essential libssl-dev pkg-config open
 cargo install sqlx-cli
 
 # Install the Rust toolchain.
-RUST_VERSION=$(cat toolchain.txt)
+RUST_VERSION=$(grep 'channel' coprocessor/fhevm-engine/rust-toolchain.toml | awk -F' = ' '{print $2}' | tr -d '"')
 rustup toolchain install $RUST_VERSION
 rustup component add --toolchain $RUST_VERSION rustfmt
 rustup component add --toolchain $RUST_VERSION clippy
