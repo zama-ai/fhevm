@@ -119,7 +119,9 @@ describe('OperatorRewarder', function () {
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('5'));
       await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.delegator1, ethers.parseEther('5'));
+        .withArgs(this.mock, this.delegator1, ethers.parseEther('5'))
+        .to.emit(this.mock, 'RewardsClaimed')
+        .withArgs(this.delegator1, ethers.parseEther('5'));
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
 
       // Historical reward: 10 (seconds) * 0.5 (reward rate) = 5
@@ -139,12 +141,16 @@ describe('OperatorRewarder', function () {
 
       await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.delegator1, ethers.parseEther('2.75'));
+        .withArgs(this.mock, this.delegator1, ethers.parseEther('2.75'))
+        .to.emit(this.mock, 'RewardsClaimed')
+        .withArgs(this.delegator1, ethers.parseEther('2.75'));
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
 
       await expect(this.mock.connect(this.delegator2).claimRewards(this.delegator2))
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.delegator2, ethers.parseEther('2.25'));
+        .withArgs(this.mock, this.delegator2, ethers.parseEther('2.25'))
+        .to.emit(this.mock, 'RewardsClaimed')
+        .withArgs(this.delegator2, ethers.parseEther('2.25'));
       await expect(this.mock.earned(this.delegator2)).to.eventually.eq(0);
 
       // Historical reward: (1+9) (seconds) * 0.5 (reward rate) = 5
@@ -178,12 +184,16 @@ describe('OperatorRewarder', function () {
 
       await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.delegator1, ethers.parseEther('4.5'));
+        .withArgs(this.mock, this.delegator1, ethers.parseEther('4.5'))
+        .to.emit(this.mock, 'RewardsClaimed')
+        .withArgs(this.delegator1, ethers.parseEther('4.5'));
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
 
       await expect(this.mock.connect(this.beneficiary).claimFee())
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.5'));
+        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.5'))
+        .to.emit(this.mock, 'FeeClaimed')
+        .withArgs(this.beneficiary, ethers.parseEther('0.5'));
       await expect(this.mock.unpaidFee()).to.eventually.eq(0);
 
       // Historical reward: 10 (seconds) * 0.5 (reward rate) - 0.5 (10% fee) = 4.5
@@ -195,10 +205,9 @@ describe('OperatorRewarder', function () {
       await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
       await time.increase(9);
 
-      await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1)).to.not.emit(
-        this.token,
-        'Transfer',
-      );
+      await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
+        .to.not.emit(this.token, 'Transfer')
+        .to.not.emit(this.mock, 'RewardsClaimed');
 
       // Historical reward: 0 (no reward rate)
       await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('0'));
@@ -323,7 +332,9 @@ describe('OperatorRewarder', function () {
       // 1 more second goes by
       await expect(this.mock.connect(this.beneficiary).claimFee())
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.beneficiary, ethers.parseEther('1.05'));
+        .withArgs(this.mock, this.beneficiary, ethers.parseEther('1.05'))
+        .to.emit(this.mock, 'FeeClaimed')
+        .withArgs(this.beneficiary, ethers.parseEther('1.05'));
       await expect(this.mock.unpaidFee()).to.eventually.eq(0);
 
       // Historical reward: (20+1) (seconds) * 0.5 (reward rate) - 1.05 (10% fee) = 9.45
@@ -355,12 +366,16 @@ describe('OperatorRewarder', function () {
       await timeIncreaseNoMine(10);
       await expect(this.mock.connect(this.beneficiary).claimFee())
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.5'));
+        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.5'))
+        .to.emit(this.mock, 'FeeClaimed')
+        .withArgs(this.beneficiary, ethers.parseEther('0.5'));
 
       await timeIncreaseNoMine(5);
       await expect(this.mock.connect(this.beneficiary).claimFee())
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.25'));
+        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.25'))
+        .to.emit(this.mock, 'FeeClaimed')
+        .withArgs(this.beneficiary, ethers.parseEther('0.25'));
     });
 
     it('should not claim fee if not beneficiary', async function () {

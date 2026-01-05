@@ -66,6 +66,12 @@ contract OperatorRewarder {
      */
     event ClaimerAuthorized(address indexed receiver, address indexed claimer);
 
+    /// @notice Emitted when rewards are claimed for an account.
+    event RewardsClaimed(address indexed receiver, uint256 amount);
+
+    /// @notice Emitted when fees are claimed by the beneficiary.
+    event FeeClaimed(address indexed beneficiary, uint256 amount);
+
     /// @notice Error for invalid claimer address.
     error InvalidClaimer(address claimer);
 
@@ -168,6 +174,7 @@ contract OperatorRewarder {
             _rewardsPaid[receiver] += SafeCast.toInt256(earned_);
             _totalRewardsPaid += earned_;
             _doTransferOut(receiver, earned_);
+            emit RewardsClaimed(receiver, earned_);
         }
     }
 
@@ -409,6 +416,7 @@ contract OperatorRewarder {
 
         if (unpaidFee_ > 0) {
             _doTransferOut(beneficiary(), unpaidFee_);
+            emit FeeClaimed(beneficiary(), unpaidFee_);
         }
     }
 
