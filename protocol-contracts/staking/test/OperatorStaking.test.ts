@@ -678,11 +678,6 @@ describe('OperatorStaking', function () {
       });
 
       it('new rewarder should not have stale state after initialization', async function () {
-        // This test ensures the fix for H-01: New OperatorRewarder Is Likely to Initialize With a Stale Value
-        // Before the fix, the new rewarder's constructor would snapshot _lastClaimTotalAssetsPlusPaidRewards
-        // with pending rewards, then setRewarder would claim those rewards through the old rewarder,
-        // causing underflow in _unpaidFee() calculations.
-
         // The new rewarder starts with 0 historical rewards (no donations were made to it before
         // initialization). If donations were made, they would be correctly
         // included in historicalReward() and distributed to delegators (minus fees).
