@@ -562,70 +562,67 @@ describe('OperatorRewarder', function () {
     });
   });
 
-  describe('initialize', function () {
-    it('should be initialized', async function () {
-      await expect(this.mock.isInitialized()).to.eventually.eq(true);
+  describe('start', function () {
+    it('should be started', async function () {
+      await expect(this.mock.isStarted()).to.eventually.eq(true);
     });
 
-    it("can't initialize twice", async function () {
+    it("can't start twice", async function () {
       const signer = await impersonate(hre, this.operatorStaking.target);
-      await expect(this.mock.connect(signer).initialize()).to.be.revertedWithCustomError(
-        this.mock,
-        'AlreadyInitialized',
-      );
+      await expect(this.mock.connect(signer).start()).to.be.revertedWithCustomError(this.mock, 'AlreadyStarted');
     });
 
     describe('with new rewarder', async function () {
       beforeEach(async function () {
-        const uninitializedRewarder = await ethers.deployContract('OperatorRewarder', [
+        const notStartedRewarder = await ethers.deployContract('OperatorRewarder', [
           this.beneficiary,
           this.protocolStaking,
           this.mock,
           10000, // 100% maximum fee
           0, // 0% fee
         ]);
-        Object.assign(this, { uninitializedRewarder });
+        Object.assign(this, { notStartedRewarder });
       });
 
-      it('should revert if initialized not called by OperatorStaking', async function () {
-        await expect(this.uninitializedRewarder.connect(this.admin).initialize())
-          .to.be.revertedWithCustomError(this.uninitializedRewarder, 'CallerNotOperatorStaking')
+      it('should revert if started not called by OperatorStaking', async function () {
+        await expect(this.notStartedRewarder.connect(this.admin).start())
+          .to.be.revertedWithCustomError(this.notStartedRewarder, 'CallerNotOperatorStaking')
           .withArgs(this.admin);
       });
 
-      it('should revert if not initialized for claimRewards', async function () {
+      it('should revert if not started for claimRewards', async function () {
         await expect(
-          this.uninitializedRewarder.connect(this.delegator1).claimRewards(this.delegator1),
-        ).to.be.revertedWithCustomError(this.uninitializedRewarder, 'NotInitialized');
+          this.notStartedRewarder.connect(this.delegator1).claimRewards(this.delegator1),
+        ).to.be.revertedWithCustomError(this.notStartedRewarder, 'NotStarted');
       });
 
-      it('should revert if not initialized for claimFee', async function () {
-        await expect(this.uninitializedRewarder.connect(this.beneficiary).claimFee()).to.be.revertedWithCustomError(
-          this.uninitializedRewarder,
-          'NotInitialized',
+      it('should revert if not started for claimFee', async function () {
+        await expect(this.notStartedRewarder.connect(this.beneficiary).claimFee()).to.be.revertedWithCustomError(
+          this.notStartedRewarder,
+          'NotStarted',
         );
       });
 
-      it('should revert if not initialized for setFee', async function () {
-        await expect(this.uninitializedRewarder.connect(this.beneficiary).setFee(1000)).to.be.revertedWithCustomError(
-          this.uninitializedRewarder,
-          'NotInitialized',
+      it('should revert if not started for setFee', async function () {
+        await expect(this.notStartedRewarder.connect(this.beneficiary).setFee(1000)).to.be.revertedWithCustomError(
+          this.notStartedRewarder,
+          'NotStarted',
         );
       });
 
-      it('should revert if not initialized for setMaxFee', async function () {
-        await expect(this.uninitializedRewarder.connect(this.admin).setMaxFee(1000)).to.be.revertedWithCustomError(
-          this.uninitializedRewarder,
-          'NotInitialized',
+      it('should revert if not started for setMaxFee', async function () {
+        await expect(this.notStartedRewarder.connect(this.admin).setMaxFee(1000)).to.be.revertedWithCustomError(
+          this.notStartedRewarder,
+          'NotStarted',
         );
       });
 
-      it('should revert if not initialized for transferHook', async function () {
+      it('should revert if not started for transferHook', async function () {
         await expect(
-          this.uninitializedRewarder
+          this.notStartedRewarder
             .connect(this.anyone)
             .transferHook(this.delegator1, this.delegator1, ethers.parseEther('1')),
-        ).to.be.revertedWithCustomError(this.mock, 'NotInitialized');
+        ).to.be.revertedWithCustomError(this.mock, 'NotStarted');
       });
     });
   });

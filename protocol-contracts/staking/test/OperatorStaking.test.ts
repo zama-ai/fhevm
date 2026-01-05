@@ -604,9 +604,9 @@ describe('OperatorStaking', function () {
   });
 
   describe('setRewarder', async function () {
-    it('current rewarder should be initialized', async function () {
+    it('current rewarder should be started', async function () {
       const rewarder = await ethers.getContractAt('OperatorRewarder', await this.mock.rewarder());
-      await expect(rewarder.isInitialized()).to.eventually.eq(true);
+      await expect(rewarder.isStarted()).to.eventually.eq(true);
     });
 
     it('only owner can set rewarder', async function () {
@@ -666,8 +666,8 @@ describe('OperatorStaking', function () {
         await expect(this.oldRewarder.isShutdown()).to.eventually.eq(true);
       });
 
-      it('new rewarder should be initialized after setRewarder', async function () {
-        await expect(this.newRewarder.isInitialized()).to.eventually.eq(true);
+      it('new rewarder should be started after setRewarder', async function () {
+        await expect(this.newRewarder.isStarted()).to.eventually.eq(true);
       });
 
       it('new rewarder should start accruing rewards properly', async function () {
@@ -682,10 +682,10 @@ describe('OperatorStaking', function () {
           .withArgs(this.newRewarder, this.delegator1, ethers.parseEther('1.375'));
       });
 
-      it('new rewarder should not have stale state after initialization', async function () {
-        // Since the new rewarder is initialized right after earned rewards have been claimed from
+      it('new rewarder should not have stale state after starting', async function () {
+        // Since the new rewarder is started right after earned rewards have been claimed from
         // the old rewarder, historical rewards are initially null. Note that this is true in this
-        // test because no donations were made to it before initialization. If some were made, they
+        // test because no donations were made to it before starting. If some were made, they
         // would be correctly included in historicalReward() and distributed to delegators (minus
         // fees) in any case.
         await expect(this.newRewarder.historicalReward()).to.eventually.eq(0);

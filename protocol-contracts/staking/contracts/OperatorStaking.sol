@@ -141,7 +141,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         );
         $._rewarder = address(rewarder_);
         protocolStaking_.setRewardsRecipient(address(rewarder_));
-        rewarder_.initialize();
+        rewarder_.start();
 
         emit RewarderSet(address(0), address(rewarder_));
     }
@@ -292,10 +292,10 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         _getOperatorStakingStorage()._rewarder = newRewarder;
         protocolStaking().setRewardsRecipient(newRewarder);
 
-        // Initialize the new rewarder after shutting down the old one to ensure proper reward snapshot
+        // Start the new rewarder after shutting down the old one to ensure proper reward snapshot
         // This allows a rewarder to be deployed long before registering it for an OperatorStaking
         // contract.
-        OperatorRewarder(newRewarder).initialize();
+        OperatorRewarder(newRewarder).start();
 
         emit RewarderSet(oldRewarder, newRewarder);
     }
