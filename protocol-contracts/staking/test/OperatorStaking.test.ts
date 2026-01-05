@@ -231,13 +231,13 @@ describe('OperatorStaking', function () {
           BigInt(currentTimestamp) + 1n + (await this.protocolStaking.unstakeCooldownPeriod()),
         );
 
-      await expect(this.mock.pendingRedeemRequest(0, this.delegator1)).to.eventually.eq(ethers.parseEther('1'));
-      await expect(this.mock.claimableRedeemRequest(0, this.delegator1)).to.eventually.eq(0);
+      await expect(this.mock.pendingRedeemRequest(this.delegator1)).to.eventually.eq(ethers.parseEther('1'));
+      await expect(this.mock.claimableRedeemRequest(this.delegator1)).to.eventually.eq(0);
 
       await time.increase(60);
 
-      await expect(this.mock.pendingRedeemRequest(0, this.delegator1)).to.eventually.eq(0);
-      await expect(this.mock.claimableRedeemRequest(0, this.delegator1)).to.eventually.eq(ethers.parseEther('1'));
+      await expect(this.mock.pendingRedeemRequest(this.delegator1)).to.eventually.eq(0);
+      await expect(this.mock.claimableRedeemRequest(this.delegator1)).to.eventually.eq(ethers.parseEther('1'));
 
       await expect(this.mock.connect(this.delegator1).redeem(ethers.parseEther('1'), this.delegator1, this.delegator1))
         .to.emit(this.token, 'Transfer')

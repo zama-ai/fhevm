@@ -353,7 +353,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
      * @param controller The controller address.
      * @return Amount of shares pending redeem.
      */
-    function pendingRedeemRequest(uint256, address controller) public view virtual returns (uint256) {
+    function pendingRedeemRequest(address controller) public view virtual returns (uint256) {
         OperatorStakingStorage storage $ = _getOperatorStakingStorage();
         return $._redeemRequests[controller].latest() - $._redeemRequests[controller].upperLookup(Time.timestamp());
     }
@@ -363,7 +363,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
      * @param controller The controller address.
      * @return Amount of claimable shares.
      */
-    function claimableRedeemRequest(uint256, address controller) public view virtual returns (uint256) {
+    function claimableRedeemRequest(address controller) public view virtual returns (uint256) {
         OperatorStakingStorage storage $ = _getOperatorStakingStorage();
         return $._redeemRequests[controller].upperLookup(Time.timestamp()) - $._sharesReleased[controller];
     }
@@ -390,7 +390,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
      * @return The maximum redeemable shares.
      */
     function maxRedeem(address ownerRedeem) public view virtual returns (uint256) {
-        return claimableRedeemRequest(0, ownerRedeem);
+        return claimableRedeemRequest(ownerRedeem);
     }
 
     /**
