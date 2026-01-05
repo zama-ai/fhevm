@@ -20,7 +20,8 @@ struct Transaction {
     input_tx: HashSet<TransactionHash>,
     output_tx: HashSet<TransactionHash>,
     linear_chain: TransactionHash,
-    size: usize,
+    size: u64,
+    depth_size: u64,
 }
 
 impl Transaction {
@@ -34,12 +35,15 @@ impl Transaction {
             output_tx: HashSet::with_capacity(3),
             linear_chain: tx_hash, //  before coallescing linear tx chains
             size: 0,
+            depth_size: 0,
         }
     }
 }
 
 const AVG_LOGS_PER_TX: usize = 8;
-fn scan_transactions(logs: &[LogTfhe]) -> Vec<Transaction> {
+fn scan_transactions(
+    logs: &[LogTfhe],
+) -> (Vec<TransactionHash>, HashMap<TransactionHash, Transaction>) {
     // TODO: OPT no need for hashmap if contiguous tx
     let mut txs = HashMap::new();
     let mut ordered_txs_hash = Vec::with_capacity(logs.len() / AVG_LOGS_PER_TX);
@@ -69,14 +73,11 @@ fn scan_transactions(logs: &[LogTfhe]) -> Vec<Transaction> {
             }
         }
     }
-    ordered_txs_hash
-        .iter()
-        .filter_map(|tx_hash| txs.remove(tx_hash))
-        .collect()
+    (ordered_txs_hash, txs)
 }
 
 fn tx_of_handle(
-    ordered_txs: &[Transaction],
+    ordered_txs: &HashMap<TransactionHash, Transaction>,
 ) -> (
     HashMap<Handle, TransactionHash>,
     HashMap<Handle, HashSet<TransactionHash>>,
@@ -84,12 +85,12 @@ fn tx_of_handle(
     // handle to tx maps
     let mut handle_creator = HashMap::new(); // no intermediate value
     let mut handle_consumer = HashMap::new();
-    for tx in ordered_txs {
+    for tx in ordered_txs.values() {
         for handle in &tx.allowed_handle {
             handle_creator.insert(*handle, tx.tx_hash);
         }
     }
-    for tx in ordered_txs {
+    for tx in ordered_txs.values() {
         for handle in &tx.input_handle {
             if tx.output_handle.contains(handle) {
                 // self dependency, ignore
@@ -115,13 +116,14 @@ fn tx_of_handle(
 }
 
 async fn fill_tx_dependence_maps(
-    txs: &mut [Transaction],
+    txs: &mut HashMap<TransactionHash, Transaction>,
+    used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
     past_chains: &ChainCache,
 ) {
     // handle to tx maps
     let (handle_creator, handle_consumer) = tx_of_handle(txs);
     // txs relations
-    for tx in txs {
+    for tx in txs.values_mut() {
         // this tx depends on dep_tx
         for input_handle in &tx.input_handle {
             if tx.output_handle.contains(input_handle) {
@@ -131,11 +133,31 @@ async fn fill_tx_dependence_maps(
             if let Some(dep_tx) = handle_creator.get(input_handle) {
                 // intra block
                 tx.input_tx.insert(*dep_tx);
+                used_txs_chains
+                    .entry(*dep_tx)
+                    .and_modify(|v| {
+                        v.insert(tx.tx_hash);
+                    })
+                    .or_insert({
+                        let mut h = HashSet::new();
+                        h.insert(tx.tx_hash);
+                        h
+                    });
             } else if let Some(dep_tx_hash) =
                 past_chains.write().await.get(input_handle)
             {
                 // extra block, this is directly a chain hash
                 tx.input_tx.insert(*dep_tx_hash);
+                used_txs_chains
+                    .entry(*dep_tx_hash)
+                    .and_modify(|v| {
+                        v.insert(tx.tx_hash);
+                    })
+                    .or_insert({
+                        let mut h = HashSet::new();
+                        h.insert(tx.tx_hash);
+                        h
+                    });
             }
         }
         // this tx is used by consumer_tx
@@ -154,42 +176,55 @@ async fn fill_tx_dependence_maps(
     }
 }
 
-fn topological_order(ordered_txs: &mut Vec<Transaction>) {
+fn topological_order(
+    ordered_hash: Vec<TransactionHash>,
+    mut txs: HashMap<TransactionHash, Transaction>,
+) -> Vec<Transaction> {
     let mut seen_tx: HashSet<TransactionHash> =
-        HashSet::with_capacity(ordered_txs.len());
-    let txs_set: HashSet<TransactionHash> =
-        ordered_txs.clone().iter().map(|tx| tx.tx_hash).collect();
+        HashSet::with_capacity(txs.len());
     let mut is_already_sorted = true;
-    for tx in ordered_txs.iter() {
+    for &tx_hash in &ordered_hash {
+        let Some(tx) = txs.get(&tx_hash) else {
+            error!("Transaction {:?} missing in txs map", tx_hash);
+            continue;
+        };
+        let mut depth_size = 0;
         for input_tx in &tx.input_tx {
-            if !txs_set.contains(input_tx) {
-                // previous block tx, already seen
-                continue;
+            match txs.get(input_tx) {
+                None => {
+                    // previous block tx, already seen
+                    continue;
+                }
+                Some(dep_tx) => {
+                    depth_size =
+                        depth_size.max(dep_tx.depth_size + dep_tx.size);
+                }
             }
             if !seen_tx.contains(input_tx) {
                 is_already_sorted = false;
-                error!("Out of order transaction detected: tx {:?} depends on tx {:?} which is later in the block", tx.tx_hash, input_tx);
+                error!("Out of order transaction detected: tx {:?} depends on tx {:?} which is later in the block", tx_hash, input_tx);
                 break;
             }
         }
-        seen_tx.insert(tx.tx_hash);
+        if let Some(tx) = txs.get_mut(&tx_hash) {
+            tx.depth_size = depth_size;
+        }
+        seen_tx.insert(tx_hash);
     }
     if is_already_sorted {
-        return;
+        return ordered_hash
+            .iter()
+            .filter_map(|tx_hash| txs.remove(tx_hash))
+            .collect();
     }
-    let mut txs = ordered_txs
-        .clone()
-        .iter()
-        .map(|tx| (tx.tx_hash, tx.clone()))
-        .collect::<HashMap<_, _>>();
-    let mut done_tx = HashSet::with_capacity(ordered_txs.len());
-    let mut stacked_tx = HashSet::with_capacity(ordered_txs.len());
+    let mut done_tx = HashSet::with_capacity(txs.len());
+    let mut stacked_tx = HashSet::with_capacity(txs.len());
     let mut stack = Vec::new();
-    let mut reordered = Vec::with_capacity(ordered_txs.len());
-    for tx in ordered_txs.iter() {
+    let mut reordered = Vec::with_capacity(txs.len());
+    for tx_hash in ordered_hash {
         stacked_tx.clear();
-        stack.push(tx.tx_hash);
-        stacked_tx.insert(tx.tx_hash);
+        stack.push(tx_hash);
+        stacked_tx.insert(tx_hash);
         while let Some(tx_hash) = stack.pop() {
             if done_tx.contains(&tx_hash) {
                 continue;
@@ -201,16 +236,26 @@ fn topological_order(ordered_txs: &mut Vec<Transaction>) {
                 continue;
             };
             let mut unseen = vec![];
+            let mut depth_size = 0;
             for input_tx in &tx.input_tx {
-                let is_other_block = !txs.contains_key(input_tx);
-                if is_other_block {
-                    continue;
+                match txs.get(input_tx) {
+                    None => {
+                        // previous block tx, already seen
+                        continue;
+                    }
+                    Some(dep_tx) => {
+                        depth_size =
+                            depth_size.max(dep_tx.depth_size + dep_tx.size);
+                    }
                 }
                 if !done_tx.contains(input_tx) {
                     unseen.push(*input_tx);
                 }
             }
             if unseen.is_empty() {
+                if let Some(tx) = txs.get_mut(&tx_hash) {
+                    tx.depth_size = depth_size;
+                }
                 reordered.push(tx_hash);
                 done_tx.insert(tx_hash);
             } else {
@@ -233,14 +278,11 @@ fn topological_order(ordered_txs: &mut Vec<Transaction>) {
             }
         }
     }
-    ordered_txs.clear();
     debug!("Reordered txs: {:?}", reordered);
-    for tx_hash in reordered.iter() {
-        let Some(tx) = txs.remove(tx_hash) else {
-            continue;
-        };
-        ordered_txs.push(tx);
-    }
+    reordered
+        .iter()
+        .filter_map(|tx_hash| txs.remove(tx_hash))
+        .collect()
 }
 
 async fn grouping_to_chains_connex(
@@ -342,6 +384,7 @@ async fn grouping_to_chains_connex(
 
 fn grouping_to_chains_no_fork(
     ordered_txs: &mut [Transaction],
+    used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
     across_blocks: bool,
 ) -> OrderedChains {
     let mut used_tx: HashMap<TransactionHash, &Transaction> =
@@ -349,8 +392,13 @@ fn grouping_to_chains_no_fork(
     let mut chains: HashMap<ChainHash, Chain> =
         HashMap::with_capacity(ordered_txs.len());
     let mut ordered_chains_hash = Vec::with_capacity(ordered_txs.len());
+    let block_tx_hashes = ordered_txs
+        .iter()
+        .map(|tx| tx.tx_hash)
+        .collect::<HashSet<_>>();
     for tx in ordered_txs.iter_mut() {
-        let mut dependencies = Vec::with_capacity(tx.input_tx.len());
+        let mut dependencies_block = Vec::with_capacity(tx.input_tx.len());
+        let mut dependencies_outer = Vec::with_capacity(tx.input_tx.len());
         let mut dependencies_seen = HashSet::with_capacity(tx.input_tx.len());
         for dep_hash in &tx.input_tx {
             // Only record dependences within the block as we don't
@@ -359,20 +407,60 @@ fn grouping_to_chains_no_fork(
                 used_tx.get(dep_hash).map(|tx| tx.linear_chain)
             {
                 if !dependencies_seen.contains(&linear_chain) {
-                    dependencies.push(linear_chain);
+                    if block_tx_hashes.contains(&linear_chain) {
+                        dependencies_block.push(linear_chain);
+                    } else if across_blocks {
+                        dependencies_outer.push(linear_chain);
+                    }
                     dependencies_seen.insert(linear_chain);
                 }
             } else if across_blocks {
                 // if not in used_tx, it is a past chain
                 if !dependencies_seen.contains(dep_hash) {
-                    dependencies.push(*dep_hash);
+                    dependencies_outer.push(*dep_hash);
                     dependencies_seen.insert(*dep_hash);
                 }
             }
         }
-        let is_linear = dependencies.len() == 1 && tx.output_tx.len() <= 1;
+        // A chain is linear if there's no joins on the current
+        // transaction and if the current transaction is not a
+        // descendant of a fork
+        // 1. Test for joins
+        let mut is_linear =
+            (dependencies_block.len() + dependencies_outer.len()) == 1;
+        // 2. Test for forks
         if is_linear {
-            tx.linear_chain = dependencies[0];
+            let unique_parent = if dependencies_block.is_empty() {
+                dependencies_outer[0]
+            } else {
+                dependencies_block[0]
+            };
+            if let Some(siblings) = used_txs_chains.get_mut(&unique_parent) {
+                for s in siblings.clone().iter() {
+                    // If one sibling is already within a chain, this
+                    // chain could be the same as another in the
+                    // siblings set, so both dependences are then
+                    // covered by the same chain.
+                    if let Some(linear_chain) =
+                        used_tx.get(s).map(|tx| tx.linear_chain)
+                    {
+                        siblings.remove(s);
+                        siblings.insert(linear_chain);
+                    }
+                }
+                // If there is only one descendant for the unique
+                // ancestor or all descendents are in a single
+                // dependence chain as a totally ordered set, then the
+                // linear chain continues
+                is_linear = siblings.len() == 1;
+            }
+        }
+        if is_linear {
+            tx.linear_chain = if dependencies_block.is_empty() {
+                dependencies_outer[0]
+            } else {
+                dependencies_block[0]
+            };
             match chains.entry(tx.linear_chain) {
                 // extend the existing chain from same block
                 Entry::Occupied(mut e) => {
@@ -397,7 +485,7 @@ fn grouping_to_chains_no_fork(
             }
         } else {
             let mut before_size = 0;
-            for dep in &dependencies {
+            for dep in &dependencies_block {
                 before_size = before_size.max(
                     chains
                         .get(dep)
@@ -405,12 +493,13 @@ fn grouping_to_chains_no_fork(
                         .unwrap_or(0),
                 );
             }
-            debug!("Creating new chain for tx {:?} with dependencies {:?}, before_size {}", tx, dependencies, before_size);
+            debug!("Creating new chain for tx {:?} with block dependencies {:?}, outer dependencies {:?}, before_size {}",
+		   tx, dependencies_block, dependencies_outer, before_size);
             let new_chain = Chain {
                 hash: tx.tx_hash,
                 size: tx.size,
                 before_size,
-                dependencies,
+                dependencies: dependencies_block,
                 dependents: vec![],
                 allowed_handle: tx.allowed_handle.clone(),
                 new_chain: true,
@@ -451,14 +540,22 @@ pub async fn dependence_chains(
     connex: bool,
     across_blocks: bool,
 ) -> OrderedChains {
-    let mut ordered_txs = scan_transactions(logs);
-    fill_tx_dependence_maps(ordered_txs.as_mut_slice(), past_chains).await;
-    debug!("Transactions: {:?}", ordered_txs);
-    topological_order(&mut ordered_txs);
+    let (ordered_hash, mut txs) = scan_transactions(logs);
+    let mut used_txs_chains: HashMap<
+        TransactionHash,
+        HashSet<TransactionHash>,
+    > = HashMap::with_capacity(txs.len());
+    fill_tx_dependence_maps(&mut txs, &mut used_txs_chains, past_chains).await;
+    debug!("Transactions: {:?}", txs.values());
+    let mut ordered_txs = topological_order(ordered_hash, txs);
     let chains = if connex {
         grouping_to_chains_connex(&mut ordered_txs).await
     } else {
-        grouping_to_chains_no_fork(&mut ordered_txs, across_blocks)
+        grouping_to_chains_no_fork(
+            &mut ordered_txs,
+            &mut used_txs_chains,
+            across_blocks,
+        )
     };
     // propagate to logs
     let txs = ordered_txs
@@ -469,6 +566,7 @@ pub async fn dependence_chains(
         let tx_hash = log.transaction_hash.unwrap_or_default();
         if let Some(tx) = txs.get(&tx_hash) {
             log.dependence_chain = tx.linear_chain;
+            log.tx_depth_size = tx.depth_size;
         } else {
             // past chain
             log.dependence_chain = tx_hash;
@@ -522,6 +620,7 @@ mod tests {
             block_timestamp: sqlx::types::time::PrimitiveDateTime::MIN,
             transaction_hash: Some(tx),
             dependence_chain: TransactionHash::ZERO,
+            tx_depth_size: 0,
         })
     }
 
@@ -767,6 +866,11 @@ mod tests {
         assert_eq!(logs[2].dependence_chain, tx2);
         assert_eq!(logs[3].dependence_chain, tx1);
         assert_eq!(logs[4].dependence_chain, tx3);
+        assert_eq!(logs[0].tx_depth_size, 0);
+        assert_eq!(logs[1].tx_depth_size, 0);
+        assert_eq!(logs[2].tx_depth_size, 0);
+        assert_eq!(logs[3].tx_depth_size, 0);
+        assert_eq!(logs[4].tx_depth_size, 2);
         assert_eq!(cache.read().await.len(), 3);
         assert_eq!(chains[0].before_size, 0);
         assert_eq!(chains[1].before_size, 0);
@@ -941,6 +1045,7 @@ mod tests {
         let chains = dependence_chains(&mut logs, &cache, false, true).await;
         assert_eq!(chains.len(), 6);
         assert!(chains.iter().all(|c| c.before_size == 0));
+        assert!(logs.iter().all(|log| log.tx_depth_size == 0));
     }
 
     #[tokio::test]
@@ -1034,5 +1139,47 @@ mod tests {
         assert_eq!(chains.len(), 1);
         assert!(logs[0..3].iter().all(|log| log.dependence_chain == tx3));
         assert_eq!(cache.read().await.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_past_chain_fork() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let past_chain1 = past_chain(100);
+        let past_chain_hash1 = past_chain1.hash;
+        let past_handle1 = new_handle();
+        cache.write().await.put(past_handle1, past_chain_hash1);
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(2);
+        let tx2 = TransactionHash::with_last_byte(3);
+        let _h1 = op1(past_handle1, &mut logs, tx1);
+        let _h2 = op1(past_handle1, &mut logs, tx2);
+        let chains = dependence_chains(&mut logs, &cache, false, true).await;
+        assert_eq!(chains.len(), 2);
+        assert!(logs[0].dependence_chain == tx1);
+        assert!(logs[1].dependence_chain == tx2);
+        assert_eq!(cache.read().await.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_current_block_fork() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let past_handle1 = new_handle();
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(2);
+        let tx2 = TransactionHash::with_last_byte(3);
+        let tx3 = TransactionHash::with_last_byte(4);
+        let h1 = op1(past_handle1, &mut logs, tx1);
+        let _h2 = op1(h1, &mut logs, tx2);
+        let _h3 = op1(h1, &mut logs, tx3);
+        let chains = dependence_chains(&mut logs, &cache, false, true).await;
+        assert_eq!(chains.len(), 3);
+        assert!(logs[0].dependence_chain == tx1);
+        assert!(logs[1].dependence_chain == tx2);
+        assert!(logs[2].dependence_chain == tx3);
+        assert_eq!(cache.read().await.len(), 3);
     }
 }
