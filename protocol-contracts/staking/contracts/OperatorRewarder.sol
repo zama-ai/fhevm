@@ -29,6 +29,7 @@ contract OperatorRewarder {
     uint16 private _maxFeeBasisPoints;
     uint16 private _feeBasisPoints;
     bool private _shutdown;
+    bool private _initialized;
     uint256 private _lastClaimTotalAssetsPlusPaidRewards;
     uint256 private _totalRewardsPaid;
     int256 private _totalVirtualRewardsPaid;
@@ -111,6 +112,12 @@ contract OperatorRewarder {
     /// @notice Error for max fee already set to the same value.
     error MaxFeeAlreadySet(uint16 maxFeeBasisPoints);
 
+    /// @notice Error for attempting to initialize an already initialized rewarder.
+    error AlreadyInitialized();
+
+    /// @notice Error for attempting to use an uninitialized rewarder.
+    error NotInitialized();
+
     modifier onlyOperatorStaking() {
         require(msg.sender == address(operatorStaking()), CallerNotOperatorStaking(msg.sender));
         _;
@@ -131,8 +138,14 @@ contract OperatorRewarder {
         _;
     }
 
+    modifier whenInitialized() {
+        require(_initialized, NotInitialized());
+        _;
+    }
+
     /**
-     * @notice Initializes the OperatorRewarder contract.
+     * @notice Constructs the OperatorRewarder contract.
+     * @dev The rewarder is not usable until `initialize()` is called by the OperatorStaking contract.
      * @param beneficiary_ The address that can set and claim fees.
      * @param protocolStaking_ The ProtocolStaking contract address.
      * @param operatorStaking_ The OperatorStaking contract address.
@@ -150,8 +163,29 @@ contract OperatorRewarder {
         _token = IERC20(protocolStaking_.stakingToken());
         _protocolStaking = protocolStaking_;
         _operatorStaking = operatorStaking_;
-        _setMaxFee(initialMaxFeeBasisPoints_);
-        _setFee(initialFeeBasisPoints_);
+
+        // Set fee values directly without calling `setFee()`/`setMaxFee()`, which would snapshot
+        // `_lastClaimTotalAssetsPlusPaidRewards` via `claimFee()` with potentially stale pending rewards.
+        require(initialMaxFeeBasisPoints_ <= 10000, InvalidBasisPoints(initialMaxFeeBasisPoints_));
+        require(
+            initialFeeBasisPoints_ <= initialMaxFeeBasisPoints_,
+            MaxBasisPointsExceeded(initialFeeBasisPoints_, initialMaxFeeBasisPoints_)
+        );
+        _maxFeeBasisPoints = initialMaxFeeBasisPoints_;
+        _feeBasisPoints = initialFeeBasisPoints_;
+    }
+
+    /**
+     * @notice Initializes the rewarder, enabling its functionality.
+     * @dev Must be called by OperatorStaking after the old rewarder (if any) has been shut down.
+     * This ensures the rewarder starts operating only after any pending rewards from the old
+     * rewarder have been claimed during shutdown, avoiding stale state.
+     * The _lastClaimTotalAssetsPlusPaidRewards is left at 0, meaning any donations sent before
+     * initialization will be subject to fees.
+     */
+    function initialize() public virtual onlyOperatorStaking {
+        require(!_initialized, AlreadyInitialized());
+        _initialized = true;
     }
 
     /**
@@ -168,7 +202,7 @@ contract OperatorRewarder {
      * themselves.
      * @param receiver The delegator's address that will receive the rewards.
      */
-    function claimRewards(address receiver) public virtual onlyClaimer(receiver) {
+    function claimRewards(address receiver) public virtual whenInitialized onlyClaimer(receiver) {
         uint256 earned_ = earned(receiver);
         if (earned_ > 0) {
             _rewardsPaid[receiver] += SafeCast.toInt256(earned_);
@@ -181,7 +215,7 @@ contract OperatorRewarder {
     /**
      * @notice Claims unpaid fees. Only callable by the beneficiary.
      */
-    function claimFee() public virtual onlyBeneficiary {
+    function claimFee() public virtual whenInitialized onlyBeneficiary {
         _claimFee();
     }
 
@@ -193,7 +227,7 @@ contract OperatorRewarder {
      * - the unpaid fees are claimed and transferred to the beneficiary
      * @param basisPoints Maximum fee in basis points (max 10000).
      */
-    function setMaxFee(uint16 basisPoints) public virtual onlyOwner {
+    function setMaxFee(uint16 basisPoints) public virtual whenInitialized onlyOwner {
         require(basisPoints != maxFeeBasisPoints(), MaxFeeAlreadySet(maxFeeBasisPoints()));
 
         _setMaxFee(basisPoints);
@@ -204,7 +238,7 @@ contract OperatorRewarder {
      * Unpaid fees are claimed and transferred to the beneficiary.
      * @param basisPoints Fee in basis points (cannot be greater than the maximum fee).
      */
-    function setFee(uint16 basisPoints) public virtual onlyBeneficiary {
+    function setFee(uint16 basisPoints) public virtual whenInitialized onlyBeneficiary {
         require(basisPoints != feeBasisPoints(), FeeAlreadySet(feeBasisPoints()));
 
         _setFee(basisPoints);
@@ -241,7 +275,7 @@ contract OperatorRewarder {
      * @param to Recipient address.
      * @param shares Number of shares transferred.
      */
-    function transferHook(address from, address to, uint256 shares) public virtual onlyOperatorStaking {
+    function transferHook(address from, address to, uint256 shares) public virtual whenInitialized onlyOperatorStaking {
         uint256 oldTotalSupply = operatorStaking().totalSupply();
         if (oldTotalSupply == 0) return;
 
@@ -310,6 +344,14 @@ contract OperatorRewarder {
      */
     function operatorStaking() public view virtual returns (OperatorStaking) {
         return _operatorStaking;
+    }
+
+    /**
+     * @notice Returns true if the contract is initialized.
+     * @return True if initialized, false otherwise.
+     */
+    function isInitialized() public view virtual returns (bool) {
+        return _initialized;
     }
 
     /**

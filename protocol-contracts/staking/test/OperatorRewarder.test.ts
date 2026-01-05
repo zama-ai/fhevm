@@ -61,6 +61,39 @@ describe('OperatorRewarder', function () {
     });
   });
 
+  describe('deployment', function () {
+    it('should not deploy if max fee is over 100%', async function () {
+      const maxFeeTooHigh = 10001;
+      await expect(
+        ethers.deployContract('OperatorRewarder', [
+          this.beneficiary,
+          this.protocolStaking,
+          this.mock,
+          maxFeeTooHigh,
+          0,
+        ]),
+      )
+        .to.be.revertedWithCustomError(this.mock, 'InvalidBasisPoints')
+        .withArgs(maxFeeTooHigh);
+    });
+
+    it('should not deploy if fee is over max fee', async function () {
+      const maxFee = 1000;
+      const feeOverMaxFee = 1234;
+      await expect(
+        ethers.deployContract('OperatorRewarder', [
+          this.beneficiary,
+          this.protocolStaking,
+          this.mock,
+          maxFee,
+          feeOverMaxFee,
+        ]),
+      )
+        .to.be.revertedWithCustomError(this.mock, 'MaxBasisPointsExceeded')
+        .withArgs(feeOverMaxFee, maxFee);
+    });
+  });
+
   describe('transferBeneficiary', function () {
     it('should transfer beneficiary address', async function () {
       await expect(this.mock.beneficiary()).to.eventually.not.eq(this.anyone.address);
@@ -526,6 +559,74 @@ describe('OperatorRewarder', function () {
       await expect(this.mock.connect(this.anyone).setClaimer(this.claimer))
         .to.be.revertedWithCustomError(this.mock, 'ClaimerAlreadySet')
         .withArgs(this.anyone, this.claimer);
+    });
+  });
+
+  describe('initialize', function () {
+    it('should be initialized', async function () {
+      await expect(this.mock.isInitialized()).to.eventually.eq(true);
+    });
+
+    it("can't initialize twice", async function () {
+      const signer = await impersonate(hre, this.operatorStaking.target);
+      await expect(this.mock.connect(signer).initialize()).to.be.revertedWithCustomError(
+        this.mock,
+        'AlreadyInitialized',
+      );
+    });
+
+    describe('with new rewarder', async function () {
+      beforeEach(async function () {
+        const uninitializedRewarder = await ethers.deployContract('OperatorRewarder', [
+          this.beneficiary,
+          this.protocolStaking,
+          this.mock,
+          10000, // 100% maximum fee
+          0, // 0% fee
+        ]);
+        Object.assign(this, { uninitializedRewarder });
+      });
+
+      it('should revert if initialized not called by OperatorStaking', async function () {
+        await expect(this.uninitializedRewarder.connect(this.admin).initialize())
+          .to.be.revertedWithCustomError(this.uninitializedRewarder, 'CallerNotOperatorStaking')
+          .withArgs(this.admin);
+      });
+
+      it('should revert if not initialized for claimRewards', async function () {
+        await expect(
+          this.uninitializedRewarder.connect(this.delegator1).claimRewards(this.delegator1),
+        ).to.be.revertedWithCustomError(this.uninitializedRewarder, 'NotInitialized');
+      });
+
+      it('should revert if not initialized for claimFee', async function () {
+        await expect(this.uninitializedRewarder.connect(this.beneficiary).claimFee()).to.be.revertedWithCustomError(
+          this.uninitializedRewarder,
+          'NotInitialized',
+        );
+      });
+
+      it('should revert if not initialized for setFee', async function () {
+        await expect(this.uninitializedRewarder.connect(this.beneficiary).setFee(1000)).to.be.revertedWithCustomError(
+          this.uninitializedRewarder,
+          'NotInitialized',
+        );
+      });
+
+      it('should revert if not initialized for setMaxFee', async function () {
+        await expect(this.uninitializedRewarder.connect(this.admin).setMaxFee(1000)).to.be.revertedWithCustomError(
+          this.uninitializedRewarder,
+          'NotInitialized',
+        );
+      });
+
+      it('should revert if not initialized for transferHook', async function () {
+        await expect(
+          this.uninitializedRewarder
+            .connect(this.anyone)
+            .transferHook(this.delegator1, this.delegator1, ethers.parseEther('1')),
+        ).to.be.revertedWithCustomError(this.mock, 'NotInitialized');
+      });
     });
   });
 

@@ -604,6 +604,11 @@ describe('OperatorStaking', function () {
   });
 
   describe('setRewarder', async function () {
+    it('current rewarder should be initialized', async function () {
+      const rewarder = await ethers.getContractAt('OperatorRewarder', await this.mock.rewarder());
+      await expect(rewarder.isInitialized()).to.eventually.eq(true);
+    });
+
     it('only owner can set rewarder', async function () {
       await expect(this.mock.connect(this.delegator1).setRewarder(ethers.ZeroAddress)).to.be.revertedWithCustomError(
         this.mock,
@@ -652,6 +657,14 @@ describe('OperatorStaking', function () {
         await expect(this.token.balanceOf(this.oldRewarder)).to.eventually.eq(ethers.parseEther('5.5'));
       });
 
+      it('old rewarder should be shutdown after setRewarder', async function () {
+        await expect(this.oldRewarder.isShutdown()).to.eventually.eq(true);
+      });
+
+      it('new rewarder should be initialized after setRewarder', async function () {
+        await expect(this.newRewarder.isInitialized()).to.eventually.eq(true);
+      });
+
       it('new rewarder should start accruing rewards properly', async function () {
         await time.increase(10);
 
@@ -662,6 +675,23 @@ describe('OperatorStaking', function () {
         await expect(this.newRewarder.claimRewards(this.delegator1))
           .to.emit(this.token, 'Transfer')
           .withArgs(this.newRewarder, this.delegator1, ethers.parseEther('1.375'));
+      });
+
+      it('new rewarder should not have stale state after initialization', async function () {
+        // This test ensures the fix for H-01: New OperatorRewarder Is Likely to Initialize With a Stale Value
+        // Before the fix, the new rewarder's constructor would snapshot _lastClaimTotalAssetsPlusPaidRewards
+        // with pending rewards, then setRewarder would claim those rewards through the old rewarder,
+        // causing underflow in _unpaidFee() calculations.
+
+        // The new rewarder starts with 0 historical rewards (no donations were made to it before
+        // initialization). If donations were made, they would be correctly
+        // included in historicalReward() and distributed to delegators (minus fees).
+        await expect(this.newRewarder.historicalReward()).to.eventually.eq(0);
+        await expect(this.newRewarder.unpaidFee()).to.eventually.eq(0);
+
+        // After some time, the new rewarder should accrue rewards properly without underflow
+        await time.increase(10);
+        await expect(this.newRewarder.historicalReward()).to.eventually.eq(ethers.parseEther('5'));
       });
     });
   });
