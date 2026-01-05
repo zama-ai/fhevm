@@ -46,8 +46,10 @@ async fn test_pick_response_with_polling_backup(response_str: &str) -> anyhow::R
     let inserted_response =
         insert_rand_response(test_instance.db(), response_str, None, None).await?;
 
-    let mut config = Config::default().await;
-    config.database_polling_timeout = Duration::from_millis(500);
+    let config = Config {
+        database_polling_timeout: Duration::from_millis(500),
+        ..Default::default()
+    };
     let mut response_picker =
         DbKmsResponsePicker::connect(test_instance.db().clone(), &config).await?;
 
