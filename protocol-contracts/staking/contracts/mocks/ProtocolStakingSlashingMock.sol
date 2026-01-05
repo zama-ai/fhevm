@@ -12,9 +12,6 @@ contract ProtocolStakingSlashingMock is ProtocolStaking {
     using Checkpoints for Checkpoints.Trace208;
     using SafeERC20 for IERC20;
 
-    bytes32 private constant PROTOCOL_STAKING_STORAGE_LOCATION =
-        0xd955b2342c0487c5e5b5f50f5620ec67dcb16d94462ba5d080d7b7472b67b900;
-
     mapping(address => uint256) private _slashedAmount;
 
     function slash(address account, uint256 amount) public {
@@ -30,21 +27,15 @@ contract ProtocolStakingSlashingMock is ProtocolStaking {
     }
 
     function tokensToReleaseAt(address account, uint48 timestamp) public view virtual returns (uint256) {
-        ProtocolStakingStorage storage $ = __getProtocolStakingStorage();
+        ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
         return $._unstakeRequests[account].upperLookup(timestamp) - $._released[account] - _slashedAmount[account];
     }
 
     function release(address account) public virtual override {
         uint256 amountToRelease = tokensToReleaseAt(account, Time.timestamp());
         if (amountToRelease > 0) {
-            __getProtocolStakingStorage()._released[account] += amountToRelease;
+            _getProtocolStakingStorage()._released[account] += amountToRelease;
             IERC20(stakingToken()).safeTransfer(account, amountToRelease);
-        }
-    }
-
-    function __getProtocolStakingStorage() private pure returns (ProtocolStaking.ProtocolStakingStorage storage $) {
-        assembly {
-            $.slot := PROTOCOL_STAKING_STORAGE_LOCATION
         }
     }
 }
