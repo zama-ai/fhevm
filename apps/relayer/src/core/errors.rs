@@ -60,8 +60,11 @@ pub enum EventProcessingError {
     #[error("Relayer internal queue is full")]
     QueueFull,
 
+    #[error("Relayer queue channel is closed")]
+    ChannelClosed,
+
     #[error("Protocol Overwhelmed: {0}")]
-    ProtocolOverwhelmed(String),
+    ProtocolOverload(String),
 }
 
 impl From<GatewayTxnError> for EventProcessingError {

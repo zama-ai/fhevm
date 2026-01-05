@@ -13,7 +13,7 @@ use crate::{
             bindings::Decryption,
             transaction::{
                 helper::{TransactionHelper, TransactionType, TxResult},
-                throttler::{DynTxHook, GatewayTxTask, MemoryThrottler},
+                throttler::{DynTxHook, GatewayTxTask, ThrottlingSender},
                 TxLifecycleHooks,
             },
             ComputeCalldata,
@@ -50,7 +50,7 @@ impl From<&HandleContractPair> for Decryption::CtHandleContractPair {
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    tx_throttler: MemoryThrottler<GatewayTxTask>,
+    tx_throttler: ThrottlingSender<GatewayTxTask>,
     readiness_checker: Arc<ReadinessChecker>,
     decryption_address: Address,
     user_decrypt_repo: Arc<UserDecryptRepository>,
@@ -60,7 +60,7 @@ pub struct GatewayHandler {
 impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        tx_throttler: MemoryThrottler<GatewayTxTask>,
+        tx_throttler: ThrottlingSender<GatewayTxTask>,
         readiness_checker: Arc<ReadinessChecker>,
         decryption_address: Address,
         user_decrypt_shares_threshold: usize,
@@ -80,6 +80,8 @@ impl GatewayHandler {
             &[
                 UserDecryptEventId::ReqRcvdFromUser.into(),
                 UserDecryptEventId::ReqSentToGw.into(),
+                // NOTE: We don't use Failed Event Id here, to allow notifying users
+                UserDecryptEventId::InternalFailure.into(),
                 GatewayChainEventId::EventLogRcvd.into(),
             ],
             handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
@@ -112,7 +114,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     }
                     .await
                 }
-                UserDecryptEventData::Failed { error } => Err(error.clone()),
+                UserDecryptEventData::InternalFailure { error } => Err(error.clone()),
                 _ => {
                     warn!("unexpected event received in user decrypt handler");
                     return;
@@ -254,11 +256,20 @@ impl GatewayHandler {
         // The request should never be injected in the system, and bounced after the cache check if the queue is full.
         match self.tx_throttler.push(task).await {
             Ok(()) => {}
-            Err(_err) => {
-                return Err(EventProcessingError::ProtocolOverwhelmed(
-                    "Relayer is full, retry later.".to_string(),
-                ));
-            }
+            Err(e) => match e {
+                EventProcessingError::QueueFull => {
+                    return Err(EventProcessingError::ProtocolOverload(
+                        "Relayer is full, retry later.".to_string(),
+                    ));
+                }
+                EventProcessingError::ChannelClosed => {
+                    error!("FATAL: Cannot accept request, internal worker is dead.");
+                    return Err(e);
+                }
+                _ => {
+                    return Err(e);
+                }
+            },
         };
 
         Ok(())

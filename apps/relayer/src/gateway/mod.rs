@@ -15,7 +15,7 @@ pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 use crate::config::settings::Settings;
 use crate::core::event::RelayerEvent;
 use crate::gateway::arbitrum::transaction::processor::GatewayTxProcessor;
-use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, MemoryThrottler};
+use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
 use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
 use crate::store::sql::repositories::Repositories;
 use alloy::primitives::Address;
@@ -49,7 +49,7 @@ pub async fn initialize_gateway(
     ));
 
     // Create throttler.
-    let (tx_throttler, tx_worker) = MemoryThrottler::<GatewayTxTask>::new(
+    let (tx_throttler, tx_worker) = ThrottlingSender::<GatewayTxTask>::new(
         settings.gateway.tx_engine.tx_throttler_capacity,
         settings.gateway.tx_engine.tx_throttler_per_secs,
     );

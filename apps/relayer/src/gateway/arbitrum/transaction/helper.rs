@@ -79,24 +79,22 @@ impl TransactionHelper {
         }
     }
 
-    pub async fn send_raw_transaction_sync<F, H>(
+    pub async fn send_raw_transaction_sync<H>(
         &self,
         transaction_type: TransactionType,
         job_id: JobId,
         hook: &H,
         target: Address,
-        prepare_calldata: F,
+        calldata_bytes: Bytes,
     ) -> Result<(), EventProcessingError>
     where
-        F: Fn() -> Result<Bytes, EventProcessingError>,
         H: TxLifecycleHooks + ?Sized,
     {
-        let calldata = prepare_calldata()?;
         let tx_metric_type = transaction_type.as_metrics_type();
 
         info!(
             operation = %transaction_type,
-            calldata = %format!("0x{}...", hex::encode(&calldata[..std::cmp::min(20, calldata.len())])),
+            calldata = %format!("0x{}...", hex::encode(&calldata_bytes[..std::cmp::min(20, calldata_bytes.len())])),
             "Preparing transaction"
         );
 
@@ -104,7 +102,7 @@ impl TransactionHelper {
         let transaction_start_time = Instant::now();
         let request = match self
             .tx_engine
-            .prepare_transaction(target, calldata, None)
+            .prepare_transaction(target, calldata_bytes, None)
             .await
         {
             Ok(req) => req,

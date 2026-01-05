@@ -42,6 +42,7 @@ pub enum PublicDecryptEventId {
     RespRcvdFromGw = 13,
     Failed = 14,
     RespSentToUser = 15,
+    InternalFailure = 16,
 }
 
 impl From<PublicDecryptEventId> for u8 {
@@ -60,6 +61,7 @@ pub enum UserDecryptEventId {
     RespRcvdFromGw = 23,
     RespSentToUser = 24,
     Failed = 25,
+    InternalFailure = 26,
 }
 
 impl From<UserDecryptEventId> for u8 {
@@ -76,6 +78,7 @@ pub enum InputProofEventId {
     ReqSentToGw = 31,
     RespRcvdFromGw = 32,
     Failed = 33,
+    InternalFailure = 34,
 }
 
 impl From<InputProofEventId> for u8 {
@@ -175,6 +178,9 @@ impl Event for RelayerEvent {
                     PublicDecryptEventId::RespRcvdFromGw.into()
                 }
                 PublicDecryptEventData::Failed { .. } => PublicDecryptEventId::Failed.into(),
+                PublicDecryptEventData::InternalFailure { .. } => {
+                    PublicDecryptEventId::InternalFailure.into()
+                }
                 PublicDecryptEventData::RespSentToUser => {
                     PublicDecryptEventId::RespSentToUser.into()
                 }
@@ -192,6 +198,9 @@ impl Event for RelayerEvent {
                 }
                 UserDecryptEventData::RespSentToUser => UserDecryptEventId::RespSentToUser.into(),
                 UserDecryptEventData::Failed { .. } => UserDecryptEventId::Failed.into(),
+                UserDecryptEventData::InternalFailure { .. } => {
+                    UserDecryptEventId::InternalFailure.into()
+                }
             },
             RelayerEventData::InputProof(input_event) => match input_event {
                 InputProofEventData::ReqRcvdFromUser { .. } => {
@@ -202,6 +211,9 @@ impl Event for RelayerEvent {
                     InputProofEventId::RespRcvdFromGw.into()
                 }
                 InputProofEventData::Failed { .. } => InputProofEventId::Failed.into(),
+                InputProofEventData::InternalFailure { .. } => {
+                    InputProofEventId::InternalFailure.into()
+                }
             },
             RelayerEventData::KeyUrl(keyurl_event) => match keyurl_event {
                 KeyUrlEventData::KeyDataUpdated { .. } => KeyUrlEventId::KeyDataUpdated.into(),
@@ -315,7 +327,11 @@ pub enum PublicDecryptEventData {
     RespSentToUser,
 
     /// Event representing the failure in processing the public decryption request.
+    /// Used to notify outside internal handlers only.
     Failed { error: EventProcessingError },
+
+    /// Event representing the internal failure in processing the public decryption request: will not notify the user directly.
+    InternalFailure { error: EventProcessingError },
 }
 
 impl PublicDecryptEventData {
@@ -329,6 +345,7 @@ impl PublicDecryptEventData {
             PublicDecryptEventData::RespRcvdFromGw { .. } => "PublicDecrypt::RespRcvdFromGw",
             PublicDecryptEventData::RespSentToUser => "PublicDecrypt::RespSentToUser",
             PublicDecryptEventData::Failed { .. } => "PublicDecrypt::Failed",
+            PublicDecryptEventData::InternalFailure { .. } => "PublicDecrypt::InternalFailure",
         }
     }
 }
@@ -357,7 +374,11 @@ pub enum UserDecryptEventData {
     RespSentToUser,
 
     /// Event representing the failure in processing the user decryption request.
+    /// Used to notify outside internal handlers only.
     Failed { error: EventProcessingError },
+
+    /// Event representing the internal failure in processing the user decrypt request: will not notify the user directly.
+    InternalFailure { error: EventProcessingError },
 }
 
 impl UserDecryptEventData {
@@ -371,6 +392,7 @@ impl UserDecryptEventData {
             UserDecryptEventData::RespRcvdFromGw { .. } => "UserDecrypt::RespRcvdFromGw",
             UserDecryptEventData::RespSentToUser => "UserDecrypt::RespSentToFhevm",
             UserDecryptEventData::Failed { .. } => "UserDecrypt::Failed",
+            UserDecryptEventData::InternalFailure { .. } => "UserDecrypt::InternalFailure",
         }
     }
 }
@@ -603,7 +625,11 @@ pub enum InputProofEventData {
 
     /// Event representing the failure in processing the input proof
     /// verification request.
+    /// Used to notify outside internal handlers only.
     Failed { error: EventProcessingError },
+
+    /// Event representing the internal failure in processing the input proof request: will not notify the user directly.
+    InternalFailure { error: EventProcessingError },
 }
 
 impl InputProofEventData {
@@ -613,6 +639,7 @@ impl InputProofEventData {
             InputProofEventData::RespRcvdFromGw { .. } => "Input::RespRcvdFromGw",
             InputProofEventData::ReqSentToGw { .. } => "Input::ReqSentToGw",
             InputProofEventData::Failed { .. } => "Input::Failed",
+            InputProofEventData::InternalFailure { .. } => "Input::InternalFailure",
         }
     }
 }

@@ -21,6 +21,13 @@ impl fmt::Debug for DynTxHook {
     }
 }
 
+impl DynTxHook {
+    /// Helper to easily access the inner trait object reference
+    pub fn as_inner(&self) -> &dyn TxLifecycleHooks {
+        self.0.as_ref()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GatewayTxTask {
     pub id: String,
@@ -44,25 +51,26 @@ pub trait MemoryThrottlerItem: Send + Sync + 'static + std::fmt::Debug {
 
 /// The Producer Handle.
 #[derive(Clone)]
-pub struct MemoryThrottler<T> {
+pub struct ThrottlingSender<T> {
     // Bounded Channel carrying the Payload T
     sender: mpsc::Sender<T>,
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
 }
 
+// NOTE: There must be at least one instance of this and hence the reciever for the queue channel to stay alive.
 /// The Background Worker.
-pub struct ThrottlerWorker<T> {
+pub struct ThrottlingWorker<T> {
     receiver: mpsc::Receiver<T>,
     // Shared reference to the same tracker to remove items when processed
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
     tps: u32,
 }
 
-impl<T> MemoryThrottler<T>
+impl<T> ThrottlingSender<T>
 where
     T: MemoryThrottlerItem + Send + Sync + 'static,
 {
-    pub fn new(capacity: usize, tps: u32) -> (Self, ThrottlerWorker<T>) {
+    pub fn new(capacity: usize, tps: u32) -> (Self, ThrottlingWorker<T>) {
         let (sender, receiver) = mpsc::channel(capacity);
         let tracker = Arc::new(RwLock::new(IndexMap::new()));
 
@@ -71,7 +79,7 @@ where
             tracker: tracker.clone(),
         };
 
-        let worker = ThrottlerWorker {
+        let worker = ThrottlingWorker {
             receiver,
             tracker,
             tps,
@@ -89,18 +97,13 @@ where
     pub async fn push(&self, item: T) -> anyhow::Result<(), EventProcessingError> {
         let id = item.get_id();
 
-        // 1. Acquire Write Lock
+        // Acquire Write Lock
         // We hold this lock during the send to ensure consistency between Map and Channel.
         // If the worker is fast, it waits for this lock before it can remove the item.
         let mut tracker = self.tracker.write().await;
 
-        // 2. Deduplication Check
-        if tracker.contains_key(&id) {
-            warn!("Item already exists in throttler, ignoring duplicate push");
-            return Ok(());
-        }
-
-        // 3. Try Send (Bounded check)
+        // Try Send (Bounded check)
+        // Dedup not necessary.
         match self.sender.try_send(item) {
             Ok(_) => {
                 // Success: Add ID to tracker
@@ -115,8 +118,10 @@ where
                 // This flow is supposed to be not reachable.
                 // Note: Self healing infinite loop or auto restart within kubernetes should be implemented.
                 // Following die-fast principle, a restart should restart as soon as possible.
-                error!("Throttler channel is closed! Worker is dead.");
-                panic!("FATAL: RELAYER MUST RESTART, There is no more active worker to handle requests.");
+                error!(
+                    "CRITICAL: Throttler channel is closed! Worker is dead, Relayer must restart."
+                );
+                Err(EventProcessingError::ChannelClosed)
             }
         }
     }
@@ -138,13 +143,9 @@ where
     pub async fn get_position(&self, id: &str) -> Option<usize> {
         self.tracker.read().await.get_index_of(id)
     }
-
-    pub async fn get_queued_ids(&self) -> Vec<String> {
-        self.tracker.read().await.keys().cloned().collect()
-    }
 }
 
-impl<T> ThrottlerWorker<T>
+impl<T> ThrottlingWorker<T>
 where
     T: MemoryThrottlerItem + Send + Sync + 'static,
 {
@@ -214,7 +215,7 @@ mod tests {
     // --- Test 1: FIFO Ordering & Tracking ---
     #[tokio::test]
     async fn test_fifo_ordering() {
-        let (throttler, worker) = MemoryThrottler::<MockTask>::new(10, 100);
+        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 100);
         let processed = Arc::new(Mutex::new(Vec::new()));
         let processed_clone = processed.clone();
 
@@ -241,7 +242,7 @@ mod tests {
     // --- Test 2: Deduplication ---
     #[tokio::test]
     async fn test_deduplication() {
-        let (throttler, _worker) = MemoryThrottler::<MockTask>::new(10, 100);
+        let (throttler, _worker) = ThrottlingSender::<MockTask>::new(10, 100);
 
         throttler.push(MockTask { id: "A".into() }).await.unwrap();
 
@@ -255,7 +256,7 @@ mod tests {
     #[tokio::test]
     async fn test_queue_full() {
         // Capacity = 1
-        let (throttler, _worker) = MemoryThrottler::<MockTask>::new(1, 100);
+        let (throttler, _worker) = ThrottlingSender::<MockTask>::new(1, 100);
 
         // 1. Push OK
         assert!(throttler.push(MockTask { id: "1".into() }).await.is_ok());
@@ -277,7 +278,7 @@ mod tests {
     #[tokio::test]
     async fn test_position_tracking() {
         // Very slow rate (1 TPS) to ensure items stay in queue
-        let (throttler, worker) = MemoryThrottler::<MockTask>::new(10, 1);
+        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 1);
 
         throttler.push(MockTask { id: "A".into() }).await.unwrap();
         throttler.push(MockTask { id: "B".into() }).await.unwrap();
@@ -297,9 +298,10 @@ mod tests {
         // A is likely gone (processed). B is at 0 (next). C is at 1.
         // Or if rate limiter held A, A=0, B=1, C=2.
         // Let's rely on IDs list.
-        let ids = throttler.get_queued_ids().await;
-        assert!(ids.contains(&"C".to_string()));
-        assert!(ids.len() >= 2);
+        let contains = throttler.contains(&"C").await;
+        let len = throttler.len().await;
+        assert_eq!(contains, true);
+        assert!(len >= 2);
     }
 
     // --- Test 4 - 2: Position Tracking (Deterministic) ---
@@ -307,7 +309,7 @@ mod tests {
     async fn test_position_tracking_deterministic() {
         // 1. Setup Throttler (Worker NOT spawned yet)
         // Capacity 10 allows us to push multiple items without blocking/failing
-        let (throttler, worker) = MemoryThrottler::<MockTask>::new(10, 50);
+        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 50);
 
         // 2. Push items
         // Since the worker isn't running, these sit in the Channel and the Tracker.
@@ -325,10 +327,6 @@ mod tests {
 
         // Verify random access failure
         assert_eq!(throttler.get_position("Z").await, None);
-
-        // Verify full list
-        let ids = throttler.get_queued_ids().await;
-        assert_eq!(ids, vec!["A", "B", "C"]);
 
         // 4. Start Worker to drain
         // Now we verify that they are processed and removed correctly
@@ -353,7 +351,7 @@ mod tests {
         // - Items 11-20: Processed 1 every 100ms.
         // Total expected time: ~1.0 second.
         let tps = 10;
-        let (throttler, worker) = MemoryThrottler::<MockTask>::new(100, tps);
+        let (throttler, worker) = ThrottlingSender::<MockTask>::new(100, tps);
         let processed_count = Arc::new(AtomicUsize::new(0));
         let counter = processed_count.clone();
 
@@ -407,7 +405,7 @@ mod tests {
     async fn test_rate_limit_sustained() {
         let tps = 20;
         // Capacity large enough to hold the blast so we don't get "Queue Full" errors during setup
-        let (throttler, worker) = MemoryThrottler::<MockTask>::new(200, tps);
+        let (throttler, worker) = ThrottlingSender::<MockTask>::new(200, tps);
         let processed_count = Arc::new(AtomicUsize::new(0));
         let counter = processed_count.clone();
 
@@ -460,7 +458,7 @@ mod tests {
     // --- Test: Cloning Safety ---
     #[tokio::test]
     async fn test_cloning_shares_state() {
-        let (throttler_1, worker) = MemoryThrottler::<MockTask>::new(10, 100);
+        let (throttler_1, worker) = ThrottlingSender::<MockTask>::new(10, 100);
 
         // Clone it (Creating a second producer handle)
         let throttler_2 = throttler_1.clone();

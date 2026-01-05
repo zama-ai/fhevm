@@ -5,7 +5,7 @@ use crate::{
     },
     gateway::arbitrum::transaction::{
         helper::{TransactionHelper, TransactionType},
-        throttler::{GatewayTxTask, ThrottlerWorker},
+        throttler::{GatewayTxTask, ThrottlingWorker},
     },
     orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
 };
@@ -21,16 +21,14 @@ impl GatewayTxProcessor {
     /// It registers with the Orchestrator so it starts/stops cleanly with the application.
     /// It delegates the infinite loop logic to `throttler.run_consumer`.
     pub async fn orchestrator_spawn_task(
-        throttler_worker: ThrottlerWorker<GatewayTxTask>,
+        throttler_worker: ThrottlingWorker<GatewayTxTask>,
         tx_helper: Arc<TransactionHelper>,
         orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     ) -> anyhow::Result<()> {
         let task_name = "gateway_tx_processor";
 
         // Prepare Arcs for the background task
-        let orchestrator_runner = orchestrator.clone();
-
-        println!("Getting into the gateway processor !!! LETS GOOOO..");
+        let dispatcher = orchestrator.clone();
 
         // The Task Future
         let task_future = async move {
@@ -41,13 +39,9 @@ impl GatewayTxProcessor {
             // It will only exit if the application shuts down or the channel is explicitly closed.
             throttler_worker
                 .run_consumer(move |task: GatewayTxTask| {
-                    // Clone dependencies for the individual task execution
-                    let helper = tx_helper.clone();
-                    let dispatcher = orchestrator_runner.clone();
-
-                    async move {
-                        Self::process_single_task(helper, task, dispatcher).await;
-                    }
+                    // Call the async function directly.
+                    // It returns the Future that the consumer expects.
+                    Self::process_single_task(tx_helper.clone(), task, dispatcher.clone())
                 })
                 .await;
 
@@ -75,11 +69,10 @@ impl GatewayTxProcessor {
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     ) {
         // Dereference hook
-        let hook_ref = &*task.hook.0;
+        let hook_ref = task.hook.as_inner();
 
         // Adapt Calldata for the helper closure
         let calldata_bytes = task.calldata.clone();
-        let calldata_fn = move || Ok(calldata_bytes.clone());
 
         // Execute Transaction
         // If this fails, it returns Err. It does NOT panic.
@@ -89,7 +82,7 @@ impl GatewayTxProcessor {
                 task.job_id,
                 hook_ref,
                 task.target,
-                calldata_fn,
+                calldata_bytes,
             )
             .await;
 
@@ -104,13 +97,17 @@ impl GatewayTxProcessor {
             // Construct the failure event data based on transaction type
             let next_event_data: RelayerEventData = match task.transaction_type {
                 TransactionType::InputRequest => {
-                    RelayerEventData::InputProof(InputProofEventData::Failed { error: e })
+                    RelayerEventData::InputProof(InputProofEventData::InternalFailure { error: e })
                 }
                 TransactionType::PublicDecryptRequest => {
-                    RelayerEventData::PublicDecrypt(PublicDecryptEventData::Failed { error: e })
+                    RelayerEventData::PublicDecrypt(PublicDecryptEventData::InternalFailure {
+                        error: e,
+                    })
                 }
                 TransactionType::UserDecryptRequest => {
-                    RelayerEventData::UserDecrypt(UserDecryptEventData::Failed { error: e })
+                    RelayerEventData::UserDecrypt(UserDecryptEventData::InternalFailure {
+                        error: e,
+                    })
                 }
             };
 

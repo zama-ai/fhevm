@@ -12,7 +12,7 @@ use crate::{
         bindings::InputVerification,
         transaction::{
             helper::{TransactionHelper, TransactionType, TxResult},
-            throttler::{DynTxHook, GatewayTxTask, MemoryThrottler},
+            throttler::{DynTxHook, GatewayTxTask, ThrottlingSender},
             TxLifecycleHooks,
         },
         ComputeCalldata,
@@ -35,7 +35,7 @@ use tracing::{error, info, instrument, warn};
 #[derive(Clone)]
 pub struct InputProofGatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    tx_throttler: MemoryThrottler<GatewayTxTask>,
+    tx_throttler: ThrottlingSender<GatewayTxTask>,
     contracts: ContractConfig,
     input_proof_repo: Arc<InputProofRepository>,
 }
@@ -43,7 +43,7 @@ pub struct InputProofGatewayHandler {
 impl InputProofGatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        tx_throttler: MemoryThrottler<GatewayTxTask>,
+        tx_throttler: ThrottlingSender<GatewayTxTask>,
         contracts: ContractConfig,
         input_proof_repo: Arc<InputProofRepository>,
     ) -> Arc<Self> {
@@ -60,6 +60,8 @@ impl InputProofGatewayHandler {
                 InputProofEventId::ReqRcvdFromUser.into(),
                 InputProofEventId::ReqSentToGw.into(),
                 InputProofEventId::RespRcvdFromGw.into(),
+                // NOTE: We don't use Failed Event Id here, to allow notifying users
+                InputProofEventId::InternalFailure.into(),
                 GatewayChainEventId::EventLogRcvd.into(),
             ],
             handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
@@ -82,7 +84,7 @@ impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
                     self.send_input_proof_request(event.clone(), input_proof_request.clone())
                         .await
                 }
-                InputProofEventData::Failed { error } => Err(error.clone()),
+                InputProofEventData::InternalFailure { error, .. } => Err(error.clone()),
                 _ => {
                     warn!("unexpected event received in input handler");
                     return;
@@ -204,11 +206,20 @@ impl InputProofGatewayHandler {
         // The request should never be injected in the system, and bounced after the cache check if the queue is full.
         match self.tx_throttler.push(task).await {
             Ok(()) => {}
-            Err(_err) => {
-                return Err(EventProcessingError::ProtocolOverwhelmed(
-                    "Relayer is full, retry later.".to_string(),
-                ));
-            }
+            Err(e) => match e {
+                EventProcessingError::QueueFull => {
+                    return Err(EventProcessingError::ProtocolOverload(
+                        "Relayer is full, retry later.".to_string(),
+                    ));
+                }
+                EventProcessingError::ChannelClosed => {
+                    error!("FATAL: Cannot accept request, internal worker is dead.");
+                    return Err(e);
+                }
+                _ => {
+                    return Err(e);
+                }
+            },
         };
 
         Ok(())
