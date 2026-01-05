@@ -35,19 +35,35 @@ contract OperatorRewarder {
     mapping(address => int256) private _rewardsPaid;
     mapping(address => address) private _authorizedClaimers;
 
-    /// @notice Emitted when the beneficiary is transferred.
+    /**
+     * @notice Emitted when the beneficiary is transferred.
+     * @param oldBeneficiary The previous beneficiary address.
+     * @param newBeneficiary The new beneficiary address.
+     */
     event BeneficiaryTransferred(address oldBeneficiary, address newBeneficiary);
 
     /// @notice Emitted when the contract is shut down.
     event Shutdown();
 
-    /// @notice Emitted when the maximum fee is updated.
+    /**
+     * @notice Emitted when the maximum fee is updated.
+     * @param oldFee The previous maximum fee in basis points.
+     * @param newFee The new maximum fee in basis points.
+     */
     event MaxFeeUpdated(uint16 oldFee, uint16 newFee);
 
-    /// @notice Emitted when the fee is updated.
+    /**
+     * @notice Emitted when the fee is updated.
+     * @param oldFee The previous fee in basis points.
+     * @param newFee The new fee in basis points.
+     */
     event FeeUpdated(uint16 oldFee, uint16 newFee);
 
-    /// @notice Emitted when an address is authorized to claim rewards on behalf of the receiver address.
+    /**
+     * @notice Emitted when an address is authorized to claim rewards on behalf of the receiver address.
+     * @param receiver The address that will receive the rewards.
+     * @param claimer The address authorized to claim rewards on behalf of the receiver.
+     */
     event ClaimerAuthorized(address receiver, address claimer);
 
     /// @notice Error for invalid claimer address.
@@ -326,19 +342,34 @@ contract OperatorRewarder {
         return SafeCast.toUint256(SignedMath.max(0, allocation - _rewardsPaid[account]));
     }
 
+    /**
+     * @notice Returns the total historical rewards distributed.
+     * @dev This amount is computed as the sum of:
+     * - the total rewards accumulated in the contract (see `_totalAssetsPlusPaidRewards()`) from
+     * the start of the contract
+     * - minus the fees not yet claimed by the beneficiary (see `_unpaidFee()`)
+     * @return The total historical rewards amount.
+     */
     function historicalReward() public view virtual returns (uint256) {
         uint256 totalAssetsPlusPaidRewards = _totalAssetsPlusPaidRewards();
         return totalAssetsPlusPaidRewards - _unpaidFee(totalAssetsPlusPaidRewards);
     }
 
     /**
-     * @notice Returns unpaid fee.
+     * @notice Returns unpaid fee (not yet claimed by the beneficiary).
      * @return Amount of unpaid fee.
      */
     function unpaidFee() public view virtual returns (uint256) {
         return _unpaidFee(_totalAssetsPlusPaidRewards());
     }
 
+    /**
+     * @notice Transfers the specified amount of tokens to the specified address.
+     * @dev If the amount to transfer is greater than the balance of the rewarder, it will first
+     * claim rewards from the ProtocolStaking contract.
+     * @param to The address to transfer the tokens to.
+     * @param amount The amount of tokens to transfer.
+     */
     function _doTransferOut(address to, uint256 amount) internal {
         IERC20 token_ = token();
         if (amount > token_.balanceOf(address(this))) {
@@ -370,7 +401,12 @@ contract OperatorRewarder {
     function _claimFee() internal virtual {
         uint256 totalAssetsPlusPaidRewards = _totalAssetsPlusPaidRewards();
         uint256 unpaidFee_ = _unpaidFee(totalAssetsPlusPaidRewards);
+
+        // Update the last claim value used to define the next unpaid fee (see `_unpaidFee()`).
+        // This amount is exactly the same as `historicalReward()`, but we need to get the unpaid
+        // fee separately in order to send the fee to the beneficiary below.
         _lastClaimTotalAssetsPlusPaidRewards = totalAssetsPlusPaidRewards - unpaidFee_;
+
         if (unpaidFee_ > 0) {
             _doTransferOut(beneficiary(), unpaidFee_);
         }
@@ -410,6 +446,14 @@ contract OperatorRewarder {
         _feeBasisPoints = basisPoints;
     }
 
+    /**
+     * @notice Returns the total assets plus earned rewards plus paid rewards.
+     * @dev This amount is computed as the sum of:
+     * - the balance of the rewarder contract (includes: total claimed but unpaid rewards + total donation + unpaid fees)
+     * - the earned rewards by the operator staking contract (total earned but unpaid rewards)
+     * - the total rewards paid to the delegators (total paid rewards)
+     * @return Total assets plus earned rewards plus paid rewards.
+     */
     function _totalAssetsPlusPaidRewards() internal view returns (uint256) {
         return
             token().balanceOf(address(this)) +
@@ -417,12 +461,37 @@ contract OperatorRewarder {
             _totalRewardsPaid;
     }
 
+    /**
+     * @notice Returns the unpaid fee.
+     * @dev This amount is computed as a percentage (defined in basis points) of the amount of rewards
+     * accumulated since the last time fees were claimed. This works because:
+     * - claiming fees snapshots the historical rewards amount in the `_lastClaimTotalAssetsPlusPaidRewards`
+     * value, which monitors all rewards accumulated since the start of the contract by excluding fees.
+     * - the total rewards amount (`_totalAssetsPlusPaidRewards()`) is computed such as it is always
+     * increasing, except when fees are claimed (where fees are transferred to the beneficiary).
+     * This makes sure that the difference between both above values does not take claimed fees
+     * into account when computing the next unpaid fees.
+     * @param totalAssetsPlusPaidRewards The total assets plus earned rewards plus paid rewards.
+     * @return Amount of unpaid fee.
+     */
     function _unpaidFee(uint256 totalAssetsPlusPaidRewards) internal view returns (uint256) {
         uint256 totalAssetsPlusPaidRewardsDelta = totalAssetsPlusPaidRewards - _lastClaimTotalAssetsPlusPaidRewards;
         return (totalAssetsPlusPaidRewardsDelta * feeBasisPoints()) / 10_000;
     }
 
-    /// @dev Compute total allocation based on number of shares and total shares. Must take paid rewards into account after.
+    /**
+     * @notice Compute total allocation based on number of shares and total shares.
+     * @param share The number of shares.
+     * @param total The total number of shares.
+     * @return The total allocation.
+     * The allocation corresponds to the rewards (both real and virtual) a user would receive if
+     * the current weight distribution, with their updated stake, was constant since the deployment
+     * of the protocol.
+     * Total reward amount is computed as the sum of:
+     * - historical rewards: total of all rewards generated up to that point
+     * - paid virtual rewards: a pool of "virtual" rewards that account for changes in the weight distribution
+     *  Note: the `mulDiv` rounds down: floor(totalRewards * share / total)
+     */
     function _allocation(uint256 share, uint256 total) private view returns (uint256) {
         return
             SafeCast.toUint256(SafeCast.toInt256(historicalReward()) + _totalVirtualRewardsPaid).mulDiv(share, total);
