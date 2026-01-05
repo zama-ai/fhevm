@@ -18,8 +18,8 @@ pub trait Healthcheck {
     fn service_name() -> &'static str;
 }
 
-pub fn default_healthcheck_timeout_secs() -> u64 {
-    3 // 3 seconds
+pub fn default_healthcheck_timeout() -> Duration {
+    Duration::from_secs(3)
 }
 
 /// Performs the database healthcheck.

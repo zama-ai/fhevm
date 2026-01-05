@@ -5,6 +5,7 @@ use tx_sender::{
 
 use connector_utils::{
     cli::{Cli, Subcommands},
+    config::DeserializeConfig,
     monitoring::{
         health::query_healthcheck_endpoint, otlp::init_otlp_setup, server::start_monitoring_server,
     },
@@ -28,13 +29,13 @@ async fn run() -> anyhow::Result<()> {
     let subcommand = Cli::new("TransactionSender").parse();
     match subcommand {
         Subcommands::Validate { config } => {
-            Config::from_env_and_file(Some(config)).await?;
+            Config::from_env_and_file(Some(config))?;
         }
         Subcommands::Health { endpoint } => {
             query_healthcheck_endpoint::<HealthStatus>(endpoint).await?;
         }
         Subcommands::Start { config } => {
-            let config = Config::from_env_and_file(config.as_ref()).await?;
+            let config = Config::from_env_and_file(config.as_ref())?;
             debug!("{config:?}");
             init_otlp_setup(config.service_name.clone())?;
 

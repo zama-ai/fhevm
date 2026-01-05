@@ -69,7 +69,7 @@ impl S3Instance {
             .with_copy_to(
                 format!("/data/{S3_CT_DIGEST}"),
                 PathBuf::from_str(&format!(
-                    "{}/../../tests/data/{}",
+                    "{}/tests/data/{}",
                     env!("CARGO_MANIFEST_DIR"),
                     S3_CT_DIGEST
                 ))
