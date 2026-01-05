@@ -64,11 +64,20 @@ jobs:
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
     runs-on: ubuntu-latest
     outputs:
-      coprocessor: ${{ steps.create-e2e-tests-input.outputs.coprocessor }}
-      connector: ${{ steps.create-e2e-tests-input.outputs.connector }}
-      gateway: ${{ steps.create-e2e-tests-input.outputs.gateway }}
-      host: ${{ steps.create-e2e-tests-input.outputs.host }}
-      test-suite: ${{ steps.create-e2e-tests-input.outputs.test-suite }}
+      coprocessor-db-migration-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
+      coprocessor-gw-listener-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
+      coprocessor-host-listener-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-host-listener-version }}
+      coprocessor-sns-worker-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-sns-worker-version }}
+      coprocessor-tfhe-worker-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
+      coprocessor-tx-sender-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
+      coprocessor-zkproof-worker-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      connector-db-migration-version: ${{ steps.create-e2e-tests-input.outputs.connector-db-migration-version }}
+      connector-gw-listener-version: ${{ steps.create-e2e-tests-input.outputs.connector-gw-listener-version }}
+      connector-kms-worker-version: ${{ steps.create-e2e-tests-input.outputs.connector-kms-worker-version }}
+      connector-tx-sender-version: ${{ steps.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      gateway-version: ${{ steps.create-e2e-tests-input.outputs.gateway-version }}
+      host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
+      test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
       - id: create-e2e-tests-input
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v0.8.0
