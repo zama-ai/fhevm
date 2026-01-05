@@ -190,20 +190,26 @@ describe('OperatorStaking', function () {
         .withArgs(this.delegatorNoApproval, this.mock, this.permitValue);
     });
 
-    it('should revert if signature is invalid', async function () {
+    it('should revert with insufficient allowance if signature is invalid', async function () {
+      // With try-catch on permit, invalid signature causes permit to silently fail,
+      // then deposit fails with ERC20InsufficientAllowance since no approval exists
       await expect(
         this.mock
           .connect(this.delegatorNoApproval)
           .depositWithPermit(this.permitValue, this.delegatorNoApproval, this.permitDeadline, 0, this.r, this.s),
-      ).to.be.revertedWithCustomError(this.token, 'ECDSAInvalidSignature');
+      ).to.be.revertedWithCustomError(this.token, 'ERC20InsufficientAllowance');
     });
 
-    it('should revert if signer is invalid', async function () {
+    it('should succeed if signer has existing approval even with invalid permit', async function () {
+      // With try-catch on permit, invalid signer causes permit to silently fail,
+      // but delegator1 already has approval so deposit succeeds
       await expect(
         this.mock
           .connect(this.delegator1)
           .depositWithPermit(this.permitValue, this.delegator1, this.permitDeadline, this.v, this.r, this.s),
-      ).to.be.revertedWithCustomError(this.token, 'ERC2612InvalidSigner');
+      )
+        .to.emit(this.mock, 'Transfer')
+        .withArgs(ethers.ZeroAddress, this.delegator1, this.permitValue);
     });
   });
 

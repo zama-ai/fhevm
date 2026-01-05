@@ -163,7 +163,8 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         bytes32 r,
         bytes32 s
     ) public virtual returns (uint256) {
-        IERC20Permit(asset()).permit(msg.sender, address(this), assets, deadline, v, r, s);
+        // Use try-catch to prevent frontrun DOS attacks on permit (see ERC-2612)
+        try IERC20Permit(asset()).permit(msg.sender, address(this), assets, deadline, v, r, s) {} catch {}
 
         return deposit(assets, receiver);
     }
