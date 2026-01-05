@@ -93,6 +93,9 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
     /// @dev Thrown when the number of shares to redeem or request redeem is zero.
     error InvalidShares();
 
+    /// @dev Thrown when liquid asset balance is insufficient to cover pending redemptions in {stakeExcess}.
+    error NoExcessBalance(uint256 liquidBalance, uint256 assetsPendingRedemption);
+
     modifier onlyOwner() {
         require(msg.sender == owner(), CallerNotProtocolStakingOwner(msg.sender));
         _;
@@ -262,12 +265,16 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
      *
      * NOTE: Excess tokens will be in the `OperatorStaking` contract the operator is slashed
      * during a redemption flow or if donations are made to it. Anyone can call this function to
-     * restake those tokens.
+     * restake those tokens. This function will revert if the liquid balance is less than or equal
+     * to the amount of assets in pending redemption .
      */
     function stakeExcess() public virtual {
         ProtocolStaking protocolStaking_ = protocolStaking();
         protocolStaking_.release(address(this));
-        uint256 amountToRestake = IERC20(asset()).balanceOf(address(this)) - previewRedeem(totalSharesInRedemption());
+        uint256 liquidBalance = IERC20(asset()).balanceOf(address(this));
+        uint256 assetsPendingRedemption = previewRedeem(totalSharesInRedemption());
+        require(liquidBalance > assetsPendingRedemption, NoExcessBalance(liquidBalance, assetsPendingRedemption));
+        uint256 amountToRestake = liquidBalance - assetsPendingRedemption;
         protocolStaking_.stake(amountToRestake);
     }
 

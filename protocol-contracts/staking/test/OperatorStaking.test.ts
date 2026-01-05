@@ -487,6 +487,21 @@ describe('OperatorStaking', function () {
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.protocolStaking, restakeAmount);
     });
+
+    it('should revert with NoExcessBalance when liquid balance is less than pending redemptions', async function () {
+      // Deposit and request redemption
+      await this.mock.connect(this.delegator1).deposit(ethers.parseEther('10'), this.delegator1);
+      await this.mock.connect(this.delegator1).requestRedeem(ethers.parseEther('5'), this.delegator1, this.delegator1);
+
+      // Slash staked balance to reduce available funds (slash 3 assets)
+      await this.protocolStaking.slashWithdrawal(this.mock, ethers.parseEther('3'));
+
+      await timeIncreaseNoMine(60);
+
+      // Now liquid balance (after release) will be less than assets pending redemption
+      // since slashing reduced the staked balance but pending redemption still expects original value
+      await expect(this.mock.stakeExcess()).to.be.revertedWithCustomError(this.mock, 'NoExcessBalance');
+    });
   });
 
   describe('slashing', async function () {
