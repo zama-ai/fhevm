@@ -176,7 +176,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
             ._unstakeRequests[msg.sender]
             .latestCheckpoint();
         uint48 releaseTime = SafeCast.toUint48(Math.max(Time.timestamp() + $._unstakeCooldownPeriod, lastReleaseTime));
-        $._unstakeRequests[msg.sender].push(releaseTime, uint208(totalRequestedToWithdraw + amount));
+        $._unstakeRequests[msg.sender].push(releaseTime, SafeCast.toUint208(totalRequestedToWithdraw + amount));
 
         emit TokensUnstaked(msg.sender, amount, releaseTime);
         return releaseTime;
