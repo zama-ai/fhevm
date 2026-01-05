@@ -32,8 +32,8 @@ contract OperatorRewarder {
     uint256 private _lastClaimTotalAssetsPlusPaidRewards;
     uint256 private _totalRewardsPaid;
     int256 private _totalVirtualRewardsPaid;
-    mapping(address => int256) private _rewardsPaid;
-    mapping(address => address) private _authorizedClaimers;
+    mapping(address receiver => int256 rewardsPaid) private _rewardsPaid;
+    mapping(address receiver => address claimer) private _authorizedClaimers;
 
     /**
      * @notice Emitted when the beneficiary is transferred.
@@ -160,14 +160,14 @@ contract OperatorRewarder {
      * @notice Claims rewards for a delegator. The caller must be authorized to claim rewards on
      * behalf of the delegator. By default, the caller is authorized to claim rewards on behalf of
      * themselves.
-     * @param account The delegator's address.
+     * @param receiver The delegator's address that will receive the rewards.
      */
-    function claimRewards(address account) public virtual onlyClaimer(account) {
-        uint256 earned_ = earned(account);
+    function claimRewards(address receiver) public virtual onlyClaimer(receiver) {
+        uint256 earned_ = earned(receiver);
         if (earned_ > 0) {
-            _rewardsPaid[account] += SafeCast.toInt256(earned_);
+            _rewardsPaid[receiver] += SafeCast.toInt256(earned_);
             _totalRewardsPaid += earned_;
-            _doTransferOut(account, earned_);
+            _doTransferOut(receiver, earned_);
         }
     }
 
