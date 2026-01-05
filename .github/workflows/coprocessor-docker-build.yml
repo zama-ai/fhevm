@@ -138,7 +138,7 @@ jobs:
       github.event_name == 'release'
       || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-db-migration == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_db_migration)
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     secrets: &docker_secrets
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -158,6 +158,7 @@ jobs:
       image-name: "fhevm/coprocessor/db-migration"
       docker-file: "coprocessor/fhevm-engine/db-migration/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-db-migration"
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   build-gw-listener:
     needs: check-changes
@@ -165,7 +166,7 @@ jobs:
       github.event_name == 'release'
       || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-gw-listener == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_gw_listener)
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -174,6 +175,7 @@ jobs:
       image-name: "fhevm/coprocessor/gw-listener"
       docker-file: "./coprocessor/fhevm-engine/gw-listener/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-gw-listener"
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   build-host-listener:
     needs: check-changes
@@ -181,7 +183,7 @@ jobs:
       github.event_name == 'release'
       || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-host-listener == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_host_listener)
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -190,6 +192,7 @@ jobs:
       image-name: "fhevm/coprocessor/host-listener"
       docker-file: "coprocessor/fhevm-engine/host-listener/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-host-listener"
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   build-sns-worker:
     needs: check-changes
@@ -197,7 +200,7 @@ jobs:
       github.event_name == 'release'
       || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-sns-worker == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_sns_worker)
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -206,6 +209,7 @@ jobs:
       image-name: "fhevm/coprocessor/sns-worker"
       docker-file: "coprocessor/fhevm-engine/sns-worker/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-sns-worker"
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   build-tfhe-worker:
     needs: check-changes
@@ -213,7 +217,7 @@ jobs:
       github.event_name == 'release'
       || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-tfhe-worker == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_tfhe_worker)
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -222,6 +226,7 @@ jobs:
       image-name: "fhevm/coprocessor/tfhe-worker"
       docker-file: "coprocessor/fhevm-engine/tfhe-worker/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-tfhe-worker"
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   build-tx-sender:
     needs: check-changes
@@ -229,7 +234,7 @@ jobs:
       github.event_name == 'release'
       || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-tx-sender == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_tx_sender)
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -238,6 +243,7 @@ jobs:
       image-name: "fhevm/coprocessor/tx-sender"
       docker-file: "./coprocessor/fhevm-engine/transaction-sender/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-tx-sender"
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   build-zkproof-worker:
     needs: check-changes
@@ -245,7 +251,7 @@ jobs:
       github.event_name == 'release'
       || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-zkproof-worker == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_zkproof_worker)
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -254,6 +260,7 @@ jobs:
       image-name: "fhevm/coprocessor/zkproof-worker"
       docker-file: "coprocessor/fhevm-engine/zkproof-worker/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-zkproof-worker"
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-db-migration-image:
     needs: check-changes
