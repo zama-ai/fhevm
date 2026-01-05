@@ -103,7 +103,7 @@ jobs:
       github.event_name == 'release'
       || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-db-migration == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_db_migration)
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     secrets: &docker_secrets
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -123,6 +123,7 @@ jobs:
       image-name: "fhevm/kms-connector/db-migration"
       docker-file: "kms-connector/connector-db/Dockerfile"
       app-cache-dir: "fhevm-kms-connector-db-migration"
+      rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   build-gw-listener:
     needs: check-changes
@@ -130,7 +131,7 @@ jobs:
       github.event_name == 'release'
       || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-gw-listener == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_gw_listener)
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -139,6 +140,7 @@ jobs:
       image-name: "fhevm/kms-connector/gw-listener"
       docker-file: "./kms-connector/crates/gw-listener/Dockerfile"
       app-cache-dir: "fhevm-kms-connector-gw-listener"
+      rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   build-kms-worker:
     needs: check-changes
@@ -146,7 +148,7 @@ jobs:
       github.event_name == 'release'
       || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-kms-worker == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_kms_worker)
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -155,6 +157,7 @@ jobs:
       image-name: "fhevm/kms-connector/kms-worker"
       docker-file: "./kms-connector/crates/kms-worker/Dockerfile"
       app-cache-dir: "fhevm-kms-connector-kms-worker"
+      rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   build-tx-sender:
     needs: check-changes
@@ -162,7 +165,7 @@ jobs:
       github.event_name == 'release'
       || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-tx-sender == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_tx_sender)
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -171,6 +174,7 @@ jobs:
       image-name: "fhevm/kms-connector/tx-sender"
       docker-file: "./kms-connector/crates/tx-sender/Dockerfile"
       app-cache-dir: "fhevm-kms-connector-tx-sender"
+      rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   re-tag-db-migration-image:
     needs: check-changes
