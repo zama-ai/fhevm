@@ -15,7 +15,9 @@ pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 use crate::config::settings::Settings;
 use crate::core::event::RelayerEvent;
 use crate::gateway::arbitrum::transaction::processor::GatewayTxProcessor;
-use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
+use crate::gateway::arbitrum::transaction::throttler::{
+    GatewayTxTask, ThrottlingSender, ThrottlingWorker,
+};
 use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
 use crate::store::sql::repositories::Repositories;
 use alloy::primitives::Address;
@@ -34,6 +36,8 @@ pub async fn initialize_gateway(
     orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     settings: &Settings,
     repositories: Arc<Repositories>,
+    tx_throttler: ThrottlingSender<GatewayTxTask>,
+    tx_worker: ThrottlingWorker<GatewayTxTask>,
 ) -> anyhow::Result<KeyUrlGatewayHandler> {
     info!("Initializing gateway components");
 
@@ -47,13 +51,6 @@ pub async fn initialize_gateway(
         settings.gateway.clone(),
         tx_engine_gateway.into(),
     ));
-
-    // Create throttler.
-    let (tx_throttler, tx_worker) = ThrottlingSender::<GatewayTxTask>::new(
-        settings.gateway.tx_engine.tx_throttler_capacity,
-        settings.gateway.tx_engine.tx_throttler_safety_margin,
-        settings.gateway.tx_engine.tx_throttler_per_secs,
-    );
 
     // Spawn gateway task
     GatewayTxProcessor::orchestrator_spawn_task(

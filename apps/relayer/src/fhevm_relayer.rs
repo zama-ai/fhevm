@@ -23,7 +23,10 @@
 //!
 //! See [`Settings`] for detailed configuration options.
 
-use crate::gateway;
+use crate::gateway::{
+    self,
+    arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender},
+};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -107,11 +110,23 @@ pub async fn run_fhevm_relayer(
         repositories.clone() as Arc<dyn HealthCheck>,
     );
 
+    // Create throttler.
+    let (tx_throttler, tx_worker) = ThrottlingSender::<GatewayTxTask>::new(
+        settings.gateway.tx_engine.tx_throttler_capacity,
+        settings.gateway.tx_engine.tx_throttler_safety_margin,
+        settings.gateway.tx_engine.tx_throttler_per_secs,
+    );
+
     // Initialize all gateway components
-    let keyurl_gateway_handler =
-        gateway::initialize_gateway(orchestrator.clone(), &settings, repositories.clone())
-            .await
-            .map_err(|e| eyre::eyre!("Failed to initialize gateway: {}", e))?;
+    let keyurl_gateway_handler = gateway::initialize_gateway(
+        orchestrator.clone(),
+        &settings,
+        repositories.clone(),
+        tx_throttler.clone(),
+        tx_worker,
+    )
+    .await
+    .map_err(|e| eyre::eyre!("Failed to initialize gateway: {}", e))?;
 
     let mut settings = settings;
 
