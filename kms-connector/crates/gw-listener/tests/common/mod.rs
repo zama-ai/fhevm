@@ -56,7 +56,7 @@ pub async fn start_test_listener(
 
     // Wait for all gw-listener event filters to be ready + 2 anvil blocks
     for _ in 0..NB_EVENT_TYPE {
-        test_instance.wait_for_log("Waiting for next").await;
+        test_instance.wait_for_log("Subscribed to ").await;
     }
     tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
