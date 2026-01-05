@@ -210,9 +210,21 @@ describe('OperatorStaking', function () {
   describe('redeem', async function () {
     it('simple redemption', async function () {
       await this.mock.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
-      await this.mock
-        .connect(this.delegator1)
-        .requestRedeem(await this.mock.balanceOf(this.delegator1), this.delegator1, this.delegator1);
+      const currentTimestamp = await time.latest();
+      await expect(
+        this.mock
+          .connect(this.delegator1)
+          .requestRedeem(await this.mock.balanceOf(this.delegator1), this.delegator1, this.delegator1),
+      )
+        .to.emit(this.mock, 'RedeemRequest')
+        .withArgs(
+          this.delegator1,
+          this.delegator1,
+          0,
+          this.delegator1,
+          ethers.parseEther('1'),
+          BigInt(currentTimestamp) + 1n + (await this.protocolStaking.unstakeCooldownPeriod()),
+        );
 
       await expect(this.mock.pendingRedeemRequest(0, this.delegator1)).to.eventually.eq(ethers.parseEther('1'));
       await expect(this.mock.claimableRedeemRequest(0, this.delegator1)).to.eventually.eq(0);
@@ -228,11 +240,13 @@ describe('OperatorStaking', function () {
       await expect(this.token.balanceOf(this.mock)).to.eventually.be.eq(0);
     });
 
-    it('zero redemption should terminate early', async function () {
-      await expect(this.mock.connect(this.delegator1).requestRedeem(0, this.delegator1, this.delegator1)).to.not.emit(
-        this.mock,
-        'RedeemRequest',
-      );
+    it('should return release time', async function () {
+      await this.mock.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
+      await expect(
+        this.mock
+          .connect(this.delegator1)
+          .requestRedeem.staticCall(await this.mock.balanceOf(this.delegator1), this.delegator1, this.delegator1),
+      ).to.eventually.eq(BigInt(await time.latest()) + (await this.protocolStaking.unstakeCooldownPeriod()));
     });
 
     it('should not redeem twice', async function () {
@@ -249,6 +263,18 @@ describe('OperatorStaking', function () {
       await expect(
         this.mock.connect(this.delegator1).redeem(ethers.MaxUint256, this.delegator1, this.delegator1),
       ).to.not.emit(this.token, 'Transfer');
+    });
+
+    it('should revert on requestRedeem 0 shares', async function () {
+      await expect(
+        this.mock.connect(this.delegator1).requestRedeem(0, this.delegator1, this.delegator1),
+      ).to.be.revertedWithCustomError(this.mock, 'InvalidShares');
+    });
+
+    it('should revert on redeem 0 shares', async function () {
+      await expect(
+        this.mock.connect(this.delegator1).redeem(0, this.delegator1, this.delegator1),
+      ).to.be.revertedWithCustomError(this.mock, 'InvalidShares');
     });
 
     it('should revert on redeem more than available', async function () {
