@@ -64,11 +64,20 @@ jobs:
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
     runs-on: ubuntu-latest
     outputs:
-      coprocessor: ${{ steps.create-e2e-tests-input.outputs.coprocessor }}
-      connector: ${{ steps.create-e2e-tests-input.outputs.connector }}
-      gateway: ${{ steps.create-e2e-tests-input.outputs.gateway }}
-      host: ${{ steps.create-e2e-tests-input.outputs.host }}
-      test-suite: ${{ steps.create-e2e-tests-input.outputs.test-suite }}
+      coprocessor-db-migration-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
+      coprocessor-gw-listener-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
+      coprocessor-host-listener-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-host-listener-version }}
+      coprocessor-sns-worker-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-sns-worker-version }}
+      coprocessor-tfhe-worker-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
+      coprocessor-tx-sender-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
+      coprocessor-zkproof-worker-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      connector-db-migration-version: ${{ steps.create-e2e-tests-input.outputs.connector-db-migration-version }}
+      connector-gw-listener-version: ${{ steps.create-e2e-tests-input.outputs.connector-gw-listener-version }}
+      connector-kms-worker-version: ${{ steps.create-e2e-tests-input.outputs.connector-kms-worker-version }}
+      connector-tx-sender-version: ${{ steps.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      gateway-version: ${{ steps.create-e2e-tests-input.outputs.gateway-version }}
+      host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
+      test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
       - id: create-e2e-tests-input
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v0.8.0
@@ -87,33 +96,27 @@ jobs:
               return imageTag;
             }
 
-            const coprocessor = [
-              getImageTagIfBuilt('coprocessor-docker-build', 'db_migration_build_result'),
-              getImageTagIfBuilt('coprocessor-docker-build', 'gw_listener_build_result'),
-              getImageTagIfBuilt('coprocessor-docker-build', 'host_listener_build_result'),
-              getImageTagIfBuilt('coprocessor-docker-build', 'sns_worker_build_result'),
-              getImageTagIfBuilt('coprocessor-docker-build', 'tfhe_worker_build_result'),
-              getImageTagIfBuilt('coprocessor-docker-build', 'tx_sender_build_result'),
-              getImageTagIfBuilt('coprocessor-docker-build', 'zkproof_worker_build_result'),
-            ];
+            core.setOutput('coprocessor-db-migration-version', getImageTagIfBuilt('coprocessor-docker-build', 'db_migration_build_result'));
+            core.setOutput('coprocessor-gw-listener-version', getImageTagIfBuilt('coprocessor-docker-build', 'gw_listener_build_result'));
+            core.setOutput('coprocessor-host-listener-version', getImageTagIfBuilt('coprocessor-docker-build', 'host_listener_build_result'));
+            core.setOutput('coprocessor-sns-worker-version', getImageTagIfBuilt('coprocessor-docker-build', 'sns_worker_build_result'));
+            core.setOutput('coprocessor-tfhe-worker-version', getImageTagIfBuilt('coprocessor-docker-build', 'tfhe_worker_build_result'));
+            core.setOutput('coprocessor-tx-sender-version', getImageTagIfBuilt('coprocessor-docker-build', 'tx_sender_build_result'));
+            core.setOutput('coprocessor-zkproof-worker-version', getImageTagIfBuilt('coprocessor-docker-build', 'zkproof_worker_build_result'));
 
-            const connector = [
-              getImageTagIfBuilt('kms-connector-docker-build', 'db_migration_build_result'),
-              getImageTagIfBuilt('kms-connector-docker-build', 'gw_listener_build_result'),
-              getImageTagIfBuilt('kms-connector-docker-build', 'kms_worker_build_result'),
-              getImageTagIfBuilt('kms-connector-docker-build', 'tx_sender_build_result'),
-            ];
+            core.setOutput('connector-db-migration-version', getImageTagIfBuilt('kms-connector-docker-build', 'db_migration_build_result'));
+            core.setOutput('connector-gw-listener-version', getImageTagIfBuilt('kms-connector-docker-build', 'gw_listener_build_result'));
+            core.setOutput('connector-kms-worker-version', getImageTagIfBuilt('kms-connector-docker-build', 'kms_worker_build_result'));
+            core.setOutput('connector-tx-sender-version', getImageTagIfBuilt('kms-connector-docker-build', 'tx_sender_build_result'));
 
-            core.setOutput('coprocessor', coprocessor);
-            core.setOutput('gateway', getImageTagIfBuilt('gateway-contracts-docker-build', 'build_result'));
-            core.setOutput('host', getImageTagIfBuilt('host-contracts-docker-build', 'build_result'));
-            core.setOutput('connector', connector);
-            core.setOutput('test-suite', getImageTagIfBuilt('test-suite-docker-build', 'build_result'));
+            core.setOutput('gateway-version', getImageTagIfBuilt('gateway-contracts-docker-build', 'build_result'));
+            core.setOutput('host-version', getImageTagIfBuilt('host-contracts-docker-build', 'build_result'));
+            core.setOutput('test-suite-version', getImageTagIfBuilt('test-suite-docker-build', 'build_result'));
 
   run-e2e-tests:
     needs: [create-e2e-tests-input]
     uses:
-      ./.github/workflows/test-suite-e2e-tests-mq.yml
+      ./.github/workflows/test-suite-e2e-tests.yml
     permissions:
       contents: 'read' # Required to checkout repository code
       id-token: 'write' # Required for OIDC authentication
@@ -123,8 +126,17 @@ jobs:
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     with:
-      coprocessor: ${{ needs.create-e2e-tests-input.outputs.coprocessor }}
-      gateway: ${{ needs.create-e2e-tests-input.outputs.gateway }}
-      host: ${{ needs.create-e2e-tests-input.outputs.host }}
-      connector: ${{ needs.create-e2e-tests-input.outputs.connector }}
-      test-suite: ${{ needs.create-e2e-tests-input.outputs.test-suite }}
+      coprocessor-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
+      coprocessor-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
+      coprocessor-host-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-host-listener-version }}
+      coprocessor-sns-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-sns-worker-version }}
+      coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
+      coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
+      coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
+      connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
+      connector-kms-worker-version: ${{ needs.create-e2e-tests-input.outputs.connector-kms-worker-version }}
+      connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
+      host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
+      test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
