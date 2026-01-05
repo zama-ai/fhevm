@@ -2,7 +2,7 @@ use crate::{
     config::KmsWallet,
     conn::WalletGatewayProvider,
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
-    tests::setup::{ROOT_CARGO_TOML, pick_free_port},
+    tests::setup::ROOT_CARGO_TOML,
 };
 use alloy::{
     primitives::{Address, ChainId, FixedBytes},
@@ -17,7 +17,7 @@ use fhevm_gateway_bindings::{
 use std::{sync::LazyLock, time::Duration};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
-    core::{WaitFor, client::docker_client_instance},
+    core::{ContainerPort, WaitFor, client::docker_client_instance},
     runners::AsyncRunner,
 };
 use tracing::info;
@@ -78,9 +78,10 @@ impl GatewayInstance {
 
     pub async fn setup() -> anyhow::Result<Self> {
         let block_time = 1;
-        let anvil_host_port = pick_free_port();
-        let anvil: ContainerAsync<GenericImage> =
-            setup_anvil_gateway(anvil_host_port, block_time).await?;
+
+        let anvil = setup_anvil_gateway(block_time).await?;
+        let anvil_host_port = anvil.get_host_port_ipv4(ANVIL_PORT).await?;
+
         let wallet = KmsWallet::from_private_key_str(
             DEPLOYER_PRIVATE_KEY,
             Some(ChainId::from(*CHAIN_ID as u64)),
@@ -118,19 +119,15 @@ impl GatewayInstance {
     }
 }
 
-pub async fn setup_anvil_gateway(
-    host_port: u16,
-    block_time: u64,
-) -> anyhow::Result<ContainerAsync<GenericImage>> {
+pub async fn setup_anvil_gateway(block_time: u64) -> anyhow::Result<ContainerAsync<GenericImage>> {
     info!("Starting Anvil...");
     let anvil = GenericImage::new("ghcr.io/foundry-rs/foundry", "v1.3.5")
+        .with_exposed_port(ContainerPort::Tcp(ANVIL_PORT))
         .with_wait_for(WaitFor::message_on_stdout("Listening"))
         .with_entrypoint("anvil")
         .with_cmd([
             "--host",
             "0.0.0.0",
-            "--port",
-            ANVIL_PORT.to_string().as_str(),
             "--chain-id",
             CHAIN_ID.to_string().as_str(),
             "--mnemonic",
@@ -138,7 +135,6 @@ pub async fn setup_anvil_gateway(
             "--block-time",
             &format!("{block_time}"),
         ])
-        .with_mapped_port(host_port, ANVIL_PORT.into())
         .start()
         .await?;
 

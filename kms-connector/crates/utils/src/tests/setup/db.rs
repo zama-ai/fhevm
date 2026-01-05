@@ -2,8 +2,6 @@ use sqlx::{Pool, Postgres};
 use testcontainers::{ContainerAsync, GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
 use tracing::info;
 
-use crate::tests::setup::pick_free_port;
-
 const POSTGRES_PORT: u16 = 5432;
 
 pub struct DbInstance {
@@ -15,13 +13,11 @@ pub struct DbInstance {
 
 impl DbInstance {
     pub async fn setup() -> anyhow::Result<Self> {
-        let host_port = pick_free_port();
         info!("Starting Postgres container...");
         let container = GenericImage::new("postgres", "17.5")
             .with_wait_for(WaitFor::message_on_stderr(
                 "database system is ready to accept connections",
             ))
-            .with_mapped_port(host_port, POSTGRES_PORT.into())
             .with_env_var("POSTGRES_USER", "postgres")
             .with_env_var("POSTGRES_PASSWORD", "postgres")
             .start()
@@ -29,6 +25,7 @@ impl DbInstance {
         info!("Postgres container ready!");
 
         let cont_host = container.get_host().await?;
+        let host_port = container.get_host_port_ipv4(POSTGRES_PORT).await?;
         let admin_db_url =
             format!("postgresql://postgres:postgres@{cont_host}:{host_port}/postgres");
         let db_url =
