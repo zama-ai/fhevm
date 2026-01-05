@@ -474,8 +474,12 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
             );
     }
 
+    /**
+     * @dev Returns a decimal offset of 2 to mitigate the ERC4626 inflation attack.
+     * This creates 100 virtual shares per asset unit, making the attack economically unfeasible.
+     */
     function _decimalsOffset() internal view virtual returns (uint8) {
-        return 0;
+        return 2;
     }
 
     function _getOperatorStakingStorage() internal pure returns (OperatorStakingStorage storage $) {

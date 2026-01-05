@@ -7,6 +7,11 @@ import hre from 'hardhat';
 const timeIncreaseNoMine = (duration: number) =>
   time.latest().then(clock => time.setNextBlockTimestamp(clock + duration));
 
+// DECIMAL_OFFSET is used in OperatorStaking to mitigate inflation attacks.
+// This creates 10^DECIMAL_OFFSET virtual shares per asset unit.
+const DECIMAL_OFFSET = 2n;
+const SHARES_PER_ASSET_UNIT = 10n ** DECIMAL_OFFSET;
+
 describe('OperatorRewarder', function () {
   beforeEach(async function () {
     const [delegator1, delegator2, claimer, admin, beneficiary, anyone, ...accounts] = await ethers.getSigners();
@@ -162,7 +167,8 @@ describe('OperatorRewarder', function () {
       await timeIncreaseNoMine(10);
       await this.protocolStaking.connect(this.admin).setRewardRate(0);
       await this.mock.connect(this.delegator1).claimRewards(this.delegator1); // claims past rewards before not being able to
-      await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, ethers.parseEther('1'));
+      const sharesToTransfer = ethers.parseEther('1') * SHARES_PER_ASSET_UNIT;
+      await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, sharesToTransfer);
       // delegator1 will be able deposit and claim reward again
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
       // delegator2 cannot claim any reward
@@ -223,20 +229,17 @@ describe('OperatorRewarder', function () {
       await this.mock.connect(this.delegator1).claimRewards(this.delegator1);
       await this.mock.connect(this.delegator2).claimRewards(this.delegator2);
 
+      const sharesToRedeem = ethers.parseEther('1') * SHARES_PER_ASSET_UNIT;
       await this.operatorStaking
         .connect(this.delegator1)
-        .requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1);
+        .requestRedeem(sharesToRedeem, this.delegator1, this.delegator1);
       await this.operatorStaking
         .connect(this.delegator2)
-        .requestRedeem(ethers.parseEther('1'), this.delegator2, this.delegator2);
+        .requestRedeem(sharesToRedeem, this.delegator2, this.delegator2);
       await timeIncreaseNoMine(60);
 
-      await this.operatorStaking
-        .connect(this.delegator1)
-        .redeem(ethers.parseEther('1'), this.delegator1, this.delegator1);
-      await this.operatorStaking
-        .connect(this.delegator2)
-        .redeem(ethers.parseEther('1'), this.delegator2, this.delegator2);
+      await this.operatorStaking.connect(this.delegator1).redeem(sharesToRedeem, this.delegator1, this.delegator1);
+      await this.operatorStaking.connect(this.delegator2).redeem(sharesToRedeem, this.delegator2, this.delegator2);
 
       await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
@@ -261,9 +264,10 @@ describe('OperatorRewarder', function () {
 
       await timeIncreaseNoMine(10);
 
+      const sharesToRedeem = ethers.parseEther('2') * SHARES_PER_ASSET_UNIT;
       await this.operatorStaking
         .connect(this.delegator1)
-        .requestRedeem(ethers.parseEther('2'), this.delegator1, this.delegator1);
+        .requestRedeem(sharesToRedeem, this.delegator1, this.delegator1);
 
       await time.increase(10);
 
@@ -591,7 +595,8 @@ describe('OperatorRewarder', function () {
         await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
         await timeIncreaseNoMine(10);
 
-        await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, ethers.parseEther('1'));
+        const sharesToTransfer = ethers.parseEther('1') * SHARES_PER_ASSET_UNIT;
+        await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, sharesToTransfer);
         await time.increase(10);
 
         await expect(this.mock.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('5'));
@@ -602,7 +607,8 @@ describe('OperatorRewarder', function () {
         await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
         await timeIncreaseNoMine(10);
 
-        await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, ethers.parseEther('0.5'));
+        const sharesToTransfer = ethers.parseEther('0.5') * SHARES_PER_ASSET_UNIT;
+        await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, sharesToTransfer);
         await time.increase(10);
 
         await expect(this.mock.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('7.5'));
