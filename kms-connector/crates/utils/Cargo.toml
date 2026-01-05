@@ -43,6 +43,7 @@ testcontainers = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 
 [dev-dependencies]
+alloy = { workspace = true, features = ["provider-anvil-node"] }
 serial_test.workspace = true
 tempfile.workspace = true
 toml.workspace = true
