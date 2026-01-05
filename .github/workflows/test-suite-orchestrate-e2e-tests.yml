@@ -79,6 +79,10 @@ jobs:
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
       - id: create-e2e-tests-input
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v0.8.0
         with:
@@ -89,9 +93,17 @@ jobs:
             console.log(`New commit hash: ${newCommitHash}`)
             console.log(`Docker build results: ${process.env.DOCKER_BUILD_RESULTS}`)
 
+            const { execSync } = require('child_process');
             const dockerBuildResults = JSON.parse(process.env.DOCKER_BUILD_RESULTS);
             function getImageTagIfBuilt(key, build_result) {
-              let imageTag = dockerBuildResults[key].outputs[build_result] === 'success' ? newCommitHash : previousCommitHash;
+              let imageCommit = dockerBuildResults[key].outputs[build_result] === 'success' ? newCommitHash : previousCommitHash;
+              let imageTag;
+              try {
+                imageTag = execSync(`git rev-parse --short ${imageCommit}`, { encoding: 'utf8' }).trim();
+              } catch (err) {
+                console.log(`Failed to resolve short hash for ${imageCommit}, falling back to substring`);
+                imageTag = imageCommit.substring(0, 7);
+              }
               console.log(`Assigning image tag '${imageTag}' for ${key}`);
               return imageTag;
             }

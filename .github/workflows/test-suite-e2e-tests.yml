@@ -106,7 +106,7 @@ jobs:
       CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector-tx-sender-version }}
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
       RELAYER_VERSION: ${{ inputs.relayer-version }}
-      KMS_CORE_VERSION: ${{ inputs.kms-core-version }}
+      CORE_VERSION: ${{ inputs.kms-core-version }}
     runs-on: large_ubuntu_32
     steps:
       - name: Checkout code
