@@ -45,7 +45,8 @@ gateway:
       max_attempts: 100
       retry_interval_ms: 500
     tx_throttler_per_secs: 20
-    tx_throttler_capacity: 2000
+    tx_throttler_capacity: 10000
+    tx_throttler_safety_margin: 500
   readiness_checker:
     max_concurrency: 100
     retry:

@@ -55,6 +55,7 @@ pub struct ThrottlingSender<T> {
     // Bounded Channel carrying the Payload T
     sender: mpsc::Sender<T>,
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
+    soft_capacity: usize,
 }
 
 // NOTE: There must be at least one instance of this and hence the reciever for the queue channel to stay alive.
@@ -70,13 +71,21 @@ impl<T> ThrottlingSender<T>
 where
     T: MemoryThrottlerItem + Send + Sync + 'static,
 {
-    pub fn new(capacity: usize, tps: u32) -> (Self, ThrottlingWorker<T>) {
+    pub fn new(
+        capacity: usize,
+        capacity_safety_margin: usize,
+        tps: u32,
+    ) -> (Self, ThrottlingWorker<T>) {
         let (sender, receiver) = mpsc::channel(capacity);
         let tracker = Arc::new(RwLock::new(IndexMap::new()));
+        // The safety margin (Headroom). is_queue_full returns true when (capacity - capacity_safety_margin) is reached.
+        // Useful to avoid the TOCTOU race condition when bouncing from the api routes.
+        let soft_capacity = capacity.saturating_sub(capacity_safety_margin);
 
         let throttler = Self {
             sender,
             tracker: tracker.clone(),
+            soft_capacity,
         };
 
         let worker = ThrottlingWorker {
@@ -142,6 +151,18 @@ where
 
     pub async fn get_position(&self, id: &str) -> Option<usize> {
         self.tracker.read().await.get_index_of(id)
+    }
+
+    /// SOFT CHECK: Used by API to bounce requests early.
+    /// Returns TRUE if we have reached the "High Water Mark".
+    ///
+    /// Logic:
+    /// If Capacity = 100, Buffer = 10.
+    /// We say "Full" when Len >= 90.
+    /// The remaining 10 slots are reserved for Concurrent post requests (Race conditions).
+    pub async fn is_queue_full(&self) -> bool {
+        let len = self.len().await;
+        len >= self.soft_capacity
     }
 }
 
@@ -215,7 +236,7 @@ mod tests {
     // --- Test 1: FIFO Ordering & Tracking ---
     #[tokio::test]
     async fn test_fifo_ordering() {
-        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 100);
+        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 0, 100);
         let processed = Arc::new(Mutex::new(Vec::new()));
         let processed_clone = processed.clone();
 
@@ -242,7 +263,7 @@ mod tests {
     // --- Test 2: Deduplication ---
     #[tokio::test]
     async fn test_deduplication() {
-        let (throttler, _worker) = ThrottlingSender::<MockTask>::new(10, 100);
+        let (throttler, _worker) = ThrottlingSender::<MockTask>::new(10, 0, 100);
 
         throttler.push(MockTask { id: "A".into() }).await.unwrap();
 
@@ -256,7 +277,7 @@ mod tests {
     #[tokio::test]
     async fn test_queue_full() {
         // Capacity = 1
-        let (throttler, _worker) = ThrottlingSender::<MockTask>::new(1, 100);
+        let (throttler, _worker) = ThrottlingSender::<MockTask>::new(1, 0, 100);
 
         // 1. Push OK
         assert!(throttler.push(MockTask { id: "1".into() }).await.is_ok());
@@ -278,7 +299,7 @@ mod tests {
     #[tokio::test]
     async fn test_position_tracking() {
         // Very slow rate (1 TPS) to ensure items stay in queue
-        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 1);
+        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 0, 1);
 
         throttler.push(MockTask { id: "A".into() }).await.unwrap();
         throttler.push(MockTask { id: "B".into() }).await.unwrap();
@@ -309,7 +330,7 @@ mod tests {
     async fn test_position_tracking_deterministic() {
         // 1. Setup Throttler (Worker NOT spawned yet)
         // Capacity 10 allows us to push multiple items without blocking/failing
-        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 50);
+        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 0, 50);
 
         // 2. Push items
         // Since the worker isn't running, these sit in the Channel and the Tracker.
@@ -351,7 +372,7 @@ mod tests {
         // - Items 11-20: Processed 1 every 100ms.
         // Total expected time: ~1.0 second.
         let tps = 10;
-        let (throttler, worker) = ThrottlingSender::<MockTask>::new(100, tps);
+        let (throttler, worker) = ThrottlingSender::<MockTask>::new(100, 0, tps);
         let processed_count = Arc::new(AtomicUsize::new(0));
         let counter = processed_count.clone();
 
@@ -405,7 +426,7 @@ mod tests {
     async fn test_rate_limit_sustained() {
         let tps = 20;
         // Capacity large enough to hold the blast so we don't get "Queue Full" errors during setup
-        let (throttler, worker) = ThrottlingSender::<MockTask>::new(200, tps);
+        let (throttler, worker) = ThrottlingSender::<MockTask>::new(200, 0, tps);
         let processed_count = Arc::new(AtomicUsize::new(0));
         let counter = processed_count.clone();
 
@@ -458,7 +479,7 @@ mod tests {
     // --- Test: Cloning Safety ---
     #[tokio::test]
     async fn test_cloning_shares_state() {
-        let (throttler_1, worker) = ThrottlingSender::<MockTask>::new(10, 100);
+        let (throttler_1, worker) = ThrottlingSender::<MockTask>::new(10, 0, 100);
 
         // Clone it (Creating a second producer handle)
         let throttler_2 = throttler_1.clone();
@@ -480,5 +501,54 @@ mod tests {
 
         // 4. Check via Clone 1 (Should see "B")
         assert!(throttler_1.contains("B").await);
+    }
+
+    // --- Test: Buffer / Headroom Logic ---
+    #[tokio::test]
+    async fn test_throttler_buffer_logic() {
+        // Capacity = 10
+        // Buffer = 2
+        // Soft Limit = 8
+        // TPS = 100 (irrelevant as we don't start worker immediately)
+        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 2, 100);
+
+        // 1. Fill up to Soft Limit (8 items)
+        for i in 0..8 {
+            throttler
+                .push(MockTask {
+                    id: format!("{}", i),
+                })
+                .await
+                .unwrap();
+        }
+
+        assert_eq!(throttler.len().await, 8);
+
+        // 2. CHECK: Queue should report FULL (Soft Limit reached)
+        // Even though physical capacity is 10, we stop accepting API calls here.
+        assert!(throttler.is_queue_full().await);
+
+        // 3. PROOF OF SAFETY (The "Race Condition" Simulation)
+        // Imagine 2 requests passed the check concurrently right before step 2.
+        // They try to push NOW.
+
+        // Pushing 9th item -> Should SUCCEED (consumed 1 buffer slot)
+        assert!(throttler.push(MockTask { id: "9".into() }).await.is_ok());
+
+        // Pushing 10th item -> Should SUCCEED (consumed 2nd buffer slot)
+        assert!(throttler.push(MockTask { id: "10".into() }).await.is_ok());
+
+        assert_eq!(throttler.len().await, 10);
+
+        // 4. HARD LIMIT
+        // Now the buffer is truly gone. Next push fails hard.
+        let err = throttler.push(MockTask { id: "11".into() }).await;
+        assert!(err.is_err());
+
+        // Drain to clean up
+        tokio::spawn(async move {
+            worker.run_consumer(|_| async {}).await;
+        });
+        sleep(Duration::from_millis(100)).await;
     }
 }

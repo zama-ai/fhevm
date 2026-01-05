@@ -51,6 +51,7 @@ pub async fn initialize_gateway(
     // Create throttler.
     let (tx_throttler, tx_worker) = ThrottlingSender::<GatewayTxTask>::new(
         settings.gateway.tx_engine.tx_throttler_capacity,
+        settings.gateway.tx_engine.tx_throttler_safety_margin,
         settings.gateway.tx_engine.tx_throttler_per_secs,
     );
 

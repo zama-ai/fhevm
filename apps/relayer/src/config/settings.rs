@@ -87,6 +87,7 @@ pub struct TxEngineConfig {
     pub retry: RetrySettings,
     pub tx_throttler_per_secs: u32,
     pub tx_throttler_capacity: usize,
+    pub tx_throttler_safety_margin: usize,
 }
 
 impl TxEngineConfig {
@@ -95,6 +96,13 @@ impl TxEngineConfig {
             return Err(AppConfigError::Config(format!(
                 "Tx throttler capacity should be superior to 0: {}",
                 self.tx_throttler_capacity
+            )));
+        }
+        if self.tx_throttler_safety_margin >= self.tx_throttler_capacity {
+            return Err(AppConfigError::Config(format!(
+                "Tx throttler safety margin should be inferior strictly to capacity: cap:{}, margin:{}",
+                self.tx_throttler_capacity,
+                self.tx_throttler_safety_margin,
             )));
         }
         if self.tx_throttler_per_secs == 0 {
