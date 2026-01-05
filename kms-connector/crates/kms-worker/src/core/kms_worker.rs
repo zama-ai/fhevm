@@ -110,7 +110,7 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>> {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
+        let provider = connect_to_gateway(config.gateway_url.clone(), config.chain_id).await?;
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
         let s3_client = reqwest::Client::builder()

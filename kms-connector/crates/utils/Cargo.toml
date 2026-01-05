@@ -22,6 +22,7 @@ clap.workspace = true
 config.workspace = true
 futures.workspace = true
 git-version.workspace = true
+humantime-serde.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
@@ -44,7 +45,6 @@ toml = { workspace = true, optional = true }
 
 [dev-dependencies]
 serial_test.workspace = true
-tempfile.workspace = true
 toml.workspace = true
 
 [features]

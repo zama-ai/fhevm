@@ -58,7 +58,9 @@ async fn test_pick_response_with_pg_notif(response_str: &str) -> anyhow::Result<
 
 async fn init_response_picker(db_pool: Pool<Postgres>) -> anyhow::Result<DbKmsResponsePicker> {
     // Use high polling to ensure PG notifications are used in tests
-    let mut config = Config::default().await;
-    config.database_polling_timeout = Duration::from_secs(120);
+    let config = Config {
+        database_polling_timeout: Duration::from_secs(120),
+        ..Default::default()
+    };
     DbKmsResponsePicker::connect(db_pool, &config).await
 }

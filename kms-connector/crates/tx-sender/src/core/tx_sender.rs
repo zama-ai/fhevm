@@ -138,12 +138,13 @@ where
 impl TransactionSender<DbKmsResponsePicker, WalletGatewayProviderFillers, RootProvider> {
     /// Creates a new `TransactionSender` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
+        let wallet = config.build_wallet().await?;
+
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let response_picker = DbKmsResponsePicker::connect(db_pool.clone(), &config).await?;
 
         let provider =
-            connect_to_gateway_with_wallet(&config.gateway_url, config.chain_id, config.wallet)
-                .await?;
+            connect_to_gateway_with_wallet(config.gateway_url, config.chain_id, wallet).await?;
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
         let kms_generation_contract =
