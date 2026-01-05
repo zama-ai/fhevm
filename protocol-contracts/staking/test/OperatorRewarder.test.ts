@@ -616,14 +616,6 @@ describe('OperatorRewarder', function () {
           'NotStarted',
         );
       });
-
-      it('should revert if not started for transferHook', async function () {
-        await expect(
-          this.notStartedRewarder
-            .connect(this.anyone)
-            .transferHook(this.delegator1, this.delegator1, ethers.parseEther('1')),
-        ).to.be.revertedWithCustomError(this.mock, 'NotStarted');
-      });
     });
   });
 

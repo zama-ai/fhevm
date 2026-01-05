@@ -275,7 +275,7 @@ contract OperatorRewarder {
      * @param to Recipient address.
      * @param shares Number of shares transferred.
      */
-    function transferHook(address from, address to, uint256 shares) public virtual whenStarted onlyOperatorStaking {
+    function transferHook(address from, address to, uint256 shares) public virtual onlyOperatorStaking {
         uint256 oldTotalSupply = operatorStaking().totalSupply();
         if (oldTotalSupply == 0) return;
 

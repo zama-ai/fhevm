@@ -641,7 +641,7 @@ describe('OperatorStaking', function () {
         await timeIncreaseNoMine(10);
 
         // Deploy the new rewarder contract after earnings have been accumulated in the old rewarder
-        // to better reflect the "stake state" test
+        // to better reflect the "stale state" test
         // This prevents further changes introduced in the OperatorRewarder that could lead to snapshotting
         // pending (old) rewards at deployment (as it would make the aforementioned test fail)
         const newRewarder = await ethers.deployContract('OperatorRewarder', [
