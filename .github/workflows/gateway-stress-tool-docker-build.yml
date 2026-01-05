@@ -33,4 +33,4 @@ jobs:
       image-name: "fhevm/test-suite/gateway-stress-tool"
       docker-file: "./test-suite/gateway-stress/Dockerfile"
       app-cache-dir: "fhevm-gateway-stress-tool"
-      rust-toolchain-file-path: kms-connector/rust-toolchain.toml
+      rust-toolchain-file-path: test-suite/gateway-stress/rust-toolchain.toml
