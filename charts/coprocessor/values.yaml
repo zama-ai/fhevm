@@ -157,8 +157,8 @@ hostListener:
 
     ### Dependence chains parameters
     # - --dependence-cache-size=10000
-    # - --dependence-by-connexity   # Whether to build connected components or linear chains
-    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default no)
+    # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
+    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
 
     ### Catchup parameters (optional)
     # - --catchup-margin
@@ -269,6 +269,11 @@ hostListenerPoller:
 
     ### Prometheus metrics
     - --metrics-addr=0.0.0.0:9100  # Address for Prometheus metrics HTTP server
+
+    ### Dependence chains parameters
+    # - --dependence-cache-size=10000
+    # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
+    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
 
   # Service ports configuration
   ports:

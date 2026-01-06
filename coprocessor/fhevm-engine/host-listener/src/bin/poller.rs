@@ -9,6 +9,10 @@ use tracing::Level;
 
 use fhevm_engine_common::metrics_server;
 use fhevm_engine_common::utils::DatabaseURL;
+use host_listener::cmd::{
+    DEFAULT_DEPENDENCE_BY_CONNEXITY, DEFAULT_DEPENDENCE_CACHE_SIZE,
+    DEFAULT_DEPENDENCE_CROSS_BLOCK,
+};
 use host_listener::poller::{run_poller, PollerConfig};
 
 #[derive(Parser, Debug, Clone)]
@@ -93,6 +97,27 @@ struct Args {
 
     #[arg(long, default_value = "host-listener-poller")]
     service_name: String,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_DEPENDENCE_CACHE_SIZE,
+        help = "Pre-computation dependence chain cache size"
+    )]
+    pub dependence_cache_size: u16,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_DEPENDENCE_BY_CONNEXITY,
+        help = "Dependence chain are connected components"
+    )]
+    pub dependence_by_connexity: bool,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_DEPENDENCE_CROSS_BLOCK,
+        help = "Dependence chain are across blocks"
+    )]
+    pub dependence_cross_block: bool,
 }
 
 #[tokio::main]
@@ -131,6 +156,9 @@ async fn main() -> anyhow::Result<()> {
         max_http_retries: args.max_http_retries,
         rpc_compute_units_per_second: args.rpc_compute_units_per_second,
         health_port: args.health_port,
+        dependence_cache_size: args.dependence_cache_size,
+        dependence_by_connexity: args.dependence_by_connexity,
+        dependence_cross_block: args.dependence_cross_block,
     };
 
     run_poller(config).await
