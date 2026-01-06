@@ -7,6 +7,8 @@ use crate::core::event::{
     RelayerEventData,
 };
 use crate::core::job_id::JobId;
+use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
+use crate::http::utils::bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpApiVersion, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -28,6 +30,8 @@ where
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     api_version: ApiVersion,
     input_proof_repo: Arc<InputProofRepository>,
+    retry_after_seconds: u32,
+    tx_throttler: ThrottlingSender<GatewayTxTask>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
@@ -37,11 +41,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
         api_version: ApiVersion,
         input_proof_repo: Arc<InputProofRepository>,
+        retry_after_seconds: u32,
+        tx_throttler: ThrottlingSender<GatewayTxTask>,
     ) -> Self {
         Self {
             orchestrator,
             api_version,
             input_proof_repo,
+            retry_after_seconds,
+            tx_throttler,
         }
     }
 
@@ -100,6 +108,17 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             };
 
         info!("Successfully parsed and validated request");
+
+        let full = bounce_check(self.tx_throttler.clone()).await;
+        if full {
+            info!("Input proof v2 is bounced by full queue");
+            return AppResponse::<()>::protocol_overloaded(
+                "relayer is currently processing too many requests",
+                &self.retry_after_seconds.to_string(),
+                &request_id.to_string(),
+            )
+            .into_response();
+        }
 
         let (gateway_response_handler, gateway_response_rx): (
             OnceHandler<RelayerEvent>,

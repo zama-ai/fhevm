@@ -60,6 +60,8 @@ where
         orchestrator.clone(),
         api_version,
         repositories.input_proof.clone(),
+        config.api_retry_after_seconds,
+        tx_throttler.clone(),
     ));
 
     let user_decrypt_handler_v1 = Arc::new(UserDecryptHandlerV1::new(
@@ -84,6 +86,7 @@ where
         api_version,
         repositories.input_proof.clone(),
         config.api_retry_after_seconds,
+        tx_throttler.clone(),
     ));
 
     let user_decrypt_handler_v2 = Arc::new(UserDecryptHandlerV2::new(
