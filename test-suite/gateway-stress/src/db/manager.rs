@@ -3,7 +3,10 @@ use crate::{
     cli::{DbBenchmarkArgs, DbTestArgs},
     config::Config,
     db::{DbConnector, RequestBuilder, ResponseTracker},
-    decryption::{BurstResult, types::DecryptionRequest},
+    decryption::{
+        BurstResult,
+        types::{DecryptionRequest, DecryptionType},
+    },
 };
 use anyhow::anyhow;
 use std::sync::Arc;
@@ -40,6 +43,8 @@ impl DatabaseTestManager {
             let connector = DbConnector::connect(db_config, i, request_sender).await?;
             let tracker = ResponseTracker::new(
                 connector.name.clone(),
+                config.public_ct.len(),
+                config.user_ct.len(),
                 request_receiver,
                 connector.db_pool.clone(),
             );
@@ -130,12 +135,16 @@ impl DatabaseTestManager {
         }
 
         burst_tasks.join_all().await;
+
         let elapsed = session_start.elapsed().as_secs_f64();
-        info!(
-            "Handled all burst in {:.2}s. Throughput: {:.2} tps",
-            elapsed,
-            (self.config.parallel_requests * (burst_index - 1) as u32) as f64 / elapsed
-        );
+        let handle_batch_size = match args.decryption_type {
+            DecryptionType::Public => self.config.public_ct.len() as u32,
+            DecryptionType::User => self.config.user_ct.len() as u32,
+        };
+        let total_decryption =
+            self.config.parallel_requests * handle_batch_size * (burst_index - 1) as u32;
+        let throughput = total_decryption as f64 / elapsed;
+        info!("Handled all burst in {elapsed:.2}s. Throughput: {throughput:.2} tps");
 
         if !args.skip_clear_db {
             self.clear_databases().await?;

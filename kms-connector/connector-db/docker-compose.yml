@@ -21,6 +21,8 @@ services:
     build:
       context: ../..
       dockerfile: kms-connector/connector-db/Dockerfile
+      args:
+        RUST_IMAGE_VERSION: stable
     environment:
       DATABASE_URL: postgresql://postgres:postgres@kms-connector-db:5432/kms-connector
     depends_on:

@@ -160,12 +160,16 @@ impl GatewayTestManager {
         }
 
         burst_tasks.join_all().await;
+
         let elapsed = session_start.elapsed().as_secs_f64();
-        info!(
-            "Handled all burst in {:.2}s. Throughput: {:.2} tps",
-            elapsed,
-            (self.config.parallel_requests * (burst_index - 1) as u32) as f64 / elapsed
-        );
+        let handle_batch_size = match args.decryption_type {
+            DecryptionType::Public => self.config.public_ct.len() as u32,
+            DecryptionType::User => self.config.user_ct.len() as u32,
+        };
+        let total_decryption =
+            self.config.parallel_requests * handle_batch_size * (burst_index - 1) as u32;
+        let throughput = total_decryption as f64 / elapsed;
+        info!("Handled all burst in {elapsed:.2}s. Throughput: {throughput:.2} tps");
         Ok(())
     }
 
