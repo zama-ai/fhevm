@@ -239,6 +239,40 @@ Response:
 }
 ```
 
+### Admin Endpoints (Optional)
+
+When `enable_admin_endpoint: true` in config:
+
+```
+POST /admin/config
+```
+
+Update runtime configuration without restart.
+
+Request:
+
+```json
+{
+  "name": "tx_throttler_per_secs",
+  "value": 50
+}
+```
+
+Response (Success):
+
+```json
+{
+  "name": "tx_throttler_per_secs",
+  "value": 50,
+  "message": "Configuration updated successfully"
+}
+```
+
+**Supported Parameters:**
+- `tx_throttler_per_secs`: Transaction throttler rate limit (0 < TPS <= 1000)
+
+**Production Note:** Authentication and rate limiting should be handled by Kong/API Gateway.
+
 ## Development
 
 ### Testing

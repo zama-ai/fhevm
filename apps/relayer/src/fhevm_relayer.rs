@@ -110,11 +110,12 @@ pub async fn run_fhevm_relayer(
         repositories.clone() as Arc<dyn HealthCheck>,
     );
 
-    // Create throttler.
-    let (tx_throttler, tx_worker) = ThrottlingSender::<GatewayTxTask>::new(
+    // Create throttler with optional admin control channel
+    let (tx_throttler, tx_worker, throttler_control_tx) = ThrottlingSender::<GatewayTxTask>::new(
         settings.gateway.tx_engine.tx_throttler_capacity,
         settings.gateway.tx_engine.tx_throttler_safety_margin,
         settings.gateway.tx_engine.tx_throttler_per_secs,
+        settings.http.enable_admin_endpoint,
     );
 
     // Initialize all gateway components
@@ -140,6 +141,7 @@ pub async fn run_fhevm_relayer(
             repositories.clone(),
             settings.gateway.contracts.user_decrypt_shares_threshold,
             tx_throttler.clone(),
+            throttler_control_tx,
         )
         .await;
 

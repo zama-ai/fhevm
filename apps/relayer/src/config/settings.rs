@@ -150,6 +150,9 @@ pub struct HttpConfig {
     pub metrics: HttpMetricsConfig,
     /// Default retry-after seconds for queued API responses
     pub api_retry_after_seconds: u32,
+    /// Enable admin endpoints for dynamic configuration updates
+    #[serde(default)]
+    pub enable_admin_endpoint: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]

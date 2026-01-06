@@ -65,6 +65,8 @@ pub struct ThrottlingWorker<T> {
     // Shared reference to the same tracker to remove items when processed
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
     tps: u32,
+    // Control channel for dynamic TPS updates (optional)
+    control_rx: Option<mpsc::Receiver<u32>>,
 }
 
 impl<T> ThrottlingSender<T>
@@ -75,12 +77,21 @@ where
         capacity: usize,
         capacity_safety_margin: usize,
         tps: u32,
-    ) -> (Self, ThrottlingWorker<T>) {
+        enable_dynamic_rate_limiting: bool,
+    ) -> (Self, ThrottlingWorker<T>, Option<mpsc::Sender<u32>>) {
         let (sender, receiver) = mpsc::channel(capacity);
         let tracker = Arc::new(RwLock::new(IndexMap::new()));
         // The safety margin (Headroom). is_queue_full returns true when (capacity - capacity_safety_margin) is reached.
         // Useful to avoid the TOCTOU race condition when bouncing from the api routes.
         let soft_capacity = capacity.saturating_sub(capacity_safety_margin);
+
+        // Create control channel if dynamic rate limiting is enabled
+        let (control_tx, control_rx) = if enable_dynamic_rate_limiting {
+            let (tx, rx) = mpsc::channel(1);
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
 
         let throttler = Self {
             sender,
@@ -92,9 +103,10 @@ where
             receiver,
             tracker,
             tps,
+            control_rx,
         };
 
-        (throttler, worker)
+        (throttler, worker, control_tx)
     }
 
     /// Try to push an item.
@@ -170,45 +182,80 @@ impl<T> ThrottlingWorker<T>
 where
     T: MemoryThrottlerItem + Send + Sync + 'static,
 {
+    /// Helper to create a rate limiter with given TPS
+    fn create_limiter(
+        tps: u32,
+    ) -> Arc<
+        RateLimiter<
+            governor::state::direct::NotKeyed,
+            governor::state::InMemoryState,
+            governor::clock::DefaultClock,
+        >,
+    > {
+        let burst = NonZeroU32::new(tps).unwrap_or(NonZeroU32::MIN);
+        let quota = Quota::per_second(burst).allow_burst(burst);
+        Arc::new(RateLimiter::direct(quota))
+    }
+
     pub async fn run_consumer<F, Fut>(mut self, processor: F)
     where
         F: Fn(T) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
+        let dynamic_rate_limiting_enabled = self.control_rx.is_some();
         info!(
-            "Throttler Worker started. TPS: {}, Capacity: Bounded",
-            self.tps
+            "Throttler Worker started. TPS: {}, Capacity: Bounded, Dynamic rate limiting: {}",
+            self.tps, dynamic_rate_limiting_enabled
         );
 
-        let burst = NonZeroU32::new(self.tps).unwrap_or(NonZeroU32::MIN);
-        let quota = Quota::per_second(burst).allow_burst(burst);
-        let limiter = Arc::new(RateLimiter::direct(quota));
+        let mut limiter = Self::create_limiter(self.tps);
         let processor = Arc::new(processor);
 
-        while let Some(item) = self.receiver.recv().await {
-            let id = item.get_id();
+        loop {
+            // Handle control channel conditionally
+            let control_fut = async {
+                match &mut self.control_rx {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await, // Never resolves if disabled
+                }
+            };
 
-            // 1. Rate Limit
-            limiter.until_ready().await;
+            tokio::select! {
+                Some(item) = self.receiver.recv() => {
+                    let id = item.get_id();
 
-            // 2. Remove from Tracker
-            // We remove it *before* processing so the position list is accurate
-            // (it is no longer "waiting" in queue, it is "processing")
-            {
-                let mut tracker = self.tracker.write().await;
-                tracker.shift_remove(&id);
+                    // 1. Rate Limit
+                    limiter.until_ready().await;
+
+                    // 2. Remove from Tracker
+                    // We remove it *before* processing so the position list is accurate
+                    // (it is no longer "waiting" in queue, it is "processing")
+                    {
+                        let mut tracker = self.tracker.write().await;
+                        tracker.shift_remove(&id);
+                    }
+
+                    // 3. Process (Isolated)
+                    let proc_clone = processor.clone();
+
+                    tokio::spawn(async move {
+                        // If this panics, the worker loop survives.
+                        proc_clone(item).await;
+                    });
+                }
+
+                Some(new_tps) = control_fut => {
+                    info!("Throttler rate limit updated: {} TPS -> {} TPS", self.tps, new_tps);
+                    self.tps = new_tps;
+                    limiter = Self::create_limiter(new_tps);
+                }
+
+                else => {
+                    info!("Throttler Worker stopping (All producers dropped).");
+                    break;
+                }
             }
-
-            // 3. Process (Isolated)
-            let proc_clone = processor.clone();
-
-            tokio::spawn(async move {
-                // If this panics, the worker loop survives.
-                proc_clone(item).await;
-            });
         }
-
-        info!("Throttler Worker stopping (All producers dropped).");
     }
 }
 
@@ -236,7 +283,7 @@ mod tests {
     // --- Test 1: FIFO Ordering & Tracking ---
     #[tokio::test]
     async fn test_fifo_ordering() {
-        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 0, 100);
+        let (throttler, worker, _control_tx) = ThrottlingSender::<MockTask>::new(10, 0, 100, false);
         let processed = Arc::new(Mutex::new(Vec::new()));
         let processed_clone = processed.clone();
 
@@ -263,7 +310,8 @@ mod tests {
     // --- Test 2: Deduplication ---
     #[tokio::test]
     async fn test_deduplication() {
-        let (throttler, _worker) = ThrottlingSender::<MockTask>::new(10, 0, 100);
+        let (throttler, _worker, _control_tx) =
+            ThrottlingSender::<MockTask>::new(10, 0, 100, false);
 
         throttler.push(MockTask { id: "A".into() }).await.unwrap();
 
@@ -277,7 +325,7 @@ mod tests {
     #[tokio::test]
     async fn test_queue_full() {
         // Capacity = 1
-        let (throttler, _worker) = ThrottlingSender::<MockTask>::new(1, 0, 100);
+        let (throttler, _worker, _control_tx) = ThrottlingSender::<MockTask>::new(1, 0, 100, false);
 
         // 1. Push OK
         assert!(throttler.push(MockTask { id: "1".into() }).await.is_ok());
@@ -299,7 +347,7 @@ mod tests {
     #[tokio::test]
     async fn test_position_tracking() {
         // Very slow rate (1 TPS) to ensure items stay in queue
-        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 0, 1);
+        let (throttler, worker, _control_tx) = ThrottlingSender::<MockTask>::new(10, 0, 1, false);
 
         throttler.push(MockTask { id: "A".into() }).await.unwrap();
         throttler.push(MockTask { id: "B".into() }).await.unwrap();
@@ -319,9 +367,9 @@ mod tests {
         // A is likely gone (processed). B is at 0 (next). C is at 1.
         // Or if rate limiter held A, A=0, B=1, C=2.
         // Let's rely on IDs list.
-        let contains = throttler.contains(&"C").await;
+        let contains = throttler.contains("C").await;
         let len = throttler.len().await;
-        assert_eq!(contains, true);
+        assert!(contains);
         assert!(len >= 2);
     }
 
@@ -330,7 +378,7 @@ mod tests {
     async fn test_position_tracking_deterministic() {
         // 1. Setup Throttler (Worker NOT spawned yet)
         // Capacity 10 allows us to push multiple items without blocking/failing
-        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 0, 50);
+        let (throttler, worker, _control_tx) = ThrottlingSender::<MockTask>::new(10, 0, 50, false);
 
         // 2. Push items
         // Since the worker isn't running, these sit in the Channel and the Tracker.
@@ -372,7 +420,8 @@ mod tests {
         // - Items 11-20: Processed 1 every 100ms.
         // Total expected time: ~1.0 second.
         let tps = 10;
-        let (throttler, worker) = ThrottlingSender::<MockTask>::new(100, 0, tps);
+        let (throttler, worker, _control_tx) =
+            ThrottlingSender::<MockTask>::new(100, 0, tps, false);
         let processed_count = Arc::new(AtomicUsize::new(0));
         let counter = processed_count.clone();
 
@@ -426,7 +475,8 @@ mod tests {
     async fn test_rate_limit_sustained() {
         let tps = 20;
         // Capacity large enough to hold the blast so we don't get "Queue Full" errors during setup
-        let (throttler, worker) = ThrottlingSender::<MockTask>::new(200, 0, tps);
+        let (throttler, worker, _control_tx) =
+            ThrottlingSender::<MockTask>::new(200, 0, tps, false);
         let processed_count = Arc::new(AtomicUsize::new(0));
         let counter = processed_count.clone();
 
@@ -465,12 +515,12 @@ mod tests {
             if s == 1 {
                 // First Second: Burst (20) + Flow (20) = ~40
                 assert!(
-                    delta >= 35 && delta <= 45,
+                    (35..=45).contains(&delta),
                     "First second should handle Burst + Flow"
                 );
             } else {
                 // Subsequent Seconds: Strict Flow (20)
-                assert!(delta >= 18 && delta <= 22, "Steady state should match TPS");
+                assert!((18..=22).contains(&delta), "Steady state should match TPS");
             }
             prev_count = curr;
         }
@@ -479,7 +529,8 @@ mod tests {
     // --- Test: Cloning Safety ---
     #[tokio::test]
     async fn test_cloning_shares_state() {
-        let (throttler_1, worker) = ThrottlingSender::<MockTask>::new(10, 0, 100);
+        let (throttler_1, worker, _control_tx) =
+            ThrottlingSender::<MockTask>::new(10, 0, 100, false);
 
         // Clone it (Creating a second producer handle)
         let throttler_2 = throttler_1.clone();
@@ -510,7 +561,7 @@ mod tests {
         // Buffer = 2
         // Soft Limit = 8
         // TPS = 100 (irrelevant as we don't start worker immediately)
-        let (throttler, worker) = ThrottlingSender::<MockTask>::new(10, 2, 100);
+        let (throttler, worker, _control_tx) = ThrottlingSender::<MockTask>::new(10, 2, 100, false);
 
         // 1. Fill up to Soft Limit (8 items)
         for i in 0..8 {

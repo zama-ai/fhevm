@@ -2,7 +2,7 @@ use crate::config::settings::HttpConfig;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
 use crate::http::endpoints::{
-    health_handler, liveness_handler,
+    admin, health_handler, liveness_handler,
     v1::handlers::{
         InputProofHandler as InputProofHandlerV1, KeyUrlHandler as KeyUrlHandlerV1,
         PublicDecryptHandler as PublicDecryptHandlerV1, UserDecryptHandler as UserDecryptHandlerV1,
@@ -17,10 +17,15 @@ use crate::http::{openapi_middleware, with_rate_limiting};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::Repositories;
-use axum::{routing::get, Router};
+use axum::{
+    routing::{get, post},
+    Extension, Router,
+};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc;
+use tracing::info;
 
 async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
     const MAX_RETRIES: u32 = 10;
@@ -43,6 +48,7 @@ pub async fn run_http_server<D>(
     repositories: Arc<Repositories>,
     user_decrypt_shares_threshold: u16,
     tx_throttler: ThrottlingSender<GatewayTxTask>,
+    throttler_control_tx: Option<mpsc::Sender<u32>>,
 ) -> SocketAddr
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
@@ -114,7 +120,7 @@ where
     let keyurl_handler_v2 = KeyUrlHandlerV2::new(orchestrator.clone());
 
     // Create the router by merging all handler routers
-    let app = Router::new()
+    let mut app = Router::new()
         // Health and info endpoints
         .route("/liveness", get(liveness_handler))
         .route(
@@ -140,6 +146,20 @@ where
         .merge(keyurl_handler_v2.routes())
         // Add OpenAPI documentation
         .merge(openapi_middleware());
+
+    // Always register admin endpoints, but control availability via extension
+    // Pass Some(tx) when enabled, None when disabled - handler returns 403 for None
+    if config.enable_admin_endpoint {
+        info!("Admin endpoints enabled at /admin/config");
+        app = app
+            .route("/admin/config", post(admin::update_config))
+            .layer(Extension(throttler_control_tx));
+    } else {
+        info!("Admin endpoints disabled");
+        app = app
+            .route("/admin/config", post(admin::update_config))
+            .layer(Extension(Option::<mpsc::Sender<u32>>::None));
+    }
 
     // Setup TCP listener and start server
     let listener = tokio::net::TcpListener::bind(http_endpoint).await.unwrap();
