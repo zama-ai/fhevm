@@ -132,19 +132,18 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
 
         IERC20(asset()).approve(address(protocolStaking_), type(uint256).max);
 
-        address rewarder_ = address(
-            new OperatorRewarder(
-                beneficiary_,
-                protocolStaking_,
-                this,
-                initialMaxFeeBasisPoints_,
-                initialFeeBasisPoints_
-            )
+        OperatorRewarder rewarder_ = new OperatorRewarder(
+            beneficiary_,
+            protocolStaking_,
+            this,
+            initialMaxFeeBasisPoints_,
+            initialFeeBasisPoints_
         );
-        protocolStaking_.setRewardsRecipient(rewarder_);
-        $._rewarder = rewarder_;
+        $._rewarder = address(rewarder_);
+        protocolStaking_.setRewardsRecipient(address(rewarder_));
+        rewarder_.start();
 
-        emit RewarderSet(address(0), rewarder_);
+        emit RewarderSet(address(0), address(rewarder_));
     }
 
     /**
@@ -286,9 +285,17 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
     function setRewarder(address newRewarder) public virtual onlyOwner {
         address oldRewarder = rewarder();
         require(newRewarder != oldRewarder && newRewarder.code.length > 0, InvalidRewarder(newRewarder));
+
+        // Shutdown old rewarder first to claim any pending rewards before initializing the new one
         OperatorRewarder(oldRewarder).shutdown();
+
         _getOperatorStakingStorage()._rewarder = newRewarder;
         protocolStaking().setRewardsRecipient(newRewarder);
+
+        // Start the new rewarder after shutting down the old one to ensure proper reward snapshot
+        // This allows a rewarder to be deployed long before registering it for an OperatorStaking
+        // contract.
+        OperatorRewarder(newRewarder).start();
 
         emit RewarderSet(oldRewarder, newRewarder);
     }

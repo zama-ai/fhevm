@@ -599,6 +599,11 @@ describe('OperatorStaking', function () {
   });
 
   describe('setRewarder', async function () {
+    it('current rewarder should be started', async function () {
+      const rewarder = await ethers.getContractAt('OperatorRewarder', await this.mock.rewarder());
+      await expect(rewarder.isStarted()).to.eventually.eq(true);
+    });
+
     it('only owner can set rewarder', async function () {
       await expect(this.mock.connect(this.delegator1).setRewarder(ethers.ZeroAddress)).to.be.revertedWithCustomError(
         this.mock,
@@ -621,13 +626,6 @@ describe('OperatorStaking', function () {
 
     describe('with new rewarder', async function () {
       beforeEach(async function () {
-        const newRewarder = await ethers.deployContract('OperatorRewarder', [
-          this.beneficiary,
-          this.protocolStaking,
-          this.mock,
-          10000, // 100% maximum fee
-          0,
-        ]);
         const oldRewarder = await ethers.getContractAt('OperatorRewarder', await this.mock.rewarder());
 
         await this.protocolStaking.connect(this.admin).addEligibleAccount(this.mock);
@@ -637,14 +635,34 @@ describe('OperatorStaking', function () {
         await this.mock.connect(this.delegator2).deposit(ethers.parseEther('3'), this.delegator2);
         await timeIncreaseNoMine(10);
 
+        // Deploy the new rewarder contract after earnings have been accumulated in the old rewarder
+        // to better reflect the "stale state" test
+        // This prevents further changes introduced in the OperatorRewarder that could lead to snapshotting
+        // pending (old) rewards at deployment (as it would make the aforementioned test fail)
+        const newRewarder = await ethers.deployContract('OperatorRewarder', [
+          this.beneficiary,
+          this.protocolStaking,
+          this.mock,
+          10000, // 100% maximum fee
+          0, // 0% fee
+        ]);
+
         await this.mock.connect(this.admin).setRewarder(newRewarder);
         Object.assign(this, { oldRewarder, newRewarder });
       });
 
       it('old rewards should remain on old rewarder', async function () {
-        await expect(this.oldRewarder.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('1.75'));
+        await expect(this.oldRewarder.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('1.875'));
         await expect(this.newRewarder.earned(this.delegator1)).to.eventually.eq(0);
-        await expect(this.token.balanceOf(this.oldRewarder)).to.eventually.eq(ethers.parseEther('5.5'));
+        await expect(this.token.balanceOf(this.oldRewarder)).to.eventually.eq(ethers.parseEther('6'));
+      });
+
+      it('old rewarder should be shutdown after setRewarder', async function () {
+        await expect(this.oldRewarder.isShutdown()).to.eventually.eq(true);
+      });
+
+      it('new rewarder should be started after setRewarder', async function () {
+        await expect(this.newRewarder.isStarted()).to.eventually.eq(true);
       });
 
       it('new rewarder should start accruing rewards properly', async function () {
@@ -657,6 +675,19 @@ describe('OperatorStaking', function () {
         await expect(this.newRewarder.claimRewards(this.delegator1))
           .to.emit(this.token, 'Transfer')
           .withArgs(this.newRewarder, this.delegator1, ethers.parseEther('1.375'));
+      });
+
+      it('new rewarder should not have stale state after starting', async function () {
+        // Since the new rewarder is started right after earned rewards have been claimed from
+        // the old rewarder, historical rewards are initially null. Note that this is true in this
+        // test because no donations were made to it before starting. If some were made, they
+        // would be correctly included in historicalReward() and distributed to delegators (minus
+        // fees) in any case.
+        await expect(this.newRewarder.historicalReward()).to.eventually.eq(0);
+        await expect(this.newRewarder.unpaidFee()).to.eventually.eq(0);
+
+        await time.increase(10);
+        await expect(this.newRewarder.historicalReward()).to.eventually.eq(ethers.parseEther('5'));
       });
     });
   });
