@@ -103,10 +103,6 @@ testcontainers = "=0.24.0"
 toml = { version = "=0.9.8", default-features = true }
 tracing-test = { version = "=0.2.5", default-features = false }
 
-[profile.release]
-opt-level = 3
-lto = "fat"
-
 # CI profile for faster builds in CI/testing (significantly faster compile+link)
 # Use with: cargo build --profile ci
 [profile.ci]
