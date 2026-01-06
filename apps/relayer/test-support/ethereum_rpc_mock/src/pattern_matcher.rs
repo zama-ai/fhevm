@@ -17,9 +17,10 @@ use std::sync::RwLock;
 pub type PredicateFn<T> = Arc<dyn Fn(&T) -> bool + Send + Sync>;
 
 /// Usage limits for pattern matching (simplified)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UsageLimit {
     /// Pattern can be used unlimited times
+    #[default]
     Unlimited,
     /// Pattern can only be used once
     Once,
@@ -48,12 +49,6 @@ impl UsageLimit {
     /// Check if this is a once-only usage limit
     pub(crate) fn is_once(&self) -> bool {
         matches!(self, Self::Once)
-    }
-}
-
-impl Default for UsageLimit {
-    fn default() -> Self {
-        Self::Unlimited
     }
 }
 
