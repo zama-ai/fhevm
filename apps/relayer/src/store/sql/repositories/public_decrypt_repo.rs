@@ -3,7 +3,8 @@ use std::time::Instant;
 use crate::core::event::{PublicDecryptRequest, PublicDecryptResponse};
 use crate::metrics;
 use crate::store::sql::models::public_decrypt_req_model::{
-    PublicDecryptResponseModel, PublicReqStateModel, PublicReqStateModelWithOldStatusAndTimestamp,
+    PublicDecryptResponseModel, PublicReqStateModel,
+    PublicReqStateModelWithOldStatusAndTimestamp,
 };
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::{
@@ -34,19 +35,21 @@ impl PublicDecryptRepository {
 
     // INITIAL POST REQUEST:
 
-    // Check if there is already existing internal_indexer_id and return ext_job_id if there is one
-    /// Check if there is already an existing internal_indexer_id.
-    /// Returns the ext_job_id (UUID) if found.
-    pub async fn find_ext_ref_by_int_job_id(
+    /// Check for an existing *active* request (not failed, not timed_out).
+    /// Returns the ext_job_id (Uuid) if found.
+    /// Returns None if the request doesn't exist OR if it exists but is in a terminal failure state.
+    pub async fn find_active_ext_ref_by_int_job_id(
         &self,
         int_job_id_bytes: &[u8],
     ) -> SqlResult<Option<Uuid>> {
         let query_start = Instant::now();
+
         let result = sqlx::query_scalar!(
             r#"
             SELECT ext_job_id
             FROM public_decrypt_req
             WHERE int_job_id = $1
+              AND req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             LIMIT 1
             "#,
             int_job_id_bytes

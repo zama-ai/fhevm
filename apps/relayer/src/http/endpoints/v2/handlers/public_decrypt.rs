@@ -10,8 +10,10 @@ use crate::core::event::{
     ApiVersion, PublicDecryptEventData, PublicDecryptRequest, RelayerEvent, RelayerEventData,
 };
 use crate::core::job_id::JobId;
+use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
 use crate::http::endpoints::v1::types::public_decrypt::PublicDecryptRequestJson;
-use crate::http::{parse_and_validate, AppResponse};
+use crate::http::utils::bounce_check;
+use crate::http::{parse_and_validate, AppResponse, ErrorLabel};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::HttpApiVersion;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -41,6 +43,7 @@ where
     api_version: ApiVersion,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
     retry_after_seconds: u32,
+    tx_throttler: ThrottlingSender<GatewayTxTask>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
@@ -51,12 +54,14 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         api_version: ApiVersion,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
         retry_after_seconds: u32,
+        tx_throttler: ThrottlingSender<GatewayTxTask>,
     ) -> Self {
         Self {
             orchestrator,
             api_version,
             public_decrypt_repo,
             retry_after_seconds,
+            tx_throttler,
         }
     }
 
@@ -145,6 +150,41 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         info!("Successfully parsed and validated request");
 
         let int_job_id = request.content_hash();
+
+        // Queue full Bouncing logic.
+        let active_external_job_id = self
+            .public_decrypt_repo
+            .find_active_ext_ref_by_int_job_id(&int_job_id)
+            .await;
+
+        match active_external_job_id {
+            Ok(res) => {
+                if let None = res {
+                    // In this case, we check queue full and bounce the request with 429
+                    let full = bounce_check(self.tx_throttler.clone()).await;
+                    if full {
+                        info!("Public decrypt v2 is bounced by full queue");
+                        return AppResponse::<()>::protocol_overloaded(
+                            "relayer is currently processing too many requests",
+                            &self.retry_after_seconds.to_string(),
+                            &request_id.to_string(),
+                        )
+                        .into_response();
+                    }
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Failed to insert/get public decrypt into/from database: {}",
+                    e
+                );
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
+        }
+
         let proposed_ext_job_id = self.orchestrator.new_ext_job_id();
 
         let assigned_ext_job_id = match self

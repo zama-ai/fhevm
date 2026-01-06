@@ -267,6 +267,18 @@ impl<V: serde::Serialize> AppResponse<V> {
         }
     }
 
+    /// Creates a new protocol overloaded response.
+    pub fn protocol_overloaded<S: Into<String>>(reason: S, retry_after: S, request_id: S) -> Self {
+        let reason: String = reason.into();
+        let request_id_str = request_id.into();
+        AppResponse::TooManyRequests {
+            label: ErrorLabel::ProtocolOverload,
+            message: format!("Protocol overloaded: {}", reason).to_string(),
+            retry_after: retry_after.into(),
+            request_id: Some(request_id_str),
+        }
+    }
+
     /// Sets the request ID for error responses
     pub fn set_request_id(&mut self, request_id: &str) {
         match self {
@@ -313,6 +325,8 @@ pub enum ErrorLabel {
     RateLimited,
     /// Internal server processing error
     InternalServerError,
+    /// Protocol Overload used for boucing
+    ProtocolOverload,
 }
 
 impl ErrorLabel {
@@ -324,6 +338,7 @@ impl ErrorLabel {
             ErrorLabel::RequestError => "request_error",
             ErrorLabel::RateLimited => "rate_limited",
             ErrorLabel::InternalServerError => "internal_server_error",
+            ErrorLabel::ProtocolOverload => "protocol_overload",
         }
     }
 }
