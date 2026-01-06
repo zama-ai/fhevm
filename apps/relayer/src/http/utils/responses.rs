@@ -268,16 +268,33 @@ impl<V: serde::Serialize> AppResponse<V> {
     }
 
     /// Creates a new protocol overloaded response.
+    ///
+    /// TEMPORARY FIX FOR AUCTION: Currently returns `rate_limited` label instead of
+    /// `protocol_overload` to enable rate limiter retry logic without additional client changes.
+    /// This should be restored to the correct version (commented below) after the auction.
     pub fn protocol_overloaded<S: Into<String>>(reason: S, retry_after: S, request_id: S) -> Self {
         let reason: String = reason.into();
         let request_id_str = request_id.into();
         AppResponse::TooManyRequests {
-            label: ErrorLabel::ProtocolOverload,
-            message: format!("Protocol overloaded: {}", reason).to_string(),
+            label: ErrorLabel::RateLimited,
+            message: format!("Server is experiencing high processing load: {}", reason).to_string(),
             retry_after: retry_after.into(),
             request_id: Some(request_id_str),
         }
     }
+
+    // ORIGINAL VERSION (commented out temporarily for auction):
+    // /// Creates a new protocol overloaded response.
+    // pub fn protocol_overloaded<S: Into<String>>(reason: S, retry_after: S, request_id: S) -> Self {
+    //     let reason: String = reason.into();
+    //     let request_id_str = request_id.into();
+    //     AppResponse::TooManyRequests {
+    //         label: ErrorLabel::ProtocolOverload,
+    //         message: format!("Protocol overloaded: {}", reason).to_string(),
+    //         retry_after: retry_after.into(),
+    //         request_id: Some(request_id_str),
+    //     }
+    // }
 
     /// Sets the request ID for error responses
     pub fn set_request_id(&mut self, request_id: &str) {
