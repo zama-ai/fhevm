@@ -37,6 +37,13 @@ FHEVM ensures both confidentiality and composability, with the following guarant
 - **No impact on existing dApps and state:** Encrypted state co-exists alongside public one, and doesn't impact existing dApps.
 <br></br>
 
+## Repository Scope
+
+This repository focuses on enabling Fully Homomorphic Encryption (FHE)
+execution within the EVM context. It provides core contracts, tooling,
+and examples related to fhevm.
+
+
 ### Table of contents
 
 - [About](#about)
