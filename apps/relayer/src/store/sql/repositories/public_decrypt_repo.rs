@@ -3,8 +3,7 @@ use std::time::Instant;
 use crate::core::event::{PublicDecryptRequest, PublicDecryptResponse};
 use crate::metrics;
 use crate::store::sql::models::public_decrypt_req_model::{
-    PublicDecryptResponseModel, PublicReqStateModel,
-    PublicReqStateModelWithOldStatusAndTimestamp,
+    PublicDecryptResponseModel, PublicReqStateModel, PublicReqStateModelWithOldStatusAndTimestamp,
 };
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::{

@@ -7,6 +7,8 @@ use crate::core::event::{
     UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
+use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
+use crate::http::utils::bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpApiVersion, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -60,6 +62,8 @@ where
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     api_version: ApiVersion,
     user_decrypt_repo: Arc<UserDecryptRepository>,
+    retry_after_seconds: u32,
+    tx_throttler: ThrottlingSender<GatewayTxTask>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
@@ -69,11 +73,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
         api_version: ApiVersion,
         user_decrypt_repo: Arc<UserDecryptRepository>,
+        retry_after_seconds: u32,
+        tx_throttler: ThrottlingSender<GatewayTxTask>,
     ) -> Self {
         Self {
             orchestrator,
             api_version,
             user_decrypt_repo,
+            retry_after_seconds,
+            tx_throttler,
         }
     }
 
@@ -134,6 +142,42 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         info!("Successfully parsed and validated request");
 
         let int_job_id = JobId::from_sha256_hash(user_decrypt_request.content_hash());
+
+        // Queue full Bouncing logic.
+        let active_external_job_id = self
+            .user_decrypt_repo
+            .find_active_ext_ref_by_int_job_id(&int_job_id.as_sha256_hash().unwrap()[..])
+            .await;
+
+        match active_external_job_id {
+            Ok(res) => {
+                if res.is_none() {
+                    // In this case, we check queue full and bounce the request with 429
+                    let full = bounce_check(self.tx_throttler.clone()).await;
+                    if full {
+                        info!("User decrypt v1 is bounced by full queue");
+                        // NOTE: Could return 500 to not change the behaviour of the v1.
+                        // Here return 429
+                        return AppResponse::<()>::protocol_overloaded(
+                            "relayer is currently processing too many requests",
+                            &self.retry_after_seconds.to_string(),
+                            &request_id.to_string(),
+                        )
+                        .into_response();
+                    }
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Failed to insert/get user decrypt into/from database: {}",
+                    e
+                );
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
+        }
 
         let (response_handler, response_rx): (
             OnceHandler<RelayerEvent>,

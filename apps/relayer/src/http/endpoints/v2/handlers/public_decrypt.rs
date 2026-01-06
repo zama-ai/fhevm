@@ -13,7 +13,7 @@ use crate::core::job_id::JobId;
 use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
 use crate::http::endpoints::v1::types::public_decrypt::PublicDecryptRequestJson;
 use crate::http::utils::bounce_check;
-use crate::http::{parse_and_validate, AppResponse, ErrorLabel};
+use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::HttpApiVersion;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -159,7 +159,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         match active_external_job_id {
             Ok(res) => {
-                if let None = res {
+                if res.is_none() {
                     // In this case, we check queue full and bounce the request with 429
                     let full = bounce_check(self.tx_throttler.clone()).await;
                     if full {

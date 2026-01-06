@@ -45,24 +45,26 @@ impl UserDecryptRepository {
 
     // GENERAL REQUESTS.
 
-    /// Check if there is already existing internal_indexer_id and return ext_job_id if there is one
-    pub async fn find_ext_job_id_by_int_job_id(
+    /// Check for an existing *active* request (not failed, not timed_out).
+    /// Returns the ext_job_id (Uuid) if found.
+    /// Returns None if the request doesn't exist OR if it exists but is in a terminal failure state.
+    pub async fn find_active_ext_ref_by_int_job_id(
         &self,
         int_job_id_bytes: &[u8],
     ) -> SqlResult<Option<Uuid>> {
-        let mut conn = self.pool.get_app_connection().await?;
-
         let query_start = Instant::now();
+
         let result = sqlx::query_scalar!(
             r#"
             SELECT ext_job_id
             FROM user_decrypt_req
             WHERE int_job_id = $1
+              AND req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             LIMIT 1
             "#,
             int_job_id_bytes
         )
-        .fetch_optional(&mut *conn)
+        .fetch_optional(&self.pool.get_app_pool())
         .await;
 
         match &result {
