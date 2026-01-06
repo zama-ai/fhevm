@@ -118,7 +118,7 @@ pub async fn run_fhevm_relayer(
     );
 
     // Initialize all gateway components
-    let keyurl_gateway_handler = gateway::initialize_gateway(
+    let gateway_handler = gateway::initialize_gateway(
         orchestrator.clone(),
         &settings,
         repositories.clone(),
@@ -162,7 +162,7 @@ pub async fn run_fhevm_relayer(
     settings.metrics.endpoint = actual_metrics_addr.to_string();
 
     // Initialize KeyUrl handler after HTTP server is up
-    keyurl_gateway_handler.initialize().await;
+    gateway_handler.initialize().await;
 
     drop(setup_span);
 
