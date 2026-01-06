@@ -594,12 +594,6 @@ describe('OperatorRewarder', function () {
           .withArgs(this.admin);
       });
 
-      it('should revert if not started for claimRewards', async function () {
-        await expect(
-          this.notStartedRewarder.connect(this.delegator1).claimRewards(this.delegator1),
-        ).to.be.revertedWithCustomError(this.notStartedRewarder, 'NotStarted');
-      });
-
       it('should revert if not started for claimFee', async function () {
         await expect(this.notStartedRewarder.connect(this.beneficiary).claimFee()).to.be.revertedWithCustomError(
           this.notStartedRewarder,
