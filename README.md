@@ -178,3 +178,10 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Learning Resources
+
+- Zama documentation and blog posts
+- fhevm examples included in this repository
+- Community discussions and issues on GitHub
+
