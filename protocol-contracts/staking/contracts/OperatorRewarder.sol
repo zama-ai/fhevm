@@ -202,7 +202,7 @@ contract OperatorRewarder {
      * themselves.
      * @param receiver The delegator's address that will receive the rewards.
      */
-    function claimRewards(address receiver) public virtual whenStarted onlyClaimer(receiver) {
+    function claimRewards(address receiver) public virtual onlyClaimer(receiver) {
         uint256 earned_ = earned(receiver);
         if (earned_ > 0) {
             _rewardsPaid[receiver] += SafeCast.toInt256(earned_);
