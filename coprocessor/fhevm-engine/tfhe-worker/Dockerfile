@@ -1,6 +1,8 @@
 # Stage 1: Build TFHE Worker
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
+ARG CARGO_PROFILE=release
+
 USER root
 
 WORKDIR /app
@@ -11,17 +13,18 @@ COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 
 WORKDIR /app/coprocessor/fhevm-engine
 
-# Build tfhe_worker binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo fetch && \
-    SQLX_OFFLINE=true cargo build --release -p tfhe-worker
+    SQLX_OFFLINE=true cargo build --profile=${CARGO_PROFILE} -p tfhe-worker
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 
+ARG CARGO_PROFILE=release
+
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/tfhe_worker /usr/local/bin/tfhe_worker
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/${CARGO_PROFILE}/tfhe_worker /usr/local/bin/tfhe_worker
 
 USER fhevm:fhevm
 

@@ -21,6 +21,8 @@ RUN cp .env.example .env \
 # Stage 1: Build Stress-Tool
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
+ARG CARGO_PROFILE=release
+
 USER root
 
 WORKDIR /app
@@ -33,17 +35,18 @@ COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-c
 
 WORKDIR /app/coprocessor/fhevm-engine
 
-# Build stress_generator binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo fetch && \
-    SQLX_OFFLINE=true cargo build --release -p stress-test-generator
+    SQLX_OFFLINE=true cargo build --profile=${CARGO_PROFILE} -p stress-test-generator
 
 # Stage 2: Runtime image
 FROM cgr.dev/chainguard/glibc-dynamic:latest AS prod
 
+ARG CARGO_PROFILE=release
+
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/stress_generator /usr/local/bin/stress_generator
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/${CARGO_PROFILE}/stress_generator /usr/local/bin/stress_generator
 USER fhevm:fhevm
 
 CMD ["/usr/local/bin/stress_generator"]

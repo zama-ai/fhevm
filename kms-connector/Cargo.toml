@@ -102,3 +102,14 @@ serial_test = "3.2.0"
 testcontainers = "=0.24.0"
 toml = { version = "=0.9.8", default-features = true }
 tracing-test = { version = "=0.2.5", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+
+# CI profile for faster test/CI builds (30-50% faster link times)
+# Use with: cargo build --profile ci
+[profile.ci]
+inherits = "release"
+lto = "thin"
+codegen-units = 16

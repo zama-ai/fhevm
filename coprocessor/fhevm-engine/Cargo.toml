@@ -101,3 +101,10 @@ overflow-checks = false
 [profile.release]
 opt-level = 3
 lto = "fat"
+
+# CI profile for faster test/CI builds (30-50% faster link times)
+# Use with: cargo build --profile ci
+[profile.ci]
+inherits = "release"
+lto = "thin"
+codegen-units = 16

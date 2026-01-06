@@ -15,6 +15,8 @@ RUN npm install && HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && npx ha
 # Stage 1: Build Host Listener
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
+ARG CARGO_PROFILE=release
+
 USER root
 
 WORKDIR /app
@@ -28,18 +30,19 @@ COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 
 WORKDIR /app/coprocessor/fhevm-engine
 
-# Build host_listener binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --release -p host-listener
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p host-listener
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 
+ARG CARGO_PROFILE=release
+
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/host_listener /usr/local/bin/host_listener
-COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/host_listener_poller /usr/local/bin/host_listener_poller
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/${CARGO_PROFILE}/host_listener /usr/local/bin/host_listener
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/${CARGO_PROFILE}/host_listener_poller /usr/local/bin/host_listener_poller
 
 USER fhevm:fhevm
 

@@ -15,6 +15,8 @@ RUN npm install && \
 # Stage 1: Build GW Listener
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
+ARG CARGO_PROFILE=release
+
 USER root
 
 WORKDIR /app
@@ -29,17 +31,18 @@ COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 
 WORKDIR /app/coprocessor/fhevm-engine
 
-# Build gw_listener binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --release -p gw-listener
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p gw-listener
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 
+ARG CARGO_PROFILE=release
+
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/gw_listener /usr/local/bin/gw_listener
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/${CARGO_PROFILE}/gw_listener /usr/local/bin/gw_listener
 
 USER fhevm:fhevm
 

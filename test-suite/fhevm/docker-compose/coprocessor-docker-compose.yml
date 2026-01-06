@@ -5,6 +5,8 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
+      args:
+        CARGO_PROFILE: ${CARGO_PROFILE:-release}
       cache_from:
         - type=gha
       cache_to:
@@ -25,6 +27,8 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
+      args:
+        CARGO_PROFILE: ${CARGO_PROFILE:-release}
       cache_from:
         - type=gha
       cache_to:
@@ -49,6 +53,8 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
+      args:
+        CARGO_PROFILE: ${CARGO_PROFILE:-release}
       cache_from:
         - type=gha
       cache_to:
@@ -72,6 +78,8 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
+      args:
+        CARGO_PROFILE: ${CARGO_PROFILE:-release}
       cache_from:
         - type=gha
       cache_to:
@@ -103,6 +111,8 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/tfhe-worker/Dockerfile
+      args:
+        CARGO_PROFILE: ${CARGO_PROFILE:-release}
       cache_from:
         - type=gha
       cache_to:
@@ -129,6 +139,8 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/zkproof-worker/Dockerfile
+      args:
+        CARGO_PROFILE: ${CARGO_PROFILE:-release}
       cache_from:
         - type=gha
       cache_to:
@@ -153,6 +165,8 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/sns-worker/Dockerfile
+      args:
+        CARGO_PROFILE: ${CARGO_PROFILE:-release}
       cache_from:
         - type=gha
       cache_to:
@@ -190,6 +204,8 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/transaction-sender/Dockerfile
+      args:
+        CARGO_PROFILE: ${CARGO_PROFILE:-release}
       cache_from:
         - type=gha
       cache_to:
