@@ -26,6 +26,7 @@
 use crate::gateway::{
     self,
     arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender},
+    readiness_check::readiness_throttler::{GatewayReadinessTask, ReadinessSender},
 };
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -118,6 +119,21 @@ pub async fn run_fhevm_relayer(
         settings.http.enable_admin_endpoint,
     );
 
+    let (public_decrypt_throttler, public_decrypt_worker) =
+        ReadinessSender::<GatewayReadinessTask>::new(
+            settings.gateway.readiness_checker.public_decrypt.capacity,
+            settings
+                .gateway
+                .readiness_checker
+                .public_decrypt
+                .safety_margin,
+            settings
+                .gateway
+                .readiness_checker
+                .public_decrypt
+                .max_concurrency,
+        );
+
     // Initialize all gateway components
     let gateway_handler = gateway::initialize_gateway(
         orchestrator.clone(),
@@ -125,6 +141,8 @@ pub async fn run_fhevm_relayer(
         repositories.clone(),
         tx_throttler.clone(),
         tx_worker,
+        public_decrypt_throttler.clone(),
+        public_decrypt_worker,
     )
     .await
     .map_err(|e| eyre::eyre!("Failed to initialize gateway: {}", e))?;

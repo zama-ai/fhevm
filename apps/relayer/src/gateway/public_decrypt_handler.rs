@@ -18,7 +18,10 @@ use crate::{
             },
             ComputeCalldata,
         },
-        readiness_checker::{ReadinessCheckError, ReadinessChecker},
+        readiness_check::{
+            readiness_checker::{ReadinessCheckError, ReadinessChecker},
+            readiness_throttler::{GatewayReadinessTask, ReadinessSender},
+        },
     },
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
@@ -36,7 +39,9 @@ use tracing::{error, info, instrument, warn};
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     tx_throttler: ThrottlingSender<GatewayTxTask>,
+    // TODO Remove this unecessary param.
     readiness_checker: Arc<ReadinessChecker>,
+    public_decrypt_readiness_throttler: ReadinessSender<GatewayReadinessTask>,
     decryption_address: Address,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
 }
@@ -46,6 +51,7 @@ impl GatewayHandler {
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         tx_throttler: ThrottlingSender<GatewayTxTask>,
         readiness_checker: Arc<ReadinessChecker>,
+        public_decrypt_readiness_throttler: ReadinessSender<GatewayReadinessTask>,
         decryption_address: Address,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
     ) -> Arc<Self> {
@@ -53,6 +59,7 @@ impl GatewayHandler {
             dispatcher: Arc::clone(&dispatcher),
             tx_throttler,
             readiness_checker,
+            public_decrypt_readiness_throttler,
             decryption_address,
             public_decrypt_repo,
         });
@@ -168,6 +175,9 @@ impl GatewayHandler {
             }
         }
     }
+
+    // TODO : add a function to enqueue the request, and manages the two errors: QueueFull and ChannelClosed
+    // on thoses errors, dispatch properly and update the request with: error on the system.
 
     /// Processes user public decrypt request by sending it to the Gateway blockchain.
     ///

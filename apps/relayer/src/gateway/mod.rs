@@ -2,14 +2,13 @@ pub mod arbitrum;
 pub mod input_handlers;
 pub mod keyurl_handler;
 pub mod public_decrypt_handler;
-pub mod readiness_checker;
+pub mod readiness_check;
 pub mod user_decrypt_handler;
 pub mod utils;
 
 pub use input_handlers::InputProofGatewayHandler;
 pub use keyurl_handler::KeyUrlGatewayHandler;
 pub use public_decrypt_handler::GatewayHandler as PublicDecryptGatewayHandler;
-pub use readiness_checker::ReadinessChecker;
 pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 
 use crate::config::settings::Settings;
@@ -17,6 +16,11 @@ use crate::core::event::RelayerEvent;
 use crate::gateway::arbitrum::transaction::processor::GatewayTxProcessor;
 use crate::gateway::arbitrum::transaction::throttler::{
     GatewayTxTask, ThrottlingSender, ThrottlingWorker,
+};
+use crate::gateway::readiness_check::public_decrypt_processor::PublicDecryptReadinessProcessor;
+use crate::gateway::readiness_check::readiness_checker::ReadinessChecker;
+use crate::gateway::readiness_check::readiness_throttler::{
+    GatewayReadinessTask, ReadinessSender, ReadinessWorker,
 };
 use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
 use crate::store::sql::repositories::Repositories;
@@ -38,6 +42,8 @@ pub async fn initialize_gateway(
     repositories: Arc<Repositories>,
     tx_throttler: ThrottlingSender<GatewayTxTask>,
     tx_worker: ThrottlingWorker<GatewayTxTask>,
+    public_decrypt_throttler: ReadinessSender<GatewayReadinessTask>,
+    public_decrypt_worker: ReadinessWorker<GatewayReadinessTask>,
 ) -> anyhow::Result<KeyUrlGatewayHandler> {
     info!("Initializing gateway components");
 
@@ -63,6 +69,13 @@ pub async fn initialize_gateway(
     // Create ReadinessChecker to be shared by decrypt handlers
     let readiness_checker = Arc::new(ReadinessChecker::new(&settings.gateway)?);
 
+    PublicDecryptReadinessProcessor::orchestrator_spawn_task(
+        public_decrypt_worker,
+        readiness_checker.clone(),
+        orchestrator.clone(),
+    )
+    .await?;
+
     // Parse addresses for handlers (listener parses its own from config)
     let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
         .map_err(|_| anyhow::anyhow!("Invalid decryption address"))?;
@@ -79,6 +92,7 @@ pub async fn initialize_gateway(
         orchestrator.clone(),
         tx_throttler.clone(),
         readiness_checker.clone(),
+        public_decrypt_throttler.clone(),
         decryption_address,
         repositories.public_decrypt.clone(),
     );

@@ -18,7 +18,7 @@ use crate::{
             },
             ComputeCalldata,
         },
-        readiness_checker::{ReadinessCheckError, ReadinessChecker},
+        readiness_check::readiness_checker::{ReadinessCheckError, ReadinessChecker},
     },
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},

@@ -2,7 +2,7 @@ use crate::{
     config::settings::AppConfigError,
     gateway::{
         arbitrum::transaction::{engine::GatewayTxnError, fhevm::FhevmError},
-        readiness_checker::ReadinessCheckError,
+        readiness_check::readiness_checker::ReadinessCheckError,
     },
 };
 use serde::{Deserialize, Serialize};
