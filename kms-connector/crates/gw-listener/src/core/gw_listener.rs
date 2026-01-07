@@ -167,9 +167,10 @@ where
         event_poller.poller = event_poller.poller.with_poll_interval(poll_interval);
         info!("✓ Subscribed to {event_type} events");
 
-        self.catchup_past_events::<E>(&mut last_block_polled, event_type)
+        let _ = self
+            .catchup_past_events::<E>(&mut last_block_polled, event_type)
             .await
-            .map_err(|e| anyhow!("Failed to catch up past {event_type} events: {e}"))?;
+            .inspect_err(|e| warn!("Failed to catch up past {event_type} events: {e}"));
 
         select! {
             _ = self.process_events(event_type, event_poller, &mut last_block_polled) => (),
