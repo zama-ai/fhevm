@@ -1,6 +1,7 @@
 use crate::config::settings::HttpConfig;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
+use crate::gateway::readiness_check::readiness_throttler::{GatewayReadinessTask, ReadinessSender};
 use crate::http::endpoints::{
     admin, health_handler, liveness_handler,
     v1::handlers::{
@@ -49,6 +50,7 @@ pub async fn run_http_server<D>(
     user_decrypt_shares_threshold: u16,
     tx_throttler: ThrottlingSender<GatewayTxTask>,
     throttler_control_tx: Option<mpsc::Sender<u32>>,
+    public_decrypt_readiness_throttler: ReadinessSender<GatewayReadinessTask>,
 ) -> SocketAddr
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
@@ -84,6 +86,7 @@ where
         repositories.public_decrypt.clone(),
         config.api_retry_after_seconds,
         tx_throttler.clone(),
+        public_decrypt_readiness_throttler.clone(),
     ));
 
     // Initialize v2 handlers
@@ -110,6 +113,7 @@ where
         repositories.public_decrypt.clone(),
         config.api_retry_after_seconds,
         tx_throttler.clone(),
+        public_decrypt_readiness_throttler.clone(),
     ));
 
     // Clone orchestrator for health endpoint before using it

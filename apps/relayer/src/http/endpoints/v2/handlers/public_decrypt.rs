@@ -11,8 +11,9 @@ use crate::core::event::{
 };
 use crate::core::job_id::JobId;
 use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
+use crate::gateway::readiness_check::readiness_throttler::{GatewayReadinessTask, ReadinessSender};
 use crate::http::endpoints::v1::types::public_decrypt::PublicDecryptRequestJson;
-use crate::http::utils::bounce_check;
+use crate::http::utils::public_decrypt_bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::HttpApiVersion;
@@ -44,6 +45,7 @@ where
     public_decrypt_repo: Arc<PublicDecryptRepository>,
     retry_after_seconds: u32,
     tx_throttler: ThrottlingSender<GatewayTxTask>,
+    public_decrypt_readiness_throttler: ReadinessSender<GatewayReadinessTask>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
@@ -55,6 +57,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         public_decrypt_repo: Arc<PublicDecryptRepository>,
         retry_after_seconds: u32,
         tx_throttler: ThrottlingSender<GatewayTxTask>,
+        public_decrypt_readiness_throttler: ReadinessSender<GatewayReadinessTask>,
     ) -> Self {
         Self {
             orchestrator,
@@ -62,6 +65,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             public_decrypt_repo,
             retry_after_seconds,
             tx_throttler,
+            public_decrypt_readiness_throttler,
         }
     }
 
@@ -161,7 +165,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             Ok(res) => {
                 if res.is_none() {
                     // In this case, we check queue full and bounce the request with 429
-                    let full = bounce_check(self.tx_throttler.clone()).await;
+                    let full = public_decrypt_bounce_check(
+                        self.tx_throttler.clone(),
+                        self.public_decrypt_readiness_throttler.clone(),
+                    )
+                    .await;
                     if full {
                         info!("Public decrypt v2 is bounced by full queue");
                         return AppResponse::<()>::protocol_overloaded(

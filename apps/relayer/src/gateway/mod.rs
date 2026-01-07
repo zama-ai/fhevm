@@ -42,8 +42,8 @@ pub async fn initialize_gateway(
     repositories: Arc<Repositories>,
     tx_throttler: ThrottlingSender<GatewayTxTask>,
     tx_worker: ThrottlingWorker<GatewayTxTask>,
-    public_decrypt_throttler: ReadinessSender<GatewayReadinessTask>,
-    public_decrypt_worker: ReadinessWorker<GatewayReadinessTask>,
+    public_decrypt_readiness_throttler: ReadinessSender<GatewayReadinessTask>,
+    public_decrypt_readiness_worker: ReadinessWorker<GatewayReadinessTask>,
 ) -> anyhow::Result<KeyUrlGatewayHandler> {
     info!("Initializing gateway components");
 
@@ -70,7 +70,7 @@ pub async fn initialize_gateway(
     let readiness_checker = Arc::new(ReadinessChecker::new(&settings.gateway)?);
 
     PublicDecryptReadinessProcessor::orchestrator_spawn_task(
-        public_decrypt_worker,
+        public_decrypt_readiness_worker,
         readiness_checker.clone(),
         orchestrator.clone(),
     )
@@ -91,7 +91,7 @@ pub async fn initialize_gateway(
     PublicDecryptGatewayHandler::new(
         orchestrator.clone(),
         tx_throttler.clone(),
-        public_decrypt_throttler.clone(),
+        public_decrypt_readiness_throttler.clone(),
         decryption_address,
         repositories.public_decrypt.clone(),
     );

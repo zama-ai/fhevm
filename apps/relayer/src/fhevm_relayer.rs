@@ -119,7 +119,7 @@ pub async fn run_fhevm_relayer(
         settings.http.enable_admin_endpoint,
     );
 
-    let (public_decrypt_throttler, public_decrypt_worker) =
+    let (public_decrypt_readiness_throttler, public_decrypt_worker) =
         ReadinessSender::<GatewayReadinessTask>::new(
             settings.gateway.readiness_checker.public_decrypt.capacity,
             settings
@@ -141,7 +141,7 @@ pub async fn run_fhevm_relayer(
         repositories.clone(),
         tx_throttler.clone(),
         tx_worker,
-        public_decrypt_throttler.clone(),
+        public_decrypt_readiness_throttler.clone(),
         public_decrypt_worker,
     )
     .await
@@ -160,6 +160,7 @@ pub async fn run_fhevm_relayer(
             settings.gateway.contracts.user_decrypt_shares_threshold,
             tx_throttler.clone(),
             throttler_control_tx,
+            public_decrypt_readiness_throttler,
         )
         .await;
 
