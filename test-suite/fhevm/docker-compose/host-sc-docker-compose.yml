@@ -3,8 +3,8 @@ services:
     container_name: host-sc-deploy
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
     build:
-      context: ../../../host-contracts
-      dockerfile: Dockerfile
+      context: ../../..
+      dockerfile: host-contracts/Dockerfile
       cache_from:
         - ${FHEVM_CACHE_FROM_HOST_SC_DEPLOY:-type=gha}
       cache_to:
@@ -20,8 +20,8 @@ services:
     container_name: host-sc-add-pausers
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
     build:
-      context: ../../../host-contracts
-      dockerfile: Dockerfile
+      context: ../../..
+      dockerfile: host-contracts/Dockerfile
       cache_from:
         - ${FHEVM_CACHE_FROM_HOST_SC_ADD_PAUSERS:-type=gha}
       cache_to:
