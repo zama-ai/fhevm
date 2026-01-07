@@ -1,4 +1,8 @@
-use crate::core::{errors::EventProcessingError, event::PublicDecryptRequest, job_id::JobId};
+use crate::core::{
+    errors::EventProcessingError,
+    event::{PublicDecryptRequest, UserDecryptRequest},
+    job_id::JobId,
+};
 use indexmap::IndexMap;
 use std::future::Future;
 use std::sync::Arc;
@@ -11,13 +15,27 @@ pub trait ReadinessItem: Send + Sync + 'static + std::fmt::Debug {
 
 /// The unit of work for the Readiness Throttler.
 #[derive(Debug, Clone)]
-pub struct GatewayReadinessTask {
+pub struct PublicDecryptReadinessTask {
     pub id: String,
     pub job_id: JobId,
     pub request: PublicDecryptRequest,
 }
 
-impl ReadinessItem for GatewayReadinessTask {
+impl ReadinessItem for PublicDecryptReadinessTask {
+    fn get_id(&self) -> String {
+        self.id.clone()
+    }
+}
+
+/// The unit of work for the Readiness Throttler.
+#[derive(Debug, Clone)]
+pub struct UserDecryptReadinessTask {
+    pub id: String,
+    pub job_id: JobId,
+    pub request: UserDecryptRequest,
+}
+
+impl ReadinessItem for UserDecryptReadinessTask {
     fn get_id(&self) -> String {
         self.id.clone()
     }
@@ -82,6 +100,8 @@ where
 
         // Acquire Write Lock
         let mut tracker = self.tracker.write().await;
+
+        // Note: We can add at this step a deduplication step.
 
         // Try Send (Bounded check)
         match self.sender.try_send(item) {

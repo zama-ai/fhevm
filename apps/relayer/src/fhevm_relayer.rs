@@ -26,7 +26,7 @@
 use crate::gateway::{
     self,
     arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender},
-    readiness_check::readiness_throttler::{GatewayReadinessTask, ReadinessSender},
+    readiness_check::readiness_throttler::{PublicDecryptReadinessTask, ReadinessSender},
 };
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -120,7 +120,7 @@ pub async fn run_fhevm_relayer(
     );
 
     let (public_decrypt_readiness_throttler, public_decrypt_worker) =
-        ReadinessSender::<GatewayReadinessTask>::new(
+        ReadinessSender::<PublicDecryptReadinessTask>::new(
             settings.gateway.readiness_checker.public_decrypt.capacity,
             settings
                 .gateway

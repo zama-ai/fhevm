@@ -20,7 +20,7 @@ use crate::gateway::arbitrum::transaction::throttler::{
 use crate::gateway::readiness_check::public_decrypt_processor::PublicDecryptReadinessProcessor;
 use crate::gateway::readiness_check::readiness_checker::ReadinessChecker;
 use crate::gateway::readiness_check::readiness_throttler::{
-    GatewayReadinessTask, ReadinessSender, ReadinessWorker,
+    PublicDecryptReadinessTask, ReadinessSender, ReadinessWorker,
 };
 use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
 use crate::store::sql::repositories::Repositories;
@@ -42,8 +42,8 @@ pub async fn initialize_gateway(
     repositories: Arc<Repositories>,
     tx_throttler: ThrottlingSender<GatewayTxTask>,
     tx_worker: ThrottlingWorker<GatewayTxTask>,
-    public_decrypt_readiness_throttler: ReadinessSender<GatewayReadinessTask>,
-    public_decrypt_readiness_worker: ReadinessWorker<GatewayReadinessTask>,
+    public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+    public_decrypt_readiness_worker: ReadinessWorker<PublicDecryptReadinessTask>,
 ) -> anyhow::Result<KeyUrlGatewayHandler> {
     info!("Initializing gateway components");
 

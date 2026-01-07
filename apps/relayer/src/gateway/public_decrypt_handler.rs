@@ -18,7 +18,7 @@ use crate::{
             },
             ComputeCalldata,
         },
-        readiness_check::readiness_throttler::{GatewayReadinessTask, ReadinessSender},
+        readiness_check::readiness_throttler::{PublicDecryptReadinessTask, ReadinessSender},
     },
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
@@ -36,7 +36,7 @@ use tracing::{error, info, instrument, warn};
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     tx_throttler: ThrottlingSender<GatewayTxTask>,
-    public_decrypt_readiness_throttler: ReadinessSender<GatewayReadinessTask>,
+    public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
     decryption_address: Address,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
 }
@@ -45,7 +45,7 @@ impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         tx_throttler: ThrottlingSender<GatewayTxTask>,
-        public_decrypt_readiness_throttler: ReadinessSender<GatewayReadinessTask>,
+        public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
         decryption_address: Address,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
     ) -> Arc<Self> {
@@ -166,7 +166,7 @@ impl GatewayHandler {
     ) -> Result<(), EventProcessingError> {
         let job_id = JobId::from_sha256_hash(job_id_hash);
 
-        let task: GatewayReadinessTask = GatewayReadinessTask {
+        let task: PublicDecryptReadinessTask = PublicDecryptReadinessTask {
             id: job_id.to_string(),
             job_id,
             request: decrypt_request.clone(),

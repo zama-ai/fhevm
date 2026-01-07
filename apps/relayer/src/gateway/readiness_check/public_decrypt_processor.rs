@@ -9,7 +9,7 @@ use crate::{
     },
     gateway::readiness_check::{
         readiness_checker::{ReadinessCheckError, ReadinessChecker},
-        readiness_throttler::{GatewayReadinessTask, ReadinessWorker},
+        readiness_throttler::{PublicDecryptReadinessTask, ReadinessWorker},
     },
     orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
 };
@@ -26,7 +26,7 @@ impl PublicDecryptReadinessProcessor {
     /// Registers with the Orchestrator. The worker runs indefinitely, consuming tasks
     /// and executing the readiness check logic without touching the database.
     pub async fn orchestrator_spawn_task(
-        throttler_worker: ReadinessWorker<GatewayReadinessTask>,
+        throttler_worker: ReadinessWorker<PublicDecryptReadinessTask>,
         readiness_checker: Arc<ReadinessChecker>,
         orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     ) -> anyhow::Result<()> {
@@ -39,7 +39,7 @@ impl PublicDecryptReadinessProcessor {
 
             // Run the consumer loop
             throttler_worker
-                .run_consumer(move |task: GatewayReadinessTask| {
+                .run_consumer(move |task: PublicDecryptReadinessTask| {
                     // Clone dependencies for the individual task execution
                     let checker = readiness_checker.clone();
                     Self::process_single_task(checker, task, dispatcher.clone())
@@ -65,7 +65,7 @@ impl PublicDecryptReadinessProcessor {
     /// 3. On Failure: Dispatches `Failed` event (to notify user/DB).
     async fn process_single_task(
         checker: Arc<ReadinessChecker>,
-        task: GatewayReadinessTask,
+        task: PublicDecryptReadinessTask,
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     ) {
         // Prepare handles

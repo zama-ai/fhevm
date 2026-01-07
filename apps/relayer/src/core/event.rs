@@ -64,6 +64,8 @@ pub enum UserDecryptEventId {
     RespSentToUser = 24,
     Failed = 25,
     InternalFailure = 26,
+    ReadinessCheckTimedOut = 27,
+    ReadinessCheckFailed = 28,
 }
 
 impl From<UserDecryptEventId> for u8 {
@@ -200,6 +202,12 @@ impl Event for RelayerEvent {
                 UserDecryptEventData::ReadinessCheckPassed { .. } => {
                     UserDecryptEventId::ReadinessCheckPassed.into()
                 }
+                UserDecryptEventData::ReadinessCheckTimedOut { .. } => {
+                    UserDecryptEventId::ReadinessCheckTimedOut.into()
+                }
+                UserDecryptEventData::ReadinessCheckFailed { .. } => {
+                    UserDecryptEventId::ReadinessCheckFailed.into()
+                }
                 UserDecryptEventData::ReqSentToGw { .. } => UserDecryptEventId::ReqSentToGw.into(),
                 UserDecryptEventData::RespRcvdFromGw { .. } => {
                     UserDecryptEventId::RespRcvdFromGw.into()
@@ -319,7 +327,7 @@ pub enum PublicDecryptEventData {
         decrypt_request: PublicDecryptRequest,
     },
 
-    /// Event representing that readiness check has failed for a public decryption request.
+    /// Event representing that readiness check has timed out for a public decryption request.
     ReadinessCheckTimedOut {
         decrypt_request: PublicDecryptRequest,
         error: EventProcessingError,
@@ -381,8 +389,19 @@ pub enum UserDecryptEventData {
     ReqRcvdFromUser { decrypt_request: UserDecryptRequest },
 
     /// Event representing that readiness check has passed for a user decryption request.
-    /// Available for future API notifications.
     ReadinessCheckPassed { decrypt_request: UserDecryptRequest },
+
+    /// Event representing that readiness check has timed out for a public decryption request.
+    ReadinessCheckTimedOut {
+        decrypt_request: UserDecryptRequest,
+        error: EventProcessingError,
+    },
+
+    /// Event representing that readiness check has failed for a public decryption request.
+    ReadinessCheckFailed {
+        decrypt_request: UserDecryptRequest,
+        error: EventProcessingError,
+    },
 
     /// Event representing the result of sending a user decryption request to
     /// gateway. Id will be used to map the response that will be received later
@@ -412,6 +431,12 @@ impl UserDecryptEventData {
             UserDecryptEventData::ReqRcvdFromUser { .. } => "UserDecrypt::ReqRcvdFromUser",
             UserDecryptEventData::ReadinessCheckPassed { .. } => {
                 "UserDecrypt::ReadinessCheckPassed"
+            }
+            UserDecryptEventData::ReadinessCheckTimedOut { .. } => {
+                "UserDecrypt::ReadinessCheckTimedOut"
+            }
+            UserDecryptEventData::ReadinessCheckFailed { .. } => {
+                "UserDecrypt::ReadinessCheckFailed"
             }
             UserDecryptEventData::ReqSentToGw { .. } => "UserDecrypt::ReqSentToGw",
             UserDecryptEventData::RespRcvdFromGw { .. } => "UserDecrypt::RespRcvdFromGw",

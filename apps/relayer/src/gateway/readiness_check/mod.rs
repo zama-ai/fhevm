@@ -1,3 +1,4 @@
 pub mod public_decrypt_processor;
 pub mod readiness_checker;
 pub mod readiness_throttler;
+pub mod user_decrypt_processor;

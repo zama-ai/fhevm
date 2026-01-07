@@ -11,7 +11,9 @@ use crate::core::event::{
 };
 use crate::core::job_id::JobId;
 use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
-use crate::gateway::readiness_check::readiness_throttler::{GatewayReadinessTask, ReadinessSender};
+use crate::gateway::readiness_check::readiness_throttler::{
+    PublicDecryptReadinessTask, ReadinessSender,
+};
 use crate::http::endpoints::v1::types::public_decrypt::PublicDecryptRequestJson;
 use crate::http::utils::public_decrypt_bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
@@ -45,7 +47,7 @@ where
     public_decrypt_repo: Arc<PublicDecryptRepository>,
     retry_after_seconds: u32,
     tx_throttler: ThrottlingSender<GatewayTxTask>,
-    public_decrypt_readiness_throttler: ReadinessSender<GatewayReadinessTask>,
+    public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
@@ -57,7 +59,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         public_decrypt_repo: Arc<PublicDecryptRepository>,
         retry_after_seconds: u32,
         tx_throttler: ThrottlingSender<GatewayTxTask>,
-        public_decrypt_readiness_throttler: ReadinessSender<GatewayReadinessTask>,
+        public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
     ) -> Self {
         Self {
             orchestrator,
