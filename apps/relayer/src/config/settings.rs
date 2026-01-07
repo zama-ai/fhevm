@@ -23,6 +23,8 @@ impl GatewayConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         self.blockchain_rpc.validate()?;
         self.tx_engine.validate()?;
+        self.readiness_checker.public_decrypt.validate()?;
+        self.readiness_checker.user_decrypt.validate()?;
         Ok(())
     }
 }
@@ -107,8 +109,8 @@ impl TxEngineConfig {
         }
         if self.tx_throttler_per_secs == 0 {
             return Err(AppConfigError::Config(format!(
-                "Tx throttler capacity should be superior to 0: {}",
-                self.tx_throttler_capacity
+                "Tx throttler drain capacity should be superior to 0: {}",
+                self.tx_throttler_per_secs
             )));
         }
         Ok(())
@@ -117,8 +119,73 @@ impl TxEngineConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ReadinessCheckConfig {
-    pub max_concurrency: u16,
+    pub public_decrypt: PublicDecryptQueueSettings,
+    pub user_decrypt: UserDecryptQueueSettings,
     pub retry: RetrySettings,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PublicDecryptQueueSettings {
+    pub max_concurrency: usize,
+    pub capacity: usize,
+    pub safety_margin: usize,
+}
+
+impl PublicDecryptQueueSettings {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        if self.capacity == 0 {
+            return Err(AppConfigError::Config(format!(
+                "Public decrypt queue capacity should be superior to 0: {}",
+                self.capacity
+            )));
+        }
+        if self.safety_margin >= self.capacity {
+            return Err(AppConfigError::Config(format!(
+                "Public decrypt queue safety margin should be inferior strictly to capacity: cap:{}, margin:{}",
+                self.capacity,
+                self.safety_margin,
+            )));
+        }
+        if self.max_concurrency == 0 {
+            return Err(AppConfigError::Config(format!(
+                "Public decrypt queue max concurrency should be superior to 0: {}",
+                self.max_concurrency
+            )));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct UserDecryptQueueSettings {
+    pub max_concurrency: usize,
+    pub capacity: usize,
+    pub safety_margin: usize,
+}
+
+impl UserDecryptQueueSettings {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        if self.capacity == 0 {
+            return Err(AppConfigError::Config(format!(
+                "Public decrypt queue capacity should be superior to 0: {}",
+                self.capacity
+            )));
+        }
+        if self.safety_margin >= self.capacity {
+            return Err(AppConfigError::Config(format!(
+                "Public decrypt queue safety margin should be inferior strictly to capacity: cap:{}, margin:{}",
+                self.capacity,
+                self.safety_margin,
+            )));
+        }
+        if self.max_concurrency == 0 {
+            return Err(AppConfigError::Config(format!(
+                "Public decrypt queue max concurrency should be superior to 0: {}",
+                self.max_concurrency
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
