@@ -167,9 +167,10 @@ where
         event_poller.poller = event_poller.poller.with_poll_interval(poll_interval);
         info!("✓ Subscribed to {event_type} events");
 
-        self.catchup_past_events::<E>(&mut last_block_polled, event_type)
+        let _ = self
+            .catchup_past_events::<E>(&mut last_block_polled, event_type)
             .await
-            .map_err(|e| anyhow!("Failed to catch up past {event_type} events: {e}"))?;
+            .inspect_err(|e| warn!("Failed to catch up past {event_type} events: {e}"));
 
         select! {
             _ = self.process_events(event_type, event_poller, &mut last_block_polled) => (),
@@ -407,7 +408,7 @@ mod tests {
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
     async fn test_reset_filter_stops_listener() {
-        let (_test_instance, asserter, gw_listener) = test_setup().await;
+        let (_test_instance, asserter, gw_listener) = test_setup(None).await;
 
         asserter.push_failure(ErrorPayload {
             code: -32000,
@@ -421,8 +422,28 @@ mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
+    async fn test_failed_catchup_does_not_stop_listener() {
+        let (mut test_instance, asserter, gw_listener) = test_setup(Some(0)).await;
+
+        asserter.push_failure(ErrorPayload {
+            code: -32002,
+            message: "request timed out".into(),
+            data: None,
+        });
+
+        let event_type = EventType::KeygenRequest;
+        tokio::spawn(gw_listener.subscribe(event_type));
+        test_instance.wait_for_log("Failed to catch up").await;
+        test_instance
+            .wait_for_log(&format!("Waiting for next {event_type}"))
+            .await;
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(90))]
+    #[tokio::test]
     async fn test_listener_ended_by_end_of_any_task() {
-        let (mut test_instance, _asserter, gw_listener) = test_setup().await;
+        let (mut test_instance, _asserter, gw_listener) = test_setup(None).await;
 
         // Will stop because some subcription tasks will not be able to init their event filter
         gw_listener.start().await;
@@ -438,7 +459,9 @@ mod tests {
         RootProvider,
     >;
 
-    async fn test_setup() -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
+    async fn test_setup(
+        from_block_number: Option<u64>,
+    ) -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
         let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
 
         // Create a mocked `alloy::Provider`
@@ -452,6 +475,7 @@ mod tests {
         let config = Config {
             decryption_polling: Duration::from_millis(500),
             key_management_polling: Duration::from_millis(500),
+            from_block_number,
             ..Default::default()
         };
         let listener = GatewayListener::new(
