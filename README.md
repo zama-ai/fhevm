@@ -24,6 +24,11 @@
   <a href="https://slsa.dev"><img alt="SLSA 3" src="https://slsa.dev/images/gh-badge-level3.svg" /></a>
 </p>
 
+## Project Overview
+
+FHEVM enables fully homomorphic encryption support for smart contracts.
+The project focuses on privacy-preserving computation on the EVM.
+
 
 ## About
 
