@@ -1,4 +1,21 @@
 services:
+  # =============================================================================
+  # COPROCESSOR BUILD CACHING STRATEGY
+  # =============================================================================
+  # All coprocessor services share a single Dockerfile.workspace with multi-stage
+  # targets. When docker-compose builds them in parallel, each service is a separate
+  # BuildKit invocation.
+  #
+  # To avoid cache write conflicts (multiple processes writing to same directory),
+  # we use a SINGLE EXPORTER pattern:
+  #   - ALL services: cache_from (read from shared cache) ✓
+  #   - ONLY tfhe-worker: cache_to (write to shared cache) ✓
+  #   - Other services: no cache_to (read-only)
+  #
+  # tfhe-worker is chosen as the exporter because it's typically the largest build
+  # and shares all common layers with other services.
+  # =============================================================================
+
   coprocessor-db-migration:
     container_name: coprocessor-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}
@@ -10,8 +27,6 @@ services:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     environment:
@@ -33,8 +48,6 @@ services:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -60,8 +73,6 @@ services:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -86,8 +97,6 @@ services:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/liveness || exit 1"]
       interval: 10s
@@ -149,8 +158,6 @@ services:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -176,8 +183,6 @@ services:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -216,8 +221,6 @@ services:
         CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
         - ${FHEVM_CACHE_FROM_COPROCESSOR:-type=gha}
-      cache_to:
-        - ${FHEVM_CACHE_TO_COPROCESSOR:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:

@@ -1,11 +1,17 @@
 # =============================================================================
-# UNIFIED COPROCESSOR DOCKERFILE
+# UNIFIED COPROCESSOR DOCKERFILE (LOCAL BUILDS)
 # =============================================================================
 # This Dockerfile builds ALL coprocessor workspace binaries in a single builder
-# stage, ensuring dependencies are compiled exactly ONCE. Individual runtime images are
-# produced via multi-stage targets.
+# stage, ensuring dependencies (especially tfhe-rs) are compiled exactly ONCE.
+# Individual runtime images are produced via multi-stage targets.
 #
-# Usage:
+# LOCAL vs CI BUILDS:
+#   - LOCAL: Uses this Dockerfile.workspace via docker-compose for faster builds
+#            (shared builder stage, single tfhe-rs compilation)
+#   - CI:    Uses individual Dockerfiles (coprocessor/*/Dockerfile) for granular
+#            caching and independent service builds
+#
+# Usage (standalone):
 #   docker build --target tfhe-worker -t tfhe-worker:latest .
 #   docker build --target host-listener -t host-listener:latest .
 #   docker build --target gw-listener -t gw-listener:latest .
@@ -13,6 +19,10 @@
 #   docker build --target transaction-sender -t transaction-sender:latest .
 #   docker build --target zkproof-worker -t zkproof-worker:latest .
 #   docker build --target db-migration -t db-migration:latest .
+#
+# Usage (via docker-compose, recommended for local dev):
+#   cd test-suite/fhevm
+#   ./fhevm-cli deploy --build --local
 #
 # =============================================================================
 
