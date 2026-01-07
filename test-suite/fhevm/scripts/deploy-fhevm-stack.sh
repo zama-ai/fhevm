@@ -46,12 +46,14 @@ if [ "$LOCAL_BUILD" = true ]; then
     export DOCKER_BUILDKIT=1
     export COMPOSE_DOCKER_CLI_BUILD=1
     export BUILDX_NO_DEFAULT_ATTESTATIONS=1
+    export DOCKER_BUILD_PROVENANCE=false
+    export FHEVM_CARGO_PROFILE=local
     FHEVM_BUILDX_CACHE_DIR="${FHEVM_BUILDX_CACHE_DIR:-.buildx-cache}"
     mkdir -p "$FHEVM_BUILDX_CACHE_DIR"
     set_local_cache_vars() {
         local service_name="$1"
-        local service_key="${service_name//-/_}"
-        service_key="${service_key^^}"
+        local service_key
+        service_key=$(echo "${service_name//-/_}" | tr '[:lower:]' '[:upper:]')
         local cache_dir="${FHEVM_BUILDX_CACHE_DIR}/${service_name}"
         mkdir -p "$cache_dir"
         export "FHEVM_CACHE_FROM_${service_key}=type=local,src=${cache_dir}"
@@ -79,6 +81,7 @@ if [ "$LOCAL_BUILD" = true ]; then
         host-sc-deploy
         host-sc-pause
         host-sc-unpause
+        kms-connector-db-migration
         kms-connector-gw-listener
         kms-connector-kms-worker
         kms-connector-tx-sender

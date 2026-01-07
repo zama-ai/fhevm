@@ -1,6 +1,8 @@
 # Stage 1: Build Transaction Sender
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
+ARG CARGO_PROFILE=release
+
 USER root
 
 WORKDIR /app
@@ -14,14 +16,16 @@ WORKDIR /app/coprocessor/fhevm-engine
 # Build transaction_sender binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo fetch && \
-    SQLX_OFFLINE=true cargo build --release -p transaction-sender
+    SQLX_OFFLINE=true cargo build --profile=${CARGO_PROFILE} -p transaction-sender
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 
+ARG CARGO_PROFILE=release
+
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/transaction_sender /usr/local/bin/transaction_sender
+COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/${CARGO_PROFILE}/transaction_sender /usr/local/bin/transaction_sender
 
 USER fhevm:fhevm
 
