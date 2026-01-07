@@ -6,9 +6,9 @@ services:
       context: ../../../host-contracts
       dockerfile: Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_HOST_SC_PAUSE:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_HOST_SC_PAUSE:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.host-sc.local
     command:

@@ -15,9 +15,9 @@ services:
       context: ../../..
       dockerfile: kms-connector/crates/gw-listener/Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR_GW_LISTENER:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_KMS_CONNECTOR_GW_LISTENER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.kms-connector.local
     depends_on:
@@ -31,9 +31,9 @@ services:
       context: ../../..
       dockerfile: kms-connector/crates/kms-worker/Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR_KMS_WORKER:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_KMS_CONNECTOR_KMS_WORKER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.kms-connector.local
     depends_on:
@@ -47,9 +47,9 @@ services:
       context: ../../..
       dockerfile: kms-connector/crates/tx-sender/Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR_TX_SENDER:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_KMS_CONNECTOR_TX_SENDER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.kms-connector.local
     depends_on:

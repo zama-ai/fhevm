@@ -6,9 +6,9 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_DB_MIGRATION:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_COPROCESSOR_DB_MIGRATION:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     environment:
@@ -26,9 +26,9 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_HOST_LISTENER:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_COPROCESSOR_HOST_LISTENER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -50,9 +50,9 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_HOST_LISTENER_POLLER:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_COPROCESSOR_HOST_LISTENER_POLLER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -73,9 +73,9 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_GW_LISTENER:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_COPROCESSOR_GW_LISTENER:-type=gha,mode=max}
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/liveness || exit 1"]
       interval: 10s
@@ -104,9 +104,9 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/tfhe-worker/Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_TFHE_WORKER:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_COPROCESSOR_TFHE_WORKER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -130,9 +130,9 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/zkproof-worker/Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_ZKPROOF_WORKER:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_COPROCESSOR_ZKPROOF_WORKER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -154,9 +154,9 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/sns-worker/Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_SNS_WORKER:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_COPROCESSOR_SNS_WORKER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -191,9 +191,9 @@ services:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/transaction-sender/Dockerfile
       cache_from:
-        - ${FHEVM_CACHE_FROM:-type=gha}
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_TRANSACTION_SENDER:-type=gha}
       cache_to:
-        - ${FHEVM_CACHE_TO:-type=gha,mode=max}
+        - ${FHEVM_CACHE_TO_COPROCESSOR_TRANSACTION_SENDER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:

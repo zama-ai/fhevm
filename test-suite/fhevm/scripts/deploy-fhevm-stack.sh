@@ -48,8 +48,45 @@ if [ "$LOCAL_BUILD" = true ]; then
     export BUILDX_NO_DEFAULT_ATTESTATIONS=1
     FHEVM_BUILDX_CACHE_DIR="${FHEVM_BUILDX_CACHE_DIR:-.buildx-cache}"
     mkdir -p "$FHEVM_BUILDX_CACHE_DIR"
-    export FHEVM_CACHE_FROM="type=local,src=${FHEVM_BUILDX_CACHE_DIR}"
-    export FHEVM_CACHE_TO="type=local,dest=${FHEVM_BUILDX_CACHE_DIR},mode=max"
+    set_local_cache_vars() {
+        local service_name="$1"
+        local service_key="${service_name//-/_}"
+        service_key="${service_key^^}"
+        local cache_dir="${FHEVM_BUILDX_CACHE_DIR}/${service_name}"
+        mkdir -p "$cache_dir"
+        export "FHEVM_CACHE_FROM_${service_key}=type=local,src=${cache_dir}"
+        export "FHEVM_CACHE_TO_${service_key}=type=local,dest=${cache_dir},mode=max"
+    }
+    LOCAL_CACHE_SERVICES=( 
+        coprocessor-db-migration
+        coprocessor-gw-listener
+        coprocessor-host-listener
+        coprocessor-host-listener-poller
+        coprocessor-sns-worker
+        coprocessor-tfhe-worker
+        coprocessor-transaction-sender
+        coprocessor-zkproof-worker
+        gateway-deploy-mocked-zama-oft
+        gateway-sc-add-network
+        gateway-sc-add-pausers
+        gateway-sc-deploy
+        gateway-sc-pause
+        gateway-sc-trigger-crsgen
+        gateway-sc-trigger-keygen
+        gateway-sc-unpause
+        gateway-set-relayer-mocked-payment
+        host-sc-add-pausers
+        host-sc-deploy
+        host-sc-pause
+        host-sc-unpause
+        kms-connector-gw-listener
+        kms-connector-kms-worker
+        kms-connector-tx-sender
+        test-suite-e2e-debug
+    )
+    for service_name in "${LOCAL_CACHE_SERVICES[@]}"; do
+        set_local_cache_vars "$service_name"
+    done
 fi
 
 # Function to check if services are ready based on expected state
