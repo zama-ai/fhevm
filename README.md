@@ -178,3 +178,7 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+## Getting Help
+
+If you have questions or encounter issues, please open an issue in this repository.
