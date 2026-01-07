@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM input_proof_req WHERE gw_reference_id = $3\n            ),\n            upd AS (\n                UPDATE input_proof_req\n                SET\n                    res = $1,\n                    req_status = 'completed'::req_status,\n                    gw_response_tx_hash = $2,\n                    accepted = true\n                WHERE gw_reference_id = $3\n                RETURNING int_request_id, updated_at\n            )\n            SELECT \n                old.req_status as \"old_status!: ReqStatus\", \n                old.updated_at as \"old_updated_at!\",\n                upd.int_request_id as \"int_request_id!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
+  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM input_proof_req WHERE gw_reference_id = $3\n            ),\n            upd AS (\n                UPDATE input_proof_req\n                SET\n                    res = $1,\n                    req_status = 'completed'::req_status,\n                    gw_response_tx_hash = $2,\n                    accepted = true\n                WHERE gw_reference_id = $3\n                  AND req_status = 'receipt_received'::req_status\n                RETURNING int_request_id, updated_at\n            )\n            SELECT \n                old.req_status as \"old_status!: ReqStatus\", \n                old.updated_at as \"old_updated_at!\",\n                upd.int_request_id as \"int_request_id!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
   "describe": {
     "columns": [
       {
@@ -53,5 +53,5 @@
       false
     ]
   },
-  "hash": "5bc81630e6aa28cf26cf48d907c1afb41448e48f5e325fe973e3644733a6924b"
+  "hash": "2fc2cd8530ca75df58f1107302e084d236b69e2fbb5d32abc0cd681f6250286f"
 }

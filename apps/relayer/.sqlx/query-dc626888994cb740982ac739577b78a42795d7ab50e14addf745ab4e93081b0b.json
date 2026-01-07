@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM public_decrypt_req \n                WHERE gw_reference_id = $3\n                AND req_status NOT IN ('timed_out'::req_status, 'failure'::req_status)\n            ),\n            upd AS (\n                UPDATE public_decrypt_req\n                SET \n                    res = $1,\n                    req_status = 'completed'::req_status,\n                    gw_response_tx_hash = $2\n                WHERE gw_reference_id = $3\n                  AND req_status NOT IN ('timed_out'::req_status, 'failure'::req_status)\n                RETURNING \n                    int_job_id, \n                    req_status, \n                    updated_at,\n                    err_reason\n            )\n            SELECT \n                old.req_status as \"old_status!: ReqStatus\",\n                old.updated_at as \"old_updated_at!\",\n                upd.int_job_id as \"int_job_id!\",\n                upd.req_status as \"req_status!: ReqStatus\",\n                upd.updated_at as \"updated_at!\",\n                upd.err_reason\n            FROM old, upd\n            ",
+  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM public_decrypt_req\n                WHERE gw_reference_id = $3\n                AND req_status = 'receipt_received'::req_status\n            ),\n            upd AS (\n                UPDATE public_decrypt_req\n                SET\n                    res = $1,\n                    req_status = 'completed'::req_status,\n                    gw_response_tx_hash = $2\n                WHERE gw_reference_id = $3\n                  AND req_status = 'receipt_received'::req_status\n                RETURNING \n                    int_job_id, \n                    req_status, \n                    updated_at,\n                    err_reason\n            )\n            SELECT \n                old.req_status as \"old_status!: ReqStatus\",\n                old.updated_at as \"old_updated_at!\",\n                upd.int_job_id as \"int_job_id!\",\n                upd.req_status as \"req_status!: ReqStatus\",\n                upd.updated_at as \"updated_at!\",\n                upd.err_reason\n            FROM old, upd\n            ",
   "describe": {
     "columns": [
       {
@@ -80,5 +80,5 @@
       true
     ]
   },
-  "hash": "2a7a79d9a18a85c60452a10e49bf6aa1feda258a3225f17017e996deebdc0bc6"
+  "hash": "dc626888994cb740982ac739577b78a42795d7ab50e14addf745ab4e93081b0b"
 }

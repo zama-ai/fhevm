@@ -154,6 +154,7 @@ impl UserDecryptRepository {
                 UPDATE user_decrypt_req
                 SET req_status = 'processing'::req_status
                 WHERE int_job_id = $1
+                  AND req_status = 'queued'::req_status
                 RETURNING req_status, updated_at
             )
             SELECT 
@@ -210,6 +211,7 @@ impl UserDecryptRepository {
                     req_status = 'timed_out'::req_status,
                     err_reason = $1
                 WHERE int_job_id = $2
+                  AND req_status IN ('queued'::req_status, 'receipt_received'::req_status)
                 RETURNING req_status, updated_at
             )
             SELECT 
@@ -262,6 +264,7 @@ impl UserDecryptRepository {
                 UPDATE user_decrypt_req
                 SET req_status = 'tx_in_flight'::req_status
                 WHERE int_job_id = $1
+                  AND req_status = 'processing'::req_status
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -384,6 +387,7 @@ impl UserDecryptRepository {
                     gw_req_tx_hash = $1,
                     gw_reference_id = $2
                 WHERE int_job_id = $3
+                  AND req_status = 'tx_in_flight'::req_status
                 RETURNING req_status, updated_at
             )
             SELECT 
@@ -440,6 +444,7 @@ impl UserDecryptRepository {
                     req_status = 'failure'::req_status,
                     err_reason = $1
                 WHERE int_job_id = $2
+                  AND req_status IN ('processing'::req_status, 'tx_in_flight'::req_status)
                 RETURNING req_status, updated_at
             )
             SELECT 
@@ -655,7 +660,7 @@ impl UserDecryptRepository {
                         UPDATE user_decrypt_req
                         SET req_status = 'completed'::req_status
                         WHERE gw_reference_id = $1
-                          AND req_status != 'timed_out'::req_status
+                          AND req_status = 'receipt_received'::req_status
                         RETURNING int_job_id, req_status, updated_at, err_reason
                     )
                     SELECT 

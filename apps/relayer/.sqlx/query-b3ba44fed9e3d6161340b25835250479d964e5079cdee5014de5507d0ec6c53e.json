@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $2\n            ),\n            upd AS (\n                UPDATE public_decrypt_req\n                SET \n                    req_status = 'timed_out'::req_status,\n                    err_reason = $1\n                WHERE int_job_id = $2\n                RETURNING req_status, updated_at\n            )\n            SELECT \n                old.req_status as \"old_status!: ReqStatus\",\n                old.updated_at as \"old_updated_at!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
+  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM input_proof_req WHERE int_request_id = $1\n            ),\n            upd AS (\n                UPDATE input_proof_req\n                SET req_status = 'tx_in_flight'::req_status\n                WHERE int_request_id = $1\n                  AND req_status = 'processing'::req_status\n                RETURNING req_status, updated_at\n            )\n            SELECT\n                old.req_status as \"old_status!: ReqStatus\",\n                old.updated_at as \"old_updated_at!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
   "describe": {
     "columns": [
       {
@@ -36,8 +36,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Bytea"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -46,5 +45,5 @@
       false
     ]
   },
-  "hash": "cae5ac17255a7b26505b83857230c1dd824e645eec3fab5a8a93623d5f3220be"
+  "hash": "b3ba44fed9e3d6161340b25835250479d964e5079cdee5014de5507d0ec6c53e"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM user_decrypt_req WHERE int_job_id = $3\n            ),\n            upd AS (\n                UPDATE user_decrypt_req\n                SET\n                    req_status = 'receipt_received'::req_status,\n                    gw_req_tx_hash = $1,\n                    gw_reference_id = $2\n                WHERE int_job_id = $3\n                RETURNING req_status, updated_at\n            )\n            SELECT \n                old.req_status as \"old_status!: ReqStatus\",\n                old.updated_at as \"old_updated_at!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
+  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM input_proof_req WHERE int_request_id = $3\n            ),\n            upd AS (\n                UPDATE input_proof_req\n                SET\n                    req_status = 'receipt_received'::req_status,\n                    gw_req_tx_hash = $1,\n                    gw_reference_id = $2\n                WHERE int_request_id = $3\n                  AND req_status = 'tx_in_flight'::req_status\n                RETURNING req_status, updated_at\n            )\n            SELECT \n                old.req_status as \"old_status!: ReqStatus\", \n                old.updated_at as \"old_updated_at!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
   "describe": {
     "columns": [
       {
@@ -38,7 +38,7 @@
       "Left": [
         "Text",
         "Bytea",
-        "Bytea"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -47,5 +47,5 @@
       false
     ]
   },
-  "hash": "47df77f281dbbc2c93f16373854137bea57ca9d8ecd58beff7bf4155077204ac"
+  "hash": "c1525d5a6d24b10a2d2d86838c248600173fc7a2ec07acb96572ce52666dad6c"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                    WITH old AS (\n                        SELECT req_status, updated_at FROM user_decrypt_req \n                        WHERE gw_reference_id = $1\n                    ),\n                    upd AS (\n                        UPDATE user_decrypt_req\n                        SET req_status = 'completed'::req_status\n                        WHERE gw_reference_id = $1\n                          AND req_status != 'timed_out'::req_status\n                        RETURNING int_job_id, req_status, updated_at, err_reason\n                    )\n                    SELECT \n                        upd.int_job_id as \"int_job_id!\",\n                        upd.req_status as \"req_status!: ReqStatus\",\n                        upd.updated_at as \"updated_at!\",\n                        upd.err_reason,\n                        old.req_status as \"old_status!: ReqStatus\",\n                        old.updated_at as \"old_updated_at!\"\n                    FROM old, upd\n                    ",
+  "query": "\n                    WITH old AS (\n                        SELECT req_status, updated_at FROM user_decrypt_req \n                        WHERE gw_reference_id = $1\n                    ),\n                    upd AS (\n                        UPDATE user_decrypt_req\n                        SET req_status = 'completed'::req_status\n                        WHERE gw_reference_id = $1\n                          AND req_status = 'receipt_received'::req_status\n                        RETURNING int_job_id, req_status, updated_at, err_reason\n                    )\n                    SELECT \n                        upd.int_job_id as \"int_job_id!\",\n                        upd.req_status as \"req_status!: ReqStatus\",\n                        upd.updated_at as \"updated_at!\",\n                        upd.err_reason,\n                        old.req_status as \"old_status!: ReqStatus\",\n                        old.updated_at as \"old_updated_at!\"\n                    FROM old, upd\n                    ",
   "describe": {
     "columns": [
       {
@@ -78,5 +78,5 @@
       false
     ]
   },
-  "hash": "e2d491aa4c051521a1a82f9abecf7698c4d92ebfc14e74961c8b6f49ce69cd93"
+  "hash": "8c2e38005ceee2b8a1a4dfb8e9a4ee0b606e0b89b4b72f9b799f39be4b5fe853"
 }

@@ -95,6 +95,7 @@ impl InputProofRepository {
                 UPDATE input_proof_req
                 SET req_status = 'tx_in_flight'::req_status
                 WHERE int_request_id = $1
+                  AND req_status = 'processing'::req_status
                 RETURNING req_status, updated_at
             )
             SELECT
@@ -217,6 +218,7 @@ impl InputProofRepository {
                     gw_req_tx_hash = $1,
                     gw_reference_id = $2
                 WHERE int_request_id = $3
+                  AND req_status = 'tx_in_flight'::req_status
                 RETURNING req_status, updated_at
             )
             SELECT 
@@ -275,6 +277,9 @@ impl InputProofRepository {
                     req_status = 'failure'::req_status,
                     err_reason = $1
                 WHERE int_request_id = $2
+                  AND req_status IN ('processing'::req_status,
+                                     'tx_in_flight'::req_status,
+                                     'receipt_received'::req_status)
                 RETURNING req_status, updated_at
             )
             SELECT 
@@ -346,6 +351,7 @@ impl InputProofRepository {
                     gw_response_tx_hash = $2,
                     accepted = true
                 WHERE gw_reference_id = $3
+                  AND req_status = 'receipt_received'::req_status
                 RETURNING int_request_id, updated_at
             )
             SELECT 
@@ -408,6 +414,7 @@ impl InputProofRepository {
                     gw_response_tx_hash = $1,
                     err_reason = $2
                 WHERE gw_reference_id = $3
+                  AND req_status = 'receipt_received'::req_status
                 RETURNING int_request_id, updated_at
             )
             SELECT 
