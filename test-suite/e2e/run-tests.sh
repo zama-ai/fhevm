@@ -9,6 +9,7 @@ RESET='\033[0m'
 DEFAULT_GREP="test user input uint64"
 DEFAULT_NETWORK="staging"
 VERBOSE=false
+NO_COMPILE=false
 
 show_help() {
   echo -e "${BLUE}============================================================${RESET}"
@@ -21,6 +22,7 @@ show_help() {
   echo -e "  -g, --grep PATTERN  Specify test grep pattern (default: ${DEFAULT_GREP})"
   echo -e "  -n, --network NAME  Specify network (default: ${DEFAULT_NETWORK})"
   echo -e "  -v, --verbose       Enable verbose output"
+  echo -e "  --no-compile        Skip Hardhat compilation step"
   echo -e "  -r, --no-relayer    Disable Rust relayer"
   echo -e ""
   echo -e "${YELLOW}Examples:${RESET}"
@@ -67,6 +69,10 @@ while (( "$#" )); do
       VERBOSE=true
       shift
       ;;
+    --no-compile)
+      NO_COMPILE=true
+      shift
+      ;;
     *)
       PARAMS="$PARAMS $1"
       shift
@@ -92,6 +98,9 @@ echo -e "  Network:     ${YELLOW}$NETWORK${RESET}"
 if [ "$VERBOSE" = true ]; then
   echo -e "  Verbose:     ${YELLOW}Enabled${RESET}"
 fi
+if [ "$NO_COMPILE" = true ]; then
+  echo -e "  Compile:     ${YELLOW}Disabled${RESET}"
+fi
 echo -e "${BLUE}============================================================${RESET}"
 
 trap cleanup SIGINT SIGTERM
@@ -101,6 +110,9 @@ echo -e "\n${GREEN}Running tests...${RESET}"
 HARDHAT_OPTS="${HARDHAT_PARALLEL} "
 if [ "$VERBOSE" = true ]; then
   HARDHAT_OPTS+=" --verbose "
+fi
+if [ "$NO_COMPILE" = true ]; then
+  HARDHAT_OPTS+=" --no-compile "
 fi
 
 echo hardhat test ${HARDHAT_OPTS} --grep "$GREP_TEXT" --network "$NETWORK"

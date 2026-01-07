@@ -25,17 +25,32 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Argument Parsing
 FORCE_BUILD=false
+LOCAL_BUILD=false
 NEW_ARGS=()
 for arg in "$@"; do
   if [[ "$arg" == "--build" ]]; then
     FORCE_BUILD=true
     log_info "Force build option detected. Services will be rebuilt."
+  elif [[ "$arg" == "--local" || "$arg" == "--dev" ]]; then
+    LOCAL_BUILD=true
+    log_info "Local optimization option detected."
   else
     NEW_ARGS+=("$arg")
   fi
 done
-# Overwrite original arguments with the filtered list (removes --build from $@)
+# Overwrite original arguments with the filtered list (removes local flags from $@)
 set -- "${NEW_ARGS[@]}"
+
+if [ "$LOCAL_BUILD" = true ]; then
+    log_info "Enabling local BuildKit cache and disabling provenance attestations."
+    export DOCKER_BUILDKIT=1
+    export COMPOSE_DOCKER_CLI_BUILD=1
+    export BUILDX_NO_DEFAULT_ATTESTATIONS=1
+    FHEVM_BUILDX_CACHE_DIR="${FHEVM_BUILDX_CACHE_DIR:-.buildx-cache}"
+    mkdir -p "$FHEVM_BUILDX_CACHE_DIR"
+    export FHEVM_CACHE_FROM="type=local,src=${FHEVM_BUILDX_CACHE_DIR}"
+    export FHEVM_CACHE_TO="type=local,dest=${FHEVM_BUILDX_CACHE_DIR},mode=max"
+fi
 
 # Function to check if services are ready based on expected state
 wait_for_service() {
