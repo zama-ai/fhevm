@@ -179,7 +179,8 @@ pub async fn run_fhevm_relayer(
             settings.gateway.contracts.user_decrypt_shares_threshold,
             tx_throttler.clone(),
             throttler_control_tx,
-            public_decrypt_readiness_throttler,
+            public_decrypt_readiness_throttler.clone(),
+            user_decrypt_readiness_throttler.clone(),
         )
         .await;
 

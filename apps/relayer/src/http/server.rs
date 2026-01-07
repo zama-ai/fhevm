@@ -1,7 +1,9 @@
 use crate::config::settings::HttpConfig;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
-use crate::gateway::readiness_check::readiness_throttler::{PublicDecryptReadinessTask, ReadinessSender};
+use crate::gateway::readiness_check::readiness_throttler::{
+    PublicDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
+};
 use crate::http::endpoints::{
     admin, health_handler, liveness_handler,
     v1::handlers::{
@@ -51,6 +53,7 @@ pub async fn run_http_server<D>(
     tx_throttler: ThrottlingSender<GatewayTxTask>,
     throttler_control_tx: Option<mpsc::Sender<u32>>,
     public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+    user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
 ) -> SocketAddr
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
@@ -78,6 +81,7 @@ where
         repositories.user_decrypt.clone(),
         config.api_retry_after_seconds,
         tx_throttler.clone(),
+        user_decrypt_readiness_throttler.clone(),
     ));
 
     let public_decrypt_handler_v1 = Arc::new(PublicDecryptHandlerV1::new(
@@ -105,6 +109,7 @@ where
         user_decrypt_shares_threshold,
         config.api_retry_after_seconds,
         tx_throttler.clone(),
+        user_decrypt_readiness_throttler.clone(),
     ));
 
     let public_decrypt_handler_v2 = Arc::new(PublicDecryptHandlerV2::new(

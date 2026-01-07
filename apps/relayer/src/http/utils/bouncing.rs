@@ -1,6 +1,8 @@
 use crate::gateway::{
     arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender},
-    readiness_check::readiness_throttler::{PublicDecryptReadinessTask, ReadinessSender},
+    readiness_check::readiness_throttler::{
+        PublicDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
+    },
 };
 
 pub async fn bounce_check(tx_throttler: ThrottlingSender<GatewayTxTask>) -> bool {
@@ -15,4 +17,13 @@ pub async fn public_decrypt_bounce_check(
     let tx_full = tx_throttler.is_queue_full().await;
     let pub_dec_full = public_decrypt_readiness_throttler.is_queue_full().await;
     tx_full || pub_dec_full
+}
+
+pub async fn user_decrypt_bounce_check(
+    tx_throttler: ThrottlingSender<GatewayTxTask>,
+    user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+) -> bool {
+    let tx_full = tx_throttler.is_queue_full().await;
+    let user_dec_full = user_decrypt_readiness_throttler.is_queue_full().await;
+    tx_full || user_dec_full
 }
