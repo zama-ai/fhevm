@@ -1,0 +1,103 @@
+# syntax=docker/dockerfile:1
+# =============================================================================
+# UNIFIED KMS-CONNECTOR DOCKERFILE (LOCAL BUILDS)
+# =============================================================================
+# This Dockerfile builds ALL kms-connector workspace binaries in a single
+# builder stage, ensuring dependencies (tfhe-rs, alloy, sqlx) are compiled
+# exactly ONCE. Individual runtime images are produced via multi-stage targets.
+#
+# LOCAL vs CI BUILDS:
+#   - LOCAL: Uses this Dockerfile.workspace via docker-compose for faster builds
+#            (shared builder stage, single dependency compilation)
+#   - CI:    Uses individual Dockerfiles (kms-connector/crates/*/Dockerfile) for
+#            granular caching and independent service builds
+#
+# Usage (standalone):
+#   docker build --target gw-listener -t gw-listener:latest .
+#   docker build --target kms-worker -t kms-worker:latest .
+#   docker build --target tx-sender -t tx-sender:latest .
+#
+# Usage (via docker-compose, recommended for local dev):
+#   cd test-suite/fhevm
+#   ./fhevm-cli deploy --build --local
+#
+# =============================================================================
+
+ARG RUST_IMAGE_VERSION=1.91.0
+
+# =============================================================================
+# Stage 1: Build ALL workspace binaries
+# =============================================================================
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
+
+ARG CARGO_PROFILE=release
+
+USER root
+WORKDIR /app
+
+COPY .git ./.git
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY kms-connector ./kms-connector
+
+WORKDIR /app/kms-connector
+
+# Build entire workspace - shared deps compile ONCE here
+# NOTE: Cache mounts are NOT committed to image layers, so we copy binaries
+# to /tmp in the same RUN instruction for COPY --from to work in later stages.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/app/kms-connector/target,sharing=locked \
+    git config --global --add safe.directory /app && \
+    cargo fetch && \
+    cargo build --profile=${CARGO_PROFILE} --workspace && \
+    mkdir -p /out && \
+    cp target/${CARGO_PROFILE}/gw-listener /out/ && \
+    cp target/${CARGO_PROFILE}/kms-worker /out/ && \
+    cp target/${CARGO_PROFILE}/tx-sender /out/
+
+# =============================================================================
+# Stage 2a: gw-listener runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS gw-listener
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/gw-listener /app/kms-connector/bin/gw-listener
+
+USER fhevm:fhevm
+
+ENTRYPOINT ["/app/kms-connector/bin/gw-listener", "start"]
+
+HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
+    CMD ["/app/kms-connector/bin/gw-listener", "health", "--endpoint", "http://127.0.0.1:9100/healthz"]
+
+# =============================================================================
+# Stage 2b: kms-worker runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS kms-worker
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/kms-worker /app/kms-connector/bin/kms-worker
+
+USER fhevm:fhevm
+
+ENTRYPOINT ["/app/kms-connector/bin/kms-worker", "start"]
+
+HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
+    CMD ["/app/kms-connector/bin/kms-worker", "health", "--endpoint", "http://127.0.0.1:9100/healthz"]
+
+# =============================================================================
+# Stage 2c: tx-sender runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS tx-sender
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/tx-sender /app/kms-connector/bin/tx-sender
+
+USER fhevm:fhevm
+
+ENTRYPOINT ["/app/kms-connector/bin/tx-sender", "start"]
+
+HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
+    CMD ["/app/kms-connector/bin/tx-sender", "health", "--endpoint", "http://127.0.0.1:9100/healthz"]
