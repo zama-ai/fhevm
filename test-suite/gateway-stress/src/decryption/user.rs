@@ -300,7 +300,7 @@ where
     let latency = burst_start.elapsed().as_secs_f64();
     let result = BurstResult {
         latency,
-        throughput: config.parallel_requests as f64 / latency,
+        throughput: (config.parallel_requests * config.user_ct.len() as u32) as f64 / latency,
     };
     progress_bar.finish_with_message(format!(
         "Handled burst #{} of {} in {:.2}s. Throughput: {:.2} tps",
