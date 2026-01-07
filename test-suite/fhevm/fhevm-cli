@@ -73,14 +73,14 @@ function usage {
   echo -e "  ${CYAN}-n, --network NAME${RESET}  Specify network (default: ${GREEN}staging${RESET})"
   echo -e "  ${CYAN}-g, --grep PATTERN${RESET}  Override default test pattern"
   echo -e "  ${CYAN}-r, --no-relayer${RESET}    Disable Rust relayer"
-  echo -e "  ${CYAN}--no-compile${RESET}        Skip Hardhat compilation step"
+  echo -e "  ${CYAN}--no-hardhat-compile${RESET}        Skip Hardhat compilation step"
   echo
   echo -e "${BOLD}${LIGHT_BLUE}Examples:${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --local${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
-  echo -e "  ${PURPLE}./fhevm-cli test input-proof --no-compile${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test input-proof --no-hardhat-compile${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-ebool ${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-mixed -n staging${RESET}"
@@ -199,8 +199,8 @@ case $COMMAND in
           NO_RELAYER="-r"
           shift
           ;;
-        --no-compile)
-          NO_COMPILE="--no-compile"
+        --no-hardhat-compile)
+          NO_COMPILE="--no-hardhat-compile"
           shift
           ;;
         *)
@@ -220,7 +220,7 @@ case $COMMAND in
       docker_args+=("-r")
     fi
     if [ -n "$NO_COMPILE" ]; then
-      docker_args+=("--no-compile")
+      docker_args+=("--no-hardhat-compile")
     fi
 
     if [ -n "$GREP" ]; then

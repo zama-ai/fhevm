@@ -22,7 +22,7 @@ show_help() {
   echo -e "  -g, --grep PATTERN  Specify test grep pattern (default: ${DEFAULT_GREP})"
   echo -e "  -n, --network NAME  Specify network (default: ${DEFAULT_NETWORK})"
   echo -e "  -v, --verbose       Enable verbose output"
-  echo -e "  --no-compile        Skip Hardhat compilation step"
+  echo -e "  --no-hardhat-compile        Skip Hardhat compilation step"
   echo -e "  -r, --no-relayer    Disable Rust relayer"
   echo -e ""
   echo -e "${YELLOW}Examples:${RESET}"
@@ -69,7 +69,7 @@ while (( "$#" )); do
       VERBOSE=true
       shift
       ;;
-    --no-compile)
+    --no-hardhat-compile)
       NO_COMPILE=true
       shift
       ;;
@@ -112,7 +112,7 @@ if [ "$VERBOSE" = true ]; then
   HARDHAT_OPTS+=" --verbose "
 fi
 if [ "$NO_COMPILE" = true ]; then
-  HARDHAT_OPTS+=" --no-compile "
+  HARDHAT_OPTS+=" --no-hardhat-compile "
 fi
 
 echo hardhat test ${HARDHAT_OPTS} --grep "$GREP_TEXT" --network "$NETWORK"

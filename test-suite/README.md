@@ -41,7 +41,7 @@ cd test-suite/fhevm
 # Run specific tests
 ./fhevm-cli test input-proof
 # Skip Hardhat compile when artifacts are already up to date
-./fhevm-cli test input-proof --no-compile
+./fhevm-cli test input-proof --no-hardhat-compile
 # Trivial
 ./fhevm-cli test user-decryption
 # Trivial
@@ -98,7 +98,7 @@ For faster local iteration, use `--local` to enable a local BuildKit cache (stor
 When running tests and you know your Hardhat artifacts are already up to date, you can skip compilation:
 
 ```sh
-./fhevm-cli test input-proof --no-compile
+./fhevm-cli test input-proof --no-hardhat-compile
 ```
 
 ## Security policy
