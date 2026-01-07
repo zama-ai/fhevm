@@ -1,0 +1,205 @@
+# =============================================================================
+# UNIFIED COPROCESSOR DOCKERFILE
+# =============================================================================
+# This Dockerfile builds ALL coprocessor workspace binaries in a single builder
+# stage, ensuring dependencies are compiled exactly ONCE. Individual runtime images are
+# produced via multi-stage targets.
+#
+# Usage:
+#   docker build --target tfhe-worker -t tfhe-worker:latest .
+#   docker build --target host-listener -t host-listener:latest .
+#   docker build --target gw-listener -t gw-listener:latest .
+#   docker build --target sns-worker -t sns-worker:latest .
+#   docker build --target transaction-sender -t transaction-sender:latest .
+#   docker build --target zkproof-worker -t zkproof-worker:latest .
+#   docker build --target db-migration -t db-migration:latest .
+#
+# =============================================================================
+
+# =============================================================================
+# Stage 0: Build Solidity contracts (required for host-listener, gw-listener)
+# =============================================================================
+FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
+
+USER root
+WORKDIR /app
+
+# Copy host-contracts for host-listener
+COPY host-contracts ./host-contracts
+
+# Compile host-contracts
+WORKDIR /app/host-contracts
+RUN cp .env.example .env && \
+    npm install && \
+    HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && \
+    npx hardhat compile
+
+# Copy gateway-contracts for gw-listener
+WORKDIR /app
+COPY gateway-contracts ./gateway-contracts
+
+# Compile gateway-contracts
+WORKDIR /app/gateway-contracts
+RUN npm install && \
+    DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
+
+# =============================================================================
+# Stage 1: Build ALL Rust workspace binaries
+# =============================================================================
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
+
+ARG CARGO_PROFILE=release
+
+USER root
+WORKDIR /app
+
+# Copy contract artifacts from contract_builder stage
+COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
+COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
+
+# Copy Rust sources and dependencies
+COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
+COPY coprocessor/proto ./coprocessor/proto
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY gateway-contracts/contracts ./gateway-contracts/contracts
+COPY host-contracts/contracts ./host-contracts/contracts
+
+# Copy BUILD_ID for version metadata (git commit reference)
+COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
+
+WORKDIR /app/coprocessor/fhevm-engine
+
+# Build entire workspace - tfhe compiles ONCE here
+# NOTE: We use cache mounts for incremental compilation. Because cache mounts
+# are NOT committed to the image layer, we must copy binaries to /out during
+# the same RUN instruction for COPY --from to work in later stages.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
+    cargo fetch && \
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} --workspace && \
+    mkdir -p /out && \
+    cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \
+    cp target/${CARGO_PROFILE}/host_listener /out/ && \
+    cp target/${CARGO_PROFILE}/host_listener_poller /out/ && \
+    cp target/${CARGO_PROFILE}/gw_listener /out/ && \
+    cp target/${CARGO_PROFILE}/sns_worker /out/ && \
+    cp target/${CARGO_PROFILE}/transaction_sender /out/ && \
+    cp target/${CARGO_PROFILE}/zkproof_worker /out/
+
+# =============================================================================
+# Stage 1b: Build sqlx-cli for db-migration
+# =============================================================================
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS sqlx_builder
+
+USER root
+WORKDIR /app
+
+# Install sqlx-cli
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo install sqlx-cli --version 0.7.2 \
+    --no-default-features --features postgres --locked
+
+# =============================================================================
+# Stage 2a: tfhe-worker runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS tfhe-worker
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/tfhe_worker /usr/local/bin/tfhe_worker
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/tfhe_worker"]
+
+# =============================================================================
+# Stage 2b: host-listener runtime (includes both host_listener and host_listener_poller)
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS host-listener
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/host_listener /usr/local/bin/host_listener
+COPY --from=builder --chown=fhevm:fhevm /out/host_listener_poller /usr/local/bin/host_listener_poller
+
+USER fhevm:fhevm
+
+# No CMD - compose specifies the command (host_listener or host_listener_poller)
+
+# =============================================================================
+# Stage 2c: gw-listener runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS gw-listener
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/gw_listener /usr/local/bin/gw_listener
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/gw_listener"]
+
+# =============================================================================
+# Stage 2d: sns-worker runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS sns-worker
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/sns_worker /usr/local/bin/sns_worker
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/sns_worker"]
+
+# =============================================================================
+# Stage 2e: transaction-sender runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS transaction-sender
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/transaction_sender /usr/local/bin/transaction_sender
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/transaction_sender"]
+
+# =============================================================================
+# Stage 2f: zkproof-worker runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS zkproof-worker
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/zkproof_worker /usr/local/bin/zkproof_worker
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/zkproof_worker"]
+
+# =============================================================================
+# Stage 2g: db-migration runtime (special: Postgres-based image)
+# =============================================================================
+FROM cgr.dev/zama.ai/postgres:17 AS db-migration
+
+# Copy sqlx-cli from sqlx_builder
+COPY --from=sqlx_builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
+
+# Copy migrations and initialization script from source
+COPY coprocessor/fhevm-engine/db-migration/initialize_db.sh /initialize_db.sh
+COPY coprocessor/fhevm-engine/db-migration/migrations /migrations
+
+# Copy user/group from builder for consistency
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+
+# Set ownership
+RUN chown -R fhevm:fhevm /initialize_db.sh /migrations
+
+USER fhevm:fhevm
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD psql --version || exit 1
+
+ENTRYPOINT ["/bin/bash", "-c"]
