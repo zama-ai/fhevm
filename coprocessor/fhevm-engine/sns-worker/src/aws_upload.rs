@@ -441,7 +441,7 @@ async fn fetch_pending_uploads(
         // Fetch missing ciphertext128
         if ciphertext128_digest.is_none() {
             if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext128 FROM ciphertexts WHERE tenant_id = $1 AND handle = $2;",
+                "SELECT ciphertext FROM ciphertexts128 WHERE tenant_id = $1 AND handle = $2;",
                 row.tenant_id,
                 handle
             )
@@ -449,7 +449,7 @@ async fn fetch_pending_uploads(
             .await
             {
                 if let Some(record) = row {
-                    match record.ciphertext128 {
+                    match record.ciphertext {
                         Some(ct) if !ct.is_empty() => {
                             ct128 = ct;
                         }
