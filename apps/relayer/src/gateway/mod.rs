@@ -20,8 +20,9 @@ use crate::gateway::arbitrum::transaction::throttler::{
 use crate::gateway::readiness_check::public_decrypt_processor::PublicDecryptReadinessProcessor;
 use crate::gateway::readiness_check::readiness_checker::ReadinessChecker;
 use crate::gateway::readiness_check::readiness_throttler::{
-    PublicDecryptReadinessTask, ReadinessSender, ReadinessWorker,
+    PublicDecryptReadinessTask, ReadinessSender, ReadinessWorker, UserDecryptReadinessTask,
 };
+use crate::gateway::readiness_check::user_decrypt_processor::UserDecryptReadinessProcessor;
 use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
 use crate::store::sql::repositories::Repositories;
 use alloy::primitives::Address;
@@ -44,6 +45,8 @@ pub async fn initialize_gateway(
     tx_worker: ThrottlingWorker<GatewayTxTask>,
     public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
     public_decrypt_readiness_worker: ReadinessWorker<PublicDecryptReadinessTask>,
+    user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+    user_decrypt_readiness_worker: ReadinessWorker<UserDecryptReadinessTask>,
 ) -> anyhow::Result<KeyUrlGatewayHandler> {
     info!("Initializing gateway components");
 
@@ -76,6 +79,13 @@ pub async fn initialize_gateway(
     )
     .await?;
 
+    UserDecryptReadinessProcessor::orchestrator_spawn_task(
+        user_decrypt_readiness_worker,
+        readiness_checker.clone(),
+        orchestrator.clone(),
+    )
+    .await?;
+
     // Parse addresses for handlers (listener parses its own from config)
     let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
         .map_err(|_| anyhow::anyhow!("Invalid decryption address"))?;
@@ -99,7 +109,7 @@ pub async fn initialize_gateway(
     UserDecryptGatewayHandler::new(
         orchestrator.clone(),
         tx_throttler.clone(),
-        readiness_checker,
+        user_decrypt_readiness_throttler.clone(),
         decryption_address,
         settings.gateway.contracts.user_decrypt_shares_threshold as usize,
         repositories.user_decrypt.clone(),

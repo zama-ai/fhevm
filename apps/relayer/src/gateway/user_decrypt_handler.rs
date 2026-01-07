@@ -18,7 +18,7 @@ use crate::{
             },
             ComputeCalldata,
         },
-        readiness_check::readiness_checker::{ReadinessCheckError, ReadinessChecker},
+        readiness_check::readiness_throttler::{ReadinessSender, UserDecryptReadinessTask},
     },
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
@@ -51,7 +51,7 @@ impl From<&HandleContractPair> for Decryption::CtHandleContractPair {
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     tx_throttler: ThrottlingSender<GatewayTxTask>,
-    readiness_checker: Arc<ReadinessChecker>,
+    user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
     decryption_address: Address,
     user_decrypt_repo: Arc<UserDecryptRepository>,
     user_decrypt_shares_threshold: i64,
@@ -61,7 +61,7 @@ impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         tx_throttler: ThrottlingSender<GatewayTxTask>,
-        readiness_checker: Arc<ReadinessChecker>,
+        user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
         decryption_address: Address,
         user_decrypt_shares_threshold: usize,
         user_decrypt_repo: Arc<UserDecryptRepository>,
@@ -69,7 +69,7 @@ impl GatewayHandler {
         let handler = Arc::new(Self {
             dispatcher: Arc::clone(&dispatcher),
             tx_throttler,
-            readiness_checker,
+            user_decrypt_readiness_throttler,
             decryption_address,
             user_decrypt_repo,
             user_decrypt_shares_threshold: user_decrypt_shares_threshold as i64,
@@ -82,6 +82,9 @@ impl GatewayHandler {
                 UserDecryptEventId::ReqSentToGw.into(),
                 // NOTE: We don't use Failed Event Id here, to allow notifying users
                 UserDecryptEventId::InternalFailure.into(),
+                UserDecryptEventId::ReadinessCheckPassed.into(),
+                UserDecryptEventId::ReadinessCheckTimedOut.into(),
+                UserDecryptEventId::ReadinessCheckFailed.into(),
                 GatewayChainEventId::EventLogRcvd.into(),
             ],
             handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
@@ -103,8 +106,21 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 } => {
                     info!("Processing user decrypt request {}", event.job_id);
                     async {
-                        self.check_readiness(decrypt_request).await?;
-                        info!("Readiness validation passed for {}", event.job_id);
+                        let job_id_hash = decrypt_request.content_hash();
+                        self.readiness_check_enqueue(job_id_hash, decrypt_request)
+                            .await
+                    }
+                    .await
+                }
+                UserDecryptEventData::ReadinessCheckPassed {
+                    ref decrypt_request,
+                    ..
+                } => {
+                    async {
+                        info!(
+                        "Readiness check passed, Throttling public decrypt request to gateway {}",
+                        event.job_id
+                    );
 
                         let job_id_hash = decrypt_request.content_hash();
                         self.mark_processing(job_id_hash).await?;
@@ -114,6 +130,10 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     }
                     .await
                 }
+                UserDecryptEventData::ReadinessCheckTimedOut { ref error, .. } => {
+                    Err(error.clone())
+                }
+                UserDecryptEventData::ReadinessCheckFailed { ref error, .. } => Err(error.clone()),
                 UserDecryptEventData::InternalFailure { error } => Err(error.clone()),
                 _ => {
                     warn!("unexpected event received in user decrypt handler");
@@ -168,38 +188,43 @@ impl GatewayHandler {
     /// Validates that all ciphertext handles are ready and user is authorized for decryption.
     ///
     /// Checks if handles exist on fhevm and user has permission to decrypt them.
-    async fn check_readiness(
+    /// Enqueue the readiness check event with a semaphore for throttling requests.
+    async fn readiness_check_enqueue(
         &self,
-        user_decrypt_request: &UserDecryptRequest,
+        job_id_hash: [u8; 32],
+        decrypt_request: &UserDecryptRequest,
     ) -> Result<(), EventProcessingError> {
-        let contract_pairs: Vec<_> = user_decrypt_request
-            .ct_handle_contract_pairs
-            .iter()
-            .map(Decryption::CtHandleContractPair::from)
-            .collect();
+        let job_id = JobId::from_sha256_hash(job_id_hash);
 
-        match self
-            .readiness_checker
-            .check_user_decryption_readiness(
-                user_decrypt_request.user_address,
-                contract_pairs,
-                user_decrypt_request.extra_data.clone(),
-            )
-            .await
-        {
-            Ok(()) => {
-                info!("User readiness check passed");
-                Ok(())
-            }
-            Err(ReadinessCheckError::Timeout) => {
-                error!("User readiness check timed out");
-                Err(EventProcessingError::ReadinessCheckTimedOut)
-            }
-            Err(ReadinessCheckError::ContractError(err)) => {
-                error!("User readiness check contract error: {}", err);
-                Err(EventProcessingError::ContractCallFailed(err.to_string()))
-            }
-        }
+        let task: UserDecryptReadinessTask = UserDecryptReadinessTask {
+            id: job_id.to_string(),
+            job_id,
+            request: decrypt_request.clone(),
+        };
+
+        match self.user_decrypt_readiness_throttler.push(task).await {
+            Ok(()) => {}
+            // Thoses errors are putting request in failure mode.
+            // This introduce a new termination error, which is failure for readiness,
+            // should NEVER happen with the bouncer.
+            // NOTE: time_out instead ?
+            Err(e) => match e {
+                EventProcessingError::QueueFull => {
+                    return Err(EventProcessingError::ProtocolOverload(
+                        "Relayer is full for public readiness check, retry later.".to_string(),
+                    ));
+                }
+                EventProcessingError::ChannelClosed => {
+                    error!("FATAL: Cannot accept request for public readiness check, internal worker is dead.");
+                    return Err(e);
+                }
+                _ => {
+                    return Err(e);
+                }
+            },
+        };
+
+        Ok(())
     }
 
     /// Processes user decrypt request by sending it to the Gateway blockchain.
@@ -559,10 +584,12 @@ impl GatewayHandler {
                     "Readiness check failed - updating database with timeout status"
                 );
 
-                if let RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
-                    ref decrypt_request,
-                    ..
-                }) = event.data
+                if let RelayerEventData::UserDecrypt(
+                    UserDecryptEventData::ReadinessCheckTimedOut {
+                        ref decrypt_request,
+                        ..
+                    },
+                ) = event.data
                 {
                     let job_id_hash = decrypt_request.content_hash();
 
@@ -588,6 +615,50 @@ impl GatewayHandler {
                 );
 
                 if let RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
+                    ref decrypt_request,
+                    ..
+                }) = event.data
+                {
+                    let job_id_hash = decrypt_request.content_hash();
+                    let err_reason = format!("Processing Failed: {}", error);
+
+                    // TODO(mano): Review if nested error logging is necessary or can be simplified
+                    if let Err(db_err) = self
+                        .user_decrypt_repo
+                        .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
+                        .await
+                    {
+                        error!(
+                            job_id = %event.job_id,
+                            db_error = %db_err,
+                            "Failed to update failure status in database"
+                        );
+                    }
+                }
+
+                if let RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckFailed {
+                    ref decrypt_request,
+                    ..
+                }) = event.data
+                {
+                    let job_id_hash = decrypt_request.content_hash();
+                    let err_reason = format!("Processing Failed: {}", error);
+
+                    // TODO(mano): Review if nested error logging is necessary or can be simplified
+                    if let Err(db_err) = self
+                        .user_decrypt_repo
+                        .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
+                        .await
+                    {
+                        error!(
+                            job_id = %event.job_id,
+                            db_error = %db_err,
+                            "Failed to update failure status in database"
+                        );
+                    }
+                }
+
+                if let RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckPassed {
                     ref decrypt_request,
                     ..
                 }) = event.data
