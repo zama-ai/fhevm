@@ -1,7 +1,10 @@
 use crate::{
     core::{
         errors::EventProcessingError,
-        event::{ApiCategory, ApiVersion, PublicDecryptEventData, RelayerEvent, RelayerEventData},
+        event::{
+            ApiCategory, ApiVersion, PublicDecryptEventData, PublicDecryptRequest, RelayerEvent,
+            RelayerEventData,
+        },
         job_id::JobId,
     },
     gateway::readiness_check::{
@@ -110,10 +113,11 @@ impl PublicDecryptReadinessProcessor {
                 error!(job_id = %task.job_id, "Readiness check timed out");
 
                 // Map to EventProcessingError
-                Self::dispatch_failure(
+                Self::dispatch_timeout(
                     &dispatcher,
+                    &task.request,
                     task.job_id,
-                    EventProcessingError::ReadinessCheckFailed,
+                    EventProcessingError::ReadinessCheckTimedOut,
                 )
                 .await;
             }
@@ -124,6 +128,7 @@ impl PublicDecryptReadinessProcessor {
 
                 Self::dispatch_failure(
                     &dispatcher,
+                    &task.request,
                     task.job_id,
                     EventProcessingError::ContractCallFailed(e.to_string()),
                 )
@@ -132,9 +137,10 @@ impl PublicDecryptReadinessProcessor {
         }
     }
 
-    /// Helper to dispatch failure events
-    async fn dispatch_failure(
+    /// Helper to dispatch timed_out events
+    async fn dispatch_timeout(
         dispatcher: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        decrypt_request: &PublicDecryptRequest,
         job_id: JobId,
         error: EventProcessingError,
     ) {
@@ -144,7 +150,34 @@ impl PublicDecryptReadinessProcessor {
                 category: ApiCategory::PRODUCTION,
                 number: 1,
             },
-            RelayerEventData::PublicDecrypt(PublicDecryptEventData::InternalFailure { error }),
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReadinessCheckTimedOut {
+                decrypt_request: decrypt_request.clone(),
+                error,
+            }),
+        );
+
+        if let Err(e) = dispatcher.dispatch_event(event).await {
+            error!(error = ?e, "CRITICAL: Failed to dispatch readiness failure event");
+        }
+    }
+
+    /// Helper to dispatch failure events
+    async fn dispatch_failure(
+        dispatcher: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        decrypt_request: &PublicDecryptRequest,
+        job_id: JobId,
+        error: EventProcessingError,
+    ) {
+        let event = RelayerEvent::new(
+            job_id,
+            ApiVersion {
+                category: ApiCategory::PRODUCTION,
+                number: 1,
+            },
+            RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReadinessCheckFailed {
+                decrypt_request: decrypt_request.clone(),
+                error,
+            }),
         );
 
         if let Err(e) = dispatcher.dispatch_event(event).await {

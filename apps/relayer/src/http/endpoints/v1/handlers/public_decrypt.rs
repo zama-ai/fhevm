@@ -261,7 +261,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                         }),
                                     )
                                         .into_response(),
-                                    EventProcessingError::ReadinessCheckFailed => (
+                                    EventProcessingError::ReadinessCheckTimedOut => (
                                         StatusCode::SERVICE_UNAVAILABLE,
                                         Json(PublicDecryptErrorResponseJson {
                                             message: READINESS_CHECK_TIMEOUT_MSG.to_string(),

@@ -91,7 +91,6 @@ pub async fn initialize_gateway(
     PublicDecryptGatewayHandler::new(
         orchestrator.clone(),
         tx_throttler.clone(),
-        readiness_checker.clone(),
         public_decrypt_throttler.clone(),
         decryption_address,
         repositories.public_decrypt.clone(),

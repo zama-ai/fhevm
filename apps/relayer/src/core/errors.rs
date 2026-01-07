@@ -55,7 +55,7 @@ pub enum EventProcessingError {
     ConfigError(#[from] AppConfigError),
 
     #[error("{}", crate::core::errors::READINESS_CHECK_TIMEOUT_MSG)]
-    ReadinessCheckFailed,
+    ReadinessCheckTimedOut,
 
     #[error("Relayer internal queue is full")]
     QueueFull,
@@ -76,7 +76,7 @@ impl From<GatewayTxnError> for EventProcessingError {
 impl From<ReadinessCheckError> for EventProcessingError {
     fn from(e: ReadinessCheckError) -> Self {
         match e {
-            ReadinessCheckError::Timeout => EventProcessingError::ReadinessCheckFailed,
+            ReadinessCheckError::Timeout => EventProcessingError::ReadinessCheckTimedOut,
             ReadinessCheckError::ContractError(err) => {
                 EventProcessingError::ContractCallFailed(err.to_string())
             }

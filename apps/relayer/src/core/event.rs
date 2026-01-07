@@ -43,6 +43,8 @@ pub enum PublicDecryptEventId {
     Failed = 14,
     RespSentToUser = 15,
     InternalFailure = 16,
+    ReadinessCheckTimedOut = 17,
+    ReadinessCheckFailed = 18,
 }
 
 impl From<PublicDecryptEventId> for u8 {
@@ -170,6 +172,12 @@ impl Event for RelayerEvent {
                 }
                 PublicDecryptEventData::ReadinessCheckPassed { .. } => {
                     PublicDecryptEventId::ReadinessCheckPassed.into()
+                }
+                PublicDecryptEventData::ReadinessCheckTimedOut { .. } => {
+                    PublicDecryptEventId::ReadinessCheckTimedOut.into()
+                }
+                PublicDecryptEventData::ReadinessCheckFailed { .. } => {
+                    PublicDecryptEventId::ReadinessCheckFailed.into()
                 }
                 PublicDecryptEventData::ReqSentToGw { .. } => {
                     PublicDecryptEventId::ReqSentToGw.into()
@@ -307,9 +315,20 @@ pub enum PublicDecryptEventData {
     },
 
     /// Event representing that readiness check has passed for a public decryption request.
-    /// Available for future API notifications.
     ReadinessCheckPassed {
         decrypt_request: PublicDecryptRequest,
+    },
+
+    /// Event representing that readiness check has failed for a public decryption request.
+    ReadinessCheckTimedOut {
+        decrypt_request: PublicDecryptRequest,
+        error: EventProcessingError,
+    },
+
+    /// Event representing that readiness check has failed for a public decryption request.
+    ReadinessCheckFailed {
+        decrypt_request: PublicDecryptRequest,
+        error: EventProcessingError,
     },
 
     /// Event representing the result of sending a public decryption request to
@@ -340,6 +359,12 @@ impl PublicDecryptEventData {
             PublicDecryptEventData::ReqRcvdFromUser { .. } => "PublicDecrypt::ReqRcvdFromUser",
             PublicDecryptEventData::ReadinessCheckPassed { .. } => {
                 "PublicDecrypt::ReadinessCheckPassed"
+            }
+            PublicDecryptEventData::ReadinessCheckTimedOut { .. } => {
+                "PublicDecrypt::ReadinessCheckTimedOut"
+            }
+            PublicDecryptEventData::ReadinessCheckFailed { .. } => {
+                "PublicDecrypt::ReadinessCheckFailed"
             }
             PublicDecryptEventData::ReqSentToGw { .. } => "PublicDecrypt::ReqSentToGw",
             PublicDecryptEventData::RespRcvdFromGw { .. } => "PublicDecrypt::RespRcvdFromGw",

@@ -193,7 +193,7 @@ impl GatewayHandler {
             }
             Err(ReadinessCheckError::Timeout) => {
                 error!("User readiness check timed out");
-                Err(EventProcessingError::ReadinessCheckFailed)
+                Err(EventProcessingError::ReadinessCheckTimedOut)
             }
             Err(ReadinessCheckError::ContractError(err)) => {
                 error!("User readiness check contract error: {}", err);
@@ -553,7 +553,7 @@ impl GatewayHandler {
                 );
             }
 
-            EventProcessingError::ReadinessCheckFailed => {
+            EventProcessingError::ReadinessCheckTimedOut => {
                 error!(
                     job_id = %event.job_id,
                     "Readiness check failed - updating database with timeout status"
