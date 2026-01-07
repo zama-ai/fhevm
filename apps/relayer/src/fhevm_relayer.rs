@@ -26,7 +26,9 @@
 use crate::gateway::{
     self,
     arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender},
-    readiness_check::readiness_throttler::{PublicDecryptReadinessTask, ReadinessSender},
+    readiness_check::readiness_throttler::{
+        PublicDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
+    },
 };
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -119,7 +121,7 @@ pub async fn run_fhevm_relayer(
         settings.http.enable_admin_endpoint,
     );
 
-    let (public_decrypt_readiness_throttler, public_decrypt_worker) =
+    let (public_decrypt_readiness_throttler, public_decrypt_readiness_worker) =
         ReadinessSender::<PublicDecryptReadinessTask>::new(
             settings.gateway.readiness_checker.public_decrypt.capacity,
             settings
@@ -134,6 +136,21 @@ pub async fn run_fhevm_relayer(
                 .max_concurrency,
         );
 
+    let (user_decrypt_readiness_throttler, user_decrypt_readiness_worker) =
+        ReadinessSender::<UserDecryptReadinessTask>::new(
+            settings.gateway.readiness_checker.user_decrypt.capacity,
+            settings
+                .gateway
+                .readiness_checker
+                .user_decrypt
+                .safety_margin,
+            settings
+                .gateway
+                .readiness_checker
+                .user_decrypt
+                .max_concurrency,
+        );
+
     // Initialize all gateway components
     let gateway_handler = gateway::initialize_gateway(
         orchestrator.clone(),
@@ -142,7 +159,9 @@ pub async fn run_fhevm_relayer(
         tx_throttler.clone(),
         tx_worker,
         public_decrypt_readiness_throttler.clone(),
-        public_decrypt_worker,
+        public_decrypt_readiness_worker,
+        user_decrypt_readiness_throttler.clone(),
+        user_decrypt_readiness_worker,
     )
     .await
     .map_err(|e| eyre::eyre!("Failed to initialize gateway: {}", e))?;
