@@ -23,12 +23,16 @@
 //!
 //! See [`Settings`] for detailed configuration options.
 
-use crate::gateway::{
-    self,
-    arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender},
-    readiness_check::readiness_throttler::{
-        PublicDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
+use crate::{
+    gateway::{
+        self,
+        arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender},
+        readiness_check::readiness_throttler::{
+            PublicDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
+        },
+        GatewayThrottler,
     },
+    http::server::BouncerThrottlers,
 };
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -151,17 +155,28 @@ pub async fn run_fhevm_relayer(
                 .max_concurrency,
         );
 
-    // Initialize all gateway components
-    let gateway_handler = gateway::initialize_gateway(
-        orchestrator.clone(),
-        &settings,
-        repositories.clone(),
+    let gateway_throttlers = GatewayThrottler::new(
         tx_throttler.clone(),
         tx_worker,
         public_decrypt_readiness_throttler.clone(),
         public_decrypt_readiness_worker,
         user_decrypt_readiness_throttler.clone(),
         user_decrypt_readiness_worker,
+    );
+
+    let bouncer_throttlers = BouncerThrottlers::new(
+        tx_throttler.clone(),
+        throttler_control_tx,
+        public_decrypt_readiness_throttler.clone(),
+        user_decrypt_readiness_throttler.clone(),
+    );
+
+    // Initialize all gateway components
+    let gateway_handler = gateway::initialize_gateway(
+        orchestrator.clone(),
+        &settings,
+        repositories.clone(),
+        gateway_throttlers,
     )
     .await
     .map_err(|e| eyre::eyre!("Failed to initialize gateway: {}", e))?;
@@ -177,10 +192,7 @@ pub async fn run_fhevm_relayer(
             Arc::clone(&orchestrator),
             repositories.clone(),
             settings.gateway.contracts.user_decrypt_shares_threshold,
-            tx_throttler.clone(),
-            throttler_control_tx,
-            public_decrypt_readiness_throttler.clone(),
-            user_decrypt_readiness_throttler.clone(),
+            bouncer_throttlers,
         )
         .await;
 

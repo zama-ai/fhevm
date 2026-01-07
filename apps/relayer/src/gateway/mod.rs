@@ -36,17 +36,41 @@ use arbitrum::{
 use std::{str::FromStr, sync::Arc};
 use tracing::{error, info};
 
+pub struct GatewayThrottler {
+    pub tx_throttler: ThrottlingSender<GatewayTxTask>,
+    pub tx_worker: ThrottlingWorker<GatewayTxTask>,
+    pub public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+    pub public_decrypt_readiness_worker: ReadinessWorker<PublicDecryptReadinessTask>,
+    pub user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+    pub user_decrypt_readiness_worker: ReadinessWorker<UserDecryptReadinessTask>,
+}
+
+impl GatewayThrottler {
+    pub fn new(
+        tx_throttler: ThrottlingSender<GatewayTxTask>,
+        tx_worker: ThrottlingWorker<GatewayTxTask>,
+        public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+        public_decrypt_readiness_worker: ReadinessWorker<PublicDecryptReadinessTask>,
+        user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+        user_decrypt_readiness_worker: ReadinessWorker<UserDecryptReadinessTask>,
+    ) -> Self {
+        Self {
+            tx_throttler,
+            tx_worker,
+            public_decrypt_readiness_throttler,
+            public_decrypt_readiness_worker,
+            user_decrypt_readiness_throttler,
+            user_decrypt_readiness_worker,
+        }
+    }
+}
+
 /// Initialize all gateway components including handlers, listener, and KeyUrl handler
 pub async fn initialize_gateway(
     orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     settings: &Settings,
     repositories: Arc<Repositories>,
-    tx_throttler: ThrottlingSender<GatewayTxTask>,
-    tx_worker: ThrottlingWorker<GatewayTxTask>,
-    public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
-    public_decrypt_readiness_worker: ReadinessWorker<PublicDecryptReadinessTask>,
-    user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-    user_decrypt_readiness_worker: ReadinessWorker<UserDecryptReadinessTask>,
+    gateway_throttlers: GatewayThrottler,
 ) -> anyhow::Result<KeyUrlGatewayHandler> {
     info!("Initializing gateway components");
 
@@ -63,7 +87,7 @@ pub async fn initialize_gateway(
 
     // Spawn gateway task
     GatewayTxProcessor::orchestrator_spawn_task(
-        tx_worker,
+        gateway_throttlers.tx_worker,
         gateway_tx_helper.clone(),
         orchestrator.clone(),
     )
@@ -73,14 +97,14 @@ pub async fn initialize_gateway(
     let readiness_checker = Arc::new(ReadinessChecker::new(&settings.gateway)?);
 
     PublicDecryptReadinessProcessor::orchestrator_spawn_task(
-        public_decrypt_readiness_worker,
+        gateway_throttlers.public_decrypt_readiness_worker,
         readiness_checker.clone(),
         orchestrator.clone(),
     )
     .await?;
 
     UserDecryptReadinessProcessor::orchestrator_spawn_task(
-        user_decrypt_readiness_worker,
+        gateway_throttlers.user_decrypt_readiness_worker,
         readiness_checker.clone(),
         orchestrator.clone(),
     )
@@ -93,23 +117,25 @@ pub async fn initialize_gateway(
     // Initialize all gateway components (each handles its own orchestrator registration)
     InputProofGatewayHandler::new(
         orchestrator.clone(),
-        tx_throttler.clone(),
+        gateway_throttlers.tx_throttler.clone(),
         settings.gateway.contracts.clone(),
         repositories.input_proof.clone(),
     );
 
     PublicDecryptGatewayHandler::new(
         orchestrator.clone(),
-        tx_throttler.clone(),
-        public_decrypt_readiness_throttler.clone(),
+        gateway_throttlers.tx_throttler.clone(),
+        gateway_throttlers
+            .public_decrypt_readiness_throttler
+            .clone(),
         decryption_address,
         repositories.public_decrypt.clone(),
     );
 
     UserDecryptGatewayHandler::new(
         orchestrator.clone(),
-        tx_throttler.clone(),
-        user_decrypt_readiness_throttler.clone(),
+        gateway_throttlers.tx_throttler.clone(),
+        gateway_throttlers.user_decrypt_readiness_throttler.clone(),
         decryption_address,
         settings.gateway.contracts.user_decrypt_shares_threshold as usize,
         repositories.user_decrypt.clone(),

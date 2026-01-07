@@ -45,15 +45,35 @@ async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
     Err(anyhow::anyhow!("HTTP server failed to start"))
 }
 
+pub struct BouncerThrottlers {
+    pub tx_throttler: ThrottlingSender<GatewayTxTask>,
+    pub throttler_control_tx: Option<mpsc::Sender<u32>>,
+    pub public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+    pub user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+}
+
+impl BouncerThrottlers {
+    pub fn new(
+        tx_throttler: ThrottlingSender<GatewayTxTask>,
+        throttler_control_tx: Option<mpsc::Sender<u32>>,
+        public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+        user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+    ) -> Self {
+        Self {
+            tx_throttler,
+            throttler_control_tx,
+            public_decrypt_readiness_throttler,
+            user_decrypt_readiness_throttler,
+        }
+    }
+}
+
 pub async fn run_http_server<D>(
     config: &HttpConfig,
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     repositories: Arc<Repositories>,
     user_decrypt_shares_threshold: u16,
-    tx_throttler: ThrottlingSender<GatewayTxTask>,
-    throttler_control_tx: Option<mpsc::Sender<u32>>,
-    public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
-    user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+    bouncer_throttlers: BouncerThrottlers,
 ) -> SocketAddr
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
@@ -72,7 +92,7 @@ where
         api_version,
         repositories.input_proof.clone(),
         config.api_retry_after_seconds,
-        tx_throttler.clone(),
+        bouncer_throttlers.tx_throttler.clone(),
     ));
 
     let user_decrypt_handler_v1 = Arc::new(UserDecryptHandlerV1::new(
@@ -80,8 +100,8 @@ where
         api_version,
         repositories.user_decrypt.clone(),
         config.api_retry_after_seconds,
-        tx_throttler.clone(),
-        user_decrypt_readiness_throttler.clone(),
+        bouncer_throttlers.tx_throttler.clone(),
+        bouncer_throttlers.user_decrypt_readiness_throttler.clone(),
     ));
 
     let public_decrypt_handler_v1 = Arc::new(PublicDecryptHandlerV1::new(
@@ -89,8 +109,10 @@ where
         api_version,
         repositories.public_decrypt.clone(),
         config.api_retry_after_seconds,
-        tx_throttler.clone(),
-        public_decrypt_readiness_throttler.clone(),
+        bouncer_throttlers.tx_throttler.clone(),
+        bouncer_throttlers
+            .public_decrypt_readiness_throttler
+            .clone(),
     ));
 
     // Initialize v2 handlers
@@ -99,7 +121,7 @@ where
         api_version,
         repositories.input_proof.clone(),
         config.api_retry_after_seconds,
-        tx_throttler.clone(),
+        bouncer_throttlers.tx_throttler.clone(),
     ));
 
     let user_decrypt_handler_v2 = Arc::new(UserDecryptHandlerV2::new(
@@ -108,8 +130,8 @@ where
         repositories.user_decrypt.clone(),
         user_decrypt_shares_threshold,
         config.api_retry_after_seconds,
-        tx_throttler.clone(),
-        user_decrypt_readiness_throttler.clone(),
+        bouncer_throttlers.tx_throttler.clone(),
+        bouncer_throttlers.user_decrypt_readiness_throttler.clone(),
     ));
 
     let public_decrypt_handler_v2 = Arc::new(PublicDecryptHandlerV2::new(
@@ -117,8 +139,10 @@ where
         api_version,
         repositories.public_decrypt.clone(),
         config.api_retry_after_seconds,
-        tx_throttler.clone(),
-        public_decrypt_readiness_throttler.clone(),
+        bouncer_throttlers.tx_throttler.clone(),
+        bouncer_throttlers
+            .public_decrypt_readiness_throttler
+            .clone(),
     ));
 
     // Clone orchestrator for health endpoint before using it
@@ -162,7 +186,7 @@ where
         info!("Admin endpoints enabled at /admin/config");
         app = app
             .route("/admin/config", post(admin::update_config))
-            .layer(Extension(throttler_control_tx));
+            .layer(Extension(bouncer_throttlers.throttler_control_tx));
     } else {
         info!("Admin endpoints disabled");
         app = app
