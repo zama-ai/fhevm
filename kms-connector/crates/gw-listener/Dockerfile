@@ -32,8 +32,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 
-ARG CARGO_PROFILE=release
-
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder --chown=fhevm:fhevm /tmp/gw-listener /app/kms-connector/bin/gw-listener
