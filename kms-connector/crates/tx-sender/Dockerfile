@@ -23,8 +23,11 @@ COPY kms-connector ./kms-connector
 # Build with improved caching
 WORKDIR /app/kms-connector
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/app/kms-connector/target,sharing=locked \
     git config --global --add safe.directory /app && \
-    cargo build --profile=${CARGO_PROFILE} -p tx-sender
+    cargo fetch && \
+    cargo build --profile=${CARGO_PROFILE} -p tx-sender && \
+    cp target/${CARGO_PROFILE}/tx-sender /tmp/tx-sender
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
@@ -33,7 +36,7 @@ ARG CARGO_PROFILE=release
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder --chown=fhevm:fhevm /app/kms-connector/target/${CARGO_PROFILE}/tx-sender /app/kms-connector/bin/tx-sender
+COPY --from=builder --chown=fhevm:fhevm /tmp/tx-sender /app/kms-connector/bin/tx-sender
 
 USER fhevm:fhevm
 
