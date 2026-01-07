@@ -165,7 +165,7 @@ async fn run_uploader_loop(
                 // Spawn a new task to upload the ciphertexts
                 let h = tokio::spawn(async move {
                     let s = item.otel.child_span("upload_s3");
-                    match upload_ciphertexts(trx, item, &client, &conf).instrument(error_span!("upload_s3")).await {
+                    match upload_ciphertexts(trx, item.clone(), &client, &conf).instrument(error_span!("upload_s3")).await {
                         Ok(()) => telemetry::end_span(s),
                         Err(err) => {
                             if let ExecutionError::S3TransientError(_) = err {
@@ -437,7 +437,7 @@ async fn fetch_pending_uploads(
         // Fetch missing ciphertext128
         if ciphertext128_digest.is_none() {
             if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext128 FROM ciphertexts WHERE tenant_id = $1 AND handle = $2;",
+                "SELECT ciphertext FROM ciphertexts128 WHERE tenant_id = $1 AND handle = $2;",
                 row.tenant_id,
                 handle
             )
@@ -445,7 +445,7 @@ async fn fetch_pending_uploads(
             .await
             {
                 if let Some(record) = row {
-                    match record.ciphertext128 {
+                    match record.ciphertext {
                         Some(ct) if !ct.is_empty() => {
                             ct128 = ct;
                         }

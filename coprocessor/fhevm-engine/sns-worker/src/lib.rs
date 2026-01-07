@@ -242,7 +242,7 @@ impl HandleItem {
             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             self.tenant_id,
             self.handle,
-            self.transaction_id
+            self.transaction_id,
         )
         .execute(db_txn.as_mut())
         .await?;
