@@ -302,7 +302,7 @@ where
             EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
                 self.config.decryption_from_block_number
             }
-            _ => self.config.kms_from_block_number,
+            _ => self.config.kms_operation_from_block_number,
         };
 
         let last_block_polled = match from_block_number {
@@ -467,7 +467,7 @@ mod tests {
     >;
 
     async fn test_setup(
-        kms_from_block_number: Option<u64>,
+        kms_operation_from_block_number: Option<u64>,
     ) -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
         let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
 
@@ -482,7 +482,7 @@ mod tests {
         let config = Config {
             decryption_polling: Duration::from_millis(500),
             key_management_polling: Duration::from_millis(500),
-            kms_from_block_number,
+            kms_operation_from_block_number,
             ..Default::default()
         };
         let listener = GatewayListener::new(

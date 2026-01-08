@@ -58,7 +58,7 @@ pub struct Config {
     /// Optional block number to start processing decryption events from.
     pub decryption_from_block_number: Option<u64>,
     /// Optional block number to start processing KMS operation events from.
-    pub kms_from_block_number: Option<u64>,
+    pub kms_operation_from_block_number: Option<u64>,
 }
 
 impl DeserializeConfig for Config {}
@@ -92,7 +92,7 @@ impl Default for Config {
             decryption_polling: default_decryption_polling(),
             key_management_polling: default_key_management_polling(),
             decryption_from_block_number: None,
-            kms_from_block_number: None,
+            kms_operation_from_block_number: None,
         }
     }
 }

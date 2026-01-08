@@ -43,7 +43,7 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 
 # Block number to start processing KMS operation events from (optional, defaults to latest block if not set)
 # ENV: KMS_CONNECTOR_KMS_FROM_BLOCK_NUMBER
-# kms_from_block_number = 1234
+# kms_operation_from_block_number = 1234
 
 # Configuration of the Decryption contract (required)
 [decryption_contract]

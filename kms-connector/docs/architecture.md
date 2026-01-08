@@ -182,7 +182,7 @@ sent.
 As we will run multiple `GatewayListener` instances, we assume that they will not crash all
 simultaneously, thus that all events emitted by the Gateway would be written in the DB.
 
-There are also `decryption_from_block_number` and `kms_from_block_number` options in its configuration,
+There are also `decryption_from_block_number` and `kms_operation_from_block_number` options in its configuration,
 to be able to recover decryption events and KMS operation events from given block numbers respectively.
 
 So even if we run only one `KmsWorker` that crashes, it will have access to unhandled events when
