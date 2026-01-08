@@ -18,7 +18,7 @@ GW_MOCKS_DIR = GW_CONTRACTS_DIR.joinpath("mocks")
 
 # To update forge to the latest version locally, run `foundryup`
 MIN_FORGE_VERSION = (1, 3, 1)
-MAX_FORGE_VERSION = (1, 5, 1)
+MAX_FORGE_VERSION = (2, 0, 0)  # Exclusive upper bound
 
 
 def parse_semver(version_str: str) -> tuple:
@@ -121,13 +121,12 @@ class BindingsUpdater:
 
         forge_version = parse_semver(version_match.group(1))
 
-        if not (MIN_FORGE_VERSION <= forge_version <= MAX_FORGE_VERSION):
+        if not (MIN_FORGE_VERSION <= forge_version < MAX_FORGE_VERSION):
             min_str = ".".join(map(str, MIN_FORGE_VERSION))
             max_str = ".".join(map(str, MAX_FORGE_VERSION))
             log_error(
-                f"ERROR: Forge version must be between "
-                f"{min_str} and {max_str}, but "
-                f"'{forge_version_str}' is currently installed."
+                f"ERROR: Forge version must be >= {min_str} and < {max_str}, "
+                f"but '{forge_version_str}' is currently installed."
             )
             sys.exit(ExitStatus.WRONG_FORGE_VERSION.value)
 
