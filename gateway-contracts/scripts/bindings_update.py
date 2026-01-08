@@ -10,7 +10,6 @@ import tempfile
 from argparse import ArgumentParser
 from enum import Enum
 from pathlib import Path
-from packaging import version
 
 GW_ROOT_DIR = Path(os.path.dirname(__file__)).parent
 GW_CRATE_DIR = GW_ROOT_DIR.joinpath("rust_bindings")
@@ -18,8 +17,13 @@ GW_CONTRACTS_DIR = GW_ROOT_DIR.joinpath("contracts")
 GW_MOCKS_DIR = GW_CONTRACTS_DIR.joinpath("mocks")
 
 # To update forge to the latest version locally, run `foundryup`
-MIN_FORGE_VERSION = "1.3.1"
-MAX_FORGE_VERSION = "1.5.1"
+MIN_FORGE_VERSION = (1, 3, 1)
+MAX_FORGE_VERSION = (1, 5, 1)
+
+
+def parse_semver(version_str: str) -> tuple:
+    """Parses a semver string (e.g., '1.3.1') into a tuple of integers."""
+    return tuple(int(x) for x in version_str.split("."))
 
 
 def init_cli() -> ArgumentParser:
@@ -115,15 +119,15 @@ class BindingsUpdater:
             )
             sys.exit(ExitStatus.WRONG_FORGE_VERSION.value)
 
-        forge_version = version.parse(version_match.group(1))
-        min_version = version.parse(MIN_FORGE_VERSION)
-        max_version = version.parse(MAX_FORGE_VERSION)
+        forge_version = parse_semver(version_match.group(1))
 
-        if not (min_version <= forge_version <= max_version):
+        if not (MIN_FORGE_VERSION <= forge_version <= MAX_FORGE_VERSION):
+            min_str = ".".join(map(str, MIN_FORGE_VERSION))
+            max_str = ".".join(map(str, MAX_FORGE_VERSION))
             log_error(
                 f"ERROR: Forge version must be between "
-                f"{MIN_FORGE_VERSION} and {MAX_FORGE_VERSION}, but "
-                f"'{forge_version_str}' (version {forge_version}) is currently installed."
+                f"{min_str} and {max_str}, but "
+                f"'{forge_version_str}' is currently installed."
             )
             sys.exit(ExitStatus.WRONG_FORGE_VERSION.value)
 
