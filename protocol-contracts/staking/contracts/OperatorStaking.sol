@@ -39,7 +39,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         IERC20 _asset;
         address _rewarder;
         uint256 _totalSharesInRedemption;
-        uint8 _assetDecimals;
+        uint8 _underlyingDecimals;
         mapping(address controller => uint256 sharesReleased) _sharesReleased;
         mapping(address controller => Checkpoints.Trace208 redeemRequests) _redeemRequests;
         mapping(address controller => mapping(address operator => bool approved)) _operator;
@@ -134,7 +134,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
 
         // Follow ERC4626 pattern but no need to use `_tryGetAssetDecimals` as the implementation
         // used to deploy the asset does expose the `decimals` function.
-        $._assetDecimals = IERC20Metadata(asset()).decimals();
+        $._underlyingDecimals = IERC20Metadata(asset()).decimals();
 
         IERC20(asset()).approve(address(protocolStaking_), type(uint256).max);
 
@@ -439,7 +439,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
      * @return The decimals of the shares following the ERC4626 pattern.
      */
     function decimals() public view virtual override returns (uint8) {
-        return _getOperatorStakingStorage()._assetDecimals + _decimalsOffset();
+        return _getOperatorStakingStorage()._underlyingDecimals + _decimalsOffset();
     }
 
     function _doTransferOut(address to, uint256 amount) internal virtual {
