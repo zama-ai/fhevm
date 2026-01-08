@@ -16,9 +16,9 @@ const instance = await createInstance({
   // INPUT_VERIFIER_CONTRACT_ADDRESS (FHEVM Host chain)
   inputVerifierContractAddress: "0xbc91f3daD1A5F19F8390c400196e58073B6a0BC4",
   // DECRYPTION_ADDRESS (Gateway chain)
-  verifyingContractAddressDecryption: "0xb6E160B1ff80D67Bfe90A85eE06Ce0A2613607D1",
+  decryptionContractAddress: "0xb6E160B1ff80D67Bfe90A85eE06Ce0A2613607D1",
   // INPUT_VERIFICATION_ADDRESS (Gateway chain)
-  verifyingContractAddressInputVerification: "0x7048C39f048125eDa9d678AEbaDfB22F7900a29F",
+  inputVerificationContractAddress: "0x7048C39f048125eDa9d678AEbaDfB22F7900a29F",
   // FHEVM Host chain id
   chainId: 11155111,
   // Gateway chain id
