@@ -256,6 +256,16 @@ interface IGatewayConfig {
     error ChainIdNotUint64(uint256 chainId);
 
     /**
+     * @notice Error emitted when all the pausable gateway contracts are already paused.
+     */
+    error AllGatewayContractsAlreadyPaused();
+
+    /**
+     * @notice Error emitted when all the pausable gateway contracts are already unpaused.
+     */
+    error AllGatewayContractsAlreadyUnpaused();
+
+    /**
      * @notice Update the list of KMS nodes and their thresholds.
      * @dev ⚠️ This function should be used with caution as it can lead to unexpected behavior in
      * some requests and the contracts should first be paused. It will be deprecated in the future.

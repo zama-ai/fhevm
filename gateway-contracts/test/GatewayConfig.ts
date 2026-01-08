@@ -1342,6 +1342,39 @@ describe("GatewayConfig", function () {
         expect(await inputVerification.paused()).to.be.true;
       });
 
+      it("Should pause contracts not yet paused even when some contract is already paused", async function () {
+        await decryption.connect(pauser).pause();
+
+        // Check that the decryption contract is paused and the input verification contract is not paused
+        expect(await decryption.paused()).to.be.true;
+        expect(await inputVerification.paused()).to.be.false;
+
+        const txResponse = await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+
+        await expect(txResponse).to.emit(gatewayConfig, "PauseAllGatewayContracts");
+
+        // Check that the pausable contracts are paused
+        expect(await decryption.paused()).to.be.true;
+        expect(await inputVerification.paused()).to.be.true;
+      });
+
+      it("Should unpause contracts not yet unpaused even when some contract is already unpaused", async function () {
+        await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+        await decryption.connect(owner).unpause();
+
+        // Check that the decryption contract is unpaused and the input verification contract is paused
+        expect(await decryption.paused()).to.be.false;
+        expect(await inputVerification.paused()).to.be.true;
+
+        const txResponse = await gatewayConfig.connect(owner).unpauseAllGatewayContracts();
+
+        await expect(txResponse).to.emit(gatewayConfig, "UnpauseAllGatewayContracts");
+
+        // Check that the pausable contracts are unpaused
+        expect(await decryption.paused()).to.be.false;
+        expect(await inputVerification.paused()).to.be.false;
+      });
+
       it("Should revert on pause all gateway contracts because the sender is not the pauser", async function () {
         await expect(gatewayConfig.connect(fakePauser).pauseAllGatewayContracts()).to.be.revertedWithCustomError(
           gatewayConfig,
@@ -1367,6 +1400,21 @@ describe("GatewayConfig", function () {
         await expect(gatewayConfig.connect(fakeOwner).unpauseAllGatewayContracts()).to.be.revertedWithCustomError(
           gatewayConfig,
           "OwnableUnauthorizedAccount",
+        );
+      });
+
+      it("Should revert on pause all gateway contracts because they are already paused", async function () {
+        await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+        await expect(gatewayConfig.connect(pauser).pauseAllGatewayContracts()).to.be.revertedWithCustomError(
+          gatewayConfig,
+          "AllGatewayContractsAlreadyPaused",
+        );
+      });
+
+      it("Should revert on unpause all gateway contracts because they are already unpaused", async function () {
+        await expect(gatewayConfig.connect(owner).unpauseAllGatewayContracts()).to.be.revertedWithCustomError(
+          gatewayConfig,
+          "AllGatewayContractsAlreadyUnpaused",
         );
       });
     });

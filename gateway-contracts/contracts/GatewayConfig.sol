@@ -359,21 +359,41 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /**
      * @notice See {IGatewayConfig-pauseAllGatewayContracts}.
      * Contracts that are technically pausable but do not provide any pausable functions are not
-     * paused. If at least one of the contracts is already paused, the function will revert.
+     * paused. If all of the contracts are already paused, the function will revert.
      */
     function pauseAllGatewayContracts() external virtual onlyPauser {
-        DECRYPTION.pause();
-        INPUT_VERIFICATION.pause();
+        if (DECRYPTION.paused() && INPUT_VERIFICATION.paused()) {
+            revert AllGatewayContractsAlreadyPaused();
+        }
+
+        if (!DECRYPTION.paused()) {
+            DECRYPTION.pause();
+        }
+
+        if (!INPUT_VERIFICATION.paused()) {
+            INPUT_VERIFICATION.pause();
+        }
+
         emit PauseAllGatewayContracts();
     }
 
     /**
      * @notice See {IGatewayConfig-unpauseAllGatewayContracts}.
-     * If at least one of the contracts is not paused, the function will revert.
+     * If all of the contracts are not paused, the function will revert.
      */
     function unpauseAllGatewayContracts() external virtual onlyOwner {
-        DECRYPTION.unpause();
-        INPUT_VERIFICATION.unpause();
+        if (!DECRYPTION.paused() && !INPUT_VERIFICATION.paused()) {
+            revert AllGatewayContractsAlreadyUnpaused();
+        }
+
+        if (DECRYPTION.paused()) {
+            DECRYPTION.unpause();
+        }
+
+        if (INPUT_VERIFICATION.paused()) {
+            INPUT_VERIFICATION.unpause();
+        }
+
         emit UnpauseAllGatewayContracts();
     }
 
