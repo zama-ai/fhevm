@@ -129,6 +129,68 @@ impl InputProofRepository {
         }
     }
 
+    /// Reset all tx_in_flight requests to processing status.
+    /// Used during startup recovery to ensure clean state transitions.
+    /// Returns the number of rows affected.
+    pub async fn reset_tx_in_flight_to_processing(&self) -> SqlResult<u64> {
+        let mut conn = self.pool.get_app_connection().await?;
+
+        let query_start = Instant::now();
+
+        // Fetch rows to update for metrics
+        let rows = sqlx::query!(
+            r#"
+            SELECT int_request_id, updated_at
+            FROM input_proof_req
+            WHERE req_status = 'tx_in_flight'::req_status
+            "#
+        )
+        .fetch_all(&mut *conn)
+        .await;
+
+        match &rows {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+
+        let rows = rows?;
+        if rows.is_empty() {
+            return Ok(0);
+        }
+
+        // Perform bulk update (updated_at set by trigger)
+        let query_start = Instant::now();
+        let result = sqlx::query!(
+            r#"
+            UPDATE input_proof_req
+            SET req_status = 'processing'::req_status
+            WHERE req_status = 'tx_in_flight'::req_status
+            "#
+        )
+        .execute(&mut *conn)
+        .await;
+
+        match &result {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+
+        let rows_affected = result?.rows_affected();
+
+        // Update metrics: decrement tx_in_flight, increment processing
+        for _ in 0..rows_affected {
+            metrics::record_status_transition(
+                metrics::RequestType::InputProof,
+                ReqStatus::TxInFlight,
+                ReqStatus::Processing,
+                chrono::Utc::now(),
+                chrono::Utc::now(),
+            );
+        }
+
+        Ok(rows_affected)
+    }
+
     // update the status to 'receipt_recieved' + gw_req_tx_hash + gw_reference_id by int_request_id
     /// Update req_status to 'receipt_received', set tx hash and gw_ref_id by int_request_id.
     /// Returns number of rows affected.

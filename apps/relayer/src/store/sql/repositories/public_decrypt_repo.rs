@@ -296,6 +296,72 @@ impl PublicDecryptRepository {
         }
     }
 
+    /// Reset all tx_in_flight requests to processing status.
+    /// Used during startup recovery to ensure clean state transitions.
+    /// Returns the number of rows affected.
+    pub async fn reset_tx_in_flight_to_processing(&self) -> SqlResult<u64> {
+        let mut conn = self.pool.get_app_connection().await?;
+
+        let query_start = Instant::now();
+
+        // Fetch rows to update for metrics
+        let rows = sqlx::query!(
+            r#"
+            SELECT int_job_id, updated_at
+            FROM public_decrypt_req
+            WHERE req_status = 'tx_in_flight'::req_status
+            "#
+        )
+        .fetch_all(&mut *conn)
+        .await;
+
+        match &rows {
+            Ok(_) => {
+                metrics::observe_query(metrics::Table::PublicDecryptReq, query_start.elapsed())
+            }
+            Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
+        }
+
+        let rows = rows?;
+        if rows.is_empty() {
+            return Ok(0);
+        }
+
+        // Perform bulk update (updated_at set by trigger)
+        let query_start = Instant::now();
+        let result = sqlx::query!(
+            r#"
+            UPDATE public_decrypt_req
+            SET req_status = 'processing'::req_status
+            WHERE req_status = 'tx_in_flight'::req_status
+            "#
+        )
+        .execute(&mut *conn)
+        .await;
+
+        match &result {
+            Ok(_) => {
+                metrics::observe_query(metrics::Table::PublicDecryptReq, query_start.elapsed())
+            }
+            Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
+        }
+
+        let rows_affected = result?.rows_affected();
+
+        // Update metrics: decrement tx_in_flight, increment processing
+        for _ in 0..rows_affected {
+            metrics::record_status_transition(
+                metrics::RequestType::PublicDecrypt,
+                ReqStatus::TxInFlight,
+                ReqStatus::Processing,
+                chrono::Utc::now(),
+                chrono::Utc::now(),
+            );
+        }
+
+        Ok(rows_affected)
+    }
+
     /// Updating the req_status to receipt_received, gw_req_tx_hash, gw_reference_id by int_job_id
     /// Returns the number of rows affected (should be 1 or retry).
     pub async fn update_status_to_receipt_received_on_tx_success(

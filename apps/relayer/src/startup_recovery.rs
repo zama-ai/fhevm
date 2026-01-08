@@ -18,12 +18,60 @@ use crate::{
 use std::sync::Arc;
 use tracing::{info, warn};
 
+/// Reset all tx_in_flight requests to processing before recovery.
+/// This ensures clean state transitions and proper idempotency checks.
+async fn reset_tx_in_flight_requests(repositories: &Arc<Repositories>) -> eyre::Result<()> {
+    let public_decrypt_count = repositories
+        .public_decrypt
+        .reset_tx_in_flight_to_processing()
+        .await
+        .map_err(|e| eyre::eyre!("Failed to reset public_decrypt: {}", e))?;
+
+    if public_decrypt_count > 0 {
+        info!(
+            "Reset {} public_decrypt requests from tx_in_flight to processing",
+            public_decrypt_count
+        );
+    }
+
+    let user_decrypt_count = repositories
+        .user_decrypt
+        .reset_tx_in_flight_to_processing()
+        .await
+        .map_err(|e| eyre::eyre!("Failed to reset user_decrypt: {}", e))?;
+
+    if user_decrypt_count > 0 {
+        info!(
+            "Reset {} user_decrypt requests from tx_in_flight to processing",
+            user_decrypt_count
+        );
+    }
+
+    let input_proof_count = repositories
+        .input_proof
+        .reset_tx_in_flight_to_processing()
+        .await
+        .map_err(|e| eyre::eyre!("Failed to reset input_proof: {}", e))?;
+
+    if input_proof_count > 0 {
+        info!(
+            "Reset {} input_proof requests from tx_in_flight to processing",
+            input_proof_count
+        );
+    }
+
+    Ok(())
+}
+
 /// Recover incomplete requests by re-dispatching events based on their status.
 pub async fn recover_incomplete_requests(
     orchestrator: &Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     repositories: &Arc<Repositories>,
 ) -> eyre::Result<usize> {
     info!("Starting request recovery...");
+
+    // Reset tx_in_flight to processing
+    reset_tx_in_flight_requests(repositories).await?;
 
     let mut total_recovered = 0;
 

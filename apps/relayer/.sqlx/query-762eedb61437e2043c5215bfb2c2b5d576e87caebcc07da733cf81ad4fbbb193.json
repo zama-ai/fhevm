@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT int_job_id, updated_at\n            FROM public_decrypt_req\n            WHERE req_status = 'tx_in_flight'::req_status\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "int_job_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "762eedb61437e2043c5215bfb2c2b5d576e87caebcc07da733cf81ad4fbbb193"
+}
