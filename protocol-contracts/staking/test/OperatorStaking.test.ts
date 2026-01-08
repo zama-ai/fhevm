@@ -85,6 +85,13 @@ describe('OperatorStaking', function () {
     });
   });
 
+  describe('decimals', function () {
+    it('should return the decimals of the shares', async function () {
+      const assetDecimals = await this.token.decimals();
+      expect(await this.mock.decimals()).to.equal(assetDecimals + DECIMAL_OFFSET);
+    });
+  });
+
   describe('deposit', async function () {
     it('should stake into protocol staking', async function () {
       await expect(this.mock.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1))
