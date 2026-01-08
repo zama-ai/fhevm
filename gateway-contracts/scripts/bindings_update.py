@@ -17,7 +17,13 @@ GW_CONTRACTS_DIR = GW_ROOT_DIR.joinpath("contracts")
 GW_MOCKS_DIR = GW_CONTRACTS_DIR.joinpath("mocks")
 
 # To update forge to the latest version locally, run `foundryup`
-ALLOWED_FORGE_VERSIONS = ["1.3.1-v1.3.1", "1.3.1-stable", "1.3.2-stable"]
+MIN_FORGE_VERSION = (1, 3, 1)
+MAX_FORGE_VERSION = (2, 0, 0)  # Exclusive upper bound
+
+
+def parse_semver(version_str: str) -> tuple:
+    """Parses a semver string (e.g., '1.3.1') into a tuple of integers."""
+    return tuple(int(x) for x in version_str.split("."))
 
 
 def init_cli() -> ArgumentParser:
@@ -95,7 +101,7 @@ class BindingsUpdater:
             log_error("ERROR: forge is not installed.")
             sys.exit(ExitStatus.FORGE_NOT_INSTALLED.value)
 
-        forge_version = (
+        forge_version_str = (
             subprocess.run(
                 ["forge", "--version"],
                 capture_output=True,
@@ -104,11 +110,23 @@ class BindingsUpdater:
             .stdout.splitlines()[0]
             .lstrip("forge Version: ")
         )
-        if forge_version not in ALLOWED_FORGE_VERSIONS:
+
+        # Extract version number from format like "1.3.1-stable" or "1.3.1-v1.3.1"
+        version_match = re.match(r'^(\d+\.\d+\.\d+)', forge_version_str)
+        if not version_match:
             log_error(
-                "ERROR: Required forge version to be one of these: "
-                f"`{ALLOWED_FORGE_VERSIONS}` but '{forge_version}' is "
-                "currently installed."
+                f"ERROR: Could not parse forge version '{forge_version_str}'."
+            )
+            sys.exit(ExitStatus.WRONG_FORGE_VERSION.value)
+
+        forge_version = parse_semver(version_match.group(1))
+
+        if not (MIN_FORGE_VERSION <= forge_version < MAX_FORGE_VERSION):
+            min_str = ".".join(map(str, MIN_FORGE_VERSION))
+            max_str = ".".join(map(str, MAX_FORGE_VERSION))
+            log_error(
+                f"ERROR: Forge version must be >= {min_str} and < {max_str}, "
+                f"but '{forge_version_str}' is currently installed."
             )
             sys.exit(ExitStatus.WRONG_FORGE_VERSION.value)
 
