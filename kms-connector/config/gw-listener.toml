@@ -37,9 +37,13 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_KMS_GENERATION_POLLING (format: https://docs.rs/humantime/latest/humantime/)
 # key_management_polling = "30s"
 
-# Block number to start processing from (optional, defaults to latest block if not set)
-# ENV: KMS_CONNECTOR_FROM_BLOCK_NUMBER
-# from_block_number = 1234
+# Block number to start processing decryption events from (optional, defaults to latest block if not set)
+# ENV: KMS_CONNECTOR_DECRYPTION_FROM_BLOCK_NUMBER
+# decryption_from_block_number = 1234
+
+# Block number to start processing KMS operation events from (optional, defaults to latest block if not set)
+# ENV: KMS_CONNECTOR_KMS_FROM_BLOCK_NUMBER
+# kms_from_block_number = 1234
 
 # Configuration of the Decryption contract (required)
 [decryption_contract]

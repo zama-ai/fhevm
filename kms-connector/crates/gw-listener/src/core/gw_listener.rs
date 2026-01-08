@@ -298,8 +298,15 @@ where
 
     /// Get the last block polled from config or DB.
     async fn get_last_block_polled(&self, event_type: EventType) -> anyhow::Result<Option<u64>> {
-        let last_block_polled = match self.config.from_block_number {
-            // Start polling event from `from_block_number` if configured
+        let from_block_number = match event_type {
+            EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
+                self.config.decryption_from_block_number
+            }
+            _ => self.config.kms_from_block_number,
+        };
+
+        let last_block_polled = match from_block_number {
+            // Start polling event from the configured `from_block_number` if set
             Some(from_block) => {
                 info!(
                     "Found configured `from_block_number` ({from_block}) for {event_type} subscriptions!"
@@ -460,7 +467,7 @@ mod tests {
     >;
 
     async fn test_setup(
-        from_block_number: Option<u64>,
+        kms_from_block_number: Option<u64>,
     ) -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
         let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
 
@@ -475,7 +482,7 @@ mod tests {
         let config = Config {
             decryption_polling: Duration::from_millis(500),
             key_management_polling: Duration::from_millis(500),
-            from_block_number,
+            kms_from_block_number,
             ..Default::default()
         };
         let listener = GatewayListener::new(

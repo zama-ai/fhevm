@@ -55,8 +55,10 @@ pub struct Config {
     #[serde(with = "humantime_serde", default = "default_key_management_polling")]
     pub key_management_polling: Duration,
 
-    /// Optional block number to start processing from.
-    pub from_block_number: Option<u64>,
+    /// Optional block number to start processing decryption events from.
+    pub decryption_from_block_number: Option<u64>,
+    /// Optional block number to start processing KMS operation events from.
+    pub kms_from_block_number: Option<u64>,
 }
 
 impl DeserializeConfig for Config {}
@@ -89,7 +91,8 @@ impl Default for Config {
             healthcheck_timeout: default_healthcheck_timeout(),
             decryption_polling: default_decryption_polling(),
             key_management_polling: default_key_management_polling(),
-            from_block_number: None,
+            decryption_from_block_number: None,
+            kms_from_block_number: None,
         }
     }
 }

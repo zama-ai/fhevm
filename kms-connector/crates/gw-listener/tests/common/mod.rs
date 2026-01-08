@@ -42,7 +42,8 @@ pub async fn start_test_listener(
     let mut config = Config::default();
     config.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
     config.kms_generation_contract.address = KMS_GENERATION_MOCK_ADDRESS;
-    config.from_block_number = from_block_number;
+    config.decryption_from_block_number = from_block_number;
+    config.kms_from_block_number = from_block_number;
     config.decryption_polling = Duration::from_millis(300);
     config.key_management_polling = Duration::from_millis(300);
     let gw_listener = GatewayListener::new(
