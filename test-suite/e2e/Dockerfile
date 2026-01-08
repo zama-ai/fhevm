@@ -17,14 +17,18 @@ RUN addgroup -g 10001 fhevm && \
     adduser -D -u 10000 -G fhevm fhevm && \
     mkdir -p /app /home/fhevm
 
-# Copy only necessary files
+# Copy only dependency manifests first for better cache reuse
 COPY package.json package-lock.json ./
-COPY library-solidity ./library-solidity
-COPY test-suite/e2e ./test-suite/e2e
+COPY library-solidity/package.json ./library-solidity/package.json
+COPY test-suite/e2e/package.json ./test-suite/e2e/
 
 # Install dependencies
 RUN npm ci && \
     npm prune
+
+# Copy sources after deps are cached
+COPY library-solidity ./library-solidity
+COPY test-suite/e2e ./test-suite/e2e
 
 WORKDIR /app/test-suite/e2e
 

@@ -5,6 +5,13 @@ services:
     build:
       context: ../../..
       dockerfile: kms-connector/connector-db/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        RUST_IMAGE_VERSION: 1.91.0
+      cache_from:
+        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR_DB_MIGRATION:-type=gha}
+      cache_to:
+        - ${FHEVM_CACHE_TO_KMS_CONNECTOR_DB_MIGRATION:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.kms-connector.local
 
@@ -14,10 +21,13 @@ services:
     build:
       context: ../../..
       dockerfile: kms-connector/crates/gw-listener/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        RUST_IMAGE_VERSION: 1.91.0
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR_GW_LISTENER:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_KMS_CONNECTOR_GW_LISTENER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.kms-connector.local
     depends_on:
@@ -30,10 +40,13 @@ services:
     build:
       context: ../../..
       dockerfile: kms-connector/crates/kms-worker/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        RUST_IMAGE_VERSION: 1.91.0
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR_KMS_WORKER:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_KMS_CONNECTOR_KMS_WORKER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.kms-connector.local
     depends_on:
@@ -46,10 +59,13 @@ services:
     build:
       context: ../../..
       dockerfile: kms-connector/crates/tx-sender/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        RUST_IMAGE_VERSION: 1.91.0
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR_TX_SENDER:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_KMS_CONNECTOR_TX_SENDER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.kms-connector.local
     depends_on:

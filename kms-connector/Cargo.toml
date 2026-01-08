@@ -102,3 +102,9 @@ serial_test = "3.2.0"
 testcontainers = "=0.24.0"
 toml = { version = "=0.9.8", default-features = true }
 tracing-test = { version = "=0.2.5", default-features = false }
+
+[profile.local]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 16
