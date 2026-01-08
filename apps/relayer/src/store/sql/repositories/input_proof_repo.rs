@@ -1,5 +1,8 @@
 use std::time::Instant;
 
+use chrono::{DateTime, Utc};
+use serde_json::Value;
+
 use crate::core::event::{InputProofRequest, InputProofResponse};
 use crate::metrics;
 use crate::store::sql::models::input_proof_req_model::InputProofResponseModel;
@@ -409,5 +412,26 @@ impl InputProofRepository {
         }
 
         Ok(result?)
+    }
+
+    /// Find incomplete requests for startup recovery (queued, processing, tx_in_flight).
+    pub async fn find_incomplete_requests(
+        &self,
+    ) -> SqlResult<Vec<(Uuid, Value, ReqStatus, DateTime<Utc>)>> {
+        let result = sqlx::query!(
+            r#"
+            SELECT int_request_id, req, req_status as "req_status!: ReqStatus", updated_at
+            FROM input_proof_req
+            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
+            ORDER BY created_at ASC
+            "#
+        )
+        .fetch_all(&self.pool.get_app_pool())
+        .await?;
+
+        Ok(result
+            .into_iter()
+            .map(|row| (row.int_request_id, row.req, row.req_status, row.updated_at))
+            .collect())
     }
 }

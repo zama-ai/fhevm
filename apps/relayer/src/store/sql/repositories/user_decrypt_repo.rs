@@ -1,3 +1,6 @@
+use chrono::{DateTime, Utc};
+use serde_json::Value;
+
 use crate::core::event::UserDecryptRequest;
 use crate::metrics;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
@@ -738,5 +741,26 @@ impl UserDecryptRepository {
         }
 
         Ok(result?)
+    }
+
+    /// Find incomplete requests for startup recovery (queued, processing, tx_in_flight).
+    pub async fn find_incomplete_requests(
+        &self,
+    ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, DateTime<Utc>)>> {
+        let result = sqlx::query!(
+            r#"
+            SELECT int_job_id, req, req_status as "req_status!: ReqStatus", updated_at
+            FROM user_decrypt_req
+            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
+            ORDER BY created_at ASC
+            "#
+        )
+        .fetch_all(&self.pool.get_app_pool())
+        .await?;
+
+        Ok(result
+            .into_iter()
+            .map(|row| (row.int_job_id, row.req, row.req_status, row.updated_at))
+            .collect())
     }
 }

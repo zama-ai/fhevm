@@ -35,6 +35,7 @@ use crate::{
     http::server::run_http_server,
     metrics,
     orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher},
+    startup_recovery,
     store::sql::repositories::Repositories,
 };
 use prometheus::Registry;
@@ -149,6 +150,11 @@ pub async fn run_fhevm_relayer(
 
     // Initialize KeyUrl handler after HTTP server is up
     gateway_handler.initialize().await;
+
+    // Recover incomplete requests from previous runs
+    startup_recovery::recover_incomplete_requests(&orchestrator, &repositories)
+        .await
+        .map_err(|e| eyre::eyre!("Failed to recover incomplete requests: {}", e))?;
 
     drop(setup_span);
 

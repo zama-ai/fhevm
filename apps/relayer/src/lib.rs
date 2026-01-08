@@ -6,6 +6,7 @@ pub mod http;
 pub mod metrics;
 pub mod orchestrator;
 pub mod startup;
+pub mod startup_recovery;
 pub mod store;
 pub mod tracing;
 
