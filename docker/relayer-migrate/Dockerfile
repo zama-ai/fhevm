@@ -15,14 +15,16 @@ WORKDIR /app
 # source code into the container. Once built, copy the executable to an
 # output directory before the cache mounted /app/target is unmounted.
 USER root
+RUN apk add --no-cache openssl-dev clang
+
 RUN --mount=type=bind,source=apps/relayer/relayer-migrate/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=apps/relayer/relayer-migrate/Cargo.lock,target=Cargo.lock \
     --mount=type=bind,source=apps/relayer/relayer-migrate/src,target=src \
     --mount=type=bind,source=apps/relayer/relayer-migrate/migrations,target=migrations \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
-    apk add --no-cache openssl-dev clang && \
-    ls -R && cargo build --locked --release && \
+    --mount=type=cache,target=/usr/local/cargo/git/ \
+    cargo build --locked --release && \
     cp ./target/release/$APP_NAME /bin/server
 
 
