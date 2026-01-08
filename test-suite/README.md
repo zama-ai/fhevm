@@ -35,9 +35,13 @@ The test suite offers a unified CLI for all operations:
 cd test-suite/fhevm
 # Deploy the entire stack
 ./fhevm-cli deploy
+# Deploy with local BuildKit cache (disables provenance attestations)
+./fhevm-cli deploy --local
 
 # Run specific tests
 ./fhevm-cli test input-proof
+# Skip Hardhat compile when artifacts are already up to date
+./fhevm-cli test input-proof --no-hardhat-compile
 # Trivial
 ./fhevm-cli test user-decryption
 # Trivial
@@ -82,6 +86,20 @@ This command instructs Docker Compose to:
 - **Ensuring Correct Setup:** It guarantees that you are running with images built directly from the provided source, eliminating discrepancies that could arise from attempting to pull non-existent or inaccessible public images.
 
 🚧 **In summary:** Until public images are made available, external users should always use `./fhevm-cli deploy --build` to ensure a successful deployment.
+
+### Local developer optimizations
+
+For faster local iteration, use `--local` to enable a local BuildKit cache (stored under `.buildx-cache/`) and disable default provenance attestations:
+
+```sh
+./fhevm-cli deploy --local
+```
+
+When running tests and you know your Hardhat artifacts are already up to date, you can skip compilation:
+
+```sh
+./fhevm-cli test input-proof --no-hardhat-compile
+```
 
 ## Security policy
 

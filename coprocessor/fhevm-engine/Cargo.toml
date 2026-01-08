@@ -101,3 +101,9 @@ overflow-checks = false
 [profile.release]
 opt-level = 3
 lto = "fat"
+
+[profile.local]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 16

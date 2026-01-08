@@ -5,10 +5,12 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_DB_MIGRATION:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_COPROCESSOR_DB_MIGRATION:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     environment:
@@ -25,10 +27,12 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_HOST_LISTENER:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_COPROCESSOR_HOST_LISTENER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -49,10 +53,12 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_HOST_LISTENER_POLLER:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_COPROCESSOR_HOST_LISTENER_POLLER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -72,10 +78,12 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_GW_LISTENER:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_COPROCESSOR_GW_LISTENER:-type=gha,mode=max}
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/liveness || exit 1"]
       interval: 10s
@@ -103,10 +111,12 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/tfhe-worker/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_TFHE_WORKER:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_COPROCESSOR_TFHE_WORKER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -129,10 +139,12 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/zkproof-worker/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_ZKPROOF_WORKER:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_COPROCESSOR_ZKPROOF_WORKER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -153,10 +165,12 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/sns-worker/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_SNS_WORKER:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_COPROCESSOR_SNS_WORKER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
@@ -190,10 +204,12 @@ services:
     build:
       context: ../../..
       dockerfile: coprocessor/fhevm-engine/transaction-sender/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_COPROCESSOR_TRANSACTION_SENDER:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_COPROCESSOR_TRANSACTION_SENDER:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:

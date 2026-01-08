@@ -59,7 +59,7 @@ function usage {
   echo -e "${BOLD}Usage:${RESET} ${YELLOW}fhevm-cli${RESET} ${CYAN}COMMAND [OPTIONS]${RESET}"
   echo
   echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
-  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
+  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
   echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|delegate-user-decryption|random|random-subset|operators|erc20|debug)"
@@ -73,11 +73,14 @@ function usage {
   echo -e "  ${CYAN}-n, --network NAME${RESET}  Specify network (default: ${GREEN}staging${RESET})"
   echo -e "  ${CYAN}-g, --grep PATTERN${RESET}  Override default test pattern"
   echo -e "  ${CYAN}-r, --no-relayer${RESET}    Disable Rust relayer"
+  echo -e "  ${CYAN}--no-hardhat-compile${RESET}        Skip Hardhat compilation step"
   echo
   echo -e "${BOLD}${LIGHT_BLUE}Examples:${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli deploy --local${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli test input-proof --no-hardhat-compile${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-ebool ${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test public-decrypt-http-mixed -n staging${RESET}"
@@ -99,16 +102,25 @@ case $COMMAND in
   deploy)
     print_logo
     echo -e "${LIGHT_BLUE}${BOLD}[DEPLOY] Deploying fhevm stack...${RESET}"
-    BUILD_ARG=""
-    if [[ "$1" == "--build" ]]; then
-      BUILD_ARG="--build"
-      shift
-    elif [[ -n "$1" ]]; then
-      echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown argument for deploy: $1${RESET}"
-      usage
-      exit 1
-    fi
-    "${SCRIPT_DIR}/scripts/deploy-fhevm-stack.sh" $BUILD_ARG
+    DEPLOY_ARGS=()
+    while (( "$#" )); do
+      case "$1" in
+        --build)
+          DEPLOY_ARGS+=("--build")
+          shift
+          ;;
+        --local|--dev)
+          DEPLOY_ARGS+=("--local")
+          shift
+          ;;
+        *)
+          echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown argument for deploy: $1${RESET}"
+          usage
+          exit 1
+          ;;
+      esac
+    done
+    "${SCRIPT_DIR}/scripts/deploy-fhevm-stack.sh" "${DEPLOY_ARGS[@]}"
     echo -e "${GREEN}${BOLD} [SUCCESS] fhevm stack deployment complete!${RESET}"
     ;;
 
@@ -155,6 +167,7 @@ case $COMMAND in
     NETWORK="staging"
     GREP=""
     NO_RELAYER=""
+    NO_COMPILE=""
 
     while (( "$#" )); do
       case "$1" in
@@ -186,6 +199,10 @@ case $COMMAND in
           NO_RELAYER="-r"
           shift
           ;;
+        --no-hardhat-compile)
+          NO_COMPILE="--no-hardhat-compile"
+          shift
+          ;;
         *)
           echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown option: $1${RESET}"
           usage
@@ -201,6 +218,9 @@ case $COMMAND in
     docker_args+=("-n" "$NETWORK")
     if [ -n "$NO_RELAYER" ]; then
       docker_args+=("-r")
+    fi
+    if [ -n "$NO_COMPILE" ]; then
+      docker_args+=("--no-hardhat-compile")
     fi
 
     if [ -n "$GREP" ]; then

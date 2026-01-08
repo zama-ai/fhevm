@@ -25,17 +25,72 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Argument Parsing
 FORCE_BUILD=false
+LOCAL_BUILD=false
 NEW_ARGS=()
 for arg in "$@"; do
   if [[ "$arg" == "--build" ]]; then
     FORCE_BUILD=true
     log_info "Force build option detected. Services will be rebuilt."
+  elif [[ "$arg" == "--local" || "$arg" == "--dev" ]]; then
+    LOCAL_BUILD=true
+    log_info "Local optimization option detected."
   else
     NEW_ARGS+=("$arg")
   fi
 done
-# Overwrite original arguments with the filtered list (removes --build from $@)
+# Overwrite original arguments with the filtered list (removes local flags from $@)
 set -- "${NEW_ARGS[@]}"
+
+if [ "$LOCAL_BUILD" = true ]; then
+    log_info "Enabling local BuildKit cache and disabling provenance attestations."
+    export DOCKER_BUILDKIT=1
+    export COMPOSE_DOCKER_CLI_BUILD=1
+    export BUILDX_NO_DEFAULT_ATTESTATIONS=1
+    export DOCKER_BUILD_PROVENANCE=false
+    export FHEVM_CARGO_PROFILE=local
+    FHEVM_BUILDX_CACHE_DIR="${FHEVM_BUILDX_CACHE_DIR:-.buildx-cache}"
+    mkdir -p "$FHEVM_BUILDX_CACHE_DIR"
+    set_local_cache_vars() {
+        local service_name="$1"
+        local service_key
+        service_key=$(echo "${service_name//-/_}" | tr '[:lower:]' '[:upper:]')
+        local cache_dir="${FHEVM_BUILDX_CACHE_DIR}/${service_name}"
+        mkdir -p "$cache_dir"
+        export "FHEVM_CACHE_FROM_${service_key}=type=local,src=${cache_dir}"
+        export "FHEVM_CACHE_TO_${service_key}=type=local,dest=${cache_dir},mode=max"
+    }
+    LOCAL_CACHE_SERVICES=( 
+        coprocessor-db-migration
+        coprocessor-gw-listener
+        coprocessor-host-listener
+        coprocessor-host-listener-poller
+        coprocessor-sns-worker
+        coprocessor-tfhe-worker
+        coprocessor-transaction-sender
+        coprocessor-zkproof-worker
+        gateway-deploy-mocked-zama-oft
+        gateway-sc-add-network
+        gateway-sc-add-pausers
+        gateway-sc-deploy
+        gateway-sc-pause
+        gateway-sc-trigger-crsgen
+        gateway-sc-trigger-keygen
+        gateway-sc-unpause
+        gateway-set-relayer-mocked-payment
+        host-sc-add-pausers
+        host-sc-deploy
+        host-sc-pause
+        host-sc-unpause
+        kms-connector-db-migration
+        kms-connector-gw-listener
+        kms-connector-kms-worker
+        kms-connector-tx-sender
+        test-suite-e2e-debug
+    )
+    for service_name in "${LOCAL_CACHE_SERVICES[@]}"; do
+        set_local_cache_vars "$service_name"
+    done
+fi
 
 # Function to check if services are ready based on expected state
 wait_for_service() {

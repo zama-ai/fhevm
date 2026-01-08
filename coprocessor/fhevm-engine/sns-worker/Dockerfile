@@ -1,6 +1,8 @@
 # Stage 1: Build SNS Worker
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
+ARG CARGO_PROFILE=release
+
 USER root
 
 WORKDIR /app
@@ -12,16 +14,21 @@ COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 WORKDIR /app/coprocessor/fhevm-engine
 
 # Build sns_executor binary
+# NOTE: We use a cache mount for the target directory to enable incremental compilation.
+# Because cache mounts are NOT committed to the image layer, we must copy the binary
+# to a non-mounted path (/tmp) during the same RUN instruction for COPY --from to work.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
     cargo fetch && \
-    SQLX_OFFLINE=true cargo build --release -p sns-worker
+    SQLX_OFFLINE=true cargo build --profile=${CARGO_PROFILE} -p sns-worker && \
+    cp target/${CARGO_PROFILE}/sns_worker /tmp/sns_worker
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/sns_worker /usr/local/bin/sns_worker
+COPY --from=builder --chown=fhevm:fhevm /tmp/sns_worker /usr/local/bin/sns_worker
 
 USER fhevm:fhevm
 
