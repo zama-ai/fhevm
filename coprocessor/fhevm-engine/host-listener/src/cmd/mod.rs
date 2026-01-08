@@ -29,6 +29,15 @@ use crate::health_check::HealthCheck;
 
 pub mod block_history;
 use block_history::{BlockHash, BlockHistory, BlockSummary};
+pub mod metrics;
+use metrics::{
+    increment, touch, BLOCKS_NOT_INSERTED, CATCHUP_BLOCKS_INSERTED,
+    EVENTS_MISSED, REALTIME_BLOCKS_INSERTED, REALTIME_EVENTS_INSERTED,
+};
+use metrics::{
+    latency_timer, observe_approximate_latency, observe_timer,
+    APPROX_LATENCY_TO_NOTIFY_BLOCK, LATENCY_FROM_HOST, LATENCY_TO_DB,
+};
 
 const REORG_RETRY_GET_LOGS: u64 = 10; // retry 10 times to get logs for a block
 const RETRY_GET_LOGS_DELAY_IN_MS: u64 = 100;
@@ -146,6 +155,7 @@ pub struct Args {
 // TODO: to merge with Levent works
 struct InfiniteLogIter {
     url: String,
+    chain_id: String,
     block_time: u64, /* A default value that is refined with real-time
                       * events data */
     contract_addresses: Vec<Address>,
@@ -228,14 +238,17 @@ impl InfiniteLogIter {
                 args.reorg_maximum_duration_in_blocks as usize,
             ),
             catchup_finalization_in_blocks: args.catchup_finalization_in_blocks,
+            chain_id: String::new(), // updated later
         }
     }
 
-    async fn get_chain_id(&self) -> anyhow::Result<ChainId> {
+    async fn get_chain_id(&mut self) -> anyhow::Result<ChainId> {
         let config = websocket_config();
         let ws = WsConnect::new(&self.url).with_config(config);
         let provider = ProviderBuilder::new().connect_ws(ws).await?;
-        Ok(provider.get_chain_id().await?)
+        let chain_id = provider.get_chain_id().await?;
+        self.chain_id = chain_id.to_string();
+        Ok(chain_id)
     }
 
     /// Resolves `end_at_block` to an absolute block number.
@@ -558,6 +571,7 @@ impl InfiniteLogIter {
         &self,
         block_hash: BlockHash,
     ) -> Result<Vec<Log>> {
+        let latency_timer = latency_timer(&self.chain_id, &LATENCY_FROM_HOST);
         let mut filter = Filter::new().at_block_hash(block_hash);
         if !self.contract_addresses.is_empty() {
             filter = filter.address(self.contract_addresses.clone())
@@ -584,7 +598,10 @@ impl InfiniteLogIter {
                     .await;
                     continue;
                 }
-                Ok(Ok(logs)) => return Ok(logs),
+                Ok(Ok(logs)) => {
+                    observe_timer(latency_timer);
+                    return Ok(logs);
+                }
                 Ok(Err(err)) => {
                     error!(
                         block_hash = ?block_hash,
@@ -782,9 +799,16 @@ impl InfiniteLogIter {
         {
             Err(_) => Ok(BlockOrTimeoutOrNone::Timeout),
             Ok(None) => Ok(BlockOrTimeoutOrNone::None),
-            Ok(Some(header)) => Ok(BlockOrTimeoutOrNone::Block(
-                self.attach_logs_to(header).await?,
-            )),
+            Ok(Some(header)) => {
+                observe_approximate_latency(
+                    &self.chain_id,
+                    &APPROX_LATENCY_TO_NOTIFY_BLOCK,
+                    header.timestamp,
+                );
+                Ok(BlockOrTimeoutOrNone::Block(
+                    self.attach_logs_to(header).await?,
+                ))
+            }
         }
     }
 
@@ -905,7 +929,7 @@ async fn db_insert_block(
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<usize> {
     info!(
         block = ?block_logs.summary,
         nb_events = block_logs.logs.len(),
@@ -913,6 +937,7 @@ async fn db_insert_block(
         "Inserting block in coprocessor",
     );
     let mut retries = 10;
+    let latency_timer = latency_timer(&chain_id.to_string(), &LATENCY_TO_DB);
     loop {
         let res = ingest_block_logs(
             chain_id,
@@ -922,17 +947,21 @@ async fn db_insert_block(
             tfhe_contract_address,
         )
         .await;
-        let Err(err) = res else {
-            // Notify the database of the new block
-            // Delayed delegation rely on this signal to reconsider ready delegation
-            if !block_logs.catchup {
-                if let Err(err) =
-                    db.block_notification(block_logs.summary.number).await
-                {
-                    error!(error = %err, "Error notifying listener for new block");
-                };
+        let err = match res {
+            Ok(inserted) => {
+                // Notify the database of the new block
+                // Delayed delegation rely on this signal to reconsider ready delegation
+                if !block_logs.catchup {
+                    if let Err(err) =
+                        db.block_notification(block_logs.summary.number).await
+                    {
+                        error!(error = %err, "Error notifying listener for new block");
+                    };
+                }
+                observe_timer(latency_timer);
+                return Ok(inserted);
             }
-            return Ok(());
+            Err(err) => err,
         };
         if retries == 0 {
             error!(error = %err, block = ?block_logs.summary, "Error inserting block");
@@ -950,7 +979,38 @@ async fn db_insert_block(
     }
 }
 
+pub(crate) fn update_blocks_metrics(
+    chain_id: &str,
+    block_logs: &BlockLogs<Log>,
+    catchup_inserted: usize,
+) {
+    let block_size = block_logs.logs.len();
+    if block_logs.catchup {
+        if catchup_inserted == 0 {
+            return; // nothing can be deduce
+        }
+        // it should not happen in normal condition
+        if catchup_inserted == block_logs.logs.len() {
+            // the full block was inserted could be,
+            // a manual catchup after an upgrade
+            // a realtime block that was missed or not inserted (db failure)
+            touch(chain_id, &CATCHUP_BLOCKS_INSERTED);
+        } else {
+            increment(chain_id, &EVENTS_MISSED, catchup_inserted);
+        }
+    } else {
+        touch(chain_id, &REALTIME_BLOCKS_INSERTED);
+        increment(chain_id, &REALTIME_EVENTS_INSERTED, block_size);
+    }
+}
+
 pub async fn main(args: Args) -> anyhow::Result<()> {
+    if !args.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
+            warn!(error = %err, "Failed to setup OTLP");
+        }
+    }
+
     info!("Starting main");
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
@@ -1046,6 +1106,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             coprocessor_api_key
         ));
     }
+    let chain_id_str = chain_id.to_string();
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: log_iter.tick_timeout.clone(),
@@ -1084,8 +1145,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &tfhe_contract_address,
             )
             .await;
-            if status.is_err() {
+            if let Ok(inserted) = status {
+                update_blocks_metrics(&chain_id_str, &block_logs, inserted);
+            } else {
                 // logging & retry on error is already done in db_insert_block
+                touch(&chain_id_str, &BLOCKS_NOT_INSERTED);
                 continue;
             };
             log_iter.last_valid_block = Some(
