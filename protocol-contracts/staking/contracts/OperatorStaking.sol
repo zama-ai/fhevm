@@ -435,7 +435,9 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
     }
 
     /**
-     * @dev Returns the decimals of the shares following the ERC4626 pattern.
+     * @notice Returns the decimals of the shares following the ERC4626 pattern.
+     * @dev The decimals of the shares is the sum of the decimals of the underlying asset and the
+     * decimal offset.
      * @return The decimals of the shares following the ERC4626 pattern.
      */
     function decimals() public view virtual override returns (uint8) {
