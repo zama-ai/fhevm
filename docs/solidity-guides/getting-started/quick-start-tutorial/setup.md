@@ -143,5 +143,5 @@ cd <your-new-repo-name>
 Then run:
 
 ```sh
-rm -rf test/* src/* tasks/* deploy ./fhevmTemp ./artifacts ./cache ./coverage ./types ./coverage.json ./dist
+rm -rf test/* src/* deploy ./fhevmTemp ./artifacts ./cache ./coverage ./types ./coverage.json ./dist
 ```
