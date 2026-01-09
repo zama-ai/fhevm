@@ -7,6 +7,11 @@ import hre from 'hardhat';
 const timeIncreaseNoMine = (duration: number) =>
   time.latest().then(clock => time.setNextBlockTimestamp(clock + duration));
 
+// DECIMAL_OFFSET is used in OperatorStaking to mitigate inflation attacks.
+// This creates 10^DECIMAL_OFFSET virtual shares per asset unit.
+const DECIMAL_OFFSET = 2n;
+const SHARES_PER_ASSET_UNIT = 10n ** DECIMAL_OFFSET;
+
 describe('OperatorRewarder', function () {
   beforeEach(async function () {
     const [delegator1, delegator2, claimer, admin, beneficiary, anyone, ...accounts] = await ethers.getSigners();
@@ -58,6 +63,39 @@ describe('OperatorRewarder', function () {
       operatorStaking,
       protocolStaking,
       mock,
+    });
+  });
+
+  describe('deployment', function () {
+    it('should not deploy if max fee is over 100%', async function () {
+      const maxFeeTooHigh = 10001;
+      await expect(
+        ethers.deployContract('OperatorRewarder', [
+          this.beneficiary,
+          this.protocolStaking,
+          this.mock,
+          maxFeeTooHigh,
+          0,
+        ]),
+      )
+        .to.be.revertedWithCustomError(this.mock, 'InvalidBasisPoints')
+        .withArgs(maxFeeTooHigh);
+    });
+
+    it('should not deploy if fee is over max fee', async function () {
+      const maxFee = 1000;
+      const feeOverMaxFee = 1234;
+      await expect(
+        ethers.deployContract('OperatorRewarder', [
+          this.beneficiary,
+          this.protocolStaking,
+          this.mock,
+          maxFee,
+          feeOverMaxFee,
+        ]),
+      )
+        .to.be.revertedWithCustomError(this.mock, 'MaxBasisPointsExceeded')
+        .withArgs(feeOverMaxFee, maxFee);
     });
   });
 
@@ -119,7 +157,9 @@ describe('OperatorRewarder', function () {
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('5'));
       await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.delegator1, ethers.parseEther('5'));
+        .withArgs(this.mock, this.delegator1, ethers.parseEther('5'))
+        .to.emit(this.mock, 'RewardsClaimed')
+        .withArgs(this.delegator1, ethers.parseEther('5'));
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
 
       // Historical reward: 10 (seconds) * 0.5 (reward rate) = 5
@@ -139,12 +179,16 @@ describe('OperatorRewarder', function () {
 
       await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.delegator1, ethers.parseEther('2.75'));
+        .withArgs(this.mock, this.delegator1, ethers.parseEther('2.75'))
+        .to.emit(this.mock, 'RewardsClaimed')
+        .withArgs(this.delegator1, ethers.parseEther('2.75'));
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
 
       await expect(this.mock.connect(this.delegator2).claimRewards(this.delegator2))
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.delegator2, ethers.parseEther('2.25'));
+        .withArgs(this.mock, this.delegator2, ethers.parseEther('2.25'))
+        .to.emit(this.mock, 'RewardsClaimed')
+        .withArgs(this.delegator2, ethers.parseEther('2.25'));
       await expect(this.mock.earned(this.delegator2)).to.eventually.eq(0);
 
       // Historical reward: (1+9) (seconds) * 0.5 (reward rate) = 5
@@ -156,7 +200,8 @@ describe('OperatorRewarder', function () {
       await timeIncreaseNoMine(10);
       await this.protocolStaking.connect(this.admin).setRewardRate(0);
       await this.mock.connect(this.delegator1).claimRewards(this.delegator1); // claims past rewards before not being able to
-      await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, ethers.parseEther('1'));
+      const sharesToTransfer = ethers.parseEther('1') * SHARES_PER_ASSET_UNIT;
+      await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, sharesToTransfer);
       // delegator1 will be able deposit and claim reward again
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
       // delegator2 cannot claim any reward
@@ -178,12 +223,16 @@ describe('OperatorRewarder', function () {
 
       await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.delegator1, ethers.parseEther('4.5'));
+        .withArgs(this.mock, this.delegator1, ethers.parseEther('4.5'))
+        .to.emit(this.mock, 'RewardsClaimed')
+        .withArgs(this.delegator1, ethers.parseEther('4.5'));
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
 
       await expect(this.mock.connect(this.beneficiary).claimFee())
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.5'));
+        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.5'))
+        .to.emit(this.mock, 'FeeClaimed')
+        .withArgs(this.beneficiary, ethers.parseEther('0.5'));
       await expect(this.mock.unpaidFee()).to.eventually.eq(0);
 
       // Historical reward: 10 (seconds) * 0.5 (reward rate) - 0.5 (10% fee) = 4.5
@@ -195,10 +244,9 @@ describe('OperatorRewarder', function () {
       await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
       await time.increase(9);
 
-      await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1)).to.not.emit(
-        this.token,
-        'Transfer',
-      );
+      await expect(this.mock.connect(this.delegator1).claimRewards(this.delegator1))
+        .to.not.emit(this.token, 'Transfer')
+        .to.not.emit(this.mock, 'RewardsClaimed');
 
       // Historical reward: 0 (no reward rate)
       await expect(this.mock.historicalReward()).to.eventually.eq(ethers.parseEther('0'));
@@ -214,20 +262,17 @@ describe('OperatorRewarder', function () {
       await this.mock.connect(this.delegator1).claimRewards(this.delegator1);
       await this.mock.connect(this.delegator2).claimRewards(this.delegator2);
 
+      const sharesToRedeem = ethers.parseEther('1') * SHARES_PER_ASSET_UNIT;
       await this.operatorStaking
         .connect(this.delegator1)
-        .requestRedeem(ethers.parseEther('1'), this.delegator1, this.delegator1);
+        .requestRedeem(sharesToRedeem, this.delegator1, this.delegator1);
       await this.operatorStaking
         .connect(this.delegator2)
-        .requestRedeem(ethers.parseEther('1'), this.delegator2, this.delegator2);
+        .requestRedeem(sharesToRedeem, this.delegator2, this.delegator2);
       await timeIncreaseNoMine(60);
 
-      await this.operatorStaking
-        .connect(this.delegator1)
-        .redeem(ethers.parseEther('1'), this.delegator1, this.delegator1);
-      await this.operatorStaking
-        .connect(this.delegator2)
-        .redeem(ethers.parseEther('1'), this.delegator2, this.delegator2);
+      await this.operatorStaking.connect(this.delegator1).redeem(sharesToRedeem, this.delegator1, this.delegator1);
+      await this.operatorStaking.connect(this.delegator2).redeem(sharesToRedeem, this.delegator2, this.delegator2);
 
       await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
       await expect(this.mock.earned(this.delegator1)).to.eventually.eq(0);
@@ -252,9 +297,10 @@ describe('OperatorRewarder', function () {
 
       await timeIncreaseNoMine(10);
 
+      const sharesToRedeem = ethers.parseEther('2') * SHARES_PER_ASSET_UNIT;
       await this.operatorStaking
         .connect(this.delegator1)
-        .requestRedeem(ethers.parseEther('2'), this.delegator1, this.delegator1);
+        .requestRedeem(sharesToRedeem, this.delegator1, this.delegator1);
 
       await time.increase(10);
 
@@ -323,7 +369,9 @@ describe('OperatorRewarder', function () {
       // 1 more second goes by
       await expect(this.mock.connect(this.beneficiary).claimFee())
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.beneficiary, ethers.parseEther('1.05'));
+        .withArgs(this.mock, this.beneficiary, ethers.parseEther('1.05'))
+        .to.emit(this.mock, 'FeeClaimed')
+        .withArgs(this.beneficiary, ethers.parseEther('1.05'));
       await expect(this.mock.unpaidFee()).to.eventually.eq(0);
 
       // Historical reward: (20+1) (seconds) * 0.5 (reward rate) - 1.05 (10% fee) = 9.45
@@ -355,12 +403,16 @@ describe('OperatorRewarder', function () {
       await timeIncreaseNoMine(10);
       await expect(this.mock.connect(this.beneficiary).claimFee())
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.5'));
+        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.5'))
+        .to.emit(this.mock, 'FeeClaimed')
+        .withArgs(this.beneficiary, ethers.parseEther('0.5'));
 
       await timeIncreaseNoMine(5);
       await expect(this.mock.connect(this.beneficiary).claimFee())
         .to.emit(this.token, 'Transfer')
-        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.25'));
+        .withArgs(this.mock, this.beneficiary, ethers.parseEther('0.25'))
+        .to.emit(this.mock, 'FeeClaimed')
+        .withArgs(this.beneficiary, ethers.parseEther('0.25'));
     });
 
     it('should not claim fee if not beneficiary', async function () {
@@ -514,6 +566,57 @@ describe('OperatorRewarder', function () {
     });
   });
 
+  describe('start', function () {
+    it('should be started', async function () {
+      await expect(this.mock.isStarted()).to.eventually.eq(true);
+    });
+
+    it("can't start twice", async function () {
+      const signer = await impersonate(hre, this.operatorStaking.target);
+      await expect(this.mock.connect(signer).start()).to.be.revertedWithCustomError(this.mock, 'AlreadyStarted');
+    });
+
+    describe('with new rewarder', async function () {
+      beforeEach(async function () {
+        const notStartedRewarder = await ethers.deployContract('OperatorRewarder', [
+          this.beneficiary,
+          this.protocolStaking,
+          this.mock,
+          10000, // 100% maximum fee
+          0, // 0% fee
+        ]);
+        Object.assign(this, { notStartedRewarder });
+      });
+
+      it('should revert if started not called by OperatorStaking', async function () {
+        await expect(this.notStartedRewarder.connect(this.admin).start())
+          .to.be.revertedWithCustomError(this.notStartedRewarder, 'CallerNotOperatorStaking')
+          .withArgs(this.admin);
+      });
+
+      it('should revert if not started for claimFee', async function () {
+        await expect(this.notStartedRewarder.connect(this.beneficiary).claimFee()).to.be.revertedWithCustomError(
+          this.notStartedRewarder,
+          'NotStarted',
+        );
+      });
+
+      it('should revert if not started for setFee', async function () {
+        await expect(this.notStartedRewarder.connect(this.beneficiary).setFee(1000)).to.be.revertedWithCustomError(
+          this.notStartedRewarder,
+          'NotStarted',
+        );
+      });
+
+      it('should revert if not started for setMaxFee', async function () {
+        await expect(this.notStartedRewarder.connect(this.admin).setMaxFee(1000)).to.be.revertedWithCustomError(
+          this.notStartedRewarder,
+          'NotStarted',
+        );
+      });
+    });
+  });
+
   describe('shutdown', function () {
     beforeEach(async function () {
       await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
@@ -576,7 +679,8 @@ describe('OperatorRewarder', function () {
         await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
         await timeIncreaseNoMine(10);
 
-        await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, ethers.parseEther('1'));
+        const sharesToTransfer = ethers.parseEther('1') * SHARES_PER_ASSET_UNIT;
+        await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, sharesToTransfer);
         await time.increase(10);
 
         await expect(this.mock.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('5'));
@@ -587,7 +691,8 @@ describe('OperatorRewarder', function () {
         await this.operatorStaking.connect(this.delegator1).deposit(ethers.parseEther('1'), this.delegator1);
         await timeIncreaseNoMine(10);
 
-        await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, ethers.parseEther('0.5'));
+        const sharesToTransfer = ethers.parseEther('0.5') * SHARES_PER_ASSET_UNIT;
+        await this.operatorStaking.connect(this.delegator1).transfer(this.delegator2, sharesToTransfer);
         await time.increase(10);
 
         await expect(this.mock.earned(this.delegator1)).to.eventually.eq(ethers.parseEther('7.5'));

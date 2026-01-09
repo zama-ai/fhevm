@@ -5,6 +5,7 @@ use kms_worker::{
 
 use connector_utils::{
     cli::{Cli, Subcommands},
+    config::DeserializeConfig,
     monitoring::{
         health::query_healthcheck_endpoint, otlp::init_otlp_setup, server::start_monitoring_server,
     },

@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   build:
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6c72e3dbc894744c1e228fb165f4c4d657e475b6 # v1.0.1
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -33,3 +33,4 @@ jobs:
       image-name: "fhevm/test-suite/gateway-stress-tool"
       docker-file: "./test-suite/gateway-stress/Dockerfile"
       app-cache-dir: "fhevm-gateway-stress-tool"
+      rust-toolchain-file-path: test-suite/gateway-stress/rust-toolchain.toml

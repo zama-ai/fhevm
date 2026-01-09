@@ -44,10 +44,11 @@ clap = { version = "=4.5.47", default-features = true, features = [
     "cargo",
     "derive",
 ] }
-config = { version = "=0.15.15", default-features = false, features = ["toml"] }
+config = { version = "=0.15.19", default-features = false, features = ["toml"] }
 dashmap = { version = "=6.1.0", default-features = false }
 futures = { version = "=0.3.31", default-features = false }
 git-version = { version = "=0.3.9", default-features = false }
+humantime-serde = "=1.1.1"
 opentelemetry = "=0.30.0"
 opentelemetry-otlp = { version = "=0.30.0", features = ["grpc-tonic"] }
 opentelemetry_sdk = "=0.30.0"
@@ -55,7 +56,7 @@ prometheus = "=0.14.0"
 rustls = { version = "=0.23.31", default-features = false, features = [
     "aws-lc-rs",
 ] }
-serde = { version = "=1.0.226", default-features = false, features = [
+serde = { version = "=1.0.228", default-features = false, features = [
     "derive",
     "std",
 ] }
@@ -98,7 +99,12 @@ mocktail = "=0.3.0"
 rand = "=0.9.2"
 rstest = "=0.26.1"
 serial_test = "3.2.0"
-tempfile = "=3.20.0"
 testcontainers = "=0.24.0"
-toml = { version = "=0.9.5", default-features = true }
+toml = { version = "=0.9.8", default-features = true }
 tracing-test = { version = "=0.2.5", default-features = false }
+
+[profile.local]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 16

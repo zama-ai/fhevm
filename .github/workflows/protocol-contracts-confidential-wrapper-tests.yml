@@ -35,14 +35,11 @@ jobs:
           filters: |
             protocol-contracts-confidential-wrapper:
               - .github/workflows/protocol-contracts-confidential-wrapper-tests.yml
-              - protocol-contracts/staking/**
+              - protocol-contracts/confidential-wrapper/**
   tests:
     name: protocol-contracts-confidential-wrapper-tests/tests (bpr)
     needs: check-changes
-    # if: ${{ needs.check-changes.outputs.changes-protocol-contracts-confidential-wrapper == 'true' }}
-    # TODO: Re-enable this once the tests are fixed
-    # See https://github.com/zama-ai/fhevm-internal/issues/796
-    if: false
+    if: ${{ needs.check-changes.outputs.changes-protocol-contracts-confidential-wrapper == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
@@ -58,20 +55,8 @@ jobs:
       
       - name: Run lint
         working-directory: protocol-contracts/confidential-wrapper
-        run: npm run lint
-
-      - name: Run compile
-        working-directory: protocol-contracts/confidential-wrapper
-        run: npm run compile
-
-      - name: Run build:ts
-        working-directory: protocol-contracts/confidential-wrapper
-        run: npm run build:ts
+        run: make conformance
 
       - name: Run unit tests
         working-directory: protocol-contracts/confidential-wrapper
         run: make test
-
-      - name: Run coverage
-        working-directory: protocol-contracts/confidential-wrapper
-        run: make run coverage

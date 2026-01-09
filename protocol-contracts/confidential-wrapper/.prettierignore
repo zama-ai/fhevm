@@ -1,6 +1,3 @@
-# fhevm
-fhevmTemp
-
 # directories
 .coverage_artifacts
 .coverage_cache
@@ -12,14 +9,15 @@ coverage
 dist
 node_modules
 types
+lib
 
 # files
 *.env
 *.log
 .DS_Store
 .pnp.*
-bun.lockb
 coverage.json
 package-lock.json
-pnpm-lock.yaml
 yarn.lock
+README.md
+fhevmTemp

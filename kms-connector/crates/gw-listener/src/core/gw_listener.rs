@@ -167,9 +167,10 @@ where
         event_poller.poller = event_poller.poller.with_poll_interval(poll_interval);
         info!("✓ Subscribed to {event_type} events");
 
-        self.catchup_past_events::<E>(&mut last_block_polled, event_type)
+        let _ = self
+            .catchup_past_events::<E>(&mut last_block_polled, event_type)
             .await
-            .map_err(|e| anyhow!("Failed to catch up past {event_type} events: {e}"))?;
+            .inspect_err(|e| warn!("Failed to catch up past {event_type} events: {e}"));
 
         select! {
             _ = self.process_events(event_type, event_poller, &mut last_block_polled) => (),
@@ -297,8 +298,15 @@ where
 
     /// Get the last block polled from config or DB.
     async fn get_last_block_polled(&self, event_type: EventType) -> anyhow::Result<Option<u64>> {
-        let last_block_polled = match self.config.from_block_number {
-            // Start polling event from `from_block_number` if configured
+        let from_block_number = match event_type {
+            EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
+                self.config.decryption_from_block_number
+            }
+            _ => self.config.kms_operation_from_block_number,
+        };
+
+        let last_block_polled = match from_block_number {
+            // Start polling event from the configured `from_block_number` if set
             Some(from_block) => {
                 info!(
                     "Found configured `from_block_number` ({from_block}) for {event_type} subscriptions!"
@@ -371,7 +379,7 @@ impl GatewayListener<GatewayProvider> {
         cancel_token: CancellationToken,
     ) -> anyhow::Result<(Self, State<GatewayProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
+        let provider = connect_to_gateway(config.gateway_url.clone(), config.chain_id).await?;
 
         let state = State::new(
             db_pool.clone(),
@@ -407,7 +415,7 @@ mod tests {
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
     async fn test_reset_filter_stops_listener() {
-        let (_test_instance, asserter, gw_listener) = test_setup().await;
+        let (_test_instance, asserter, gw_listener) = test_setup(None).await;
 
         asserter.push_failure(ErrorPayload {
             code: -32000,
@@ -421,8 +429,28 @@ mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
+    async fn test_failed_catchup_does_not_stop_listener() {
+        let (mut test_instance, asserter, gw_listener) = test_setup(Some(0)).await;
+
+        asserter.push_failure(ErrorPayload {
+            code: -32002,
+            message: "request timed out".into(),
+            data: None,
+        });
+
+        let event_type = EventType::KeygenRequest;
+        tokio::spawn(gw_listener.subscribe(event_type));
+        test_instance.wait_for_log("Failed to catch up").await;
+        test_instance
+            .wait_for_log(&format!("Waiting for next {event_type}"))
+            .await;
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(90))]
+    #[tokio::test]
     async fn test_listener_ended_by_end_of_any_task() {
-        let (mut test_instance, _asserter, gw_listener) = test_setup().await;
+        let (mut test_instance, _asserter, gw_listener) = test_setup(None).await;
 
         // Will stop because some subcription tasks will not be able to init their event filter
         gw_listener.start().await;
@@ -438,7 +466,9 @@ mod tests {
         RootProvider,
     >;
 
-    async fn test_setup() -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
+    async fn test_setup(
+        kms_operation_from_block_number: Option<u64>,
+    ) -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
         let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
 
         // Create a mocked `alloy::Provider`
@@ -452,6 +482,7 @@ mod tests {
         let config = Config {
             decryption_polling: Duration::from_millis(500),
             key_management_polling: Duration::from_millis(500),
+            kms_operation_from_block_number,
             ..Default::default()
         };
         let listener = GatewayListener::new(

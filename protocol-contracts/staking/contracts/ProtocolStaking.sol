@@ -54,19 +54,53 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     bytes32 private constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 private constant ELIGIBLE_ACCOUNT_ROLE = keccak256("ELIGIBLE_ACCOUNT_ROLE");
 
-    /// @dev Emitted when tokens are staked by an account.
+    /**
+     * @dev Emitted when tokens are staked by an account.
+     * @param account The address of the account staking tokens.
+     * @param amount The amount of tokens staked.
+     */
     event TokensStaked(address indexed account, uint256 amount);
-    /// @dev Emitted when tokens are unstaked by an account.
+
+    /**
+     * @dev Emitted when tokens are unstaked by an account.
+     * @param account The address of the account unstaking tokens.
+     * @param amount The amount of tokens unstaked.
+     * @param releaseTime The timestamp when the tokens can be released.
+     */
     event TokensUnstaked(address indexed account, uint256 amount, uint48 releaseTime);
-    /// @dev Emitted when tokens are released to a recipient after the unstaking cooldown period.
+
+    /**
+     * @dev Emitted when tokens are released to a recipient after the unstaking cooldown period.
+     * @param recipient The address receiving the released tokens.
+     * @param amount The amount of tokens released.
+     */
     event TokensReleased(address indexed recipient, uint256 amount);
-    /// @dev Emitted when rewards of an account are claimed.
+
+    /**
+     * @dev Emitted when rewards of an account are claimed.
+     * @param account The address of the account whose rewards are claimed.
+     * @param recipient The address receiving the claimed rewards.
+     * @param amount The amount of rewards claimed.
+     */
     event RewardsClaimed(address indexed account, address indexed recipient, uint256 amount);
-    /// @dev Emitted when the reward rate is updated.
+
+    /**
+     * @dev Emitted when the reward rate is updated.
+     * @param rewardRate The new reward rate in tokens per second.
+     */
     event RewardRateSet(uint256 rewardRate);
-    /// @dev Emitted when the unstake cooldown is updated.
+
+    /**
+     * @dev Emitted when the unstake cooldown is updated.
+     * @param unstakeCooldownPeriod The new unstake cooldown period in seconds.
+     */
     event UnstakeCooldownPeriodSet(uint256 unstakeCooldownPeriod);
-    /// @dev Emitted when the reward recipient of an account is updated.
+
+    /**
+     * @dev Emitted when the reward recipient of an account is updated.
+     * @param account The address of the account whose reward recipient is updated.
+     * @param recipient The new reward recipient address.
+     */
     event RewardsRecipientSet(address indexed account, address indexed recipient);
 
     /// @dev The account cannot be made eligible.
@@ -81,7 +115,17 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         _disableInitializers();
     }
 
-    /// @dev Initializes this upgradeable protocol staking contract.
+    /**
+     * @dev Initializes this upgradeable protocol staking contract.
+     * @param name The name of the ERC20 token representing staked tokens.
+     * @param symbol The symbol of the ERC20 token representing staked tokens.
+     * @param version The version string for EIP712 domain separator.
+     * @param stakingToken_ The address of the token used for staking and rewards.
+     * @param governor The address granted the default admin role.
+     * @param manager The address granted the manager role.
+     * @param initialUnstakeCooldownPeriod The initial unstake cooldown period in seconds.
+     * @param initialRewardRate The initial reward rate in tokens per second.
+     */
     function initialize(
         string memory name,
         string memory symbol,
@@ -91,7 +135,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         address manager,
         uint48 initialUnstakeCooldownPeriod,
         uint256 initialRewardRate
-    ) public initializer {
+    ) public virtual initializer {
         __AccessControlDefaultAdminRules_init(0, governor);
         _grantRole(MANAGER_ROLE, manager);
         _setRoleAdmin(ELIGIBLE_ACCOUNT_ROLE, MANAGER_ROLE);
@@ -106,7 +150,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @dev Stake `amount` tokens from `msg.sender`.
      * @param amount The amount of tokens to stake.
      */
-    function stake(uint256 amount) public {
+    function stake(uint256 amount) public virtual {
         _mint(msg.sender, amount);
         IERC20(stakingToken()).safeTransferFrom(msg.sender, address(this), amount);
 
@@ -124,7 +168,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @param amount The amount of tokens to unstake.
      * @return releaseTime The timestamp when the unstaked tokens can be released.
      */
-    function unstake(uint256 amount) public returns (uint48) {
+    function unstake(uint256 amount) public virtual returns (uint48) {
         _burn(msg.sender, amount);
 
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
@@ -132,7 +176,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
             ._unstakeRequests[msg.sender]
             .latestCheckpoint();
         uint48 releaseTime = SafeCast.toUint48(Math.max(Time.timestamp() + $._unstakeCooldownPeriod, lastReleaseTime));
-        $._unstakeRequests[msg.sender].push(releaseTime, uint208(totalRequestedToWithdraw + amount));
+        $._unstakeRequests[msg.sender].push(releaseTime, SafeCast.toUint208(totalRequestedToWithdraw + amount));
 
         emit TokensUnstaked(msg.sender, amount, releaseTime);
         return releaseTime;
@@ -157,7 +201,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @dev Claim staking rewards for `account`. Can be called by anyone.
      * @param account The account to claim rewards for.
      */
-    function claimRewards(address account) public {
+    function claimRewards(address account) public virtual {
         uint256 rewards = earned(account);
         if (rewards > 0) {
             _getProtocolStakingStorage()._paid[account] += SafeCast.toInt256(rewards);
@@ -171,7 +215,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @dev Sets the reward rate in tokens per second. Only callable by `MANAGER_ROLE` role.
      * @param rewardRate_ The new reward rate in tokens per second.
      */
-    function setRewardRate(uint256 rewardRate_) public onlyRole(MANAGER_ROLE) {
+    function setRewardRate(uint256 rewardRate_) public virtual onlyRole(MANAGER_ROLE) {
         _setRewardRate(rewardRate_);
     }
 
@@ -181,7 +225,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * `ELIGIBLE_ACCOUNT_ROLE`. By default this is `MANAGER_ROLE`.
      * @param account The account to grant the `ELIGIBLE_ACCOUNT_ROLE` role to.
      */
-    function addEligibleAccount(address account) public {
+    function addEligibleAccount(address account) public virtual {
         grantRole(ELIGIBLE_ACCOUNT_ROLE, account);
     }
 
@@ -191,7 +235,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * `ELIGIBLE_ACCOUNT_ROLE`. By default this is `MANAGER_ROLE`.
      * @param account The account to revoke the `ELIGIBLE_ACCOUNT_ROLE` role from.
      */
-    function removeEligibleAccount(address account) public {
+    function removeEligibleAccount(address account) public virtual {
         revokeRole(ELIGIBLE_ACCOUNT_ROLE, account);
     }
 
@@ -200,7 +244,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * by `MANAGER_ROLE` role. See {unstake} for important notes regarding the cooldown period.
      * @param unstakeCooldownPeriod_ The new unstake cooldown period.
      */
-    function setUnstakeCooldownPeriod(uint48 unstakeCooldownPeriod_) public onlyRole(MANAGER_ROLE) {
+    function setUnstakeCooldownPeriod(uint48 unstakeCooldownPeriod_) public virtual onlyRole(MANAGER_ROLE) {
         _setUnstakeCooldownPeriod(unstakeCooldownPeriod_);
     }
 
@@ -210,7 +254,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @param recipient The recipient that will receive rewards on behalf of `msg.sender` for all future  {claimRewards} calls.
      * A value of `address(0)` indicates that rewards should be sent to `msg.sender`.
      */
-    function setRewardsRecipient(address recipient) public {
+    function setRewardsRecipient(address recipient) public virtual {
         _getProtocolStakingStorage()._rewardsRecipient[msg.sender] = recipient;
 
         emit RewardsRecipientSet(msg.sender, recipient);
@@ -221,7 +265,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @param account The account to check rewards for.
      * @return The earned amount.
      */
-    function earned(address account) public view returns (uint256) {
+    function earned(address account) public view virtual returns (uint256) {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
         uint256 stakedWeight = isEligibleAccount(account) ? weight(balanceOf(account)) : 0;
         // if stakedWeight == 0, there is a risk of totalStakedWeight == 0. To avoid div by 0 just return 0
@@ -230,8 +274,11 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         return SafeCast.toUint256(SignedMath.max(0, SafeCast.toInt256(allocation) - $._paid[account]));
     }
 
-    /// @dev Returns the staking token which is used for staking and rewards.
-    function stakingToken() public view returns (address) {
+    /**
+     * @dev Returns the staking token which is used for staking and rewards.
+     * @return The address of the staking token.
+     */
+    function stakingToken() public view virtual returns (address) {
         return _getProtocolStakingStorage()._stakingToken;
     }
 
@@ -240,17 +287,23 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @param amount The amount being weighted.
      * @return The staking weight.
      */
-    function weight(uint256 amount) public pure returns (uint256) {
+    function weight(uint256 amount) public pure virtual returns (uint256) {
         return Math.sqrt(amount);
     }
 
-    /// @dev Returns the current total staked weight.
-    function totalStakedWeight() public view returns (uint256) {
+    /**
+     * @dev Returns the current total staked weight.
+     * @return The total staked weight of all eligible accounts.
+     */
+    function totalStakedWeight() public view virtual returns (uint256) {
         return _getProtocolStakingStorage()._totalEligibleStakedWeight;
     }
 
-    /// @dev Returns the current unstake cooldown period in seconds.
-    function unstakeCooldownPeriod() public view returns (uint256) {
+    /**
+     * @dev Returns the current unstake cooldown period in seconds.
+     * @return The unstake cooldown period in seconds.
+     */
+    function unstakeCooldownPeriod() public view virtual returns (uint256) {
         return _getProtocolStakingStorage()._unstakeCooldownPeriod;
     }
 
@@ -269,7 +322,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @dev Gets the current protocol reward rate in tokens distributed per second.
      * @return The reward rate.
      */
-    function rewardRate() public view returns (uint256) {
+    function rewardRate() public view virtual returns (uint256) {
         return _getProtocolStakingStorage()._rewardRate;
     }
 
@@ -278,7 +331,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @param account The account that earned rewards.
      * @return The rewards recipient.
      */
-    function rewardsRecipient(address account) public view returns (address) {
+    function rewardsRecipient(address account) public view virtual returns (address) {
         address storedRewardsRecipient = _getProtocolStakingStorage()._rewardsRecipient[account];
         return storedRewardsRecipient == address(0) ? account : storedRewardsRecipient;
     }
@@ -288,11 +341,11 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @param account The account being checked for eligibility.
      * @return True if eligible.
      */
-    function isEligibleAccount(address account) public view returns (bool) {
+    function isEligibleAccount(address account) public view virtual returns (bool) {
         return hasRole(ELIGIBLE_ACCOUNT_ROLE, account);
     }
 
-    function _grantRole(bytes32 role, address account) internal override returns (bool) {
+    function _grantRole(bytes32 role, address account) internal virtual override returns (bool) {
         bool success = super._grantRole(role, account);
         if (role == ELIGIBLE_ACCOUNT_ROLE && success) {
             require(account != address(0), InvalidEligibleAccount(account));
@@ -301,7 +354,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         return success;
     }
 
-    function _revokeRole(bytes32 role, address account) internal override returns (bool) {
+    function _revokeRole(bytes32 role, address account) internal virtual override returns (bool) {
         bool success = super._revokeRole(role, account);
         if (role == ELIGIBLE_ACCOUNT_ROLE && success) {
             _updateRewards(account, weight(balanceOf(account)), 0);
@@ -309,7 +362,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         return success;
     }
 
-    function _setUnstakeCooldownPeriod(uint48 unstakeCooldownPeriod_) internal {
+    function _setUnstakeCooldownPeriod(uint48 unstakeCooldownPeriod_) internal virtual {
         require(unstakeCooldownPeriod_ != 0 && unstakeCooldownPeriod_ <= 365 days, InvalidUnstakeCooldownPeriod());
         _getProtocolStakingStorage()._unstakeCooldownPeriod = unstakeCooldownPeriod_;
 
@@ -320,7 +373,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @dev Sets the reward rate in tokens per second.
      * @param rewardRate_ The new reward rate in tokens per second.
      */
-    function _setRewardRate(uint256 rewardRate_) internal {
+    function _setRewardRate(uint256 rewardRate_) internal virtual {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
         $._lastUpdateReward = _historicalReward();
         $._lastUpdateTimestamp = Time.timestamp();
@@ -329,7 +382,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         emit RewardRateSet(rewardRate_);
     }
 
-    function _updateRewards(address user, uint256 weightBefore, uint256 weightAfter) internal {
+    function _updateRewards(address user, uint256 weightBefore, uint256 weightAfter) internal virtual {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
         uint256 oldTotalWeight = $._totalEligibleStakedWeight;
         $._totalEligibleStakedWeight = oldTotalWeight - weightBefore + weightAfter;
@@ -351,7 +404,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         }
     }
 
-    function _update(address from, address to, uint256 value) internal override {
+    function _update(address from, address to, uint256 value) internal virtual override {
         // Disable Transfers
         require(from == address(0) || to == address(0), TransferDisabled());
         if (isEligibleAccount(from)) {
@@ -367,21 +420,21 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         super._update(from, to, value);
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-    function _historicalReward() internal view returns (uint256) {
+    function _historicalReward() internal view virtual returns (uint256) {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
         return $._lastUpdateReward + (Time.timestamp() - $._lastUpdateTimestamp) * $._rewardRate;
     }
 
-    function _allocation(uint256 share, uint256 total) private view returns (uint256) {
+    function _allocation(uint256 share, uint256 total) internal view virtual returns (uint256) {
         return
             SafeCast
                 .toUint256(SafeCast.toInt256(_historicalReward()) + _getProtocolStakingStorage()._totalVirtualPaid)
                 .mulDiv(share, total);
     }
 
-    function _getProtocolStakingStorage() private pure returns (ProtocolStakingStorage storage $) {
+    function _getProtocolStakingStorage() internal pure returns (ProtocolStakingStorage storage $) {
         assembly {
             $.slot := PROTOCOL_STAKING_STORAGE_LOCATION
         }

@@ -21,5 +21,6 @@ paths:
     ignore:
       - SC2001 # https://www.shellcheck.net/wiki/SC2129
       - 'property "result" is not defined in object type.*'
-      - '".*" section is alias node but mapping node is expected'
-      - 'secret ".*" is required by ".*" reusable workflow.*'
+  .github/workflows/gateway-contracts-upgrade-tests.yml:
+    ignore:
+      - 'constant expression "false" in condition' # https://github.com/zama-ai/fhevm-internal/issues/379

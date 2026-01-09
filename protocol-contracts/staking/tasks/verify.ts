@@ -59,31 +59,47 @@ task('task:verifyAllProtocolStakingContracts').setAction(async function (_, hre)
   }
 });
 
-// Verify a operator staking contract
+// Verify a single operator staking contract by proxy address
 // Example usage:
-// npx hardhat task:verifyOperatorStaking --network testnet
-task('task:verifyOperatorStaking').setAction(async function (_, hre) {
-  const { run, upgrades } = hre;
+// npx hardhat task:verifyOperatorStaking --proxyAddress 0x1234567890123456789012345678901234567890 --network testnet
+task('task:verifyOperatorStaking')
+  .addParam('proxyAddress', 'The address of the operator staking proxy contract to verify', '', types.string)
+  .setAction(async function ({ proxyAddress }, hre) {
+    const { run, upgrades } = hre;
 
-  // Get the first operator staking proxy address
-  // Since all operator staking contracts share the same implementation, we only have to
-  // verify one of them
-  const operatorStakingProxyAddress = (await getAllOperatorStakingAddresses(hre))[0];
+    // Get the implementation address
+    const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
 
-  // Get the implementation address
-  const implementationAddress = await upgrades.erc1967.getImplementationAddress(operatorStakingProxyAddress);
+    console.log(`Verifying operator staking proxy contract at ${proxyAddress}...\n`);
+    await run('verify:verify', {
+      address: proxyAddress,
+      constructorArguments: [],
+    });
 
-  console.log(`Verifying operator staking proxy contract at ${operatorStakingProxyAddress}...\n`);
-  await run('verify:verify', {
-    address: operatorStakingProxyAddress,
-    constructorArguments: [],
+    console.log(`Verifying operator staking implementation contract at ${implementationAddress}...\n`);
+    await run('verify:verify', {
+      address: implementationAddress,
+      constructorArguments: [],
+    });
   });
 
-  console.log(`Verifying operator staking implementation contract at ${implementationAddress}...\n`);
-  await run('verify:verify', {
-    address: implementationAddress,
-    constructorArguments: [],
-  });
+// Verify all operator staking contracts (proxies and implementations)
+// Since all operator staking contracts share the same implementation, we normally only have to
+// verify one of them. However, since they are proxied, verifying all of them has the benefit of linking
+// their proxies with their implementations on Etherscan.
+// Example usage:
+// npx hardhat task:verifyAllOperatorStakingContracts --network testnet
+task('task:verifyAllOperatorStakingContracts').setAction(async function (_, hre) {
+  // Get all operator staking proxy addresses
+  const operatorStakingProxyAddresses = await getAllOperatorStakingAddresses(hre);
+
+  for (const proxyAddress of operatorStakingProxyAddresses) {
+    try {
+      await hre.run('task:verifyOperatorStaking', { proxyAddress });
+    } catch (error) {
+      console.error('An error occurred:', error);
+    }
+  }
 });
 
 // Verify a operator rewarder contract

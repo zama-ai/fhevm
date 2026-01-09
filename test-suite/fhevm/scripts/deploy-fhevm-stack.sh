@@ -25,17 +25,76 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Argument Parsing
 FORCE_BUILD=false
+LOCAL_BUILD=false
 NEW_ARGS=()
 for arg in "$@"; do
   if [[ "$arg" == "--build" ]]; then
     FORCE_BUILD=true
     log_info "Force build option detected. Services will be rebuilt."
+  elif [[ "$arg" == "--local" || "$arg" == "--dev" ]]; then
+    LOCAL_BUILD=true
+    log_info "Local optimization option detected."
   else
     NEW_ARGS+=("$arg")
   fi
 done
-# Overwrite original arguments with the filtered list (removes --build from $@)
+# Overwrite original arguments with the filtered list (removes local flags from $@)
 set -- "${NEW_ARGS[@]}"
+
+if [ "$LOCAL_BUILD" = true ]; then
+    log_info "Enabling local BuildKit cache and disabling provenance attestations."
+    export DOCKER_BUILDKIT=1
+    export COMPOSE_DOCKER_CLI_BUILD=1
+    export BUILDX_NO_DEFAULT_ATTESTATIONS=1
+    export DOCKER_BUILD_PROVENANCE=false
+    export FHEVM_CARGO_PROFILE=local
+    FHEVM_BUILDX_CACHE_DIR="${FHEVM_BUILDX_CACHE_DIR:-.buildx-cache}"
+    mkdir -p "$FHEVM_BUILDX_CACHE_DIR"
+    set_local_cache_vars() {
+        local service_name="$1"
+        local service_key
+        service_key=$(echo "${service_name//-/_}" | tr '[:lower:]' '[:upper:]')
+        local cache_dir="${FHEVM_BUILDX_CACHE_DIR}/${service_name}"
+        mkdir -p "$cache_dir"
+        export "FHEVM_CACHE_FROM_${service_key}=type=local,src=${cache_dir}"
+        export "FHEVM_CACHE_TO_${service_key}=type=local,dest=${cache_dir},mode=max"
+    }
+    # Unified coprocessor workspace cache (all services share one cache since they
+    # are built from a single Dockerfile.workspace with multi-stage targets)
+    coprocessor_cache_dir="${FHEVM_BUILDX_CACHE_DIR}/coprocessor"
+    mkdir -p "$coprocessor_cache_dir"
+    export "FHEVM_CACHE_FROM_COPROCESSOR=type=local,src=${coprocessor_cache_dir}"
+    export "FHEVM_CACHE_TO_COPROCESSOR=type=local,dest=${coprocessor_cache_dir},mode=max"
+
+    # Unified kms-connector workspace cache (gw-listener, kms-worker, tx-sender
+    # share Dockerfile.workspace; db-migration uses separate Dockerfile)
+    kms_connector_cache_dir="${FHEVM_BUILDX_CACHE_DIR}/kms-connector"
+    mkdir -p "$kms_connector_cache_dir"
+    export "FHEVM_CACHE_FROM_KMS_CONNECTOR=type=local,src=${kms_connector_cache_dir}"
+    export "FHEVM_CACHE_TO_KMS_CONNECTOR=type=local,dest=${kms_connector_cache_dir},mode=max"
+
+    # Other services still use individual caches
+    LOCAL_CACHE_SERVICES=(
+        gateway-deploy-mocked-zama-oft
+        gateway-sc-add-network
+        gateway-sc-add-pausers
+        gateway-sc-deploy
+        gateway-sc-pause
+        gateway-sc-trigger-crsgen
+        gateway-sc-trigger-keygen
+        gateway-sc-unpause
+        gateway-set-relayer-mocked-payment
+        host-sc-add-pausers
+        host-sc-deploy
+        host-sc-pause
+        host-sc-unpause
+        kms-connector-db-migration
+        test-suite-e2e-debug
+    )
+    for service_name in "${LOCAL_CACHE_SERVICES[@]}"; do
+        set_local_cache_vars "$service_name"
+    done
+fi
 
 # Function to check if services are ready based on expected state
 wait_for_service() {
@@ -267,14 +326,14 @@ log_info "FHEVM Contracts:"
 log_info "  gateway-contracts:${GATEWAY_VERSION}${BUILD_TAG}"
 log_info "  host-contracts:${HOST_VERSION}${BUILD_TAG}"
 log_info "FHEVM Coprocessor Services:"
-log_info "  coprocessor/db-migration:${DB_MIGRATION_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/gw-listener:${GW_LISTENER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/host-listener:${HOST_LISTENER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/poller:${HOST_LISTENER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/tx-sender:${TX_SENDER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/sns-worker:${SNS_WORKER_VERSION}${BUILD_TAG}"
-log_info "  coprocessor/zkproof-worker:${ZKPROOF_WORKER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/db-migration:${COPROCESSOR_DB_MIGRATION_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/gw-listener:${COPROCESSOR_GW_LISTENER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/host-listener:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/poller:${COPROCESSOR_HOST_LISTENER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/tx-sender:${COPROCESSOR_TX_SENDER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/tfhe-worker:${COPROCESSOR_TFHE_WORKER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/sns-worker:${COPROCESSOR_SNS_WORKER_VERSION}${BUILD_TAG}"
+log_info "  coprocessor/zkproof-worker:${COPROCESSOR_ZKPROOF_WORKER_VERSION}${BUILD_TAG}"
 log_info "FHEVM KMS Connector Services:"
 log_info "  kms-connector/db-migration:${CONNECTOR_DB_MIGRATION_VERSION}${BUILD_TAG}"
 log_info "  kms-connector/gw-listener:${CONNECTOR_GW_LISTENER_VERSION}${BUILD_TAG}"

@@ -1,11 +1,12 @@
 use crate::config::{Error, Result};
-use alloy::primitives::Address;
-use serde::{Deserialize, Serialize};
-use std::{fmt::Display, str::FromStr};
+use alloy::primitives::{Address, address};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::str::FromStr;
 use tracing::{info, warn};
 
 /// Struct containing the information required to interact with a Gateway's contract.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(debug_assertions, derive(Serialize))]
 pub struct ContractConfig {
     pub contract_name: String,
     pub address: Address,
@@ -13,9 +14,47 @@ pub struct ContractConfig {
     pub domain_version: String,
 }
 
+/// Struct used to deserialize the Gateway's contracts information from the configuration file.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+struct RawContractConfig {
+    pub address: String,
+    pub domain_name: Option<String>,
+    pub domain_version: Option<String>,
+}
+
+pub fn deserialize_decryption_contract_config<'de, D>(
+    deserializer: D,
+) -> std::result::Result<ContractConfig, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    ContractConfig::parse("Decryption", Deserialize::deserialize(deserializer)?)
+        .map_err(|e| serde::de::Error::custom(e.to_string()))
+}
+
+pub fn deserialize_gateway_config_contract_config<'de, D>(
+    deserializer: D,
+) -> std::result::Result<ContractConfig, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    ContractConfig::parse("GatewayConfig", Deserialize::deserialize(deserializer)?)
+        .map_err(|e| serde::de::Error::custom(e.to_string()))
+}
+
+pub fn deserialize_kms_generation_contract_config<'de, D>(
+    deserializer: D,
+) -> std::result::Result<ContractConfig, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    ContractConfig::parse("KMSGeneration", Deserialize::deserialize(deserializer)?)
+        .map_err(|e| serde::de::Error::custom(e.to_string()))
+}
+
 impl ContractConfig {
     /// Parses the `RawContractConfig` data from the configuration file.
-    pub fn parse(contract_name: &str, raw_config: RawContractConfig) -> Result<Self> {
+    fn parse(contract_name: &str, raw_config: RawContractConfig) -> Result<Self> {
         if raw_config.address.is_empty() {
             return Err(Error::EmptyField(format!("{contract_name} address")));
         }
@@ -60,30 +99,29 @@ impl ContractConfig {
     }
 }
 
-impl Display for ContractConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
-            f,
-            "{} contract address: {}",
-            self.contract_name, self.address
-        )?;
-        writeln!(
-            f,
-            "{} Domain Name: {}",
-            self.contract_name, self.domain_name
-        )?;
-        write!(
-            f,
-            "{} Domain Version: {}",
-            self.contract_name, self.domain_version,
-        )
+pub fn default_decryption_contract_config() -> ContractConfig {
+    ContractConfig {
+        contract_name: "Decryption".to_string(),
+        address: address!("0x0000000000000000000000000000000000000000"),
+        domain_name: "Decryption".to_string(),
+        domain_version: "1".to_string(),
     }
 }
 
-/// Struct used to deserialize the Gateway's contracts information from the configuration file.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct RawContractConfig {
-    pub address: String,
-    pub domain_name: Option<String>,
-    pub domain_version: Option<String>,
+pub fn default_gateway_config_contract_config() -> ContractConfig {
+    ContractConfig {
+        contract_name: "GatewayConfig".to_string(),
+        address: address!("0x0000000000000000000000000000000000000000"),
+        domain_name: "GatewayConfig".to_string(),
+        domain_version: "1".to_string(),
+    }
+}
+
+pub fn default_kms_generation_contract_config() -> ContractConfig {
+    ContractConfig {
+        contract_name: "KMSGeneration".to_string(),
+        address: address!("0x0000000000000000000000000000000000000000"),
+        domain_name: "KMSGeneration".to_string(),
+        domain_version: "1".to_string(),
+    }
 }

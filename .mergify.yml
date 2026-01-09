@@ -1,7 +1,7 @@
 queue_rules:
   - name: main
     batch_size: 3
-    batch_max_wait_time: 1m
+    batch_max_wait_time: 1h
     checks_timeout: 12h
     merge_method: squash
     update_method: rebase
@@ -10,14 +10,8 @@ queue_rules:
     queue_conditions:
       - base = main
       - label!=do-not-merge
-pull_request_rules:
-  - name: autoqueue-to-main
-    description: Queue a PR for main when it matches the queue conditions
-    conditions:
-      - label=ready-to-merge
-    actions:
-      queue:
 
+pull_request_rules:
   - name: merge-queued-label
     description: Toggle the `merge-queued` label when a pull request is queued
     conditions:
@@ -27,3 +21,9 @@ pull_request_rules:
         toggle:
           - merge-queued
 
+  - name: merge hotfix immediately
+    conditions:
+      - label = hotfix
+      - "#approved-reviews-by >= 1"
+    actions:
+      merge:

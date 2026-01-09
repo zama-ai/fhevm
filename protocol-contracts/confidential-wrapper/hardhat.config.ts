@@ -1,108 +1,115 @@
-import "@openzeppelin/hardhat-upgrades";
-import "@fhevm/hardhat-plugin";
-import "@nomicfoundation/hardhat-chai-matchers";
-import "@nomicfoundation/hardhat-ethers";
-import "@nomicfoundation/hardhat-verify";
-import "@typechain/hardhat";
-import "hardhat-deploy";
-import "hardhat-gas-reporter";
-import type { HardhatUserConfig } from "hardhat/config";
-import { vars } from "hardhat/config";
-import "solidity-coverage";
+import '@nomicfoundation/hardhat-chai-matchers';
+import '@nomicfoundation/hardhat-ethers';
+import '@nomicfoundation/hardhat-verify';
+import '@openzeppelin/hardhat-upgrades';
+import '@typechain/hardhat';
+import dotenv from 'dotenv';
+import { existsSync } from 'fs';
+import 'hardhat-deploy';
+import 'hardhat-gas-reporter';
+import 'hardhat-ignore-warnings';
+import '@fhevm/hardhat-plugin';
+import { task } from 'hardhat/config';
+import { HardhatUserConfig, HttpNetworkAccountsUserConfig } from 'hardhat/types';
+import { resolve } from 'path';
+import 'solidity-coverage';
+import 'hardhat-exposed';
 
-import "./tasks/accounts";
-import "./tasks/FHECounter";
+import './tasks/accounts';
+import './tasks/deploy';
+import './tasks/verify';
 
-// Run 'npx hardhat vars setup' to see the list of variables that need to be set
+// Get the environment configuration from .env file
+//
+// To make use of automatic environment setup:
+// - Duplicate .env.example file and name it .env
+// - Fill in the environment variables
+dotenv.config();
 
-const MNEMONIC: string = vars.get("MNEMONIC", "test test test test test test test test test test test junk");
-const INFURA_API_KEY: string = vars.get("INFURA_API_KEY", "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz");
+// Set your preferred authentication method
+//
+// If you prefer using a mnemonic, set a MNEMONIC environment variable
+// to a valid mnemonic
+const MNEMONIC = process.env.MNEMONIC;
+
+// If you prefer to be authenticated using a private key, set a PRIVATE_KEY environment variable
+const PRIVATE_KEY = process.env.PRIVATE_KEY;
+
+const accounts: HttpNetworkAccountsUserConfig | undefined = MNEMONIC
+  ? { mnemonic: MNEMONIC }
+  : PRIVATE_KEY
+    ? [PRIVATE_KEY]
+    : undefined;
+
+if (accounts == null) {
+  console.warn(
+    'Could not find MNEMONIC or PRIVATE_KEY environment variables. It will not be possible to execute transactions in your example.',
+  );
+}
+
+// Run the test suite with environment variables from `.env.example`
+task('test', 'Runs the test suite with environment variables from .env.example').setAction(async (_, hre, runSuper) => {
+  // Load `.env.example`
+  const envExamplePath = resolve(__dirname, '.env.example');
+  if (existsSync(envExamplePath)) {
+    dotenv.config({ path: envExamplePath, override: true });
+  }
+  await runSuper();
+});
 
 const config: HardhatUserConfig = {
-  defaultNetwork: "hardhat",
-  namedAccounts: {
-    deployer: 0,
+  solidity: {
+    version: '0.8.27',
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 800,
+      },
+      evmVersion: 'cancun',
+    },
   },
-  etherscan: {
-    apiKey: {
-      sepolia: vars.get("ETHERSCAN_API_KEY", ""),
+  networks: {
+    // ChainID must be specified in order to be able to verify contracts using the fhevm hardhat plugin
+    mainnet: {
+      url: process.env.MAINNET_RPC_URL || '',
+      accounts,
+      chainId: 1,
+    },
+    // ChainID must be specified in order to be able to verify contracts using the fhevm hardhat plugin
+    testnet: {
+      url: process.env.SEPOLIA_RPC_URL || '',
+      accounts,
+      chainId: 11155111,
+    },
+    hardhat: {
+      // Need this to avoid deployment issues in test
+      saveDeployments: false,
+    },
+  },
+  namedAccounts: {
+    deployer: {
+      default: 0, // wallet address of index[0], of the mnemonic in .env
+    },
+    alice: {
+      default: 1, // wallet address of index[1], of the mnemonic in .env
     },
   },
   gasReporter: {
-    currency: "USD",
-    enabled: process.env.REPORT_GAS ? true : false,
-    excludeContracts: [],
-  },
-  networks: {
-    hardhat: {
-      accounts: {
-        mnemonic: MNEMONIC,
-      },
-      chainId: 31337,
-    },
-    anvil: {
-      accounts: {
-        mnemonic: MNEMONIC,
-        path: "m/44'/60'/0'/0/",
-        count: 10,
-      },
-      chainId: 31337,
-      url: "http://localhost:8545",
-    },
-    sepolia: {
-      accounts: {
-        mnemonic: MNEMONIC,
-        path: "m/44'/60'/0'/0/",
-        count: 10,
-      },
-      chainId: 11155111,
-      url: `https://sepolia.infura.io/v3/${INFURA_API_KEY}`,
-    },
-  },
-  paths: {
-    artifacts: "./artifacts",
-    cache: "./cache",
-    sources: "./contracts",
-    tests: "./test",
-  },
-  solidity: {
-    compilers: [
-      {
-        version: "0.8.27",
-        settings: {
-          metadata: {
-            // Not including the metadata hash
-            // https://github.com/paulrberg/hardhat-template/issues/31
-            bytecodeHash: "none",
-          },
-          // Disable the optimizer when debugging
-          // https://hardhat.org/hardhat-network/#solidity-optimizer-support
-          optimizer: {
-            enabled: true,
-            runs: 800,
-          },
-          evmVersion: "cancun",
-        },
-      },
-      // Used for Uniswap v2-periphery contracts used in mock contracts
-      {
-        version: "0.6.6",
-        settings: {
-          optimizer: { enabled: true, runs: 800 },
-        },
-      },
-      // Used for Uniswap v2-core contracts used in mock contracts
-      {
-        version: "0.5.16",
-        settings: {
-          optimizer: { enabled: true, runs: 800 },
-        },
-      },
-    ]
+    currency: 'USD',
+    enabled: process.env.REPORT_GAS === 'true',
+    showMethodSig: true,
+    includeBytecodeInJSON: true,
   },
   typechain: {
-    outDir: "types",
-    target: "ethers-v6",
+    outDir: 'types',
+    target: 'ethers-v6',
+  },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY!,
+  },
+  exposed: {
+    imports: true,
+    initializers: true,
   },
 };
 

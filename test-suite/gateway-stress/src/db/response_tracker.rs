@@ -13,6 +13,8 @@ const RESPONSE_POLLING: Duration = Duration::from_millis(500);
 
 pub struct ResponseTracker {
     name: String,
+    public_decrypt_ct_handles_batch_size: usize,
+    user_decrypt_ct_handles_batch_size: usize,
     request_receiver: UnboundedReceiver<Vec<DecryptionRequestDbMetadata>>,
     db_pool: Pool<Postgres>,
 }
@@ -20,11 +22,15 @@ pub struct ResponseTracker {
 impl ResponseTracker {
     pub fn new(
         name: String,
+        public_decrypt_ct_handles_batch_size: usize,
+        user_decrypt_ct_handles_batch_size: usize,
         request_receiver: UnboundedReceiver<Vec<DecryptionRequestDbMetadata>>,
         db_pool: Pool<Postgres>,
     ) -> Self {
         Self {
             name,
+            public_decrypt_ct_handles_batch_size,
+            user_decrypt_ct_handles_batch_size,
             request_receiver,
             db_pool,
         }
@@ -44,6 +50,7 @@ impl ResponseTracker {
 
         let burst_start = requests.iter().map(|r| r.created_at).min().unwrap();
         let mut interval = interval(RESPONSE_POLLING);
+
         let mut ids_to_process: Vec<Vec<u8>> = requests
             .into_iter()
             .map(|r| r.id.to_le_bytes_vec())
@@ -60,10 +67,11 @@ impl ResponseTracker {
 
         let burst_end = responses.iter().map(|r| r.created_at).max().unwrap();
         let latency = (burst_end - burst_start).as_seconds_f64();
+        let decryption_number: usize = responses.iter().map(|r| r.handle_batch_size).sum();
 
         let result = BurstResult {
             latency,
-            throughput: responses.len() as f64 / latency,
+            throughput: decryption_number as f64 / latency,
         };
         debug!(
             latency = result.latency,
@@ -91,6 +99,7 @@ impl ResponseTracker {
             responses.push(DecryptionResponseDbMetadata {
                 id: U256::from_le_slice(&row.decryption_id),
                 created_at: row.created_at,
+                handle_batch_size: self.public_decrypt_ct_handles_batch_size,
             });
         }
 
@@ -104,6 +113,7 @@ impl ResponseTracker {
             responses.push(DecryptionResponseDbMetadata {
                 id: U256::from_le_slice(&row.decryption_id),
                 created_at: row.created_at,
+                handle_batch_size: self.user_decrypt_ct_handles_batch_size,
             });
         }
 
