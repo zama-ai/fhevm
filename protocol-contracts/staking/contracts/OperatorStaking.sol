@@ -6,6 +6,7 @@ import {ERC1363Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC2
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {ERC4626, IERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -38,6 +39,7 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
         IERC20 _asset;
         address _rewarder;
         uint256 _totalSharesInRedemption;
+        uint8 _underlyingDecimals;
         mapping(address controller => uint256 sharesReleased) _sharesReleased;
         mapping(address controller => Checkpoints.Trace208 redeemRequests) _redeemRequests;
         mapping(address controller => mapping(address operator => bool approved)) _operator;
@@ -129,6 +131,10 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
 
         $._asset = IERC20(protocolStaking_.stakingToken());
         $._protocolStaking = protocolStaking_;
+
+        // Follow ERC4626 pattern but no need to use `_tryGetAssetDecimals` as the implementation
+        // used to deploy the asset does expose the `decimals` function.
+        $._underlyingDecimals = IERC20Metadata(asset()).decimals();
 
         IERC20(asset()).approve(address(protocolStaking_), type(uint256).max);
 
@@ -426,6 +432,16 @@ contract OperatorStaking is ERC1363Upgradeable, ReentrancyGuardTransient, UUPSUp
      */
     function isOperator(address controller, address operator) public view virtual returns (bool) {
         return _getOperatorStakingStorage()._operator[controller][operator];
+    }
+
+    /**
+     * @notice Returns the decimals of the shares following the ERC4626 pattern.
+     * @dev The decimals of the shares is the sum of the decimals of the underlying asset and the
+     * decimal offset.
+     * @return The decimals of the shares following the ERC4626 pattern.
+     */
+    function decimals() public view virtual override returns (uint8) {
+        return _getOperatorStakingStorage()._underlyingDecimals + _decimalsOffset();
     }
 
     function _doTransferOut(address to, uint256 amount) internal virtual {
