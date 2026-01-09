@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { ContractFactory, EventLog, Wallet, ZeroAddress } from "ethers";
 import hre from "hardhat";
 
-import { Decryption, EmptyUUPSProxyGatewayConfig, GatewayConfig, InputVerification } from "../typechain-types";
+import { EmptyUUPSProxyGatewayConfig, GatewayConfig } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
 import {
@@ -101,6 +101,7 @@ describe("GatewayConfig", function () {
         signerAddress: kmsSigners[i].address,
         ipAddress: kmsNodeIps[i],
         storageUrl: kmsNodeStorageUrls[i],
+        apiUrl: `http://kms-api-${i}.example.com`,
       });
     }
 
@@ -111,6 +112,7 @@ describe("GatewayConfig", function () {
         txSenderAddress: coprocessorTxSenders[i].address,
         signerAddress: coprocessorSigners[i].address,
         s3BucketUrl: coprocessorS3Buckets[i],
+        apiUrl: `http://coprocessor-api-${i}.example.com`,
       });
     }
 
@@ -547,6 +549,7 @@ describe("GatewayConfig", function () {
             signerAddress: newSignerAddress,
             ipAddress: "127.0.0.1000",
             storageUrl: "s3://kms-bucket-1000",
+            apiUrl: "http://kms-api-1000.example.com",
           };
           const newKmsNodes: KmsNodeStruct[] = [newKmsNode];
           const newMpcThreshold = 0;
@@ -593,6 +596,7 @@ describe("GatewayConfig", function () {
             signerAddress: ZeroAddress,
             ipAddress: "",
             storageUrl: "",
+            apiUrl: "",
           };
 
           // Check that old KMS nodes have been removed
@@ -751,6 +755,7 @@ describe("GatewayConfig", function () {
             txSenderAddress: newTxSenderAddress,
             signerAddress: newSignerAddress,
             s3BucketUrl: "s3://coprocessor-bucket-1000",
+            apiUrl: "http://coprocessor-api-1000.example.com",
           };
           const newCoprocessors: CoprocessorStruct[] = [newCoprocessor];
           const newCoprocessorThreshold = 1;
@@ -776,6 +781,7 @@ describe("GatewayConfig", function () {
             txSenderAddress: ZeroAddress,
             signerAddress: ZeroAddress,
             s3BucketUrl: "",
+            apiUrl: "",
           };
 
           // Check that old coprocessors have been removed
@@ -1319,27 +1325,9 @@ describe("GatewayConfig", function () {
     });
 
     describe("Pause all gateway contracts", function () {
-      let decryption: Decryption;
-      let inputVerification: InputVerification;
-
-      before(async function () {
-        const fixtureData = await loadFixture(loadTestVariablesFixture);
-        decryption = fixtureData.decryption;
-        inputVerification = fixtureData.inputVerification;
-      });
-
       it("Should pause all the Gateway contracts with the pauser", async function () {
-        // Check that the contracts are not paused
-        expect(await decryption.paused()).to.be.false;
-        expect(await inputVerification.paused()).to.be.false;
-
         const txResponse = await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
-
         await expect(txResponse).to.emit(gatewayConfig, "PauseAllGatewayContracts");
-
-        // Check that the pausable contracts are paused
-        expect(await decryption.paused()).to.be.true;
-        expect(await inputVerification.paused()).to.be.true;
       });
 
       it("Should revert on pause all gateway contracts because the sender is not the pauser", async function () {
@@ -1350,17 +1338,10 @@ describe("GatewayConfig", function () {
       });
 
       it("Should unpause all the gateway contracts with the owner", async function () {
-        // Pause the contract with the pauser address
         await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
 
-        // Unpause the contract with the owner address
         const txResponse = await gatewayConfig.connect(owner).unpauseAllGatewayContracts();
-
         await expect(txResponse).to.emit(gatewayConfig, "UnpauseAllGatewayContracts");
-
-        // Check that the contracts are not paused anymore
-        expect(await decryption.paused()).to.be.false;
-        expect(await inputVerification.paused()).to.be.false;
       });
 
       it("Should revert on unpause all gateway contracts because the sender is not the owner", async function () {

@@ -3,20 +3,12 @@ import { Wallet } from "ethers";
 import { ethers, upgrades } from "hardhat";
 
 import {
-  CiphertextCommitsV2Example__factory,
-  CiphertextCommits__factory,
-  DecryptionV2Example__factory,
-  Decryption__factory,
   EmptyUUPSProxyGatewayConfig__factory,
   EmptyUUPSProxy__factory,
   GatewayConfigV2Example__factory,
   GatewayConfig__factory,
-  InputVerificationV2Example__factory,
-  InputVerification__factory,
   KMSGenerationV2Example__factory,
   KMSGeneration__factory,
-  MultichainACLV2Example__factory,
-  MultichainACL__factory,
   ProtocolPaymentV2Example__factory,
   ProtocolPayment__factory,
 } from "../../typechain-types";
@@ -26,18 +18,10 @@ describe("Upgrades", function () {
   let owner: Wallet;
   let regularEmptyUUPSFactory: EmptyUUPSProxy__factory;
   let gatewayConfigEmptyUUPSFactory: EmptyUUPSProxyGatewayConfig__factory;
-  let ciphertextCommitsFactoryV1: CiphertextCommits__factory;
-  let ciphertextCommitsFactoryV2: CiphertextCommitsV2Example__factory;
-  let decryptionFactoryV1: Decryption__factory;
-  let decryptionFactoryV2: DecryptionV2Example__factory;
   let gatewayConfigFactoryV1: GatewayConfig__factory;
   let gatewayConfigFactoryV2: GatewayConfigV2Example__factory;
-  let inputVerificationFactoryV1: InputVerification__factory;
-  let inputVerificationFactoryV2: InputVerificationV2Example__factory;
   let kmsGenerationFactoryV1: KMSGeneration__factory;
   let kmsGenerationFactoryV2: KMSGenerationV2Example__factory;
-  let MultichainACLFactoryV1: MultichainACL__factory;
-  let MultichainACLFactoryV2: MultichainACLV2Example__factory;
   let protocolPaymentFactoryV1: ProtocolPayment__factory;
   let protocolPaymentFactoryV2: ProtocolPaymentV2Example__factory;
 
@@ -46,78 +30,14 @@ describe("Upgrades", function () {
     regularEmptyUUPSFactory = await ethers.getContractFactory("EmptyUUPSProxy", owner);
     gatewayConfigEmptyUUPSFactory = await ethers.getContractFactory("EmptyUUPSProxyGatewayConfig", owner);
 
-    ciphertextCommitsFactoryV1 = await ethers.getContractFactory("CiphertextCommits", owner);
-    ciphertextCommitsFactoryV2 = await ethers.getContractFactory("CiphertextCommitsV2Example", owner);
-
-    decryptionFactoryV1 = await ethers.getContractFactory("Decryption", owner);
-    decryptionFactoryV2 = await ethers.getContractFactory("DecryptionV2Example", owner);
-
     gatewayConfigFactoryV1 = await ethers.getContractFactory("GatewayConfig", owner);
     gatewayConfigFactoryV2 = await ethers.getContractFactory("GatewayConfigV2Example", owner);
-
-    inputVerificationFactoryV1 = await ethers.getContractFactory("InputVerification", owner);
-    inputVerificationFactoryV2 = await ethers.getContractFactory("InputVerificationV2Example", owner);
 
     kmsGenerationFactoryV1 = await ethers.getContractFactory("KMSGeneration", owner);
     kmsGenerationFactoryV2 = await ethers.getContractFactory("KMSGenerationV2Example", owner);
 
-    MultichainACLFactoryV1 = await ethers.getContractFactory("MultichainACL", owner);
-    MultichainACLFactoryV2 = await ethers.getContractFactory("MultichainACLV2Example", owner);
-
     protocolPaymentFactoryV1 = await ethers.getContractFactory("ProtocolPayment", owner);
     protocolPaymentFactoryV2 = await ethers.getContractFactory("ProtocolPaymentV2Example", owner);
-  });
-
-  it("Should deploy upgradable MultichainACL", async function () {
-    const nonceBef = await ethers.provider.getTransactionCount(owner);
-    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
-      initializer: "initialize",
-      kind: "uups",
-    });
-    const MultichainACL = await upgrades.upgradeProxy(emptyUUPS, MultichainACLFactoryV1);
-    await MultichainACL.waitForDeployment();
-    const initialVersion = await MultichainACL.getVersion();
-    const MultichainACLV2 = await upgrades.upgradeProxy(MultichainACL, MultichainACLFactoryV2);
-    await MultichainACLV2.waitForDeployment();
-    const newVersion = await MultichainACLV2.getVersion();
-    expect(newVersion).to.not.be.equal(initialVersion);
-    expect(newVersion).to.equal("MultichainACL v1000.0.0");
-
-    const multichainACLAddress = ethers.getCreateAddress({
-      from: owner.address,
-      nonce: nonceBef, // using nonce of nonceBef instead of nonceBef+1 here, since the original implementation has already been deployer during the setup phase, and hardhat-upgrades plugin is able to detect this and not redeploy twice same contract
-    });
-    expect(multichainACLAddress).to.equal(await MultichainACLV2.getAddress());
-  });
-
-  it("Should deploy upgradable CiphertextCommits", async function () {
-    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
-      initializer: "initialize",
-      kind: "uups",
-    });
-    const ciphertextCommits = await upgrades.upgradeProxy(emptyUUPS, ciphertextCommitsFactoryV1);
-    await ciphertextCommits.waitForDeployment();
-    const initialVersion = await ciphertextCommits.getVersion();
-    const ciphertextCommitsV2 = await upgrades.upgradeProxy(ciphertextCommits, ciphertextCommitsFactoryV2);
-    await ciphertextCommitsV2.waitForDeployment();
-    const newVersion = await ciphertextCommitsV2.getVersion();
-    expect(newVersion).to.not.be.equal(initialVersion);
-    expect(newVersion).to.equal("CiphertextCommits v1000.0.0");
-  });
-
-  it("Should deploy upgradable Decryption", async function () {
-    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
-      initializer: "initialize",
-      kind: "uups",
-    });
-    const decryption = await upgrades.upgradeProxy(emptyUUPS, decryptionFactoryV1);
-    await decryption.waitForDeployment();
-    const initialVersion = await decryption.getVersion();
-    const decryptionV2 = await upgrades.upgradeProxy(decryption, decryptionFactoryV2);
-    await decryptionV2.waitForDeployment();
-    const newVersion = await decryptionV2.getVersion();
-    expect(newVersion).to.not.be.equal(initialVersion);
-    expect(newVersion).to.equal("Decryption v1000.0.0");
   });
 
   it("Should deploy upgradable GatewayConfig", async function () {
@@ -148,21 +68,6 @@ describe("Upgrades", function () {
     const newVersion = await kmsGenerationV2.getVersion();
     expect(newVersion).to.not.be.equal(initialVersion);
     expect(newVersion).to.equal("KMSGeneration v1000.0.0");
-  });
-
-  it("Should deploy upgradable InputVerification", async function () {
-    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
-      initializer: "initialize",
-      kind: "uups",
-    });
-    const inputVerification = await upgrades.upgradeProxy(emptyUUPS, inputVerificationFactoryV1);
-    await inputVerification.waitForDeployment();
-    const initialVersion = await inputVerification.getVersion();
-    const inputVerificationV2 = await upgrades.upgradeProxy(inputVerification, inputVerificationFactoryV2);
-    await inputVerificationV2.waitForDeployment();
-    const newVersion = await inputVerificationV2.getVersion();
-    expect(newVersion).to.not.be.equal(initialVersion);
-    expect(newVersion).to.equal("InputVerification v1000.0.0");
   });
 
   it("Should deploy upgradable ProtocolPayment", async function () {

@@ -23,6 +23,8 @@ struct KmsNode {
     string ipAddress;
     /// @notice URL address of the KMS node' storage where ciphertexts are stored
     string storageUrl;
+    /// @notice HTTP API endpoint URL for V2 worker polling (bound to signerAddress)
+    string apiUrl;
 }
 
 /**
@@ -35,6 +37,8 @@ struct Coprocessor {
     address signerAddress;
     /// @notice URL address of the coprocessor's S3 bucket where ciphertexts are stored
     string s3BucketUrl;
+    /// @notice HTTP API endpoint URL for V2 worker polling (bound to signerAddress)
+    string apiUrl;
 }
 
 /**

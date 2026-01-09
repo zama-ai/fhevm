@@ -167,26 +167,8 @@ export async function loadTestVariablesFixture() {
   // Load the GatewayConfig contract
   const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS"));
 
-  // Load the InputVerification contract
-  const inputVerification = await hre.ethers.getContractAt(
-    "InputVerification",
-    getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS"),
-  );
-
   // Load the KMSGeneration contract
   const kmsGeneration = await hre.ethers.getContractAt("KMSGeneration", getRequiredEnvVar("KMS_GENERATION_ADDRESS"));
-
-  // Load the CiphertextCommits contract
-  const ciphertextCommits = await hre.ethers.getContractAt(
-    "CiphertextCommits",
-    getRequiredEnvVar("CIPHERTEXT_COMMITS_ADDRESS"),
-  );
-
-  // Load the MultichainACL contract
-  const multichainACL = await hre.ethers.getContractAt("MultichainACL", getRequiredEnvVar("MULTICHAIN_ACL_ADDRESS"));
-
-  // Load the Decryption contract
-  const decryption = await hre.ethers.getContractAt("Decryption", getRequiredEnvVar("DECRYPTION_ADDRESS"));
 
   // Load the PauserSet contract
   const pauserSet = await hre.ethers.getContractAt("PauserSet", getRequiredEnvVar("PAUSER_SET_ADDRESS"));
@@ -205,10 +187,6 @@ export async function loadTestVariablesFixture() {
     ...fixtureData,
     gatewayConfig,
     kmsGeneration,
-    ciphertextCommits,
-    multichainACL,
-    decryption,
-    inputVerification,
     chainIds,
     nKmsNodes,
     nCoprocessors,

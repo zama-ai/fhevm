@@ -5,9 +5,7 @@ import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/acc
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
 import { IPauserSet } from "./interfaces/IPauserSet.sol";
-import { decryptionAddress, inputVerificationAddress, pauserSetAddress } from "../addresses/GatewayAddresses.sol";
-import { Decryption } from "./Decryption.sol";
-import { InputVerification } from "./InputVerification.sol";
+import { pauserSetAddress } from "../addresses/GatewayAddresses.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { Pausable } from "./shared/Pausable.sol";
 import { ProtocolMetadata, HostChain, Coprocessor, Custodian, KmsNode } from "./shared/Structs.sol";
@@ -47,10 +45,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     uint64 private constant REINITIALIZER_VERSION = 5;
 
     /**
-     * @notice The address of the all gateway contracts
+     * @notice The address of the PauserSet contract
      */
-    Decryption private constant DECRYPTION = Decryption(decryptionAddress);
-    InputVerification private constant INPUT_VERIFICATION = InputVerification(inputVerificationAddress);
     IPauserSet private constant PAUSER_SET = IPauserSet(pauserSetAddress);
 
     /**
@@ -358,22 +354,25 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-pauseAllGatewayContracts}.
-     * Contracts that are technically pausable but do not provide any pausable functions are not
-     * paused. If at least one of the contracts is already paused, the function will revert.
+     * @dev V2: The V1 Decryption and InputVerification contracts have been removed.
+     * In V2, DecryptionRegistry should be paused via its own mechanism.
+     * This function now only emits the event for backward compatibility.
      */
     function pauseAllGatewayContracts() external virtual onlyPauser {
-        DECRYPTION.pause();
-        INPUT_VERIFICATION.pause();
+        // V2: V1 contracts (Decryption, InputVerification) removed.
+        // DecryptionRegistry pause should be handled separately if needed.
         emit PauseAllGatewayContracts();
     }
 
     /**
      * @notice See {IGatewayConfig-unpauseAllGatewayContracts}.
-     * If at least one of the contracts is not paused, the function will revert.
+     * @dev V2: The V1 Decryption and InputVerification contracts have been removed.
+     * In V2, DecryptionRegistry should be unpaused via its own mechanism.
+     * This function now only emits the event for backward compatibility.
      */
     function unpauseAllGatewayContracts() external virtual onlyOwner {
-        DECRYPTION.unpause();
-        INPUT_VERIFICATION.unpause();
+        // V2: V1 contracts (Decryption, InputVerification) removed.
+        // DecryptionRegistry unpause should be handled separately if needed.
         emit UnpauseAllGatewayContracts();
     }
 
@@ -585,6 +584,32 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
                     Strings.toString(PATCH_VERSION)
                 )
             );
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getKmsNodesWithApis}.
+     */
+    function getKmsNodesWithApis() external view virtual returns (KmsNode[] memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        uint256 length = $.kmsTxSenderAddresses.length;
+        KmsNode[] memory kmsNodes = new KmsNode[](length);
+        for (uint256 i = 0; i < length; i++) {
+            kmsNodes[i] = $.kmsNodes[$.kmsTxSenderAddresses[i]];
+        }
+        return kmsNodes;
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getCoprocessorsWithApis}.
+     */
+    function getCoprocessorsWithApis() external view virtual returns (Coprocessor[] memory) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        uint256 length = $.coprocessorTxSenderAddresses.length;
+        Coprocessor[] memory coprocessors = new Coprocessor[](length);
+        for (uint256 i = 0; i < length; i++) {
+            coprocessors[i] = $.coprocessors[$.coprocessorTxSenderAddresses[i]];
+        }
+        return coprocessors;
     }
 
     /**

@@ -496,4 +496,20 @@ interface IGatewayConfig {
      * @dev This is conventionally used for upgrade features.
      */
     function getVersion() external pure returns (string memory);
+
+    /**
+     * @notice Get the list of all KMS nodes with their API URLs.
+     * @dev V2: This function is used by relayers to discover worker endpoints.
+     * Workers with empty apiUrl should be skipped (V1-only, not yet migrated).
+     * @return An array of all KmsNode structs including apiUrl.
+     */
+    function getKmsNodesWithApis() external view returns (KmsNode[] memory);
+
+    /**
+     * @notice Get the list of all coprocessors with their API URLs.
+     * @dev V2: This function is used by relayers to discover worker endpoints.
+     * Workers with empty apiUrl should be skipped (V1-only, not yet migrated).
+     * @return An array of all Coprocessor structs including apiUrl.
+     */
+    function getCoprocessorsWithApis() external view returns (Coprocessor[] memory);
 }

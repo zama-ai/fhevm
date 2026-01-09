@@ -51,63 +51,7 @@ async function unpauseSingleContract(name: string, ethers: HardhatEthersHelpers,
   console.log(`${name} contract successfully unpaused at address: ${proxyAddress}\n`);
 }
 
-// Pausing tasks
-// Pause the InputVerification contract
-task("task:pauseInputVerification")
-  .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
-    false,
-    types.boolean,
-  )
-  .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await pauseSingleContract("InputVerification", ethers, useInternalProxyAddress);
-  });
-
-// Pause the Decryption contract
-task("task:pauseDecryption")
-  .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
-    false,
-    types.boolean,
-  )
-  .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await pauseSingleContract("Decryption", ethers, useInternalProxyAddress);
-  });
-
-// Unpausing tasks
-// Unpause the InputVerification contract
-task("task:unpauseInputVerification")
-  .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
-    false,
-    types.boolean,
-  )
-  .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await unpauseSingleContract("InputVerification", ethers, useInternalProxyAddress);
-  });
-
-// Unpause the Decryption contract
-task("task:unpauseDecryption")
-  .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
-    false,
-    types.boolean,
-  )
-  .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await unpauseSingleContract("Decryption", ethers, useInternalProxyAddress);
-  });
-
-// Pause all the contracts
-// The following contracts are pausable but don't have pausable functions yet, so they are
-// not paused by the `pauseAllGatewayContracts()` function for now:
-// - CiphertextCommits
-// - MultichainACL
-// - GatewayConfig
-// In addition, the `KMSGeneration` contract is not used yet, so we don't need to pause it for now.
+// Pause all Gateway contracts via GatewayConfig
 // See https://github.com/zama-ai/fhevm-internal/issues/180
 task("task:pauseAllGatewayContracts")
   .addOptionalParam(

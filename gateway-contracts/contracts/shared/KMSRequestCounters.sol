@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /**
  * @notice The KMS request types.
  * @dev The first request type is deprecated.
- * See `Decryption.sol` for more details.
+ * See `DecryptionRegistry.sol` for more details.
  */
 enum RequestType {
     _deprecated_, // 0: DEPRECATED

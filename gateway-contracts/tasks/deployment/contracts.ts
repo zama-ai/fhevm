@@ -134,29 +134,9 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   ]);
 });
 
-// Deploy the InputVerification contract
-task("task:deployInputVerification").setAction(async function (_, hre) {
-  await deployContractImplementation("InputVerification", hre, REGULAR_EMPTY_PROXY_NAME, true);
-});
-
 // Deploy the KMSGeneration contract
 task("task:deployKMSGeneration").setAction(async function (_, hre) {
   await deployContractImplementation("KMSGeneration", hre, REGULAR_EMPTY_PROXY_NAME, true);
-});
-
-// Deploy the CiphertextCommits contract
-task("task:deployCiphertextCommits").setAction(async function (_, hre) {
-  await deployContractImplementation("CiphertextCommits", hre, REGULAR_EMPTY_PROXY_NAME, true);
-});
-
-// Deploy the MultichainACL contract
-task("task:deployMultichainACL").setAction(async function (_, hre) {
-  await deployContractImplementation("MultichainACL", hre, REGULAR_EMPTY_PROXY_NAME, true);
-});
-
-// Deploy the Decryption contract
-task("task:deployDecryption").setAction(async function (_, hre) {
-  await deployContractImplementation("Decryption", hre, REGULAR_EMPTY_PROXY_NAME, true);
 });
 
 // Deploy the ProtocolPayment contract
@@ -209,20 +189,8 @@ task("task:deployImplementationContracts").setAction(async function (_, hre) {
   console.log("Deploy GatewayConfig contract:");
   await hre.run("task:deployGatewayConfig");
 
-  console.log("Deploy InputVerification contract:");
-  await hre.run("task:deployInputVerification");
-
   console.log("Deploy KMSGeneration contract:");
   await hre.run("task:deployKMSGeneration");
-
-  console.log("Deploy CiphertextCommits contract:");
-  await hre.run("task:deployCiphertextCommits");
-
-  console.log("Deploy MultichainACL contract:");
-  await hre.run("task:deployMultichainACL");
-
-  console.log("Deploy Decryption contract:");
-  await hre.run("task:deployDecryption");
 
   console.log("Deploy ProtocolPayment contract:");
   await hre.run("task:deployProtocolPayment");
