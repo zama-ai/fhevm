@@ -11,7 +11,8 @@ const SENTINEL_OWNERS = '0x0000000000000000000000000000000000000001'
  * The actual gas usage will likely be lower.
  *
  * Formula: baseOverhead + (numOperations * gasPerOperation)
- * TODO: this could be optimized later with proper gas profiling
+ * TODO: this could be optimized later with proper gas profiling,
+ * see https://github.com/zama-ai/fhevm-internal/issues/660
  */
 const GAS_ESTIMATES = {
     gasPerOperation: 100000, // Conservative estimate per Safe operation (swap/add/remove/changeThreshold)
