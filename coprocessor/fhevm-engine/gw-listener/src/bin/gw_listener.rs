@@ -1,6 +1,9 @@
+use std::str::FromStr;
 use std::time::Duration;
 
-use alloy::providers::{ProviderBuilder, WsConnect};
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::signers::local::PrivateKeySigner;
+use alloy::sol_types::eip712_domain;
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
 use fhevm_engine_common::{metrics_server, telemetry, utils::DatabaseURL};
@@ -10,9 +13,10 @@ use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
 use gw_listener::ConfigSettings;
 use humantime::parse_duration;
+use sqlx::postgres::PgPoolOptions;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, Level};
+use tracing::{error, info, warn, Level};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -78,6 +82,10 @@ struct Conf {
 
     #[arg(long, default_value = None, help = "Can be negative from last processed block", allow_hyphen_values = true)]
     pub catchup_kms_generation_from_block: Option<i64>,
+
+    /// Coprocessor signer private key (hex string)
+    #[arg(long)]
+    coprocessor_private_key: Option<String>,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -173,7 +181,7 @@ async fn main() -> anyhow::Result<()> {
     // Wrap the GatewayListener in an Arc
     let gw_listener = std::sync::Arc::new(gw_listener);
 
-    let http_server = HttpServer::new(
+    let mut http_server = HttpServer::new(
         gw_listener.clone(),
         conf.health_check_port,
         cancel_token.clone(),
@@ -181,9 +189,30 @@ async fn main() -> anyhow::Result<()> {
 
     install_signal_handlers(cancel_token.clone())?;
 
+    if let Some(private_key) = conf.coprocessor_private_key.as_ref() {
+        let signer = PrivateKeySigner::from_str(private_key.trim())?;
+        let signer_address = signer.address();
+        let gateway_chain_id = provider.get_chain_id().await?;
+        let eip712_domain = eip712_domain! {
+            name: "FHEVM",
+            version: "1",
+            chain_id: gateway_chain_id,
+            verifying_contract: conf.input_verification_address,
+        };
+
+        let db_pool = PgPoolOptions::new()
+            .max_connections(conf.database_pool_size)
+            .connect(conf.database_url.clone().unwrap_or_default().as_str())
+            .await?;
+
+        http_server = http_server.with_v2_api(db_pool, signer, signer_address, eip712_domain);
+    } else {
+        warn!("COPROCESSOR_PRIVATE_KEY not set; V2 API endpoints disabled");
+    }
+
     info!(
         health_check_port = conf.health_check_port,
-        "Starting HTTP health check server"
+        "Starting HTTP server"
     );
 
     // Run both services in parallel. Here we assume that if gw listener stops without an error, HTTP server should also stop.

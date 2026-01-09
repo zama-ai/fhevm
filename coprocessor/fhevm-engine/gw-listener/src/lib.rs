@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use tracing::error;
 
+pub mod api;
 pub mod aws_s3;
 pub(crate) mod database;
 pub(crate) mod digest;

@@ -22,7 +22,7 @@ use crate::metrics::{
 use crate::sks_key::extract_server_key_without_ns;
 use crate::{ChainId, ConfigSettings, HealthStatus, KeyId, KeyType};
 
-use fhevm_gateway_bindings::input_verification::InputVerification;
+use fhevm_gateway_bindings::input_verification_registry::InputVerificationRegistry;
 use fhevm_gateway_bindings::kms_generation::KMSGeneration;
 
 #[derive(Debug)]
@@ -54,6 +54,7 @@ pub struct GatewayListener<
 impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'static>
     GatewayListener<P, A>
 {
+    const INPUT_VERIFICATION_REORG_SAFETY_MARGIN: u64 = 100;
     pub fn new(
         input_verification_address: Address,
         kms_generation_address: Address,
@@ -139,22 +140,18 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         db_pool: &Pool<Postgres>,
         sleep_duration: &mut u64,
     ) -> anyhow::Result<()> {
-        let input_verification =
-            InputVerification::new(self.input_verification_address, &self.provider);
+        let input_verification_registry =
+            InputVerificationRegistry::new(self.input_verification_address, &self.provider);
 
-        // We assume that the provider will reconnect internally if the connection is lost and stream.next() will eventually return successfully.
-        // We ensure that by requiring the `provider_max_retries` and `provider_retry_interval` to be set to high enough values in the configuration s.t. retry is essentially infinite.
-        //
-        // That might lead to skipped events, but that is acceptable for input verification requests as the client will eventually retry.
-        // Furthermore, replaying old input verification requests is unnecessary as input verification is a synchronous request/response interaction on the client side.
-        // Finally, no data on the GW will be left in an inconsistent state.
-        let mut verify_proof_request = input_verification
-            .VerifyProofRequest_filter()
+        self.reconcile_input_verification_events(db_pool).await?;
+
+        let mut input_verification_registered = input_verification_registry
+            .InputVerificationRegistered_filter()
             .subscribe()
             .await?
             .into_stream()
             .fuse();
-        info!("Subscribed to InputVerification.VerifyProofRequest events");
+        info!("Subscribed to InputVerificationRegistry.InputVerificationRegistered events (V2)");
 
         loop {
             tokio::select! {
@@ -164,18 +161,51 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                     break;
                 }
 
-                item = verify_proof_request.next() => {
+                item = input_verification_registered.next() => {
                     let Some(item) = item else {
                         error!("Block stream closed");
                         return Err(anyhow::anyhow!("Block stream closed"));
                     };
                     let (request, log) = item?;
-                    self.verify_proof_request(db_pool, request, log).await?;
+                    self.input_verification_registered(db_pool, request, log).await?;
                 }
             }
-            // Reset sleep duration on successful iteration.
             self.reset_sleep_duration(sleep_duration);
         }
+        Ok(())
+    }
+
+    async fn reconcile_input_verification_events(
+        &self,
+        db_pool: &Pool<Postgres>,
+    ) -> anyhow::Result<()> {
+        let current_block = self.provider.get_block_number().await?;
+        let from_block = current_block.saturating_sub(Self::INPUT_VERIFICATION_REORG_SAFETY_MARGIN);
+
+        if from_block == current_block {
+            return Ok(());
+        }
+
+        info!(
+            from_block,
+            current_block,
+            "Reconciling InputVerificationRegistered events"
+        );
+
+        let input_verification_registry =
+            InputVerificationRegistry::new(self.input_verification_address, &self.provider);
+
+        let events = input_verification_registry
+            .InputVerificationRegistered_filter()
+            .from_block(from_block)
+            .to_block(current_block)
+            .query()
+            .await?;
+
+        for (event, log) in events {
+            self.input_verification_registered(db_pool, event, log).await?;
+        }
+
         Ok(())
     }
 
@@ -328,16 +358,24 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         Ok(())
     }
 
-    async fn verify_proof_request(
+    async fn input_verification_registered(
         &self,
         db_pool: &Pool<Postgres>,
-        request: InputVerification::VerifyProofRequest,
+        event: InputVerificationRegistry::InputVerificationRegistered,
         log: Log,
     ) -> anyhow::Result<()> {
         let transaction_id = log.transaction_hash.map(|h| h.to_vec()).unwrap_or_default();
-        info!(zk_proof_id = %request.zkProofId, tid = %to_hex(&transaction_id), "Received ZK proof request event");
+        info!(
+            request_id = %event.requestId,
+            commitment = %event.commitment,
+            user_address = %event.userAddress,
+            contract_chain_id = %event.contractChainId,
+            contract_address = %event.contractAddress,
+            tid = %to_hex(&transaction_id),
+            "Received InputVerificationRegistered event (V2)"
+        );
 
-        let chain_id = request.contractChainId.to::<i64>();
+        let chain_id = event.contractChainId.to::<i64>();
 
         let _ = telemetry::try_begin_transaction(
             db_pool,
@@ -347,30 +385,29 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         )
         .await;
 
-        // TODO: check if we can avoid the cast from u256 to i64
-        sqlx::query!(
-            "WITH ins AS (
-                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT(zk_proof_id) DO NOTHING
-            )
-            SELECT pg_notify($8, '')",
-            request.zkProofId.to::<i64>(),
-            request.contractChainId.to::<i64>(),
-            request.contractAddress.to_string(),
-            request.userAddress.to_string(),
-            Some(request.ciphertextWithZKProof.as_ref()),
-            request.extraData.as_ref(),
-            transaction_id,
-            self.conf.verify_proof_req_db_channel
+        sqlx::query(
+            "INSERT INTO input_verification_requests (request_id, commitment, user_address, contract_chain_id, contract_address, user_signature, timestamp, transaction_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT(request_id) DO NOTHING",
         )
+        .bind(event.requestId.to::<i64>())
+        .bind(event.commitment.as_slice())
+        .bind(event.userAddress.to_string())
+        .bind(chain_id)
+        .bind(event.contractAddress.to_string())
+        .bind(event.userSignature.as_ref())
+        .bind(event.timestamp.to::<i64>())
+        .bind(&transaction_id)
         .execute(db_pool)
-        .await.
-        inspect(|_| {
+        .await
+        .inspect(|_| {
             VERIFY_PROOF_SUCCESS_COUNTER.inc();
-        }).inspect_err(|_| {
+        })
+        .inspect_err(|_| {
             VERIFY_PROOF_FAIL_COUNTER.inc();
         })?;
+
+        info!(request_id = %event.requestId, "V2 input verification request registered in DB");
         Ok(())
     }
 
@@ -500,22 +537,14 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         &self,
         db_pool: &Pool<Postgres>,
     ) -> anyhow::Result<Option<u64>> {
-        let rows = sqlx::query!(
-            "SELECT last_block_num
-            FROM gw_listener_last_block
-            WHERE dummy_id = true"
+        let result: Option<(Option<i64>,)> = sqlx::query_as(
+            "SELECT last_block_num FROM gw_listener_last_block WHERE dummy_id = true"
         )
-        .fetch_all(db_pool)
+        .fetch_optional(db_pool)
         .await?;
-        assert!(
-            rows.len() <= 1,
-            "Expected at most one row in gw_listener_last_block, found {}",
-            rows.len()
-        );
 
-        Ok(rows.first().and_then(|row| {
-            row.last_block_num
-                .map(|n| n.try_into().expect("Got an invalid block number"))
+        Ok(result.and_then(|row| {
+            row.0.map(|n| n.try_into().expect("Got an invalid block number"))
         }))
     }
 
@@ -529,12 +558,12 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             last_block = last_block,
             "Updating last processed block number"
         );
-        sqlx::query!(
+        sqlx::query(
             "INSERT into gw_listener_last_block (dummy_id, last_block_num)
             VALUES (true, $1)
             ON CONFLICT (dummy_id) DO UPDATE SET last_block_num = EXCLUDED.last_block_num",
-            last_block
         )
+        .bind(last_block)
         .execute(db_pool)
         .await?;
         Ok(())

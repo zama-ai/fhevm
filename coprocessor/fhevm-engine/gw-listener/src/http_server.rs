@@ -1,18 +1,26 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 
+use alloy::primitives::Address;
+use alloy::signers::local::PrivateKeySigner;
+use alloy::sol_types::Eip712Domain;
 use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Json},
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use serde::Serialize;
+use sqlx::{Pool, Postgres};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
+use crate::api::handlers::{
+    get_ciphertext_handler, health_handler_v2, verify_input_handler, ApiState,
+};
 use crate::aws_s3::AwsS3Interface;
 use crate::gw_listener::GatewayListener;
 use crate::HealthStatus;
@@ -50,6 +58,10 @@ pub struct HttpServer<
     listener: Arc<GatewayListener<P, A>>,
     port: u16,
     cancel_token: CancellationToken,
+    db_pool: Option<Pool<Postgres>>,
+    signer: Option<Arc<PrivateKeySigner>>,
+    signer_address: Option<Address>,
+    eip712_domain: Option<Eip712Domain>,
 }
 
 impl<
@@ -66,19 +78,58 @@ impl<
             listener,
             port,
             cancel_token,
+            db_pool: None,
+            signer: None,
+            signer_address: None,
+            eip712_domain: None,
         }
     }
 
+    pub fn with_v2_api(
+        mut self,
+        db_pool: Pool<Postgres>,
+        signer: PrivateKeySigner,
+        signer_address: Address,
+        eip712_domain: Eip712Domain,
+    ) -> Self {
+        self.db_pool = Some(db_pool);
+        self.signer = Some(Arc::new(signer));
+        self.signer_address = Some(signer_address);
+        self.eip712_domain = Some(eip712_domain);
+        self
+    }
+
     pub async fn start(&self) -> anyhow::Result<()> {
-        let app = Router::new()
+        let mut app = Router::new()
             .route("/healthz", get(health_handler))
             .route("/liveness", get(liveness_handler))
             .with_state(self.listener.clone());
 
+        if let (Some(db_pool), Some(signer_address), Some(signer), Some(eip712_domain)) =
+            (&self.db_pool, &self.signer_address, &self.signer, &self.eip712_domain)
+        {
+            let api_state = Arc::new(ApiState {
+                listener: self.listener.clone(),
+                db_pool: db_pool.clone(),
+                signer: signer.clone(),
+                eip712_domain: eip712_domain.clone(),
+                signer_address: *signer_address,
+                start_time: Instant::now(),
+            });
+
+            let v2_routes = Router::new()
+                .route("/v1/verify-input", post(verify_input_handler::<P, A>))
+                .route("/v1/ciphertext/:handle", get(get_ciphertext_handler::<P, A>))
+                .route("/v1/health", get(health_handler_v2::<P, A>))
+                .with_state(api_state);
+
+            app = app.merge(v2_routes);
+            info!("V2 API endpoints enabled: /v1/verify-input, /v1/ciphertext/:handle, /v1/health");
+        }
+
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
         info!(address = %addr, "Starting HTTP server");
 
-        // Create a shutdown future that owns the token
         let cancel_token = self.cancel_token.clone();
         let shutdown = async move {
             cancel_token.cancelled().await;

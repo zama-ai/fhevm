@@ -1,45 +1,41 @@
+//! V2: DISABLED - verify_proof responses now served via Coprocessor HTTP API
+//!
+//! This module is disabled in Gateway V2. Input verification responses are
+//! served via the HTTP API (`GET /v1/ciphertext/:handle`) instead of on-chain
+//! transactions.
+//!
+//! See docs/gateway-v2-implementation/RESTRUCTURED_PLAN.md Phase 2 for details.
+//!
+//! Original implementation is preserved below (commented out) for reference
+//! and potential rollback needs.
+
 use super::TransactionOperation;
-use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
 use crate::AbstractSigner;
-use alloy::network::TransactionBuilder;
-use alloy::primitives::{Address, U256};
+use alloy::primitives::Address;
 use alloy::providers::Provider;
-use alloy::rpc::types::TransactionRequest;
-use alloy::sol;
-use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
+use alloy::network::Ethereum;
 use async_trait::async_trait;
-use fhevm_engine_common::telemetry;
 use sqlx::{Pool, Postgres};
-use std::convert::TryInto;
-use std::time::Duration;
-use tokio::task::JoinSet;
-use tracing::{debug, error, info, warn};
-
-use fhevm_gateway_bindings::input_verification::InputVerification;
-use fhevm_gateway_bindings::input_verification::InputVerification::InputVerificationErrors;
-
-sol! {
-    struct CiphertextVerification {
-        bytes32[] ctHandles;
-        address userAddress;
-        address contractAddress;
-        uint256 contractChainId;
-        bytes extraData;
-    }
-}
+use tracing::warn;
 
 #[derive(Clone)]
 pub(crate) struct VerifyProofOperation<P>
 where
     P: Provider<Ethereum> + Clone + 'static,
 {
+    #[allow(dead_code)]
     input_verification_address: Address,
+    #[allow(dead_code)]
     provider: NonceManagedProvider<P>,
+    #[allow(dead_code)]
     signer: AbstractSigner,
     conf: crate::ConfigSettings,
+    #[allow(dead_code)]
     gas: Option<u64>,
+    #[allow(dead_code)]
     gw_chain_id: u64,
+    #[allow(dead_code)]
     db_pool: Pool<Postgres>,
 }
 
@@ -66,303 +62,73 @@ where
             db_pool,
         })
     }
-
-    async fn remove_proof_by_id(&self, zk_proof_id: i64) -> anyhow::Result<()> {
-        debug!(zk_proof_id = zk_proof_id, "Removing proof");
-        sqlx::query!(
-            "DELETE FROM verify_proofs WHERE zk_proof_id = $1",
-            zk_proof_id
-        )
-        .execute(&self.db_pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn update_retry_count_by_proof_id(
-        &self,
-        zk_proof_id: i64,
-        current_retry_count: i32,
-        error: &str,
-    ) -> anyhow::Result<()> {
-        if current_retry_count == (self.conf.verify_proof_resp_max_retries as i32) - 1 {
-            error!(zk_proof_id = zk_proof_id, "Max retries reached for proof");
-        }
-        debug!(zk_proof_id = zk_proof_id, "Updating retry count of proof");
-        sqlx::query!(
-            "UPDATE verify_proofs
-            SET
-                retry_count = retry_count + 1,
-                last_error = $2,
-                last_retry_at = NOW()
-            WHERE zk_proof_id = $1",
-            zk_proof_id,
-            error
-        )
-        .execute(&self.db_pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn remove_proofs_by_retry_count(&self) -> anyhow::Result<()> {
-        debug!(
-            max_retries = self.conf.verify_proof_resp_max_retries,
-            "Removing proofs with retry count >= max_retries"
-        );
-        sqlx::query!(
-            "DELETE FROM verify_proofs WHERE retry_count >= $1",
-            self.conf.verify_proof_resp_max_retries as i64
-        )
-        .execute(&self.db_pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn process_proof(
-        &self,
-        txn_request: (i64, impl Into<TransactionRequest>),
-        current_retry_count: i32,
-        src_transaction_id: Option<Vec<u8>>,
-    ) -> anyhow::Result<()> {
-        info!(zk_proof_id = txn_request.0, "Processing transaction");
-        let _t = telemetry::tracer("call_verify_proof_resp", &src_transaction_id);
-
-        let receipt = match self
-            .provider
-            .send_sync_with_overprovision(
-                txn_request.1,
-                self.conf.gas_limit_overprovision_percent,
-                Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
-            )
-            .await
-        {
-            Ok(receipt) => receipt,
-            Err(e) => {
-                if let Some(InputVerificationErrors::CoprocessorAlreadyVerified(_)) =
-                    e.as_error_resp().and_then(|payload| {
-                        payload.as_decoded_interface_error::<InputVerificationErrors>()
-                    })
-                {
-                    warn!(
-                        zk_proof_id = txn_request.0,
-                        "Coprocessor has already verified the proof, removing from DB"
-                    );
-                    self.remove_proof_by_id(txn_request.0).await?;
-                    return Ok(());
-                } else if let Some(InputVerificationErrors::CoprocessorAlreadyRejected(_)) =
-                    e.as_error_resp().and_then(|payload| {
-                        payload.as_decoded_interface_error::<InputVerificationErrors>()
-                    })
-                {
-                    warn!(
-                        zk_proof_id = txn_request.0,
-                        "Coprocessor has already rejected the proof, removing from DB"
-                    );
-                    self.remove_proof_by_id(txn_request.0).await?;
-                    return Ok(());
-                } else {
-                    VERIFY_PROOF_FAIL_COUNTER.inc();
-                    error!(
-                        zk_proof_id = txn_request.0,
-                        error = %e,
-                        "Transaction sending failed"
-                    );
-                    self.update_retry_count_by_proof_id(
-                        txn_request.0,
-                        current_retry_count,
-                        &e.to_string(),
-                    )
-                    .await?;
-                    return Err(anyhow::Error::new(e));
-                }
-            }
-        };
-
-        if receipt.status() {
-            info!(
-                zk_proof_id = txn_request.0,
-                transaction_hash = %receipt.transaction_hash,
-                "Transaction succeeded"
-            );
-            self.remove_proof_by_id(txn_request.0).await?;
-            VERIFY_PROOF_SUCCESS_COUNTER.inc();
-
-            telemetry::try_end_zkproof_transaction(
-                &self.db_pool,
-                &src_transaction_id.unwrap_or_default(),
-            )
-            .await?;
-        } else {
-            VERIFY_PROOF_FAIL_COUNTER.inc();
-            error!(
-                zk_proof_id = txn_request.0,
-                transaction_hash = %receipt.transaction_hash,
-                status = receipt.status(),
-                "Transaction failed"
-            );
-            self.update_retry_count_by_proof_id(
-                txn_request.0,
-                current_retry_count,
-                "receipt status = false",
-            )
-            .await?;
-            return Err(anyhow::anyhow!(
-                "Transaction {} for zk_proof_id {} failed with status {}",
-                receipt.transaction_hash,
-                txn_request.0,
-                receipt.status(),
-            ));
-        }
-        Ok(())
-    }
 }
 
 #[async_trait]
 impl<P> TransactionOperation<P> for VerifyProofOperation<P>
 where
-    P: alloy::providers::Provider<Ethereum> + Clone + 'static,
+    P: Provider<Ethereum> + Clone + 'static,
 {
     fn channel(&self) -> &str {
         &self.conf.verify_proof_resp_db_channel
     }
 
     async fn execute(&self) -> anyhow::Result<bool> {
-        let input_verification =
-            InputVerification::new(self.input_verification_address, self.provider.inner());
-        if self.conf.verify_proof_remove_after_max_retries {
-            self.remove_proofs_by_retry_count().await?;
-        }
-        let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id
-             FROM verify_proofs
-             WHERE verified IS NOT NULL AND retry_count < $1
-             ORDER BY zk_proof_id
-             LIMIT $2",
-            self.conf.verify_proof_resp_max_retries as i64,
-            self.conf.verify_proof_resp_batch_limit as i64
-        )
-        .fetch_all(&self.db_pool)
-        .await?;
-        info!(rows_count = rows.len(), "Selected rows to process");
-        let maybe_has_more_work = rows.len() == self.conf.verify_proof_resp_batch_limit as usize;
-        let mut join_set = JoinSet::new();
-        for row in rows.into_iter() {
-            let transaction_id = row.transaction_id.clone();
-            let t = telemetry::tracer("prepare_verify_proof_resp", &transaction_id);
+        // V2: Disabled - responses now served via Coprocessor HTTP API
+        // See docs/gateway-v2-implementation/RESTRUCTURED_PLAN.md Phase 2
+        warn!("verify_proof tx-sender DISABLED in V2 - responses served via Coprocessor HTTP API");
 
-            let txn_request = match row.verified {
-                Some(true) => {
-                    info!(zk_proof_id = row.zk_proof_id, "Processing verified proof");
-                    let handles = row
-                        .handles
-                        .ok_or(anyhow::anyhow!("handles field is None"))?;
-                    if handles.len() % 32 != 0 {
-                        error!(
-                            handles_len = handles.len(),
-                            "Bad handles field, len is not divisible by 32"
-                        );
-                        self.remove_proof_by_id(row.zk_proof_id).await?;
-                        continue;
-                    }
-                    let handles: Vec<FixedBytes<32>> = handles
-                        .chunks(32)
-                        .map(|chunk| {
-                            let array: [u8; 32] = chunk.try_into().expect("chunk size must be 32");
-                            FixedBytes(array)
-                        })
-                        .collect();
-                    let domain = alloy::sol_types::eip712_domain! {
-                        name: "InputVerification",
-                        version: "1",
-                        chain_id: self.gw_chain_id,
-                        verifying_contract: self.input_verification_address,
-                    };
-                    let signing_hash = CiphertextVerification {
-                        ctHandles: handles.clone(),
-                        userAddress: row.user_address.parse().expect("invalid user address"),
-                        contractAddress: row
-                            .contract_address
-                            .parse()
-                            .expect("invalid contract address"),
-                        contractChainId: U256::from(row.chain_id),
-                        extraData: row.extra_data.clone().into(),
-                    }
-                    .eip712_signing_hash(&domain);
-                    let signature = self.signer.sign_hash(&signing_hash).await?;
-
-                    if let Some(gas) = self.gas {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .verifyProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    handles,
-                                    signature.as_bytes().into(),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request()
-                                .with_gas_limit(gas),
-                        )
-                    } else {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .verifyProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    handles,
-                                    signature.as_bytes().into(),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request(),
-                        )
-                    }
-                }
-                Some(false) => {
-                    info!(zk_proof_id = row.zk_proof_id, "Processing rejected proof");
-                    if let Some(gas) = self.gas {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .rejectProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request()
-                                .with_gas_limit(gas),
-                        )
-                    } else {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .rejectProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request(),
-                        )
-                    }
-                }
-                None => {
-                    error!(
-                        zk_proof_id = row.zk_proof_id,
-                        "verified field is unexpectedly None for proof"
-                    );
-                    continue;
-                }
-            };
-
-            t.end();
-
-            let self_clone = self.clone();
-            let src_transaction_id = transaction_id;
-            join_set.spawn(async move {
-                self_clone
-                    .process_proof(txn_request, row.retry_count, src_transaction_id)
-                    .await
-            });
-        }
-        while let Some(res) = join_set.join_next().await {
-            res??;
-        }
-        Ok(maybe_has_more_work)
+        // Return false to indicate no work was done (no more work to process)
+        Ok(false)
     }
 }
+
+// =============================================================================
+// ORIGINAL V1 IMPLEMENTATION (preserved for reference)
+// =============================================================================
+//
+// The original implementation handled:
+// 1. Querying `verify_proofs` table for pending proofs
+// 2. Building `verifyProofResponse` or `rejectProofResponse` transactions
+// 3. Signing with EIP-712 domain
+// 4. Sending transactions to Gateway InputVerification contract
+// 5. Handling CoprocessorAlreadyVerified/Rejected errors
+// 6. Retry logic with exponential backoff
+//
+// Key dependencies (now removed):
+// - fhevm_gateway_bindings::InputVerification (deleted in V2)
+// - fhevm_gateway_bindings::InputVerification::CiphertextVerification
+// - fhevm_gateway_bindings::InputVerification::InputVerificationErrors
+//
+// Original imports:
+// use alloy::primitives::{FixedBytes, U256};
+// use alloy::rpc::types::TransactionRequest;
+// use fhevm_gateway_bindings::InputVerification::{
+//     self, CiphertextVerification, InputVerificationErrors,
+// };
+// use std::time::Duration;
+// use telemetry::VERIFY_PROOF_FAIL_COUNTER;
+// use telemetry::VERIFY_PROOF_SUCCESS_COUNTER;
+// use tokio::task::JoinSet;
+// use tracing::{debug, error, info};
+//
+// Original execute() implementation:
+// async fn execute(&self) -> anyhow::Result<bool> {
+//     let input_verification =
+//         InputVerification::new(self.input_verification_address, self.provider.inner());
+//     if self.conf.verify_proof_remove_after_max_retries {
+//         self.remove_proofs_by_retry_count().await?;
+//     }
+//     let rows = sqlx::query!(
+//         "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id
+//          FROM verify_proofs
+//          WHERE verified IS NOT NULL AND retry_count < $1
+//          ORDER BY zk_proof_id
+//          LIMIT $2",
+//         self.conf.verify_proof_resp_max_retries as i64,
+//         self.conf.verify_proof_resp_batch_limit as i64
+//     )
+//     .fetch_all(&self.db_pool)
+//     .await?;
+//     // ... rest of implementation
+// }
