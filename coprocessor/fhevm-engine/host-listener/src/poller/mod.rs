@@ -28,7 +28,6 @@ use crate::poller::metrics::{
     inc_blocks_processed, inc_db_errors, inc_rpc_errors,
 };
 
-const DEFAULT_DEPENDENCE_CACHE_SIZE: u16 = 128;
 const MAX_DB_RETRIES: u64 = 10;
 /// Exit after this many consecutive RPC failures (after retries exhausted).
 /// Orchestrator will restart with fresh state.
@@ -84,6 +83,10 @@ pub struct PollerConfig {
     /// Higher values = less throttling.
     pub rpc_compute_units_per_second: u64,
     pub health_port: u16,
+    // Dependence chain settings
+    pub dependence_cache_size: u16,
+    pub dependence_by_connexity: bool,
+    pub dependence_cross_block: bool,
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
@@ -133,7 +136,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let mut db = Database::new(
         &config.database_url,
         &config.coprocessor_api_key,
-        DEFAULT_DEPENDENCE_CACHE_SIZE,
+        config.dependence_cache_size,
     )
     .await?;
 
@@ -293,6 +296,8 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 acl_address,
                 tfhe_address,
                 config.retry_interval,
+                config.dependence_by_connexity,
+                config.dependence_cross_block,
             )
             .await
             {
@@ -356,6 +361,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn ingest_with_retry(
     chain_id: u64,
     db: &mut Database,
@@ -363,12 +369,24 @@ async fn ingest_with_retry(
     acl_address: Address,
     tfhe_address: Address,
     retry_interval: Duration,
+    dependency_by_connexity: bool,
+    dependency_cross_block: bool,
 ) -> Result<u64, (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
     loop {
-        match ingest_block_logs(chain_id, db, block_logs, &acl, &tfhe).await {
+        match ingest_block_logs(
+            chain_id,
+            db,
+            block_logs,
+            &acl,
+            &tfhe,
+            dependency_by_connexity,
+            dependency_cross_block,
+        )
+        .await
+        {
             Ok(_) => return Ok(errors),
             Err(err) => {
                 errors += 1;

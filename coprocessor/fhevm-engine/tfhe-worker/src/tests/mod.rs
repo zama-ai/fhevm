@@ -13,6 +13,7 @@ use utils::{
     decrypt_ciphertexts, default_api_key, random_handle, wait_until_all_allowed_handles_computed,
 };
 
+mod dependence_chain;
 mod errors;
 mod health_check;
 mod inputs;
