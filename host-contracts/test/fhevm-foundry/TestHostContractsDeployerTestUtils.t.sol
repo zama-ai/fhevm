@@ -7,7 +7,7 @@ import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeploy
 import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 import {ACL} from "@fhevm-host-contracts/contracts/ACL.sol";
 import {FHEVMExecutor} from "@fhevm-host-contracts/contracts/FHEVMExecutor.sol";
-import {KMSVerifier} from "@fhevm-host-contracts/contracts/KMSVerifier.sol";
+import {KMSVerifierV2} from "@fhevm-host-contracts/contracts/KMSVerifierV2.sol";
 import {InputVerifier} from "@fhevm-host-contracts/contracts/InputVerifier.sol";
 import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
@@ -44,14 +44,14 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     }
 
     function test_DeployKMSVerifier_UsesProxyUpgradeFlow() public {
-        // KMSVerifier inherits ACLOwnable as well, ensuring the ACL proxy is in place avoids upgrade reverts.
+        // KMSVerifierV2 inherits ACLOwnable as well, ensuring the ACL proxy is in place avoids upgrade reverts.
         _deployACL(OWNER);
         address[] memory initialSigners = new address[](2);
         initialSigners[0] = address(0x1111);
         initialSigners[1] = address(0x2222);
         uint256 initialThreshold = 1;
 
-        (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) = _deployKMSVerifier(
+        (KMSVerifierV2 kmsVerifierProxy, address kmsVerifierImplementation) = _deployKMSVerifier(
             OWNER,
             GATEWAY_SOURCE_CONTRACT,
             GATEWAY_CHAIN_ID,
@@ -59,9 +59,9 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
             initialThreshold
         );
 
-        assertEq(address(kmsVerifierProxy), kmsVerifierAdd, "KMSVerifier proxy address mismatch");
+        assertEq(address(kmsVerifierProxy), kmsVerifierAdd, "KMSVerifierV2 proxy address mismatch");
         assertNotEq(kmsVerifierImplementation, address(0), "Implementation not deployed");
-        assertEq(kmsVerifierProxy.getVersion(), "KMSVerifier v0.1.0", "Version mismatch");
+        assertEq(kmsVerifierProxy.getVersion(), "KMSVerifierV2 v2.0.0", "Version mismatch");
         assertEq(kmsVerifierProxy.getThreshold(), initialThreshold, "Threshold mismatch");
         address[] memory storedSigners = kmsVerifierProxy.getKmsSigners();
         assertEq(storedSigners.length, initialSigners.length, "Signers length mismatch");
@@ -153,7 +153,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertEq(aclProxy.getPauserSetAddress(), pauserSetAdd, "ACL PauserSet wiring mismatch");
         assertEq(fheExecutor.getACLAddress(), aclAdd, "Executor ACL wiring mismatch");
         assertEq(fheExecutor.getHCULimitAddress(), hcuLimitAdd, "Executor HCULimit wiring mismatch");
-        assertEq(KMSVerifier(kmsVerifierAdd).getThreshold(), 1, "KMSVerifier threshold mismatch");
+        assertEq(KMSVerifierV2(kmsVerifierAdd).getThreshold(), 1, "KMSVerifierV2 threshold mismatch");
         assertEq(InputVerifier(inputVerifierAdd).getThreshold(), 1, "InputVerifier threshold mismatch");
         assertTrue(PauserSet(pauserSetAdd).isPauser(pauser), "Pauser not registered");
         assertFalse(aclProxy.isAllowed(bytes32(uint256(1)), address(this)), "Unexpected ACL allow");

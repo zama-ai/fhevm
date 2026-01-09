@@ -183,11 +183,11 @@ task('task:upgradeFHEVMExecutor')
 task('task:upgradeKMSVerifier')
   .addParam(
     'currentImplementation',
-    'The currently deployed implementation solidity contract path and name, eg: contracts/KMSVerifier.sol:KMSVerifier',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/KMSVerifierV2.sol:KMSVerifierV2',
   )
   .addParam(
     'newImplementation',
-    'The new implementation solidity contract path and name, eg: examples/KMSVerifierUpgradedExample.sol:KMSVerifierUpgradedExample',
+    'The new implementation solidity contract path and name, eg: examples/KMSVerifierV2UpgradedExample.sol:KMSVerifierV2UpgradedExample',
   )
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -207,7 +207,7 @@ task('task:upgradeKMSVerifier')
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
 
-    await checkImplementationArtifacts('KMSVerifier', currentImplementation, newImplementation, hre);
+    await checkImplementationArtifacts('KMSVerifierV2', currentImplementation, newImplementation, hre);
 
     if (useInternalProxyAddress) {
       dotenv.config({ path: 'addresses/.env.host', override: true });

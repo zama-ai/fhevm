@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ACL} from "@fhevm-host-contracts/contracts/ACL.sol";
 import {FHEVMExecutor} from "@fhevm-host-contracts/contracts/FHEVMExecutor.sol";
-import {KMSVerifier} from "@fhevm-host-contracts/contracts/KMSVerifier.sol";
+import {KMSVerifierV2} from "@fhevm-host-contracts/contracts/KMSVerifierV2.sol";
 import {InputVerifier} from "@fhevm-host-contracts/contracts/InputVerifier.sol";
 import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
@@ -85,7 +85,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         uint64 chainIDSource,
         address[] memory initialSigners,
         uint256 initialThreshold
-    ) internal returns (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) {
+    ) internal returns (KMSVerifierV2 kmsVerifierProxy, address kmsVerifierImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
@@ -93,21 +93,21 @@ abstract contract HostContractsDeployerTestUtils is Test {
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
             kmsVerifierAdd
         );
-        vm.label(kmsVerifierAdd, "KMSVerifier Proxy");
+        vm.label(kmsVerifierAdd, "KMSVerifierV2 Proxy");
 
-        kmsVerifierImplementation = address(new KMSVerifier());
-        vm.label(kmsVerifierImplementation, "KMSVerifier Implementation");
+        kmsVerifierImplementation = address(new KMSVerifierV2());
+        vm.label(kmsVerifierImplementation, "KMSVerifierV2 Implementation");
 
         vm.prank(owner);
         EmptyUUPSProxy(kmsVerifierAdd).upgradeToAndCall(
             kmsVerifierImplementation,
             abi.encodeCall(
-                KMSVerifier.initializeFromEmptyProxy,
+                KMSVerifierV2.initializeFromEmptyProxy,
                 (verifyingContractSource, chainIDSource, initialSigners, initialThreshold)
             )
         );
 
-        kmsVerifierProxy = KMSVerifier(kmsVerifierAdd);
+        kmsVerifierProxy = KMSVerifierV2(kmsVerifierAdd);
     }
 
     function _deployInputVerifier(
@@ -187,7 +187,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         require(fheExecutor.getACLAddress() == aclAdd, "executor ACL wiring");
         require(fheExecutor.getHCULimitAddress() == hcuLimitAdd, "executor HCU wiring");
         require(aclProxy.getPauserSetAddress() == pauserSetAdd, "ACL PauserSet wiring");
-        require(KMSVerifier(kmsVerifierAdd).getThreshold() == kmsThreshold, "KMS threshold wiring");
+        require(KMSVerifierV2(kmsVerifierAdd).getThreshold() == kmsThreshold, "KMS threshold wiring");
         require(InputVerifier(inputVerifierAdd).getThreshold() == inputThreshold, "Input threshold wiring");
     }
 

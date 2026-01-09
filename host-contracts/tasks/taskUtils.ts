@@ -3,7 +3,7 @@ import fs from 'fs';
 import { task } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 
-import { InputVerifier, KMSVerifier } from '../types';
+import { InputVerifier, KMSVerifierV2 } from '../types';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Faucet
@@ -29,19 +29,19 @@ task('task:faucetToPrivate')
 task('task:getKmsSigners')
   .addOptionalParam(
     'customKmsVerifierAddress',
-    'Use a custom address for the KMSVerifier contract instead of the default one - ie stored inside .env.host',
+    'Use a custom address for the KMSVerifierV2 contract instead of the default one - ie stored inside .env.host',
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const factory = await ethers.getContractFactory('./contracts/KMSVerifier.sol:KMSVerifier');
+    const factory = await ethers.getContractFactory('./contracts/KMSVerifierV2.sol:KMSVerifierV2');
     let kmsAdd;
     if (taskArguments.customKmsVerifierAddress) {
       kmsAdd = taskArguments.customKmsVerifierAddress;
     } else {
       kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).KMS_VERIFIER_CONTRACT_ADDRESS;
     }
-    const kmsVerifier = factory.attach(kmsAdd).connect(ethers.provider) as KMSVerifier;
+    const kmsVerifier = factory.attach(kmsAdd).connect(ethers.provider) as KMSVerifierV2;
     const listCurrentKMSSigners = await kmsVerifier.getKmsSigners();
-    console.log('The list of current KMS Signers stored inside KMSVerifier contract is: ', listCurrentKMSSigners);
+    console.log('The list of current KMS Signers stored inside KMSVerifierV2 contract is: ', listCurrentKMSSigners);
   });
 
 ////////////////////////////////////////////////////////////////////////////////

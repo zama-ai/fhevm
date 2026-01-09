@@ -134,7 +134,7 @@ task('task:deployFHEVMExecutor').setAction(async function (taskArguments: TaskAr
 });
 
 ////////////////////////////////////////////////////////////////////////////////
-// KMSVerifier
+// KMSVerifierV2 (replaces KMSVerifier with epoch grace period support)
 ////////////////////////////////////////////////////////////////////////////////
 
 task('task:deployKMSVerifier')
@@ -148,7 +148,7 @@ task('task:deployKMSVerifier')
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
     const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-    const newImplem = await ethers.getContractFactory('KMSVerifier', deployer);
+    const newImplem = await ethers.getContractFactory('KMSVerifierV2', deployer);
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
     const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
     const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
@@ -173,12 +173,12 @@ task('task:deployKMSVerifier')
         args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold],
       },
     });
-    console.log('KMSVerifier code set successfully at address:', proxyAddress);
+    console.log('KMSVerifierV2 code set successfully at address:', proxyAddress);
     console.log(
-      `${numSigners} KMS signers were added to KMSVerifier at initialization, list of KMS signers is:`,
+      `${numSigners} KMS signers were added to KMSVerifierV2 at initialization, list of KMS signers is:`,
       initialSigners,
     );
-    console.log('Threshold for KMSVerifier is:', initialThreshold);
+    console.log('Threshold for KMSVerifierV2 is:', initialThreshold);
   });
 
 ////////////////////////////////////////////////////////////////////////////////
