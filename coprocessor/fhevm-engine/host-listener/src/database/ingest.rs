@@ -41,7 +41,7 @@ pub async fn ingest_block_logs(
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
-) -> Result<(), sqlx::Error> {
+) -> Result<usize, sqlx::Error> {
     let mut tx = db.new_transaction().await?;
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
@@ -140,12 +140,15 @@ pub async fn ingest_block_logs(
         }
     }
 
-    if catchup_insertion == block_logs.logs.len() {
-        info!(block_number, catchup_insertion, "Catchup inserted a block");
-    } else if catchup_insertion > 0 {
-        info!(block_number, catchup_insertion, "Catchup inserted events");
+    if catchup_insertion > 0 {
+        if catchup_insertion == block_logs.logs.len() {
+            info!(block_number, catchup_insertion, "Catchup inserted a block");
+        } else {
+            info!(block_number, catchup_insertion, "Catchup inserted events");
+        }
     }
 
     db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
-    tx.commit().await
+    tx.commit().await?;
+    Ok(catchup_insertion)
 }
