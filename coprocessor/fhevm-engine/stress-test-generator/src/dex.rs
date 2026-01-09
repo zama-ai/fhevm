@@ -1,27 +1,25 @@
-use alloy_primitives::Address;
-use fhevm_engine_common::types::AllowEvents;
-use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
-use host_listener::database::tfhe_event_propagate::{
-    Database as ListenerDatabase, Handle, ScalarByte,
-};
-use sqlx::Postgres;
-
 use crate::erc20::erc20_transaction;
 use crate::utils::{
     allow_handle, generate_trivial_encrypt, insert_tfhe_event, next_random_handle, tfhe_event,
     Context, ERCTransferVariant, DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
+use alloy_primitives::Address;
+use fhevm_engine_common::types::AllowEvents;
+use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
+use host_listener::database::tfhe_event_propagate::{
+    Database as ListenerDatabase, Handle, ScalarByte,
+};
 
 #[allow(clippy::too_many_arguments)]
 async fn dex_swap_request_update_dex_balance(
     ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     from_balance: Option<Handle>,
     current_dex_balance: Option<Handle>,
     amount: Option<Handle>,
     transaction_id: Handle,
-    listener_event_to_db: &mut ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
+    listener_event_to_db: &ListenerDatabase,
     variant: ERCTransferVariant,
     contract_address: &String,
     user_address: &String,
@@ -41,12 +39,12 @@ async fn dex_swap_request_update_dex_balance(
         generate_random_handle_amount_if_none(ctx, amount, contract_address, user_address).await?;
     let (_, new_current_balance) = erc20_transaction(
         ctx,
+        tx,
         Some(from_balance),
         Some(current_dex_balance),
         Some(amount),
         Some(transaction_id),
         listener_event_to_db,
-        pool,
         variant,
         contract_address,
         user_address,
@@ -60,19 +58,19 @@ async fn dex_swap_request_update_dex_balance(
         result: sent_amount,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
     Ok((sent_amount, new_current_balance))
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn dex_swap_request_finalize(
     ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     to_balance: Option<Handle>,
     total_dex_token_in: Option<Handle>,
     sent: Option<Handle>,
     transaction_id: Handle,
-    listener_event_to_db: &mut ListenerDatabase,
-    _pool: &sqlx::Pool<Postgres>,
+    listener_event_to_db: &ListenerDatabase,
     contract_address: &String,
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
@@ -97,7 +95,7 @@ async fn dex_swap_request_finalize(
         result: pending_in,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(listener_event_to_db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true).await?;
     let pending_total_token_in = next_random_handle(DEF_TYPE);
     let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
         caller,
@@ -106,13 +104,14 @@ async fn dex_swap_request_finalize(
         result: pending_total_token_in,
         scalarByte: ScalarByte::from(false as u8),
     }));
-    insert_tfhe_event(listener_event_to_db, transaction_id, event, true).await?;
+    insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, true).await?;
     Ok((pending_in, pending_total_token_in))
 }
 
 #[allow(clippy::too_many_arguments)]
 pub async fn dex_swap_request_transaction(
     ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     from_balance_0: Option<Handle>,
     from_balance_1: Option<Handle>,
     current_balance_0: Option<Handle>,
@@ -123,8 +122,7 @@ pub async fn dex_swap_request_transaction(
     total_token_1: Option<Handle>,
     amount_0: Option<Handle>,
     amount_1: Option<Handle>,
-    listener_event_to_db: &mut ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
+    listener_event_to_db: &ListenerDatabase,
     variant: ERCTransferVariant,
     contract_address: &String,
     user_address: &String,
@@ -171,12 +169,12 @@ pub async fn dex_swap_request_transaction(
 
     let (sent_0, new_current_balance_0) = dex_swap_request_update_dex_balance(
         ctx,
+        tx,
         Some(from_balance_0),
         Some(current_balance_0),
         Some(amount_0),
         transaction_id,
         listener_event_to_db,
-        pool,
         variant.to_owned(),
         contract_address,
         user_address,
@@ -184,12 +182,12 @@ pub async fn dex_swap_request_transaction(
     .await?;
     let (sent_1, new_current_balance_1) = dex_swap_request_update_dex_balance(
         ctx,
+        tx,
         Some(from_balance_1),
         Some(current_balance_1),
         Some(amount_1),
         transaction_id,
         listener_event_to_db,
-        pool,
         variant.to_owned(),
         contract_address,
         user_address,
@@ -198,74 +196,74 @@ pub async fn dex_swap_request_transaction(
 
     let (pending_in_0, pending_total_token_in_0) = dex_swap_request_finalize(
         ctx,
+        tx,
         Some(to_balance_0),
         Some(total_token_0),
         Some(sent_0),
         transaction_id,
         listener_event_to_db,
-        pool,
         contract_address,
         user_address,
     )
     .await?;
     let (pending_in_1, pending_total_token_in_1) = dex_swap_request_finalize(
         ctx,
+        tx,
         Some(to_balance_1),
         Some(total_token_1),
         Some(sent_1),
         transaction_id,
         listener_event_to_db,
-        pool,
         contract_address,
         user_address,
     )
     .await?;
     allow_handle(
+        tx,
         &pending_in_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     allow_handle(
+        tx,
         &pending_in_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     allow_handle(
+        tx,
         &pending_total_token_in_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     allow_handle(
+        tx,
         &pending_total_token_in_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     allow_handle(
+        tx,
         &new_current_balance_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     allow_handle(
+        tx,
         &new_current_balance_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     Ok((new_current_balance_0, new_current_balance_1))
@@ -274,6 +272,7 @@ pub async fn dex_swap_request_transaction(
 #[allow(clippy::too_many_arguments)]
 async fn dex_swap_claim_prepare(
     ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     pending_0_in: Option<Handle>,
     pending_1_in: Option<Handle>,
     total_dex_token_0_in: u64,
@@ -281,8 +280,7 @@ async fn dex_swap_claim_prepare(
     total_dex_token_0_out: u64,
     total_dex_token_1_out: u64,
     transaction_id: Handle,
-    listener_event_to_db: &mut ListenerDatabase,
-    _pool: &sqlx::Pool<Postgres>,
+    listener_event_to_db: &ListenerDatabase,
     _variant: ERCTransferVariant,
     contract_address: &String,
     user_address: &String,
@@ -304,8 +302,9 @@ async fn dex_swap_claim_prepare(
             toType: crate::utils::FheType::FheUint128 as u8,
             result: big_pending_1_in,
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+        insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
         let total_dex_token_0_out_te = generate_trivial_encrypt(
+            tx,
             contract_address,
             user_address,
             transaction_id,
@@ -323,8 +322,9 @@ async fn dex_swap_claim_prepare(
             result: big_amount_0_out_mul,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+        insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
         let total_dex_token_1_in_te = generate_trivial_encrypt(
+            tx,
             contract_address,
             user_address,
             transaction_id,
@@ -342,7 +342,7 @@ async fn dex_swap_claim_prepare(
             result: big_amount_0_out_div,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+        insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
         amount_0_out = next_random_handle(crate::utils::FheType::FheUint64);
         let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
             caller,
@@ -350,7 +350,7 @@ async fn dex_swap_claim_prepare(
             toType: crate::utils::FheType::FheUint64 as u8,
             result: amount_0_out,
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+        insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
     }
     if total_dex_token_0_in != 0 {
         let big_pending_0_in = next_random_handle(crate::utils::FheType::FheUint128);
@@ -360,8 +360,9 @@ async fn dex_swap_claim_prepare(
             toType: crate::utils::FheType::FheUint128 as u8,
             result: big_pending_0_in,
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+        insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
         let total_dex_token_1_out_te = generate_trivial_encrypt(
+            tx,
             contract_address,
             user_address,
             transaction_id,
@@ -379,8 +380,9 @@ async fn dex_swap_claim_prepare(
             result: big_amount_1_out_mul,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+        insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
         let total_dex_token_0_in_te = generate_trivial_encrypt(
+            tx,
             contract_address,
             user_address,
             transaction_id,
@@ -398,7 +400,7 @@ async fn dex_swap_claim_prepare(
             result: big_amount_1_out_div,
             scalarByte: ScalarByte::from(false as u8),
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+        insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
         amount_1_out = next_random_handle(crate::utils::FheType::FheUint64);
         let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
             caller,
@@ -406,7 +408,7 @@ async fn dex_swap_claim_prepare(
             toType: crate::utils::FheType::FheUint64 as u8,
             result: amount_1_out,
         }));
-        insert_tfhe_event(listener_event_to_db, transaction_id, event, false).await?;
+        insert_tfhe_event(tx, listener_event_to_db, transaction_id, event, false).await?;
     }
     Ok((amount_0_out, amount_1_out))
 }
@@ -414,13 +416,13 @@ async fn dex_swap_claim_prepare(
 #[allow(clippy::too_many_arguments)]
 async fn dex_swap_claim_update_dex_balance(
     ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     amount_out: Option<Handle>,
     total_dex_other_token_in: u64,
     old_balance: Option<Handle>,
     current_dex_balance: Option<Handle>,
     transaction_id: Handle,
-    listener_event_to_db: &mut ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
+    listener_event_to_db: &ListenerDatabase,
     variant: ERCTransferVariant,
     contract_address: &String,
     user_address: &String,
@@ -443,12 +445,12 @@ async fn dex_swap_claim_update_dex_balance(
     if total_dex_other_token_in != 0 {
         (new_dex_balance, new_balance) = erc20_transaction(
             ctx,
+            tx,
             Some(current_dex_balance),
             Some(old_balance),
             Some(amount_out),
             Some(transaction_id),
             listener_event_to_db,
-            pool,
             variant,
             contract_address,
             user_address,
@@ -461,6 +463,7 @@ async fn dex_swap_claim_update_dex_balance(
 #[allow(clippy::too_many_arguments)]
 pub async fn dex_swap_claim_transaction(
     ctx: &Context,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     pending_0_in: Option<Handle>,
     pending_1_in: Option<Handle>,
     total_token_0_in: u64,
@@ -471,8 +474,7 @@ pub async fn dex_swap_claim_transaction(
     old_balance_1: Option<Handle>,
     current_balance_0: Option<Handle>,
     current_balance_1: Option<Handle>,
-    listener_event_to_db: &mut ListenerDatabase,
-    pool: &sqlx::Pool<Postgres>,
+    listener_event_to_db: &ListenerDatabase,
     variant: ERCTransferVariant,
     contract_address: &String,
     user_address: &String,
@@ -507,6 +509,7 @@ pub async fn dex_swap_claim_transaction(
 
     let (amount_0_out, amount_1_out) = dex_swap_claim_prepare(
         ctx,
+        tx,
         Some(pending_0_in),
         Some(pending_1_in),
         total_token_0_in,
@@ -515,7 +518,6 @@ pub async fn dex_swap_claim_transaction(
         total_token_1_out,
         transaction_id,
         listener_event_to_db,
-        pool,
         variant.to_owned(),
         contract_address,
         user_address,
@@ -524,13 +526,13 @@ pub async fn dex_swap_claim_transaction(
 
     let (new_dex_balance_0, new_balance_0) = dex_swap_claim_update_dex_balance(
         ctx,
+        tx,
         Some(amount_0_out),
         total_token_1_in,
         Some(old_balance_0),
         Some(current_balance_0),
         transaction_id,
         listener_event_to_db,
-        pool,
         variant.to_owned(),
         contract_address,
         user_address,
@@ -538,48 +540,48 @@ pub async fn dex_swap_claim_transaction(
     .await?;
     let (new_dex_balance_1, new_balance_1) = dex_swap_claim_update_dex_balance(
         ctx,
+        tx,
         Some(amount_1_out),
         total_token_0_in,
         Some(old_balance_1),
         Some(current_balance_1),
         transaction_id,
         listener_event_to_db,
-        pool,
         variant.to_owned(),
         contract_address,
         user_address,
     )
     .await?;
     allow_handle(
+        tx,
         &new_balance_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     allow_handle(
+        tx,
         &new_balance_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     allow_handle(
+        tx,
         &new_dex_balance_0.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     allow_handle(
+        tx,
         &new_dex_balance_1.to_vec(),
         AllowEvents::AllowedForDecryption,
         contract_address.to_string(),
         transaction_id,
-        pool,
     )
     .await?;
     Ok((new_dex_balance_0, new_dex_balance_1))
