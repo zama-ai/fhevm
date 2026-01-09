@@ -197,6 +197,9 @@ async fn poller_catches_up_to_safe_tip(
         max_http_retries: 0,
         rpc_compute_units_per_second: 1000,
         health_port: 18081,
+        dependence_cache_size: 10_000,
+        dependence_by_connexity: false,
+        dependence_cross_block: false,
     };
 
     let poller_handle = tokio::spawn(run_poller(config));

@@ -2,6 +2,7 @@ use clap::Parser;
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::utils::DatabaseURL;
 use tracing::Level;
+use uuid::Uuid;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -82,6 +83,43 @@ pub struct Args {
     /// tfhe-worker service name in OTLP traces
     #[arg(long, default_value = "tfhe-worker")]
     pub service_name: String,
+
+    /// Worker/replica ID for this worker instance
+    /// If not provided, a random UUID will be generated
+    /// Used to identify the worker in the dependence_chain table
+    #[arg(long, value_parser = clap::value_parser!(Uuid))]
+    pub worker_id: Option<Uuid>,
+
+    /// Time-to-live in seconds for dependence chain locks
+    /// Defaults to 30 seconds if not provided
+    #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 30)]
+    pub dcid_ttl_sec: u32,
+
+    /// If set to true, disable dependence chain ID locking mechanism
+    /// Enabling this may lead to multiple workers processing the same dependence chain simultaneously
+    /// Useful for fallbacking to non-locking behavior in case of issues with the locking mechanism
+    #[arg(long, value_parser = clap::value_parser!(bool), default_value_t = false)]
+    pub disable_dcid_locking: bool,
+
+    /// Time slice in seconds for processing each dependence chain
+    /// If a worker exceeds this time while processing a dependence chain,
+    /// it will release the lock and allow other workers to acquire it
+    #[arg(long, default_value_t = 90)]
+    pub dcid_timeslice_sec: u32,
+
+    /// Time-to-live in seconds for processed dependence chains
+    /// Processed dependence chains older than this TTL will be deleted during idle time
+    #[arg(long, default_value_t = 48*60*60)] // Keep dcid not older than 48 hours
+    pub processed_dcid_ttl_sec: u32,
+
+    /// Interval in seconds for cleaning up expired dependence chain locks
+    #[arg(long, default_value_t = 3600)]
+    pub dcid_cleanup_interval_sec: u32,
+
+    /// Maximum number of worker cycles allowed without progress on a
+    /// dependence chain
+    #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 2)]
+    pub dcid_max_no_progress_cycles: u32,
 
     /// Log level for the application
     #[arg(
