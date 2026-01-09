@@ -163,6 +163,12 @@ interfaces/
 | 1A.8 | Update Hardhat tasks | Point to V2 contracts, update deployment scripts |
 | 1A.9 | Regenerate Rust bindings | `python3 scripts/bindings_update.py update` |
 | 1A.10 | Write Foundry tests | Unit tests for V2 contracts |
+| 1A.11 | Update upgrade tests | Remove V1 references in `test/upgrades/upgrades.ts` |
+
+### Phase Boundary Check (1A)
+- No changes outside `gateway-contracts/`
+- `InputVerificationRegistry` changes included in this phase (do not defer to Phase 2)
+- V2 contract tests added and passing
 
 ### Contract Changes Detail
 
@@ -428,8 +434,9 @@ Gateway                                        Gateway
 | 2.6 | Update event subscription to V2 | `gw-listener/src/gw_listener.rs` |
 | 2.7 | **Add event reconciliation on startup** | `gw-listener/src/` (Oracle finding) |
 | 2.8 | Disable verify_proof in tx-sender (comment out + WARN log) | `transaction-sender/src/ops/verify_proof.rs` |
-| 2.9 | Add DB migration for commitment column | `db-migration/migrations/` |
+| 2.9 | Add DB migration for V2 input verification fields | `db-migration/migrations/` (commitment + user_signature + epoch_id as needed) |
 | 2.10 | Write API unit tests | `gw-listener/src/api/tests/` |
+| 2.11 | Phase boundary check | Ensure Phase 2 touches only `coprocessor/fhevm-engine/` and does not add `gateway-contracts/` changes |
 
 > **Note on 2.1**: The coprocessor's `gw-listener` already has an axum server (`http_server.rs`) exposing `/healthz` and `/liveness` for monitoring. Task 2.1 extends this existing server with the V2 functional endpoints, not creating a new server from scratch.
 
@@ -490,6 +497,7 @@ pub async fn process_verify_proof_responses(...) -> Result<()> {
 - [ ] V2 events (InputVerificationRegistered) are subscribed
 - [ ] verify_proof tx-sender operation is disabled
 - [ ] All unit tests pass
+- [ ] No cross-component changes (Phase 2 is coprocessor-only)
 
 ---
 
@@ -628,6 +636,9 @@ Gateway (Decryption.sol)                       Gateway (DecryptionRegistry.sol)
 | 3.8 | Disable tx-sender decryption responses (comment out + WARN log) | `tx-sender/src/core/tx_sender.rs` |
 | 3.9 | Write API unit tests | `kms-worker/src/api/tests/` |
 | 3.10 | **Add event reconciliation with reorg safety** | `gw-listener/src/` (Oracle finding - see DESIGN_CONFLICTS_RESOLUTION.md #8) |
+| 3.11 | Add DB migration for V2 decryption requests | `connector-db/migrations/` (handles + contract_addresses + chain_id + timestamp + signature + epoch_id + rejection metadata; drop legacy columns) |
+| 3.12 | Retire legacy S3 decryption tests | `kms-worker/tests/` (remove/update V1 S3-focused tests and mocks) |
+| 3.13 | Phase boundary check | Ensure Phase 3 touches only `kms-connector/` |
 
 > **Note on 3.1**: The KMS connector's `kms-worker` already has an actix-web server exposing `/metrics`, `/healthz`, `/liveness`, and `/version` for monitoring. Task 3.1 extends this existing server with the V2 functional endpoints.
 
@@ -769,6 +780,9 @@ async fn fetch_ciphertext(handle: B256) -> Result<Ciphertext> {
 - [ ] Ciphertext fetched from Coprocessor API
 - [ ] tx-sender decryption responses disabled
 - [ ] All unit tests pass
+- [ ] DB schema updated for V2 decryption requests
+- [ ] Legacy S3 tests removed/updated
+- [ ] No cross-component changes (Phase 3 is kms-connector-only)
 
 ---
 
