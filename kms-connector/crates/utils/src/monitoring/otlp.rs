@@ -1,4 +1,4 @@
-use actix_web::{HttpResponse, http::StatusCode};
+use actix_web::HttpResponse;
 use anyhow::anyhow;
 use opentelemetry::{
     global,
@@ -51,13 +51,20 @@ pub fn init_otlp_setup(service_name: String) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The content type header for Prometheus text-based metrics format.
+///
+/// For more details, check https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format
+const PROMETHEUS_TEXT_FORMAT_HEADER: (&str, &str) = ("Content-Type", prometheus::TEXT_FORMAT);
+
 /// Responder used to collect metrics of the service.
 pub async fn metrics_responder() -> impl actix_web::Responder {
     let encoder = prometheus::TextEncoder::new();
     let metric_families = prometheus::gather();
     match encoder.encode_to_string(&metric_families) {
-        Ok(encoded_metrics) => HttpResponse::with_body(StatusCode::OK, encoded_metrics),
-        Err(e) => HttpResponse::with_body(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        Ok(encoded_metrics) => HttpResponse::Ok()
+            .insert_header(PROMETHEUS_TEXT_FORMAT_HEADER)
+            .body(encoded_metrics),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
 
