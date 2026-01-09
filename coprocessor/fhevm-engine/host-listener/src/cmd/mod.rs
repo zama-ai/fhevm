@@ -36,6 +36,9 @@ const REORG_RETRY_GET_BLOCK: u64 = 10; // retry 10 times to get logs for a block
 const RETRY_GET_BLOCK_DELAY_IN_MS: u64 = 100;
 
 const DEFAULT_BLOCK_TIME: u64 = 12;
+pub const DEFAULT_DEPENDENCE_CACHE_SIZE: u16 = 10_000;
+pub const DEFAULT_DEPENDENCE_BY_CONNEXITY: bool = false;
+pub const DEFAULT_DEPENDENCE_CROSS_BLOCK: bool = true;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -101,10 +104,24 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value = "128",
+        default_value_t = DEFAULT_DEPENDENCE_CACHE_SIZE,
         help = "Pre-computation dependence chain cache size"
     )]
     pub dependence_cache_size: u16,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_DEPENDENCE_BY_CONNEXITY,
+        help = "Dependence chain are connected components"
+    )]
+    pub dependence_by_connexity: bool,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_DEPENDENCE_CROSS_BLOCK,
+        help = "Dependence chain are across blocks"
+    )]
+    pub dependence_cross_block: bool,
 
     #[arg(
         long,
@@ -841,6 +858,7 @@ impl InfiniteLogIter {
                     warn!(
                         new_block = ?block_logs.summary,
                         block_time = self.block_time,
+                        nb_logs = block_logs.logs.len(),
                         "Block timeout, proceed with last block"
                     );
                     break block_logs;
@@ -874,6 +892,7 @@ async fn db_insert_block(
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
+    args: &Args,
 ) -> anyhow::Result<()> {
     info!(
         block = ?block_logs.summary,
@@ -889,6 +908,8 @@ async fn db_insert_block(
             block_logs,
             acl_contract_address,
             tfhe_contract_address,
+            args.dependence_by_connexity,
+            args.dependence_cross_block,
         )
         .await;
         let Err(err) = res else {
@@ -1051,6 +1072,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &block_logs,
                 &acl_contract_address,
                 &tfhe_contract_address,
+                &args,
             )
             .await;
             if status.is_err() {
