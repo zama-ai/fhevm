@@ -205,8 +205,8 @@ async fn init_kms_worker<P: Provider + Clone + 'static>(
     let s3_client = reqwest::Client::new();
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
-    let s3_service = S3Service::new(&config, provider.clone(), s3_client);
-    let decryption_processor = DecryptionProcessor::new(&config, provider.clone(), s3_service);
+    let _s3_service = S3Service::new(&config, provider.clone(), s3_client);
+    let decryption_processor = DecryptionProcessor::new(&config, provider.clone());
     let kms_generation_processor = KMSGenerationProcessor::new(&config);
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),

@@ -1,6 +1,6 @@
 use crate::core::event_processor::{
     KmsClient,
-    decryption::{DecryptionProcessor, UserDecryptionExtraData},
+    decryption::DecryptionProcessor,
     kms::KMSGenerationProcessor,
 };
 use alloy::providers::Provider;
@@ -25,7 +25,7 @@ pub trait EventProcessor: Send {
 
 /// Struct that processes Gateway's events coming from a `Postgres` database.
 #[derive(Clone)]
-pub struct DbEventProcessor<P: Provider> {
+pub struct DbEventProcessor<P: Provider + Clone + Send + Sync + 'static> {
     /// The GRPC client used to communicate with the KMS Core.
     kms_client: KmsClient,
 
@@ -42,7 +42,7 @@ pub struct DbEventProcessor<P: Provider> {
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider> EventProcessor for DbEventProcessor<P> {
+impl<P: Provider + Clone + Send + Sync + 'static> EventProcessor for DbEventProcessor<P> {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
@@ -98,7 +98,7 @@ pub enum ProcessingError {
     Recoverable(anyhow::Error),
 }
 
-impl<P: Provider> DbEventProcessor<P> {
+impl<P: Provider + Clone + Send + Sync + 'static> DbEventProcessor<P> {
     pub fn new(
         kms_client: KmsClient,
         decryption_processor: DecryptionProcessor<P>,
@@ -124,14 +124,14 @@ impl<P: Provider> DbEventProcessor<P> {
         match &event.kind {
             GatewayEventKind::PublicDecryption(req) => {
                 self.decryption_processor
-                    .check_decryption_not_already_done(req.decryptionId)
+                    .check_decryption_not_already_done(req.request_id)
                     .await?;
                 self.decryption_processor
-                    .prepare_decryption_request(
-                        req.decryptionId,
-                        &req.snsCtMaterials,
-                        &req.extraData,
-                        None,
+                    .prepare_public_decryption_request(
+                        req.request_id,
+                        &req.handles,
+                        &req.contract_addresses,
+                        req.chain_id,
                     )
                     .await
             }
@@ -139,34 +139,35 @@ impl<P: Provider> DbEventProcessor<P> {
                 // No need to check decryption is done for user decrypt, as MPC parties don't
                 // communicate between each other for user decrypt
                 self.decryption_processor
-                    .prepare_decryption_request(
-                        req.decryptionId,
-                        &req.snsCtMaterials,
-                        &req.extraData,
-                        Some(UserDecryptionExtraData::new(
-                            req.userAddress,
-                            req.publicKey.clone(),
-                        )),
+                    .prepare_user_decryption_request(
+                        req.request_id,
+                        &req.handles,
+                        &req.contract_addresses,
+                        req.user_address,
+                        req.public_key.clone(),
+                        req.signature.clone(),
+                        req.chain_id,
                     )
                     .await
             }
             GatewayEventKind::PrepKeygen(req) => self
                 .kms_generation_processor
-                .prepare_prep_keygen_request(req),
-            GatewayEventKind::Keygen(req) => {
-                self.kms_generation_processor.prepare_keygen_request(req)
-            }
-            GatewayEventKind::Crsgen(req) => {
-                self.kms_generation_processor.prepare_crsgen_request(req)
-            }
-            GatewayEventKind::PrssInit(id) => {
-                Ok(self.kms_generation_processor.prepare_prss_init_request(*id))
-            }
+                .prepare_prep_keygen_request(req)
+                .map_err(ProcessingError::Recoverable),
+            GatewayEventKind::Keygen(req) => self
+                .kms_generation_processor
+                .prepare_keygen_request(req)
+                .map_err(ProcessingError::Recoverable),
+            GatewayEventKind::Crsgen(req) => self
+                .kms_generation_processor
+                .prepare_crsgen_request(req)
+                .map_err(ProcessingError::Recoverable),
+            GatewayEventKind::PrssInit(id) => Ok(self.kms_generation_processor.prepare_prss_init_request(*id)),
             GatewayEventKind::KeyReshareSameSet(req) => self
                 .kms_generation_processor
-                .prepare_initiate_resharing_request(req),
+                .prepare_initiate_resharing_request(req)
+                .map_err(ProcessingError::Recoverable),
         }
-        .map_err(ProcessingError::Recoverable)
     }
 
     /// Core event processing logic function.

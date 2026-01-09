@@ -18,7 +18,7 @@ gw-listener.path = "crates/gw-listener"
 kms-worker.path = "crates/kms-worker"
 tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
-fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.10.3", default-features = false }
+fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
 kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.12.4", default-features = true }
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.12.4", default-features = true }
 tfhe = "=1.4.0-alpha.3"

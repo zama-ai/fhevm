@@ -10,7 +10,7 @@ use alloy::{
     transports::http::reqwest::Url,
 };
 use fhevm_gateway_bindings::{
-    decryption::Decryption::{self, DecryptionInstance},
+    decryption_registry::DecryptionRegistry::{self, DecryptionRegistryInstance},
     gateway_config::GatewayConfig::{self, GatewayConfigInstance},
     kms_generation::KMSGeneration::{self, KMSGenerationInstance},
 };
@@ -22,7 +22,7 @@ use testcontainers::{
 };
 use tracing::info;
 
-pub const DECRYPTION_MOCK_ADDRESS: Address = Address(FixedBytes([
+pub const DECRYPTION_REGISTRY_MOCK_ADDRESS: Address = Address(FixedBytes([
     184, 174, 68, 54, 92, 69, 167, 197, 37, 107, 20, 246, 7, 202, 226, 59, 192, 64, 195, 84,
 ]));
 pub const GATEWAY_CONFIG_MOCK_ADDRESS: Address = Address(FixedBytes([
@@ -44,7 +44,7 @@ const ANVIL_PORT: u16 = 8545;
 
 pub struct GatewayInstance {
     pub provider: WalletGatewayProvider,
-    pub decryption_contract: DecryptionInstance<WalletGatewayProvider>,
+    pub decryption_registry_contract: DecryptionRegistryInstance<WalletGatewayProvider>,
     pub gateway_config_contract: GatewayConfigInstance<WalletGatewayProvider>,
     pub kms_generation_contract: KMSGenerationInstance<WalletGatewayProvider>,
     pub anvil: ContainerAsync<GenericImage>,
@@ -59,7 +59,7 @@ impl GatewayInstance {
         provider: WalletGatewayProvider,
         block_time: u64,
     ) -> Self {
-        let decryption_contract = Decryption::new(DECRYPTION_MOCK_ADDRESS, provider.clone());
+        let decryption_registry_contract = DecryptionRegistry::new(DECRYPTION_REGISTRY_MOCK_ADDRESS, provider.clone());
         let gateway_config_contract =
             GatewayConfig::new(GATEWAY_CONFIG_MOCK_ADDRESS, provider.clone());
         let kms_generation_contract =
@@ -67,7 +67,7 @@ impl GatewayInstance {
 
         GatewayInstance {
             provider,
-            decryption_contract,
+            decryption_registry_contract,
             gateway_config_contract,
             kms_generation_contract,
             anvil,

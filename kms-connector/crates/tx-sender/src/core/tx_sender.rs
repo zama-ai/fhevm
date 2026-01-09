@@ -27,7 +27,6 @@ use connector_utils::{
     },
 };
 use fhevm_gateway_bindings::{
-    decryption::Decryption::{self, DecryptionErrors, DecryptionInstance},
     gateway_config::GatewayConfig::GatewayConfigErrors,
     kms_generation::KMSGeneration::{self, KMSGenerationErrors, KMSGenerationInstance},
 };
@@ -145,14 +144,11 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProviderFillers, RootPr
 
         let provider =
             connect_to_gateway_with_wallet(config.gateway_url, config.chain_id, wallet).await?;
-        let decryption_contract =
-            Decryption::new(config.decryption_contract.address, provider.clone());
         let kms_generation_contract =
             KMSGeneration::new(config.kms_generation_contract.address, provider.clone());
 
         let inner = TransactionSenderInner::new(
             provider.clone(),
-            decryption_contract,
             kms_generation_contract,
             TransactionSenderInnerConfig {
                 tx_retries: config.tx_retries,
@@ -175,7 +171,7 @@ where
     P: Provider,
 {
     provider: NonceManagedProvider<F, P>,
-    decryption_contract: DecryptionInstance<NonceManagedProvider<F, P>>,
+    // V2: Decryption contract removed - responses now served via KMS HTTP API
     kms_generation_contract: KMSGenerationInstance<NonceManagedProvider<F, P>>,
     config: TransactionSenderInnerConfig,
 }
@@ -195,13 +191,11 @@ where
 {
     pub fn new(
         provider: NonceManagedProvider<F, P>,
-        decryption_contract: DecryptionInstance<NonceManagedProvider<F, P>>,
         kms_generation_contract: KMSGenerationInstance<NonceManagedProvider<F, P>>,
         inner_config: TransactionSenderInnerConfig,
     ) -> Self {
         Self {
             provider,
-            decryption_contract,
             kms_generation_contract,
             config: inner_config,
         }
@@ -211,16 +205,17 @@ where
     async fn send_to_gateway(&self, response: KmsResponseKind) -> Result<(), Error> {
         info!("Sending response to the Gateway: {response:?}");
         let response_str = response.as_str();
+        if matches!(response, KmsResponseKind::PublicDecryption(_) | KmsResponseKind::UserDecryption(_)) {
+            warn!("Decryption responses disabled in V2 - serving via KMS HTTP API");
+            return Ok(());
+        }
         let tx_result = match response {
-            KmsResponseKind::PublicDecryption(response) => {
-                self.send_public_decryption_response(response).await
-            }
-            KmsResponseKind::UserDecryption(response) => {
-                self.send_user_decryption_response(response).await
-            }
             KmsResponseKind::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
             KmsResponseKind::Keygen(response) => self.send_keygen_response(response).await,
             KmsResponseKind::Crsgen(response) => self.send_crsgen_response(response).await,
+            KmsResponseKind::PublicDecryption(_) | KmsResponseKind::UserDecryption(_) => {
+                unreachable!("Decryption responses are handled above");
+            }
         };
 
         let receipt = tx_result.inspect_err(|e| {
@@ -244,34 +239,22 @@ where
 
     pub async fn send_public_decryption_response(
         &self,
-        response: PublicDecryptionResponse,
+        _response: PublicDecryptionResponse,
     ) -> Result<TransactionReceipt, Error> {
-        let call_builder = self.decryption_contract.publicDecryptionResponse(
-            response.decryption_id,
-            response.decrypted_result.into(),
-            response.signature.into(),
-            response.extra_data.into(),
-        );
-        debug!("Calldata length {}", call_builder.calldata().len());
-
-        let call = call_builder.into_transaction_request();
-        self.send_tx_sync_with_retry(call).await
+        warn!("send_public_decryption_response DISABLED in V2 - responses served via KMS HTTP API");
+        Err(Error::Irrecoverable(anyhow!(
+            "Public decryption responses disabled in V2 - use HTTP API"
+        )))
     }
 
     pub async fn send_user_decryption_response(
         &self,
-        response: UserDecryptionResponse,
+        _response: UserDecryptionResponse,
     ) -> Result<TransactionReceipt, Error> {
-        let call_builder = self.decryption_contract.userDecryptionResponse(
-            response.decryption_id,
-            response.user_decrypted_shares.into(),
-            response.signature.into(),
-            response.extra_data.into(),
-        );
-        debug!("Calldata length {}", call_builder.calldata().len());
-
-        let call = call_builder.into_transaction_request();
-        self.send_tx_sync_with_retry(call).await
+        warn!("send_user_decryption_response DISABLED in V2 - responses served via KMS HTTP API");
+        Err(Error::Irrecoverable(anyhow!(
+            "User decryption responses disabled in V2 - use HTTP API"
+        )))
     }
 
     pub async fn send_prep_keygen_response(
@@ -428,7 +411,6 @@ where
     fn clone(&self) -> Self {
         Self {
             provider: self.provider.clone(),
-            decryption_contract: self.decryption_contract.clone(),
             kms_generation_contract: self.kms_generation_contract.clone(),
             config: self.config.clone(),
         }
@@ -449,12 +431,6 @@ impl From<RpcError<TransportErrorKind>> for Error {
     fn from(value: RpcError<TransportErrorKind>) -> Self {
         if matches!(value, RpcError::Transport(TransportErrorKind::BackendGone)) {
             return Self::AlloyBackendGone;
-        }
-        if let Some(decryption_error) = value
-            .as_error_resp()
-            .and_then(|e| e.as_decoded_interface_error::<DecryptionErrors>())
-        {
-            return Self::Irrecoverable(anyhow!("{decryption_error:?}"));
         }
         if let Some(kms_generation_error) = value
             .as_error_resp()
@@ -528,10 +504,10 @@ mod tests {
         asserter.push_success(&send_tx_sync);
         asserter.push_success(&debug_trace_tx);
 
-        // Mock out of gas tx
+        // V2: Test disabled - decryption responses now served via HTTP API
+        // Mock keygen tx instead
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
-            DecryptionInstance::new(Address::default(), mock_provider.clone()),
             KMSGenerationInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
@@ -540,16 +516,16 @@ mod tests {
                 ..Default::default()
             },
         );
-        inner_sender
+        let result = inner_sender
             .send_to_gateway(KmsResponseKind::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
                 signature: rand_signature(),
                 extra_data: vec![],
             }))
-            .await
-            .unwrap_err();
-        logs_contain("out of gas");
+            .await;
+        assert!(result.is_err());
+        logs_contain("DISABLED in V2");
         Ok(())
     }
 
@@ -562,7 +538,6 @@ mod tests {
         );
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
-            DecryptionInstance::new(Address::default(), mock_provider.clone()),
             KMSGenerationInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 trace_reverted_tx: false,
@@ -584,8 +559,7 @@ mod tests {
 
     #[tokio::test]
     #[tracing_test::traced_test]
-    async fn test_error_decryption_not_requested() -> anyhow::Result<()> {
-        // Create a mocked `alloy::Provider`
+    async fn test_decryption_response_disabled_in_v2() -> anyhow::Result<()> {
         let asserter = Asserter::new();
         let mock_provider = NonceManagedProvider::new(
             FillProvider::new(
@@ -597,21 +571,8 @@ mod tests {
             Address::default(),
         );
 
-        // Used to mock all RPC responses of transaction sending operation
-        let estimate_gas: usize = 21000;
-        let send_tx_failure = ErrorPayload {
-            code: 3,
-            message: "execution reverted: custom error 0xd48af942: 77cb0955e69416cf320fcdf8186e8b3951fb40b84cb7f2a356d0e8af207b0046".into(),
-            data: Some(RawValue::from_string(String::from(
-                "\"0xd48af94277cb0955e69416cf320fcdf8186e8b3951fb40b84cb7f2a356d0e8af207b0046\"",
-            ))?),
-        };
-        asserter.push_success(&estimate_gas);
-        asserter.push_failure(send_tx_failure);
-
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
-            DecryptionInstance::new(Address::default(), mock_provider.clone()),
             KMSGenerationInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
@@ -629,7 +590,7 @@ mod tests {
             .unwrap_err();
         match error {
             Error::Irrecoverable(error_msg) => {
-                assert!(error_msg.to_string().contains("DecryptionNotRequested"));
+                assert!(error_msg.to_string().contains("disabled in V2"));
             }
             _ => panic!("Unexpected error type"),
         }
@@ -638,8 +599,7 @@ mod tests {
 
     #[tokio::test]
     #[tracing_test::traced_test]
-    async fn test_error_not_kms_tx_sender() -> anyhow::Result<()> {
-        // Create a mocked `alloy::Provider`
+    async fn test_public_decryption_response_disabled_in_v2() -> anyhow::Result<()> {
         let asserter = Asserter::new();
         let mock_provider = NonceManagedProvider::new(
             FillProvider::new(
@@ -651,21 +611,8 @@ mod tests {
             Address::default(),
         );
 
-        // Used to mock all RPC responses of transaction sending operation
-        let estimate_gas: usize = 21000;
-        let send_tx_failure = ErrorPayload {
-            code: 3,
-            message: "execution reverted: custom error 0xaee86323: 00000000000000000000000031de9c8ac5ecd5eaceddddee531e9bad8ac9c2a5".into(),
-            data: Some(RawValue::from_string(String::from(
-                "\"0xaee8632300000000000000000000000031de9c8ac5ecd5eaceddddee531e9bad8ac9c2a5\"",
-            ))?),
-        };
-        asserter.push_success(&estimate_gas);
-        asserter.push_failure(send_tx_failure);
-
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
-            DecryptionInstance::new(Address::default(), mock_provider.clone()),
             KMSGenerationInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
@@ -673,71 +620,19 @@ mod tests {
             },
         );
         let error = inner_sender
-            .send_to_gateway(KmsResponseKind::UserDecryption(UserDecryptionResponse {
-                decryption_id: rand_u256(),
-                user_decrypted_shares: vec![],
-                signature: rand_signature(),
-                extra_data: vec![],
-            }))
+            .send_to_gateway(KmsResponseKind::PublicDecryption(
+                PublicDecryptionResponse {
+                    decryption_id: rand_u256(),
+                    decrypted_result: vec![],
+                    signature: rand_signature(),
+                    extra_data: vec![],
+                },
+            ))
             .await
             .unwrap_err();
         match error {
             Error::Irrecoverable(error_msg) => {
-                assert!(error_msg.to_string().contains("NotKmsTxSender"));
-            }
-            _ => panic!("Unexpected error type"),
-        }
-        Ok(())
-    }
-
-    #[tokio::test]
-    #[tracing_test::traced_test]
-    async fn test_error_not_kms_signer() -> anyhow::Result<()> {
-        // Create a mocked `alloy::Provider`
-        let asserter = Asserter::new();
-        let mock_provider = NonceManagedProvider::new(
-            FillProvider::new(
-                ProviderBuilder::new()
-                    .disable_recommended_fillers()
-                    .connect_mocked_client(asserter.clone()),
-                Identity,
-            ),
-            Address::default(),
-        );
-
-        // Used to mock all RPC responses of transaction sending operation
-        let estimate_gas: usize = 21000;
-        let send_tx_failure = ErrorPayload {
-            code: 3,
-            message: "execution reverted: custom error 0x2a7c6ef6: 000000000000000000000000c5c5b98cb42800738f51b48b97b8d7998cfb3d68".into(),
-            data: Some(RawValue::from_string(String::from(
-                "\"0x2a7c6ef6000000000000000000000000c5c5b98cb42800738f51b48b97b8d7998cfb3d68\"",
-            ))?),
-        };
-        asserter.push_success(&estimate_gas);
-        asserter.push_failure(send_tx_failure);
-
-        let inner_sender = TransactionSenderInner::new(
-            mock_provider.clone(),
-            DecryptionInstance::new(Address::default(), mock_provider.clone()),
-            KMSGenerationInstance::new(Address::default(), mock_provider),
-            TransactionSenderInnerConfig {
-                tx_retries: 1,
-                ..Default::default()
-            },
-        );
-        let error = inner_sender
-            .send_to_gateway(KmsResponseKind::UserDecryption(UserDecryptionResponse {
-                decryption_id: rand_u256(),
-                user_decrypted_shares: vec![],
-                signature: rand_signature(),
-                extra_data: vec![],
-            }))
-            .await
-            .unwrap_err();
-        match error {
-            Error::Irrecoverable(error_msg) => {
-                assert!(error_msg.to_string().contains("NotKmsSigner"));
+                assert!(error_msg.to_string().contains("disabled in V2"));
             }
             _ => panic!("Unexpected error type"),
         }

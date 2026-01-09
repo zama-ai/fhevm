@@ -1,16 +1,37 @@
 use crate::{
     monitoring::otlp::PropagationContext,
-    types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
+    types::db::{OperationStatus, ParamsTypeDb},
 };
-use alloy::primitives::U256;
+use alloy::primitives::{Address, FixedBytes, U256};
 use fhevm_gateway_bindings::{
-    decryption::Decryption::{
-        PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
+    decryption_registry::DecryptionRegistry::{
+        PublicDecryptionRequested, UserDecryptionRequested,
     },
     kms_generation::KMSGeneration::{
         CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
     },
 };
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PublicDecryptionRequestV2 {
+    pub request_id: U256,
+    pub handles: Vec<FixedBytes<32>>,
+    pub contract_addresses: Vec<Address>,
+    pub chain_id: U256,
+    pub timestamp: U256,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UserDecryptionRequestV2 {
+    pub request_id: U256,
+    pub handles: Vec<FixedBytes<32>>,
+    pub contract_addresses: Vec<Address>,
+    pub user_address: Address,
+    pub public_key: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub chain_id: U256,
+    pub timestamp: U256,
+}
 use sqlx::{
     Pool, Postgres, Row,
     postgres::{PgArguments, PgRow},
@@ -61,11 +82,11 @@ impl GatewayEvent {
         let err_count = self.error_counter;
         match &self.kind {
             GatewayEventKind::PublicDecryption(e) => {
-                update_public_decryption_status(db, e.decryptionId, status, already_sent, err_count)
+                update_public_decryption_status(db, e.request_id, status, already_sent, err_count)
                     .await
             }
             GatewayEventKind::UserDecryption(e) => {
-                update_user_decryption_status(db, e.decryptionId, status, already_sent, err_count)
+                update_user_decryption_status(db, e.request_id, status, already_sent, err_count)
                     .await
             }
             GatewayEventKind::PrepKeygen(e) => {
@@ -87,8 +108,8 @@ impl GatewayEvent {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum GatewayEventKind {
-    PublicDecryption(PublicDecryptionRequest),
-    UserDecryption(UserDecryptionRequest),
+    PublicDecryption(PublicDecryptionRequestV2),
+    UserDecryption(UserDecryptionRequestV2),
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
     Crsgen(CrsgenRequest),
@@ -97,16 +118,15 @@ pub enum GatewayEventKind {
 }
 
 pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
-    let sns_ct_materials = row
-        .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
-        .iter()
-        .map(SnsCiphertextMaterial::from)
-        .collect();
+    let handles: Vec<[u8; 32]> = row.try_get("handles")?;
+    let contract_addresses: Vec<[u8; 20]> = row.try_get("contract_addresses")?;
 
-    let kind = GatewayEventKind::PublicDecryption(PublicDecryptionRequest {
-        decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
-        snsCtMaterials: sns_ct_materials,
-        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
+    let kind = GatewayEventKind::PublicDecryption(PublicDecryptionRequestV2 {
+        request_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("request_id")?),
+        handles: handles.into_iter().map(FixedBytes::from).collect(),
+        contract_addresses: contract_addresses.into_iter().map(Address::from).collect(),
+        chain_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("chain_id")?),
+        timestamp: U256::from_le_bytes(row.try_get::<[u8; 32], _>("timestamp")?),
     });
     Ok(GatewayEvent {
         kind,
@@ -117,18 +137,18 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
 }
 
 pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
-    let sns_ct_materials = row
-        .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
-        .iter()
-        .map(SnsCiphertextMaterial::from)
-        .collect();
+    let handles: Vec<[u8; 32]> = row.try_get("handles")?;
+    let contract_addresses: Vec<[u8; 20]> = row.try_get("contract_addresses")?;
 
-    let kind = GatewayEventKind::UserDecryption(UserDecryptionRequest {
-        decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
-        snsCtMaterials: sns_ct_materials,
-        userAddress: row.try_get::<[u8; 20], _>("user_address")?.into(),
-        publicKey: row.try_get::<Vec<u8>, _>("public_key")?.into(),
-        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
+    let kind = GatewayEventKind::UserDecryption(UserDecryptionRequestV2 {
+        request_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("request_id")?),
+        handles: handles.into_iter().map(FixedBytes::from).collect(),
+        contract_addresses: contract_addresses.into_iter().map(Address::from).collect(),
+        user_address: row.try_get::<[u8; 20], _>("user_address")?.into(),
+        public_key: row.try_get::<Vec<u8>, _>("public_key")?,
+        signature: row.try_get::<Vec<u8>, _>("signature")?,
+        chain_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("chain_id")?),
+        timestamp: U256::from_le_bytes(row.try_get::<[u8; 32], _>("timestamp")?),
     });
     Ok(GatewayEvent {
         kind,
@@ -211,15 +231,15 @@ async fn update_public_decryption_status(
     already_sent: bool,
     error_counter: i16,
 ) {
-    let query = sqlx::query!(
+    let query = sqlx::query(
         "UPDATE public_decryption_requests SET status = $1, already_sent = $2, error_counter = $3 \
         WHERE decryption_id = $4",
-        status as OperationStatus,
-        already_sent,
-        error_counter,
-        id.as_le_slice()
-    );
-    execute_update_event_query(db, query).await;
+    )
+    .bind(status as OperationStatus)
+    .bind(already_sent)
+    .bind(error_counter)
+    .bind(id.as_le_slice());
+    execute_update_event_query_dynamic(db, query).await;
 }
 
 async fn update_user_decryption_status(
@@ -229,15 +249,15 @@ async fn update_user_decryption_status(
     already_sent: bool,
     error_counter: i16,
 ) {
-    let query = sqlx::query!(
+    let query = sqlx::query(
         "UPDATE user_decryption_requests SET status = $1, already_sent = $2, error_counter = $3 \
         WHERE decryption_id = $4",
-        status as OperationStatus,
-        already_sent,
-        error_counter,
-        id.as_le_slice()
-    );
-    execute_update_event_query(db, query).await;
+    )
+    .bind(status as OperationStatus)
+    .bind(already_sent)
+    .bind(error_counter)
+    .bind(id.as_le_slice());
+    execute_update_event_query_dynamic(db, query).await;
 }
 
 async fn update_prep_keygen_status(
@@ -326,14 +346,33 @@ async fn execute_update_event_query(db: &Pool<Postgres>, query: Query<'_, Postgr
     }
 }
 
+async fn execute_update_event_query_dynamic<'a>(
+    db: &Pool<Postgres>,
+    query: sqlx::query::Query<'a, Postgres, sqlx::postgres::PgArguments>,
+) {
+    let query_result = match query.execute(db).await {
+        Ok(result) => result,
+        Err(e) => return warn!("Failed to update event: {e}"),
+    };
+
+    if query_result.rows_affected() == 1 {
+        info!("Successfully updated event in DB!");
+    } else {
+        warn!(
+            "Unexpected query result while updating event: {:?}",
+            query_result
+        )
+    }
+}
+
 impl Display for GatewayEventKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GatewayEventKind::PublicDecryption(e) => {
-                write!(f, "PublicDecryptionRequest #{}", e.decryptionId)
+                write!(f, "PublicDecryptionRequest #{}", e.request_id)
             }
             GatewayEventKind::UserDecryption(e) => {
-                write!(f, "UserDecryptionRequest #{}", e.decryptionId)
+                write!(f, "UserDecryptionRequest #{}", e.request_id)
             }
             GatewayEventKind::PrepKeygen(e) => {
                 write!(f, "PrepKeygenRequest #{}", e.prepKeygenId)
@@ -348,15 +387,30 @@ impl Display for GatewayEventKind {
     }
 }
 
-impl From<PublicDecryptionRequest> for GatewayEventKind {
-    fn from(value: PublicDecryptionRequest) -> Self {
-        Self::PublicDecryption(value)
+impl From<PublicDecryptionRequested> for GatewayEventKind {
+    fn from(value: PublicDecryptionRequested) -> Self {
+        Self::PublicDecryption(PublicDecryptionRequestV2 {
+            request_id: value.requestId,
+            handles: value.handles,
+            contract_addresses: value.contractAddresses,
+            chain_id: value.chainId,
+            timestamp: value.timestamp,
+        })
     }
 }
 
-impl From<UserDecryptionRequest> for GatewayEventKind {
-    fn from(value: UserDecryptionRequest) -> Self {
-        Self::UserDecryption(value)
+impl From<UserDecryptionRequested> for GatewayEventKind {
+    fn from(value: UserDecryptionRequested) -> Self {
+        Self::UserDecryption(UserDecryptionRequestV2 {
+            request_id: value.requestId,
+            handles: value.handles,
+            contract_addresses: value.contractAddresses,
+            user_address: value.userAddress,
+            public_key: value.publicKey.to_vec(),
+            signature: value.signature.to_vec(),
+            chain_id: value.chainId,
+            timestamp: value.timestamp,
+        })
     }
 }
 
@@ -387,6 +441,18 @@ impl From<PRSSInit> for GatewayEventKind {
 impl From<KeyReshareSameSet> for GatewayEventKind {
     fn from(value: KeyReshareSameSet) -> Self {
         Self::KeyReshareSameSet(value)
+    }
+}
+
+impl From<PublicDecryptionRequestV2> for GatewayEventKind {
+    fn from(value: PublicDecryptionRequestV2) -> Self {
+        Self::PublicDecryption(value)
+    }
+}
+
+impl From<UserDecryptionRequestV2> for GatewayEventKind {
+    fn from(value: UserDecryptionRequestV2) -> Self {
+        Self::UserDecryption(value)
     }
 }
 

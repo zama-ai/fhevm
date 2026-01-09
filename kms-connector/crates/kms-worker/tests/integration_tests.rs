@@ -191,10 +191,10 @@ fn prepare_mocks(req: &GatewayEventKind, already_sent: bool) -> MockSet {
     // Gets the request ID and endpoints for the given request type
     let (request_id_u256, req_endpoint, resp_endpoint) = match req {
         GatewayEventKind::PublicDecryption(r) => {
-            (r.decryptionId, "PublicDecrypt", "GetPublicDecryptionResult")
+            (r.request_id, "PublicDecrypt", "GetPublicDecryptionResult")
         }
         GatewayEventKind::UserDecryption(r) => {
-            (r.decryptionId, "UserDecrypt", "GetUserDecryptionResult")
+            (r.request_id, "UserDecrypt", "GetUserDecryptionResult")
         }
         GatewayEventKind::PrepKeygen(r) => {
             (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
@@ -304,14 +304,14 @@ fn check_response_data(request: &GatewayEventKind, response: KmsResponse) -> any
     info!("Checking response data...");
     let expected_response = match request {
         GatewayEventKind::PublicDecryption(r) => KmsGrpcResponse::PublicDecryption {
-            decryption_id: r.decryptionId,
+            decryption_id: r.request_id,
             grpc_response: PublicDecryptionResponse {
                 payload: Some(PublicDecryptionResponsePayload::default()),
                 ..Default::default()
             },
         },
         GatewayEventKind::UserDecryption(r) => KmsGrpcResponse::UserDecryption {
-            decryption_id: r.decryptionId,
+            decryption_id: r.request_id,
             grpc_response: UserDecryptionResponse {
                 payload: Some(UserDecryptionResponsePayload::default()),
                 ..Default::default()
@@ -351,8 +351,8 @@ async fn init_kms_worker<P: Provider + Clone + 'static>(
     let s3_client = reqwest::Client::new();
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
-    let s3_service = S3Service::new(&config, provider.clone(), s3_client);
-    let decryption_processor = DecryptionProcessor::new(&config, provider.clone(), s3_service);
+    let _s3_service = S3Service::new(&config, provider.clone(), s3_client);
+    let decryption_processor = DecryptionProcessor::new(&config, provider.clone());
     let kms_generation_processor = KMSGenerationProcessor::new(&config);
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),

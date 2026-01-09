@@ -5,15 +5,12 @@ use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
-        GatewayEvent, GatewayEventKind,
-        db::{EventType, ParamsTypeDb, SnsCiphertextMaterialDbItem},
+        GatewayEvent, GatewayEventKind, PublicDecryptionRequestV2, UserDecryptionRequestV2,
+        db::{EventType, ParamsTypeDb},
     },
 };
-use fhevm_gateway_bindings::{
-    decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kms_generation::KMSGeneration::{
-        CrsgenRequest, KeyReshareSameSet, KeygenRequest, PrepKeygenRequest,
-    },
+use fhevm_gateway_bindings::kms_generation::KMSGeneration::{
+    CrsgenRequest, KeyReshareSameSet, KeygenRequest, PrepKeygenRequest,
 };
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
 use tracing::{debug, error, info, warn};
@@ -80,51 +77,50 @@ async fn publish_event_inner(
 
 async fn publish_public_decryption(
     db_pool: &Pool<Postgres>,
-    request: PublicDecryptionRequest,
+    request: PublicDecryptionRequestV2,
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
-    let sns_ciphertexts_db = request
-        .snsCtMaterials
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+    let handles: Vec<[u8; 32]> = request.handles.iter().map(|h| h.0).collect();
+    let contract_addresses: Vec<[u8; 20]> = request.contract_addresses.iter().map(|a| a.0 .0).collect();
 
-    sqlx::query!(
-            "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, otlp_context) \
-            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-            request.decryptionId.as_le_slice(),
-            sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
-            request.extraData.as_ref(),
-            bc2wrap::serialize(&otlp_ctx)?,
-        )
-        .execute(db_pool)
-        .await
-        .map_err(anyhow::Error::from)
+    sqlx::query(
+        "INSERT INTO public_decryption_requests(decryption_id, handles, contract_addresses, chain_id, timestamp, otlp_context) \
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+    )
+    .bind(request.request_id.as_le_slice())
+    .bind(handles)
+    .bind(contract_addresses)
+    .bind(request.chain_id.as_le_slice())
+    .bind(request.timestamp.as_le_slice())
+    .bind(bc2wrap::serialize(&otlp_ctx)?)
+    .execute(db_pool)
+    .await
+    .map_err(anyhow::Error::from)
 }
 
 async fn publish_user_decryption(
     db_pool: &Pool<Postgres>,
-    request: UserDecryptionRequest,
+    request: UserDecryptionRequestV2,
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
-    let sns_ciphertexts_db = request
-        .snsCtMaterials
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+    let handles: Vec<[u8; 32]> = request.handles.iter().map(|h| h.0).collect();
+    let contract_addresses: Vec<[u8; 20]> = request.contract_addresses.iter().map(|a| a.0 .0).collect();
 
-    sqlx::query!(
+    sqlx::query(
         "INSERT INTO user_decryption_requests(\
-            decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context\
+            decryption_id, handles, contract_addresses, user_address, public_key, signature, chain_id, timestamp, otlp_context\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
-        request.decryptionId.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
-        request.userAddress.as_slice(),
-        request.publicKey.as_ref(),
-        request.extraData.as_ref(),
-        bc2wrap::serialize(&otlp_ctx)?,
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
     )
+    .bind(request.request_id.as_le_slice())
+    .bind(handles)
+    .bind(contract_addresses)
+    .bind(request.user_address.as_slice())
+    .bind(&request.public_key)
+    .bind(&request.signature)
+    .bind(request.chain_id.as_le_slice())
+    .bind(request.timestamp.as_le_slice())
+    .bind(bc2wrap::serialize(&otlp_ctx)?)
     .execute(db_pool)
     .await
     .map_err(anyhow::Error::from)

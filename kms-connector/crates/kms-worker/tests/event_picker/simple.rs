@@ -1,16 +1,18 @@
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     tests::{
-        rand::{rand_address, rand_public_key, rand_sns_ct, rand_u256},
+        rand::{
+            rand_address, rand_contract_addresses, rand_handles, rand_public_key, rand_signature,
+            rand_u256,
+        },
         setup::TestInstanceBuilder,
     },
     types::{
-        GatewayEvent, GatewayEventKind,
-        db::{ParamsTypeDb, SnsCiphertextMaterialDbItem},
+        GatewayEvent, GatewayEventKind, PublicDecryptionRequestV2, UserDecryptionRequestV2,
+        db::ParamsTypeDb,
     },
 };
 use fhevm_gateway_bindings::{
-    decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
     kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
 };
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
@@ -25,19 +27,23 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
         DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
 
     let decryption_id = rand_u256();
-    let sns_ct = vec![rand_sns_ct()];
-    let sns_ciphertexts_db = sns_ct
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+    let handles = rand_handles(2);
+    let contract_addresses = rand_contract_addresses(2);
+    let chain_id = rand_u256();
+    let timestamp = rand_u256();
+    let handles_db: Vec<[u8; 32]> = handles.iter().map(|h| h.0).collect();
+    let contract_addresses_db: Vec<[u8; 20]> =
+        contract_addresses.iter().map(|a| a.0 .0).collect();
 
     info!("Triggering Postgres notification with PublicDecryptionRequest insertion...");
     sqlx::query!(
-        "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, otlp_context) \
-        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        "INSERT INTO public_decryption_requests(decryption_id, handles, contract_addresses, chain_id, timestamp, otlp_context) \
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
-        vec![],
+        handles_db as Vec<[u8; 32]>,
+        contract_addresses_db as Vec<[u8; 20]>,
+        chain_id.as_le_slice(),
+        timestamp.as_le_slice(),
         bc2wrap::serialize(&PropagationContext::empty())?,
     )
     .execute(test_instance.db())
@@ -52,10 +58,12 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
             already_sent: false,
-            kind: GatewayEventKind::PublicDecryption(PublicDecryptionRequest {
-                decryptionId: decryption_id,
-                snsCtMaterials: sns_ct,
-                extraData: vec![].into(),
+            kind: GatewayEventKind::PublicDecryption(PublicDecryptionRequestV2 {
+                request_id: decryption_id,
+                handles,
+                contract_addresses,
+                chain_id,
+                timestamp,
             }),
         }]
     );
@@ -71,25 +79,31 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
         DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
 
     let decryption_id = rand_u256();
-    let sns_ct = vec![rand_sns_ct()];
     let user_address = rand_address();
     let public_key = rand_public_key();
-    let sns_ciphertexts_db = sns_ct
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+    let user_signature = rand_signature();
+    let handles = rand_handles(2);
+    let contract_addresses = rand_contract_addresses(2);
+    let chain_id = rand_u256();
+    let timestamp = rand_u256();
+    let handles_db: Vec<[u8; 32]> = handles.iter().map(|h| h.0).collect();
+    let contract_addresses_db: Vec<[u8; 20]> =
+        contract_addresses.iter().map(|a| a.0 .0).collect();
 
     info!("Triggering Postgres notification with UserDecryptionRequest insertion...");
     sqlx::query!(
         "INSERT INTO user_decryption_requests(\
-            decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context\
+            decryption_id, handles, contract_addresses, user_address, public_key, signature, chain_id, timestamp, otlp_context\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        handles_db as Vec<[u8; 32]>,
+        contract_addresses_db as Vec<[u8; 20]>,
         user_address.as_slice(),
         &public_key,
-        vec![],
+        &user_signature,
+        chain_id.as_le_slice(),
+        timestamp.as_le_slice(),
         bc2wrap::serialize(&PropagationContext::empty())?,
     )
     .execute(test_instance.db())
@@ -104,12 +118,15 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
             already_sent: false,
-            kind: GatewayEventKind::UserDecryption(UserDecryptionRequest {
-                decryptionId: decryption_id,
-                snsCtMaterials: sns_ct,
-                userAddress: user_address,
-                publicKey: public_key.into(),
-                extraData: vec![].into(),
+            kind: GatewayEventKind::UserDecryption(UserDecryptionRequestV2 {
+                request_id: decryption_id,
+                handles,
+                contract_addresses,
+                user_address,
+                public_key,
+                signature: user_signature,
+                chain_id,
+                timestamp,
             })
         }]
     );
@@ -248,25 +265,29 @@ async fn test_polling_backup() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
     let decryption_id = rand_u256();
-    let sns_ct = vec![rand_sns_ct()];
-    let sns_ciphertexts_db = sns_ct
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+    let handles = rand_handles(1);
+    let contract_addresses = rand_contract_addresses(1);
+    let chain_id = rand_u256();
+    let timestamp = rand_u256();
+    let handles_db: Vec<[u8; 32]> = handles.iter().map(|h| h.0).collect();
+    let contract_addresses_db: Vec<[u8; 20]> =
+        contract_addresses.iter().map(|a| a.0 .0).collect();
     info!("Inserting PublicDecryptionRequest before starting the event picker...");
     sqlx::query!(
-        "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, otlp_context) \
-        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        "INSERT INTO public_decryption_requests(decryption_id, handles, contract_addresses, chain_id, timestamp, otlp_context) \
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
-        vec![],
+        handles_db as Vec<[u8; 32]>,
+        contract_addresses_db as Vec<[u8; 20]>,
+        chain_id.as_le_slice(),
+        timestamp.as_le_slice(),
         bc2wrap::serialize(&PropagationContext::empty())?,
     )
     .execute(test_instance.db())
     .await?;
 
     let config = Config {
-        database_polling_timeout: Duration::from_millis(500),
+        db_fast_event_polling: Duration::from_millis(500),
         ..Default::default()
     };
     let mut event_picker = DbEventPicker::connect(test_instance.db().clone(), &config).await?;
@@ -280,10 +301,12 @@ async fn test_polling_backup() -> anyhow::Result<()> {
         vec![GatewayEvent {
             otlp_context: PropagationContext::empty(),
             already_sent: false,
-            kind: GatewayEventKind::PublicDecryption(PublicDecryptionRequest {
-                decryptionId: decryption_id,
-                snsCtMaterials: sns_ct,
-                extraData: vec![].into(),
+            kind: GatewayEventKind::PublicDecryption(PublicDecryptionRequestV2 {
+                request_id: decryption_id,
+                handles,
+                contract_addresses,
+                chain_id,
+                timestamp,
             })
         }]
     );

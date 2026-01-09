@@ -1,5 +1,4 @@
 use alloy::primitives::{Address, FixedBytes, U256};
-use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use rand::Rng;
 
 pub fn rand_u256() -> U256 {
@@ -22,11 +21,14 @@ pub fn rand_digest() -> FixedBytes<32> {
     rand::rng().random::<[u8; 32]>().into()
 }
 
-pub fn rand_sns_ct() -> SnsCiphertextMaterial {
-    SnsCiphertextMaterial {
-        keyId: rand_u256(),
-        ctHandle: rand::rng().random::<[u8; 32]>().into(),
-        snsCiphertextDigest: rand::rng().random::<[u8; 32]>().into(),
-        coprocessorTxSenderAddresses: vec![rand_address()],
-    }
+pub fn rand_handle() -> FixedBytes<32> {
+    rand::rng().random::<[u8; 32]>().into()
+}
+
+pub fn rand_handles(count: usize) -> Vec<FixedBytes<32>> {
+    (0..count).map(|_| rand_handle()).collect()
+}
+
+pub fn rand_contract_addresses(count: usize) -> Vec<Address> {
+    (0..count).map(|_| rand_address()).collect()
 }

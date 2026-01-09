@@ -1,25 +1,16 @@
 use crate::{
     monitoring::otlp::PropagationContext,
-    tests::{
-        rand::{rand_address, rand_public_key, rand_sns_ct, rand_u256},
-        setup::{S3_CT_DIGEST, S3_CT_HANDLE},
-    },
+    tests::rand::{rand_address, rand_contract_addresses, rand_handles, rand_public_key, rand_signature, rand_u256},
     types::{
-        GatewayEventKind,
-        db::{EventType, OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
+        GatewayEventKind, PublicDecryptionRequestV2, UserDecryptionRequestV2,
+        db::{EventType, OperationStatus, ParamsTypeDb},
         gw_event::PRSS_INIT_ID,
     },
 };
-use alloy::{
-    hex,
-    primitives::{FixedBytes, U256},
-};
+use alloy::primitives::U256;
 use anyhow::anyhow;
-use fhevm_gateway_bindings::{
-    decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kms_generation::KMSGeneration::{
-        CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
-    },
+use fhevm_gateway_bindings::kms_generation::KMSGeneration::{
+    CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
 };
 use sqlx::{Pool, Postgres};
 use tracing::info;
@@ -66,37 +57,38 @@ pub async fn insert_rand_public_decryption_request(
     id: Option<U256>,
     already_sent: bool,
     status: Option<OperationStatus>,
-) -> anyhow::Result<PublicDecryptionRequest> {
-    let decryption_id = id.unwrap_or_else(rand_u256);
-    let mut sns_ct = rand_sns_ct();
-    sns_ct.ctHandle = FixedBytes::from_slice(&hex::decode(S3_CT_HANDLE)?);
-    sns_ct.snsCiphertextDigest = FixedBytes::from_slice(&hex::decode(S3_CT_DIGEST)?);
-    let extra_data = vec![];
+) -> anyhow::Result<PublicDecryptionRequestV2> {
+    let request_id = id.unwrap_or_else(rand_u256);
+    let handles = rand_handles(2);
+    let contract_addresses = rand_contract_addresses(2);
+    let chain_id = rand_u256();
+    let timestamp = rand_u256();
     let status = status.unwrap_or(OperationStatus::Pending);
 
-    let sns_cts = vec![sns_ct];
-    let sns_ciphertexts_db = sns_cts
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+    let handles_bytes: Vec<[u8; 32]> = handles.iter().map(|h| h.0).collect();
+    let contract_addresses_bytes: Vec<[u8; 20]> = contract_addresses.iter().map(|a| a.0 .0).collect();
 
-    sqlx::query!(
-        "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, otlp_context, already_sent, status) \
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
-        decryption_id.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
-        extra_data.clone(),
-        bc2wrap::serialize(&PropagationContext::empty())?,
-        already_sent,
-        status as OperationStatus,
+    sqlx::query(
+        "INSERT INTO public_decryption_requests(decryption_id, handles, contract_addresses, chain_id, timestamp, otlp_context, already_sent, status) \
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
     )
+    .bind(request_id.as_le_slice())
+    .bind(handles_bytes)
+    .bind(contract_addresses_bytes)
+    .bind(chain_id.as_le_slice())
+    .bind(timestamp.as_le_slice())
+    .bind(bc2wrap::serialize(&PropagationContext::empty())?)
+    .bind(already_sent)
+    .bind(status as OperationStatus)
     .execute(db)
     .await?;
 
-    Ok(PublicDecryptionRequest {
-        decryptionId: decryption_id,
-        snsCtMaterials: sns_cts,
-        extraData: extra_data.into(),
+    Ok(PublicDecryptionRequestV2 {
+        request_id,
+        handles,
+        contract_addresses,
+        chain_id,
+        timestamp,
     })
 }
 
@@ -105,44 +97,49 @@ pub async fn insert_rand_user_decryption_request(
     id: Option<U256>,
     already_sent: bool,
     status: Option<OperationStatus>,
-) -> anyhow::Result<UserDecryptionRequest> {
-    let decryption_id = id.unwrap_or_else(rand_u256);
-    let mut sns_ct = rand_sns_ct();
-    sns_ct.ctHandle = FixedBytes::from_slice(&hex::decode(S3_CT_HANDLE)?);
-    sns_ct.snsCiphertextDigest = FixedBytes::from_slice(&hex::decode(S3_CT_DIGEST)?);
-    let sns_cts = vec![sns_ct];
+) -> anyhow::Result<UserDecryptionRequestV2> {
+    let request_id = id.unwrap_or_else(rand_u256);
+    let handles = rand_handles(2);
+    let contract_addresses = rand_contract_addresses(2);
     let user_address = rand_address();
     let public_key = rand_public_key();
-    let extra_data = vec![];
+    let signature = rand_signature();
+    let chain_id = rand_u256();
+    let timestamp = rand_u256();
     let status = status.unwrap_or(OperationStatus::Pending);
-    let sns_ciphertexts_db = sns_cts
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
-    sqlx::query!(
+    let handles_bytes: Vec<[u8; 32]> = handles.iter().map(|h| h.0).collect();
+    let contract_addresses_bytes: Vec<[u8; 20]> = contract_addresses.iter().map(|a| a.0 .0).collect();
+
+    sqlx::query(
         "INSERT INTO user_decryption_requests(\
-        decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context, already_sent, status\
+            decryption_id, handles, contract_addresses, user_address, public_key, signature, chain_id, timestamp, otlp_context, already_sent, status\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
-        decryption_id.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
-        user_address.as_slice(),
-        &public_key,
-        extra_data.clone(),
-        bc2wrap::serialize(&PropagationContext::empty())?,
-        already_sent,
-        status as OperationStatus,
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT DO NOTHING",
     )
+    .bind(request_id.as_le_slice())
+    .bind(handles_bytes)
+    .bind(contract_addresses_bytes)
+    .bind(user_address.as_slice())
+    .bind(&public_key)
+    .bind(&signature)
+    .bind(chain_id.as_le_slice())
+    .bind(timestamp.as_le_slice())
+    .bind(bc2wrap::serialize(&PropagationContext::empty())?)
+    .bind(already_sent)
+    .bind(status as OperationStatus)
     .execute(db)
     .await?;
 
-    Ok(UserDecryptionRequest {
-        decryptionId: decryption_id,
-        snsCtMaterials: sns_cts,
-        userAddress: user_address,
-        publicKey: public_key.into(),
-        extraData: extra_data.into(),
+    Ok(UserDecryptionRequestV2 {
+        request_id,
+        handles,
+        contract_addresses,
+        user_address,
+        public_key,
+        signature,
+        chain_id,
+        timestamp,
     })
 }
 
@@ -295,10 +292,10 @@ pub async fn check_no_uncompleted_request_in_db(
     info!("Checking no pending requests are remaining in DB...");
     let query = match event_type {
         EventType::PublicDecryptionRequest => {
-            "SELECT COUNT(decryption_id) FROM public_decryption_requests WHERE status = 'pending'"
+            "SELECT COUNT(request_id) FROM public_decryption_requests WHERE status = 'pending'"
         }
         EventType::UserDecryptionRequest => {
-            "SELECT COUNT(decryption_id) FROM user_decryption_requests WHERE status = 'pending'"
+            "SELECT COUNT(request_id) FROM user_decryption_requests WHERE status = 'pending'"
         }
         EventType::PrepKeygenRequest => {
             "SELECT COUNT(prep_keygen_id) FROM prep_keygen_requests WHERE status = 'pending'"

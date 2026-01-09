@@ -7,23 +7,17 @@ use alloy::{
 use anyhow::anyhow;
 use connector_utils::{
     tests::{
-        rand::{rand_address, rand_public_key, rand_signature, rand_u256},
-        setup::{DECRYPTION_MOCK_ADDRESS, KMS_GENERATION_MOCK_ADDRESS, TestInstance},
+        rand::{rand_address, rand_contract_addresses, rand_handles, rand_public_key, rand_signature, rand_u256},
+        setup::{DECRYPTION_REGISTRY_MOCK_ADDRESS, KMS_GENERATION_MOCK_ADDRESS, TestInstance},
     },
     types::{
-        GatewayEventKind,
+        GatewayEventKind, PublicDecryptionRequestV2, UserDecryptionRequestV2,
         db::{EventType, ParamsTypeDb},
         gw_event::PRSS_INIT_ID,
     },
 };
-use fhevm_gateway_bindings::{
-    decryption::{
-        Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-        IDecryption::{ContractsInfo, RequestValidity},
-    },
-    kms_generation::KMSGeneration::{
-        CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
-    },
+use fhevm_gateway_bindings::kms_generation::KMSGeneration::{
+    CrsgenRequest, KeyReshareSameSet, KeygenRequest, PRSSInit, PrepKeygenRequest,
 };
 use gw_listener::core::{Config, GatewayListener};
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
@@ -40,7 +34,7 @@ pub async fn start_test_listener(
     from_block_number: Option<u64>,
 ) -> anyhow::Result<JoinHandle<()>> {
     let mut config = Config::default();
-    config.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
+    config.decryption_contract.address = DECRYPTION_REGISTRY_MOCK_ADDRESS;
     config.kms_generation_contract.address = KMS_GENERATION_MOCK_ADDRESS;
     config.decryption_from_block_number = from_block_number;
     config.kms_operation_from_block_number = from_block_number;
@@ -55,7 +49,6 @@ pub async fn start_test_listener(
 
     let listener_task = tokio::spawn(gw_listener.start());
 
-    // Wait for all gw-listener event filters to be ready + 2 anvil blocks
     for _ in 0..NB_EVENT_TYPE {
         test_instance.wait_for_log("Subscribed to ").await;
     }
@@ -71,36 +64,46 @@ pub async fn mock_event_on_gw(
     info!("Mocking {event_type} on Anvil...");
     let (pending_tx, event) = match event_type {
         EventType::PublicDecryptionRequest => {
-            let rand_extra_data = rand_signature();
-            let event = PublicDecryptionRequest {
-                extraData: rand_extra_data.clone().into(),
-                ..Default::default()
+            let handles = rand_handles(2);
+            let contract_addresses = rand_contract_addresses(2);
+            let event = PublicDecryptionRequestV2 {
+                request_id: rand_u256(),
+                handles: handles.clone(),
+                contract_addresses: contract_addresses.clone(),
+                chain_id: rand_u256(),
+                timestamp: rand_u256(),
             };
             let tx = test_instance
-                .decryption_contract()
-                .publicDecryptionRequest(vec![], rand_extra_data.into())
+                .decryption_registry_contract()
+                .publicDecryptionRequest(handles, contract_addresses)
                 .send()
                 .await?;
             (tx, event.into())
         }
         EventType::UserDecryptionRequest => {
+            let handles = rand_handles(2);
+            let contract_addresses = rand_contract_addresses(2);
             let rand_user_addr = rand_address();
             let rand_pub_key = rand_public_key();
-            let event = UserDecryptionRequest {
-                userAddress: rand_user_addr,
-                publicKey: rand_pub_key.clone().into(),
-                ..Default::default()
+            let rand_sig = rand_signature();
+            let event = UserDecryptionRequestV2 {
+                request_id: rand_u256(),
+                handles: handles.clone(),
+                contract_addresses: contract_addresses.clone(),
+                user_address: rand_user_addr,
+                public_key: rand_pub_key.clone(),
+                signature: rand_sig.clone(),
+                chain_id: rand_u256(),
+                timestamp: rand_u256(),
             };
             let tx = test_instance
-                .decryption_contract()
+                .decryption_registry_contract()
                 .userDecryptionRequest(
-                    vec![],
-                    RequestValidity::default(),
-                    ContractsInfo::default(),
+                    handles,
+                    contract_addresses,
                     rand_user_addr,
                     rand_pub_key.into(),
-                    vec![].into(),
-                    vec![].into(),
+                    rand_sig.into(),
                 )
                 .send()
                 .await?;
@@ -181,10 +184,10 @@ pub async fn fetch_from_db(db: &Pool<Postgres>, event_type: EventType) -> sqlx::
     info!("Checking {event_type} is stored in DB...");
     let query = match event_type {
         EventType::PublicDecryptionRequest => {
-            "SELECT decryption_id, sns_ct_materials, extra_data FROM public_decryption_requests"
+            "SELECT request_id, handles, contract_addresses FROM public_decryption_requests"
         }
         EventType::UserDecryptionRequest => {
-            "SELECT decryption_id, sns_ct_materials, user_address, public_key FROM user_decryption_requests"
+            "SELECT request_id, handles, contract_addresses, user_address, public_key FROM user_decryption_requests"
         }
         EventType::PrepKeygenRequest => {
             "SELECT prep_keygen_id, epoch_id, params_type FROM prep_keygen_requests"
@@ -205,15 +208,15 @@ pub fn check_event_in_db(rows: &[PgRow], event: GatewayEventKind) -> anyhow::Res
     match event {
         GatewayEventKind::PublicDecryption(e) => {
             for r in rows {
-                if e.extraData.to_vec() == r.try_get::<Vec<u8>, _>("extra_data")? {
+                if e.request_id == U256::from_le_bytes(r.try_get::<[u8; 32], _>("request_id")?) {
                     return Ok(());
                 }
             }
         }
         GatewayEventKind::UserDecryption(e) => {
             for r in rows {
-                if e.publicKey.to_vec() == r.try_get::<Vec<u8>, _>("public_key")?
-                    && e.userAddress == Address::from(r.try_get::<[u8; 20], _>("user_address")?)
+                if e.public_key == r.try_get::<Vec<u8>, _>("public_key")?
+                    && e.user_address == Address::from(r.try_get::<[u8; 20], _>("user_address")?)
                 {
                     return Ok(());
                 }

@@ -4,7 +4,7 @@ use crate::{
 };
 use alloy::transports::http::reqwest::Url;
 use fhevm_gateway_bindings::{
-    decryption::Decryption::DecryptionInstance,
+    decryption_registry::DecryptionRegistry::DecryptionRegistryInstance,
     gateway_config::GatewayConfig::GatewayConfigInstance,
     kms_generation::KMSGeneration::KMSGenerationInstance,
 };
@@ -14,16 +14,12 @@ use testcontainers::{ContainerAsync, GenericImage};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tracing_subscriber::EnvFilter;
 
-/// The integration test environment.
 pub struct TestInstance {
-    /// Use to enable tracing during tests.
     _tracing_default_guard: Option<tracing::subscriber::DefaultGuard>,
     db: Option<DbInstance>,
     gateway: Option<GatewayInstance>,
     s3: Option<S3Instance>,
     kms: Option<KmsInstance>,
-
-    /// Receiver channel to read/check log printed via the `tracing` crate.
     log_rx: UnboundedReceiver<Vec<u8>>,
 }
 
@@ -36,7 +32,6 @@ impl TestInstance {
         TestInstanceBuilder::default()
     }
 
-    /// Consumes the logs of the `log_rx` channel until it finds the expected one.
     pub async fn wait_for_log(&mut self, log: &str) {
         let mut logs_received = Vec::<u8>::new();
         while !logs_contain(&logs_received, log.as_bytes()) {
@@ -83,8 +78,8 @@ impl TestInstance {
         &self.gateway().anvil
     }
 
-    pub fn decryption_contract(&self) -> &DecryptionInstance<WalletGatewayProvider> {
-        &self.gateway().decryption_contract
+    pub fn decryption_registry_contract(&self) -> &DecryptionRegistryInstance<WalletGatewayProvider> {
+        &self.gateway().decryption_registry_contract
     }
 
     pub fn gateway_config_contract(&self) -> &GatewayConfigInstance<WalletGatewayProvider> {
@@ -186,14 +181,12 @@ impl TestInstanceBuilder {
         }
     }
 
-    /// Test setup with a DB only.
     pub async fn db_setup() -> anyhow::Result<TestInstance> {
         let builder = TestInstanceBuilder::default();
         let db = DbInstance::setup().await?;
         Ok(builder.with_db(db).build())
     }
 
-    /// Test setup with a DB and Anvil Gateway.
     pub async fn db_gw_setup() -> anyhow::Result<TestInstance> {
         let builder = TestInstanceBuilder::default();
         let db = DbInstance::setup().await?;
@@ -201,7 +194,6 @@ impl TestInstanceBuilder {
         Ok(builder.with_db(db).with_gateway(gateway).build())
     }
 
-    /// Full test setup.
     pub async fn full() -> anyhow::Result<TestInstance> {
         let s3_instance = S3Instance::setup().await?;
         let kms_instance = KmsInstance::setup(&s3_instance.url).await?;

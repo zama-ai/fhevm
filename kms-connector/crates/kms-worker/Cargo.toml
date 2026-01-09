@@ -35,6 +35,7 @@ tracing-subscriber.workspace = true
 connector-utils = { workspace = true, features = ["tests"] }
 mocktail.workspace = true
 rstest.workspace = true
+serde_json.workspace = true
 serial_test.workspace = true
 testcontainers.workspace = true
 toml.workspace = true

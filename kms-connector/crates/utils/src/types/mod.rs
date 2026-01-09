@@ -5,7 +5,9 @@ pub mod gw_event;
 pub mod kms_response;
 
 pub use grpc::{KmsGrpcRequest, KmsGrpcResponse};
-pub use gw_event::{GatewayEvent, GatewayEventKind};
+pub use gw_event::{
+    GatewayEvent, GatewayEventKind, PublicDecryptionRequestV2, UserDecryptionRequestV2,
+};
 pub use kms_response::{
     CrsgenResponse, KeygenResponse, KmsResponse, KmsResponseKind, PrepKeygenResponse,
     PublicDecryptionResponse, UserDecryptionResponse,

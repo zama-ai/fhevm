@@ -22,7 +22,7 @@ use connector_utils::{
     types::{GatewayEvent, GatewayEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::{
-    decryption::Decryption::{self, DecryptionInstance},
+    decryption_registry::DecryptionRegistry::{self, DecryptionRegistryInstance},
     kms_generation::KMSGeneration::{self, KMSGenerationInstance},
 };
 use sqlx::{Pool, Postgres, Row};
@@ -42,8 +42,8 @@ where
     /// The database pool for storing Gateway's events.
     db_pool: Pool<Postgres>,
 
-    /// The Gateway's `Decryption` contract instance which is monitored.
-    decryption_contract: DecryptionInstance<P>,
+    /// The Gateway's `DecryptionRegistry` contract instance which is monitored (V2).
+    decryption_registry_contract: DecryptionRegistryInstance<P>,
 
     /// The Gateway's `KMSGeneration` contract instance which is monitored.
     kms_generation_contract: KMSGenerationInstance<P>,
@@ -66,14 +66,14 @@ where
         config: &Config,
         cancel_token: CancellationToken,
     ) -> Self {
-        let decryption_contract =
-            Decryption::new(config.decryption_contract.address, provider.clone());
+        let decryption_registry_contract =
+            DecryptionRegistry::new(config.decryption_contract.address, provider.clone());
         let kms_generation_contract =
             KMSGeneration::new(config.kms_generation_contract.address, provider);
 
         Self {
             db_pool,
-            decryption_contract,
+            decryption_registry_contract,
             kms_generation_contract,
             config: config.clone(),
             cancel_token,
@@ -115,11 +115,11 @@ where
 
         let result = match &event_type {
             EventType::PublicDecryptionRequest => {
-                let filter = self.decryption_contract.PublicDecryptionRequest_filter();
+                let filter = self.decryption_registry_contract.PublicDecryptionRequested_filter();
                 self.subscribe_inner(event_type, filter, polling).await
             }
             EventType::UserDecryptionRequest => {
-                let filter = self.decryption_contract.UserDecryptionRequest_filter();
+                let filter = self.decryption_registry_contract.UserDecryptionRequested_filter();
                 self.subscribe_inner(event_type, filter, polling).await
             }
             EventType::PrepKeygenRequest => {
@@ -208,7 +208,7 @@ where
 
         let contract_address = match event_type {
             EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
-                self.decryption_contract.address()
+                self.decryption_registry_contract.address()
             }
             _ => self.kms_generation_contract.address(),
         };
@@ -217,7 +217,7 @@ where
             .address(*contract_address)
             .event_signature(E::SIGNATURE_HASH)
             .from_block(catchup_from_block);
-        let provider = self.decryption_contract.provider();
+        let provider = self.decryption_registry_contract.provider();
 
         info!("Catching up {event_type} from {catchup_from_block}...");
         let mut event_count = 0;
@@ -313,12 +313,10 @@ where
                 );
                 Some(from_block)
             }
-            // Start from `last_block_polled` stored in DB + 1 if not configured
-            None => self
-                .get_last_block_polled_from_db(event_type)
-                .await?
-                .map(|n| n + 1),
-        };
+            // Start from `last_block_polled` stored in DB if not configured
+            None => self.get_last_block_polled_from_db(event_type).await?,
+        }
+        .map(|block| block.saturating_sub(REORG_SAFETY_MARGIN));
 
         info!(
             "Starting {} subscriptions from block {}...",
@@ -394,6 +392,8 @@ impl GatewayListener<GatewayProvider> {
 
 /// The timeout we allow for the listener to store the last block polled in DB.
 const LAST_BLOCK_POLLED_UPDATE_TIMEOUT: Duration = Duration::from_mins(5);
+/// Overlap when reconciling past events to handle reorgs.
+const REORG_SAFETY_MARGIN: u64 = 10;
 
 #[cfg(test)]
 mod tests {

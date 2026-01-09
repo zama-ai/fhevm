@@ -8,6 +8,14 @@
 # ENV: KMS_CONNECTOR_CHAIN_ID
 chain_id = 54321
 
+# Signer address for this KMS node (required for API responses)
+# ENV: KMS_CONNECTOR_SIGNER_ADDRESS
+signer_address = "0x0000000000000000000000000000000000000000"
+
+# Share index for this KMS node (optional, defaults to 0)
+# ENV: KMS_CONNECTOR_SHARE_INDEX
+# share_index = 0
+
 # List of KMS-core shards gRPC endpoints (required)
 # Format: http://host:port
 # ENV: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
@@ -94,6 +102,19 @@ address = "0x0000000000000000000000000000000000000000"
 # ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
+# Configuration of the InputVerificationRegistry contract (required)
+[input_verification_contract]
+# Address of the InputVerificationRegistry contract (required)
+# Format: hex string with 0x prefix
+# ENV: KMS_CONNECTOR_INPUT_VERIFICATION_CONTRACT__ADDRESS
+address = "0x0000000000000000000000000000000000000000"
+# EIP-712 domain name for coprocessor signatures (optional, defaults to "FHEVM")
+# ENV: KMS_CONNECTOR_INPUT_VERIFICATION_CONTRACT__DOMAIN_NAME
+domain_name = "FHEVM"
+# EIP-712 domain version for coprocessor signatures (optional, defaults to "1")
+# ENV: KMS_CONNECTOR_INPUT_VERIFICATION_CONTRACT__DOMAIN_VERSION
+# domain_version = "1"
+
 # Configuration of the KMSGeneration contract (required)
 [kms_generation_contract]
 # Address of the KMSGeneration contract (required)
@@ -106,3 +127,8 @@ address = "0x0000000000000000000000000000000000000000"
 # EIP-712 domain version for KMSGeneration contract (optional, defaults to "1")
 # ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
+
+# Optional host chain RPC endpoints (used for direct ACL checks)
+# [[host_chain_urls]]
+# chain_id = 1
+# rpc_url = "http://localhost:8545"

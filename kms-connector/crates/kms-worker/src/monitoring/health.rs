@@ -34,6 +34,10 @@ impl<P: Provider> State<P> {
             healthcheck_timeout,
         }
     }
+
+    pub fn db_pool(&self) -> &Pool<Postgres> {
+        &self.db_pool
+    }
 }
 
 impl<P: Provider> Healthcheck for State<P> {

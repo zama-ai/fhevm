@@ -1,11 +1,12 @@
-use alloy::transports::http::reqwest::Url;
+use alloy::{primitives::Address, transports::http::reqwest::Url};
 use connector_utils::{
     config::{
         ContractConfig, DeserializeConfig,
         contract::{
             default_decryption_contract_config, default_gateway_config_contract_config,
-            default_kms_generation_contract_config, deserialize_decryption_contract_config,
-            deserialize_gateway_config_contract_config, deserialize_kms_generation_contract_config,
+            default_input_verification_contract_config, default_kms_generation_contract_config,
+            deserialize_decryption_contract_config, deserialize_gateway_config_contract_config,
+            deserialize_input_verification_contract_config, deserialize_kms_generation_contract_config,
         },
         default_database_pool_size,
     },
@@ -44,6 +45,9 @@ pub struct Config {
     /// The `GatewayConfig` contract configuration.
     #[serde(deserialize_with = "deserialize_gateway_config_contract_config")]
     pub gateway_config_contract: ContractConfig,
+    /// The `InputVerificationRegistry` contract configuration.
+    #[serde(deserialize_with = "deserialize_input_verification_contract_config")]
+    pub input_verification_contract: ContractConfig,
     /// The `KMSGeneration` contract configuration.
     #[serde(deserialize_with = "deserialize_kms_generation_contract_config")]
     pub kms_generation_contract: ContractConfig,
@@ -77,10 +81,31 @@ pub struct Config {
     /// The timeout to perform each external service connection healthcheck.
     #[serde(with = "humantime_serde", default = "default_healthcheck_timeout")]
     pub healthcheck_timeout: Duration,
+
+    /// The signer address for this KMS node (for API responses).
+    pub signer_address: Address,
+    /// The share index for this KMS node (user decryption responses).
+    #[serde(default = "default_share_index")]
+    pub share_index: u32,
+
+    /// Optional host chain RPC endpoints (used for direct ACL checks).
+    #[serde(default)]
+    pub host_chain_urls: Vec<HostChainRpcConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[cfg_attr(debug_assertions, derive(Serialize))]
+pub struct HostChainRpcConfig {
+    pub chain_id: u64,
+    pub rpc_url: Url,
 }
 
 fn default_service_name() -> String {
     "kms-connector-kms-worker".to_string()
+}
+
+fn default_share_index() -> u32 {
+    0
 }
 
 fn default_db_fast_event_polling() -> Duration {
@@ -126,6 +151,7 @@ impl Default for Config {
             chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
             gateway_config_contract: default_gateway_config_contract_config(),
+            input_verification_contract: default_input_verification_contract_config(),
             kms_generation_contract: default_kms_generation_contract_config(),
             service_name: default_service_name(),
             events_batch_size: default_events_batch_size(),
@@ -136,6 +162,9 @@ impl Default for Config {
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout: default_healthcheck_timeout(),
+            signer_address: Address::ZERO,
+            share_index: default_share_index(),
+            host_chain_urls: vec![],
         }
     }
 }
@@ -170,6 +199,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
+            env::remove_var("KMS_CONNECTOR_INPUT_VERIFICATION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_EVENTS_BATCH_SIZE");
@@ -177,6 +207,8 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_SIGNER_ADDRESS");
+            env::remove_var("KMS_CONNECTOR_SHARE_INDEX");
         }
     }
 
@@ -215,6 +247,10 @@ mod tests {
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
             env::set_var(
+                "KMS_CONNECTOR_INPUT_VERIFICATION_CONTRACT__ADDRESS",
+                "0x0000000000000000000000000000000000000004",
+            );
+            env::set_var(
                 "KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS",
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
@@ -224,6 +260,11 @@ mod tests {
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
             env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4s");
+            env::set_var(
+                "KMS_CONNECTOR_SIGNER_ADDRESS",
+                "0x0000000000000000000000000000000000000005",
+            );
+            env::set_var("KMS_CONNECTOR_SHARE_INDEX", "2");
         }
 
         // Load config from environment
@@ -248,10 +289,19 @@ mod tests {
             Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
         );
         assert_eq!(
+            config.input_verification_contract.address,
+            Address::from_str("0x0000000000000000000000000000000000000004").unwrap()
+        );
+        assert_eq!(
             config.kms_generation_contract.address,
             Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
         );
         assert_eq!(config.service_name, "kms-connector-test");
+        assert_eq!(
+            config.signer_address,
+            Address::from_str("0x0000000000000000000000000000000000000005").unwrap()
+        );
+        assert_eq!(config.share_index, 2);
         assert_eq!(config.events_batch_size, 15);
         assert_eq!(config.grpc_request_retries, 5);
         assert_eq!(config.max_decryption_attempts, 300);

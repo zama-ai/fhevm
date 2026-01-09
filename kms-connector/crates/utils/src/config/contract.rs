@@ -52,6 +52,16 @@ where
         .map_err(|e| serde::de::Error::custom(e.to_string()))
 }
 
+pub fn deserialize_input_verification_contract_config<'de, D>(
+    deserializer: D,
+) -> std::result::Result<ContractConfig, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    ContractConfig::parse("InputVerificationRegistry", Deserialize::deserialize(deserializer)?)
+        .map_err(|e| serde::de::Error::custom(e.to_string()))
+}
+
 impl ContractConfig {
     /// Parses the `RawContractConfig` data from the configuration file.
     fn parse(contract_name: &str, raw_config: RawContractConfig) -> Result<Self> {
@@ -122,6 +132,15 @@ pub fn default_kms_generation_contract_config() -> ContractConfig {
         contract_name: "KMSGeneration".to_string(),
         address: address!("0x0000000000000000000000000000000000000000"),
         domain_name: "KMSGeneration".to_string(),
+        domain_version: "1".to_string(),
+    }
+}
+
+pub fn default_input_verification_contract_config() -> ContractConfig {
+    ContractConfig {
+        contract_name: "InputVerificationRegistry".to_string(),
+        address: address!("0x0000000000000000000000000000000000000000"),
+        domain_name: "FHEVM".to_string(),
         domain_version: "1".to_string(),
     }
 }
