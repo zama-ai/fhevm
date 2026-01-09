@@ -17,6 +17,7 @@ use sqlx::{PgPool, Postgres};
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
+use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
 use tracing::error;
 use tracing::info;
@@ -36,6 +37,20 @@ pub type ChainId = u64;
 pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
+pub type ChainHash = TransactionHash;
+
+#[derive(Clone, Debug)]
+pub struct Chain {
+    pub hash: ChainHash,
+    pub dependencies: Vec<ChainHash>,
+    pub dependents: Vec<ChainHash>,
+    pub allowed_handle: Vec<Handle>,
+    pub size: u64,
+    pub before_size: u64,
+    pub new_chain: bool,
+}
+pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
+pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
 
@@ -77,7 +92,7 @@ pub struct Database {
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
     pub tenant_id: TenantId,
     pub chain_id: ChainId,
-    bucket_cache: tokio::sync::RwLock<lru::LruCache<Handle, Handle>>,
+    pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
 }
 
@@ -87,7 +102,9 @@ pub struct LogTfhe {
     pub transaction_hash: Option<TransactionHash>,
     pub is_allowed: bool,
     pub block_number: u64,
-    pub block_timestamp: sqlx::types::time::PrimitiveDateTime,
+    pub block_timestamp: PrimitiveDateTime,
+    pub tx_depth_size: u64,
+    pub dependence_chain: TransactionHash,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -96,14 +113,14 @@ impl Database {
     pub async fn new(
         url: &DatabaseURL,
         coprocessor_api_key: &CoprocessorApiKey,
-        bucket_cache_size: u16,
+        dependence_cache_size: u16,
     ) -> Result<Self> {
         let pool = Self::new_pool(url).await;
         let (tenant_id, chain_id) =
             Self::find_tenant_id(&pool, coprocessor_api_key).await?;
         let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
             std::num::NonZeroU16::new(
-                bucket_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
+                dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
             )
             .unwrap()
             .into(),
@@ -113,7 +130,7 @@ impl Database {
             tenant_id,
             chain_id,
             pool: Arc::new(RwLock::new(pool)),
-            bucket_cache,
+            dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
         })
     }
@@ -208,13 +225,6 @@ impl Database {
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
-        let bucket = self
-            .sort_computation_into_bucket(
-                result,
-                dependencies_handles,
-                &log.transaction_hash,
-            )
-            .await;
         let dependencies_handles = dependencies_handles
             .iter()
             .map(|d| d.to_vec())
@@ -228,7 +238,6 @@ impl Database {
             fhe_operation,
             scalar_byte,
             log,
-            &bucket,
         )
         .await
     }
@@ -244,13 +253,6 @@ impl Database {
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
-        let bucket = self
-            .sort_computation_into_bucket(
-                result,
-                dependencies,
-                &log.transaction_hash,
-            )
-            .await;
         let dependencies =
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
         self.insert_computation_inner(
@@ -261,7 +263,6 @@ impl Database {
             fhe_operation,
             scalar_byte,
             log,
-            &bucket,
         )
         .await
     }
@@ -276,7 +277,6 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
-        bucket: &Handle,
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
@@ -292,9 +292,10 @@ impl Database {
                 transaction_id,
                 is_allowed,
                 created_at,
-                schedule_order
+                schedule_order,
+                is_completed
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9::timestamp, $10)
             ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
             "#,
             tenant_id as i32,
@@ -302,63 +303,19 @@ impl Database {
             &dependencies,
             fhe_operation as i16,
             is_scalar,
-            bucket.to_vec(),
+            log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()),
             log.is_allowed,
-            log.block_timestamp,
+            log.block_timestamp
+                .saturating_add(time::Duration::microseconds(
+                    log.tx_depth_size as i64
+                )),
+            !log.is_allowed,
         );
         query
             .execute(tx.deref_mut())
             .await
             .map(|result| result.rows_affected() > 0)
-    }
-
-    async fn sort_computation_into_bucket(
-        &self,
-        output: &Handle,
-        dependencies: &[&Handle],
-        transaction_hash: &Option<Handle>,
-    ) -> Handle {
-        // If the transaction ID is a hit in the cache, update its
-        // last use and add the output handle in the bucket
-        if let Some(txh) = transaction_hash {
-            // We need a write access here as get updates the LRUcache
-            let mut bucket_cache_write = self.bucket_cache.write().await;
-            if let Some(ce) = bucket_cache_write.get(txh).cloned() {
-                bucket_cache_write.put(*output, ce);
-                return ce;
-            }
-        }
-        // If any input dependence is a match, return its bucket. This
-        // computation is in a connected component with other ops in
-        // this bucket
-        let bucket_cache_read = self.bucket_cache.read().await;
-        for d in dependencies {
-            // We peek here as the reuse is less likely than the use
-            // of the new handle which we add - because handles
-            // operate under single assinment
-            if let Some(ce) = bucket_cache_read.peek(*d).cloned() {
-                drop(bucket_cache_read);
-                let mut bucket_cache_write = self.bucket_cache.write().await;
-                bucket_cache_write.put(*output, ce);
-                // As the transaction hash was not in the cache, add
-                // it to this bucket as well
-                if let Some(txh) = transaction_hash {
-                    bucket_cache_write.put(*txh, ce);
-                }
-                return ce;
-            }
-        }
-        drop(bucket_cache_read);
-        // If this computation is not linked to any others, assign it
-        // to a new empty bucket and add output handle and transaction
-        // hash where relevant
-        let mut bucket_cache_write = self.bucket_cache.write().await;
-        bucket_cache_write.put(*output, *output);
-        if let Some(txh) = transaction_hash {
-            bucket_cache_write.put(*txh, *output);
-        }
-        *output
     }
 
     #[rustfmt::skip]
@@ -809,6 +766,55 @@ impl Database {
         query.execute(&self.pool().await).await?;
         Ok(())
     }
+
+    pub async fn update_dependence_chain(
+        &self,
+        tx: &mut Transaction<'_>,
+        chains: OrderedChains,
+        block_timestamp: PrimitiveDateTime,
+        block_summary: &BlockSummary,
+    ) -> Result<(), SqlxError> {
+        for chain in chains {
+            let last_updated_at = block_timestamp.saturating_add(
+                TimeDuration::microseconds(chain.before_size as i64),
+            );
+            let dependents = chain
+                .dependents
+                .iter()
+                .map(|h| h.to_vec())
+                .collect::<Vec<_>>();
+            sqlx::query!(
+                r#"
+                INSERT INTO dependence_chain(
+                    dependence_chain_id,
+                    status,
+                    last_updated_at,
+                    dependency_count,
+                    dependents,
+                    block_hash,
+                    block_height
+                ) VALUES (
+                  $1, 'updated', $2::timestamp, $3, $4, $5, $6
+                )
+                ON CONFLICT (dependence_chain_id) DO UPDATE
+                SET status = 'updated',
+                    last_updated_at = CASE
+                        WHEN dependence_chain.status = 'processed' THEN EXCLUDED.last_updated_at
+                        ELSE dependence_chain.last_updated_at
+                    END
+                "#,
+                chain.hash.to_vec(),
+                last_updated_at,
+                chain.dependencies.len() as i64,
+                &dependents,
+                block_summary.hash.to_vec(),
+                block_summary.number as i64,
+            )
+            .execute(tx.deref_mut())
+            .await?;
+        }
+        Ok(())
+    }
 }
 
 fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
@@ -936,5 +942,155 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
         | AclContractEvents::Unpaused(_)
         | AclContractEvents::BlockedAccount(_)
         | AclContractEvents::UnblockedAccount(_) => vec![],
+    }
+}
+
+pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+    match op {
+        E::Cast(C::Cast { ct, .. })
+        | E::FheNeg(C::FheNeg { ct, .. })
+        | E::FheNot(C::FheNot { ct, .. }) => vec![*ct],
+
+        E::FheAdd(C::FheAdd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitAnd(C::FheBitAnd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitOr(C::FheBitOr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitXor(C::FheBitXor {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheDiv(C::FheDiv {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMax(C::FheMax {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMin(C::FheMin {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMul(C::FheMul {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRem(C::FheRem {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotl(C::FheRotl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotr(C::FheRotr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShl(C::FheShl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShr(C::FheShr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheSub(C::FheSub {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheEq(C::FheEq {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGe(C::FheGe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGt(C::FheGt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLe(C::FheLe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLt(C::FheLt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheNe(C::FheNe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        }) => {
+            if scalarByte.const_is_zero() {
+                vec![*lhs, *rhs]
+            } else {
+                vec![*lhs]
+            }
+        }
+
+        E::FheIfThenElse(C::FheIfThenElse {
+            control,
+            ifTrue,
+            ifFalse,
+            ..
+        }) => {
+            vec![*control, *ifTrue, *ifFalse]
+        }
+
+        E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => vec![],
+
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
 }
