@@ -22,7 +22,8 @@ services:
     container_name: db-migration
     build:
       context: ../../../.
-      dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
+      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+      target: db-migration
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/coprocessor
       TENANT_API_KEY: "a1503fb6-d79b-4e9e-826d-44cf262f3e05"

@@ -59,15 +59,22 @@ if [ "$LOCAL_BUILD" = true ]; then
         export "FHEVM_CACHE_FROM_${service_key}=type=local,src=${cache_dir}"
         export "FHEVM_CACHE_TO_${service_key}=type=local,dest=${cache_dir},mode=max"
     }
-    LOCAL_CACHE_SERVICES=( 
-        coprocessor-db-migration
-        coprocessor-gw-listener
-        coprocessor-host-listener
-        coprocessor-host-listener-poller
-        coprocessor-sns-worker
-        coprocessor-tfhe-worker
-        coprocessor-transaction-sender
-        coprocessor-zkproof-worker
+    # Unified coprocessor workspace cache (all services share one cache since they
+    # are built from a single Dockerfile.workspace with multi-stage targets)
+    coprocessor_cache_dir="${FHEVM_BUILDX_CACHE_DIR}/coprocessor"
+    mkdir -p "$coprocessor_cache_dir"
+    export "FHEVM_CACHE_FROM_COPROCESSOR=type=local,src=${coprocessor_cache_dir}"
+    export "FHEVM_CACHE_TO_COPROCESSOR=type=local,dest=${coprocessor_cache_dir},mode=max"
+
+    # Unified kms-connector workspace cache (gw-listener, kms-worker, tx-sender
+    # share Dockerfile.workspace; db-migration uses separate Dockerfile)
+    kms_connector_cache_dir="${FHEVM_BUILDX_CACHE_DIR}/kms-connector"
+    mkdir -p "$kms_connector_cache_dir"
+    export "FHEVM_CACHE_FROM_KMS_CONNECTOR=type=local,src=${kms_connector_cache_dir}"
+    export "FHEVM_CACHE_TO_KMS_CONNECTOR=type=local,dest=${kms_connector_cache_dir},mode=max"
+
+    # Other services still use individual caches
+    LOCAL_CACHE_SERVICES=(
         gateway-deploy-mocked-zama-oft
         gateway-sc-add-network
         gateway-sc-add-pausers
@@ -82,9 +89,6 @@ if [ "$LOCAL_BUILD" = true ]; then
         host-sc-pause
         host-sc-unpause
         kms-connector-db-migration
-        kms-connector-gw-listener
-        kms-connector-kms-worker
-        kms-connector-tx-sender
         test-suite-e2e-debug
     )
     for service_name in "${LOCAL_CACHE_SERVICES[@]}"; do

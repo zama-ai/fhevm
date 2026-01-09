@@ -153,8 +153,12 @@ hostListener:
     - --initial-block-time=12  # it can switch to real blockTime when data is available
     - --log-level=INFO
     - --health-port=8080
-    - --dependence-cache-size=128
     - --reorg-maximum-duration-in-blocks=50
+
+    ### Dependence chains parameters
+    # - --dependence-cache-size=10000
+    # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
+    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
 
     ### Catchup parameters (optional)
     # - --catchup-margin
@@ -265,6 +269,11 @@ hostListenerPoller:
 
     ### Prometheus metrics
     - --metrics-addr=0.0.0.0:9100  # Address for Prometheus metrics HTTP server
+
+    ### Dependence chains parameters
+    # - --dependence-cache-size=10000
+    # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
+    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
 
   # Service ports configuration
   ports:
@@ -545,7 +554,7 @@ tfheWorker:
     - --run-bg-worker=true
     - --worker-polling-interval-ms=10000
     - --work-items-batch-size=100  # scheduling changed
-    - --dependence-chains-per-batch=100
+    - --dependence-chains-per-batch=100  # Deprecated. To be removed in a future release.
     - --tenant-key-cache-size=32
     - --coprocessor-fhe-threads=64  # scheduling changed
     - --tokio-threads=16  # scheduling changed
@@ -562,6 +571,23 @@ tfheWorker:
     - --maximum-handles-per-input=0
     - --server-addr=""
     - --coprocessor-private-key=""
+    # Unique worker identifier (valid UUID v4 format)
+    # If not set, defaults to a random UUID generated at startup
+    - --worker-id=$(WORKER_ID)
+    - --dcid-ttl-sec=30  # Time-to-live (in seconds) for dependence chain locks
+    # Disable dependence chain ID locking
+    # WARNING: May cause multiple workers to process the same DCID concurrently
+    # Defaults to false
+    - --disable-dcid-locking=false
+    # Time slice (in seconds) for processing a single dependence chain
+    # Locks are released if processing exceeds this duration
+    - --dcid-timeslice-sec=90
+    # Processed DCIDs older than this value are cleaned up
+    # Defaults to 48 hours (172800 seconds)
+    # Time-to-live (in seconds) for processed dependence chains
+    - --processed-dcid-ttl-sec=172800
+    - --dcid-cleanup-interval-sec=3600  # Interval (in seconds) for cleaning up expired DCID locks
+    - --dcid-max-no-progress-cycles=2   # Worker cycles without progress before releasing
 
   # Service ports configuration
   ports:

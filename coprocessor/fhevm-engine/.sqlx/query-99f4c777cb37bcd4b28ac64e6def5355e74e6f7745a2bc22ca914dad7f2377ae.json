@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO dependence_chain(\n                    dependence_chain_id,\n                    status,\n                    last_updated_at,\n                    dependency_count,\n                    dependents,\n                    block_hash,\n                    block_height\n                ) VALUES (\n                  $1, 'updated', $2::timestamp, $3, $4, $5, $6\n                )\n                ON CONFLICT (dependence_chain_id) DO UPDATE\n                SET status = 'updated',\n                    last_updated_at = CASE\n                        WHEN dependence_chain.status = 'processed' THEN EXCLUDED.last_updated_at\n                        ELSE dependence_chain.last_updated_at\n                    END\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Timestamp",
+        "Int4",
+        "ByteaArray",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "99f4c777cb37bcd4b28ac64e6def5355e74e6f7745a2bc22ca914dad7f2377ae"
+}
