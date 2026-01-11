@@ -121,6 +121,10 @@ pub struct Args {
     #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 2)]
     pub dcid_max_no_progress_cycles: u32,
 
+    /// Number of no-progress DCID releases before ignoring dependence counter
+    #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 100)]
+    pub dcid_ignore_dependency_count_threshold: u32,
+
     /// Log level for the application
     #[arg(
         long,
