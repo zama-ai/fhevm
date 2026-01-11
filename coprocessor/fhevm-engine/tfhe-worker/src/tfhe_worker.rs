@@ -152,6 +152,7 @@ async fn tfhe_worker_cycle(
             &health_check,
             &mut trx,
             &mut dcid_mngr,
+            &mut no_progress_cycles,
             &tracer,
             &loop_ctx,
         )
@@ -328,6 +329,7 @@ async fn query_for_work<'a>(
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_chain_mngr: &mut dependence_chain::LockMngr,
+    no_progress_cycles: &mut u32,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<
@@ -340,7 +342,16 @@ async fn query_for_work<'a>(
         match deps_chain_mngr.extend_or_release_current_lock(true).await? {
             // If there is a current lock, we extend it and use its dependence_chain_id
             Some((id, reason)) => (Some(id), reason),
-            None => deps_chain_mngr.acquire_next_lock().await?,
+            None => {
+                if *no_progress_cycles
+                    < args.dcid_ignore_dependency_count_threshold * args.dcid_max_no_progress_cycles
+                {
+                    deps_chain_mngr.acquire_next_lock().await?
+                } else {
+                    *no_progress_cycles = 0;
+                    deps_chain_mngr.acquire_early_lock().await?
+                }
+            }
         };
     if deps_chain_mngr.enabled() && dependence_chain_id.is_none() {
         // No dependence chain to lock, so no work to do
@@ -482,7 +493,10 @@ WHERE c.transaction_id IN (
                     inputs,
                     is_allowed: w.is_allowed,
                 });
-                if w.schedule_order < earliest_schedule_order {
+                if w.schedule_order < earliest_schedule_order && w.is_allowed {
+                    // Only account for allowed to avoid case of reorg
+                    // where trivial encrypts will be in collision in
+                    // the same transaction and old ones are re-used
                     earliest_schedule_order = w.schedule_order;
                 }
             }
