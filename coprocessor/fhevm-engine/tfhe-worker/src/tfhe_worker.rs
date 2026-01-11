@@ -343,7 +343,9 @@ async fn query_for_work<'a>(
             // If there is a current lock, we extend it and use its dependence_chain_id
             Some((id, reason)) => (Some(id), reason),
             None => {
-                if *no_progress_cycles < 10 * args.dcid_max_no_progress_cycles {
+                if *no_progress_cycles
+                    < args.dcid_ignore_dependency_count_threshold * args.dcid_max_no_progress_cycles
+                {
                     deps_chain_mngr.acquire_next_lock().await?
                 } else {
                     *no_progress_cycles = 0;

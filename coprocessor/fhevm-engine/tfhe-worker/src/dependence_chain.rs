@@ -218,7 +218,10 @@ impl LockMngr {
     }
 
     /// Acquire the earliest dependence-chain entry for processing
-    /// sorted by last_updated_at (FIFO).
+    /// sorted by last_updated_at (FIFO). Here we ignore
+    /// dependency_count as reorgs can lead to incorrect counts and
+    /// set of dependents until we add block hashes to transaction
+    /// hashes to uniquely identify transactions.
     /// Returns the dependence_chain_id if a lock was acquired
     pub async fn acquire_early_lock(
         &mut self,

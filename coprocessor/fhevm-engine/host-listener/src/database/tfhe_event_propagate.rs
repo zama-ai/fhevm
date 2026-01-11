@@ -802,7 +802,12 @@ impl Database {
                         WHEN dependence_chain.status = 'processed' THEN EXCLUDED.last_updated_at
                         ELSE LEAST(dependence_chain.last_updated_at, EXCLUDED.last_updated_at)
                     END,
-                    dependents = dependence_chain.dependents || EXCLUDED.dependents
+                    dependents = (
+                        SELECT ARRAY(
+                            SELECT DISTINCT d
+                            FROM unnest(dependence_chain.dependents || EXCLUDED.dependents) AS d
+                        )
+                    )
                 "#,
                 chain.hash.to_vec(),
                 last_updated_at,
