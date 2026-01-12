@@ -3,6 +3,7 @@ pub mod input_handlers;
 pub mod keyurl_handler;
 pub mod public_decrypt_handler;
 pub mod readiness_check;
+pub mod throttlers;
 pub mod user_decrypt_handler;
 pub mod utils;
 
@@ -14,11 +15,10 @@ pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 use crate::config::settings::Settings;
 use crate::core::event::RelayerEvent;
 use crate::gateway::arbitrum::transaction::tx_processor::GatewayTxProcessor;
-use crate::gateway::arbitrum::transaction::tx_throttler::TxThrottlers;
 use crate::gateway::readiness_check::public_decrypt_processor::PublicDecryptReadinessProcessor;
 use crate::gateway::readiness_check::readiness_checker::ReadinessChecker;
-use crate::gateway::readiness_check::readiness_throttler::ReadinessThrottlers;
 use crate::gateway::readiness_check::user_decrypt_processor::UserDecryptReadinessProcessor;
+use crate::gateway::throttlers::GatewayThrottlers;
 use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
 use crate::store::sql::repositories::Repositories;
 use alloy::primitives::Address;
@@ -32,26 +32,12 @@ use arbitrum::{
 use std::{str::FromStr, sync::Arc};
 use tracing::{error, info};
 
-pub struct GatewayThrottler {
-    pub tx_throttlers: TxThrottlers,
-    pub readiness_throttlers: ReadinessThrottlers,
-}
-
-impl GatewayThrottler {
-    pub fn new(tx_throttlers: TxThrottlers, readiness_throttlers: ReadinessThrottlers) -> Self {
-        Self {
-            tx_throttlers,
-            readiness_throttlers,
-        }
-    }
-}
-
 /// Initialize all gateway components including handlers, listener, and KeyUrl handler
 pub async fn initialize_gateway(
     orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     settings: &Settings,
     repositories: Arc<Repositories>,
-    gateway_throttlers: GatewayThrottler,
+    gateway_throttlers: GatewayThrottlers,
 ) -> anyhow::Result<KeyUrlGatewayHandler> {
     info!("Initializing gateway components");
 

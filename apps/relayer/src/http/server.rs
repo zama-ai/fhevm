@@ -1,7 +1,6 @@
 use crate::config::settings::HttpConfig;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
-use crate::gateway::arbitrum::transaction::tx_throttler::TxSenders;
-use crate::gateway::readiness_check::readiness_throttler::ReadinessSenders;
+use crate::gateway::throttlers::BouncerThrottlers;
 use crate::http::endpoints::{
     admin, health_handler, liveness_handler,
     v1::handlers::{
@@ -41,32 +40,6 @@ async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     Err(anyhow::anyhow!("HTTP server failed to start"))
-}
-
-pub struct BouncerThrottlers {
-    pub input_proof_throttler_control_tx: Option<mpsc::Sender<u32>>,
-    pub user_decrypt_throttler_control_tx: Option<mpsc::Sender<u32>>,
-    pub public_decrypt_throttler_control_tx: Option<mpsc::Sender<u32>>,
-    pub tx_throttlers: TxSenders,
-    pub readiness_throttling_senders: ReadinessSenders,
-}
-
-impl BouncerThrottlers {
-    pub fn new(
-        input_proof_throttler_control_tx: Option<mpsc::Sender<u32>>,
-        user_decrypt_throttler_control_tx: Option<mpsc::Sender<u32>>,
-        public_decrypt_throttler_control_tx: Option<mpsc::Sender<u32>>,
-        tx_throttlers: TxSenders,
-        readiness_throttling_senders: ReadinessSenders,
-    ) -> Self {
-        Self {
-            input_proof_throttler_control_tx,
-            user_decrypt_throttler_control_tx,
-            public_decrypt_throttler_control_tx,
-            tx_throttlers,
-            readiness_throttling_senders,
-        }
-    }
 }
 
 pub async fn run_http_server<D>(
