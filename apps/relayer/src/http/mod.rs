@@ -25,6 +25,7 @@ pub use middleware::{openapi_middleware, with_rate_limiting};
 pub use utils::{
     // Other utilities
     de_string_or_number,
+    deserialize_ct_handles_from_hex,
     // Parsing utilities
     parse_and_validate,
     // Serialization helpers

@@ -16,6 +16,39 @@ where
     hex_handles.serialize(serializer)
 }
 
+/// Deserializes Vec<String> hex strings back to Vec<[u8; 32]> CT handles for serde.
+pub fn deserialize_ct_handles_from_hex<'de, D>(deserializer: D) -> Result<Vec<[u8; 32]>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let hex_handles: Vec<String> = Vec::deserialize(deserializer)?;
+
+    hex_handles
+        .into_iter()
+        .map(|hex_str| {
+            // Remove 0x prefix if present
+            let hex_str = hex_str.strip_prefix("0x").unwrap_or(&hex_str);
+
+            // Decode hex to bytes
+            let bytes = hex::decode(hex_str)
+                .map_err(|e| serde::de::Error::custom(format!("Invalid hex string: {}", e)))?;
+
+            // Convert to [u8; 32]
+            if bytes.len() != 32 {
+                return Err(serde::de::Error::custom(format!(
+                    "Expected 32 bytes, got {}",
+                    bytes.len()
+                )));
+            }
+
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            Ok(arr)
+        })
+        .collect()
+}
+
 pub fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
     hex::encode(vec)
 }
