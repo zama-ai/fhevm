@@ -70,22 +70,35 @@ get_step_index() {
     return 1
 }
 
-# Helper to check if step should be skipped (when resuming)
+# Helper to check if step should be skipped (when resuming or targeting only one step)
 should_skip_step() {
     local current_step=$1
-    if [[ -z "$RESUME_STEP" ]]; then
-        return 1  # No resume, don't skip
+
+    # --only mode: only run the specified step
+    if [[ -n "$ONLY_STEP" ]]; then
+        [[ "$current_step" != "$ONLY_STEP" ]]
+        return
     fi
-    local resume_index=$(get_step_index "$RESUME_STEP")
-    local current_index=$(get_step_index "$current_step")
-    [[ "$current_index" -lt "$resume_index" ]]
+
+    # --resume mode: skip steps before the resume point
+    if [[ -n "$RESUME_STEP" ]]; then
+        local resume_index=$(get_step_index "$RESUME_STEP")
+        local current_index=$(get_step_index "$current_step")
+        [[ "$current_index" -lt "$resume_index" ]]
+        return
+    fi
+
+    # Normal mode: don't skip anything
+    return 1
 }
 
 # Argument Parsing
 FORCE_BUILD=false
 LOCAL_BUILD=false
 RESUME_STEP=""
+ONLY_STEP=""
 RESUME_FLAG_DETECTED=false
+ONLY_FLAG_DETECTED=false
 NEW_ARGS=()
 
 for arg in "$@"; do
@@ -97,6 +110,8 @@ for arg in "$@"; do
     log_info "Local optimization option detected."
   elif [[ "$arg" == "--resume" ]]; then
     RESUME_FLAG_DETECTED=true
+  elif [[ "$arg" == "--only" ]]; then
+    ONLY_FLAG_DETECTED=true
   elif [[ "$RESUME_FLAG_DETECTED" == true ]]; then
     RESUME_STEP="$arg"
     RESUME_FLAG_DETECTED=false
@@ -107,15 +122,37 @@ for arg in "$@"; do
       exit 1
     fi
     log_info "Resume mode: starting from step '$RESUME_STEP'"
+  elif [[ "$ONLY_FLAG_DETECTED" == true ]]; then
+    ONLY_STEP="$arg"
+    ONLY_FLAG_DETECTED=false
+    # Validate step name
+    if [[ $(get_step_index "$ONLY_STEP") -eq -1 ]]; then
+      log_error "Invalid step: $ONLY_STEP"
+      log_error "Valid steps are: ${DEPLOYMENT_STEPS[*]}"
+      exit 1
+    fi
+    log_info "Only mode: deploying only step '$ONLY_STEP'"
   else
     NEW_ARGS+=("$arg")
   fi
 done
 
-# Check for incomplete --resume flag
+# Check for incomplete flags
 if [[ "$RESUME_FLAG_DETECTED" == true ]]; then
   log_error "--resume requires a step name"
   log_error "Valid steps are: ${DEPLOYMENT_STEPS[*]}"
+  exit 1
+fi
+
+if [[ "$ONLY_FLAG_DETECTED" == true ]]; then
+  log_error "--only requires a step name"
+  log_error "Valid steps are: ${DEPLOYMENT_STEPS[*]}"
+  exit 1
+fi
+
+# Check for conflicting flags
+if [[ -n "$RESUME_STEP" && -n "$ONLY_STEP" ]]; then
+  log_error "Cannot use --resume and --only together"
   exit 1
 fi
 
@@ -429,11 +466,41 @@ cleanup_from_step() {
     log_info "Cleanup complete. Services before '$start_step' preserved."
 }
 
+# Single step cleanup: tear down only the specified step's services
+cleanup_single_step() {
+    local step=$1
+    local compose=$(get_compose_for_step "$step")
+
+    if [[ -z "$compose" ]]; then
+        log_info "Step '$step' has no compose file to clean up"
+        return 0
+    fi
+
+    log_warn "Only mode: cleaning up '$step' services..."
+
+    local env_file="$SCRIPT_DIR/../env/staging/.env.$compose.local"
+    local compose_file="$SCRIPT_DIR/../docker-compose/$compose-docker-compose.yml"
+
+    if [[ -f "$compose_file" ]]; then
+        if [[ ! -f "$env_file" ]]; then
+            env_file="$SCRIPT_DIR/../env/staging/.env.$compose"
+        fi
+        if [[ -f "$env_file" ]]; then
+            log_info "Stopping $compose services..."
+            docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" down -v --remove-orphans 2>/dev/null || true
+        fi
+    fi
+
+    log_info "Cleanup complete. Only '$step' was cleaned."
+}
+
 # Run cleanup based on mode
-if [[ -z "$RESUME_STEP" ]]; then
-    cleanup "$@"
-else
+if [[ -n "$ONLY_STEP" ]]; then
+    cleanup_single_step "$ONLY_STEP"
+elif [[ -n "$RESUME_STEP" ]]; then
     cleanup_from_step "$RESUME_STEP"
+else
+    cleanup "$@"
 fi
 
 prepare_all_env_files
