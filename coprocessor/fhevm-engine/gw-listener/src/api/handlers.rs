@@ -2,7 +2,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use alloy::primitives::{keccak256, Address, FixedBytes, U256};
+use alloy::hex;
+use alloy::primitives::{keccak256, Address, Bytes, FixedBytes, U256};
 use alloy::{network::Ethereum, providers::Provider};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::Eip712Domain;
@@ -31,7 +32,8 @@ where
     pub listener: Arc<GatewayListener<P, A>>,
     pub db_pool: Pool<Postgres>,
     pub signer: Arc<PrivateKeySigner>,
-    pub eip712_domain: Eip712Domain,
+    pub input_eip712_domain: Eip712Domain,
+    pub ciphertext_eip712_domain: Eip712Domain,
     pub signer_address: Address,
     pub start_time: Instant,
 }
@@ -214,14 +216,12 @@ where
 
                 let signature = match sign_input_verification_attestation(
                     state.signer.as_ref(),
-                    &state.eip712_domain,
-                    request.request_id,
-                    request_record.commitment,
+                    &state.input_eip712_domain,
                     handles.clone(),
-                    request_record.contract_chain_id,
-                    request_record.contract_address,
                     request_record.user_address,
-                    epoch_id,
+                    request_record.contract_address,
+                    request_record.contract_chain_id,
+                    Bytes::from(vec![0u8]),
                 ) {
                     Ok(signature) => signature,
                     Err(e) => {
@@ -338,6 +338,7 @@ where
                     key_id: None,
                     sns_ciphertext: None,
                     sns_ciphertext_digest: None,
+                    ciphertext_format: None,
                     epoch_id: None,
                     timestamp: None,
                     signature: None,
@@ -348,15 +349,16 @@ where
         }
     };
 
-    match fetch_ciphertext(&state.db_pool, handle_bytes).await {
+    let s3_client = state.listener.aws_s3_client();
+    match fetch_ciphertext(&state.db_pool, &s3_client, handle_bytes).await {
         Ok(Some(ct_data)) => {
-            let signature = match sign_ciphertext_response(
-                state.signer.as_ref(),
-                &state.eip712_domain,
-                handle_bytes,
-                ct_data.key_id,
-                ct_data.sns_ciphertext_digest,
-                ct_data.epoch_id,
+                let signature = match sign_ciphertext_response(
+                    state.signer.as_ref(),
+                    &state.ciphertext_eip712_domain,
+                    handle_bytes,
+                    ct_data.key_id,
+                    ct_data.sns_ciphertext_digest,
+                    ct_data.epoch_id,
             ) {
                 Ok(signature) => signature,
                 Err(e) => {
@@ -369,6 +371,7 @@ where
                             key_id: None,
                             sns_ciphertext: None,
                             sns_ciphertext_digest: None,
+                            ciphertext_format: None,
                             epoch_id: None,
                             timestamp: None,
                             signature: None,
@@ -387,6 +390,7 @@ where
                     key_id: Some(ct_data.key_id),
                     sns_ciphertext: Some(ct_data.sns_ciphertext.into()),
                     sns_ciphertext_digest: Some(ct_data.sns_ciphertext_digest),
+                    ciphertext_format: Some(ct_data.ciphertext_format),
                     epoch_id: Some(ct_data.epoch_id),
                     timestamp: Some(ct_data.timestamp),
                     signature: Some(signature.as_bytes().to_vec().into()),
@@ -403,6 +407,7 @@ where
                 key_id: None,
                 sns_ciphertext: None,
                 sns_ciphertext_digest: None,
+                ciphertext_format: None,
                 epoch_id: None,
                 timestamp: None,
                 signature: None,
@@ -420,6 +425,7 @@ where
                     key_id: None,
                     sns_ciphertext: None,
                     sns_ciphertext_digest: None,
+                    ciphertext_format: None,
                     epoch_id: None,
                     timestamp: None,
                     signature: None,
@@ -478,7 +484,7 @@ async fn insert_verify_proof_request(
     pool: &Pool<Postgres>,
     request: &VerifyInputRequest,
 ) -> anyhow::Result<()> {
-    let request_id_i64: i64 = request.request_id.try_into().unwrap_or(i64::MAX);
+    let request_id_bytes = request.request_id.to_be_bytes::<32>();
     let chain_id_i64: i64 = request.contract_chain_id.try_into().unwrap_or(i64::MAX);
 
     sqlx::query(
@@ -488,7 +494,7 @@ async fn insert_verify_proof_request(
         ON CONFLICT(zk_proof_id) DO NOTHING
         "#,
     )
-    .bind(request_id_i64)
+    .bind(request_id_bytes.as_slice())
     .bind(chain_id_i64)
     .bind(request.contract_address.to_string())
     .bind(request.user_address.to_string())
@@ -524,26 +530,32 @@ struct CiphertextData {
     key_id: U256,
     sns_ciphertext: Vec<u8>,
     sns_ciphertext_digest: FixedBytes<32>,
+    ciphertext_format: i16,
     epoch_id: U256,
     timestamp: u64,
 }
 
-async fn fetch_ciphertext(
+/// Fetches the SquashedNoise ciphertext from S3 (ct128 bucket) using the digest stored in ciphertext_digest table.
+/// This is required because SNS worker stores ct128 in S3 and only keeps the digest in the database.
+async fn fetch_ciphertext<A: AwsS3Interface>(
     pool: &Pool<Postgres>,
+    s3_client: &A,
     handle: FixedBytes<32>,
 ) -> anyhow::Result<Option<CiphertextData>> {
     let handle_bytes = handle.as_slice();
 
+    // Query the ciphertext_digest table for the ct128 digest and tenant's key_id
     let result = sqlx::query(
         r#"
         SELECT
-            ct.ciphertext as sns_ciphertext,
-            ct.ciphertext_digest as sns_ciphertext_digest,
+            cd.ciphertext128 as ct128_digest,
+            cd.ciphertext128_format,
             t.key_id,
-            EXTRACT(EPOCH FROM ct.created_at)::bigint as created_at_epoch
-        FROM ciphertexts ct
-        JOIN tenants t ON ct.tenant_id = t.id
-        WHERE ct.handle = $1
+            EXTRACT(EPOCH FROM cd.created_at)::bigint as created_at_epoch
+        FROM ciphertext_digest cd
+        JOIN ciphertexts ct ON cd.handle = ct.handle AND cd.tenant_id = ct.tenant_id
+        JOIN tenants t ON ct.tenant_id = t.tenant_id
+        WHERE cd.handle = $1
         "#,
     )
     .bind(handle_bytes)
@@ -552,27 +564,58 @@ async fn fetch_ciphertext(
 
     match result {
         Some(row) => {
-            let sns_ciphertext: Vec<u8> = row.get("sns_ciphertext");
-            let digest_vec: Vec<u8> = row.get("sns_ciphertext_digest");
+            let ct128_digest: Option<Vec<u8>> = row.get("ct128_digest");
+            let ciphertext_format: i16 = row.get("ciphertext128_format");
             let key_id_vec: Option<Vec<u8>> = row.get("key_id");
             let created_at_epoch: i64 = row.get("created_at_epoch");
 
-            let digest_bytes: [u8; 32] = digest_vec
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("Invalid ciphertext digest length"))?;
+            // Check if ct128 digest exists (SNS worker has processed this ciphertext)
+            let Some(ct128_digest) = ct128_digest else {
+                warn!(handle = %handle, "ct128 digest not found - SNS worker may not have processed this ciphertext yet");
+                return Ok(None);
+            };
+
             let Some(key_id_vec) = key_id_vec else {
                 anyhow::bail!("Missing key_id for ciphertext");
             };
+
+            // Convert digest to hex for S3 key
+            let s3_key = hex::encode(&ct128_digest);
+            info!(handle = %handle, s3_key = %s3_key, "Fetching ct128 from S3");
+
+            // Fetch the actual SquashedNoise ciphertext from S3 ct128 bucket
+            let sns_ciphertext = match s3_client.get_object_by_key("ct128", &s3_key).await {
+                Ok(bytes) => bytes.to_vec(),
+                Err(e) => {
+                    error!(handle = %handle, s3_key = %s3_key, error = %e, "Failed to fetch ct128 from S3");
+                    anyhow::bail!("Failed to fetch ct128 from S3: {}", e);
+                }
+            };
+
+            // Use the stored digest (not recomputed) for signature
+            let digest_bytes: [u8; 32] = ct128_digest
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("Invalid ct128 digest length - expected 32 bytes"))?;
+
             let key_id_bytes: [u8; 32] = key_id_vec
                 .try_into()
                 .map_err(|_| anyhow::anyhow!("Invalid key_id length"))?;
 
             let key_id = U256::from_be_bytes(key_id_bytes);
 
+            info!(
+                handle = %handle,
+                key_id = %key_id,
+                ciphertext_len = sns_ciphertext.len(),
+                ciphertext_format = ciphertext_format,
+                "Successfully fetched ct128 (SquashedNoise) from S3"
+            );
+
             Ok(Some(CiphertextData {
                 key_id,
                 sns_ciphertext,
                 sns_ciphertext_digest: FixedBytes::from(digest_bytes),
+                ciphertext_format,
                 epoch_id: key_id,
                 timestamp: created_at_epoch as u64,
             }))
@@ -614,12 +657,12 @@ async fn fetch_input_verification_request(
     pool: &Pool<Postgres>,
     request_id: U256,
 ) -> anyhow::Result<Option<InputVerificationRequestRecord>> {
-    let request_id_i64: i64 = request_id.try_into().unwrap_or(i64::MAX);
+    let request_id_bytes = request_id.to_be_bytes::<32>();
     let result = sqlx::query(
         "SELECT commitment, user_address, contract_chain_id, contract_address, user_signature \
         FROM input_verification_requests WHERE request_id = $1",
     )
-    .bind(request_id_i64)
+    .bind(request_id_bytes.as_slice())
     .fetch_optional(pool)
     .await?;
 
@@ -650,13 +693,13 @@ async fn fetch_verification_status(
     pool: &Pool<Postgres>,
     request_id: U256,
 ) -> anyhow::Result<Option<VerificationStatus>> {
-    let request_id_i64: i64 = request_id.try_into().unwrap_or(i64::MAX);
+    let request_id_bytes = request_id.to_be_bytes::<32>();
     let result = sqlx::query(
         "SELECT handles, verified, last_error, \
         EXTRACT(EPOCH FROM verified_at)::bigint as verified_at_epoch \
         FROM verify_proofs WHERE zk_proof_id = $1",
     )
-    .bind(request_id_i64)
+    .bind(request_id_bytes.as_slice())
     .fetch_optional(pool)
     .await?;
 

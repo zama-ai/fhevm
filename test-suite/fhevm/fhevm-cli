@@ -59,11 +59,11 @@ function usage {
   echo -e "${BOLD}Usage:${RESET} ${YELLOW}fhevm-cli${RESET} ${CYAN}COMMAND [OPTIONS]${RESET}"
   echo
   echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
-  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
+  echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local] [--resume STEP]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
   echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|delegate-user-decryption|random|random-subset|operators|erc20|debug)"
-  echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
+  echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE] [--local]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
   echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
   echo -e "  ${YELLOW}logs${RESET} ${CYAN}[SERVICE]${RESET}      View logs for a specific service"
   echo -e "  ${YELLOW}help${RESET}                Display this help message"
@@ -79,6 +79,7 @@ function usage {
   echo -e "  ${PURPLE}./fhevm-cli deploy${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --build${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli deploy --local${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli deploy --resume kms-connector${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test input-proof --no-hardhat-compile${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
@@ -112,6 +113,15 @@ case $COMMAND in
         --local|--dev)
           DEPLOY_ARGS+=("--local")
           shift
+          ;;
+        --resume|--resume-from)
+          if [ -z "${2:-}" ]; then
+            echo -e "${RED}[ERROR]${RESET} ${BOLD}--resume requires a step name${RESET}"
+            usage
+            exit 1
+          fi
+          DEPLOY_ARGS+=("--resume" "$2")
+          shift 2
           ;;
         *)
           echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown argument for deploy: $1${RESET}"
@@ -311,6 +321,21 @@ case $COMMAND in
   upgrade)
     print_logo
     SERVICE=$1
+    shift || true
+    LOCAL_UPGRADE=false
+    while (( "$#" )); do
+      case "$1" in
+        --local|--dev)
+          LOCAL_UPGRADE=true
+          shift
+          ;;
+        *)
+          echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown argument for upgrade: $1${RESET}"
+          usage
+          exit 1
+          ;;
+      esac
+    done
     if [[ ! $SERVICE =~ ^(minio|core|gateway-node|gateway-sc|gateway-mocked-payment|host-node|host-sc|kms-connector|coprocessor|relayer|test-suite)$ ]]; then
       echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown service: $SERVICE${RESET}"
       usage
@@ -318,6 +343,14 @@ case $COMMAND in
     fi
 
     echo -e "${LIGHT_BLUE}[UPGRADE]${RESET} ${BOLD}Upgrading $SERVICE...${RESET}"
+    if [ "$LOCAL_UPGRADE" = true ]; then
+      if [ "$SERVICE" != "relayer" ]; then
+        echo -e "${RED}[ERROR]${RESET} ${BOLD}--local is only supported for relayer upgrades${RESET}"
+        exit 1
+      fi
+      "${SCRIPT_DIR}/scripts/build-relayer-local.sh"
+      export RELAYER_VERSION=local
+    fi
     docker compose -p "${PROJECT}" --env-file "${SCRIPT_DIR}/env/staging/.env.${SERVICE}.local" -f "${SCRIPT_DIR}/docker-compose/${SERVICE}-docker-compose.yml" up -d
     echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}$SERVICE upgraded successfully${RESET}"
     ;;

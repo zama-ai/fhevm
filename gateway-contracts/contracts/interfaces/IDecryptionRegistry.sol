@@ -96,6 +96,7 @@ interface IDecryptionRegistry {
     function requestUserDecryption(
         bytes32[] calldata handles,
         address[] calldata contractAddresses,
+        address userAddress,
         bytes calldata publicKey,
         bytes calldata signature
     ) external payable returns (uint256 requestId);

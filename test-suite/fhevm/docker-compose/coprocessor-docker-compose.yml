@@ -112,6 +112,8 @@ services:
       - --gw-url=${GATEWAY_WS_URL}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
       - --kms-generation-address=${KMS_GENERATION_ADDRESS}
+      - --catchup-kms-generation-from-block=0
+      - --coprocessor-private-key=${COPROCESSOR_PRIVATE_KEY}
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
     depends_on:

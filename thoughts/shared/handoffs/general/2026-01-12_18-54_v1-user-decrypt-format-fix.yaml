@@ -1,0 +1,57 @@
+---
+session: gateway-v2-e2e-testing
+date: 2026-01-12
+status: complete
+outcome: SUCCEEDED
+---
+
+goal: Fixed V1 user-decrypt response format mismatch - all 8 user decryption e2e tests passing
+now: Run full e2e test suite or continue with other Gateway V2 test coverage
+test: ./test-suite/fhevm/fhevm-cli test user-decryption
+
+done_this_session:
+  - task: Diagnosed V1 SDK response format mismatch causing "expected a sequence" WASM error
+    files: [/tmp/relayer-sdk/src/relayer-provider/v1/RelayerV1Provider.ts, /tmp/relayer-sdk/src/relayer/userDecrypt.ts]
+  - task: Fixed relayer V1 user-decrypt handler to return array directly instead of wrapped object
+    files: [console/apps/relayer/src/http/endpoints/v1/handlers/user_decrypt.rs]
+  - task: Rebuilt relayer with fix and verified all user decryption tests pass
+    files: []
+  - task: Documented fix as finding #41 in TEST_FINDINGS.md
+    files: [TEST_FINDINGS.md]
+
+blockers: []
+
+questions: []
+
+decisions:
+  fix_in_relayer: SDK V1 provider expects json.response to be array directly; fixing relayer is cleaner than changing SDK
+
+findings:
+  v1_response_format: "V1 SDK extracts json.response directly and passes to WASM; relayer was returning {result:[...]} instead of [...]; WASM expected sequence not object"
+  v2_different_extraction: "V2 SDK extracts json.result.result internally; V1 and V2 have different extraction logic"
+  full_data_flow_tracing: "Traced: Relayer → SDK V1Provider.fetchPostUserDecrypt → userDecrypt.ts → process_user_decryption_resp_from_js()"
+
+worked:
+  - Tracing full data flow from API response through SDK extraction to WASM processing
+  - Comparing SDK V1 vs V2 provider implementations to understand format expectations
+  - Reading relayer source to find exact response construction
+
+failed:
+  - Initial rebuild with just `build-relayer-local.sh` - needed full deploy with --build flag to pick up bindings
+
+next:
+  - Run full e2e test suite to verify all tests pass
+  - Test public decryption if not already covered
+  - Consider running input-proof tests to ensure V2 flow still works
+
+files:
+  created: []
+  modified:
+    - console/apps/relayer/src/http/endpoints/v1/handlers/user_decrypt.rs
+    - TEST_FINDINGS.md
+
+context:
+  previous_handoff: thoughts/shared/handoffs/general/2026-01-12_18-30_kms-worker-api-fixes.yaml
+  test_findings: TEST_FINDINGS.md
+  key_fix_location:
+    - console/apps/relayer/src/http/endpoints/v1/handlers/user_decrypt.rs:217-221 (return response_json.result instead of response_json)

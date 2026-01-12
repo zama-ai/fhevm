@@ -61,7 +61,8 @@ pub struct HttpServer<
     db_pool: Option<Pool<Postgres>>,
     signer: Option<Arc<PrivateKeySigner>>,
     signer_address: Option<Address>,
-    eip712_domain: Option<Eip712Domain>,
+    input_eip712_domain: Option<Eip712Domain>,
+    ciphertext_eip712_domain: Option<Eip712Domain>,
 }
 
 impl<
@@ -81,7 +82,8 @@ impl<
             db_pool: None,
             signer: None,
             signer_address: None,
-            eip712_domain: None,
+            input_eip712_domain: None,
+            ciphertext_eip712_domain: None,
         }
     }
 
@@ -90,12 +92,14 @@ impl<
         db_pool: Pool<Postgres>,
         signer: PrivateKeySigner,
         signer_address: Address,
-        eip712_domain: Eip712Domain,
+        input_eip712_domain: Eip712Domain,
+        ciphertext_eip712_domain: Eip712Domain,
     ) -> Self {
         self.db_pool = Some(db_pool);
         self.signer = Some(Arc::new(signer));
         self.signer_address = Some(signer_address);
-        self.eip712_domain = Some(eip712_domain);
+        self.input_eip712_domain = Some(input_eip712_domain);
+        self.ciphertext_eip712_domain = Some(ciphertext_eip712_domain);
         self
     }
 
@@ -105,14 +109,26 @@ impl<
             .route("/liveness", get(liveness_handler))
             .with_state(self.listener.clone());
 
-        if let (Some(db_pool), Some(signer_address), Some(signer), Some(eip712_domain)) =
-            (&self.db_pool, &self.signer_address, &self.signer, &self.eip712_domain)
+        if let (
+            Some(db_pool),
+            Some(signer_address),
+            Some(signer),
+            Some(input_eip712_domain),
+            Some(ciphertext_eip712_domain),
+        ) = (
+            &self.db_pool,
+            &self.signer_address,
+            &self.signer,
+            &self.input_eip712_domain,
+            &self.ciphertext_eip712_domain,
+        )
         {
             let api_state = Arc::new(ApiState {
                 listener: self.listener.clone(),
                 db_pool: db_pool.clone(),
                 signer: signer.clone(),
-                eip712_domain: eip712_domain.clone(),
+                input_eip712_domain: input_eip712_domain.clone(),
+                ciphertext_eip712_domain: ciphertext_eip712_domain.clone(),
                 signer_address: *signer_address,
                 start_time: Instant::now(),
             });

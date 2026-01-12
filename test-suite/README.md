@@ -37,6 +37,8 @@ cd test-suite/fhevm
 ./fhevm-cli deploy
 # Deploy with local BuildKit cache (disables provenance attestations)
 ./fhevm-cli deploy --local
+ # Resume a failed deploy from a specific step (keeps existing containers/volumes)
+ ./fhevm-cli deploy --resume kms-connector
 
 # Run specific tests
 ./fhevm-cli test input-proof
@@ -94,6 +96,22 @@ For faster local iteration, use `--local` to enable a local BuildKit cache (stor
 ```sh
 ./fhevm-cli deploy --local
 ```
+
+When `--local` is set, buildable services are tagged with `:local` so it's easy to see which images came from your workspace.
+
+### Resuming a deployment
+
+If a deploy fails mid-way, you can resume from a specific step without tearing down containers or regenerating `.env` files:
+
+```sh
+./fhevm-cli deploy --resume kms-connector
+```
+
+Resume steps (in order):
+`minio`, `core`, `kms-signer`, `database`, `host-node`, `gateway-node`, `coprocessor`,
+`gateway-mocked-payment`, `gateway-sc`, `sync-addresses`, `restart-coprocessor`,
+`gateway-mocked-payment-approvals`, `host-sc`, `reset-kms-connector`, `kms-connector`,
+`relayer`, `test-suite`.
 
 When running tests and you know your Hardhat artifacts are already up to date, you can skip compilation:
 

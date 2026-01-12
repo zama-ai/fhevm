@@ -1,0 +1,75 @@
+---
+session: gateway-v2-e2e-testing
+date: 2026-01-12
+status: partial
+outcome: PARTIAL_PLUS
+---
+
+goal: Fix Gateway V2 relayer local build issues (sqlx, bindings, migrations)
+now: Run ./test-suite/fhevm/fhevm-cli deploy --build --local and test user-decryption
+test: ./test-suite/fhevm/fhevm-cli deploy --build --local && ./test-suite/fhevm/fhevm-cli test user-decryption
+
+done_this_session:
+  - task: Resumed from previous handoff about relayer DB migrations
+    files: [thoughts/shared/handoffs/general/2026-01-12_15-30_gateway-v2-relayer-migration-fix.yaml]
+  - task: Diagnosed sqlx compile-time verification failure (DB not accessible during Docker build)
+    files: [relayer.local.Dockerfile]
+  - task: Fixed DATABASE_URL to use host.docker.internal for build-time DB access
+    files: [test-suite/fhevm/scripts/build-relayer-local.sh]
+  - task: Added pre-build DB init and migration steps to deploy script
+    files: [test-suite/fhevm/scripts/deploy-fhevm-stack.sh]
+  - task: Fixed bindings path mismatch (console repo had outdated 4-param bindings vs fhevm 5-param)
+    files: [relayer.local.Dockerfile]
+  - task: Added MAX_ATTEMPTS=1 to relayer-db-migration service
+    files: [test-suite/fhevm/docker-compose/relayer-docker-compose.yml]
+  - task: Documented all fixes in TEST_FINDINGS.md as finding #38
+    files: [TEST_FINDINGS.md]
+
+blockers: []
+
+questions:
+  - Does the full deployment now work end-to-end with --build --local?
+  - Do user-decryption tests pass after these build fixes?
+
+decisions:
+  sqlx_online_mode: Use SQLX_OFFLINE=false with host.docker.internal to verify queries against live DB during build
+  bindings_location: Copy bindings to console/fhevm/gateway-contracts/rust_bindings/ for self-contained builds
+  pre_build_migrations: Run DB init and migrations BEFORE Docker build so sqlx can verify schema
+
+findings:
+  sqlx_build_issue: sqlx compile-time verification needs DB access; use host.docker.internal for port-mapped services
+  bindings_mismatch: Console repo bindings had 4 params (no userAddress), fhevm repo had 5 params - caused type errors
+  docker_mount_paths: Bind mount sources are relative to build context, not working directory
+  migration_env_vars: Migration services need same env vars as main service (MAX_ATTEMPTS)
+
+worked:
+  - Using host.docker.internal to access port-mapped DB during Docker build
+  - Running DB init and migrations before build so schema exists for sqlx verification
+  - Copying bindings to console repo for consistent Docker mount path
+
+failed:
+  - Initial SQLX_OFFLINE=true approach - cache was empty
+  - Mounting from fhevm/gateway-contracts - path not found in Docker build context
+
+next:
+  - Run ./test-suite/fhevm/fhevm-cli deploy --build --local to verify full deployment works
+  - Run ./test-suite/fhevm/fhevm-cli test user-decryption to verify e2e flow
+  - If migration still fails, check docker logs fhevm-relayer-db-migration for errors
+  - Verify relayer starts without "relation does not exist" errors
+
+files:
+  created: []
+  modified:
+    - relayer.local.Dockerfile
+    - test-suite/fhevm/scripts/build-relayer-local.sh
+    - test-suite/fhevm/scripts/deploy-fhevm-stack.sh
+    - test-suite/fhevm/docker-compose/relayer-docker-compose.yml
+    - TEST_FINDINGS.md
+
+context:
+  previous_handoff: thoughts/shared/handoffs/general/2026-01-12_15-30_gateway-v2-relayer-migration-fix.yaml
+  design_doc: GATEWAY_V2_DESIGN.md
+  test_findings: TEST_FINDINGS.md
+  relayer_source: /Users/msaug/zama/console/apps/relayer
+  bindings_source: /Users/msaug/zama/fhevm/gateway-contracts/rust_bindings
+  bindings_target: /Users/msaug/zama/console/fhevm/gateway-contracts/rust_bindings

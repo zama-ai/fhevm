@@ -24,6 +24,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 BASE_URL="http://localhost:9000/kms-public/PUB/VerfAddress"
 ENV_HOST="${SCRIPT_DIR}/../env/staging/.env.host-sc.local"
 ENV_GATEWAY="${SCRIPT_DIR}/../env/staging/.env.gateway-sc.local"
+ENV_KMS_CONNECTOR="${SCRIPT_DIR}/../env/staging/.env.kms-connector.local"
 KEY_SIGNER_ID=$(docker logs kms-core | grep "Successfully stored public server signing key under the handle" | sed 's/.*handle \([^ ]*\).*/\1/')
 SIGNER_ADDRESS_URL="$BASE_URL/$KEY_SIGNER_ID"
 
@@ -62,6 +63,17 @@ if grep -q "KMS_SIGNER_ADDRESS_0=$SIGNER_ADDRESS" /tmp/env.gateway-sc.new; then
     log_info "KMS_SIGNER_ADDRESS_0 successfully updated to: $SIGNER_ADDRESS in $ENV_GATEWAY"
 else
     log_warn "Failed to update KMS_SIGNER_ADDRESS_0. Please update manually in $ENV_GATEWAY"
+    log_info "The value that should be set: $SIGNER_ADDRESS"
+fi
+
+# Setup KMS_CONNECTOR_SIGNER_ADDRESS for KMS Connector
+log_info "Updating KMS_CONNECTOR_SIGNER_ADDRESS in $ENV_KMS_CONNECTOR..."
+cat $ENV_KMS_CONNECTOR | sed "s|^KMS_CONNECTOR_SIGNER_ADDRESS=.*|KMS_CONNECTOR_SIGNER_ADDRESS=$SIGNER_ADDRESS|g" > /tmp/env.kms-connector.new
+if grep -q "KMS_CONNECTOR_SIGNER_ADDRESS=$SIGNER_ADDRESS" /tmp/env.kms-connector.new; then
+    cat /tmp/env.kms-connector.new > $ENV_KMS_CONNECTOR
+    log_info "KMS_CONNECTOR_SIGNER_ADDRESS successfully updated to: $SIGNER_ADDRESS in $ENV_KMS_CONNECTOR"
+else
+    log_warn "Failed to update KMS_CONNECTOR_SIGNER_ADDRESS. Please update manually in $ENV_KMS_CONNECTOR"
     log_info "The value that should be set: $SIGNER_ADDRESS"
 fi
 

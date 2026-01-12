@@ -45,7 +45,7 @@ contract DecryptionRegistry is
     /**
      * @dev Constant used for the `reinitializer` modifier.
      */
-    uint64 private constant REINITIALIZER_VERSION = 1;
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /**
      * @notice Request ID counter base for user decryption requests.
@@ -102,6 +102,7 @@ contract DecryptionRegistry is
     function requestUserDecryption(
         bytes32[] calldata handles,
         address[] calldata contractAddresses,
+        address userAddress,
         bytes calldata publicKey,
         bytes calldata signature
     ) external payable virtual whenNotPaused returns (uint256) {
@@ -135,7 +136,7 @@ contract DecryptionRegistry is
             requestId,
             handles,
             contractAddresses,
-            msg.sender,
+            userAddress,
             publicKey,
             signature,
             chainId,

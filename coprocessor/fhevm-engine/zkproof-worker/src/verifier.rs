@@ -236,7 +236,8 @@ async fn execute_verify_proof_routine(
     .await
     {
         let started_at = SystemTime::now();
-        let request_id: i64 = row.get("zk_proof_id");
+        let request_id_bytes: Vec<u8> = row.get("zk_proof_id");
+        let request_id_hex = format!("0x{}", encode(&request_id_bytes));
         let input: Vec<u8> = row.get("input");
         let chain_id: i64 = row.get("chain_id");
         let contract_address = row.get("contract_address");
@@ -245,7 +246,7 @@ async fn execute_verify_proof_routine(
 
         info!(
             message = "Process zk-verify request",
-            request_id,
+            request_id = %request_id_hex,
             chain_id,
             user_address,
             contract_address,
@@ -253,7 +254,7 @@ async fn execute_verify_proof_routine(
         );
 
         let t: telemetry::OtelTracer = telemetry::tracer("verify_task", &transaction_id);
-        t.set_attribute("request_id", request_id.to_string());
+        t.set_attribute("request_id", request_id_hex.clone());
 
         let s = t.child_span("fetch_keys");
         let keys = tenant_keys::fetch_tenant_server_key(chain_id, pool, tenant_key_cache, false)
@@ -262,8 +263,9 @@ async fn execute_verify_proof_routine(
         telemetry::end_span(s);
 
         let tenant_id = keys.tenant_id;
-        info!(message = "Keys retrieved", request_id, chain_id);
+        info!(message = "Keys retrieved", request_id = %request_id_hex, chain_id);
 
+        let request_id_for_task = request_id_hex.clone();
         let res = tokio::task::spawn_blocking(move || {
             let aux_data = auxiliary::ZkData {
                 contract_address,
@@ -272,12 +274,12 @@ async fn execute_verify_proof_routine(
                 acl_contract_address: keys.acl_contract_address.clone(),
             };
 
-            verify_proof(request_id, &keys, &aux_data, &input, t)
+            verify_proof(&request_id_for_task, &keys, &aux_data, &input, t)
         })
         .await?;
 
         let t = telemetry::tracer("db_insert", &transaction_id);
-        t.set_attribute("request_id", request_id.to_string());
+        t.set_attribute("request_id", request_id_hex.clone());
 
         let mut verified = false;
         let mut handles_bytes = vec![];
@@ -285,7 +287,7 @@ async fn execute_verify_proof_routine(
             Ok((cts, blob_hash)) => {
                 info!(
                     message = "Proof verification successful",
-                    request_id,
+                    request_id = %request_id_hex,
                     cts = format!("{}", cts.len()),
                 );
 
@@ -297,13 +299,13 @@ async fn execute_verify_proof_routine(
                 let count = cts.len();
                 insert_ciphertexts(&mut txn, tenant_id, cts, blob_hash).await?;
 
-                info!(message = "Ciphertexts inserted", request_id);
+                info!(message = "Ciphertexts inserted", request_id = %request_id_hex);
                 t.set_attribute("count", count.to_string());
             }
             Err(err) => {
                 error!(
                     message = "Failed to verify proof",
-                    request_id,
+                    request_id = %request_id_hex,
                     err = err.to_string()
                 );
             }
@@ -318,7 +320,7 @@ async fn execute_verify_proof_routine(
         )
         .bind(handles_bytes)
         .bind(verified)
-        .bind(request_id)
+        .bind(request_id_bytes)
         .execute(&mut *txn)
         .await?;
 
@@ -337,14 +339,14 @@ async fn execute_verify_proof_routine(
             }
         }
 
-        info!(message = "Completed", request_id);
+        info!(message = "Completed", request_id = %request_id_hex);
     }
 
     Ok(())
 }
 
 pub(crate) fn verify_proof(
-    request_id: i64,
+    request_id: &str,
     keys: &FetchTenantKeyResult,
     aux_data: &auxiliary::ZkData,
     raw_ct: &[u8],
@@ -383,7 +385,7 @@ pub(crate) fn verify_proof(
 }
 
 fn try_verify_and_expand_ciphertext_list(
-    request_id: i64,
+    request_id: &str,
     raw_ct: &[u8],
     keys: &FetchTenantKeyResult,
     aux_data: &auxiliary::ZkData,
@@ -415,14 +417,14 @@ fn try_verify_and_expand_ciphertext_list(
 
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .verify_and_expand(&keys.public_params, &keys.pks, &aux_data_bytes)
-        .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))?;
+        .map_err(|err| ExecutionError::InvalidProof(request_id.to_string(), err.to_string()))?;
 
     Ok(extract_ct_list(&expanded)?)
 }
 
 /// Creates a ciphertext
 fn create_ciphertext(
-    request_id: i64,
+    request_id: &str,
     blob_hash: &[u8],
     ct_idx: usize,
     the_ct: &mut SupportedFheCiphertexts,

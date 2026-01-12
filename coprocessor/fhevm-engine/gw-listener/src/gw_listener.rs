@@ -73,6 +73,10 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         }
     }
 
+    pub fn aws_s3_client(&self) -> A {
+        self.aws_s3_client.clone()
+    }
+
     pub async fn run(&self) -> anyhow::Result<()> {
         info!(
             conf = ?self.conf,
@@ -376,6 +380,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         );
 
         let chain_id = event.contractChainId.to::<i64>();
+        let request_id_bytes = event.requestId.to_be_bytes::<32>();
 
         let _ = telemetry::try_begin_transaction(
             db_pool,
@@ -390,7 +395,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT(request_id) DO NOTHING",
         )
-        .bind(event.requestId.to::<i64>())
+        .bind(request_id_bytes.as_slice())
         .bind(event.commitment.as_slice())
         .bind(event.userAddress.to_string())
         .bind(chain_id)

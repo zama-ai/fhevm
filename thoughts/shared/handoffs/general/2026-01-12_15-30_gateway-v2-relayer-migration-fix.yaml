@@ -1,0 +1,93 @@
+---
+session: gateway-v2-e2e-testing-investigation
+date: 2026-01-12
+status: partial
+outcome: PARTIAL_PLUS
+---
+
+goal: Fix Gateway V2 user decryption failures in E2E tests
+now: Test deployment with automatic relayer migrations
+test: ./test-suite/fhevm/fhevm-cli deploy --local && ./test-suite/fhevm/fhevm-cli test user-decryption
+
+done_this_session:
+  - task: Root cause analysis of "Request not found" errors
+    files: []
+  - task: Identified missing relayer database migrations as root cause
+    files: []
+  - task: Added automatic relayer DB initialization to deployment
+    files: [test-suite/fhevm/docker-compose/relayer-docker-compose.yml, test-suite/fhevm/scripts/deploy-fhevm-stack.sh]
+
+blockers: []
+
+questions:
+  - Does the local relayer build at /Users/msaug/zama/console/apps/relayer need any additional configuration?
+  - Are there any other services that might be missing migrations?
+
+decisions:
+  - db_init_pattern: Used same pattern as coprocessor/kms-connector (separate db-init service, then migration, then main service) for consistency
+  - postgres_client_image: Used postgres:15.7 image for db-init to have psql client available
+  - db_name: Created separate relayer_db database instead of using kms-connector database
+
+findings:
+  - relayer_missing_tables: Local relayer was missing tables (gateway_block_number_store, user_decrypt_req) causing "relation does not exist" errors
+  - no_migration_in_deployment: Original deployment script did not run relayer database migrations
+  - kms_services_restarted: KMS connector services restarted during test execution, creating availability gaps
+  - request_id_endianness_correct: Request ID endianness conversion (big-endian to little-endian) is working correctly by design
+  - response_exists_in_db: KMS worker successfully processed requests and stored responses in database
+  - gateway_v2_implementation_correct: The Gateway V2 code implementation is correct; failure was due to deployment issue
+
+worked:
+  - Using scout agents to investigate code paths in parallel (KMS worker API, relayer V2 handler, Gateway contracts)
+  - Checking database directly to verify data existence
+  - Following the pattern used by existing services (coprocessor-db-migration, kms-connector-db-migration)
+
+failed:
+  - Initial assumption that endianness was the issue (it was correct by design)
+  - Looking at KMS API implementation first instead of relayer startup logs
+
+next:
+  - Run ./test-suite/fhevm/fhevm-cli deploy --local to test the updated deployment
+  - Verify relayer-db-init creates the database successfully
+  - Verify relayer-db-migration runs migrations without errors
+  - Run user decryption E2E test: ./test-suite/fhevm/fhevm-cli test user-decryption
+  - Check relayer logs to confirm no more "relation does not exist" errors
+  - If successful, test other decryption types (public-decryption, input-proof)
+
+files:
+  created: []
+  modified:
+    - test-suite/fhevm/docker-compose/relayer-docker-compose.yml
+    - test-suite/fhevm/scripts/deploy-fhevm-stack.sh
+
+context:
+  logs_analyzed:
+    - KMS worker API logs showing "Request not found for request_id=0x0200...0006"
+    - Relayer logs showing "relation 'gateway_block_number_store' does not exist"
+    - Relayer logs showing "relation 'user_decrypt_req' does not exist"
+    - gw-listener logs showing successful event processing and DB writes
+
+  key_error_timeline:
+    - "14:27:00 - Relayer fails to resolve starting block (missing tables)"
+    - "14:27:10 - Relayer listener fails after 20 retry attempts"
+    - "14:57:33 - User tries to decrypt, relayer polls KMS workers"
+    - "14:58:10 - KMS API returns 'Request not found'"
+    - "15:07:59 - KMS services restart, creating availability gap"
+
+  design_doc_location: GATEWAY_V2_DESIGN.md
+  relayer_source: /Users/msaug/zama/console/apps/relayer
+  migration_dockerfile: /Users/msaug/zama/console/docker/relayer-migrate/Dockerfile
+  migration_sql: /Users/msaug/zama/console/apps/relayer/relayer-migrate/migrations/20251109145104_create_tables.sql
+
+architectural_changes:
+  - Added relayer-db-init service to create relayer_db database
+  - Added relayer-db-migration service to run sqlx migrations
+  - Made relayer service depend on successful completion of both init and migration
+  - Updated deployment script to wait for db-init:complete and db-migration:complete
+
+  pattern_match: Follows same pattern as kms-connector-db-migration and coprocessor-db-migration
+
+verification_commands:
+  - docker logs fhevm-relayer-db-init  # Should show "Relayer database ready"
+  - docker logs fhevm-relayer-db-migration  # Should show "Migrations executed"
+  - docker logs fhevm-relayer  # Should NOT show "relation does not exist"
+  - docker exec coprocessor-and-kms-db psql -U postgres -d relayer_db -c "\\dt"  # Should list tables

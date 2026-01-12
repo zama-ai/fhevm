@@ -48,7 +48,7 @@ pub enum ExecutionError {
     InvalidPkBytes(String),
 
     #[error("Invalid Proof({0}, {1})")]
-    InvalidProof(i64, String),
+    InvalidProof(String, String),
 
     #[error("Fhevm error: {0}")]
     FaildFhevm(#[from] FhevmError),

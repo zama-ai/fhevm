@@ -29,7 +29,7 @@ services:
     env_file:
       - ../env/staging/.env.gateway-sc.local
     command:
-      - npx hardhat task:addHostChainsToGatewayConfig
+      - npx hardhat task:addHostChainsToGatewayConfig --use-internal-proxy-address true
     depends_on:
       gateway-sc-deploy:
         condition: service_completed_successfully
@@ -51,7 +51,7 @@ services:
     env_file:
       - ../env/staging/.env.gateway-sc.local
     command:
-      - npx hardhat task:addGatewayPausers
+      - npx hardhat task:addGatewayPausers --use-internal-pauser-set-address true
     depends_on:
       gateway-sc-add-network:
         condition: service_completed_successfully
@@ -76,7 +76,7 @@ services:
     # tests fail with a high probability (1/2 chance), so we instead use default parameters (--params-type 0).
     # See https://github.com/zama-ai/fhevm-internal/issues/685
     command:
-      - npx hardhat task:triggerKeygen --params-type 0
+      - npx hardhat task:triggerKeygen --params-type 0 --use-internal-proxy-address true
     depends_on:
       gateway-sc-add-pausers:
         condition: service_completed_successfully
@@ -101,7 +101,7 @@ services:
     # CRS parameters must be of the same type as the keygen parameters.
     # See https://github.com/zama-ai/fhevm-internal/issues/685
     command:
-      - npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048
+      - npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048 --use-internal-proxy-address true
     depends_on:
       gateway-sc-trigger-keygen:
         condition: service_completed_successfully

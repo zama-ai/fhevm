@@ -47,7 +47,7 @@ contract InputVerificationRegistry is
     /**
      * @dev Constant used for the `reinitializer` modifier.
      */
-    uint64 private constant REINITIALIZER_VERSION = 1;
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /**
      * @notice Request ID counter base for input verification requests.

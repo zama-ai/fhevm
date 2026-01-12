@@ -1,0 +1,69 @@
+---
+session: gateway-v2-e2e-testing
+date: 2026-01-12
+status: partial
+outcome: PARTIAL_PLUS
+---
+
+goal: Fixed KMS worker API "not found" bug - two root causes identified and fixed
+now: Investigate relayer response format mismatch with SDK expectations
+test: curl -s http://localhost:9100/v1/share/0x0200000000000000000000000000000000000000000000000000000000000008 | jq .status
+
+done_this_session:
+  - task: Diagnosed KMS worker API returning "not found" despite DB having responses
+    files: [kms-connector/crates/kms-worker/src/api/handlers.rs]
+  - task: Fixed V2 status race condition - INSERT now sets status='completed'
+    files: [kms-connector/crates/kms-worker/src/core/kms_response_publisher.rs]
+  - task: Fixed SQL type mismatch - EXTRACT(EPOCH) returns NUMERIC not FLOAT8
+    files: [kms-connector/crates/kms-worker/src/api/handlers.rs]
+  - task: Added port mapping for V2 API access
+    files: [test-suite/fhevm/docker-compose/kms-connector-docker-compose.yml]
+  - task: Documented fixes as findings #39 and #40 in TEST_FINDINGS.md
+    files: [TEST_FINDINGS.md]
+
+blockers: []
+
+questions:
+  - Why does relayer wrap response in {"result": [...]} instead of returning sequence directly?
+  - Is this a relayer bug or SDK expectation mismatch?
+
+decisions:
+  status_on_insert: In V2, responses served via HTTP API not on-chain tx, so must set status='completed' on INSERT
+  type_cast_explicit: PostgreSQL EXTRACT returns NUMERIC, always cast to ::float8 for Rust f64 compatibility
+
+findings:
+  silent_error_swallowing: "if let Ok(Some(...))" pattern hid SQL type mismatch errors entirely
+  v2_status_flow: V1 tx-sender updated status to 'completed' after on-chain tx; V2 has no on-chain tx so status stayed 'pending'
+  sdk_format_mismatch: SDK process_user_decryption_resp_from_js expects sequence, relayer returns {"result":[...]}
+
+worked:
+  - Adding debug query to verify DB connectivity from API handler
+  - Adding explicit error logging to catch silent failures
+  - Testing API directly with curl before running full e2e test
+
+failed:
+  - Initial assumption that endianness was the issue (it was correct)
+  - Assuming DB connection issue when logs showed "not found"
+
+next:
+  - Investigate relayer response transformation in console/apps/relayer
+  - Check SDK expected format in @zama-fhe/relayer-sdk and node-tkms
+  - Fix relayer to return correct format OR update SDK to handle wrapper
+  - Run full e2e test suite after format fix
+
+files:
+  created: []
+  modified:
+    - kms-connector/crates/kms-worker/src/core/kms_response_publisher.rs
+    - kms-connector/crates/kms-worker/src/api/handlers.rs
+    - test-suite/fhevm/docker-compose/kms-connector-docker-compose.yml
+    - TEST_FINDINGS.md
+
+context:
+  previous_handoff: thoughts/shared/handoffs/general/2026-01-12_17-43_relayer-build-fixes.yaml
+  test_findings: TEST_FINDINGS.md
+  key_fix_locations:
+    - kms_response_publisher.rs:67-76 (publish_public_decryption INSERT with status)
+    - kms_response_publisher.rs:89-98 (publish_user_decryption INSERT with status)
+    - handlers.rs:166 (EXTRACT::float8 cast for user_response)
+    - handlers.rs:210 (EXTRACT::float8 cast for public_response)

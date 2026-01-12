@@ -13,7 +13,7 @@ interface IDecryptionRegistry {
 
     function getVersion() external pure returns (string memory);
     function requestPublicDecryption(bytes32[] memory handles, address[] memory contractAddresses) external payable returns (uint256 requestId);
-    function requestUserDecryption(bytes32[] memory handles, address[] memory contractAddresses, bytes memory publicKey, bytes memory signature) external payable returns (uint256 requestId);
+    function requestUserDecryption(bytes32[] memory handles, address[] memory contractAddresses, address userAddress, bytes memory publicKey, bytes memory signature) external payable returns (uint256 requestId);
 }
 ```
 
@@ -70,6 +70,11 @@ interface IDecryptionRegistry {
         "name": "contractAddresses",
         "type": "address[]",
         "internalType": "address[]"
+      },
+      {
+        "name": "userAddress",
+        "type": "address",
+        "internalType": "address"
       },
       {
         "name": "publicKey",
@@ -1218,9 +1223,9 @@ function requestPublicDecryption(bytes32[] memory handles, address[] memory cont
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `requestUserDecryption(bytes32[],address[],bytes,bytes)` and selector `0x61fcbc07`.
+    /**Function with signature `requestUserDecryption(bytes32[],address[],address,bytes,bytes)` and selector `0x8907c0a9`.
 ```solidity
-function requestUserDecryption(bytes32[] memory handles, address[] memory contractAddresses, bytes memory publicKey, bytes memory signature) external payable returns (uint256 requestId);
+function requestUserDecryption(bytes32[] memory handles, address[] memory contractAddresses, address userAddress, bytes memory publicKey, bytes memory signature) external payable returns (uint256 requestId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1234,13 +1239,15 @@ function requestUserDecryption(bytes32[] memory handles, address[] memory contra
             alloy::sol_types::private::Address,
         >,
         #[allow(missing_docs)]
+        pub userAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
         pub publicKey: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
         pub signature: alloy::sol_types::private::Bytes,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`requestUserDecryption(bytes32[],address[],bytes,bytes)`](requestUserDecryptionCall) function.
+    ///Container type for the return parameters of the [`requestUserDecryption(bytes32[],address[],address,bytes,bytes)`](requestUserDecryptionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct requestUserDecryptionReturn {
@@ -1263,6 +1270,7 @@ function requestUserDecryption(bytes32[] memory handles, address[] memory contra
                     alloy::sol_types::sol_data::FixedBytes<32>,
                 >,
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+                alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
@@ -1272,6 +1280,7 @@ function requestUserDecryption(bytes32[] memory handles, address[] memory contra
                     alloy::sol_types::private::FixedBytes<32>,
                 >,
                 alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+                alloy::sol_types::private::Address,
                 alloy::sol_types::private::Bytes,
                 alloy::sol_types::private::Bytes,
             );
@@ -1294,6 +1303,7 @@ function requestUserDecryption(bytes32[] memory handles, address[] memory contra
                     (
                         value.handles,
                         value.contractAddresses,
+                        value.userAddress,
                         value.publicKey,
                         value.signature,
                     )
@@ -1307,8 +1317,9 @@ function requestUserDecryption(bytes32[] memory handles, address[] memory contra
                     Self {
                         handles: tuple.0,
                         contractAddresses: tuple.1,
-                        publicKey: tuple.2,
-                        signature: tuple.3,
+                        userAddress: tuple.2,
+                        publicKey: tuple.3,
+                        signature: tuple.4,
                     }
                 }
             }
@@ -1356,6 +1367,7 @@ function requestUserDecryption(bytes32[] memory handles, address[] memory contra
                     alloy::sol_types::sol_data::FixedBytes<32>,
                 >,
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+                alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
@@ -1367,8 +1379,8 @@ function requestUserDecryption(bytes32[] memory handles, address[] memory contra
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "requestUserDecryption(bytes32[],address[],bytes,bytes)";
-            const SELECTOR: [u8; 4] = [97u8, 252u8, 188u8, 7u8];
+            const SIGNATURE: &'static str = "requestUserDecryption(bytes32[],address[],address,bytes,bytes)";
+            const SELECTOR: [u8; 4] = [137u8, 7u8, 192u8, 169u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -1384,6 +1396,9 @@ function requestUserDecryption(bytes32[] memory handles, address[] memory contra
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::Address,
                     > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.userAddress,
+                    ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.publicKey,
                     ),
@@ -1446,7 +1461,7 @@ function requestUserDecryption(bytes32[] memory handles, address[] memory contra
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [13u8, 142u8, 110u8, 44u8],
             [37u8, 231u8, 224u8, 32u8],
-            [97u8, 252u8, 188u8, 7u8],
+            [137u8, 7u8, 192u8, 169u8],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
@@ -2244,6 +2259,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             contractAddresses: alloy::sol_types::private::Vec<
                 alloy::sol_types::private::Address,
             >,
+            userAddress: alloy::sol_types::private::Address,
             publicKey: alloy::sol_types::private::Bytes,
             signature: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, requestUserDecryptionCall, N> {
@@ -2251,6 +2267,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 &requestUserDecryptionCall {
                     handles,
                     contractAddresses,
+                    userAddress,
                     publicKey,
                     signature,
                 },

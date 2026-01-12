@@ -65,6 +65,8 @@ services:
         - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
     env_file:
       - ../env/staging/.env.kms-connector.local
+    ports:
+      - "9100:9100"
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully

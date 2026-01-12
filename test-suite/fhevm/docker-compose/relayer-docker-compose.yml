@@ -1,8 +1,43 @@
 services:
+  relayer-db-init:
+    container_name: fhevm-relayer-db-init
+    image: postgres:15.7
+    environment:
+      - PGPASSWORD=postgres
+    command:
+      - /bin/bash
+      - -c
+      - |
+        echo "Waiting for database to be ready..."
+        until pg_isready -h coprocessor-and-kms-db -U postgres; do
+          sleep 1
+        done
+        echo "Creating relayer database if it doesn't exist..."
+        psql -h coprocessor-and-kms-db -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'relayer_db'" | grep -q 1 || \
+        psql -h coprocessor-and-kms-db -U postgres -c "CREATE DATABASE relayer_db"
+        echo "Relayer database ready"
+
+  relayer-db-migration:
+    container_name: fhevm-relayer-db-migration
+    platform: linux/amd64
+    image: ghcr.io/zama-ai/console/relayer-migrate:${RELAYER_VERSION}
+    build:
+      context: ${CONSOLE_REPO:-../../../../console}
+      dockerfile: docker/relayer-migrate/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@coprocessor-and-kms-db:5432/relayer_db
+      - MAX_ATTEMPTS=1
+    depends_on:
+      relayer-db-init:
+        condition: service_completed_successfully
+
   relayer:
     container_name: fhevm-relayer
     platform: linux/amd64
     image: ghcr.io/zama-ai/console/relayer:${RELAYER_VERSION}
+    build:
+      context: ${CONSOLE_REPO:-../../../../console}
+      dockerfile: docker/relayer/Dockerfile
     env_file:
       - ../env/staging/.env.relayer.local
     command:
@@ -12,3 +47,6 @@ services:
       - ../config/relayer/local.yaml:/app/config/local.yaml
     ports:
       - "3000:3000"
+    depends_on:
+      relayer-db-migration:
+        condition: service_completed_successfully

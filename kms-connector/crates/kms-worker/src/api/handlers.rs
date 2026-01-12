@@ -33,34 +33,46 @@ pub async fn get_share_handler(
         }
     };
 
-    // Debug logging for request ID conversion
-    tracing::debug!(
+    // Log request ID conversion for API diagnostics
+    tracing::info!(
         "API /v1/share lookup: request_id_hex={}, le_bytes={}",
         format_u256(request_id),
         hex::encode(request_id.as_le_slice())
     );
 
     if let Ok(Some(response)) = fetch_user_response(&state, request_id).await {
-        tracing::debug!("Found user decryption response for request_id={}", format_u256(request_id));
+        tracing::info!(
+            "Found user decryption response for request_id={}",
+            format_u256(request_id)
+        );
         return HttpResponse::Ok().json(response);
     }
 
     if let Ok(Some(response)) = fetch_public_response(&state, request_id).await {
-        tracing::debug!("Found public decryption response for request_id={}", format_u256(request_id));
+        tracing::info!(
+            "Found public decryption response for request_id={}",
+            format_u256(request_id)
+        );
         return HttpResponse::Ok().json(response);
     }
 
     if let Ok(Some(response)) = fetch_user_request_status(&state, request_id).await {
-        tracing::debug!("Found user decryption request for request_id={}", format_u256(request_id));
+        tracing::info!(
+            "Found user decryption request for request_id={}",
+            format_u256(request_id)
+        );
         return HttpResponse::Ok().json(response);
     }
 
     if let Ok(Some(response)) = fetch_public_request_status(&state, request_id).await {
-        tracing::debug!("Found public decryption request for request_id={}", format_u256(request_id));
+        tracing::info!(
+            "Found public decryption request for request_id={}",
+            format_u256(request_id)
+        );
         return HttpResponse::Ok().json(response);
     }
 
-    tracing::debug!("Request not found for request_id={}", format_u256(request_id));
+    tracing::info!("Request not found for request_id={}", format_u256(request_id));
 
     HttpResponse::Ok().json(ShareResponse {
         status: "not_found".to_string(),
@@ -121,13 +133,13 @@ async fn fetch_user_response(
     state: &ApiState,
     request_id: U256,
 ) -> anyhow::Result<Option<ShareResponse>> {
-    tracing::debug!(
+    tracing::info!(
         "Querying user_decryption_responses: decryption_id (le_bytes)={}",
         hex::encode(request_id.as_le_slice())
     );
 
     let row = sqlx::query(
-        "SELECT user_decrypted_shares, signature, EXTRACT(EPOCH FROM created_at) AS response_at \
+        "SELECT user_decrypted_shares, signature, EXTRACT(EPOCH FROM created_at)::float8 AS response_at \
          FROM user_decryption_responses WHERE decryption_id = $1 AND status = 'completed'",
     )
     .bind(request_id.as_le_slice())
@@ -135,7 +147,7 @@ async fn fetch_user_response(
     .await?;
 
     if row.is_none() {
-        tracing::debug!("No matching row in user_decryption_responses");
+        tracing::info!("No matching row in user_decryption_responses");
     }
 
     let Some(row) = row else { return Ok(None); };
@@ -171,7 +183,7 @@ async fn fetch_public_response(
     request_id: U256,
 ) -> anyhow::Result<Option<ShareResponse>> {
     let row = sqlx::query(
-        "SELECT decrypted_result, signature, EXTRACT(EPOCH FROM created_at) AS response_at \
+        "SELECT decrypted_result, signature, EXTRACT(EPOCH FROM created_at)::float8 AS response_at \
          FROM public_decryption_responses WHERE decryption_id = $1 AND status = 'completed'",
     )
     .bind(request_id.as_le_slice())
@@ -211,7 +223,7 @@ async fn fetch_user_request_status(
     request_id: U256,
 ) -> anyhow::Result<Option<ShareResponse>> {
     let row = sqlx::query(
-        "SELECT status, rejection_reason, rejection_code, EXTRACT(EPOCH FROM created_at) AS observed_at \
+        "SELECT status, rejection_reason, rejection_code, EXTRACT(EPOCH FROM created_at)::float8 AS observed_at \
          FROM user_decryption_requests WHERE decryption_id = $1",
     )
     .bind(request_id.as_le_slice())
@@ -271,7 +283,7 @@ async fn fetch_public_request_status(
     request_id: U256,
 ) -> anyhow::Result<Option<ShareResponse>> {
     let row = sqlx::query(
-        "SELECT status, rejection_reason, rejection_code, EXTRACT(EPOCH FROM created_at) AS observed_at \
+        "SELECT status, rejection_reason, rejection_code, EXTRACT(EPOCH FROM created_at)::float8 AS observed_at \
          FROM public_decryption_requests WHERE decryption_id = $1",
     )
     .bind(request_id.as_le_slice())

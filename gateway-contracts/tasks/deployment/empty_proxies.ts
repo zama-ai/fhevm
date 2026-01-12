@@ -75,6 +75,16 @@ task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgra
   console.log("Deploying an EmptyUUPS proxy contract for ProtocolPayment...");
   const protocolPaymentAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   setGatewayContractAddress("ProtocolPayment", protocolPaymentAddress);
+
+  console.log("Deploying an EmptyUUPS proxy contract for DecryptionRegistry...");
+  const decryptionRegistryAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  // Keep legacy address naming for Solidity imports (decryptionAddress).
+  setGatewayContractAddress("Decryption", decryptionRegistryAddress);
+
+  console.log("Deploying an EmptyUUPS proxy contract for InputVerificationRegistry...");
+  const inputVerificationRegistryAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  // Keep legacy address naming for Solidity imports (inputVerificationAddress).
+  setGatewayContractAddress("InputVerification", inputVerificationRegistryAddress);
 });
 
 // Deploy a single regular EmptyUUPS proxy contract for a given contract, after the GatewayConfig
@@ -106,5 +116,11 @@ task("task:deploySingleEmptyUUPSProxy")
 
     console.log(`Deploying an EmptyUUPS proxy contract for ${name}...`);
     const contractAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-    setGatewayContractAddress(name, contractAddress);
+    const addressName =
+      name === "DecryptionRegistry"
+        ? "Decryption"
+        : name === "InputVerificationRegistry"
+          ? "InputVerification"
+          : name;
+    setGatewayContractAddress(addressName, contractAddress);
   });

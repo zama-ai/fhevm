@@ -46,6 +46,8 @@ pub struct CiphertextResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sns_ciphertext_digest: Option<FixedBytes<32>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub ciphertext_format: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub epoch_id: Option<U256>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<u64>,

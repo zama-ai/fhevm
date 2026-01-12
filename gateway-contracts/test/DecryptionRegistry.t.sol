@@ -80,8 +80,9 @@ contract DecryptionRegistryTest is TestBase {
             timestamp
         );
 
-        vm.prank(user);
-        uint256 requestId = registry.requestUserDecryption(handles, contractAddresses, publicKey, signature);
+        vm.prank(address(0xB0B));
+        uint256 requestId =
+            registry.requestUserDecryption(handles, contractAddresses, user, publicKey, signature);
         assertEq(requestId, expectedRequestId);
     }
 
@@ -96,7 +97,7 @@ contract DecryptionRegistryTest is TestBase {
                 1
             )
         );
-        registry.requestUserDecryption(handles, contractAddresses, hex"01", hex"02");
+        registry.requestUserDecryption(handles, contractAddresses, address(0xA11CE), hex"01", hex"02");
     }
 
     function test_requestPublicDecryption_emitsEvent() public {

@@ -114,6 +114,54 @@ impl AwsS3Interface for AwsS3Client {
             .await?
             .into_bytes())
     }
+
+    async fn get_object_by_key(
+        &self,
+        bucket: &str,
+        key: &str,
+    ) -> anyhow::Result<bytes::Bytes> {
+        // Use credentials from environment (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL)
+        let sdk_config = aws_config::defaults(BehaviorVersion::latest())
+            .load()
+            .await;
+
+        let timeout_config = TimeoutConfig::builder()
+            .connect_timeout(S3Policy::DEFAULT.connect_timeout)
+            .operation_attempt_timeout(S3Policy::DEFAULT.max_retries_timeout)
+            .build();
+
+        let retry_config = RetryConfig::standard()
+            .with_max_attempts(S3Policy::DEFAULT.max_attempt)
+            .with_max_backoff(S3Policy::DEFAULT.max_backoff);
+
+        let mut builder = Builder::from(&sdk_config)
+            .timeout_config(timeout_config)
+            .retry_config(retry_config)
+            .force_path_style(true); // Required for MinIO
+
+        // Use AWS_ENDPOINT_URL from environment if set
+        if let Ok(endpoint_url) = std::env::var("AWS_ENDPOINT_URL") {
+            builder = builder.endpoint_url(endpoint_url);
+        }
+
+        let client = Client::from_conf(builder.build());
+
+        info!(bucket, key, "Fetching object from S3 by exact key");
+
+        let result = client
+            .get_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await?
+            .body
+            .collect()
+            .await?
+            .into_bytes();
+
+        info!(bucket, key, len = result.len(), "Successfully fetched object from S3");
+        Ok(result)
+    }
 }
 
 #[async_trait]
@@ -121,6 +169,14 @@ pub trait AwsS3Interface: Send + Sync {
     async fn get_bucket_key(
         &self,
         url: &str,
+        bucket: &str,
+        key: &str,
+    ) -> anyhow::Result<bytes::Bytes>;
+
+    /// Fetch an object directly by exact key from an internal S3-compatible storage.
+    /// Uses credentials from environment (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL).
+    async fn get_object_by_key(
+        &self,
         bucket: &str,
         key: &str,
     ) -> anyhow::Result<bytes::Bytes>;

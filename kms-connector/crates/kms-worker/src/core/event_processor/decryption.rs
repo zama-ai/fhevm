@@ -312,11 +312,17 @@ fn build_typed_ciphertexts(
         .into_iter()
         .map(|ct| {
             let fhe_type = extract_fhe_type_from_handle(ct.handle.as_slice())?;
+            // Map coprocessor ciphertext format to KMS CiphertextFormat
+            // Coprocessor formats: 10=UncompressedOnCpu, 11=CompressedOnCpu, 20=UncompressedOnGpu, 21=CompressedOnGpu
+            let ciphertext_format = match ct.ciphertext_format {
+                Some(11) | Some(21) => CiphertextFormat::BigCompressed, // Compressed formats
+                _ => CiphertextFormat::BigExpanded, // Uncompressed or unknown defaults to expanded
+            };
             Ok(TypedCiphertext {
                 ciphertext: ct.sns_ciphertext,
                 fhe_type: fhe_type as i32,
                 external_handle: ct.handle.as_slice().to_vec(),
-                ciphertext_format: CiphertextFormat::BigExpanded.into(),
+                ciphertext_format: ciphertext_format.into(),
             })
         })
         .collect::<Result<Vec<_>, anyhow::Error>>()

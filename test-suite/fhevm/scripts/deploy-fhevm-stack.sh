@@ -26,20 +26,98 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Argument Parsing
 FORCE_BUILD=false
 LOCAL_BUILD=false
+RESUME_FROM=""
 NEW_ARGS=()
-for arg in "$@"; do
-  if [[ "$arg" == "--build" ]]; then
-    FORCE_BUILD=true
-    log_info "Force build option detected. Services will be rebuilt."
-  elif [[ "$arg" == "--local" || "$arg" == "--dev" ]]; then
-    LOCAL_BUILD=true
-    log_info "Local optimization option detected."
-  else
-    NEW_ARGS+=("$arg")
-  fi
+while (( "$#" )); do
+  case "$1" in
+    --build)
+      FORCE_BUILD=true
+      log_info "Force build option detected. Services will be rebuilt."
+      shift
+      ;;
+    --local|--dev)
+      LOCAL_BUILD=true
+      log_info "Local optimization option detected."
+      shift
+      ;;
+    --resume|--resume-from)
+      if [ -z "${2:-}" ]; then
+        log_error "--resume requires a step name"
+        exit 1
+      fi
+      RESUME_FROM="$2"
+      shift 2
+      ;;
+    *)
+      NEW_ARGS+=("$1")
+      shift
+      ;;
+  esac
 done
 # Overwrite original arguments with the filtered list (removes local flags from $@)
 set -- "${NEW_ARGS[@]}"
+
+STEP_ORDER=(
+    minio
+    core
+    kms-signer
+    database
+    host-node
+    gateway-node
+    coprocessor
+    gateway-mocked-payment
+    gateway-sc
+    sync-addresses
+    restart-coprocessor
+    gateway-mocked-payment-approvals
+    host-sc
+    reset-kms-connector
+    kms-connector
+    relayer
+    test-suite
+)
+
+step_index() {
+    local step="$1"
+    local idx=1
+    for s in "${STEP_ORDER[@]}"; do
+        if [ "$s" = "$step" ]; then
+            echo "$idx"
+            return 0
+        fi
+        idx=$((idx + 1))
+    done
+    echo 0
+}
+
+RESUME_INDEX=0
+if [ -n "$RESUME_FROM" ]; then
+    RESUME_INDEX=$(step_index "$RESUME_FROM")
+    if [ "$RESUME_INDEX" -eq 0 ]; then
+        log_error "Unknown resume step: $RESUME_FROM"
+        log_info "Valid steps: ${STEP_ORDER[*]}"
+        exit 1
+    fi
+    log_info "Resuming deployment from step: ${RESUME_FROM}"
+fi
+
+should_run_step() {
+    local step="$1"
+    if [ -z "$RESUME_FROM" ]; then
+        return 0
+    fi
+    local idx
+    idx=$(step_index "$step")
+    if [ "$idx" -eq 0 ]; then
+        log_error "Unknown step: $step"
+        exit 1
+    fi
+    if [ "$idx" -lt "$RESUME_INDEX" ]; then
+        log_warn "Skipping step ${step} (resume from ${RESUME_FROM})"
+        return 1
+    fi
+    return 0
+}
 
 if [ "$LOCAL_BUILD" = true ]; then
     log_info "Enabling local BuildKit cache and disabling provenance attestations."
@@ -48,8 +126,44 @@ if [ "$LOCAL_BUILD" = true ]; then
     export BUILDX_NO_DEFAULT_ATTESTATIONS=1
     export DOCKER_BUILD_PROVENANCE=false
     export FHEVM_CARGO_PROFILE=local
+    export RELAYER_VERSION=local
+    export CONNECTOR_DB_MIGRATION_VERSION=local
+    export CONNECTOR_GW_LISTENER_VERSION=local
+    export CONNECTOR_KMS_WORKER_VERSION=local
+    export CONNECTOR_TX_SENDER_VERSION=local
+    export COPROCESSOR_DB_MIGRATION_VERSION=local
+    export COPROCESSOR_GW_LISTENER_VERSION=local
+    export COPROCESSOR_HOST_LISTENER_VERSION=local
+    export COPROCESSOR_TX_SENDER_VERSION=local
+    export COPROCESSOR_TFHE_WORKER_VERSION=local
+    export COPROCESSOR_SNS_WORKER_VERSION=local
+    export COPROCESSOR_ZKPROOF_WORKER_VERSION=local
+    export GATEWAY_VERSION=local
+    export HOST_VERSION=local
+    export TEST_SUITE_VERSION=local
     FHEVM_BUILDX_CACHE_DIR="${FHEVM_BUILDX_CACHE_DIR:-.buildx-cache}"
     mkdir -p "$FHEVM_BUILDX_CACHE_DIR"
+    ensure_buildx_driver() {
+        local driver
+        driver="$(docker buildx inspect --format '{{.Driver}}' 2>/dev/null || true)"
+        if [[ "$driver" == "docker" || -z "$driver" ]]; then
+            log_warn "Buildx driver is docker; cache export isn't supported. Switching to docker-container builder."
+            local builder_name
+            builder_name="$(docker buildx ls | awk 'NR>1 && $2 == "docker-container" {print $1; exit}')"
+            builder_name="${builder_name%\*}"
+            if [[ -z "$builder_name" ]]; then
+                builder_name="fhevm-buildx"
+                docker buildx create --name "$builder_name" --driver docker-container >/dev/null
+            fi
+            docker buildx use "$builder_name" >/dev/null
+            export BUILDX_BUILDER="$builder_name"
+            docker buildx inspect --bootstrap >/dev/null
+        fi
+    }
+    ensure_buildx_driver
+    FHEVM_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+    ZAMA_ROOT="$(cd "${FHEVM_ROOT}/.." && pwd)"
+    export CONSOLE_REPO="${CONSOLE_REPO:-${ZAMA_ROOT}/console}"
     set_local_cache_vars() {
         local service_name="$1"
         local service_key
@@ -281,6 +395,28 @@ run_compose_with_build() {
     done
 }
 
+# Function to run a single compose service once (no deps), useful for one-shot tasks
+run_compose_service_once() {
+    local component=$1
+    local service_name=$2
+    local service_desc=$3
+    local env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
+    local compose_file="$SCRIPT_DIR/../docker-compose/$component-docker-compose.yml"
+
+    log_info "Running $service_desc using local environment file..."
+    log_info "Using environment file: $env_file"
+
+    local build_flag=()
+    if [ "$FORCE_BUILD" = true ] || [ "$LOCAL_BUILD" = true ]; then
+        build_flag=(--build)
+    fi
+
+    if ! docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" run --rm --no-deps "${build_flag[@]}" "$service_name"; then
+        log_error "Failed to run $service_desc"
+        return 1
+    fi
+}
+
 get_minio_ip() {
     # Get IP address of minio container and update AWS_ENDPOINT_URL
     # IMPORTANT: this is a workaround as sns-worker is not able to resolve the container name
@@ -309,10 +445,13 @@ cleanup() {
     fi
 }
 
-cleanup "$@"
-
-prepare_all_env_files
-prepare_local_config_relayer
+if [ -z "$RESUME_FROM" ]; then
+    cleanup "$@"
+    prepare_all_env_files
+    prepare_local_config_relayer
+else
+    log_warn "Resume requested; skipping cleanup and local env regeneration."
+fi
 
 log_info "Deploying FHEVM Stack..."
 
@@ -345,21 +484,28 @@ log_info "External Dependencies:"
 log_info "  kms-core-service:${CORE_VERSION}"
 log_info "  fhevm-relayer:${RELAYER_VERSION}"
 
-run_compose "minio" "MinIO Services" \
-    "${PROJECT}-minio:running" \
-    "${PROJECT}-minio-setup:complete"
-
-get_minio_ip "fhevm-minio"
+if should_run_step "minio"; then
+    run_compose "minio" "MinIO Services" \
+        "${PROJECT}-minio:running" \
+        "${PROJECT}-minio-setup:complete"
+    get_minio_ip "fhevm-minio"
+fi
 
 # Run KMS core service (External dependency)
-run_compose "core" "Core Services" "kms-core:running"
+if should_run_step "core"; then
+    run_compose "core" "Core Services" "kms-core:running"
+fi
 
 # Setup KMS signer address used in Gateway and Host contracts
-sleep 5
-${SCRIPT_DIR}/setup-kms-signer-address.sh
+if should_run_step "kms-signer"; then
+    sleep 5
+    ${SCRIPT_DIR}/setup-kms-signer-address.sh
+fi
 
 # Run database shared by Coprocessor and KMS connector services
-run_compose "database" "Database service" "coprocessor-and-kms-db:running"
+if should_run_step "database"; then
+    run_compose "database" "Database service" "coprocessor-and-kms-db:running"
+fi
 
 if [ "$FORCE_BUILD" = true ]; then
     RUN_COMPOSE=run_compose_with_build
@@ -367,53 +513,233 @@ else
     RUN_COMPOSE=run_compose
 fi
 
+update_env_var() {
+    local file=$1
+    local key=$2
+    local value=$3
+    if [ -z "$value" ]; then
+        log_warn "Skipping update for ${key} in ${file} (empty value)"
+        return
+    fi
+    if grep -q "^${key}=" "$file"; then
+        sed -i.bak "s|^${key}=.*|${key}=${value}|" "$file"
+    else
+        echo "${key}=${value}" >> "$file"
+    fi
+}
+
+sync_gateway_addresses_from_volume() {
+    local volume_name="${PROJECT}_addresses-volume"
+    local addresses_file="/data/.env.gateway"
+    local address_content
+    address_content=$(docker run --rm -v "${volume_name}:/data" alpine cat "${addresses_file}" 2>/dev/null || true)
+
+    if [ -z "$address_content" ]; then
+        log_error "Failed to read ${addresses_file} from volume ${volume_name}"
+        return 1
+    fi
+
+    local gateway_config_address
+    local kms_generation_address
+    local protocol_payment_address
+    local decryption_address
+    local input_verification_address
+    local pauser_set_address
+
+    gateway_config_address=$(echo "$address_content" | awk -F= '/^GATEWAY_CONFIG_ADDRESS=/{print $2}')
+    kms_generation_address=$(echo "$address_content" | awk -F= '/^KMS_GENERATION_ADDRESS=/{print $2}')
+    protocol_payment_address=$(echo "$address_content" | awk -F= '/^PROTOCOL_PAYMENT_ADDRESS=/{print $2}')
+    decryption_address=$(echo "$address_content" | awk -F= '/^DECRYPTION_ADDRESS=/{print $2}')
+    input_verification_address=$(echo "$address_content" | awk -F= '/^INPUT_VERIFICATION_ADDRESS=/{print $2}')
+    pauser_set_address=$(echo "$address_content" | awk -F= '/^PAUSER_SET_ADDRESS=/{print $2}')
+
+    local gateway_env="$SCRIPT_DIR/../env/staging/.env.gateway-sc.local"
+    local host_env="$SCRIPT_DIR/../env/staging/.env.host-sc.local"
+    local kms_env="$SCRIPT_DIR/../env/staging/.env.kms-connector.local"
+    local copro_env="$SCRIPT_DIR/../env/staging/.env.coprocessor.local"
+    local relayer_env="$SCRIPT_DIR/../env/staging/.env.relayer.local"
+    local test_env="$SCRIPT_DIR/../env/staging/.env.test-suite.local"
+    local mocked_env="$SCRIPT_DIR/../env/staging/.env.gateway-mocked-payment.local"
+    local relayer_config="$SCRIPT_DIR/../config/relayer/local.yaml.local"
+
+    update_env_var "$gateway_env" "GATEWAY_CONFIG_ADDRESS" "$gateway_config_address"
+    update_env_var "$gateway_env" "KMS_GENERATION_ADDRESS" "$kms_generation_address"
+    update_env_var "$gateway_env" "PAUSER_SET_ADDRESS" "$pauser_set_address"
+
+    update_env_var "$host_env" "DECRYPTION_ADDRESS" "$decryption_address"
+    update_env_var "$host_env" "INPUT_VERIFICATION_ADDRESS" "$input_verification_address"
+
+    update_env_var "$kms_env" "KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS" "$decryption_address"
+    update_env_var "$kms_env" "KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS" "$gateway_config_address"
+    update_env_var "$kms_env" "KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS" "$kms_generation_address"
+    update_env_var "$kms_env" "KMS_CONNECTOR_INPUT_VERIFICATION_CONTRACT__ADDRESS" "$input_verification_address"
+
+    update_env_var "$copro_env" "INPUT_VERIFICATION_ADDRESS" "$input_verification_address"
+    update_env_var "$copro_env" "KMS_GENERATION_ADDRESS" "$kms_generation_address"
+
+    update_env_var "$relayer_env" "APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS" "$decryption_address"
+    update_env_var "$relayer_env" "APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS" "$input_verification_address"
+
+    update_env_var "$test_env" "DECRYPTION_ADDRESS" "$decryption_address"
+    update_env_var "$test_env" "INPUT_VERIFICATION_ADDRESS" "$input_verification_address"
+
+    update_env_var "$mocked_env" "PROTOCOL_PAYMENT_ADDRESS" "$protocol_payment_address"
+
+    if [ -f "$relayer_config" ]; then
+        sed -i.bak "s|decryption_address: \".*\"|decryption_address: \"${decryption_address}\"|" "$relayer_config"
+        sed -i.bak "s|input_verification_address: \".*\"|input_verification_address: \"${input_verification_address}\"|" "$relayer_config"
+        if grep -q "gateway_config_address:" "$relayer_config"; then
+            sed -i.bak "s|gateway_config_address: \".*\"|gateway_config_address: \"${gateway_config_address}\"|" "$relayer_config"
+        fi
+    fi
+
+    log_info "Synchronized gateway contract addresses from ${volume_name}"
+}
+
+reset_kms_connector_requests() {
+    log_info "Resetting KMS connector request tables to avoid request-id collisions"
+    if ! docker exec -i coprocessor-and-kms-db psql -U postgres -d postgres -tAc \
+        "SELECT 1 FROM pg_database WHERE datname='kms-connector'" | grep -q 1; then
+        log_warn "kms-connector database not found yet; skipping reset"
+        return 0
+    fi
+    docker exec -i coprocessor-and-kms-db psql -U postgres -d "kms-connector" -v ON_ERROR_STOP=1 -c \
+        "TRUNCATE public_decryption_requests, public_decryption_responses, user_decryption_requests, user_decryption_responses;"
+}
+
 # Run Host and Gateway nodes
-${RUN_COMPOSE} "host-node" "Host node service" "host-node:running"
-${RUN_COMPOSE} "gateway-node" "Gateway node service" "gateway-node:running"
+if should_run_step "host-node"; then
+    ${RUN_COMPOSE} "host-node" "Host node service" "host-node:running"
+fi
+if should_run_step "gateway-node"; then
+    ${RUN_COMPOSE} "gateway-node" "Gateway node service" "gateway-node:running"
+fi
 
 # Run coprocessor services
-${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
-    "coprocessor-and-kms-db:running" \
-    "coprocessor-db-migration:complete" \
-    "coprocessor-host-listener:running" \
-    "coprocessor-gw-listener:running" \
-    "coprocessor-tfhe-worker:running" \
-    "coprocessor-zkproof-worker:running" \
-    "coprocessor-sns-worker:running" \
-    "coprocessor-transaction-sender:running"
+if should_run_step "coprocessor"; then
+    ${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
+        "coprocessor-and-kms-db:running" \
+        "coprocessor-db-migration:complete" \
+        "coprocessor-host-listener:running" \
+        "coprocessor-gw-listener:running" \
+        "coprocessor-tfhe-worker:running" \
+        "coprocessor-zkproof-worker:running" \
+        "coprocessor-sns-worker:running" \
+        "coprocessor-transaction-sender:running"
+fi
 
-# Run KMS connector services
-${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
-    "coprocessor-and-kms-db:running" \
-    "kms-connector-db-migration:complete" \
-    "kms-connector-gw-listener:running" \
-    "kms-connector-kms-worker:running" \
-    "kms-connector-tx-sender:running"
-
-# Setup mocked payment contracts and set the relayer with the needed funding and allowances
-${RUN_COMPOSE} "gateway-mocked-payment" "Gateway mocked payment" \
-    "gateway-deploy-mocked-zama-oft:complete" \
-    "gateway-set-relayer-mocked-payment:complete" \
+# Setup mocked payment contracts (deploy ZamaOFT before gateway-sc)
+if should_run_step "gateway-mocked-payment"; then
+    run_compose_service_once "gateway-mocked-payment" "gateway-deploy-mocked-zama-oft" "Gateway mocked ZamaOFT deploy"
+fi
 
 # Setup Gateway contracts, which will trigger the KMS materials generation. Note
 # that the key generation may take a few seconds to complete, meaning that executing
 # the e2e tests too soon may fail if the materials are not ready. Hence, the following
 # setup is placed here to favor proper sequencing.
-${RUN_COMPOSE} "gateway-sc" "Gateway contracts" \
-    "gateway-sc-deploy:complete" \
-    "gateway-sc-add-network:complete" \
-    "gateway-sc-trigger-keygen:complete" \
-    "gateway-sc-trigger-crsgen:complete" \
-    "gateway-sc-add-pausers:complete"
+if should_run_step "gateway-sc"; then
+    ${RUN_COMPOSE} "gateway-sc" "Gateway contracts" \
+        "gateway-sc-deploy:complete" \
+        "gateway-sc-add-network:complete" \
+        "gateway-sc-trigger-keygen:complete" \
+        "gateway-sc-trigger-crsgen:complete" \
+        "gateway-sc-add-pausers:complete"
+fi
+
+if should_run_step "sync-addresses"; then
+    sync_gateway_addresses_from_volume
+fi
+
+# Restart coprocessor services so they pick up updated addresses from env files
+restart_coprocessor_after_sync() {
+    local env_file="$SCRIPT_DIR/../env/staging/.env.coprocessor.local"
+    local compose_file="$SCRIPT_DIR/../docker-compose/coprocessor-docker-compose.yml"
+    log_info "Restarting coprocessor services to pick up synced contract addresses..."
+    docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" up -d --force-recreate --no-deps \
+        coprocessor-host-listener \
+        coprocessor-host-listener-poller \
+        coprocessor-gw-listener \
+        coprocessor-tfhe-worker \
+        coprocessor-zkproof-worker \
+        coprocessor-sns-worker \
+        coprocessor-transaction-sender
+}
+
+if should_run_step "restart-coprocessor"; then
+    restart_coprocessor_after_sync
+fi
+
+# Set relayer allowances after protocol payment address is known
+if should_run_step "gateway-mocked-payment-approvals"; then
+    run_compose_service_once "gateway-mocked-payment" "gateway-set-relayer-mocked-payment" "Gateway mocked payment approvals"
+fi
 
 # Setup Host contracts
-${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
+if should_run_step "host-sc"; then
+    ${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
+fi
+
+# Reset KMS connector request tables after gateway redeploy to avoid ID collisions
+if should_run_step "reset-kms-connector"; then
+    reset_kms_connector_requests
+fi
+
+# Run KMS connector services (after Gateway contracts are deployed)
+if should_run_step "kms-connector"; then
+    ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
+        "coprocessor-and-kms-db:running" \
+        "kms-connector-db-migration:complete" \
+        "kms-connector-gw-listener:running" \
+        "kms-connector-kms-worker:running" \
+        "kms-connector-tx-sender:running"
+fi
+
+# Build local relayer image if requested
+if [ "$LOCAL_BUILD" = true ] && should_run_step "relayer"; then
+    # Initialize database and run migrations BEFORE build
+    # (sqlx needs live DB with schema to verify queries at compile time)
+    log_info "Initializing relayer database for sqlx compile-time verification..."
+
+    # Create relayer_db database
+    docker exec coprocessor-and-kms-db psql -U postgres -tc \
+        "SELECT 1 FROM pg_database WHERE datname = 'relayer_db'" | grep -q 1 || \
+        docker exec coprocessor-and-kms-db psql -U postgres -c "CREATE DATABASE relayer_db"
+
+    # Run migrations using the migration image
+    log_info "Running relayer database migrations..."
+    docker run --rm \
+        --network "${PROJECT}_default" \
+        -e DATABASE_URL="postgresql://postgres:postgres@coprocessor-and-kms-db:5432/relayer_db" \
+        -e MAX_ATTEMPTS=1 \
+        ghcr.io/zama-ai/console/relayer-migrate:${RELAYER_VERSION:-latest} || {
+            # If pre-built image doesn't exist, build and run it
+            log_warn "Pre-built migration image not found, building locally..."
+            docker build -t relayer-migrate-local \
+                -f "${ZAMA_ROOT:-$(dirname "$SCRIPT_DIR")/../../..}/console/docker/relayer-migrate/Dockerfile" \
+                "${ZAMA_ROOT:-$(dirname "$SCRIPT_DIR")/../../..}/console"
+            docker run --rm \
+                --network "${PROJECT}_default" \
+                -e DATABASE_URL="postgresql://postgres:postgres@coprocessor-and-kms-db:5432/relayer_db" \
+                -e MAX_ATTEMPTS=1 \
+                relayer-migrate-local
+        }
+
+    log_info "Building local relayer image..."
+    "${SCRIPT_DIR}/build-relayer-local.sh"
+    export RELAYER_VERSION=local
+fi
 
 # Run Relayer (External dependency)
-${RUN_COMPOSE} "relayer" "Relayer Services" \
-    "${PROJECT}-relayer:running"
+if should_run_step "relayer"; then
+    ${RUN_COMPOSE} "relayer" "Relayer Services" \
+        "${PROJECT}-relayer-db-init:complete" \
+        "${PROJECT}-relayer-db-migration:complete" \
+        "${PROJECT}-relayer:running"
+fi
 
 # Run Test Suite container
-${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
+if should_run_step "test-suite"; then
+    ${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
+fi
 
 log_info "All services started successfully!"

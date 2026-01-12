@@ -193,7 +193,14 @@ async fn main() -> anyhow::Result<()> {
         let signer = PrivateKeySigner::from_str(private_key.trim())?;
         let signer_address = signer.address();
         let gateway_chain_id = provider.get_chain_id().await?;
-        let eip712_domain = eip712_domain! {
+        let input_eip712_domain = eip712_domain! {
+            name: "InputVerification",
+            version: "1",
+            chain_id: gateway_chain_id,
+            verifying_contract: conf.input_verification_address,
+        };
+
+        let ciphertext_eip712_domain = eip712_domain! {
             name: "FHEVM",
             version: "1",
             chain_id: gateway_chain_id,
@@ -205,7 +212,13 @@ async fn main() -> anyhow::Result<()> {
             .connect(conf.database_url.clone().unwrap_or_default().as_str())
             .await?;
 
-        http_server = http_server.with_v2_api(db_pool, signer, signer_address, eip712_domain);
+        http_server = http_server.with_v2_api(
+            db_pool,
+            signer,
+            signer_address,
+            input_eip712_domain,
+            ciphertext_eip712_domain,
+        );
     } else {
         warn!("COPROCESSOR_PRIVATE_KEY not set; V2 API endpoints disabled");
     }

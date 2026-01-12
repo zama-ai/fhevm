@@ -1,18 +1,16 @@
-use alloy::primitives::{Address, FixedBytes, U256};
+use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::{Signature, SignerSync};
 use alloy::sol;
 use alloy::sol_types::{Eip712Domain, SolStruct};
 
 sol! {
-    struct InputVerificationAttestation {
-        uint256 requestId;
-        bytes32 commitment;
-        bytes32[] handles;
-        uint256 contractChainId;
-        address contractAddress;
+    struct CiphertextVerification {
+        bytes32[] ctHandles;
         address userAddress;
-        uint256 epochId;
+        address contractAddress;
+        uint256 contractChainId;
+        bytes extraData;
     }
 
     struct CiphertextResponseAttestation {
@@ -26,22 +24,18 @@ sol! {
 pub fn sign_input_verification_attestation(
     signer: &PrivateKeySigner,
     domain: &Eip712Domain,
-    request_id: U256,
-    commitment: FixedBytes<32>,
     handles: Vec<FixedBytes<32>>,
-    contract_chain_id: U256,
-    contract_address: Address,
     user_address: Address,
-    epoch_id: U256,
+    contract_address: Address,
+    contract_chain_id: U256,
+    extra_data: Bytes,
 ) -> anyhow::Result<Signature> {
-    let attestation = InputVerificationAttestation {
-        requestId: request_id,
-        commitment,
-        handles,
-        contractChainId: contract_chain_id,
-        contractAddress: contract_address,
+    let attestation = CiphertextVerification {
+        ctHandles: handles,
         userAddress: user_address,
-        epochId: epoch_id,
+        contractAddress: contract_address,
+        contractChainId: contract_chain_id,
+        extraData: extra_data,
     };
 
     let signing_hash = attestation.eip712_signing_hash(domain);

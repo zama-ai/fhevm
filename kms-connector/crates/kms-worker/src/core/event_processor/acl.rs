@@ -66,12 +66,13 @@ where
         handle: FixedBytes<32>,
         user_address: Address,
     ) -> anyhow::Result<bool> {
+        let resolved_chain_id = self.resolve_chain_id(chain_id, handle);
         let acl_address = self
             .host_chain_acls
-            .get(&chain_id)
+            .get(&resolved_chain_id)
             .copied()
-            .ok_or_else(|| anyhow!("No ACL configured for host chain {chain_id}"))?;
-        let provider = self.provider_for_chain(chain_id);
+            .ok_or_else(|| anyhow!("No ACL configured for host chain {resolved_chain_id}"))?;
+        let provider = self.provider_for_chain(resolved_chain_id);
         let acl_contract = ACL::new(acl_address, provider.clone());
         acl_contract
             .isAllowed(handle, user_address)
@@ -85,18 +86,35 @@ where
         chain_id: u64,
         handle: FixedBytes<32>,
     ) -> anyhow::Result<bool> {
+        let resolved_chain_id = self.resolve_chain_id(chain_id, handle);
         let acl_address = self
             .host_chain_acls
-            .get(&chain_id)
+            .get(&resolved_chain_id)
             .copied()
-            .ok_or_else(|| anyhow!("No ACL configured for host chain {chain_id}"))?;
-        let provider = self.provider_for_chain(chain_id);
+            .ok_or_else(|| anyhow!("No ACL configured for host chain {resolved_chain_id}"))?;
+        let provider = self.provider_for_chain(resolved_chain_id);
         let acl_contract = ACL::new(acl_address, provider.clone());
         acl_contract
             .isAllowedForDecryption(handle)
             .call()
             .await
             .map_err(Into::into)
+    }
+
+    fn resolve_chain_id(&self, chain_id: u64, handle: FixedBytes<32>) -> u64 {
+        if self.host_chain_acls.contains_key(&chain_id) {
+            return chain_id;
+        }
+
+        let derived_chain_id = extract_chain_id_from_handle(handle);
+        if self.host_chain_acls.contains_key(&derived_chain_id) {
+            warn!(
+                "Chain id {chain_id} not configured for ACL; derived {derived_chain_id} from handle"
+            );
+            return derived_chain_id;
+        }
+
+        chain_id
     }
 
     fn provider_for_chain(&self, chain_id: u64) -> &P {
@@ -117,6 +135,14 @@ fn u256_to_u64(value: U256) -> anyhow::Result<u64> {
     let mut buf = [0u8; 8];
     buf.copy_from_slice(&bytes[24..]);
     Ok(u64::from_be_bytes(buf))
+}
+
+fn extract_chain_id_from_handle(handle: FixedBytes<32>) -> u64 {
+    let bytes: &[u8; 32] = handle.as_ref();
+    let mut buf = [0u8; 8];
+    // Handle format encodes chain id in bytes 22-29 (see host contracts handle metadata).
+    buf.copy_from_slice(&bytes[22..30]);
+    u64::from_be_bytes(buf)
 }
 
 #[cfg(test)]

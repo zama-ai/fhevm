@@ -2,7 +2,8 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
         CrsgenResponse, GatewayEvent, KeygenResponse, KmsResponse, KmsResponseKind,
-        PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse, db::KeyDigestDbItem,
+        PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse,
+        db::{KeyDigestDbItem, OperationStatus},
     },
 };
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
@@ -61,14 +62,17 @@ impl DbKmsResponsePublisher {
         response: PublicDecryptionResponse,
         otlp_ctx: PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
+        // V2: Set status='completed' on INSERT so responses are immediately queryable via HTTP API
+        // (tx-sender no longer processes decryption responses in V2)
         sqlx::query!(
-            "INSERT INTO public_decryption_responses(decryption_id, decrypted_result, signature, extra_data, otlp_context) \
-            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+            "INSERT INTO public_decryption_responses(decryption_id, decrypted_result, signature, extra_data, otlp_context, status) \
+            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
             response.decryption_id.as_le_slice(),
             response.decrypted_result,
             response.signature,
             response.extra_data,
-            bc2wrap::serialize(&otlp_ctx)?
+            bc2wrap::serialize(&otlp_ctx)?,
+            OperationStatus::Completed as OperationStatus
         )
         .execute(&self.db_pool)
         .await
@@ -80,14 +84,17 @@ impl DbKmsResponsePublisher {
         response: UserDecryptionResponse,
         otlp_ctx: PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
+        // V2: Set status='completed' on INSERT so responses are immediately queryable via HTTP API
+        // (tx-sender no longer processes decryption responses in V2)
         sqlx::query!(
-            "INSERT INTO user_decryption_responses(decryption_id, user_decrypted_shares, signature, extra_data, otlp_context) \
-            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+            "INSERT INTO user_decryption_responses(decryption_id, user_decrypted_shares, signature, extra_data, otlp_context, status) \
+            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
             response.decryption_id.as_le_slice(),
             response.user_decrypted_shares,
             response.signature,
             response.extra_data,
-            bc2wrap::serialize(&otlp_ctx)?
+            bc2wrap::serialize(&otlp_ctx)?,
+            OperationStatus::Completed as OperationStatus
         )
         .execute(&self.db_pool)
         .await

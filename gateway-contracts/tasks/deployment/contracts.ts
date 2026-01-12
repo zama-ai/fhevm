@@ -13,6 +13,7 @@ async function deployContractImplementation(
   emptyProxyName: string,
   useInternalProxyAddress: boolean = false,
   initializeArgs?: unknown[],
+  addressName?: string,
 ): Promise<string> {
   const { ethers, upgrades } = hre;
 
@@ -29,7 +30,7 @@ async function deployContractImplementation(
   }
 
   // Get the proxy address
-  const proxyAddress = getRequiredAddressEnvVar(name);
+  const proxyAddress = getRequiredAddressEnvVar(addressName ?? name);
 
   // Force import
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);
@@ -82,6 +83,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
       signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
       ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
       storageUrl: getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`),
+      apiUrl: getRequiredEnvVar(`KMS_NODE_API_URL_${idx}`),
     });
   }
 
@@ -93,6 +95,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
       txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
       signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
       s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
+      apiUrl: getRequiredEnvVar(`COPROCESSOR_API_URL_${idx}`),
     });
   }
 
@@ -152,6 +155,23 @@ task("task:deployProtocolPayment").setAction(async function (_, hre) {
   ]);
 });
 
+// Deploy the DecryptionRegistry contract
+task("task:deployDecryptionRegistry").setAction(async function (_, hre) {
+  await deployContractImplementation("DecryptionRegistry", hre, REGULAR_EMPTY_PROXY_NAME, true, undefined, "Decryption");
+});
+
+// Deploy the InputVerificationRegistry contract
+task("task:deployInputVerificationRegistry").setAction(async function (_, hre) {
+  await deployContractImplementation(
+    "InputVerificationRegistry",
+    hre,
+    REGULAR_EMPTY_PROXY_NAME,
+    true,
+    undefined,
+    "InputVerification",
+  );
+});
+
 // Deploy setup contracts, needed before deploying the implementation contracts
 task("task:deploySetupContracts")
   .addOptionalParam(
@@ -194,6 +214,12 @@ task("task:deployImplementationContracts").setAction(async function (_, hre) {
 
   console.log("Deploy ProtocolPayment contract:");
   await hre.run("task:deployProtocolPayment");
+
+  console.log("Deploy DecryptionRegistry contract:");
+  await hre.run("task:deployDecryptionRegistry");
+
+  console.log("Deploy InputVerificationRegistry contract:");
+  await hre.run("task:deployInputVerificationRegistry");
 
   console.log("Contract deployment done!");
 });

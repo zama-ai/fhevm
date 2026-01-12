@@ -1,23 +1,81 @@
-environment: development
+global:
+  test_mock: true
 
 gateway:
+  blockchain_rpc:
+    ws_url: "ws://gateway-node:8546"
+    http_url: "http://gateway-node:8546"
+    chain_id: 54321
+    ws_health_check_timeout_secs: 5
+    http_health_check_timeout_secs: 5
   listener:
+    # Optional: set the starting block number for event subscriptions
+    last_block_number:
     ws_reconnect_config:
       max_attempts: 20
       retry_interval_ms: 500
+    # Number of parallel listener instances (1-3)
+    listener_instances: 1
+    # TTL for event deduplication cache in seconds (1-10)
+    dedup_ttl_seconds: 5
+    # Maximum capacity for deduplication cache
+    dedup_max_capacity: 10000
   tx_engine:
-    private_key: GATEWAY_PRIVATE_KEY
+    private_key: "GATEWAY_PRIVATE_KEY"
     max_concurrency: 100
     retry:
       max_attempts: 100
       retry_interval_ms: 500
+    tx_throttler_per_secs: 20
+    tx_throttler_capacity: 11000
+    tx_throttler_safety_margin: 1000
   readiness_checker:
-    max_concurrency: 100
+    max_concurrency: 250
     retry:
-      max_attempts: 30
-      # The time is treated as seconds in code, even the config name has _ms suffix.
-      # This will be fixed in next rc, until then treat the value as seconds.
-      retry_interval_ms: 2
+      max_attempts: 75
+      retry_interval_ms: 3000
+    public_decrypt:
+      max_concurrency: 250
+      capacity: 11000
+      safety_margin: 1000
+    user_decrypt:
+      max_concurrency: 250
+      capacity: 11000
+      safety_margin: 1000
+  contracts:
+    decryption_address: "0x766dD4402606BD87e49971C8b888684e4f5D58D8"
+    input_verification_address: "0x1c30c27751df51476e2a01267d4732b4337E8E81"
+    user_decrypt_shares_threshold: 1
+    public_decrypt_shares_threshold: 1
+    coprocessor_signers_threshold: 1
+    # Optional: GatewayConfig address for discovering worker URLs/thresholds
+    gateway_config_address: "0x00d6358881F3F47638a945d789Db5853f88F26eF"
+  worker_api:
+    kms_urls:
+      - "http://kms-connector-kms-worker:9100"
+    coprocessor_urls:
+      - "http://coprocessor-gw-listener:8080"
+  worker_polling:
+    initial_delay_ms: 100
+    max_delay_ms: 5000
+    backoff_factor: 1.5
+    timeout_secs: 60
+    jitter_percent: 10
+
+log:
+  format: "compact"
+  show_file_line: true
+  show_thread_ids: false
+  show_timestamp: true
+  show_target: true
+
+keyurl:
+  fhe_public_key:
+    data_id: "fhe-public-key-data-id"
+    url: "http://minio:9000/kms-public/PUB/PublicKey/0400000000000000000000000000000000000000000000000000000000000001"
+  crs:
+    data_id: "crs-data-id"
+    url: "http://minio:9000/kms-public/PUB/CRS/0500000000000000000000000000000000000000000000000000000000000001"
 
 http:
   endpoint: "0.0.0.0:3000"
@@ -27,20 +85,38 @@ http:
     retry_after_seconds: 5
     jitter_max_ms: 2000
   metrics:
-    histogram_buckets: [0, 0.5, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 10, 12, 14, 16, 18, 20, 25, 30]
-
-log:
-  format: "compact"
-  show_file_line: true
-  show_thread_ids: false
-  show_timestamp: true
-  show_target: true
+    histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
+  api_retry_after_seconds: 4
+  enable_admin_endpoint: false
 
 metrics:
   endpoint: "0.0.0.0:9898"
+  query_duration_histogram_bucket: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+  pool_wait_duration_seconds_histogram_bucket: [0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 3.0]
+  request_status_duration_histogram_bucket: [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0]
+  transaction_duration_secs_histogram_bucket: [0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0]
 
 storage:
-  db_path_rocksdb: "./.database"
-
-development:
-  verbose_errors: true
+  sql_database_url: "postgresql://postgres:postgres@coprocessor-and-kms-db:5432/relayer_db"
+  app_pool:
+    max_connections: 10
+    min_connections: 2
+    acquire_timeout_secs: 10
+    idle_timeout_secs: 300
+    max_lifetime_secs: 900
+  cron_pool:
+    max_connections: 5
+    min_connections: 1
+    acquire_timeout_secs: 30
+    idle_timeout_secs: 600
+    max_lifetime_secs: 1800
+  sql_health_check_timeout_secs: 5
+  cron:
+    timeout_cron_interval: "60s"
+    public_decrypt_timeout: "30m"
+    user_decrypt_timeout: "30m"
+    input_proof_timeout: "30m"
+    expiry_cron_interval: "5m"
+    public_decrypt_expiry: "365d"
+    user_decrypt_expiry: "7d"
+    input_proof_expiry: "7d"

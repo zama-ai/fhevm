@@ -169,7 +169,7 @@ async fn build_host_chain_providers(
     config: &Config,
 ) -> anyhow::Result<HashMap<u64, GatewayProvider>> {
     let mut providers = HashMap::new();
-    for host_chain in &config.host_chain_urls {
+    for host_chain in config.host_chain_urls.values() {
         let provider =
             connect_to_gateway(host_chain.rpc_url.clone(), host_chain.chain_id).await?;
         providers.insert(host_chain.chain_id, provider);

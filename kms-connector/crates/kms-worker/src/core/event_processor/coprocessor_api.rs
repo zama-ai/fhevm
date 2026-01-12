@@ -36,6 +36,7 @@ pub struct CiphertextMaterial {
     pub epoch_id: U256,
     pub sns_ciphertext: Vec<u8>,
     pub sns_ciphertext_digest: FixedBytes<32>,
+    pub ciphertext_format: Option<i16>,
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +53,7 @@ struct CiphertextApiResponse {
     pub key_id: Option<U256>,
     pub sns_ciphertext: Option<Bytes>,
     pub sns_ciphertext_digest: Option<FixedBytes<32>>,
+    pub ciphertext_format: Option<i16>,
     pub epoch_id: Option<U256>,
     pub signature: Option<Bytes>,
     pub signer_address: Option<Address>,
@@ -277,6 +279,7 @@ where
             epoch_id,
             sns_ciphertext: sns_ciphertext.to_vec(),
             sns_ciphertext_digest,
+            ciphertext_format: response.ciphertext_format,
         }))
     }
 }
@@ -336,6 +339,7 @@ mod tests {
             key_id: Some(key_id),
             sns_ciphertext: Some(Bytes::from(sns_ciphertext.clone())),
             sns_ciphertext_digest: Some(sns_ciphertext_digest),
+            ciphertext_format: Some(11), // CompressedOnCpu
             epoch_id: Some(epoch_id),
             signature: Some(Bytes::from(Vec::from(signature))),
             signer_address: Some(signer_address),
@@ -357,6 +361,7 @@ mod tests {
         assert_eq!(material.epoch_id, epoch_id);
         assert_eq!(material.sns_ciphertext, sns_ciphertext);
         assert_eq!(material.sns_ciphertext_digest, sns_ciphertext_digest);
+        assert_eq!(material.ciphertext_format, Some(11));
     }
 
     #[tokio::test]
@@ -386,6 +391,7 @@ mod tests {
             key_id: Some(key_id),
             sns_ciphertext: Some(Bytes::from(sns_ciphertext)),
             sns_ciphertext_digest: Some(sns_ciphertext_digest),
+            ciphertext_format: Some(10), // UncompressedOnCpu
             epoch_id: Some(epoch_id),
             signature: Some(Bytes::from(Vec::from(signature))),
             signer_address: Some(wrong_signer.address()),
