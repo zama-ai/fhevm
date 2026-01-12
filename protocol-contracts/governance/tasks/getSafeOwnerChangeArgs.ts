@@ -208,7 +208,12 @@ async function computeOwnerChanges(
 // Usage: npx hardhat task:getSafeOwnerChangeArgs --safe 0x... --new-owners "0x...,0x...,0x..." --threshold 2 --network gateway-mainnet
 task('task:getSafeOwnerChangeArgs', 'Computes sendRemoteProposal arguments to change Safe owners and threshold')
     .addParam('safe', 'Address of the deployed Safe contract', undefined, types.string)
-    .addParam('newOwners', 'Comma-separated list of new owner addresses', undefined, types.string)
+    .addParam(
+        'newOwners',
+        'Comma-separated list of new owner addresses which is replacing the current list of owners',
+        undefined,
+        types.string
+    )
     .addParam('threshold', 'New threshold value', undefined, types.int)
     .setAction(async function (
         taskArgs: { safe: string; newOwners: string; threshold: number },
