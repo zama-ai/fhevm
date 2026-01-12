@@ -1,11 +1,15 @@
-use crate::core::{
-    errors::EventProcessingError,
-    event::{PublicDecryptRequest, UserDecryptRequest},
-    job_id::JobId,
+use crate::{
+    core::{
+        errors::EventProcessingError,
+        event::{PublicDecryptRequest, UserDecryptRequest},
+        job_id::JobId,
+    },
+    metrics,
 };
 use indexmap::IndexMap;
-use std::future::Future;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::{fmt, future::Future};
 use tokio::sync::{mpsc, RwLock, Semaphore};
 use tracing::{error, info, instrument, warn};
 
@@ -49,6 +53,36 @@ impl ReadinessSenders {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum ReadinessThrottlingType {
+    UserDecrypt,
+    PublicDecrypt,
+}
+
+impl ReadinessThrottlingType {
+    fn as_metrics_type(&self) -> metrics::QueueType {
+        match self {
+            ReadinessThrottlingType::UserDecrypt => {
+                metrics::QueueType::UserDecryptReadinessThrottler
+            }
+            ReadinessThrottlingType::PublicDecrypt => {
+                metrics::QueueType::PublicDecryptReadinessThrottler
+            }
+        }
+    }
+}
+
+impl fmt::Display for ReadinessThrottlingType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ReadinessThrottlingType::UserDecrypt => write!(f, "user_decrypt_readiness_throttler"),
+            ReadinessThrottlingType::PublicDecrypt => {
+                write!(f, "public_decrypt_readiness_throttler")
+            }
+        }
+    }
+}
+
 pub trait ReadinessItem: Send + Sync + 'static + std::fmt::Debug {
     fn get_id(&self) -> String;
 }
@@ -86,6 +120,7 @@ impl ReadinessItem for UserDecryptReadinessTask {
 /// The Producer Handle.
 #[derive(Clone)]
 pub struct ReadinessSender<T> {
+    readiness_type: ReadinessThrottlingType,
     // Bounded Channel carrying the Payload T
     sender: mpsc::Sender<T>,
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
@@ -96,6 +131,7 @@ pub struct ReadinessSender<T> {
 
 /// The Background Worker.
 pub struct ReadinessWorker<T> {
+    readiness_type: ReadinessThrottlingType,
     receiver: mpsc::Receiver<T>,
     // Shared reference to the same tracker to remove items when processed
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
@@ -108,6 +144,7 @@ where
     T: ReadinessItem + Send + Sync + 'static,
 {
     pub fn new(
+        readiness_type: ReadinessThrottlingType,
         capacity: usize,
         capacity_safety_margin: usize,
         max_parallelism: usize,
@@ -119,12 +156,14 @@ where
         let soft_capacity = capacity.saturating_sub(capacity_safety_margin);
 
         let sender = Self {
+            readiness_type,
             sender,
             tracker: tracker.clone(),
             soft_capacity,
         };
 
         let worker = ReadinessWorker {
+            readiness_type,
             receiver,
             tracker,
             max_parallelism,
@@ -148,6 +187,7 @@ where
             Ok(_) => {
                 // Success: Add ID to tracker
                 tracker.insert(id, ());
+                metrics::queue::increment_queue_size(self.readiness_type.as_metrics_type());
                 Ok(())
             }
             Err(mpsc::error::TrySendError::Full(_)) => {
@@ -229,6 +269,7 @@ where
             {
                 let mut tracker = self.tracker.write().await;
                 tracker.shift_remove(&id);
+                metrics::queue::decrement_queue_size(self.readiness_type.as_metrics_type());
             }
 
             // Process (Isolated)
@@ -275,7 +316,8 @@ mod tests {
     // --- Test 1: FIFO Ordering ---
     #[tokio::test]
     async fn test_fifo_ordering() {
-        let (sender, worker) = ReadinessSender::<MockTask>::new(10, 0, 100);
+        let (sender, worker) =
+            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 0, 100);
         let processed = Arc::new(Mutex::new(Vec::new()));
         let processed_clone = processed.clone();
 
@@ -302,7 +344,8 @@ mod tests {
     // --- Test 2: Deduplication ---
     #[tokio::test]
     async fn test_deduplication() {
-        let (sender, _worker) = ReadinessSender::<MockTask>::new(10, 0, 100);
+        let (sender, _worker) =
+            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 0, 100);
 
         sender.push(MockTask { id: "A".into() }).await.unwrap();
         sender.push(MockTask { id: "A".into() }).await.unwrap();
@@ -313,7 +356,8 @@ mod tests {
     // --- Test 3: Queue Full ---
     #[tokio::test]
     async fn test_queue_full() {
-        let (sender, _worker) = ReadinessSender::<MockTask>::new(1, 0, 100);
+        let (sender, _worker) =
+            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 1, 0, 100);
 
         assert!(sender.push(MockTask { id: "1".into() }).await.is_ok());
 
@@ -326,7 +370,12 @@ mod tests {
     async fn test_concurrency_limit() {
         // Max Parallelism = 3
         let max_parallelism = 3;
-        let (sender, worker) = ReadinessSender::<MockTask>::new(100, 0, max_parallelism);
+        let (sender, worker) = ReadinessSender::<MockTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
+            100,
+            0,
+            max_parallelism,
+        );
 
         // Counter tracks currently ACTIVE tasks
         let active_tasks = Arc::new(AtomicUsize::new(0));
@@ -395,7 +444,8 @@ mod tests {
     #[tokio::test]
     async fn test_readiness_headroom() {
         // Capacity = 10, Safety = 2 -> Soft Limit = 8
-        let (sender, worker) = ReadinessSender::<MockTask>::new(10, 2, 100);
+        let (sender, worker) =
+            ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 2, 100);
 
         for i in 0..8 {
             sender

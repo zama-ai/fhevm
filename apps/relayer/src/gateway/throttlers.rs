@@ -4,11 +4,11 @@ use crate::{
     config::settings::Settings,
     gateway::{
         arbitrum::transaction::tx_throttler::{
-            GatewayTxTask, TxSenders, TxThrottlers, TxThrottlingSender,
+            GatewayTxTask, TxSenders, TxThrottlers, TxThrottlingSender, TxThrottlingType,
         },
         readiness_check::readiness_throttler::{
             PublicDecryptReadinessTask, ReadinessSender, ReadinessSenders, ReadinessThrottlers,
-            UserDecryptReadinessTask,
+            ReadinessThrottlingType, UserDecryptReadinessTask,
         },
     },
 };
@@ -56,6 +56,7 @@ impl BouncerThrottlers {
 pub fn init_throttlers(settings: &Settings) -> (GatewayThrottlers, BouncerThrottlers) {
     let (input_proof_tx_throttler, input_proof_tx_worker, throttler_control_input_proof) =
         TxThrottlingSender::<GatewayTxTask>::new(
+            TxThrottlingType::InputProof,
             settings
                 .gateway
                 .tx_engine
@@ -73,35 +74,13 @@ pub fn init_throttlers(settings: &Settings) -> (GatewayThrottlers, BouncerThrott
                 .tx_engine
                 .tx_throttlers
                 .input_proof
-                .per_seconds,
-            settings.http.enable_admin_endpoint,
-        );
-
-    let (public_decrypt_tx_throttler, public_decrypt_tx_worker, throttler_control_public_decrypt) =
-        TxThrottlingSender::<GatewayTxTask>::new(
-            settings
-                .gateway
-                .tx_engine
-                .tx_throttlers
-                .public_decrypt
-                .capacity,
-            settings
-                .gateway
-                .tx_engine
-                .tx_throttlers
-                .public_decrypt
-                .safety_margin,
-            settings
-                .gateway
-                .tx_engine
-                .tx_throttlers
-                .public_decrypt
                 .per_seconds,
             settings.http.enable_admin_endpoint,
         );
 
     let (user_decrypt_tx_throttler, user_decrypt_tx_worker, throttler_control_user_decrypt) =
         TxThrottlingSender::<GatewayTxTask>::new(
+            TxThrottlingType::UserDecrypt,
             settings
                 .gateway
                 .tx_engine
@@ -123,8 +102,33 @@ pub fn init_throttlers(settings: &Settings) -> (GatewayThrottlers, BouncerThrott
             settings.http.enable_admin_endpoint,
         );
 
+    let (public_decrypt_tx_throttler, public_decrypt_tx_worker, throttler_control_public_decrypt) =
+        TxThrottlingSender::<GatewayTxTask>::new(
+            TxThrottlingType::PublicDecrypt,
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .public_decrypt
+                .capacity,
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .public_decrypt
+                .safety_margin,
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .public_decrypt
+                .per_seconds,
+            settings.http.enable_admin_endpoint,
+        );
+
     let (public_decrypt_readiness_throttler, public_decrypt_readiness_worker) =
         ReadinessSender::<PublicDecryptReadinessTask>::new(
+            ReadinessThrottlingType::PublicDecrypt,
             settings.gateway.readiness_checker.public_decrypt.capacity,
             settings
                 .gateway
@@ -140,6 +144,7 @@ pub fn init_throttlers(settings: &Settings) -> (GatewayThrottlers, BouncerThrott
 
     let (user_decrypt_readiness_throttler, user_decrypt_readiness_worker) =
         ReadinessSender::<UserDecryptReadinessTask>::new(
+            ReadinessThrottlingType::UserDecrypt,
             settings.gateway.readiness_checker.user_decrypt.capacity,
             settings
                 .gateway

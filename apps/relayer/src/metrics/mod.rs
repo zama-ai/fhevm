@@ -6,7 +6,7 @@ pub mod status;
 pub mod transaction;
 
 pub use http::*;
+pub use queue::*;
 pub use sql::*;
 pub use status::*;
 pub use transaction::*;
-pub use queue::*;
