@@ -290,6 +290,60 @@ pub struct CronConfig {
     pub user_decrypt_expiry: Duration,
     #[serde(deserialize_with = "deserialize_human_duration")]
     pub input_proof_expiry: Duration,
+    /// Delay before starting cron workers after recovery completes.
+    /// This gives recovered requests time to process before timeout checks begin.
+    /// Must be less than 10% of both timeout_cron_interval and expiry_cron_interval.
+    #[serde(deserialize_with = "deserialize_human_duration")]
+    pub cron_startup_delay_after_recovery: Duration,
+}
+
+impl CronConfig {
+    /// Validates that cron startup delay is less than 10% of timeout/expiry durations.
+    ///
+    /// The 10% rule ensures the startup delay is a small fraction of the actual timeout
+    /// and expiry durations, preventing excessive delays while still providing adequate
+    /// breathing room for recovered requests.
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        let delay_secs = self.cron_startup_delay_after_recovery.as_secs_f64();
+
+        // Find minimum timeout duration (for timeout cron validation)
+        let min_timeout_secs = self
+            .public_decrypt_timeout
+            .as_secs_f64()
+            .min(self.user_decrypt_timeout.as_secs_f64())
+            .min(self.input_proof_timeout.as_secs_f64());
+
+        // Check: delay < 10% of minimum timeout duration
+        let timeout_max_delay = min_timeout_secs * 0.1;
+        if delay_secs >= timeout_max_delay {
+            return Err(AppConfigError::InvalidCronConfig(
+                format!(
+                    "cron_startup_delay_after_recovery ({}s) must be less than 10% of minimum timeout duration ({}s). Max allowed: {}s",
+                    delay_secs, min_timeout_secs, timeout_max_delay
+                )
+            ));
+        }
+
+        // Find minimum expiry duration (for expiry cron validation)
+        let min_expiry_secs = self
+            .public_decrypt_expiry
+            .as_secs_f64()
+            .min(self.user_decrypt_expiry.as_secs_f64())
+            .min(self.input_proof_expiry.as_secs_f64());
+
+        // Check: delay < 10% of minimum expiry duration
+        let expiry_max_delay = min_expiry_secs * 0.1;
+        if delay_secs >= expiry_max_delay {
+            return Err(AppConfigError::InvalidCronConfig(
+                format!(
+                    "cron_startup_delay_after_recovery ({}s) must be less than 10% of minimum expiry duration ({}s). Max allowed: {}s",
+                    delay_secs, min_expiry_secs, expiry_max_delay
+                )
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -423,6 +477,9 @@ pub enum AppConfigError {
 
     #[error("Invalid network configuration: {0}")]
     InvalidNetworkConfig(String),
+
+    #[error("Invalid cron configuration: {0}")]
+    InvalidCronConfig(String),
 }
 
 impl Settings {
@@ -449,6 +506,9 @@ impl Settings {
 
         // Validate network configurations
         settings.gateway.validate()?;
+
+        // Validate cron startup delay (10% rule)
+        settings.storage.cron.validate()?;
 
         // Ensure HTTP metrics configuration is provided
         if settings.http.metrics.histogram_buckets.is_empty() {

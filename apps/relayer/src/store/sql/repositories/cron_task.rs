@@ -81,8 +81,7 @@ async fn run_expiry_worker_logic(pool: PgClient, cron_config: CronConfig) {
         "Expiry worker initialized"
     );
 
-    // Consume the immediate tick so expiry does not run at startup, which avoids
-    // fighting with the timeout worker during initial boot.
+    // Skip the first immediate tick to avoid competing with timeout worker at startup
     interval.tick().await;
 
     loop {

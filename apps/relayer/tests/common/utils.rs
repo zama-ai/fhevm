@@ -416,6 +416,8 @@ pub fn create_timeout_test_config(
                 serde_yaml::Value::String(format!("{}s", timeout_secs));
             cron["user_decrypt_timeout"] = serde_yaml::Value::String(format!("{}s", timeout_secs));
             cron["input_proof_timeout"] = serde_yaml::Value::String(format!("{}s", timeout_secs));
+            // Set startup delay to 0s for timeout tests - we want cron workers to start immediately
+            cron["cron_startup_delay_after_recovery"] = serde_yaml::Value::String("0s".to_string());
         }
     }
 

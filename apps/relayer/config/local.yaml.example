@@ -142,3 +142,9 @@ storage:
     public_decrypt_expiry: "365d"
     user_decrypt_expiry: "7d"
     input_proof_expiry: "7d"
+
+    # Delay before starting cron workers after recovery completes.
+    # Gives recovered requests time to finish processing before automated
+    # timeout checks begin, preventing false positives.
+    # VALIDATION: Must be less than 10% of minimum timeout duration AND minimum expiry duration.
+    cron_startup_delay_after_recovery: "30s"

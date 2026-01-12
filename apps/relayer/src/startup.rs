@@ -88,14 +88,6 @@ pub async fn run_fhevm_relayer(
     );
     info!("Initialized SQL repositories");
 
-    if !settings.global.test_mock {
-        // Register background workers with orchestrator (timeout, expiry cron jobs, and DB pool monitor)
-        repositories
-            .register_background_workers(&orchestrator, settings.storage.cron.clone())
-            .await
-            .map_err(|e| eyre::eyre!("Failed to register background workers: {}", e))?;
-    }
-
     // Register database with orchestrator for health checks
     orchestrator.add_health_check(
         "database".to_string(),
@@ -113,6 +105,28 @@ pub async fn run_fhevm_relayer(
     )
     .await
     .map_err(|e| eyre::eyre!("Failed to initialize gateway: {}", e))?;
+
+    // Recover incomplete requests from previous runs
+    info!("Recovering incomplete requests...");
+    startup_recovery::recover_incomplete_requests(&orchestrator, &repositories)
+        .await
+        .map_err(|e| eyre::eyre!("Failed to recover incomplete requests: {}", e))?;
+
+    // Start cron workers after configurable delay (skipped in test mode)
+    if !settings.global.test_mock {
+        let delay = settings.storage.cron.cron_startup_delay_after_recovery;
+        info!(
+            "Recovery complete. Waiting {:?} before starting cron workers...",
+            delay
+        );
+        tokio::time::sleep(delay).await;
+
+        info!("Starting cron workers: timeout_worker and expiry_worker");
+        repositories
+            .register_background_workers(&orchestrator, settings.storage.cron.clone())
+            .await
+            .map_err(|e| eyre::eyre!("Failed to register background workers: {}", e))?;
+    }
 
     let mut settings = settings;
 
@@ -150,11 +164,6 @@ pub async fn run_fhevm_relayer(
 
     // Initialize KeyUrl handler after HTTP server is up
     gateway_handler.initialize().await;
-
-    // Recover incomplete requests from previous runs
-    startup_recovery::recover_incomplete_requests(&orchestrator, &repositories)
-        .await
-        .map_err(|e| eyre::eyre!("Failed to recover incomplete requests: {}", e))?;
 
     drop(setup_span);
 

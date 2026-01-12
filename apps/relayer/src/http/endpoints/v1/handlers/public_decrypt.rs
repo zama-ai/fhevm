@@ -22,7 +22,7 @@ use axum::{body::Bytes as AxumBytes, extract::FromRequest, http::Request, respon
 use axum::{http::StatusCode, Json};
 use std::sync::Arc;
 use tokio::sync::oneshot;
-use tracing::{error, info, instrument, span, Level};
+use tracing::{error, info, instrument, span, warn, Level};
 
 pub type PublicDecryptResponse = AppResponse<PublicDecryptResponseJson>;
 
@@ -299,6 +299,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
                     }
                 }
+            }
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(4)) => {
+                warn!("Timeout waiting for public decrypt response or error event after 4 seconds");
+                let error_response = PublicDecryptErrorResponseJson {
+                    message: "Request timeout: no response received within 4 seconds".to_string(),
+                };
+                (StatusCode::REQUEST_TIMEOUT, Json(error_response)).into_response()
             }
         }
     }
