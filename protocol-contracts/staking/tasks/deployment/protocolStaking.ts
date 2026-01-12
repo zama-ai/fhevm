@@ -21,7 +21,6 @@ async function deployProtocolStaking(
   version: string,
   cooldown: number,
   rewardRate: bigint,
-  owner: string,
   hre: HardhatRuntimeEnvironment,
 ) {
   const { getNamedAccounts, ethers, deployments, upgrades, network } = hre;
@@ -35,10 +34,12 @@ async function deployProtocolStaking(
   const zamaTokenAddress = getRequiredEnvVar('ZAMA_TOKEN_ADDRESS');
 
   // Get the contract factory and deploy the proxy + the implementation
+  // At deployment, the governor and manager roles are set to the deployer address to ease initial
+  // configuration. They should be transferred to the DAO address soon after.
   const protocolStakingFactory = await ethers.getContractFactory(PROTOCOL_STAKING_CONTRACT_NAME, deployerSigner);
   const proxy = await upgrades.deployProxy(
     protocolStakingFactory,
-    [tokenName, symbol, version, zamaTokenAddress, owner, owner, cooldown, rewardRate],
+    [tokenName, symbol, version, zamaTokenAddress, deployer, deployer, cooldown, rewardRate],
     { kind: 'uups', initializer: 'initialize' },
   );
   await proxy.waitForDeployment();
@@ -74,18 +75,9 @@ task('task:deployProtocolStakingCopro').setAction(async function (_, hre) {
   const coproVersion = getRequiredEnvVar('PROTOCOL_STAKING_COPRO_VERSION');
   const coproCooldown = parseInt(getRequiredEnvVar('PROTOCOL_STAKING_COPRO_COOLDOWN_PERIOD'));
   const coproRewardRate = BigInt(parseInt(getRequiredEnvVar('PROTOCOL_STAKING_COPRO_REWARD_RATE')));
-  const coproOwner = getRequiredEnvVar('DAO_ADDRESS');
 
   // Deploy the coprocessor protocol staking contract
-  await deployProtocolStaking(
-    coproTokenName,
-    coproTokenSymbol,
-    coproVersion,
-    coproCooldown,
-    coproRewardRate,
-    coproOwner,
-    hre,
-  );
+  await deployProtocolStaking(coproTokenName, coproTokenSymbol, coproVersion, coproCooldown, coproRewardRate, hre);
 });
 
 // Deploy the KMS ProtocolStaking contracts
@@ -100,10 +92,9 @@ task('task:deployProtocolStakingKMS').setAction(async function (_, hre) {
   const kmsVersion = getRequiredEnvVar('PROTOCOL_STAKING_KMS_VERSION');
   const kmsCooldown = parseInt(getRequiredEnvVar('PROTOCOL_STAKING_KMS_COOLDOWN_PERIOD'));
   const kmsRewardRate = BigInt(parseInt(getRequiredEnvVar('PROTOCOL_STAKING_KMS_REWARD_RATE')));
-  const kmsOwner = getRequiredEnvVar('DAO_ADDRESS');
 
   // Deploy the KMS protocol staking contract
-  await deployProtocolStaking(kmsTokenName, kmsTokenSymbol, kmsVersion, kmsCooldown, kmsRewardRate, kmsOwner, hre);
+  await deployProtocolStaking(kmsTokenName, kmsTokenSymbol, kmsVersion, kmsCooldown, kmsRewardRate, hre);
 });
 
 // Deploy the ProtocolStaking contracts
