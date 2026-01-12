@@ -26,10 +26,11 @@ use crate::{
     },
     store::sql::{
         models::{
+            req_status_enum_model::ReqStatus,
             user_decrypt_req_model::ConsensusReqState,
             user_decrypt_share_model::{ShareInsertParams, UserDecryptShare},
         },
-        repositories::user_decrypt_repo::UserDecryptRepository,
+        repositories::user_decrypt_repo::{ShareCompletionOutcome, UserDecryptRepository},
     },
 };
 use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, U256};
@@ -350,7 +351,7 @@ impl GatewayHandler {
             tx_hash: &tx_hash_str,
         };
 
-        let (count, completion_result) = self
+        let outcome = self
             .user_decrypt_repo
             .insert_share_and_complete_if_threshold_reached(params, threshold)
             .await
@@ -360,32 +361,85 @@ impl GatewayHandler {
                 reason: e.to_string(),
             })?;
 
-        info!(
-            "COUNT after insert of index: {:?} {} for Gateway reference ID {}",
-            user_decrypt_response.indexShare, count, user_decryption_id
-        );
-
-        match completion_result {
-            Some((metadata, shares)) => {
+        match outcome {
+            ShareCompletionOutcome::Completed {
+                count,
+                metadata,
+                shares,
+            } => {
+                info!(
+                    "COUNT after insert of index: {:?} {} for Gateway reference ID {}",
+                    user_decrypt_response.indexShare, count, user_decryption_id
+                );
                 info!(
                     "Threshold reached and completion successful: {}/{}",
                     count, threshold
                 );
                 self.assemble_final_response(event, metadata, shares).await;
             }
-            None if count == threshold => {
-                error!(
+            ShareCompletionOutcome::ThresholdNotReached { count } => {
+                info!(
+                    "COUNT after insert of index: {:?} {} for Gateway reference ID {}",
+                    user_decrypt_response.indexShare, count, user_decryption_id
+                );
+                info!("Threshold not yet reached: {}/{}", count, threshold);
+            }
+            ShareCompletionOutcome::AlreadyCompleted {
+                count,
+                metadata,
+                shares,
+            } => {
+                info!(
+                    "COUNT after insert of index: {:?} {} for Gateway reference ID {}",
+                    user_decrypt_response.indexShare, count, user_decryption_id
+                );
+                info!(
                     job_id = %event.job_id,
-                    "Threshold reached but request was timed out: {}/{}",
+                    "Threshold reached but request already completed (duplicate share): {}/{}",
                     count, threshold
                 );
-                return Err(EventProcessingError::ValidationFailed {
-                    field: "request_status".to_string(),
-                    reason: "Request timed out before completion".to_string(),
-                });
+                // Request already completed - re-dispatch the response for any waiting HTTP handlers
+                self.assemble_final_response(event, metadata, shares).await;
             }
-            None => {
-                info!("Threshold not yet reached: {}/{}", count, threshold);
+            ShareCompletionOutcome::AlreadyInFinalState {
+                count,
+                current_status,
+            } => {
+                info!(
+                    "COUNT after insert of index: {:?} {} for Gateway reference ID {}",
+                    user_decrypt_response.indexShare, count, user_decryption_id
+                );
+                match current_status {
+                    ReqStatus::Failure => {
+                        info!(
+                            job_id = %event.job_id,
+                            "Threshold reached but request already in failure state: {}/{}",
+                            count, threshold
+                        );
+                        // Already failed, no need to error again
+                    }
+                    ReqStatus::TimedOut => {
+                        info!(
+                            job_id = %event.job_id,
+                            "Threshold reached but request already timed out (late share arrival): {}/{}",
+                            count, threshold
+                        );
+                        // Timeout handling already completed, user was notified.
+                        // Late share arrival is expected in distributed systems - just skip.
+                    }
+                    other_status => {
+                        error!(
+                            job_id = %event.job_id,
+                            "Threshold reached but request in unexpected status {:?}: {}/{} - possible state corruption",
+                            other_status, count, threshold
+                        );
+                        return Err(EventProcessingError::ShareAggregationFailed(format!(
+                            "Cannot aggregate shares - request in unexpected status {:?}. \
+                                 Shares should only arrive after ReceiptReceived status.",
+                            other_status
+                        )));
+                    }
+                }
             }
         }
 

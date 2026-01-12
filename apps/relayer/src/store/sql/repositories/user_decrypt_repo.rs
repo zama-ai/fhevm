@@ -4,9 +4,7 @@ use serde_json::Value;
 use crate::core::event::UserDecryptRequest;
 use crate::metrics;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
-use crate::store::sql::models::user_decrypt_req_model::{
-    ConsensusReqState, UserDecryptDoneWithTransitionRes,
-};
+use crate::store::sql::models::user_decrypt_req_model::ConsensusReqState;
 use crate::store::sql::{
     client::PgClient,
     error::{SqlError, SqlResult},
@@ -23,9 +21,30 @@ use std::time::Instant;
 // Import conversion functions privately within this repository
 use crate::store::sql::conversion::u256_to_i32;
 
-// Type alias to satisfy clippy::type-complexity
-// Represents: (Share Count, Option<(Metadata, List of Shares)>)
-pub type ShareThresholdResult = (i64, Option<(ConsensusReqState, Vec<UserDecryptShare>)>);
+/// Outcome of inserting a share and checking for threshold completion.
+#[derive(Debug)]
+pub enum ShareCompletionOutcome {
+    /// Threshold not yet reached, request still in progress
+    ThresholdNotReached { count: i64 },
+    /// Threshold reached and request completed successfully in this operation
+    Completed {
+        count: i64,
+        metadata: ConsensusReqState,
+        shares: Vec<UserDecryptShare>,
+    },
+    /// Threshold reached but request is already completed (duplicate shares)
+    /// Includes the completed data so caller can re-dispatch response if needed
+    AlreadyCompleted {
+        count: i64,
+        metadata: ConsensusReqState,
+        shares: Vec<UserDecryptShare>,
+    },
+    /// Threshold reached but request is already in a final failure state
+    AlreadyInFinalState {
+        count: i64,
+        current_status: ReqStatus,
+    },
+}
 
 pub struct UserDecryptRepository {
     pool: PgClient,
@@ -549,8 +568,8 @@ impl UserDecryptRepository {
 
     // We recieve a share event from the gw.
     /// Insert share and atomically complete request if threshold is reached.
-    /// Returns (share_count, completion_result) where completion_result contains
-    /// metadata and shares if threshold was reached and completion successful.
+    /// Returns outcome that explicitly indicates whether threshold was reached,
+    /// completion succeeded, or request is already in a final state.
     ///
     /// This prevents race conditions between share insertion and request completion
     /// by performing all operations within a single atomic transaction.
@@ -558,7 +577,7 @@ impl UserDecryptRepository {
         &self,
         params: ShareInsertParams<'_>,
         threshold: i64,
-    ) -> SqlResult<ShareThresholdResult> {
+    ) -> SqlResult<ShareCompletionOutcome> {
         let id_as_bytes_array: [u8; 32] = params.gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
         let share_index = u256_to_i32(params.share_index)
@@ -603,7 +622,7 @@ impl UserDecryptRepository {
         let query_start = Instant::now();
 
         // 3. Execute Business Logic inside the Transaction
-        let result: SqlResult<ShareThresholdResult> = async {
+        let result: SqlResult<ShareCompletionOutcome> = async {
             // A. Acquire advisory lock (WAITS for other transactions)
             let lock_id = compute_advisory_lock_id(&gw_ref_id);
             sqlx::query!("SELECT pg_advisory_xact_lock($1)", lock_id)
@@ -647,13 +666,22 @@ impl UserDecryptRepository {
             .await?;
 
            // If threshold reached, complete the request atomically
-            let completion_result = if count == threshold {
-                // Attempt to update request to completed status
-                let update_result = sqlx::query_as!(
-                    UserDecryptDoneWithTransitionRes,
+            if count == threshold {
+                // Query both old status and attempt update in single atomic operation
+                #[derive(sqlx::FromRow, Debug)]
+                struct ThresholdCheckResult {
+                    old_status: ReqStatus,
+                    old_updated_at: DateTime<Utc>,
+                    int_job_id: Option<Vec<u8>>,
+                    new_status: Option<ReqStatus>,
+                    updated_at: Option<DateTime<Utc>>,
+                    err_reason: Option<String>,
+                }
+
+                let check_result: Option<ThresholdCheckResult> = sqlx::query_as(
                     r#"
                     WITH old AS (
-                        SELECT req_status, updated_at FROM user_decrypt_req 
+                        SELECT req_status as old_status, updated_at as old_updated_at FROM user_decrypt_req
                         WHERE gw_reference_id = $1
                     ),
                     upd AS (
@@ -661,81 +689,156 @@ impl UserDecryptRepository {
                         SET req_status = 'completed'::req_status
                         WHERE gw_reference_id = $1
                           AND req_status = 'receipt_received'::req_status
-                        RETURNING int_job_id, req_status, updated_at, err_reason
+                        RETURNING int_job_id, req_status as new_status, updated_at, err_reason
                     )
-                    SELECT 
-                        upd.int_job_id as "int_job_id!",
-                        upd.req_status as "req_status!: ReqStatus",
-                        upd.updated_at as "updated_at!",
-                        upd.err_reason,
-                        old.req_status as "old_status!: ReqStatus",
-                        old.updated_at as "old_updated_at!"
-                    FROM old, upd
-                    "#,
-                    gw_ref_id
+                    SELECT
+                        old.old_status,
+                        old.old_updated_at,
+                        upd.int_job_id,
+                        upd.new_status,
+                        upd.updated_at,
+                        upd.err_reason
+                    FROM old
+                    LEFT JOIN upd ON true
+                    "#
                 )
+                .bind(&gw_ref_id)
                 .fetch_optional(&mut *tx)
                 .await?;
 
-                if let Some(data) = update_result {
-                    // Record transition immediately (in-memory metric, safe to do inside tx flow)
-                    metrics::record_status_transition(
-                        metrics::RequestType::UserDecrypt,
-                        data.old_status,
-                        ReqStatus::Completed,
-                        data.old_updated_at,
-                        data.updated_at,
-                    );
+                match check_result {
+                    Some(result) if result.int_job_id.is_some() => {
+                        // Update succeeded - request was in receipt_received and is now completed
+                        let int_job_id = result.int_job_id.unwrap();
+                        let new_status = result.new_status.unwrap();
+                        let updated_at = result.updated_at.unwrap();
 
-                    let metadata = ConsensusReqState {
-                        int_job_id: data.int_job_id,
-                        req_status: data.req_status,
-                        updated_at: data.updated_at,
-                        err_reason: data.err_reason,
-                    };
+                        // Record transition immediately (in-memory metric, safe to do inside tx flow)
+                        metrics::record_status_transition(
+                            metrics::RequestType::UserDecrypt,
+                            result.old_status,
+                            ReqStatus::Completed,
+                            result.old_updated_at,
+                            updated_at,
+                        );
 
-                    // Fetch shares ordered by creation time, limited to threshold
-                    let share_records = sqlx::query!(
-                        r#"
-                        SELECT id, gw_reference_id, tx_hash, share_index, share, kms_signature, extra_data, created_at, updated_at
-                        FROM user_decrypt_share
-                        WHERE gw_reference_id = $1
-                        ORDER BY created_at ASC, share_index ASC
-                        LIMIT $2
-                        "#,
-                        gw_ref_id,
-                        threshold
-                    )
-                    .fetch_all(&mut *tx)
-                    .await?;
+                        let metadata = ConsensusReqState {
+                            int_job_id,
+                            req_status: new_status,
+                            updated_at,
+                            err_reason: result.err_reason,
+                        };
 
-                    let shares: Vec<UserDecryptShare> = share_records
-                        .into_iter()
-                        .map(|r| UserDecryptShare {
-                            id: r.id,
-                            gw_reference_id: r.gw_reference_id,
-                            tx_hash: r.tx_hash,
-                            share_index: r.share_index,
-                            share: r.share,
-                            kms_signature: r.kms_signature,
-                            extra_data: r.extra_data,
-                            created_at: r.created_at,
-                            updated_at: r.updated_at,
+                        // Fetch shares ordered by creation time, limited to threshold
+                        let shares: Vec<UserDecryptShare> = sqlx::query_as(
+                            r#"
+                            SELECT id, gw_reference_id, tx_hash, share_index, share, kms_signature, extra_data, created_at, updated_at
+                            FROM user_decrypt_share
+                            WHERE gw_reference_id = $1
+                            ORDER BY created_at ASC, share_index ASC
+                            LIMIT $2
+                            "#
+                        )
+                        .bind(&gw_ref_id)
+                        .bind(threshold)
+                        .fetch_all(&mut *tx)
+                        .await?;
+
+                        tx.commit().await?;
+
+                        Ok(ShareCompletionOutcome::Completed {
+                            count,
+                            metadata,
+                            shares,
                         })
-                        .collect();
+                    }
+                    Some(result) => {
+                        // Update failed - request is in a final state (not receipt_received)
 
-                    Some((metadata, shares))
-                } else {
-                    // Request was already timed_out or doesn't exist
-                    None
+                        // If already completed, fetch the shares and return AlreadyCompleted
+                        if result.old_status == ReqStatus::Completed {
+                            // Fetch shares for the completed request
+                            let shares: Vec<UserDecryptShare> = sqlx::query_as(
+                                r#"
+                                SELECT id, gw_reference_id, tx_hash, share_index, share, kms_signature, extra_data, created_at, updated_at
+                                FROM user_decrypt_share
+                                WHERE gw_reference_id = $1
+                                ORDER BY created_at ASC, share_index ASC
+                                LIMIT $2
+                                "#
+                            )
+                            .bind(&gw_ref_id)
+                            .bind(threshold)
+                            .fetch_all(&mut *tx)
+                            .await?;
+
+                            // Fetch request metadata
+                            #[derive(sqlx::FromRow)]
+                            struct CompletedMetadata {
+                                int_job_id: Vec<u8>,
+                                req_status: ReqStatus,
+                                updated_at: DateTime<Utc>,
+                                err_reason: Option<String>,
+                            }
+
+                            let metadata_row: Option<CompletedMetadata> = sqlx::query_as(
+                                r#"
+                                SELECT int_job_id, req_status, updated_at, err_reason
+                                FROM user_decrypt_req
+                                WHERE gw_reference_id = $1
+                                "#
+                            )
+                            .bind(&gw_ref_id)
+                            .fetch_optional(&mut *tx)
+                            .await?;
+
+                            tx.commit().await?;
+
+                            match metadata_row {
+                                Some(meta) => {
+                                    let metadata = ConsensusReqState {
+                                        int_job_id: meta.int_job_id,
+                                        req_status: meta.req_status,
+                                        updated_at: meta.updated_at,
+                                        err_reason: meta.err_reason,
+                                    };
+
+                                    Ok(ShareCompletionOutcome::AlreadyCompleted {
+                                        count,
+                                        metadata,
+                                        shares,
+                                    })
+                                }
+                                None => {
+                                    Err(SqlError::Transaction(
+                                        "Request disappeared while fetching completed data".to_string(),
+                                    ))
+                                }
+                            }
+                        } else {
+                            // Other final states (failure, timed_out, etc.)
+                            tx.commit().await?;
+
+                            Ok(ShareCompletionOutcome::AlreadyInFinalState {
+                                count,
+                                current_status: result.old_status,
+                            })
+                        }
+                    }
+                    None => {
+                        // Request doesn't exist in database - should not happen
+                        tx.rollback().await?;
+                        Err(SqlError::Transaction(
+                            "Request not found when threshold reached".to_string(),
+                        ))
+                    }
                 }
             } else {
-                None
-            };
+                // Threshold not yet reached
+                tx.commit().await?;
 
-            tx.commit().await?;
-
-            Ok((count, completion_result))
+                Ok(ShareCompletionOutcome::ThresholdNotReached { count })
+            }
         }
         .await;
 
