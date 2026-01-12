@@ -41,14 +41,30 @@ DEPLOYMENT_STEPS=(
     "test-suite"
 )
 
+# Get docker-compose component name for a step
+# kms-signer has no compose file (it's just a script), returns empty
+get_compose_for_step() {
+    local step=$1
+    case "$step" in
+        minio|core|database|host-node|gateway-node|coprocessor|kms-connector|gateway-mocked-payment|gateway-sc|host-sc|relayer|test-suite)
+            echo "$step"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
 # Helper to get index of step in DEPLOYMENT_STEPS array
 get_step_index() {
     local step_name=$1
-    for i in "${!DEPLOYMENT_STEPS[@]}"; do
-        if [[ "${DEPLOYMENT_STEPS[$i]}" == "$step_name" ]]; then
+    local i=0
+    for step in "${DEPLOYMENT_STEPS[@]}"; do
+        if [[ "$step" == "$step_name" ]]; then
             echo "$i"
             return 0
         fi
+        ((i++))
     done
     echo "-1"
     return 1
@@ -374,11 +390,50 @@ cleanup() {
     fi
 }
 
-# Only run cleanup if NOT in resume mode
+# Selective cleanup: tear down services from a specific step onwards
+# Preserves containers/volumes from earlier steps
+cleanup_from_step() {
+    local start_step=$1
+    local start_index=$(get_step_index "$start_step")
+
+    log_warn "Resume mode: cleaning up services from '$start_step' onwards..."
+
+    # Collect steps to cleanup (from start_step to end)
+    local steps_to_cleanup=()
+    for ((i=start_index; i<${#DEPLOYMENT_STEPS[@]}; i++)); do
+        local step="${DEPLOYMENT_STEPS[$i]}"
+        local compose=$(get_compose_for_step "$step")
+        if [[ -n "$compose" ]]; then
+            steps_to_cleanup+=("$compose")
+        fi
+    done
+
+    # Tear down in reverse order (test-suite first, then relayer, etc.)
+    for ((i=${#steps_to_cleanup[@]}-1; i>=0; i--)); do
+        local component="${steps_to_cleanup[$i]}"
+        local env_file="$SCRIPT_DIR/../env/staging/.env.$component.local"
+        local compose_file="$SCRIPT_DIR/../docker-compose/$component-docker-compose.yml"
+
+        if [[ -f "$compose_file" ]]; then
+            # Use base env file if local doesn't exist yet
+            if [[ ! -f "$env_file" ]]; then
+                env_file="$SCRIPT_DIR/../env/staging/.env.$component"
+            fi
+            if [[ -f "$env_file" ]]; then
+                log_info "Stopping $component services..."
+                docker compose -p "${PROJECT}" --env-file "$env_file" -f "$compose_file" down -v --remove-orphans 2>/dev/null || true
+            fi
+        fi
+    done
+
+    log_info "Cleanup complete. Services before '$start_step' preserved."
+}
+
+# Run cleanup based on mode
 if [[ -z "$RESUME_STEP" ]]; then
     cleanup "$@"
 else
-    log_info "Resume mode: skipping cleanup to preserve existing containers/volumes"
+    cleanup_from_step "$RESUME_STEP"
 fi
 
 prepare_all_env_files
