@@ -348,11 +348,25 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use prometheus::Registry;
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, Once,
     };
     use tokio::time::{sleep, Duration};
+
+    // This static ensures the closure inside call_once runs only one time per process
+    static INIT: Once = Once::new();
+
+    /// Call this at the start of every test
+    fn init_metrics_once() {
+        INIT.call_once(|| {
+            let registry = Registry::new();
+            // This registers the global static metrics.
+            // Doing this more than once would panic.
+            crate::metrics::init_queue_metrics(&registry);
+        });
+    }
 
     #[derive(Debug, Clone)]
     struct MockTask {
@@ -368,6 +382,7 @@ mod tests {
     // --- Test 1: FIFO Ordering & Tracking ---
     #[tokio::test]
     async fn test_fifo_ordering() {
+        init_metrics_once();
         let (throttler, worker, _control_tx) =
             TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 10, 0, 100, false);
         let processed = Arc::new(Mutex::new(Vec::new()));
@@ -396,6 +411,7 @@ mod tests {
     // --- Test 2: Deduplication ---
     #[tokio::test]
     async fn test_deduplication() {
+        init_metrics_once();
         let (throttler, _worker, _control_tx) =
             TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 10, 0, 100, false);
 
@@ -410,6 +426,7 @@ mod tests {
     // --- Test 3: Queue Full (Backpressure) ---
     #[tokio::test]
     async fn test_queue_full() {
+        init_metrics_once();
         // Capacity = 1
         let (throttler, _worker, _control_tx) =
             TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 1, 0, 100, false);
@@ -433,6 +450,7 @@ mod tests {
     // --- Test 4: Position Tracking ---
     #[tokio::test]
     async fn test_position_tracking() {
+        init_metrics_once();
         // Very slow rate (1 TPS) to ensure items stay in queue
         let (throttler, worker, _control_tx) =
             TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 10, 0, 1, false);
@@ -464,6 +482,7 @@ mod tests {
     // --- Test 4 - 2: Position Tracking (Deterministic) ---
     #[tokio::test]
     async fn test_position_tracking_deterministic() {
+        init_metrics_once();
         // 1. Setup Throttler (Worker NOT spawned yet)
         // Capacity 10 allows us to push multiple items without blocking/failing
         let (throttler, worker, _control_tx) =
@@ -503,6 +522,7 @@ mod tests {
     // --- Test 5: Rate Limit (Burst + Tail) ---
     #[tokio::test]
     async fn test_rate_limit_simple() {
+        init_metrics_once();
         // Setup: 10 TPS.
         // Governor behavior with allow_burst(10):
         // - Items 1-10: Processed Instantly (Burst).
@@ -562,6 +582,7 @@ mod tests {
     // --- Test 6: Sustained Rate (Second-by-Second) ---
     #[tokio::test]
     async fn test_rate_limit_sustained() {
+        init_metrics_once();
         let tps = 20;
         // Capacity large enough to hold the blast so we don't get "Queue Full" errors during setup
         let (throttler, worker, _control_tx) =
@@ -618,6 +639,7 @@ mod tests {
     // --- Test: Cloning Safety ---
     #[tokio::test]
     async fn test_cloning_shares_state() {
+        init_metrics_once();
         let (throttler_1, worker, _control_tx) =
             TxThrottlingSender::<MockTask>::new(TxThrottlingType::InputProof, 10, 0, 100, false);
 
@@ -646,6 +668,7 @@ mod tests {
     // --- Test: Buffer / Headroom Logic ---
     #[tokio::test]
     async fn test_throttler_buffer_logic() {
+        init_metrics_once();
         // Capacity = 10
         // Buffer = 2
         // Soft Limit = 8

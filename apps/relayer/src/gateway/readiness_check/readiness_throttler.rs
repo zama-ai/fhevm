@@ -296,11 +296,25 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use prometheus::Registry;
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, Once,
     };
     use tokio::time::{sleep, Duration};
+
+    // This static ensures the closure inside call_once runs only one time per process
+    static INIT: Once = Once::new();
+
+    /// Call this at the start of every test
+    fn init_metrics_once() {
+        INIT.call_once(|| {
+            let registry = Registry::new();
+            // This registers the global static metrics.
+            // Doing this more than once would panic.
+            crate::metrics::init_queue_metrics(&registry);
+        });
+    }
 
     #[derive(Debug, Clone)]
     struct MockTask {
@@ -316,6 +330,7 @@ mod tests {
     // --- Test 1: FIFO Ordering ---
     #[tokio::test]
     async fn test_fifo_ordering() {
+        init_metrics_once();
         let (sender, worker) =
             ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 0, 100);
         let processed = Arc::new(Mutex::new(Vec::new()));
@@ -344,6 +359,7 @@ mod tests {
     // --- Test 2: Deduplication ---
     #[tokio::test]
     async fn test_deduplication() {
+        init_metrics_once();
         let (sender, _worker) =
             ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 0, 100);
 
@@ -356,6 +372,7 @@ mod tests {
     // --- Test 3: Queue Full ---
     #[tokio::test]
     async fn test_queue_full() {
+        init_metrics_once();
         let (sender, _worker) =
             ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 1, 0, 100);
 
@@ -368,6 +385,7 @@ mod tests {
     // --- Test 4: Concurrency Limit (Semaphore Logic) ---
     #[tokio::test]
     async fn test_concurrency_limit() {
+        init_metrics_once();
         // Max Parallelism = 3
         let max_parallelism = 3;
         let (sender, worker) = ReadinessSender::<MockTask>::new(
@@ -443,6 +461,7 @@ mod tests {
     // --- Test 5: Headroom / Soft Limit Logic ---
     #[tokio::test]
     async fn test_readiness_headroom() {
+        init_metrics_once();
         // Capacity = 10, Safety = 2 -> Soft Limit = 8
         let (sender, worker) =
             ReadinessSender::<MockTask>::new(ReadinessThrottlingType::UserDecrypt, 10, 2, 100);
