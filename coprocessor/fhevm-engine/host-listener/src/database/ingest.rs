@@ -137,6 +137,7 @@ pub async fn ingest_block_logs(
     }
 
     let chains = dependence_chains(
+        &block_hash,
         &mut tfhe_event_log,
         &db.dependence_chain,
         dependence_by_connexity,

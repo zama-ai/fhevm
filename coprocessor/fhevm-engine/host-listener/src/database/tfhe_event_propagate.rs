@@ -37,7 +37,7 @@ pub type ChainId = u64;
 pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
-pub type ChainHash = TransactionHash;
+pub type ChainHash = FixedBytes<32>;
 
 #[derive(Clone, Debug)]
 pub struct Chain {
