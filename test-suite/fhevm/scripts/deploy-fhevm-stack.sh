@@ -23,10 +23,55 @@ log_error() {
 PROJECT="fhevm"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+# Deployment steps registry - defines all steps in execution order
+# These names are used for --resume functionality
+DEPLOYMENT_STEPS=(
+    "minio"
+    "core"
+    "kms-signer"
+    "database"
+    "host-node"
+    "gateway-node"
+    "coprocessor"
+    "kms-connector"
+    "gateway-mocked-payment"
+    "gateway-sc"
+    "host-sc"
+    "relayer"
+    "test-suite"
+)
+
+# Helper to get index of step in DEPLOYMENT_STEPS array
+get_step_index() {
+    local step_name=$1
+    for i in "${!DEPLOYMENT_STEPS[@]}"; do
+        if [[ "${DEPLOYMENT_STEPS[$i]}" == "$step_name" ]]; then
+            echo "$i"
+            return 0
+        fi
+    done
+    echo "-1"
+    return 1
+}
+
+# Helper to check if step should be skipped (when resuming)
+should_skip_step() {
+    local current_step=$1
+    if [[ -z "$RESUME_STEP" ]]; then
+        return 1  # No resume, don't skip
+    fi
+    local resume_index=$(get_step_index "$RESUME_STEP")
+    local current_index=$(get_step_index "$current_step")
+    [[ "$current_index" -lt "$resume_index" ]]
+}
+
 # Argument Parsing
 FORCE_BUILD=false
 LOCAL_BUILD=false
+RESUME_STEP=""
+RESUME_FLAG_DETECTED=false
 NEW_ARGS=()
+
 for arg in "$@"; do
   if [[ "$arg" == "--build" ]]; then
     FORCE_BUILD=true
@@ -34,10 +79,30 @@ for arg in "$@"; do
   elif [[ "$arg" == "--local" || "$arg" == "--dev" ]]; then
     LOCAL_BUILD=true
     log_info "Local optimization option detected."
+  elif [[ "$arg" == "--resume" ]]; then
+    RESUME_FLAG_DETECTED=true
+  elif [[ "$RESUME_FLAG_DETECTED" == true ]]; then
+    RESUME_STEP="$arg"
+    RESUME_FLAG_DETECTED=false
+    # Validate step name
+    if [[ $(get_step_index "$RESUME_STEP") -eq -1 ]]; then
+      log_error "Invalid resume step: $RESUME_STEP"
+      log_error "Valid steps are: ${DEPLOYMENT_STEPS[*]}"
+      exit 1
+    fi
+    log_info "Resume mode: starting from step '$RESUME_STEP'"
   else
     NEW_ARGS+=("$arg")
   fi
 done
+
+# Check for incomplete --resume flag
+if [[ "$RESUME_FLAG_DETECTED" == true ]]; then
+  log_error "--resume requires a step name"
+  log_error "Valid steps are: ${DEPLOYMENT_STEPS[*]}"
+  exit 1
+fi
+
 # Overwrite original arguments with the filtered list (removes local flags from $@)
 set -- "${NEW_ARGS[@]}"
 
@@ -309,7 +374,12 @@ cleanup() {
     fi
 }
 
-cleanup "$@"
+# Only run cleanup if NOT in resume mode
+if [[ -z "$RESUME_STEP" ]]; then
+    cleanup "$@"
+else
+    log_info "Resume mode: skipping cleanup to preserve existing containers/volumes"
+fi
 
 prepare_all_env_files
 prepare_local_config_relayer
@@ -345,21 +415,41 @@ log_info "External Dependencies:"
 log_info "  kms-core-service:${CORE_VERSION}"
 log_info "  fhevm-relayer:${RELAYER_VERSION}"
 
-run_compose "minio" "MinIO Services" \
-    "${PROJECT}-minio:running" \
-    "${PROJECT}-minio-setup:complete"
+# Step 1: minio
+if ! should_skip_step "minio"; then
+    run_compose "minio" "MinIO Services" \
+        "${PROJECT}-minio:running" \
+        "${PROJECT}-minio-setup:complete"
+    get_minio_ip "fhevm-minio"
+else
+    log_info "Skipping step: minio (resuming from $RESUME_STEP)"
+    # Still need minio IP for coprocessor env if container is running
+    if docker ps --filter name=fhevm-minio --format "{{.Names}}" | grep -q fhevm-minio; then
+        get_minio_ip "fhevm-minio"
+    fi
+fi
 
-get_minio_ip "fhevm-minio"
+# Step 2: core
+if ! should_skip_step "core"; then
+    run_compose "core" "Core Services" "kms-core:running"
+else
+    log_info "Skipping step: core (resuming from $RESUME_STEP)"
+fi
 
-# Run KMS core service (External dependency)
-run_compose "core" "Core Services" "kms-core:running"
+# Step 3: kms-signer
+if ! should_skip_step "kms-signer"; then
+    sleep 5
+    ${SCRIPT_DIR}/setup-kms-signer-address.sh
+else
+    log_info "Skipping step: kms-signer (resuming from $RESUME_STEP)"
+fi
 
-# Setup KMS signer address used in Gateway and Host contracts
-sleep 5
-${SCRIPT_DIR}/setup-kms-signer-address.sh
-
-# Run database shared by Coprocessor and KMS connector services
-run_compose "database" "Database service" "coprocessor-and-kms-db:running"
+# Step 4: database
+if ! should_skip_step "database"; then
+    run_compose "database" "Database service" "coprocessor-and-kms-db:running"
+else
+    log_info "Skipping step: database (resuming from $RESUME_STEP)"
+fi
 
 if [ "$FORCE_BUILD" = true ]; then
     RUN_COMPOSE=run_compose_with_build
@@ -367,53 +457,92 @@ else
     RUN_COMPOSE=run_compose
 fi
 
-# Run Host and Gateway nodes
-${RUN_COMPOSE} "host-node" "Host node service" "host-node:running"
-${RUN_COMPOSE} "gateway-node" "Gateway node service" "gateway-node:running"
+# Step 5: host-node
+if ! should_skip_step "host-node"; then
+    ${RUN_COMPOSE} "host-node" "Host node service" "host-node:running"
+else
+    log_info "Skipping step: host-node (resuming from $RESUME_STEP)"
+fi
 
-# Run coprocessor services
-${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
-    "coprocessor-and-kms-db:running" \
-    "coprocessor-db-migration:complete" \
-    "coprocessor-host-listener:running" \
-    "coprocessor-gw-listener:running" \
-    "coprocessor-tfhe-worker:running" \
-    "coprocessor-zkproof-worker:running" \
-    "coprocessor-sns-worker:running" \
-    "coprocessor-transaction-sender:running"
+# Step 6: gateway-node
+if ! should_skip_step "gateway-node"; then
+    ${RUN_COMPOSE} "gateway-node" "Gateway node service" "gateway-node:running"
+else
+    log_info "Skipping step: gateway-node (resuming from $RESUME_STEP)"
+fi
 
-# Run KMS connector services
-${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
-    "coprocessor-and-kms-db:running" \
-    "kms-connector-db-migration:complete" \
-    "kms-connector-gw-listener:running" \
-    "kms-connector-kms-worker:running" \
-    "kms-connector-tx-sender:running"
+# Step 7: coprocessor
+if ! should_skip_step "coprocessor"; then
+    ${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
+        "coprocessor-and-kms-db:running" \
+        "coprocessor-db-migration:complete" \
+        "coprocessor-host-listener:running" \
+        "coprocessor-gw-listener:running" \
+        "coprocessor-tfhe-worker:running" \
+        "coprocessor-zkproof-worker:running" \
+        "coprocessor-sns-worker:running" \
+        "coprocessor-transaction-sender:running"
+else
+    log_info "Skipping step: coprocessor (resuming from $RESUME_STEP)"
+fi
 
-# Setup mocked payment contracts and set the relayer with the needed funding and allowances
-${RUN_COMPOSE} "gateway-mocked-payment" "Gateway mocked payment" \
-    "gateway-deploy-mocked-zama-oft:complete" \
-    "gateway-set-relayer-mocked-payment:complete" \
+# Step 8: kms-connector
+if ! should_skip_step "kms-connector"; then
+    ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
+        "coprocessor-and-kms-db:running" \
+        "kms-connector-db-migration:complete" \
+        "kms-connector-gw-listener:running" \
+        "kms-connector-kms-worker:running" \
+        "kms-connector-tx-sender:running"
+else
+    log_info "Skipping step: kms-connector (resuming from $RESUME_STEP)"
+fi
 
+# Step 9: gateway-mocked-payment
+if ! should_skip_step "gateway-mocked-payment"; then
+    ${RUN_COMPOSE} "gateway-mocked-payment" "Gateway mocked payment" \
+        "gateway-deploy-mocked-zama-oft:complete" \
+        "gateway-set-relayer-mocked-payment:complete"
+else
+    log_info "Skipping step: gateway-mocked-payment (resuming from $RESUME_STEP)"
+fi
+
+# Step 10: gateway-sc
 # Setup Gateway contracts, which will trigger the KMS materials generation. Note
 # that the key generation may take a few seconds to complete, meaning that executing
 # the e2e tests too soon may fail if the materials are not ready. Hence, the following
 # setup is placed here to favor proper sequencing.
-${RUN_COMPOSE} "gateway-sc" "Gateway contracts" \
-    "gateway-sc-deploy:complete" \
-    "gateway-sc-add-network:complete" \
-    "gateway-sc-trigger-keygen:complete" \
-    "gateway-sc-trigger-crsgen:complete" \
-    "gateway-sc-add-pausers:complete"
+if ! should_skip_step "gateway-sc"; then
+    ${RUN_COMPOSE} "gateway-sc" "Gateway contracts" \
+        "gateway-sc-deploy:complete" \
+        "gateway-sc-add-network:complete" \
+        "gateway-sc-trigger-keygen:complete" \
+        "gateway-sc-trigger-crsgen:complete" \
+        "gateway-sc-add-pausers:complete"
+else
+    log_info "Skipping step: gateway-sc (resuming from $RESUME_STEP)"
+fi
 
-# Setup Host contracts
-${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
+# Step 11: host-sc
+if ! should_skip_step "host-sc"; then
+    ${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
+else
+    log_info "Skipping step: host-sc (resuming from $RESUME_STEP)"
+fi
 
-# Run Relayer (External dependency)
-${RUN_COMPOSE} "relayer" "Relayer Services" \
-    "${PROJECT}-relayer:running"
+# Step 12: relayer
+if ! should_skip_step "relayer"; then
+    ${RUN_COMPOSE} "relayer" "Relayer Services" \
+        "${PROJECT}-relayer:running"
+else
+    log_info "Skipping step: relayer (resuming from $RESUME_STEP)"
+fi
 
-# Run Test Suite container
-${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
+# Step 13: test-suite
+if ! should_skip_step "test-suite"; then
+    ${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
+else
+    log_info "Skipping step: test-suite (resuming from $RESUME_STEP)"
+fi
 
 log_info "All services started successfully!"
