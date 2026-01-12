@@ -18,10 +18,6 @@ pub struct Args {
     #[arg(long, default_value_t = 4)]
     pub work_items_batch_size: u32,
 
-    /// Garbage collection batch size
-    #[arg(long, default_value_t = 80)]
-    pub gc_batch_size: u32,
-
     /// NOTIFY/LISTEN channels for database that the worker listen to
     #[arg(long, num_args(1..))]
     pub pg_listen_channels: Vec<String>,
@@ -88,8 +84,14 @@ pub struct Args {
     #[arg(long, default_value = "120s", value_parser = parse_duration)]
     pub s3_regular_recheck_duration: Duration,
 
-    #[arg(long, default_value = "120s", value_parser = parse_duration)]
+    #[arg(long, default_value = "15min", value_parser = parse_duration)]
     pub cleanup_interval: Duration,
+
+    /// Garbage collection batch size
+    /// Number of ciphertext128 to delete in one GC cycle
+    /// To disable GC set this value to 0
+    #[arg(long, default_value_t = 1000)]
+    pub gc_batch_size: u32,
 
     #[arg(
         long,

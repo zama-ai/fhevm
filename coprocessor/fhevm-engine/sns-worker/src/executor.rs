@@ -275,29 +275,51 @@ pub(crate) async fn run_loop(
     }
 }
 
-// Clean up the database by removing old ciphertexts128 already uploaded to S3.
+/// Clean up the database by removing old ciphertexts128 already uploaded to S3.
+/// Ideally, the table will be cleaned up by txn-sender if it's working properly
 pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionError> {
+    if limit == 0 {
+        // GC disabled
+        return Ok(());
+    }
+
+    let count: Option<i64> = sqlx::query_scalar!(
+        "
+        SELECT COUNT(*)::BIGINT
+        FROM ciphertexts128
+        "
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let count = count.unwrap_or(0);
+    if count <= limit as i64 {
+        // Avoid unnecessary cleanup when there are not too many rows
+        return Ok(());
+    }
+
+    info!(count, "Starting garbage collection of ciphertexts128");
+
     // Limit the number of rows to update in case of a large backlog due to catchup or burst
     // Skip Locked to prevent concurrent updates
     let start = SystemTime::now();
     let rows_affected: u64 = sqlx::query!(
         "
-        WITH to_update AS (
-            SELECT c.ctid
-            FROM ciphertexts c
+        WITH uploaded_ct128 AS (
+            SELECT c.tenant_id, c.handle
+            FROM ciphertexts128 c
             JOIN ciphertext_digest d
             ON d.tenant_id = c.tenant_id
             AND d.handle = c.handle
-            WHERE c.ciphertext128 IS NOT NULL
-            AND d.ciphertext128 IS NOT NULL
-            ORDER BY c.created_at
-            FOR UPDATE SKIP LOCKED
-            LIMIT $1::INT
+            WHERE d.ciphertext128 IS NOT NULL
+            FOR UPDATE OF c SKIP LOCKED
+            LIMIT $1
         )
 
-        UPDATE ciphertexts
-            SET ciphertext128 = NULL
-            WHERE ctid IN (SELECT ctid FROM to_update);
+        DELETE FROM ciphertexts128 c
+        USING uploaded_ct128 r
+        WHERE c.tenant_id = r.tenant_id
+        AND c.handle = r.handle;
         ",
         limit as i32
     )
@@ -359,6 +381,7 @@ async fn fetch_and_execute_sns_tasks(
         update_computations_status(trx, &tasks).await?;
 
         let s = t.child_span("batch_store_ciphertext128");
+
         update_ciphertext128(trx, &tasks).await?;
         notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
 
@@ -596,10 +619,6 @@ fn compute_task(
 /// The ct128 is temporarily stored in PostgresDB to ensure reliability.
 /// After the AWS uploader successfully uploads the ct128 to S3, the ct128 blob
 /// is deleted from Postgres.
-///
-/// The assumption for now is that the DB insertion is faster and more reliable
-/// than the S3 upload. Later on, the DB insertion of ct128 might be removed
-/// completely.
 async fn update_ciphertext128(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
@@ -607,17 +626,18 @@ async fn update_ciphertext128(
     for task in tasks {
         if !task.ct128.is_empty() {
             let ciphertext128 = task.ct128.bytes();
-            let s = task.otel.child_span("ct128_db_insert");
-
-            // Insert the ciphertext128 into the database for reliability
-            // Later on, we clean up all uploaded ct128
+            let s = task.otel.child_span("ciphertexts128_insert");
             let res = sqlx::query!(
                 "
-                    UPDATE ciphertexts
-                    SET ciphertext128 = $1
-                    WHERE handle = $2;",
+                INSERT INTO ciphertexts128 (
+                        tenant_id,
+                        handle,
+                        ciphertext
+                )
+                VALUES ($1, $2, $3)",
+                task.tenant_id,
+                task.handle,
                 ciphertext128,
-                task.handle
             )
             .execute(db_txn.as_mut())
             .await;
@@ -627,22 +647,21 @@ async fn update_ciphertext128(
                     info!(
                         handle = compact_hex(&task.handle),
                         query_res = format!("{:?}", val),
-                        "Inserted ct128 in DB"
+                        size = ciphertext128.len(),
+                        "Persisted ct128 successfully"
                     );
                     telemetry::end_span(s);
                 }
                 Err(err) => {
-                    error!( handle = ?task.handle, error = %err, "Failed to insert ct128 in DB");
+                    error!( handle = compact_hex(&task.handle), error = %err, "Failed to persist ct128");
                     telemetry::end_span_with_err(s, err.to_string());
                     // Although this is a single error, we drop the entire batch to be on the safe side
                     // This will ensure we will not mark a task as completed falsely
                     return Err(err.into());
                 }
             }
-
-            // Notify add_ciphertexts
         } else {
-            error!( handle = ?task.handle, "Large ciphertext not computed for task");
+            error!(handle = compact_hex(&task.handle), "ct128 not computed");
         }
     }
 
