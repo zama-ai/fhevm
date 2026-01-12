@@ -6,6 +6,9 @@ import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20P
 
 contract ERC20Mock is ERC1363, ERC20Permit {
     uint8 private immutable _decimals;
+    uint256 public constant MAX_MINT_AMOUNT_TOKENS = 1_000_000;
+
+    error MintAmountExceedsMax(uint256 amount, uint256 maxAmount);
 
     constructor(string memory name_, string memory symbol_, uint8 decimals_) ERC20(name_, symbol_) ERC20Permit(name_) {
         _decimals = decimals_;
@@ -16,6 +19,10 @@ contract ERC20Mock is ERC1363, ERC20Permit {
     }
 
     function mint(address to, uint256 amount) public virtual {
+        uint256 maxMintAmount = MAX_MINT_AMOUNT_TOKENS * 10 ** _decimals;
+        if (amount > maxMintAmount) {
+            revert MintAmountExceedsMax(amount, maxMintAmount);
+        }
         _mint(to, amount);
     }
 }
