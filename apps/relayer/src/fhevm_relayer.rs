@@ -191,6 +191,7 @@ fn ensure_global_init(settings: &Settings) -> eyre::Result<&'static Registry> {
         metrics::init_transaction_metrics(&registry, settings.metrics.clone());
         metrics::init_statuses_metrics(&registry, settings.metrics.clone());
         metrics::init_db_metrics(&registry, settings.metrics.clone());
+        metrics::init_queue_metrics(&registry);
 
         registry
     });
