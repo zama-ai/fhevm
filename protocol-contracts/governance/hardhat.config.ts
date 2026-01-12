@@ -14,6 +14,7 @@ import { HardhatUserConfig, HttpNetworkAccountsUserConfig } from 'hardhat/types'
 import { EndpointId } from '@layerzerolabs/lz-definitions'
 
 import './tasks/getLZOptions'
+import './tasks/getSafeOwnerChangeArgs'
 import './tasks/sendRemoteProposal'
 import './tasks/setAdminSafeModule'
 
