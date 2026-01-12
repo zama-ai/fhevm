@@ -14,7 +14,7 @@ use connector_utils::{
     tasks::default_task_limit,
 };
 use serde::{Deserialize, Deserializer, Serialize};
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, str::FromStr, time::Duration};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -90,7 +90,7 @@ pub struct Config {
 
     /// Optional host chain RPC endpoints (used for direct ACL checks).
     #[serde(default)]
-    pub host_chain_urls: Vec<HostChainRpcConfig>,
+    pub host_chain_urls: HashMap<String, HostChainRpcConfig>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -164,7 +164,7 @@ impl Default for Config {
             healthcheck_timeout: default_healthcheck_timeout(),
             signer_address: Address::ZERO,
             share_index: default_share_index(),
-            host_chain_urls: vec![],
+            host_chain_urls: HashMap::new(),
         }
     }
 }
