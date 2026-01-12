@@ -253,7 +253,7 @@ Request:
 
 ```json
 {
-  "name": "tx_throttler_per_secs",
+  "name": "input_proof_throttler_tps",
   "value": 50
 }
 ```
@@ -262,14 +262,17 @@ Response (Success):
 
 ```json
 {
-  "name": "tx_throttler_per_secs",
+  "name": "input_proof_throttler_tps",
   "value": 50,
   "message": "Configuration updated successfully"
 }
 ```
 
 **Supported Parameters:**
-- `tx_throttler_per_secs`: Transaction throttler rate limit (0 < TPS <= 1000)
+
+- `input_proof_throttler_tps`: Input proof Transaction throttler rate limit (0 < TPS <= 1000)
+- `user_decrypt_throttler_tps`: User Decrypt Transaction throttler rate limit (0 < TPS <= 1000)
+- `public_decrypt_throttler_tps`: Public Decrypt Transaction throttler rate limit (0 < TPS <= 1000)
 
 **Production Note:** Authentication and rate limiting should be handled by Kong/API Gateway.
 
@@ -325,12 +328,12 @@ This application provides observability through structured metrics and tracing.
 
 ### fhevm Events and transactions
 
-| Metric Name                                 | Labels             | Description                                                                   |
-| -------------------------------------------- | ------------------ | ----------------------------------------------------------------------------- |
-| `relayer_fhevm_events_total`                 | `event_type`       | Count of events from fhevm blockchain, by type                                |
-| `relayer_fhevm_tx_total`                     | `status`, `sender` | Count of transactions sent to fhevm blockchain                                |
-| `relayer_fhevm_pending_tx`                   |                    | Dynamic Count of transactions sent to fhevm blockchain requiring confirmation |
-| `relayer_fhevm_tx_confirmation_seconds`      | `status`, `sender` | Histogram of transaction confirmation times (seconds) on fhevm blockchain     |
+| Metric Name                             | Labels             | Description                                                                   |
+| --------------------------------------- | ------------------ | ----------------------------------------------------------------------------- |
+| `relayer_fhevm_events_total`            | `event_type`       | Count of events from fhevm blockchain, by type                                |
+| `relayer_fhevm_tx_total`                | `status`, `sender` | Count of transactions sent to fhevm blockchain                                |
+| `relayer_fhevm_pending_tx`              |                    | Dynamic Count of transactions sent to fhevm blockchain requiring confirmation |
+| `relayer_fhevm_tx_confirmation_seconds` | `status`, `sender` | Histogram of transaction confirmation times (seconds) on fhevm blockchain     |
 
 **Labels:**
 
@@ -348,12 +351,12 @@ relayer_fhevm_events{event_type="public_decrypt_request"} 17
 
 ### Gateway Events and transactions
 
-| Metric Name                                    | Labels                            | Description                                                                     |
-| ----------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------- |
-| `relayer_gateway_events_total`                  | `event_type`, `request_id_status` | Count of gateway events by type and ID match                                    |
-| `relayer_gateway_tx_total`                      | `status`, `sender`                | Count of transactions sent to gateway blockchain                                |
-| `relayer_gateway_pending_tx`                    |                                   | Dynamic Count of transactions sent to gateway blockchain requiring confirmation |
-| `relayer_gateway_tx_confirmation_seconds`       | `status`, `sender`                | Histogram of transaction confirmation times (seconds) on gateway blockchain     |
+| Metric Name                               | Labels                            | Description                                                                     |
+| ----------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------- |
+| `relayer_gateway_events_total`            | `event_type`, `request_id_status` | Count of gateway events by type and ID match                                    |
+| `relayer_gateway_tx_total`                | `status`, `sender`                | Count of transactions sent to gateway blockchain                                |
+| `relayer_gateway_pending_tx`              |                                   | Dynamic Count of transactions sent to gateway blockchain requiring confirmation |
+| `relayer_gateway_tx_confirmation_seconds` | `status`, `sender`                | Histogram of transaction confirmation times (seconds) on gateway blockchain     |
 
 **Labels:**
 

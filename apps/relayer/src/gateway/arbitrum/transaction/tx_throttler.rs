@@ -11,6 +11,55 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info, instrument, warn};
 
+pub struct TxThrottlers {
+    pub input_proof_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+    pub input_proof_tx_worker: TxThrottlingWorker<GatewayTxTask>,
+    pub user_decrypt_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+    pub user_decrypt_tx_worker: TxThrottlingWorker<GatewayTxTask>,
+    pub public_decrypt_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+    pub public_decrypt_tx_worker: TxThrottlingWorker<GatewayTxTask>,
+}
+
+impl TxThrottlers {
+    pub fn new(
+        input_proof_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+        input_proof_tx_worker: TxThrottlingWorker<GatewayTxTask>,
+        user_decrypt_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+        user_decrypt_tx_worker: TxThrottlingWorker<GatewayTxTask>,
+        public_decrypt_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+        public_decrypt_tx_worker: TxThrottlingWorker<GatewayTxTask>,
+    ) -> Self {
+        Self {
+            input_proof_tx_throttler,
+            input_proof_tx_worker,
+            user_decrypt_tx_throttler,
+            user_decrypt_tx_worker,
+            public_decrypt_tx_throttler,
+            public_decrypt_tx_worker,
+        }
+    }
+}
+
+pub struct TxSenders {
+    pub input_proof_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+    pub user_decrypt_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+    pub public_decrypt_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+}
+
+impl TxSenders {
+    pub fn new(
+        input_proof_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+        user_decrypt_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+        public_decrypt_tx_throttler: TxThrottlingSender<GatewayTxTask>,
+    ) -> Self {
+        Self {
+            input_proof_tx_throttler,
+            user_decrypt_tx_throttler,
+            public_decrypt_tx_throttler,
+        }
+    }
+}
+
 // DOMAIN TYPES
 #[derive(Clone)]
 pub struct DynTxHook(pub Arc<dyn TxLifecycleHooks>);
@@ -51,7 +100,7 @@ pub trait MemoryThrottlerItem: Send + Sync + 'static + std::fmt::Debug {
 
 /// The Producer Handle.
 #[derive(Clone)]
-pub struct ThrottlingSender<T> {
+pub struct TxThrottlingSender<T> {
     // Bounded Channel carrying the Payload T
     sender: mpsc::Sender<T>,
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
@@ -60,7 +109,7 @@ pub struct ThrottlingSender<T> {
 
 // NOTE: There must be at least one instance of this and hence the reciever for the queue channel to stay alive.
 /// The Background Worker.
-pub struct ThrottlingWorker<T> {
+pub struct TxThrottlingWorker<T> {
     receiver: mpsc::Receiver<T>,
     // Shared reference to the same tracker to remove items when processed
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
@@ -69,7 +118,7 @@ pub struct ThrottlingWorker<T> {
     control_rx: Option<mpsc::Receiver<u32>>,
 }
 
-impl<T> ThrottlingSender<T>
+impl<T> TxThrottlingSender<T>
 where
     T: MemoryThrottlerItem + Send + Sync + 'static,
 {
@@ -78,7 +127,7 @@ where
         capacity_safety_margin: usize,
         tps: u32,
         enable_dynamic_rate_limiting: bool,
-    ) -> (Self, ThrottlingWorker<T>, Option<mpsc::Sender<u32>>) {
+    ) -> (Self, TxThrottlingWorker<T>, Option<mpsc::Sender<u32>>) {
         let (sender, receiver) = mpsc::channel(capacity);
         let tracker = Arc::new(RwLock::new(IndexMap::new()));
         // The safety margin (Headroom). is_queue_full returns true when (capacity - capacity_safety_margin) is reached.
@@ -99,7 +148,7 @@ where
             soft_capacity,
         };
 
-        let worker = ThrottlingWorker {
+        let worker = TxThrottlingWorker {
             receiver,
             tracker,
             tps,
@@ -178,7 +227,7 @@ where
     }
 }
 
-impl<T> ThrottlingWorker<T>
+impl<T> TxThrottlingWorker<T>
 where
     T: MemoryThrottlerItem + Send + Sync + 'static,
 {
@@ -283,7 +332,8 @@ mod tests {
     // --- Test 1: FIFO Ordering & Tracking ---
     #[tokio::test]
     async fn test_fifo_ordering() {
-        let (throttler, worker, _control_tx) = ThrottlingSender::<MockTask>::new(10, 0, 100, false);
+        let (throttler, worker, _control_tx) =
+            TxThrottlingSender::<MockTask>::new(10, 0, 100, false);
         let processed = Arc::new(Mutex::new(Vec::new()));
         let processed_clone = processed.clone();
 
@@ -311,7 +361,7 @@ mod tests {
     #[tokio::test]
     async fn test_deduplication() {
         let (throttler, _worker, _control_tx) =
-            ThrottlingSender::<MockTask>::new(10, 0, 100, false);
+            TxThrottlingSender::<MockTask>::new(10, 0, 100, false);
 
         throttler.push(MockTask { id: "A".into() }).await.unwrap();
 
@@ -325,7 +375,8 @@ mod tests {
     #[tokio::test]
     async fn test_queue_full() {
         // Capacity = 1
-        let (throttler, _worker, _control_tx) = ThrottlingSender::<MockTask>::new(1, 0, 100, false);
+        let (throttler, _worker, _control_tx) =
+            TxThrottlingSender::<MockTask>::new(1, 0, 100, false);
 
         // 1. Push OK
         assert!(throttler.push(MockTask { id: "1".into() }).await.is_ok());
@@ -347,7 +398,7 @@ mod tests {
     #[tokio::test]
     async fn test_position_tracking() {
         // Very slow rate (1 TPS) to ensure items stay in queue
-        let (throttler, worker, _control_tx) = ThrottlingSender::<MockTask>::new(10, 0, 1, false);
+        let (throttler, worker, _control_tx) = TxThrottlingSender::<MockTask>::new(10, 0, 1, false);
 
         throttler.push(MockTask { id: "A".into() }).await.unwrap();
         throttler.push(MockTask { id: "B".into() }).await.unwrap();
@@ -378,7 +429,8 @@ mod tests {
     async fn test_position_tracking_deterministic() {
         // 1. Setup Throttler (Worker NOT spawned yet)
         // Capacity 10 allows us to push multiple items without blocking/failing
-        let (throttler, worker, _control_tx) = ThrottlingSender::<MockTask>::new(10, 0, 50, false);
+        let (throttler, worker, _control_tx) =
+            TxThrottlingSender::<MockTask>::new(10, 0, 50, false);
 
         // 2. Push items
         // Since the worker isn't running, these sit in the Channel and the Tracker.
@@ -421,7 +473,7 @@ mod tests {
         // Total expected time: ~1.0 second.
         let tps = 10;
         let (throttler, worker, _control_tx) =
-            ThrottlingSender::<MockTask>::new(100, 0, tps, false);
+            TxThrottlingSender::<MockTask>::new(100, 0, tps, false);
         let processed_count = Arc::new(AtomicUsize::new(0));
         let counter = processed_count.clone();
 
@@ -476,7 +528,7 @@ mod tests {
         let tps = 20;
         // Capacity large enough to hold the blast so we don't get "Queue Full" errors during setup
         let (throttler, worker, _control_tx) =
-            ThrottlingSender::<MockTask>::new(200, 0, tps, false);
+            TxThrottlingSender::<MockTask>::new(200, 0, tps, false);
         let processed_count = Arc::new(AtomicUsize::new(0));
         let counter = processed_count.clone();
 
@@ -530,7 +582,7 @@ mod tests {
     #[tokio::test]
     async fn test_cloning_shares_state() {
         let (throttler_1, worker, _control_tx) =
-            ThrottlingSender::<MockTask>::new(10, 0, 100, false);
+            TxThrottlingSender::<MockTask>::new(10, 0, 100, false);
 
         // Clone it (Creating a second producer handle)
         let throttler_2 = throttler_1.clone();
@@ -561,7 +613,8 @@ mod tests {
         // Buffer = 2
         // Soft Limit = 8
         // TPS = 100 (irrelevant as we don't start worker immediately)
-        let (throttler, worker, _control_tx) = ThrottlingSender::<MockTask>::new(10, 2, 100, false);
+        let (throttler, worker, _control_tx) =
+            TxThrottlingSender::<MockTask>::new(10, 2, 100, false);
 
         // 1. Fill up to Soft Limit (8 items)
         for i in 0..8 {

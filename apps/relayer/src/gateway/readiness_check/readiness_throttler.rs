@@ -9,6 +9,46 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock, Semaphore};
 use tracing::{error, info, instrument, warn};
 
+pub struct ReadinessThrottlers {
+    pub user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+    pub user_decrypt_readiness_worker: ReadinessWorker<UserDecryptReadinessTask>,
+    pub public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+    pub public_decrypt_readiness_worker: ReadinessWorker<PublicDecryptReadinessTask>,
+}
+
+impl ReadinessThrottlers {
+    pub fn new(
+        user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+        user_decrypt_readiness_worker: ReadinessWorker<UserDecryptReadinessTask>,
+        public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+        public_decrypt_readiness_worker: ReadinessWorker<PublicDecryptReadinessTask>,
+    ) -> Self {
+        Self {
+            user_decrypt_readiness_throttler,
+            user_decrypt_readiness_worker,
+            public_decrypt_readiness_throttler,
+            public_decrypt_readiness_worker,
+        }
+    }
+}
+
+pub struct ReadinessSenders {
+    pub user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+    pub public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+}
+
+impl ReadinessSenders {
+    pub fn new(
+        user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+        public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
+    ) -> Self {
+        Self {
+            user_decrypt_readiness_throttler,
+            public_decrypt_readiness_throttler,
+        }
+    }
+}
+
 pub trait ReadinessItem: Send + Sync + 'static + std::fmt::Debug {
     fn get_id(&self) -> String;
 }

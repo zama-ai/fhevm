@@ -22,9 +22,20 @@ pub struct GatewayConfig {
 impl GatewayConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         self.blockchain_rpc.validate()?;
-        self.tx_engine.validate()?;
         self.readiness_checker.public_decrypt.validate()?;
         self.readiness_checker.user_decrypt.validate()?;
+        self.tx_engine
+            .tx_throttlers
+            .input_proof
+            .validate("input proof")?;
+        self.tx_engine
+            .tx_throttlers
+            .user_decrypt
+            .validate("user decrypt")?;
+        self.tx_engine
+            .tx_throttlers
+            .public_decrypt
+            .validate("public decrypt")?;
         Ok(())
     }
 }
@@ -87,30 +98,43 @@ pub struct TxEngineConfig {
     pub private_key: String,
     pub max_concurrency: u16,
     pub retry: RetrySettings,
-    pub tx_throttler_per_secs: u32,
-    pub tx_throttler_capacity: usize,
-    pub tx_throttler_safety_margin: usize,
+    pub tx_throttlers: TxThrottlersConfig,
 }
 
-impl TxEngineConfig {
-    pub fn validate(&self) -> Result<(), AppConfigError> {
-        if self.tx_throttler_capacity == 0 {
+#[derive(Debug, Deserialize, Clone)]
+pub struct TxThrottlersConfig {
+    pub input_proof: TxThrottlingConfig,
+    pub public_decrypt: TxThrottlingConfig,
+    pub user_decrypt: TxThrottlingConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct TxThrottlingConfig {
+    pub per_seconds: u32,
+    pub capacity: usize,
+    pub safety_margin: usize,
+}
+
+impl TxThrottlingConfig {
+    pub fn validate(&self, name: &str) -> Result<(), AppConfigError> {
+        if self.capacity == 0 {
             return Err(AppConfigError::Config(format!(
-                "Tx throttler capacity should be superior to 0: {}",
-                self.tx_throttler_capacity
+                "Tx throttler {} capacity should be superior to 0: {}",
+                name, self.capacity
             )));
         }
-        if self.tx_throttler_safety_margin >= self.tx_throttler_capacity {
+        if self.safety_margin >= self.capacity {
             return Err(AppConfigError::Config(format!(
-                "Tx throttler safety margin should be inferior strictly to capacity: cap:{}, margin:{}",
-                self.tx_throttler_capacity,
-                self.tx_throttler_safety_margin,
+                "Tx throttler {} safety margin should be inferior strictly to capacity: cap:{}, margin:{}",
+                name,
+                self.capacity,
+                self.safety_margin,
             )));
         }
-        if self.tx_throttler_per_secs == 0 {
+        if self.per_seconds == 0 {
             return Err(AppConfigError::Config(format!(
-                "Tx throttler drain capacity should be superior to 0: {}",
-                self.tx_throttler_per_secs
+                "Tx throttler {} drain capacity should be superior to 0: {}",
+                name, self.per_seconds
             )));
         }
         Ok(())

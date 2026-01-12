@@ -5,7 +5,7 @@ use crate::{
     },
     gateway::arbitrum::transaction::{
         helper::{TransactionHelper, TransactionType},
-        throttler::{GatewayTxTask, ThrottlingWorker},
+        tx_throttler::{GatewayTxTask, TxThrottlingWorker},
     },
     orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
 };
@@ -21,7 +21,7 @@ impl GatewayTxProcessor {
     /// It registers with the Orchestrator so it starts/stops cleanly with the application.
     /// It delegates the infinite loop logic to `throttler.run_consumer`.
     pub async fn orchestrator_spawn_task(
-        throttler_worker: ThrottlingWorker<GatewayTxTask>,
+        throttler_worker: TxThrottlingWorker<GatewayTxTask>,
         tx_helper: Arc<TransactionHelper>,
         orchestrator: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     ) -> anyhow::Result<()> {

@@ -12,7 +12,7 @@ use crate::{
         bindings::InputVerification,
         transaction::{
             helper::{TransactionHelper, TransactionType, TxResult},
-            throttler::{DynTxHook, GatewayTxTask, ThrottlingSender},
+            tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
             TxLifecycleHooks,
         },
         ComputeCalldata,
@@ -35,7 +35,7 @@ use tracing::{error, info, instrument, warn};
 #[derive(Clone)]
 pub struct InputProofGatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    tx_throttler: ThrottlingSender<GatewayTxTask>,
+    tx_throttler: TxThrottlingSender<GatewayTxTask>,
     contracts: ContractConfig,
     input_proof_repo: Arc<InputProofRepository>,
 }
@@ -43,7 +43,7 @@ pub struct InputProofGatewayHandler {
 impl InputProofGatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        tx_throttler: ThrottlingSender<GatewayTxTask>,
+        tx_throttler: TxThrottlingSender<GatewayTxTask>,
         contracts: ContractConfig,
         input_proof_repo: Arc<InputProofRepository>,
     ) -> Arc<Self> {

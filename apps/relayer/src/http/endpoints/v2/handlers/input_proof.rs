@@ -10,7 +10,7 @@ use crate::core::event::{
     ApiVersion, InputProofEventData, InputProofRequest, RelayerEvent, RelayerEventData,
 };
 use crate::core::job_id::JobId;
-use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
+use crate::gateway::arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender};
 use crate::http::endpoints::v1::types::input_proof::InputProofRequestJson;
 use crate::http::utils::bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
@@ -43,7 +43,7 @@ where
     api_version: ApiVersion,
     input_proof_repo: Arc<InputProofRepository>,
     retry_after_seconds: u32,
-    tx_throttler: ThrottlingSender<GatewayTxTask>,
+    tx_throttler: TxThrottlingSender<GatewayTxTask>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
@@ -54,7 +54,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         api_version: ApiVersion,
         input_proof_repo: Arc<InputProofRepository>,
         retry_after_seconds: u32,
-        tx_throttler: ThrottlingSender<GatewayTxTask>,
+        tx_throttler: TxThrottlingSender<GatewayTxTask>,
     ) -> Self {
         Self {
             orchestrator,

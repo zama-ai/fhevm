@@ -10,7 +10,7 @@ use crate::core::event::{
     ApiVersion, PublicDecryptEventData, PublicDecryptRequest, RelayerEvent, RelayerEventData,
 };
 use crate::core::job_id::JobId;
-use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
+use crate::gateway::arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender};
 use crate::gateway::readiness_check::readiness_throttler::{
     PublicDecryptReadinessTask, ReadinessSender,
 };
@@ -46,7 +46,7 @@ where
     api_version: ApiVersion,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
     retry_after_seconds: u32,
-    tx_throttler: ThrottlingSender<GatewayTxTask>,
+    tx_throttler: TxThrottlingSender<GatewayTxTask>,
     public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
 }
 
@@ -58,7 +58,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         api_version: ApiVersion,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
         retry_after_seconds: u32,
-        tx_throttler: ThrottlingSender<GatewayTxTask>,
+        tx_throttler: TxThrottlingSender<GatewayTxTask>,
         public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
     ) -> Self {
         Self {

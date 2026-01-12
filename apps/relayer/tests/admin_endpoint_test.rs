@@ -28,7 +28,7 @@ async fn test_admin_endpoint_disabled_returns_403() {
     let response = client
         .post(&url)
         .json(&json!({
-            "name": "tx_throttler_per_secs",
+            "name": "input_proof_throttler_tps",
             "value": 50
         }))
         .send()
@@ -45,7 +45,7 @@ async fn test_admin_endpoint_disabled_returns_403() {
 /// Test admin endpoint successfully updates TPS when enabled
 #[rstest]
 #[tokio::test]
-async fn test_admin_endpoint_enabled_valid_tps() {
+async fn test_admin_endpoint_enabled_valid_input_proof_tps() {
     let setup = TestSetup::new_with_admin_endpoint()
         .await
         .expect("Failed to create test setup with admin endpoint");
@@ -55,7 +55,7 @@ async fn test_admin_endpoint_enabled_valid_tps() {
     let response = client
         .post(&url)
         .json(&json!({
-            "name": "tx_throttler_per_secs",
+            "name": "input_proof_throttler_tps",
             "value": 50
         }))
         .send()
@@ -64,7 +64,63 @@ async fn test_admin_endpoint_enabled_valid_tps() {
 
     assert_eq!(response.status(), 200); // OK
     let body: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(body["name"], "tx_throttler_per_secs");
+    assert_eq!(body["name"], "input_proof_throttler_tps");
+    assert_eq!(body["value"], 50);
+    assert!(body["message"].as_str().unwrap().contains("successfully"));
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_admin_endpoint_enabled_valid_user_decrypt_tps() {
+    let setup = TestSetup::new_with_admin_endpoint()
+        .await
+        .expect("Failed to create test setup with admin endpoint");
+    let url = helpers::admin_config_url(&setup);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .json(&json!({
+            "name": "user_decrypt_throttler_tps",
+            "value": 50
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200); // OK
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["name"], "user_decrypt_throttler_tps");
+    assert_eq!(body["value"], 50);
+    assert!(body["message"].as_str().unwrap().contains("successfully"));
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_admin_endpoint_enabled_valid_public_decrypt_tps() {
+    let setup = TestSetup::new_with_admin_endpoint()
+        .await
+        .expect("Failed to create test setup with admin endpoint");
+    let url = helpers::admin_config_url(&setup);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .json(&json!({
+            "name": "public_decrypt_throttler_tps",
+            "value": 50
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200); // OK
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["name"], "public_decrypt_throttler_tps");
     assert_eq!(body["value"], 50);
     assert!(body["message"].as_str().unwrap().contains("successfully"));
 
@@ -84,7 +140,7 @@ async fn test_admin_endpoint_invalid_tps_zero() {
     let response = client
         .post(&url)
         .json(&json!({
-            "name": "tx_throttler_per_secs",
+            "name": "input_proof_throttler_tps",
             "value": 0
         }))
         .send()
@@ -111,7 +167,7 @@ async fn test_admin_endpoint_invalid_tps_over_1000() {
     let response = client
         .post(&url)
         .json(&json!({
-            "name": "tx_throttler_per_secs",
+            "name": "input_proof_throttler_tps",
             "value": 1001
         }))
         .send()
@@ -173,7 +229,7 @@ async fn test_admin_endpoint_valid_tps_boundaries() {
     let response = client
         .post(&url)
         .json(&json!({
-            "name": "tx_throttler_per_secs",
+            "name": "input_proof_throttler_tps",
             "value": 1
         }))
         .send()
@@ -185,7 +241,7 @@ async fn test_admin_endpoint_valid_tps_boundaries() {
     let response = client
         .post(&url)
         .json(&json!({
-            "name": "tx_throttler_per_secs",
+            "name": "input_proof_throttler_tps",
             "value": 1000
         }))
         .send()

@@ -13,15 +13,11 @@ pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 
 use crate::config::settings::Settings;
 use crate::core::event::RelayerEvent;
-use crate::gateway::arbitrum::transaction::processor::GatewayTxProcessor;
-use crate::gateway::arbitrum::transaction::throttler::{
-    GatewayTxTask, ThrottlingSender, ThrottlingWorker,
-};
+use crate::gateway::arbitrum::transaction::tx_processor::GatewayTxProcessor;
+use crate::gateway::arbitrum::transaction::tx_throttler::TxThrottlers;
 use crate::gateway::readiness_check::public_decrypt_processor::PublicDecryptReadinessProcessor;
 use crate::gateway::readiness_check::readiness_checker::ReadinessChecker;
-use crate::gateway::readiness_check::readiness_throttler::{
-    PublicDecryptReadinessTask, ReadinessSender, ReadinessWorker, UserDecryptReadinessTask,
-};
+use crate::gateway::readiness_check::readiness_throttler::ReadinessThrottlers;
 use crate::gateway::readiness_check::user_decrypt_processor::UserDecryptReadinessProcessor;
 use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
 use crate::store::sql::repositories::Repositories;
@@ -37,30 +33,15 @@ use std::{str::FromStr, sync::Arc};
 use tracing::{error, info};
 
 pub struct GatewayThrottler {
-    pub tx_throttler: ThrottlingSender<GatewayTxTask>,
-    pub tx_worker: ThrottlingWorker<GatewayTxTask>,
-    pub public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
-    pub public_decrypt_readiness_worker: ReadinessWorker<PublicDecryptReadinessTask>,
-    pub user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-    pub user_decrypt_readiness_worker: ReadinessWorker<UserDecryptReadinessTask>,
+    pub tx_throttlers: TxThrottlers,
+    pub readiness_throttlers: ReadinessThrottlers,
 }
 
 impl GatewayThrottler {
-    pub fn new(
-        tx_throttler: ThrottlingSender<GatewayTxTask>,
-        tx_worker: ThrottlingWorker<GatewayTxTask>,
-        public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
-        public_decrypt_readiness_worker: ReadinessWorker<PublicDecryptReadinessTask>,
-        user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
-        user_decrypt_readiness_worker: ReadinessWorker<UserDecryptReadinessTask>,
-    ) -> Self {
+    pub fn new(tx_throttlers: TxThrottlers, readiness_throttlers: ReadinessThrottlers) -> Self {
         Self {
-            tx_throttler,
-            tx_worker,
-            public_decrypt_readiness_throttler,
-            public_decrypt_readiness_worker,
-            user_decrypt_readiness_throttler,
-            user_decrypt_readiness_worker,
+            tx_throttlers,
+            readiness_throttlers,
         }
     }
 }
@@ -85,9 +66,25 @@ pub async fn initialize_gateway(
         tx_engine_gateway.into(),
     ));
 
-    // Spawn gateway task
+    // Spawn gateway task for input proof throttler.
     GatewayTxProcessor::orchestrator_spawn_task(
-        gateway_throttlers.tx_worker,
+        gateway_throttlers.tx_throttlers.input_proof_tx_worker,
+        gateway_tx_helper.clone(),
+        orchestrator.clone(),
+    )
+    .await?;
+
+    // Spawn gateway task for public decrypt throttler.
+    GatewayTxProcessor::orchestrator_spawn_task(
+        gateway_throttlers.tx_throttlers.public_decrypt_tx_worker,
+        gateway_tx_helper.clone(),
+        orchestrator.clone(),
+    )
+    .await?;
+
+    // Spawn gateway task for user decrypt throttler.
+    GatewayTxProcessor::orchestrator_spawn_task(
+        gateway_throttlers.tx_throttlers.user_decrypt_tx_worker,
         gateway_tx_helper.clone(),
         orchestrator.clone(),
     )
@@ -97,14 +94,18 @@ pub async fn initialize_gateway(
     let readiness_checker = Arc::new(ReadinessChecker::new(&settings.gateway)?);
 
     PublicDecryptReadinessProcessor::orchestrator_spawn_task(
-        gateway_throttlers.public_decrypt_readiness_worker,
+        gateway_throttlers
+            .readiness_throttlers
+            .public_decrypt_readiness_worker,
         readiness_checker.clone(),
         orchestrator.clone(),
     )
     .await?;
 
     UserDecryptReadinessProcessor::orchestrator_spawn_task(
-        gateway_throttlers.user_decrypt_readiness_worker,
+        gateway_throttlers
+            .readiness_throttlers
+            .user_decrypt_readiness_worker,
         readiness_checker.clone(),
         orchestrator.clone(),
     )
@@ -117,15 +118,22 @@ pub async fn initialize_gateway(
     // Initialize all gateway components (each handles its own orchestrator registration)
     InputProofGatewayHandler::new(
         orchestrator.clone(),
-        gateway_throttlers.tx_throttler.clone(),
+        gateway_throttlers
+            .tx_throttlers
+            .input_proof_tx_throttler
+            .clone(),
         settings.gateway.contracts.clone(),
         repositories.input_proof.clone(),
     );
 
     PublicDecryptGatewayHandler::new(
         orchestrator.clone(),
-        gateway_throttlers.tx_throttler.clone(),
         gateway_throttlers
+            .tx_throttlers
+            .public_decrypt_tx_throttler
+            .clone(),
+        gateway_throttlers
+            .readiness_throttlers
             .public_decrypt_readiness_throttler
             .clone(),
         decryption_address,
@@ -134,8 +142,14 @@ pub async fn initialize_gateway(
 
     UserDecryptGatewayHandler::new(
         orchestrator.clone(),
-        gateway_throttlers.tx_throttler.clone(),
-        gateway_throttlers.user_decrypt_readiness_throttler.clone(),
+        gateway_throttlers
+            .tx_throttlers
+            .user_decrypt_tx_throttler
+            .clone(),
+        gateway_throttlers
+            .readiness_throttlers
+            .user_decrypt_readiness_throttler
+            .clone(),
         decryption_address,
         settings.gateway.contracts.user_decrypt_shares_threshold as usize,
         repositories.user_decrypt.clone(),

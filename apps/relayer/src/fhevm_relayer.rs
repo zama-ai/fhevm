@@ -26,9 +26,12 @@
 use crate::{
     gateway::{
         self,
-        arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender},
+        arbitrum::transaction::tx_throttler::{
+            GatewayTxTask, TxSenders, TxThrottlers, TxThrottlingSender,
+        },
         readiness_check::readiness_throttler::{
-            PublicDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
+            PublicDecryptReadinessTask, ReadinessSender, ReadinessSenders, ReadinessThrottlers,
+            UserDecryptReadinessTask,
         },
         GatewayThrottler,
     },
@@ -117,13 +120,74 @@ pub async fn run_fhevm_relayer(
         repositories.clone() as Arc<dyn HealthCheck>,
     );
 
-    // Create throttler with optional admin control channel
-    let (tx_throttler, tx_worker, throttler_control_tx) = ThrottlingSender::<GatewayTxTask>::new(
-        settings.gateway.tx_engine.tx_throttler_capacity,
-        settings.gateway.tx_engine.tx_throttler_safety_margin,
-        settings.gateway.tx_engine.tx_throttler_per_secs,
-        settings.http.enable_admin_endpoint,
-    );
+    let (input_proof_tx_throttler, input_proof_tx_worker, throttler_control_input_proof) =
+        TxThrottlingSender::<GatewayTxTask>::new(
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .input_proof
+                .capacity,
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .input_proof
+                .safety_margin,
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .input_proof
+                .per_seconds,
+            settings.http.enable_admin_endpoint,
+        );
+
+    let (public_decrypt_tx_throttler, public_decrypt_tx_worker, throttler_control_public_decrypt) =
+        TxThrottlingSender::<GatewayTxTask>::new(
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .public_decrypt
+                .capacity,
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .public_decrypt
+                .safety_margin,
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .public_decrypt
+                .per_seconds,
+            settings.http.enable_admin_endpoint,
+        );
+
+    let (user_decrypt_tx_throttler, user_decrypt_tx_worker, throttler_control_user_decrypt) =
+        TxThrottlingSender::<GatewayTxTask>::new(
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .user_decrypt
+                .capacity,
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .user_decrypt
+                .safety_margin,
+            settings
+                .gateway
+                .tx_engine
+                .tx_throttlers
+                .user_decrypt
+                .per_seconds,
+            settings.http.enable_admin_endpoint,
+        );
 
     let (public_decrypt_readiness_throttler, public_decrypt_readiness_worker) =
         ReadinessSender::<PublicDecryptReadinessTask>::new(
@@ -155,20 +219,41 @@ pub async fn run_fhevm_relayer(
                 .max_concurrency,
         );
 
-    let gateway_throttlers = GatewayThrottler::new(
-        tx_throttler.clone(),
-        tx_worker,
-        public_decrypt_readiness_throttler.clone(),
-        public_decrypt_readiness_worker,
-        user_decrypt_readiness_throttler.clone(),
-        user_decrypt_readiness_worker,
+    let tx_throttlers = TxThrottlers::new(
+        input_proof_tx_throttler.clone(),
+        input_proof_tx_worker,
+        user_decrypt_tx_throttler.clone(),
+        user_decrypt_tx_worker,
+        public_decrypt_tx_throttler.clone(),
+        public_decrypt_tx_worker,
     );
 
-    let bouncer_throttlers = BouncerThrottlers::new(
-        tx_throttler.clone(),
-        throttler_control_tx,
-        public_decrypt_readiness_throttler.clone(),
+    let readiness_throttlers = ReadinessThrottlers::new(
         user_decrypt_readiness_throttler.clone(),
+        user_decrypt_readiness_worker,
+        public_decrypt_readiness_throttler.clone(),
+        public_decrypt_readiness_worker,
+    );
+
+    let tx_throttling_senders = TxSenders::new(
+        input_proof_tx_throttler.clone(),
+        user_decrypt_tx_throttler.clone(),
+        public_decrypt_tx_throttler.clone(),
+    );
+
+    let readiness_throttling_senders = ReadinessSenders::new(
+        user_decrypt_readiness_throttler.clone(),
+        public_decrypt_readiness_throttler.clone(),
+    );
+
+    let gateway_throttlers = GatewayThrottler::new(tx_throttlers, readiness_throttlers);
+
+    let bouncer_throttlers = BouncerThrottlers::new(
+        throttler_control_input_proof,
+        throttler_control_user_decrypt,
+        throttler_control_public_decrypt,
+        tx_throttling_senders,
+        readiness_throttling_senders,
     );
 
     // Initialize all gateway components

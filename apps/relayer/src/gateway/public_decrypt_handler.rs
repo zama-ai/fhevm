@@ -13,7 +13,7 @@ use crate::{
             bindings::Decryption,
             transaction::{
                 helper::{TransactionHelper, TransactionType, TxResult},
-                throttler::{DynTxHook, GatewayTxTask, ThrottlingSender},
+                tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
                 TxLifecycleHooks,
             },
             ComputeCalldata,
@@ -35,7 +35,7 @@ use tracing::{error, info, instrument, warn};
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    tx_throttler: ThrottlingSender<GatewayTxTask>,
+    tx_throttler: TxThrottlingSender<GatewayTxTask>,
     public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
     decryption_address: Address,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
@@ -44,7 +44,7 @@ pub struct GatewayHandler {
 impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        tx_throttler: ThrottlingSender<GatewayTxTask>,
+        tx_throttler: TxThrottlingSender<GatewayTxTask>,
         public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
         decryption_address: Address,
         public_decrypt_repo: Arc<PublicDecryptRepository>,

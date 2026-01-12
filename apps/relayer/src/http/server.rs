@@ -1,9 +1,7 @@
 use crate::config::settings::HttpConfig;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
-use crate::gateway::arbitrum::transaction::throttler::{GatewayTxTask, ThrottlingSender};
-use crate::gateway::readiness_check::readiness_throttler::{
-    PublicDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
-};
+use crate::gateway::arbitrum::transaction::tx_throttler::TxSenders;
+use crate::gateway::readiness_check::readiness_throttler::ReadinessSenders;
 use crate::http::endpoints::{
     admin, health_handler, liveness_handler,
     v1::handlers::{
@@ -46,24 +44,27 @@ async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
 }
 
 pub struct BouncerThrottlers {
-    pub tx_throttler: ThrottlingSender<GatewayTxTask>,
-    pub throttler_control_tx: Option<mpsc::Sender<u32>>,
-    pub public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
-    pub user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+    pub input_proof_throttler_control_tx: Option<mpsc::Sender<u32>>,
+    pub user_decrypt_throttler_control_tx: Option<mpsc::Sender<u32>>,
+    pub public_decrypt_throttler_control_tx: Option<mpsc::Sender<u32>>,
+    pub tx_throttlers: TxSenders,
+    pub readiness_throttling_senders: ReadinessSenders,
 }
 
 impl BouncerThrottlers {
     pub fn new(
-        tx_throttler: ThrottlingSender<GatewayTxTask>,
-        throttler_control_tx: Option<mpsc::Sender<u32>>,
-        public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
-        user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+        input_proof_throttler_control_tx: Option<mpsc::Sender<u32>>,
+        user_decrypt_throttler_control_tx: Option<mpsc::Sender<u32>>,
+        public_decrypt_throttler_control_tx: Option<mpsc::Sender<u32>>,
+        tx_throttlers: TxSenders,
+        readiness_throttling_senders: ReadinessSenders,
     ) -> Self {
         Self {
-            tx_throttler,
-            throttler_control_tx,
-            public_decrypt_readiness_throttler,
-            user_decrypt_readiness_throttler,
+            input_proof_throttler_control_tx,
+            user_decrypt_throttler_control_tx,
+            public_decrypt_throttler_control_tx,
+            tx_throttlers,
+            readiness_throttling_senders,
         }
     }
 }
@@ -92,7 +93,10 @@ where
         api_version,
         repositories.input_proof.clone(),
         config.api_retry_after_seconds,
-        bouncer_throttlers.tx_throttler.clone(),
+        bouncer_throttlers
+            .tx_throttlers
+            .input_proof_tx_throttler
+            .clone(),
     ));
 
     let user_decrypt_handler_v1 = Arc::new(UserDecryptHandlerV1::new(
@@ -100,8 +104,14 @@ where
         api_version,
         repositories.user_decrypt.clone(),
         config.api_retry_after_seconds,
-        bouncer_throttlers.tx_throttler.clone(),
-        bouncer_throttlers.user_decrypt_readiness_throttler.clone(),
+        bouncer_throttlers
+            .tx_throttlers
+            .user_decrypt_tx_throttler
+            .clone(),
+        bouncer_throttlers
+            .readiness_throttling_senders
+            .user_decrypt_readiness_throttler
+            .clone(),
     ));
 
     let public_decrypt_handler_v1 = Arc::new(PublicDecryptHandlerV1::new(
@@ -109,8 +119,12 @@ where
         api_version,
         repositories.public_decrypt.clone(),
         config.api_retry_after_seconds,
-        bouncer_throttlers.tx_throttler.clone(),
         bouncer_throttlers
+            .tx_throttlers
+            .public_decrypt_tx_throttler
+            .clone(),
+        bouncer_throttlers
+            .readiness_throttling_senders
             .public_decrypt_readiness_throttler
             .clone(),
     ));
@@ -121,7 +135,10 @@ where
         api_version,
         repositories.input_proof.clone(),
         config.api_retry_after_seconds,
-        bouncer_throttlers.tx_throttler.clone(),
+        bouncer_throttlers
+            .tx_throttlers
+            .input_proof_tx_throttler
+            .clone(),
     ));
 
     let user_decrypt_handler_v2 = Arc::new(UserDecryptHandlerV2::new(
@@ -130,8 +147,14 @@ where
         repositories.user_decrypt.clone(),
         user_decrypt_shares_threshold,
         config.api_retry_after_seconds,
-        bouncer_throttlers.tx_throttler.clone(),
-        bouncer_throttlers.user_decrypt_readiness_throttler.clone(),
+        bouncer_throttlers
+            .tx_throttlers
+            .user_decrypt_tx_throttler
+            .clone(),
+        bouncer_throttlers
+            .readiness_throttling_senders
+            .user_decrypt_readiness_throttler
+            .clone(),
     ));
 
     let public_decrypt_handler_v2 = Arc::new(PublicDecryptHandlerV2::new(
@@ -139,8 +162,12 @@ where
         api_version,
         repositories.public_decrypt.clone(),
         config.api_retry_after_seconds,
-        bouncer_throttlers.tx_throttler.clone(),
         bouncer_throttlers
+            .tx_throttlers
+            .public_decrypt_tx_throttler
+            .clone(),
+        bouncer_throttlers
+            .readiness_throttling_senders
             .public_decrypt_readiness_throttler
             .clone(),
     ));
@@ -186,11 +213,21 @@ where
         info!("Admin endpoints enabled at /admin/config");
         app = app
             .route("/admin/config", post(admin::update_config))
-            .layer(Extension(bouncer_throttlers.throttler_control_tx));
+            .layer(Extension(
+                bouncer_throttlers.input_proof_throttler_control_tx,
+            ))
+            .layer(Extension(
+                bouncer_throttlers.user_decrypt_throttler_control_tx,
+            ))
+            .layer(Extension(
+                bouncer_throttlers.public_decrypt_throttler_control_tx,
+            ));
     } else {
         info!("Admin endpoints disabled");
         app = app
             .route("/admin/config", post(admin::update_config))
+            .layer(Extension(Option::<mpsc::Sender<u32>>::None))
+            .layer(Extension(Option::<mpsc::Sender<u32>>::None))
             .layer(Extension(Option::<mpsc::Sender<u32>>::None));
     }
 
