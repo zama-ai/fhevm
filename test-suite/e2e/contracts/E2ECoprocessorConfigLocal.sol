@@ -7,9 +7,9 @@ library DefaultCoprocessorConfig {
     function getConfig() internal pure returns (CoprocessorConfig memory) {
         return
             CoprocessorConfig({
-                ACLAddress: 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c,
-                CoprocessorAddress: 0xcCAe95fF1d11656358E782570dF0418F59fA40e1,
-                KMSVerifierAddress: 0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11
+                ACLAddress: REPLACE_WITH_DEPLOYED_ACL_ADDRESS,
+                CoprocessorAddress: REPLACE_WITH_DEPLOYED_FHEVMEXECUTOR_ADDRESS,
+                KMSVerifierAddress: REPLACE_WITH_DEPLOYED_KMSVERIFIER_ADDRESS
             });
     }
 }

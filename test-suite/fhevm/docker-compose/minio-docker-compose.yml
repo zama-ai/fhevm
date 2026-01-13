@@ -3,7 +3,7 @@ services:
     container_name: fhevm-minio
     image: quay.io/minio/minio
     env_file:
-      - ../env/staging/.env.minio.local
+      - ../env/staging/.env.minio
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -19,7 +19,7 @@ services:
     container_name: fhevm-minio-setup
     image: quay.io/minio/mc
     env_file:
-      - ../env/staging/.env.minio.local
+      - ../env/staging/.env.minio
     entrypoint:
       - /bin/sh
       - -c

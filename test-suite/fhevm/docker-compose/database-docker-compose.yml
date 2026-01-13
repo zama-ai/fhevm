@@ -4,7 +4,7 @@ services:
     image: postgres:15.7
     restart: always
     env_file:
-      - ../env/staging/.env.database.local
+      - ../env/staging/.env.database
     ports:
       - '5432:5432'
     healthcheck:

@@ -10,7 +10,7 @@ services:
       cache_to:
         - ${FHEVM_CACHE_TO_GATEWAY_DEPLOY_MOCKED_ZAMA_OFT:-type=gha,mode=max}
     env_file:
-      - ../env/staging/.env.gateway-mocked-payment.local
+      - ../env/staging/.env.gateway-mocked-payment
     command:
       - npx hardhat task:deployMockedZamaOFT
 
@@ -26,7 +26,7 @@ services:
       cache_to:
         - ${FHEVM_CACHE_TO_GATEWAY_SET_RELAYER_MOCKED_PAYMENT:-type=gha,mode=max}
     env_file:
-      - ../env/staging/.env.gateway-mocked-payment.local
+      - ../env/staging/.env.gateway-mocked-payment
     command:
       - npx hardhat task:setTxSenderMockedPayment
     depends_on:
