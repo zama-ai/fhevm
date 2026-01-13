@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $1\n            ),\n            upd AS (\n                UPDATE public_decrypt_req\n                SET req_status = 'processing'::req_status\n                WHERE int_job_id = $1\n                  AND req_status = 'queued'::req_status\n                RETURNING req_status, updated_at\n            )\n            SELECT \n                old.req_status as \"old_status!: ReqStatus\",\n                old.updated_at as \"old_updated_at!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
+  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM user_decrypt_req\n                WHERE int_job_id = $1\n                  AND req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)\n            ),\n            upd AS (\n                UPDATE user_decrypt_req\n                SET req_status = 'processing'::req_status\n                WHERE int_job_id = $1\n                  AND req_status = 'queued'::req_status\n                RETURNING req_status, updated_at\n            )\n            SELECT\n                old.req_status as \"old_status!: ReqStatus\",\n                old.updated_at as \"old_updated_at!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
   "describe": {
     "columns": [
       {
@@ -45,5 +45,5 @@
       false
     ]
   },
-  "hash": "b67f41d4fd31151b2fb4444f3cd66d41a43d1df3a8c1c6acf46c5cc00e8c37fc"
+  "hash": "4ca10fdc81cf86c5a753237e6d158510238e4520871b0431fd1c9c20ab531ebb"
 }

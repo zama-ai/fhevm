@@ -441,6 +441,15 @@ async fn test_consecutive_duplicate_requests_succeed() {
     println!("First request job_id: {}", job_id_1);
     println!("Second request job_id: {}", job_id_2);
 
+    // CRITICAL ASSERTION: For duplicate requests sent while first is still active,
+    // the system should return the SAME ext_job_id (deduplication behavior)
+    assert_eq!(
+        job_id_1, job_id_2,
+        "Duplicate requests with identical content should return the same job_id when \
+         the first request is still active. Got different job_ids: '{}' vs '{}'",
+        job_id_1, job_id_2
+    );
+
     // Wait for processing
     tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
 
@@ -812,6 +821,99 @@ async fn test_unknown_selector_returns_500() {
         Some("internal_server_error"),
         "Expected label 'internal_server_error' for unknown selector error"
     );
+
+    setup.shutdown().await;
+}
+
+/// Test that retrying a failed request creates a new job_id
+/// This validates that the migration to allow multiple rows with same int_job_id works correctly
+#[tokio::test]
+async fn test_retry_after_failure_creates_new_job_id() {
+    let setup = TestSetup::new_with_low_retries()
+        .await
+        .expect("Failed to create test setup with low retries");
+
+    let contract_address = helpers::random_address();
+    let user_address = helpers::random_address();
+
+    // Generate payload once - will be used for both attempts
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    // Set up readiness check to pass
+    setup.fhevm_mock.set_readiness_success();
+
+    // Configure mock to fail with max retries exceeded
+    setup.fhevm_mock.queue_tx_responses_for_selector(
+        setup.fhevm_mock.decryption_contract,
+        constants::USER_DECRYPT_SELECTOR,
+        vec![
+            Response::error("nonce too low".to_string()),
+            Response::error("nonce too low".to_string()),
+            Response::error("nonce too low".to_string()),
+        ],
+    );
+
+    let client = reqwest::Client::new();
+    let url = helpers::v2_user_decrypt_post_url(&setup);
+
+    // First attempt - will fail
+    let response1 = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send first POST request");
+
+    assert_eq!(response1.status(), reqwest::StatusCode::ACCEPTED);
+    let post_response1: UserDecryptPostResponseJson = response1
+        .json()
+        .await
+        .expect("Failed to parse first POST response");
+
+    let job_id_1 = post_response1.result.job_id.clone();
+    println!("First attempt job_id: {}", job_id_1);
+
+    // Wait for it to fail
+    let (status1, body1) = helpers::poll_until_terminal(&setup, &job_id_1).await;
+    assert_ne!(status1, reqwest::StatusCode::OK);
+    assert_eq!(body1.status, "failed");
+    println!("First attempt failed as expected");
+
+    // Retry with same payload after failure
+    let response2 = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send retry POST request");
+
+    assert_eq!(response2.status(), reqwest::StatusCode::ACCEPTED);
+    let post_response2: UserDecryptPostResponseJson = response2
+        .json()
+        .await
+        .expect("Failed to parse retry POST response");
+
+    let job_id_2 = post_response2.result.job_id.clone();
+    println!("Retry attempt job_id: {}", job_id_2);
+
+    // CRITICAL: After migration, retrying a failed request should create a NEW job_id
+    assert_ne!(
+        job_id_1, job_id_2,
+        "Retry after failure should create a new job_id. \
+         Before migration fix, this would return the same job_id or fail with duplicate key error. \
+         Got same job_id '{}' for both attempts.",
+        job_id_1
+    );
+
+    println!("✅ Retry created new job_id as expected");
 
     setup.shutdown().await;
 }

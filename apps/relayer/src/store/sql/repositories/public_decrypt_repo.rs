@@ -143,7 +143,9 @@ impl PublicDecryptRepository {
         let result = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $1
+                SELECT req_status, updated_at FROM public_decrypt_req
+                WHERE int_job_id = $1
+                  AND req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             ),
             upd AS (
                 UPDATE public_decrypt_req
@@ -152,7 +154,7 @@ impl PublicDecryptRepository {
                   AND req_status = 'queued'::req_status
                 RETURNING req_status, updated_at
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.updated_at as "new_updated_at!"
@@ -200,7 +202,9 @@ impl PublicDecryptRepository {
         let result = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $2
+                SELECT req_status, updated_at FROM public_decrypt_req
+                WHERE int_job_id = $2
+                  AND req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             ),
             upd AS (
                 UPDATE public_decrypt_req
@@ -211,7 +215,7 @@ impl PublicDecryptRepository {
                   AND req_status IN ('queued'::req_status, 'receipt_received'::req_status)
                 RETURNING req_status, updated_at
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.updated_at as "new_updated_at!"
@@ -256,7 +260,9 @@ impl PublicDecryptRepository {
         let result = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $1
+                SELECT req_status, updated_at FROM public_decrypt_req
+                WHERE int_job_id = $1
+                  AND req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             ),
             upd AS (
                 UPDATE public_decrypt_req
@@ -382,7 +388,9 @@ impl PublicDecryptRepository {
         let result = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $3
+                SELECT req_status, updated_at FROM public_decrypt_req
+                WHERE int_job_id = $3
+                  AND req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             ),
             upd AS (
                 UPDATE public_decrypt_req
@@ -394,7 +402,7 @@ impl PublicDecryptRepository {
                   AND req_status = 'tx_in_flight'::req_status
                 RETURNING req_status, updated_at
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.updated_at as "new_updated_at!"
@@ -442,7 +450,9 @@ impl PublicDecryptRepository {
         let result = sqlx::query!(
             r#"
             WITH old AS (
-                SELECT req_status, updated_at FROM public_decrypt_req WHERE int_job_id = $2
+                SELECT req_status, updated_at FROM public_decrypt_req
+                WHERE int_job_id = $2
+                  AND req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             ),
             upd AS (
                 UPDATE public_decrypt_req
@@ -453,7 +463,7 @@ impl PublicDecryptRepository {
                   AND req_status IN ('processing'::req_status, 'tx_in_flight'::req_status)
                 RETURNING req_status, updated_at
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.updated_at as "new_updated_at!"
