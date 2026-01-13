@@ -16,6 +16,11 @@ KMS can be configured to two modes:
 - [Introduction](#introduction)
 - [Main Features](#main-features)
 - [Get Started](#get-started)
+  - [Quickstart](#quickstart)
+  - [Forcing Local Builds](#wip---forcing-local-builds---build)
+  - [Local Developer Optimizations](#local-developer-optimizations)
+  - [Resuming a Deployment](#resuming-a-deployment)
+  - [Deploying a Single Step](#deploying-a-single-step)
 - [Security Policy](#security-policy)
   - [Handling Sensitive Data](#handling-sensitive-data)
     - [Environment Files](#environment-files)
@@ -31,12 +36,19 @@ KMS can be configured to two modes:
 The test suite offers a unified CLI for all operations:
 
 ```sh
-
 cd test-suite/fhevm
+
 # Deploy the entire stack
 ./fhevm-cli deploy
+
 # Deploy with local BuildKit cache (disables provenance attestations)
 ./fhevm-cli deploy --local
+
+# Resume a failed deploy from a specific step (keeps existing containers/volumes)
+./fhevm-cli deploy --resume kms-connector
+
+# Deploy only a single step (useful for redeploying one service)
+./fhevm-cli deploy --only coprocessor
 
 # Run specific tests
 ./fhevm-cli test input-proof
@@ -99,6 +111,39 @@ When running tests and you know your Hardhat artifacts are already up to date, y
 
 ```sh
 ./fhevm-cli test input-proof --no-hardhat-compile
+```
+
+### Resuming a deployment
+
+If a deploy fails mid-way, you can resume from a specific step without tearing down containers or regenerating `.env` files:
+
+```sh
+./fhevm-cli deploy --resume kms-connector
+```
+
+Resume steps (in order):
+`minio`, `core`, `kms-signer`, `database`, `host-node`, `gateway-node`, `coprocessor`,
+`kms-connector`, `gateway-mocked-payment`, `gateway-sc`, `host-sc`, `relayer`, `test-suite`.
+
+When resuming:
+- Services **before** the resume step are preserved (containers + volumes kept)
+- Services **from** the resume step onwards are torn down and redeployed
+
+### Deploying a single step
+
+To redeploy only a single service without touching others:
+
+```sh
+./fhevm-cli deploy --only coprocessor
+```
+
+This is useful when you need to restart or rebuild just one component. Only the specified step's containers are torn down and redeployed; all other services remain untouched.
+
+You can combine `--only` or `--resume` with other flags:
+
+```sh
+# Redeploy only gateway-sc with a local build
+./fhevm-cli deploy --only gateway-sc --build --local
 ```
 
 ## Security policy
