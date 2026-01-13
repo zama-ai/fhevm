@@ -9,6 +9,8 @@ on:
         required: true
       BLOCKCHAIN_ACTIONS_TOKEN:
         required: true
+      GHCR_READ_TOKEN:
+        required: true
       CGR_USERNAME:
         required: true
       CGR_PASSWORD:
@@ -29,33 +31,30 @@ permissions: {}
 
 concurrency:
   group: host-contracts-docker-build-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 jobs:
   check-changes:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets:
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
-    outputs:
-      changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: 'false'
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
-        id: filter
-        with:
-          filters: |
-            host-contracts:
-              - .github/workflows/host-contracts-docker-build.yml
-              - host-contracts/**
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/host-contracts
+      filters: |
+        host-contracts:
+          - .github/workflows/host-contracts-docker-build.yml
+          - host-contracts/**
 
   build:
     needs: check-changes
     if: |
-      needs.check-changes.outputs.changes-host-contracts == 'true'
+      needs.check-changes.outputs.changes == 'true'
       || github.event_name == 'release'
       || github.event_name == 'workflow_dispatch'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
@@ -83,7 +82,7 @@ jobs:
   re-tag-image:
     needs: check-changes
     if: |
-      needs.check-changes.outputs.changes-host-contracts != 'true' && github.event_name == 'push'
+      needs.check-changes.outputs.changes != 'true' && github.event_name == 'push'
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
@@ -92,5 +91,5 @@ jobs:
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/host-contracts"
-      previous-tag-or-commit: ${{ github.event.before }}
+      previous-tag-or-commit: ${{ needs.check-changes.outputs.base-commit }}
       new-tag-or-commit: ${{ github.event.after }}
