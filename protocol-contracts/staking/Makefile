@@ -5,6 +5,10 @@ ENV_PATH=.env.example
 prettier:
 	npx prettier . --write
 
+lint:
+	npm run lint:sol:fix
+	npm run lint:js:fix
+
 compile:
 	npx hardhat compile
 
@@ -24,4 +28,4 @@ test-tasks: clean
 
 
 # Conform to pre-commit checks
-conformance: prettier
+conformance: prettier lint

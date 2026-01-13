@@ -70,6 +70,9 @@ task('task:depositOperatorStakingFromDeployer')
     );
   });
 
+// Deposit assets into all coprocessor operator staking contracts from the deployer account
+// Example usage:
+// npx hardhat task:depositAllCoproOperatorStakingFromDeployer --network testnet
 task('task:depositAllCoproOperatorStakingFromDeployer').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   console.log('Depositing assets into all coprocessor operator staking contracts from the deployer account...\n');
 
@@ -77,7 +80,7 @@ task('task:depositAllCoproOperatorStakingFromDeployer').setAction(async function
   const operatorStakingAddresses = await getAllOperatorStakingCoproAddresses(hre);
 
   for (let i = 0; i < operatorStakingAddresses.length; i++) {
-    const assets = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_STAKING_COPRO_INITIAL_DEPOSIT_ASSETS_${i}`)));
+    const assets = BigInt(getRequiredEnvVar(`OPERATOR_STAKING_COPRO_INITIAL_DEPOSIT_ASSETS_${i}`));
     const receiver = getRequiredEnvVar(`OPERATOR_STAKING_COPRO_INITIAL_DEPOSIT_RECEIVER_${i}`);
 
     await hre.run('task:depositOperatorStakingFromDeployer', {
@@ -88,6 +91,9 @@ task('task:depositAllCoproOperatorStakingFromDeployer').setAction(async function
   }
 });
 
+// Deposit assets into all KMS operator staking contracts from the deployer account
+// Example usage:
+// npx hardhat task:depositAllKMSOperatorStakingFromDeployer --network testnet
 task('task:depositAllKMSOperatorStakingFromDeployer').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   console.log('Depositing assets into all KMS operator staking contracts from the deployer account...\n');
 
@@ -95,7 +101,7 @@ task('task:depositAllKMSOperatorStakingFromDeployer').setAction(async function (
   const operatorStakingAddresses = await getAllOperatorStakingKMSAddresses(hre);
 
   for (let i = 0; i < operatorStakingAddresses.length; i++) {
-    const assets = BigInt(parseInt(getRequiredEnvVar(`OPERATOR_STAKING_KMS_INITIAL_DEPOSIT_ASSETS_${i}`)));
+    const assets = BigInt(getRequiredEnvVar(`OPERATOR_STAKING_KMS_INITIAL_DEPOSIT_ASSETS_${i}`));
     const receiver = getRequiredEnvVar(`OPERATOR_STAKING_KMS_INITIAL_DEPOSIT_RECEIVER_${i}`);
 
     await hre.run('task:depositOperatorStakingFromDeployer', {
@@ -106,6 +112,9 @@ task('task:depositAllKMSOperatorStakingFromDeployer').setAction(async function (
   }
 });
 
+// Deposit assets into all operator staking contracts from the deployer account
+// Example usage:
+// npx hardhat task:depositAllOperatorStakingFromDeployer --network testnet
 task('task:depositAllOperatorStakingFromDeployer').setAction(async function (_, hre: HardhatRuntimeEnvironment) {
   console.log('Depositing assets into all operator staking contracts from the deployer account...\n');
 
