@@ -18,6 +18,7 @@
 ### Core Innovation
 
 FHEVM uses **symbolic execution with asynchronous computation**:
+
 1. FHE operations execute **symbolically on-chain** (fast, deterministic, cheap)
 2. Actual FHE computation happens **asynchronously off-chain** via the coprocessor
 3. Results are verified and committed back to the chain
@@ -33,6 +34,7 @@ Before diving into the architecture, these concepts are essential to understandi
 ### Ciphertext Handles
 
 A **ciphertext handle** is a 32-byte identifier (`bytes32`) that references encrypted data. Think of it like a pointer or database key:
+
 - The **handle** is stored on-chain (small, cheap)
 - The actual **ciphertext** (encrypted data) is stored off-chain in the coprocessor
 - Smart contracts operate on handles; the coprocessor operates on ciphertexts
@@ -46,6 +48,7 @@ A **ciphertext handle** is a 32-byte identifier (`bytes32`) that references encr
 3. **Return immediately**: The transaction completes without waiting for FHE computation
 
 **Example**: When a contract calls `FHE.add(a, b)`:
+
 ```
 On-chain (FHEVMExecutor):              Off-chain (Coprocessor):
 1. Validate inputs
@@ -68,6 +71,7 @@ Because FHE operations are slow (seconds to minutes), FHEVM uses an **eventual c
 - **Reads use latest state**: Subsequent operations on the same handle will use the computed ciphertext once available
 
 **For decryption**: Contracts must request decryption explicitly and receive results via callback:
+
 ```solidity
 // Request decryption (async)
 Gateway.requestDecryption(handle, callbackSelector);
@@ -162,21 +166,22 @@ FHEVM follows a three-layer architecture separating on-chain coordination from o
 
 > **Last analyzed**: December 2024 | Based on 6-month git history
 
-| Component | Status | 6-mo Commits | Focus Areas |
-|-----------|--------|--------------|-------------|
-| `coprocessor/` | 🔥 Active | 1,718 | GPU optimization, metrics, health checks |
-| `kms-connector/` | 🔥 Active | 1,110 | Garbage collection, polling, nonce management |
-| `gateway-contracts/` | 🔥 Active | 1,071 | Payment protocol, multi-sig, cross-chain |
-| `protocol-contracts/` | 🔥 Active | 748 | Staking, delegation, fee management |
-| `host-contracts/` | ✅ Stable | 455 | ACL enhancements, operator pricing |
-| `library-solidity/` | ✅ Stable | 410 | Codegen consolidation, type improvements |
-| `test-suite/` | 🔥 Active | 975 | E2E tests, version tracking |
-| `charts/` | 📦 Infra | 138 | K8s deployment emerging |
-| `sdk/` | 📦 Infra | 91 | Maintenance mode |
+| Component             | Status    | 6-mo Commits | Focus Areas                                   |
+| --------------------- | --------- | ------------ | --------------------------------------------- |
+| `coprocessor/`        | 🔥 Active | 1,718        | GPU optimization, metrics, health checks      |
+| `kms-connector/`      | 🔥 Active | 1,110        | Garbage collection, polling, nonce management |
+| `gateway-contracts/`  | 🔥 Active | 1,071        | Payment protocol, multi-sig, cross-chain      |
+| `protocol-contracts/` | 🔥 Active | 748          | Staking, delegation, fee management           |
+| `host-contracts/`     | ✅ Stable | 455          | ACL enhancements, operator pricing            |
+| `library-solidity/`   | ✅ Stable | 410          | Codegen consolidation, type improvements      |
+| `test-suite/`         | 🔥 Active | 975          | E2E tests, version tracking                   |
+| `charts/`             | 📦 Infra  | 138          | K8s deployment emerging                       |
+| `sdk/`                | 📦 Infra  | 91           | Maintenance mode                              |
 
 **Legend**: 🔥 Active development | ✅ Stable/maintained | 📦 Infrastructure (minimal changes)
 
 **Recent removals** (avoid documenting these deprecated items):
+
 - `ProtocolOperatorRegistry` - removed from protocol-contracts, replaced by `OperatorStaking`
 - Distributed codegen - consolidated to `/library-solidity/codegen/`
 - Safe-specific tasks - removed from gateway-contracts
@@ -194,17 +199,18 @@ The Gateway contracts serve as the coordination layer that manages communication
 
 **Key Contracts**:
 
-| Contract | Purpose |
-|----------|---------|
-| `GatewayConfig.sol` | Central registry for KMS nodes, coprocessors, and protocol metadata |
-| `Decryption.sol` | Manages public and user decryption requests with EIP712 signature validation |
-| `MultichainACL.sol` | Access control for cross-chain operations and user delegations |
-| `CiphertextCommits.sol` | Stores ciphertext material commitments from coprocessors |
-| `InputVerification.sol` | Verifies encrypted user inputs via ZK proofs |
-| `KMSGeneration.sol` | Orchestrates key generation and reshare operations |
-| `ProtocolPayment.sol` | Handles protocol fee collection and distribution |
+| Contract                | Purpose                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `GatewayConfig.sol`     | Central registry for KMS nodes, coprocessors, and protocol metadata          |
+| `Decryption.sol`        | Manages public and user decryption requests with EIP712 signature validation |
+| `MultichainACL.sol`     | Access control for cross-chain operations and user delegations               |
+| `CiphertextCommits.sol` | Stores ciphertext material commitments from coprocessors                     |
+| `InputVerification.sol` | Verifies encrypted user inputs via ZK proofs                                 |
+| `KMSGeneration.sol`     | Orchestrates key generation and reshare operations                           |
+| `ProtocolPayment.sol`   | Handles protocol fee collection and distribution                             |
 
 **Key Files**:
+
 - `contracts/GatewayConfig.sol` - Gateway registry and configuration
 - `contracts/Decryption.sol` - Decryption request handling
 - `contracts/shared/Structs.sol` - Core data structures (KmsNode, Coprocessor, etc.)
@@ -212,6 +218,7 @@ The Gateway contracts serve as the coordination layer that manages communication
 **Relationships**: Gateway contracts receive events from Host contracts and coordinate with the Coprocessor and KMS Connector to process FHE operations. They maintain consensus through threshold signatures from multiple coprocessors.
 
 **Recent Development Focus** (as of Dec 2024):
+
 - Payment protocol implementation (`ProtocolPayment` contract)
 - Multi-sig contracts based on Safe Smart Account
 - LayerZero cross-chain integration for testnet/mainnet
@@ -232,17 +239,18 @@ Host contracts are deployed on each supported EVM chain and provide the core FHE
 
 **Key Contracts**:
 
-| Contract | Purpose |
-|----------|---------|
-| `FHEVMExecutor.sol` | Symbolic execution engine with 20+ FHE operators |
-| `ACL.sol` | Access control for encrypted data handles |
-| `HCULimit.sol` | Enforces Homomorphic Complexity Unit limits per transaction |
-| `KMSVerifier.sol` | Verifies KMS-signed decryption results |
-| `InputVerifier.sol` | Verifies encrypted user input proofs (host-side) |
+| Contract            | Purpose                                                     |
+| ------------------- | ----------------------------------------------------------- |
+| `FHEVMExecutor.sol` | Symbolic execution engine with 20+ FHE operators            |
+| `ACL.sol`           | Access control for encrypted data handles                   |
+| `HCULimit.sol`      | Enforces Homomorphic Complexity Unit limits per transaction |
+| `KMSVerifier.sol`   | Verifies KMS-signed decryption results                      |
+| `InputVerifier.sol` | Verifies encrypted user input proofs (host-side)            |
 
 > **Note**: Both Gateway (`InputVerification.sol`) and Host (`InputVerifier.sol`) have input verification. Gateway handles cross-chain verification; Host handles local chain verification. In single-chain deployments, Host's InputVerifier is the primary entry point.
 
 **Key Files**:
+
 - `contracts/FHEVMExecutor.sol` - Core symbolic execution (fheAdd, fheMul, fheEq, etc.)
 - `contracts/ACL.sol` - Permission management for ciphertext handles
 - `contracts/shared/FheType.sol` - Encrypted type definitions
@@ -266,33 +274,36 @@ The Solidity library provides the API that smart contract developers use to work
 
 **Key Components**:
 
-| File | Purpose |
-|------|---------|
-| `lib/FHE.sol` | Main developer API - import this to use FHE |
-| `lib/Impl.sol` | Implementation details, delegates to precompiles |
-| `lib/FheType.sol` | Encrypted type enum definitions |
+| File              | Purpose                                          |
+| ----------------- | ------------------------------------------------ |
+| `lib/FHE.sol`     | Main developer API - import this to use FHE      |
+| `lib/Impl.sol`    | Implementation details, delegates to precompiles |
+| `lib/FheType.sol` | Encrypted type enum definitions                  |
 
 **Encrypted Types**:
+
 - **Boolean**: `ebool`
 - **Unsigned integers**: `euint4`, `euint8`, `euint16`, `euint32`, `euint64`, `euint128`, `euint256`, up to `euint2048`
 - **Signed integers**: `eint8`, `eint16`, `eint32`, `eint64`, `eint128`, `eint256`
 - **Special**: `eaddress`, `AsciiString`
 
 **Example Usage**:
+
 ```solidity
-import {FHE, euint64} from "fhevm/lib/FHE.sol";
+import { FHE, euint64 } from "fhevm/lib/FHE.sol";
 
 contract ConfidentialToken {
-    mapping(address => euint64) private balances;
+  mapping(address => euint64) private balances;
 
-    function transfer(address to, euint64 amount) external {
-        balances[msg.sender] = FHE.sub(balances[msg.sender], amount);
-        balances[to] = FHE.add(balances[to], amount);
-    }
+  function transfer(address to, euint64 amount) external {
+    balances[msg.sender] = FHE.sub(balances[msg.sender], amount);
+    balances[to] = FHE.add(balances[to], amount);
+  }
 }
 ```
 
 **Key Files**:
+
 - `lib/FHE.sol` - Primary import for developers
 - `examples/EncryptedERC20.sol` - Reference implementation
 - `codegen/` - Code generation for operator overloads
@@ -312,23 +323,25 @@ The Coprocessor is the off-chain component that performs actual FHE computations
 
 **Key Crates** (in `/coprocessor/fhevm-engine/`):
 
-| Crate | Purpose |
-|-------|---------|
-| `tfhe-worker` | Core FHE computation engine using TFHE-rs |
-| `scheduler` | Job orchestration and work distribution |
-| `zkproof-worker` | Zero-knowledge proof generation |
-| `sns-worker` | Switch and Squash optimization for ciphertexts |
-| `host-listener` | Monitors host chain events |
-| `gw-listener` | Monitors gateway chain events |
-| `transaction-sender` | Broadcasts results back to chain |
+| Crate                | Purpose                                        |
+| -------------------- | ---------------------------------------------- |
+| `tfhe-worker`        | Core FHE computation engine using TFHE-rs      |
+| `scheduler`          | Job orchestration and work distribution        |
+| `zkproof-worker`     | Zero-knowledge proof generation                |
+| `sns-worker`         | Switch and Squash optimization for ciphertexts |
+| `host-listener`      | Monitors host chain events                     |
+| `gw-listener`        | Monitors gateway chain events                  |
+| `transaction-sender` | Broadcasts results back to chain               |
 
 **Architecture**:
+
 - **Event-driven**: Listeners pick up on-chain events and create jobs
 - **Database-backed**: PostgreSQL stores job state and ciphertext data
 - **Async processing**: Workers process jobs concurrently via scheduler
 - **Threshold consensus**: Multiple coprocessors can run for redundancy
 
 **Key Files**:
+
 - `fhevm-engine/tfhe-worker/` - TFHE computation implementation
 - `fhevm-engine/scheduler/` - Job queue and distribution
 - `Cargo.toml` - Workspace manifest
@@ -336,6 +349,7 @@ The Coprocessor is the off-chain component that performs actual FHE computations
 **Relationships**: The Coprocessor receives work from Gateway contract events, processes FHE operations, and submits results via transaction-sender. It coordinates with the KMS Connector for key material.
 
 **Recent Development Focus** (as of Dec 2024):
+
 - GPU scheduler improvements and GPU memory management
 - Metrics collection (SNS latency, ZK verify latency, tfhe-per-txn timing)
 - Health checking in tfhe-worker and sns-worker
@@ -358,14 +372,15 @@ The KMS Connector bridges the Gateway contracts with the external KMS Core servi
 
 **Key Crates**:
 
-| Crate | Purpose |
-|-------|---------|
-| `gw-listener` | Monitors Gateway for key-related events |
-| `kms-worker` | Forwards requests to KMS Core service |
+| Crate                | Purpose                                  |
+| -------------------- | ---------------------------------------- |
+| `gw-listener`        | Monitors Gateway for key-related events  |
+| `kms-worker`         | Forwards requests to KMS Core service    |
 | `transaction-sender` | Submits signed responses back to Gateway |
-| `utils` | Shared utilities and types |
+| `utils`              | Shared utilities and types               |
 
 **Supported Key Operations**:
+
 - Key generation (initial setup)
 - Preprocessing keygen
 - Key reshare (rotation)
@@ -373,6 +388,7 @@ The KMS Connector bridges the Gateway contracts with the external KMS Core servi
 - Decryption signing (threshold signatures)
 
 **Key Files**:
+
 - `gw-listener/src/main.rs` - Event listener entry point
 - `kms-worker/src/main.rs` - KMS request handler
 - `Cargo.toml` - Workspace dependencies
@@ -380,6 +396,7 @@ The KMS Connector bridges the Gateway contracts with the external KMS Core servi
 **Relationships**: KMS Connector listens to KMSGeneration and Decryption events from Gateway contracts. It forwards requests to the external KMS Core (not in this repo) and submits EIP712-signed responses back to the chain.
 
 **Recent Development Focus** (as of Dec 2024):
+
 - Garbage collection implementation
 - Database transaction management and retry logic
 - Polling mechanisms and listener improvements
@@ -401,21 +418,23 @@ Protocol contracts implement the economic and governance layer of the FHEVM ecos
 
 **Submodules**:
 
-| Directory | Purpose |
-|-----------|---------|
-| `token/` | ZAMA ERC20 token and OFT (Omnichain Fungible Token) for cross-chain |
-| `staking/` | Node operator staking mechanisms |
-| `governance/` | DAO voting and protocol governance |
-| `confidential-wrapper/` | Wraps public tokens for confidential transfers |
-| `feesBurner/` | Fee collection and token burning |
-| `safe/` | Safe module for protocol administration |
+| Directory               | Purpose                                                             |
+| ----------------------- | ------------------------------------------------------------------- |
+| `token/`                | ZAMA ERC20 token and OFT (Omnichain Fungible Token) for cross-chain |
+| `staking/`              | Node operator staking mechanisms                                    |
+| `governance/`           | DAO voting and protocol governance                                  |
+| `confidential-wrapper/` | Wraps public tokens for confidential transfers                      |
+| `feesBurner/`           | Fee collection and token burning                                    |
+| `safe/`                 | Safe module for protocol administration                             |
 
 **Key Files**:
+
 - `token/ZamaERC20.sol` - Protocol token
 - `confidential-wrapper/Wrapper.sol` - Public-to-confidential token bridge
 - `staking/OperatorStaking.sol` - Operator staking
 
 **Recent Development Focus** (as of Dec 2024):
+
 - Staking/delegating contracts (`OperatorStaking`, `Rewarder`)
 - Fee management and burner implementation
 - Governance improvements (Safe ownership, admin modules)
@@ -435,22 +454,24 @@ Protocol contracts implement the economic and governance layer of the FHEVM ecos
 
 **Directories**:
 
-| Directory | Purpose |
-|-----------|---------|
-| `/charts/` | Helm charts for Kubernetes deployment |
-| `/test-suite/` | E2E integration tests with docker-compose |
-| `/golden-container-images/` | Base Docker images for Node.js and Rust |
-| `/docs/` | Gitbook documentation source |
-| `/sdk/` | Rust SDK for building applications |
-| `/ci/` | CI/CD pipeline configurations |
+| Directory                   | Purpose                                   |
+| --------------------------- | ----------------------------------------- |
+| `/charts/`                  | Helm charts for Kubernetes deployment     |
+| `/test-suite/`              | E2E integration tests with docker-compose |
+| `/golden-container-images/` | Base Docker images for Node.js and Rust   |
+| `/docs/`                    | Gitbook documentation source              |
+| `/sdk/`                     | Rust SDK for building applications        |
+| `/ci/`                      | CI/CD pipeline configurations             |
 
 **Testing Infrastructure**:
+
 - **Hardhat tests**: Unit/integration tests in `host-contracts/test/`, `library-solidity/test/`
 - **Foundry tests**: Solidity-native tests via `forge test`
 - **E2E tests**: Full-stack tests in `test-suite/` using docker-compose
 - **Mock FHE**: SQLite-backed mocking for fast testing without real FHE
 
 **Key Files**:
+
 - `test-suite/docker-compose.yml` - Full stack orchestration
 - `host-contracts/hardhat.config.ts` - Hardhat configuration
 - `.github/workflows/` - CI pipeline definitions
@@ -501,14 +522,14 @@ When a user submits encrypted input:
 
 ## 5. Technology Stack
 
-| Layer | Technologies | Key Files |
-|-------|-------------|-----------|
-| **Smart Contracts** | Solidity 0.8+, OpenZeppelin v5.2, UUPS Proxies | `*.sol` |
-| **Dev Tooling** | Hardhat, Foundry, TypeChain, Prettier | `hardhat.config.ts`, `foundry.toml` |
-| **Coprocessor** | Rust, TFHE-rs, Tokio, SQLx, PostgreSQL | `Cargo.toml`, `*.rs` |
-| **Communication** | gRPC, Protobuf, EIP712 signatures | `*.proto` |
-| **Deployment** | Docker, Kubernetes, Helm | `charts/`, `docker-compose.yml` |
-| **CI/CD** | GitHub Actions | `.github/workflows/` |
+| Layer               | Technologies                                   | Key Files                           |
+| ------------------- | ---------------------------------------------- | ----------------------------------- |
+| **Smart Contracts** | Solidity 0.8+, OpenZeppelin v5.2, UUPS Proxies | `*.sol`                             |
+| **Dev Tooling**     | Hardhat, Foundry, TypeChain, Prettier          | `hardhat.config.ts`, `foundry.toml` |
+| **Coprocessor**     | Rust, TFHE-rs, Tokio, SQLx, PostgreSQL         | `Cargo.toml`, `*.rs`                |
+| **Communication**   | gRPC, Protobuf, EIP712 signatures              | `*.proto`                           |
+| **Deployment**      | Docker, Kubernetes, Helm                       | `charts/`, `docker-compose.yml`     |
+| **CI/CD**           | GitHub Actions                                 | `.github/workflows/`                |
 
 ---
 
@@ -572,22 +593,22 @@ fhevm/
 
 ## Glossary
 
-| Term | Definition |
-|------|------------|
-| **Ciphertext** | Encrypted data that can be operated on using FHE |
-| **Ciphertext Handle** | A 32-byte on-chain identifier referencing off-chain encrypted data |
-| **Coprocessor** | Off-chain Rust service that performs actual FHE computation |
-| **EIP712** | Ethereum standard for typed structured data signing |
-| **FHE** | Fully Homomorphic Encryption - allows computation on encrypted data |
-| **Gateway Chain** | Central chain coordinating FHE operations across multiple hosts |
-| **HCU** | Homomorphic Complexity Unit - measure of FHE computation cost |
-| **Host Chain** | EVM chain where user dApps run |
-| **KMS** | Key Management System - manages encryption keys via MPC |
-| **MPC** | Multi-Party Computation - distributes trust across multiple parties |
-| **Symbolic Execution** | On-chain execution that generates handles without computing ciphertexts |
-| **TFHE-rs** | Rust library implementing the TFHE FHE scheme (used by coprocessor) |
-| **UUPS** | Universal Upgradeable Proxy Standard - pattern for upgradeable contracts |
+| Term                   | Definition                                                               |
+| ---------------------- | ------------------------------------------------------------------------ |
+| **Ciphertext**         | Encrypted data that can be operated on using FHE                         |
+| **Ciphertext Handle**  | A 32-byte on-chain identifier referencing off-chain encrypted data       |
+| **Coprocessor**        | Off-chain Rust service that performs actual FHE computation              |
+| **EIP712**             | Ethereum standard for typed structured data signing                      |
+| **FHE**                | Fully Homomorphic Encryption - allows computation on encrypted data      |
+| **Gateway Chain**      | Central chain coordinating FHE operations across multiple hosts          |
+| **HCU**                | Homomorphic Complexity Unit - measure of FHE computation cost            |
+| **Host Chain**         | EVM chain where user dApps run                                           |
+| **KMS**                | Key Management System - manages encryption keys via MPC                  |
+| **MPC**                | Multi-Party Computation - distributes trust across multiple parties      |
+| **Symbolic Execution** | On-chain execution that generates handles without computing ciphertexts  |
+| **TFHE-rs**            | Rust library implementing the TFHE FHE scheme (used by coprocessor)      |
+| **UUPS**               | Universal Upgradeable Proxy Standard - pattern for upgradeable contracts |
 
 ---
 
-*This document is the foundation for iterative expansion. Each [TODO] marker indicates an area that can be expanded into its own detailed section.*
+_This document is the foundation for iterative expansion. Each [TODO] marker indicates an area that can be expanded into its own detailed section._
