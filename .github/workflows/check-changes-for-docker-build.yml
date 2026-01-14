@@ -51,6 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          fetch-depth: 0
           persist-credentials: 'false'
 
       - name: Install Docker (push only)
@@ -74,7 +75,6 @@ jobs:
           IMAGE: ghcr.io/zama-ai/${{ inputs.docker-image }}
           MAX_COMMIT_COUNT: ${{ inputs.max-commit-count }}
         run: |
-          git fetch origin main
           mapfile -t CANDIDATES < <(git rev-list "${BASE_BRANCH_COMMIT}" --max-count="${MAX_COMMIT_COUNT}")
 
           LATEST_IMAGE_COMMIT=""
