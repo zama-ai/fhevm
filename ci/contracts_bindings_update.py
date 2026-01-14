@@ -11,14 +11,45 @@ from argparse import ArgumentParser
 from enum import Enum
 from pathlib import Path
 
-GW_ROOT_DIR = Path(os.path.dirname(__file__)).parent
-GW_CRATE_DIR = GW_ROOT_DIR.joinpath("rust_bindings")
-GW_CONTRACTS_DIR = GW_ROOT_DIR.joinpath("contracts")
-GW_MOCKS_DIR = GW_CONTRACTS_DIR.joinpath("mocks")
+CI_DIR = Path(os.path.dirname(__file__))
+REPO_ROOT = CI_DIR.parent
 
 # To update forge to the latest version locally, run `foundryup`
 MIN_FORGE_VERSION = (1, 3, 1)
 MAX_FORGE_VERSION = (2, 0, 0)  # Exclusive upper bound
+
+
+class ProjectConfig:
+    """Configuration for a specific project's bindings."""
+
+    def __init__(self, name: str, root_dir: Path, skip_patterns: list[str] = None):
+        self.name = name
+        self.root_dir = root_dir
+        self.crate_dir = root_dir.joinpath("rust_bindings")
+        self.contracts_dir = root_dir.joinpath("contracts")
+        self.skip_patterns = skip_patterns or []
+
+    def get_skip_args(self) -> str:
+        """Returns forge bind skip arguments for this project."""
+        return " ".join(f"--skip '{pattern}'" for pattern in self.skip_patterns)
+
+
+# Project configurations
+PROJECTS = {
+    "gateway": ProjectConfig(
+        name="Gateway",
+        root_dir=REPO_ROOT.joinpath("gateway-contracts"),
+        skip_patterns=[
+            "Example",
+            "contracts/mocks/*",
+        ],
+    ),
+    "host": ProjectConfig(
+        name="Host",
+        root_dir=REPO_ROOT.joinpath("host-contracts"),
+        skip_patterns=["fhevm-foundry/*", "test/*"],
+    ),
+}
 
 
 def parse_semver(version_str: str) -> tuple:
@@ -30,9 +61,17 @@ def init_cli() -> ArgumentParser:
     """Inits the CLI of the tool."""
     parser = ArgumentParser(
         description=(
-            "A tool to check or update the bindings crate of the Gateway contracts."
+            "A tool to check or update the bindings crate of the Gateway or Host contracts."
         )
     )
+
+    parser.add_argument(
+        "--project",
+        choices=["gateway", "host"],
+        required=True,
+        help="The project to check or update bindings for.",
+    )
+
     subparsers = parser.add_subparsers(dest="command", help="Subcommands")
 
     subparsers.add_parser(
@@ -53,7 +92,8 @@ def main():
     if args.command not in ["check", "update"]:
         return cli.print_help()
 
-    bindings_updater = BindingsUpdater()
+    project_config = PROJECTS[args.project]
+    bindings_updater = BindingsUpdater(project_config)
 
     if args.command == "check":
         bindings_updater.check_version()
@@ -74,21 +114,23 @@ class ExitStatus(Enum):
 
 class BindingsUpdater:
     """
-    An object used to check if the binding crate of the Gateway contracts is
+    An object used to check if the binding crate of the contracts is
     up-to-date.
 
     Also takes care of updating this crate if requested.
     """
 
     tempdir: str
-    gateway_repo_version: str
+    repo_version: str
+    config: ProjectConfig
 
-    def __init__(self):
+    def __init__(self, config: ProjectConfig):
+        self.config = config
         self.tempdir = tempfile.mkdtemp()
         BindingsUpdater._check_forge_installed()
-        with open(f"{GW_ROOT_DIR}/package.json", "r") as package_json_fd:
+        with open(f"{config.root_dir}/package.json", "r") as package_json_fd:
             package_json_content = json.load(package_json_fd)
-            self.gateway_repo_version = package_json_content["version"]
+            self.repo_version = package_json_content["version"]
 
     def __del__(self):
         shutil.rmtree(self.tempdir)
@@ -131,14 +173,15 @@ class BindingsUpdater:
             sys.exit(ExitStatus.WRONG_FORGE_VERSION.value)
 
     def check_bindings_up_to_date(self):
-        """Checks that the Gateway contracts' bindings are up-to-date."""
-        log_info("Checking that the Gateway contracts' bindings are up-to-date...")
+        """Checks that the contracts' bindings are up-to-date."""
+        log_info(f"Checking that the {self.config.name} contracts' bindings are up-to-date...")
 
+        skip_args = self.config.get_skip_args()
         # We need to include the --no-metadata flag to avoid updating many of the contracts' bytecode
         # when only updating one of them (since interfaces are included in many contracts)
         return_code = subprocess.call(
-            f"forge bind --root {GW_ROOT_DIR} --module --skip-cargo-toml "
-            f"--hh -b {GW_CRATE_DIR}/src  -o {self.tempdir} --skip Example --skip {GW_MOCKS_DIR}/* "
+            f"forge bind --root {self.config.root_dir} --module --skip-cargo-toml "
+            f"--hh -b {self.config.crate_dir}/src -o {self.tempdir} {skip_args} "
             f"--no-metadata",
             shell=True,
             stdout=subprocess.DEVNULL,
@@ -152,28 +195,29 @@ class BindingsUpdater:
         log_success("All binding files are up-to-date!")
 
     def update_bindings(self):
-        """Updates the Gateway contracts' bindings."""
-        log_info("Updating Gateway contracts' bindings...")
+        """Updates the contracts' bindings."""
+        log_info(f"Updating {self.config.name} contracts' bindings...")
 
+        skip_args = self.config.get_skip_args()
         # We need to include the --no-metadata flag to avoid updating many of the contracts' bytecode
         # when only updating one of them (since interfaces are included in many contracts)
         subprocess.run(
-            f"forge bind --root {GW_ROOT_DIR} --hh -b {GW_CRATE_DIR}/src "
-            f"--module --overwrite -o {self.tempdir} --skip Example --skip {GW_MOCKS_DIR}/* "
+            f"forge bind --root {self.config.root_dir} --hh -b {self.config.crate_dir}/src "
+            f"--module --overwrite -o {self.tempdir} {skip_args} "
             "--no-metadata",
             shell=True,
             check=True,
             stdout=subprocess.DEVNULL,
         )
 
-        log_success("The Gateway contracts' bindings are now up-to-date!")
+        log_success(f"The {self.config.name} contracts' bindings are now up-to-date!")
 
     def check_version(self):
         """
-        Checks that the version of the crate matches the version of the Gateway.
+        Checks that the version of the crate matches the version of the project.
         """
-        log_info("Checking that the crate's version match the Gateway version...")
-        with open(f"{GW_CRATE_DIR}/Cargo.toml", "r") as cargo_toml_fd:
+        log_info(f"Checking that the crate's version match the {self.config.name} version...")
+        with open(f"{self.config.crate_dir}/Cargo.toml", "r") as cargo_toml_fd:
             cargo_toml_content = cargo_toml_fd.read()
 
             # Find the version in the Cargo.toml
@@ -193,23 +237,23 @@ class BindingsUpdater:
             # Extract the version from the matches: the first (and only) captured group from the regex.
             cargo_toml_version = matches.group(1)
 
-        if self.gateway_repo_version != cargo_toml_version:
+        if self.repo_version != cargo_toml_version:
             log_error(
-                "ERROR: Cargo.toml version does not match Gateway version!\n"
-                f"Gateway version: {self.gateway_repo_version}\n"
+                f"ERROR: Cargo.toml version does not match {self.config.name} version!\n"
+                f"{self.config.name} version: {self.repo_version}\n"
                 f"Cargo.toml version: {cargo_toml_version}\n"
             )
             log_info("Run `make update-bindings` to update the crate's version.")
             sys.exit(ExitStatus.CRATE_VERSION_NOT_UP_TO_DATE.value)
         log_success(
-            f"The version of the crate match with the Gateway version: {self.gateway_repo_version}!\n"
+            f"The version of the crate match with the {self.config.name} version: {self.repo_version}!\n"
         )
 
     def update_crate_version(self):
-        """Updates the crate's version to match with the Gateway version."""
+        """Updates the crate's version to match with the project version."""
         log_info("Updating the crate's version...")
 
-        with open(f"{GW_CRATE_DIR}/Cargo.toml", "r") as cargo_toml_fd:
+        with open(f"{self.config.crate_dir}/Cargo.toml", "r") as cargo_toml_fd:
             cargo_toml_content = cargo_toml_fd.read()
 
         # Replace the version in the Cargo.toml
@@ -223,18 +267,18 @@ class BindingsUpdater:
         # make sure we do not alter the original format of the Cargo.toml.
         cargo_toml_content = re.sub(
             r'(\[package\].*?version\s*=\s*")[^"]+(")',
-            lambda m: m.group(1) + self.gateway_repo_version + m.group(2),
+            lambda m: m.group(1) + self.repo_version + m.group(2),
             cargo_toml_content,
             count=1,
             flags=re.DOTALL,
         )
 
-        with open(f"{GW_CRATE_DIR}/Cargo.toml", "w") as cargo_toml_fd:
+        with open(f"{self.config.crate_dir}/Cargo.toml", "w") as cargo_toml_fd:
             cargo_toml_fd.write(cargo_toml_content)
 
         log_success(
             f"The crate's version has been successfully updated to "
-            f"{self.gateway_repo_version}!\n"
+            f"{self.repo_version}!\n"
         )
 
 
