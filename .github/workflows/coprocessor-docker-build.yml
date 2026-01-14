@@ -12,6 +12,8 @@ on:
         required: true
       BLOCKCHAIN_ACTIONS_TOKEN:
         required: true
+      GHCR_READ_TOKEN:
+        required: true
       CGR_USERNAME:
         required: true
       CGR_PASSWORD:
@@ -76,67 +78,34 @@ permissions: {}
 
 concurrency:
   group: coprocessor-docker-build-${{ github.ref_name }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 jobs:
-  check-changes:
-    name: check-changes
-    permissions:
+  ########################################################################
+  #                             DB MIGRATION                             #
+  ########################################################################
+  check-changes-db-migration:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets: &check_changes_secrets
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+    permissions: &check_changes_permissions
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
-    outputs:
-      changes-db-migration: ${{ steps.filter.outputs.db-migration }}
-      changes-gw-listener: ${{ steps.filter.outputs.gw-listener }}
-      changes-host-listener: ${{ steps.filter.outputs.host-listener }}
-      changes-sns-worker: ${{ steps.filter.outputs.sns-worker }}
-      changes-tfhe-worker: ${{ steps.filter.outputs.tfhe-worker }}
-      changes-tx-sender: ${{ steps.filter.outputs.tx-sender }}
-      changes-zkproof-worker: ${{ steps.filter.outputs.zkproof-worker }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: 'false'
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
-        id: filter
-        with:
-          filters: |
-            db-migration:
-              - .github/workflows/coprocessor-docker-build.yml
-              - coprocessor/fhevm-engine/db-migration/**
-            gw-listener:
-              - .github/workflows/coprocessor-docker-build.yml
-              - coprocessor/fhevm-engine/gw-listener/**
-              - coprocessor/fhevm-engine/Cargo.*
-            host-listener:
-              - .github/workflows/coprocessor-docker-build.yml
-              - coprocessor/fhevm-engine/host-listener/**
-              - coprocessor/fhevm-engine/Cargo.*
-              - host-contracts/contracts/*Events.sol
-              - host-contracts/contracts/shared/**
-            sns-worker:
-              - .github/workflows/coprocessor-docker-build.yml
-              - coprocessor/fhevm-engine/sns-worker/**
-              - coprocessor/fhevm-engine/Cargo.*
-            tfhe-worker:
-              - .github/workflows/coprocessor-docker-build.yml
-              - coprocessor/fhevm-engine/tfhe-worker/**
-              - coprocessor/fhevm-engine/Cargo.*
-            tx-sender:
-              - .github/workflows/coprocessor-docker-build.yml
-              - coprocessor/fhevm-engine/transaction-sender/**
-              - coprocessor/fhevm-engine/Cargo.*
-            zkproof-worker:
-              - .github/workflows/coprocessor-docker-build.yml
-              - coprocessor/fhevm-engine/zkproof-worker/**
-              - coprocessor/fhevm-engine/Cargo.*
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/coprocessor/db-migration
+      filters: |
+        db-migration:
+          - .github/workflows/coprocessor-docker-build.yml
+          - coprocessor/fhevm-engine/db-migration/**
 
   build-db-migration:
-    needs: check-changes
+    needs: check-changes-db-migration
     if: |
       github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-db-migration == 'true')
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes-db-migration.outputs.changes == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_db_migration)
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     secrets: &docker_secrets
@@ -160,11 +129,43 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-db-migration"
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
+  re-tag-db-migration-image:
+    needs: check-changes-db-migration
+    if: |
+      needs.check-changes-db-migration.outputs.changes != 'true' && github.event_name == 'push'
+    permissions: &re-tag-image-permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/db-migration"
+      previous-tag-or-commit: ${{ needs.check-changes-db-migration.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                           GATEWAY LISTENER                           #
+  ########################################################################
+  check-changes-gw-listener:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/coprocessor/gw-listener
+      filters: |
+        gw-listener:
+          - .github/workflows/coprocessor-docker-build.yml
+          - coprocessor/fhevm-engine/gw-listener/**
+          - coprocessor/fhevm-engine/Cargo.*
+
   build-gw-listener:
-    needs: check-changes
+    needs: check-changes-gw-listener
     if: |
       github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-gw-listener == 'true')
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes-gw-listener.outputs.changes == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_gw_listener)
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -177,11 +178,41 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-gw-listener"
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
+  re-tag-gw-listener-image:
+    needs: check-changes-gw-listener
+    if: |
+      needs.check-changes-gw-listener.outputs.changes != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/gw-listener"
+      previous-tag-or-commit: ${{ needs.check-changes-gw-listener.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                            HOST LISTENER                             #
+  ########################################################################
+  check-changes-host-listener:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/coprocessor/host-listener
+      filters: |
+        host-listener:
+          - .github/workflows/coprocessor-docker-build.yml
+          - coprocessor/fhevm-engine/host-listener/**
+          - coprocessor/fhevm-engine/Cargo.*
+          - host-contracts/contracts/*Events.sol
+          - host-contracts/contracts/shared/**
+
   build-host-listener:
-    needs: check-changes
+    needs: check-changes-host-listener
     if: |
       github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-host-listener == 'true')
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes-host-listener.outputs.changes == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_host_listener)
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -194,11 +225,39 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-host-listener"
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
+  re-tag-host-listener-image:
+    needs: check-changes-host-listener
+    if: |
+      needs.check-changes-host-listener.outputs.changes != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/host-listener"
+      previous-tag-or-commit: ${{ needs.check-changes-host-listener.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                              SNS WORKER                              #
+  ########################################################################
+  check-changes-sns-worker:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/coprocessor/sns-worker
+      filters: |
+        sns-worker:
+          - .github/workflows/coprocessor-docker-build.yml
+          - coprocessor/fhevm-engine/sns-worker/**
+          - coprocessor/fhevm-engine/Cargo.*
+
   build-sns-worker:
-    needs: check-changes
+    needs: check-changes-sns-worker
     if: |
       github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-sns-worker == 'true')
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes-sns-worker.outputs.changes == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_sns_worker)
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -211,11 +270,39 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-sns-worker"
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
+  re-tag-sns-worker-image:
+    needs: check-changes-sns-worker
+    if: |
+      needs.check-changes-sns-worker.outputs.changes != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/sns-worker"
+      previous-tag-or-commit: ${{ needs.check-changes-sns-worker.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                             TFHE WORKER                              #
+  ########################################################################
+  check-changes-tfhe-worker:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/coprocessor/tfhe-worker
+      filters: |
+        tfhe-worker:
+          - .github/workflows/coprocessor-docker-build.yml
+          - coprocessor/fhevm-engine/tfhe-worker/**
+          - coprocessor/fhevm-engine/Cargo.*
+
   build-tfhe-worker:
-    needs: check-changes
+    needs: check-changes-tfhe-worker
     if: |
       github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-tfhe-worker == 'true')
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes-tfhe-worker.outputs.changes == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_tfhe_worker)
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -228,11 +315,39 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-tfhe-worker"
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
+  re-tag-tfhe-worker-image:
+    needs: check-changes-tfhe-worker
+    if: |
+      needs.check-changes-tfhe-worker.outputs.changes != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/tfhe-worker"
+      previous-tag-or-commit: ${{ needs.check-changes-tfhe-worker.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                          TRANSACTION SENDER                          #
+  ########################################################################
+  check-changes-tx-sender:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/coprocessor/tx-sender
+      filters: |
+        tx-sender:
+          - .github/workflows/coprocessor-docker-build.yml
+          - coprocessor/fhevm-engine/transaction-sender/**
+          - coprocessor/fhevm-engine/Cargo.*
+
   build-tx-sender:
-    needs: check-changes
+    needs: check-changes-tx-sender
     if: |
       github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-tx-sender == 'true')
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes-tx-sender.outputs.changes == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_tx_sender)
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -245,11 +360,39 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-tx-sender"
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
+  re-tag-tx-sender-image:
+    needs: check-changes-tx-sender
+    if: |
+      needs.check-changes-tx-sender.outputs.changes != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/tx-sender"
+      previous-tag-or-commit: ${{ needs.check-changes-tx-sender.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                            ZKPROOF WORKER                            #
+  ########################################################################
+  check-changes-zkproof-worker:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/coprocessor/zkproof-worker
+      filters: |
+        zkproof-worker:
+          - .github/workflows/coprocessor-docker-build.yml
+          - coprocessor/fhevm-engine/zkproof-worker/**
+          - coprocessor/fhevm-engine/Cargo.*
+
   build-zkproof-worker:
-    needs: check-changes
+    needs: check-changes-zkproof-worker
     if: |
       github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-zkproof-worker == 'true')
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes-zkproof-worker.outputs.changes == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_zkproof_worker)
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -262,83 +405,13 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-zkproof-worker"
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
-  re-tag-db-migration-image:
-    needs: check-changes
-    if: |
-      needs.check-changes.outputs.changes-db-migration != 'true' && github.event_name == 'push'
-    permissions: &re-tag-image-permissions
-      actions: 'read' # Required to read workflow run information
-      contents: 'read' # Required to checkout repository code
-      packages: 'write' # Required to publish Docker images
-      id-token: 'write' # Required for OIDC authentication
-    uses: ./.github/workflows/re-tag-docker-image.yml
-    with:
-      image-name: "fhevm/coprocessor/db-migration"
-      previous-tag-or-commit: ${{ github.event.before }}
-      new-tag-or-commit: ${{ github.event.after }}
-
-  re-tag-gw-listener-image:
-    needs: check-changes
-    if: |
-      needs.check-changes.outputs.changes-gw-listener != 'true' && github.event_name == 'push'
-    permissions: *re-tag-image-permissions
-    uses: ./.github/workflows/re-tag-docker-image.yml
-    with:
-      image-name: "fhevm/coprocessor/gw-listener"
-      previous-tag-or-commit: ${{ github.event.before }}
-      new-tag-or-commit: ${{ github.event.after }}
-
-  re-tag-host-listener-image:
-    needs: check-changes
-    if: |
-      needs.check-changes.outputs.changes-host-listener != 'true' && github.event_name == 'push'
-    permissions: *re-tag-image-permissions
-    uses: ./.github/workflows/re-tag-docker-image.yml
-    with:
-      image-name: "fhevm/coprocessor/host-listener"
-      previous-tag-or-commit: ${{ github.event.before }}
-      new-tag-or-commit: ${{ github.event.after }}
-
-  re-tag-sns-worker-image:
-    needs: check-changes
-    if: |
-      needs.check-changes.outputs.changes-sns-worker != 'true' && github.event_name == 'push'
-    permissions: *re-tag-image-permissions
-    uses: ./.github/workflows/re-tag-docker-image.yml
-    with:
-      image-name: "fhevm/coprocessor/sns-worker"
-      previous-tag-or-commit: ${{ github.event.before }}
-      new-tag-or-commit: ${{ github.event.after }}
-
-  re-tag-tfhe-worker-image:
-    needs: check-changes
-    if: |
-      needs.check-changes.outputs.changes-tfhe-worker != 'true' && github.event_name == 'push'
-    permissions: *re-tag-image-permissions
-    uses: ./.github/workflows/re-tag-docker-image.yml
-    with:
-      image-name: "fhevm/coprocessor/tfhe-worker"
-      previous-tag-or-commit: ${{ github.event.before }}
-      new-tag-or-commit: ${{ github.event.after }}
-
-  re-tag-tx-sender-image:
-    needs: check-changes
-    if: |
-      needs.check-changes.outputs.changes-tx-sender != 'true' && github.event_name == 'push'
-    permissions: *re-tag-image-permissions
-    uses: ./.github/workflows/re-tag-docker-image.yml
-    with:
-      image-name: "fhevm/coprocessor/tx-sender"
-      previous-tag-or-commit: ${{ github.event.before }}
-      new-tag-or-commit: ${{ github.event.after }}
-
   re-tag-zkproof-worker-image:
-    needs: check-changes
+    needs: check-changes-zkproof-worker
     if: |
-      needs.check-changes.outputs.changes-zkproof-worker != 'true' && github.event_name == 'push'
+      needs.check-changes-zkproof-worker.outputs.changes != 'true' && github.event_name == 'push'
     permissions: *re-tag-image-permissions
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/coprocessor/zkproof-worker"
-      previous-tag-or-commit: ${{ github.event.before }}
+      previous-tag-or-commit: ${{ needs.check-changes-zkproof-worker.outputs.base-commit }}
       new-tag-or-commit: ${{ github.event.after }}

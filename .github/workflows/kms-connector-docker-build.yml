@@ -9,6 +9,8 @@ on:
         required: true
       BLOCKCHAIN_ACTIONS_TOKEN:
         required: true
+      GHCR_READ_TOKEN:
+        required: true
       CGR_USERNAME:
         required: true
       CGR_PASSWORD:
@@ -55,53 +57,34 @@ permissions: {}
 
 concurrency:
   group: kms-connector-build-${{ github.ref_name }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 jobs:
-  check-changes:
-    name: check-changes
-    permissions:
+  ########################################################################
+  #                             DB MIGRATION                             #
+  ########################################################################
+  check-changes-db-migration:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets: &check_changes_secrets
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+    permissions: &check_changes_permissions
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
       pull-requests: 'read' # Required to read pull request information
-    runs-on: ubuntu-latest
-    outputs:
-      changes-db-migration: ${{ steps.filter.outputs.db-migration }}
-      changes-gw-listener: ${{ steps.filter.outputs.gw-listener }}
-      changes-kms-worker: ${{ steps.filter.outputs.kms-worker }}
-      changes-tx-sender: ${{ steps.filter.outputs.tx-sender }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: 'false'
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
-        id: filter
-        with:
-          filters: |
-            db-migration:
-              - .github/workflows/kms-connector-docker-build.yml
-              - kms-connector/connector-db/**
-            gw-listener:
-              - .github/workflows/kms-connector-docker-build.yml
-              - kms-connector/crates/gw-listener/**
-              - kms-connector/crates/utils/**
-              - kms-connector/Cargo.*
-            kms-worker:
-              - .github/workflows/kms-connector-docker-build.yml
-              - kms-connector/crates/kms-worker/**
-              - kms-connector/crates/utils/**
-              - kms-connector/Cargo.*
-            tx-sender:
-              - .github/workflows/kms-connector-docker-build.yml
-              - kms-connector/crates/tx-sender/**
-              - kms-connector/crates/utils/**
-              - kms-connector/Cargo.*
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/kms-connector/db-migration
+      filters: |
+        db-migration:
+          - .github/workflows/kms-connector-docker-build.yml
+          - kms-connector/connector-db/**
 
   build-db-migration:
-    needs: check-changes
+    needs: check-changes-db-migration
     if: |
       github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-db-migration == 'true')
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes-db-migration.outputs.changes == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_db_migration)
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     secrets: &docker_secrets
@@ -125,11 +108,44 @@ jobs:
       app-cache-dir: "fhevm-kms-connector-db-migration"
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
+  re-tag-db-migration-image:
+    needs: check-changes-db-migration
+    if: |
+      needs.check-changes-db-migration.outputs.changes != 'true' && github.event_name == 'push'
+    permissions: &re-tag-image-permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/kms-connector/db-migration"
+      previous-tag-or-commit: ${{ needs.check-changes-db-migration.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                           GATEWAY LISTENER                           #
+  ########################################################################
+  check-changes-gw-listener:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/kms-connector/gw-listener
+      filters: |
+        gw-listener:
+          - .github/workflows/kms-connector-docker-build.yml
+          - kms-connector/crates/gw-listener/**
+          - kms-connector/crates/utils/**
+          - kms-connector/Cargo.*
+
   build-gw-listener:
-    needs: check-changes
+    needs: check-changes-gw-listener
     if: |
       github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-gw-listener == 'true')
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes-gw-listener.outputs.changes == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_gw_listener)
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -142,11 +158,40 @@ jobs:
       app-cache-dir: "fhevm-kms-connector-gw-listener"
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
+  re-tag-gw-listener-image:
+    needs: check-changes-gw-listener
+    if: |
+      needs.check-changes-gw-listener.outputs.changes != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/kms-connector/gw-listener"
+      previous-tag-or-commit: ${{ needs.check-changes-gw-listener.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                              KMS WORKER                              #
+  ########################################################################
+  check-changes-kms-worker:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/kms-connector/kms-worker
+      filters: |
+        kms-worker:
+          - .github/workflows/kms-connector-docker-build.yml
+          - kms-connector/crates/kms-worker/**
+          - kms-connector/crates/utils/**
+          - kms-connector/Cargo.*
+
   build-kms-worker:
-    needs: check-changes
+    needs: check-changes-kms-worker
     if: |
       github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-kms-worker == 'true')
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes-kms-worker.outputs.changes == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_kms_worker)
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -159,11 +204,40 @@ jobs:
       app-cache-dir: "fhevm-kms-connector-kms-worker"
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
+  re-tag-kms-worker-image:
+    needs: check-changes-kms-worker
+    if: |
+      needs.check-changes-kms-worker.outputs.changes != 'true' && github.event_name == 'push'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/kms-connector/kms-worker"
+      previous-tag-or-commit: ${{ needs.check-changes-kms-worker.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                          TRANSACTION SENDER                          #
+  ########################################################################
+  check-changes-tx-sender:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/kms-connector/tx-sender
+      filters: |
+        tx-sender:
+          - .github/workflows/kms-connector-docker-build.yml
+          - kms-connector/crates/tx-sender/**
+          - kms-connector/crates/utils/**
+          - kms-connector/Cargo.*
+
   build-tx-sender:
-    needs: check-changes
+    needs: check-changes-tx-sender
     if: |
       github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes.outputs.changes-tx-sender == 'true')
+      || (github.event_name != 'workflow_dispatch' && needs.check-changes-tx-sender.outputs.changes == 'true')
       || (github.event_name == 'workflow_dispatch' && inputs.build_tx_sender)
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
@@ -176,50 +250,13 @@ jobs:
       app-cache-dir: "fhevm-kms-connector-tx-sender"
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
-  re-tag-db-migration-image:
-    needs: check-changes
-    if: |
-      needs.check-changes.outputs.changes-db-migration != 'true' && github.event_name == 'push'
-    permissions: &re-tag-image-permissions
-      actions: 'read' # Required to read workflow run information
-      contents: 'read' # Required to checkout repository code
-      packages: 'write' # Required to publish Docker images
-      id-token: 'write' # Required for OIDC authentication
-    uses: ./.github/workflows/re-tag-docker-image.yml
-    with:
-      image-name: "fhevm/kms-connector/db-migration"
-      previous-tag-or-commit: ${{ github.event.before }}
-      new-tag-or-commit: ${{ github.event.after }}
-
-  re-tag-gw-listener-image:
-    needs: check-changes
-    if: |
-      needs.check-changes.outputs.changes-gw-listener != 'true' && github.event_name == 'push'
-    permissions: *re-tag-image-permissions
-    uses: ./.github/workflows/re-tag-docker-image.yml
-    with:
-      image-name: "fhevm/kms-connector/gw-listener"
-      previous-tag-or-commit: ${{ github.event.before }}
-      new-tag-or-commit: ${{ github.event.after }}
-
-  re-tag-kms-worker-image:
-    needs: check-changes
-    if: |
-      needs.check-changes.outputs.changes-kms-worker != 'true' && github.event_name == 'push'
-    permissions: *re-tag-image-permissions
-    uses: ./.github/workflows/re-tag-docker-image.yml
-    with:
-      image-name: "fhevm/kms-connector/kms-worker"
-      previous-tag-or-commit: ${{ github.event.before }}
-      new-tag-or-commit: ${{ github.event.after }}
-
   re-tag-tx-sender-image:
-    needs: check-changes
+    needs: check-changes-tx-sender
     if: |
-      needs.check-changes.outputs.changes-tx-sender != 'true' && github.event_name == 'push'
+      needs.check-changes-tx-sender.outputs.changes != 'true' && github.event_name == 'push'
     permissions: *re-tag-image-permissions
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
       image-name: "fhevm/kms-connector/tx-sender"
-      previous-tag-or-commit: ${{ github.event.before }}
+      previous-tag-or-commit: ${{ needs.check-changes-tx-sender.outputs.base-commit }}
       new-tag-or-commit: ${{ github.event.after }}
