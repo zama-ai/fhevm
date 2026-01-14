@@ -48,10 +48,10 @@ docker-compose-down:
 	docker compose -vvv down -v --remove-orphans
 
 check-bindings: ensure-addresses
-	python3 ../ci/bindings_update.py --project gateway check
+	python3 ../ci/contracts_bindings_update.py --project gateway check
 
 update-bindings: ensure-addresses
-	python3 ../ci/bindings_update.py --project gateway update
+	python3 ../ci/contracts_bindings_update.py --project gateway update
 
 lint-bindings:
 	cd rust_bindings && cargo clippy -- -D warnings && cd ..
@@ -97,7 +97,7 @@ deploy-mocked-zama-oft:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployMockedZamaOFT
 
 # Deploy the contracts needed for deploying the gateway contracts
-deploy-setup-contracts: 
+deploy-setup-contracts:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deploySetupContracts --deploy-mocked-zama-oft true
 
 # Ensure that the empty proxy addresses exists as these are required for contract compilation.
