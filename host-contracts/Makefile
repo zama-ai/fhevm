@@ -48,8 +48,17 @@ check-selectors:
 update-selectors:
 	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 > ./docs/contract_selectors.txt
 
+check-bindings: ensure-addresses
+	python3 ../ci/bindings_update.py --project host check
+
+update-bindings: ensure-addresses
+	python3 ../ci/bindings_update.py --project host update
+
+lint-bindings:
+	cd rust_bindings && cargo clippy -- -D warnings && cd ..
+
 # Update auto-generated files for conformance checks
-update-conformance: update-selectors
+update-conformance: update-bindings update-selectors
 
 # Conform to pre-commit checks
 conformance: prettier update-conformance

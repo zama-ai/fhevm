@@ -48,10 +48,10 @@ docker-compose-down:
 	docker compose -vvv down -v --remove-orphans
 
 check-bindings: ensure-addresses
-	python3 scripts/bindings_update.py check
+	python3 ../ci/bindings_update.py --project gateway check
 
 update-bindings: ensure-addresses
-	python3 scripts/bindings_update.py update
+	python3 ../ci/bindings_update.py --project gateway update
 
 lint-bindings:
 	cd rust_bindings && cargo clippy -- -D warnings && cd ..
