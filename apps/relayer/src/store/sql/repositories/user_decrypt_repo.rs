@@ -181,6 +181,7 @@ impl UserDecryptRepository {
                 })?;
 
                 // Second query: Fetch shares from user_decrypt_share table
+                // Use same connection to ensure transaction consistency
                 let query_start = Instant::now();
                 let shares_result = sqlx::query_as::<_, UserDecryptShare>(
                     r#"
@@ -191,7 +192,7 @@ impl UserDecryptRepository {
                     "#,
                 )
                 .bind(&gw_reference_id)
-                .fetch_all(&self.pool.get_app_pool())
+                .fetch_all(&mut *conn)
                 .await;
 
                 match &shares_result {
