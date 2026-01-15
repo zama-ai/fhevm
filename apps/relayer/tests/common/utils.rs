@@ -13,6 +13,8 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use super::test_schema::TestSchema;
+
 /// Per-test isolated setup with own ports, database, and mock servers
 #[allow(dead_code)]
 pub struct TestSetup {
@@ -23,6 +25,7 @@ pub struct TestSetup {
     gateway_handle: MockServerHandle,
     cancellation_token: CancellationToken,
     relayer_handle: JoinHandle<()>,
+    test_schema: TestSchema,
 }
 
 impl TestSetup {
@@ -78,6 +81,13 @@ impl TestSetup {
     pub async fn new_with_config_path(
         config_path: Option<std::path::PathBuf>,
     ) -> eyre::Result<Self> {
+        // Create isolated test schema first
+        let test_schema = TestSchema::new().await?;
+        tracing::info!(
+            "Created isolated test schema: {}",
+            test_schema.schema_name()
+        );
+
         // Get free ports for mock servers (they don't support :0 yet)
         let host_port = get_free_port()?;
         let gateway_port = get_free_port()?;
@@ -147,9 +157,16 @@ impl TestSetup {
 
         // Keep test pools small to avoid exhausting CI Postgres.
         settings.storage.app_pool.max_connections = 2;
-        settings.storage.cron_pool.max_connections = 3;
         settings.storage.app_pool.min_connections = 0;
+
+        // Cron pool is unused in test_mock mode (default: test_mock=true)
+        // Cron workers (timeout/expiry) are disabled when test_mock is true
+        // Minimum allowed value is 1 connection
+        settings.storage.cron_pool.max_connections = 1;
         settings.storage.cron_pool.min_connections = 0;
+
+        // Configure to use isolated test schema
+        settings.storage.sql_database_url = test_schema.database_url();
 
         // Configure with dynamic ports (use :0 for automatic allocation for relayer HTTP/metrics)
         settings.http.endpoint = Some("0.0.0.0:0".to_string());
@@ -172,6 +189,7 @@ impl TestSetup {
             settings.storage.app_pool.min_connections;
         relayer_settings.storage.cron_pool.min_connections =
             settings.storage.cron_pool.min_connections;
+        relayer_settings.storage.sql_database_url = settings.storage.sql_database_url.clone();
         relayer_settings.http.endpoint = settings.http.endpoint.clone();
         relayer_settings.gateway.blockchain_rpc.http_url =
             settings.gateway.blockchain_rpc.http_url.clone();
@@ -228,11 +246,12 @@ impl TestSetup {
             gateway_handle,
             cancellation_token,
             relayer_handle,
+            test_schema,
         })
     }
 
     #[allow(dead_code)]
-    pub async fn shutdown(self) {
+    pub async fn shutdown(mut self) {
         self.cancellation_token.cancel();
 
         // Only wait for relayer - it has the DB connections
@@ -243,6 +262,11 @@ impl TestSetup {
         // Mock servers will shutdown when handles are dropped
         drop(self.host_handle);
         drop(self.gateway_handle);
+
+        // Clean up test schema
+        if let Err(e) = self.test_schema.cleanup().await {
+            tracing::error!("Failed to cleanup test schema: {}", e);
+        }
     }
 }
 
