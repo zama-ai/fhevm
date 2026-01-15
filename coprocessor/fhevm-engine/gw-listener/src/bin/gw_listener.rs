@@ -66,10 +66,10 @@ struct Conf {
     #[arg(long)]
     host_chain_id: Option<u64>,
 
-    #[arg(long, default_value = "1s", value_parser = parse_duration)]
+    #[arg(long, default_value = "500ms", value_parser = parse_duration)]
     get_logs_poll_interval: Duration,
 
-    #[arg(long, default_value_t = 100)]
+    #[arg(long, default_value_t = 10)]
     get_logs_block_batch_size: u64,
 
     /// gw-listener service name in OTLP traces
