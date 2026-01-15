@@ -148,6 +148,11 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HandlerRegistry<E>
         self.event_dispatcher
             .register_once_handler(event_id, job_id, handler);
     }
+
+    fn unregister_once_handler(&self, event_id: u8, job_id: JobId) {
+        self.event_dispatcher
+            .unregister_once_handler(event_id, job_id);
+    }
 }
 
 #[cfg(test)]

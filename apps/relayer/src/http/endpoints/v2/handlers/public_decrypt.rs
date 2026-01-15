@@ -21,7 +21,9 @@ use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::HttpApiVersion;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::{ContentHasher, Orchestrator};
-use crate::store::sql::repositories::public_decrypt_repo::PublicDecryptRepository;
+use crate::store::sql::repositories::public_decrypt_repo::{
+    PublicDecryptInsertResult, PublicDecryptRepository,
+};
 use axum::{
     body::Bytes as AxumBytes,
     extract::{FromRequest, Path},
@@ -245,7 +247,14 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             )
             .await
         {
-            Ok(assigned_ext_job_id) => assigned_ext_job_id,
+            Ok(insert_result) => {
+                // Extract ext_job_id from any variant
+                match insert_result {
+                    PublicDecryptInsertResult::Inserted { ext_job_id } => ext_job_id,
+                    PublicDecryptInsertResult::DuplicateCompleted { ext_job_id, .. } => ext_job_id,
+                    PublicDecryptInsertResult::DuplicateProcessing { ext_job_id } => ext_job_id,
+                }
+            }
             Err(e) => {
                 error!(
                     "Failed to insert/get public decrypt into/from database: {}",
@@ -279,6 +288,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         }
 
         info!("Dispatched event to orchestrator to initiate processing");
+
+        // TODO: V2 has duplicate gateway transaction bug - always dispatches event even for duplicates.
+        // This wastes resources and sends duplicate transactions to gateway. Should implement proper
+        // deduplication like V1 (only dispatch on Inserted variant). Bug is hidden because V2 is async
+        // and returns job_id immediately without waiting for completion.
+        // See test: test_consecutive_duplicate_requests_succeed (exists for V1, needs V2 equivalent)
 
         // Generate a new request_id for this HTTP request (not stored)
         let request_id_for_response = uuid::Uuid::new_v4();

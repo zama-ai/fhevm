@@ -16,6 +16,18 @@ use crate::store::sql::{
 use alloy::primitives::U256;
 use uuid::Uuid;
 
+pub enum PublicDecryptInsertResult {
+    /// New request inserted into DB
+    Inserted { ext_job_id: Uuid },
+    /// Duplicate request that already completed
+    DuplicateCompleted {
+        ext_job_id: Uuid,
+        response: PublicDecryptResponse,
+    },
+    /// Duplicate request still being processed
+    DuplicateProcessing { ext_job_id: Uuid },
+}
+
 pub struct PublicDecryptRepository {
     pool: PgClient,
 }
@@ -70,15 +82,14 @@ impl PublicDecryptRepository {
     }
 
     /// Insert req, ext_job_id, int_job_id.
-    /// If conflict on int_job_id, it returns the EXISTING ext_job_id.
-    /// If no conflict, it inserts and returns the NEW ext_job_id.
-    // TODO: Return the umber of rows affected.
+    /// Returns an enum indicating whether the request was inserted or was a duplicate.
+    /// For duplicates, includes the current state (completed with response, or still processing).
     pub async fn insert_data_on_conflict_and_get_ext_job_id(
         &self,
         ext_job_id: Uuid,
         int_job_id_bytes: &[u8],
         request: PublicDecryptRequest,
-    ) -> SqlResult<Uuid> {
+    ) -> SqlResult<PublicDecryptInsertResult> {
         let req = serde_json::to_value(&request).map_err(|e| {
             SqlError::conversion_error(
                 "request",
@@ -102,9 +113,9 @@ impl PublicDecryptRepository {
             )
             VALUES ($1, $2, $3, 'queued'::req_status, NOW(), NOW())
             ON CONFLICT (int_job_id)
-            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status) 
+            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             DO UPDATE SET updated_at = public_decrypt_req.updated_at
-            RETURNING ext_job_id, (xmax = 0) AS "is_inserted!"
+            RETURNING ext_job_id, (xmax = 0) AS "is_inserted!", req_status AS "req_status!: ReqStatus", res
             "#,
             ext_job_id,
             int_job_id_bytes,
@@ -122,14 +133,53 @@ impl PublicDecryptRepository {
 
         let record = result?;
 
-        if record.is_inserted {
-            metrics::increment_req_status_count(
-                metrics::RequestType::PublicDecrypt,
-                ReqStatus::Queued,
-            );
-        }
+        // Match on the state and return appropriate enum variant
+        let insert_result = match (record.is_inserted, record.req_status) {
+            (true, _) => {
+                // New request inserted
+                metrics::increment_req_status_count(
+                    metrics::RequestType::PublicDecrypt,
+                    ReqStatus::Queued,
+                );
+                PublicDecryptInsertResult::Inserted {
+                    ext_job_id: record.ext_job_id,
+                }
+            }
+            (false, ReqStatus::Completed) => {
+                // Duplicate, already completed - res must exist
+                let response = record
+                    .res
+                    .ok_or_else(|| {
+                        SqlError::conversion_error(
+                            "res",
+                            "PublicDecryptResponse",
+                            "completed request missing response".to_string(),
+                        )
+                    })
+                    .and_then(|res_value| {
+                        serde_json::from_value::<PublicDecryptResponse>(res_value).map_err(|e| {
+                            SqlError::conversion_error(
+                                "res",
+                                "PublicDecryptResponse",
+                                format!("Failed to deserialize: {}", e),
+                            )
+                        })
+                    })?;
 
-        Ok(record.ext_job_id)
+                PublicDecryptInsertResult::DuplicateCompleted {
+                    ext_job_id: record.ext_job_id,
+                    response,
+                }
+            }
+            (false, _) => {
+                // Duplicate, still processing (queued, processing, etc.)
+                PublicDecryptInsertResult::DuplicateProcessing {
+                    ext_job_id: record.ext_job_id,
+                }
+            }
+        };
+
+        Ok(insert_result)
     }
 
     // GATEWAY READINESS CHECK.

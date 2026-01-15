@@ -108,4 +108,10 @@ impl<E: Event + std::fmt::Debug> HandlerRegistry<E> for TokioEventDispatcher<E> 
             .push(handler);
         debug!("Once-Handler registered for {},{}", event_id, job_id);
     }
+
+    #[instrument(skip(self))]
+    fn unregister_once_handler(&self, event_id: u8, job_id: JobId) {
+        self.once_subscribers.remove(&(event_id, job_id));
+        debug!("Once-Handler unregistered for {},{}", event_id, job_id);
+    }
 }
