@@ -34,6 +34,13 @@ struct Conf {
     )]
     catchup_input_verification_from_block: Option<i64>,
 
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Finalization margin (in blocks) used to bound InputVerification catchup"
+    )]
+    catchup_finalization_in_blocks: u64,
+
     #[arg(long)]
     gw_url: Url,
 
@@ -160,6 +167,7 @@ async fn main() -> anyhow::Result<()> {
         database_pool_size: conf.database_pool_size,
         verify_proof_req_db_channel: conf.verify_proof_req_database_channel,
         catchup_input_verification_from_block: conf.catchup_input_verification_from_block,
+        catchup_finalization_in_blocks: conf.catchup_finalization_in_blocks,
         gw_url: conf.gw_url,
         error_sleep_initial_secs: conf.error_sleep_initial_secs,
         error_sleep_max_secs: conf.error_sleep_max_secs,

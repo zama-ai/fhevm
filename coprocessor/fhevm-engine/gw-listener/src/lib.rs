@@ -41,6 +41,7 @@ pub struct ConfigSettings {
     pub database_pool_size: u32,
     pub verify_proof_req_db_channel: String,
     pub catchup_input_verification_from_block: Option<i64>,
+    pub catchup_finalization_in_blocks: u64,
 
     pub gw_url: Url,
 
@@ -73,6 +74,7 @@ impl Default for ConfigSettings {
             database_pool_size: 16,
             verify_proof_req_db_channel: "event_zkpok_new_work".to_owned(),
             catchup_input_verification_from_block: None,
+            catchup_finalization_in_blocks: 0,
             gw_url: "ws://127.0.0.1:8546".try_into().expect("Invalid URL"),
             error_sleep_initial_secs: 1,
             error_sleep_max_secs: 10,

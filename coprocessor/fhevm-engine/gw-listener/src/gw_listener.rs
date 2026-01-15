@@ -83,18 +83,27 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             .max_connections(self.conf.database_pool_size)
             .connect(self.conf.database_url.as_str())
             .await?;
-        if let Some(from_block) = self.conf.catchup_input_verification_from_block {
-            self.catchup_input_verification(&db_pool, from_block)
-                .await?;
-        }
+        let catchup_end = match self.conf.catchup_input_verification_from_block {
+            Some(from_block) => {
+                let catchup_end = self.input_verification_catchup_end().await?;
+                self.catchup_input_verification(&db_pool, from_block, catchup_end)
+                    .await?;
+                Some(catchup_end)
+            }
+            None => None,
+        };
 
         let input_verification_handle = {
             let s = self.clone();
             let d = db_pool.clone();
+            let catchup_end = catchup_end;
             tokio::spawn(async move {
                 let mut sleep_duration = s.conf.error_sleep_initial_secs as u64;
                 loop {
-                    match s.run_input_verification(&d, &mut sleep_duration).await {
+                    match s
+                        .run_input_verification(&d, &mut sleep_duration, catchup_end)
+                        .await
+                    {
                         Ok(_) => {
                             info!("run_input_verification() stopped");
                             break;
@@ -142,56 +151,37 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         &self,
         db_pool: &Pool<Postgres>,
         from_block: i64,
+        catchup_end_block: u64,
     ) -> anyhow::Result<()> {
-        let current_block = self.provider.get_block_number().await?;
         let mut from_block = if from_block >= 0 {
             from_block as u64
         } else {
-            let start = (current_block as i64 + from_block).max(0);
+            let start = (catchup_end_block as i64 + from_block).max(0);
             start as u64
         };
-        if from_block > current_block {
+        if from_block > catchup_end_block {
             info!(
                 from_block,
-                current_block, "Catchup on InputVerification skipped (start > head)"
+                catchup_end_block, "Catchup on InputVerification skipped (start > end)"
             );
             return Ok(());
         }
         info!(
             from_block,
-            current_block, "Catchup on InputVerification, start"
+            catchup_end_block, "Catchup on InputVerification, start"
         );
 
         let mut total_events = 0u64;
-        while from_block <= current_block {
+        while from_block <= catchup_end_block {
             let to_block = {
                 let max = from_block
                     .saturating_add(self.conf.get_logs_block_batch_size.saturating_sub(1));
-                std::cmp::min(max, current_block)
+                std::cmp::min(max, catchup_end_block)
             };
-            let filter = Filter::new()
-                .address(self.input_verification_address)
-                .event_signature(InputVerification::VerifyProofRequest::SIGNATURE_HASH)
-                .from_block(from_block)
-                .to_block(to_block);
-
-            let logs = self.provider.get_logs(&filter).await?;
-            for log in logs {
-                if let Ok(event) =
-                    InputVerification::InputVerificationEvents::decode_log(&log.inner)
-                {
-                    if let InputVerification::InputVerificationEvents::VerifyProofRequest(request) =
-                        event.data
-                    {
-                        total_events += 1;
-                        self.verify_proof_request(db_pool, request, log).await?;
-                    }
-                } else {
-                    error!(log = ?log, "Failed to decode InputVerification VerifyProofRequest log");
-                }
-            }
-
-            if to_block == current_block {
+            total_events += self
+                .fetch_and_apply_input_verification_logs(db_pool, from_block, to_block)
+                .await?;
+            if to_block == catchup_end_block {
                 break;
             }
             from_block = to_block + 1;
@@ -201,10 +191,64 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         Ok(())
     }
 
+    async fn input_verification_catchup_end(&self) -> anyhow::Result<u64> {
+        let current_block = self.provider.get_block_number().await?;
+        Ok(current_block.saturating_sub(self.conf.catchup_finalization_in_blocks))
+    }
+
+    async fn close_input_verification_gap(
+        &self,
+        db_pool: &Pool<Postgres>,
+        from_block: u64,
+    ) -> anyhow::Result<()> {
+        let current_block = self.provider.get_block_number().await?;
+        if from_block > current_block {
+            return Ok(());
+        }
+        let total_events = self
+            .fetch_and_apply_input_verification_logs(db_pool, from_block, current_block)
+            .await?;
+        info!(
+            from_block,
+            current_block, total_events, "Catchup on InputVerification, gap closed"
+        );
+        Ok(())
+    }
+
+    async fn fetch_and_apply_input_verification_logs(
+        &self,
+        db_pool: &Pool<Postgres>,
+        from_block: u64,
+        to_block: u64,
+    ) -> anyhow::Result<u64> {
+        let filter = Filter::new()
+            .address(self.input_verification_address)
+            .event_signature(InputVerification::VerifyProofRequest::SIGNATURE_HASH)
+            .from_block(from_block)
+            .to_block(to_block);
+
+        let logs = self.provider.get_logs(&filter).await?;
+        let mut total_events = 0u64;
+        for log in logs {
+            if let Ok(event) = InputVerification::InputVerificationEvents::decode_log(&log.inner) {
+                if let InputVerification::InputVerificationEvents::VerifyProofRequest(request) =
+                    event.data
+                {
+                    total_events += 1;
+                    self.verify_proof_request(db_pool, request, log).await?;
+                }
+            } else {
+                error!(log = ?log, "Failed to decode InputVerification VerifyProofRequest log");
+            }
+        }
+        Ok(total_events)
+    }
+
     async fn run_input_verification(
         &self,
         db_pool: &Pool<Postgres>,
         sleep_duration: &mut u64,
+        catchup_end: Option<u64>,
     ) -> anyhow::Result<()> {
         let input_verification =
             InputVerification::new(self.input_verification_address, &self.provider);
@@ -222,6 +266,11 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             .into_stream()
             .fuse();
         info!("Subscribed to InputVerification.VerifyProofRequest events");
+
+        if let Some(catchup_end) = catchup_end {
+            self.close_input_verification_gap(db_pool, catchup_end.saturating_add(1))
+                .await?;
+        }
 
         loop {
             tokio::select! {
