@@ -34,7 +34,11 @@ async function pauseSingleContract(name: string, ethers: HardhatEthersHelpers, u
   const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress, "PAUSER_PRIVATE_KEY");
 
   // Pause the contract
-  await contract.pause();
+  const pauseTx = await contract.pause();
+  const pauseReceipt = await pauseTx.wait();
+  if (!pauseReceipt || pauseReceipt.status !== 1) {
+    throw new Error(`Pausing ${name} contract failed (tx hash: ${pauseTx.hash})`);
+  }
 
   console.log(`${name} contract successfully paused at address: ${proxyAddress}\n`);
 }
@@ -46,7 +50,11 @@ async function unpauseSingleContract(name: string, ethers: HardhatEthersHelpers,
   const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress, "DEPLOYER_PRIVATE_KEY");
 
   // Unpause the contract
-  await contract.unpause();
+  const unpauseTx = await contract.unpause();
+  const unpauseReceipt = await unpauseTx.wait();
+  if (!unpauseReceipt || unpauseReceipt.status !== 1) {
+    throw new Error(`Unpausing ${name} contract failed (tx hash: ${unpauseTx.hash})`);
+  }
 
   console.log(`${name} contract successfully unpaused at address: ${proxyAddress}\n`);
 }
@@ -130,7 +138,11 @@ task("task:pauseAllGatewayContracts")
     );
 
     // Pause all the Gateway contracts
-    await contract.pauseAllGatewayContracts();
+    const pauseTx = await contract.pauseAllGatewayContracts();
+    const pauseReceipt = await pauseTx.wait();
+    if (!pauseReceipt || pauseReceipt.status !== 1) {
+      throw new Error(`Pausing all Gateway contracts failed (tx hash: ${pauseTx.hash})`);
+    }
 
     console.log(`All Gateway contracts successfully paused through contract ${name} at address: ${proxyAddress}`);
   });
@@ -158,7 +170,11 @@ task("task:unpauseAllGatewayContracts")
     );
 
     // Unpause all the Gateway contracts
-    await contract.unpauseAllGatewayContracts();
+    const unpauseTx = await contract.unpauseAllGatewayContracts();
+    const unpauseReceipt = await unpauseTx.wait();
+    if (!unpauseReceipt || unpauseReceipt.status !== 1) {
+      throw new Error(`Unpausing all Gateway contracts failed (tx hash: ${unpauseTx.hash})`);
+    }
 
     console.log(`All Gateway contracts successfully unpaused through contract ${name} at address: ${proxyAddress}`);
   });
