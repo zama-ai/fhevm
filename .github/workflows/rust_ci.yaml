@@ -82,27 +82,12 @@ jobs:
       matrix:
         folder: [apps/relayer]
 
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: relayer_db
-        ports:
-          - 5432:5432
-        # Health check ensures DB is ready before steps run
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
       SQLX_OFFLINE: true # Use cached queries for compilation (speeds up CI)
-      DATABASE_URL: postgres://postgres:password@localhost:5432/relayer_db
-      APP_STORAGE__SQL_DATABASE_URL: postgres://postgres:password@localhost:5432/relayer_db
-      # APP_STORAGE__SQL_MAX_CONNECTIONS: 1000
+      # Aligned with local dev setup (apps/relayer/dev/docker-compose.yaml)
+      DATABASE_URL: postgres://postgres:postgres@localhost:5433/relayer_db
+      APP_STORAGE__SQL_DATABASE_URL: postgres://postgres:postgres@localhost:5433/relayer_db
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5433/relayer_db
       APP_GLOBAL__MOCK_TEST: true
 
     steps:
@@ -113,25 +98,48 @@ jobs:
           token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
           submodules: recursive
 
-      # Setting up PostgreSQL with high connection limits for sqlx tests
-      # - name: Start PostgreSQL (High Connections)
-      #   run: |
-      #     docker run -d \
-      #       --name postgres \
-      #       -p 5432:5432 \
-      #       -e POSTGRES_USER=postgres \
-      #       -e POSTGRES_PASSWORD=password \
-      #       -e POSTGRES_DB=relayer_db \
-      #       --shm-size=1g \
-      #       postgres:17 \
-      #       postgres -c max_connections=5000 -c shared_buffers=128MB
+      - name: Setup PostgreSQL
+        run: |
+          # Stop all PostgreSQL instances
+          sudo systemctl stop postgresql || true
 
-      # - name: Wait for PostgreSQL
-      #   run: |
-      #     until docker exec postgres pg_isready -U postgres; do
-      #       echo "Waiting for postgres..."
-      #       sleep 2
-      #     done
+          # Install PostgreSQL 17
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
+          sudo sh -c 'echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          sudo apt-get update
+          sudo apt-get install -y postgresql-17
+
+          # Drop any existing clusters and create fresh one on port 5433 (aligned with local dev)
+          sudo pg_dropcluster 17 main --stop || true
+          sudo pg_dropcluster 16 main --stop || true
+          sudo pg_dropcluster 14 main --stop || true
+          sudo pg_createcluster 17 main --port=5433
+
+          # Configure max_connections and authentication
+          sudo tee -a /etc/postgresql/17/main/postgresql.conf > /dev/null <<EOF
+          max_connections = 500
+          shared_buffers = 256MB
+          EOF
+
+          # Allow password auth
+          echo "local all postgres trust" | sudo tee /etc/postgresql/17/main/pg_hba.conf
+          echo "host all all 127.0.0.1/32 md5" | sudo tee -a /etc/postgresql/17/main/pg_hba.conf
+          echo "host all all ::1/128 md5" | sudo tee -a /etc/postgresql/17/main/pg_hba.conf
+
+          # Start PostgreSQL
+          sudo pg_ctlcluster 17 main start
+
+          # Wait for PostgreSQL to be ready
+          until pg_isready -h localhost -p 5433; do sleep 1; done
+
+          # Create database and set password (aligned with local: postgres/postgres)
+          sudo -u postgres psql -p 5433 -c "ALTER USER postgres PASSWORD 'postgres';"
+          sudo -u postgres psql -p 5433 -c "CREATE DATABASE relayer_db;"
+
+          # Verify
+          sudo -u postgres psql -p 5433 -c "SHOW max_connections;"
+          echo "PostgreSQL 17 ready on port 5433 with max_connections=500"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1
