@@ -26,7 +26,7 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
-pub fn update_tx_thottler_tps(
+pub fn update_tx_throttler_tps(
     control_tx: mpsc::Sender<u32>,
     payload: UpdateConfigRequest,
 ) -> Response {
@@ -138,10 +138,10 @@ pub async fn update_config(
     };
 
     match payload.name.as_str() {
-        "input_proof_throttler_tps" => update_tx_thottler_tps(input_proof_control_tx, payload),
-        "user_decrypt_thottler_tps" => update_tx_thottler_tps(user_decrypt_control_tx, payload),
+        "input_proof_throttler_tps" => update_tx_throttler_tps(input_proof_control_tx, payload),
+        "user_decrypt_throttler_tps" => update_tx_throttler_tps(user_decrypt_control_tx, payload),
         "public_decrypt_throttler_tps" => {
-            update_tx_thottler_tps(public_decrypt_control_tx, payload)
+            update_tx_throttler_tps(public_decrypt_control_tx, payload)
         }
         _ => (
             StatusCode::BAD_REQUEST,
