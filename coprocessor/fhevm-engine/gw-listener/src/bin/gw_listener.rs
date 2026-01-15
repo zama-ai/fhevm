@@ -26,6 +26,14 @@ struct Conf {
     #[arg(long, default_value = "event_zkpok_new_work")]
     verify_proof_req_database_channel: String,
 
+    #[arg(
+        long,
+        default_value = None,
+        help = "Replay InputVerification events from block (can be negative from latest)",
+        allow_hyphen_values = true
+    )]
+    catchup_input_verification_from_block: Option<i64>,
+
     #[arg(long)]
     gw_url: Url,
 
@@ -151,6 +159,7 @@ async fn main() -> anyhow::Result<()> {
         database_url: conf.database_url.clone().unwrap_or_default(),
         database_pool_size: conf.database_pool_size,
         verify_proof_req_db_channel: conf.verify_proof_req_database_channel,
+        catchup_input_verification_from_block: conf.catchup_input_verification_from_block,
         gw_url: conf.gw_url,
         error_sleep_initial_secs: conf.error_sleep_initial_secs,
         error_sleep_max_secs: conf.error_sleep_max_secs,

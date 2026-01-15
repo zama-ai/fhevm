@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use alloy::rpc::types::Filter;
-use alloy::sol_types::SolEventInterface;
+use alloy::sol_types::{SolEvent, SolEventInterface};
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
@@ -83,6 +83,10 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             .max_connections(self.conf.database_pool_size)
             .connect(self.conf.database_url.as_str())
             .await?;
+        if let Some(from_block) = self.conf.catchup_input_verification_from_block {
+            self.catchup_input_verification(&db_pool, from_block)
+                .await?;
+        }
 
         let input_verification_handle = {
             let s = self.clone();
@@ -131,6 +135,69 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         input_verification_handle.await?;
         get_logs_handle.await?;
 
+        Ok(())
+    }
+
+    async fn catchup_input_verification(
+        &self,
+        db_pool: &Pool<Postgres>,
+        from_block: i64,
+    ) -> anyhow::Result<()> {
+        let current_block = self.provider.get_block_number().await?;
+        let mut from_block = if from_block >= 0 {
+            from_block as u64
+        } else {
+            let start = (current_block as i64 + from_block).max(0);
+            start as u64
+        };
+        if from_block > current_block {
+            info!(
+                from_block,
+                current_block, "Catchup on InputVerification skipped (start > head)"
+            );
+            return Ok(());
+        }
+        info!(
+            from_block,
+            current_block, "Catchup on InputVerification, start"
+        );
+
+        let mut total_events = 0u64;
+        while from_block <= current_block {
+            let to_block = {
+                let max = from_block
+                    .saturating_add(self.conf.get_logs_block_batch_size.saturating_sub(1));
+                std::cmp::min(max, current_block)
+            };
+            let filter = Filter::new()
+                .address(self.input_verification_address)
+                .event_signature(InputVerification::VerifyProofRequest::SIGNATURE_HASH)
+                .from_block(from_block)
+                .to_block(to_block);
+
+            let logs = self.provider.get_logs(&filter).await?;
+            for log in logs {
+                if let Ok(event) =
+                    InputVerification::InputVerificationEvents::decode_log(&log.inner)
+                {
+                    if let InputVerification::InputVerificationEvents::VerifyProofRequest(request) =
+                        event.data
+                    {
+                        total_events += 1;
+                        self.verify_proof_request(db_pool, request, log).await?;
+                    }
+                } else {
+                    error!(log = ?log, "Failed to decode InputVerification VerifyProofRequest log");
+                }
+            }
+
+            if to_block == current_block {
+                break;
+            }
+            from_block = to_block + 1;
+        }
+
+        info!(total_events, "Catchup on InputVerification, finished");
         Ok(())
     }
 
