@@ -1,6 +1,6 @@
 [package]
 name = "fhevm-relayer"
-version = "0.8.2"
+version = "0.8.4"
 license = "BSD-3-Clause-Clear"
 edition = "2021"
 
