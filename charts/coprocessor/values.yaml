@@ -359,6 +359,7 @@ gwListener:
     - --metrics-addr=0.0.0.0:9100
     - --provider-max-retries=4294967295
     - --provider-retry-interval=4s
+    - --provider-no-activity-delay=120s
     - --log-level=INFO
     - --get-logs-poll-interval=1s
     - --get-logs-block-batch-size=100

@@ -16,7 +16,6 @@ use tracing::{error, info};
 use crate::aws_s3::AwsS3Interface;
 use crate::gw_listener::GatewayListener;
 use crate::HealthStatus;
-use alloy::{network::Ethereum, providers::Provider};
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -43,22 +42,15 @@ impl From<HealthStatus> for HealthResponse {
     }
 }
 
-pub struct HttpServer<
-    P: Provider<Ethereum> + Clone + Send + Sync + 'static,
-    A: AwsS3Interface + Clone + Send + Sync + 'static,
-> {
-    listener: Arc<GatewayListener<P, A>>,
+pub struct HttpServer<A: AwsS3Interface + Clone + Send + Sync + 'static> {
+    listener: Arc<GatewayListener<A>>,
     port: u16,
     cancel_token: CancellationToken,
 }
 
-impl<
-        P: Provider<Ethereum> + Clone + Send + Sync + 'static,
-        A: AwsS3Interface + Clone + Send + Sync + 'static,
-    > HttpServer<P, A>
-{
+impl<A: AwsS3Interface + Clone + Send + Sync + 'static> HttpServer<A> {
     pub fn new(
-        listener: Arc<GatewayListener<P, A>>,
+        listener: Arc<GatewayListener<A>>,
         port: u16,
         cancel_token: CancellationToken,
     ) -> Self {
@@ -98,11 +90,8 @@ impl<
 }
 
 // Health handler returns appropriate HTTP status code based on health
-async fn health_handler<
-    P: Provider<Ethereum> + Clone + Send + Sync + 'static,
-    A: AwsS3Interface + Clone + 'static,
->(
-    State(listener): State<Arc<GatewayListener<P, A>>>,
+async fn health_handler<A: AwsS3Interface + Clone + 'static>(
+    State(listener): State<Arc<GatewayListener<A>>>,
 ) -> impl IntoResponse {
     let status = listener.health_check().await;
     let http_status = if status.healthy {
@@ -115,11 +104,8 @@ async fn health_handler<
     (http_status, Json(HealthResponse::from(status)))
 }
 
-async fn liveness_handler<
-    P: Provider<Ethereum> + Clone + Send + Sync + 'static,
-    A: AwsS3Interface + Clone + 'static,
->(
-    State(_listener): State<Arc<GatewayListener<P, A>>>,
+async fn liveness_handler<A: AwsS3Interface + Clone + 'static>(
+    State(_listener): State<Arc<GatewayListener<A>>>,
 ) -> impl IntoResponse {
     (
         StatusCode::OK,

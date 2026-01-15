@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
 use fhevm_engine_common::{metrics_server, telemetry, utils::DatabaseURL};
@@ -56,6 +55,9 @@ struct Conf {
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     provider_retry_interval: Duration,
+
+    #[arg(long, default_value = "120s", value_parser = parse_duration)]
+    provider_no_activity_delay: Duration,
 
     #[arg(
         long,
@@ -114,31 +116,6 @@ async fn main() -> anyhow::Result<()> {
     info!(gateway_url = %conf.gw_url, max_retries = %conf.provider_max_retries,
          retry_interval = ?conf.provider_retry_interval, "Connecting to Gateway");
 
-    let provider = loop {
-        match ProviderBuilder::new()
-            .connect_ws(
-                WsConnect::new(conf.gw_url.clone())
-                    .with_max_retries(conf.provider_max_retries)
-                    .with_retry_interval(conf.provider_retry_interval),
-            )
-            .await
-        {
-            Ok(provider) => {
-                info!(gateway_url = %conf.gw_url, "Connected to Gateway");
-                break provider;
-            }
-            Err(e) => {
-                error!(
-                    gateway_url = %conf.gw_url,
-                    error = %e,
-                    provider_retry_interval = ?conf.provider_retry_interval,
-                    "Failed to connect to Gateway"
-                );
-                tokio::time::sleep(conf.provider_retry_interval).await;
-            }
-        }
-    };
-
     let aws_s3_client = AwsS3Client {};
 
     let cancel_token = CancellationToken::new();
@@ -159,6 +136,9 @@ async fn main() -> anyhow::Result<()> {
         get_logs_poll_interval: conf.get_logs_poll_interval,
         get_logs_block_batch_size: conf.get_logs_block_batch_size,
         catchup_kms_generation_from_block: conf.catchup_kms_generation_from_block,
+        provider_max_retries: conf.provider_max_retries,
+        provider_retry_interval: conf.provider_retry_interval,
+        provider_no_activity_delay: conf.provider_no_activity_delay,
     };
 
     let gw_listener = GatewayListener::new(
@@ -166,7 +146,6 @@ async fn main() -> anyhow::Result<()> {
         conf.kms_generation_address,
         config.clone(),
         cancel_token.clone(),
-        provider.clone(),
         aws_s3_client.clone(),
     );
 

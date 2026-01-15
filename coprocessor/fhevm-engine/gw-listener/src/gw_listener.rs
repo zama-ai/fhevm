@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
@@ -8,7 +9,7 @@ use fhevm_engine_common::utils::compact_hex;
 use futures_util::{future::join_all, StreamExt};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::aws_s3::{download_key_from_s3, AwsS3Interface};
 use crate::database::{tenant_id, update_tenant_crs, update_tenant_key};
@@ -39,27 +40,20 @@ impl std::fmt::Display for DigestMismatchError {
 impl std::error::Error for DigestMismatchError {}
 
 #[derive(Clone)]
-pub struct GatewayListener<
-    P: Provider<Ethereum> + Clone + 'static,
-    A: AwsS3Interface + Clone + 'static,
-> {
+pub struct GatewayListener<A: AwsS3Interface + Clone + 'static> {
     input_verification_address: Address,
     kms_generation_address: Address,
     conf: ConfigSettings,
     cancel_token: CancellationToken,
-    provider: P,
     aws_s3_client: A,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'static>
-    GatewayListener<P, A>
-{
+impl<A: AwsS3Interface + Clone + 'static> GatewayListener<A> {
     pub fn new(
         input_verification_address: Address,
         kms_generation_address: Address,
         conf: ConfigSettings,
         cancel_token: CancellationToken,
-        provider: P,
         aws_client: A,
     ) -> Self {
         GatewayListener {
@@ -67,7 +61,6 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             kms_generation_address,
             conf,
             cancel_token,
-            provider,
             aws_s3_client: aws_client,
         }
     }
@@ -134,13 +127,15 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         Ok(())
     }
 
-    async fn run_input_verification(
+    async fn new_verify_proof_stream(
         &self,
-        db_pool: &Pool<Postgres>,
-        sleep_duration: &mut u64,
-    ) -> anyhow::Result<()> {
-        let input_verification =
-            InputVerification::new(self.input_verification_address, &self.provider);
+    ) -> anyhow::Result<
+        impl futures_util::stream::Stream<
+            Item = anyhow::Result<(InputVerification::VerifyProofRequest, Log)>,
+        >,
+    > {
+        let provider = new_provider(&self.conf).await?;
+        let input_verification = InputVerification::new(self.input_verification_address, &provider);
 
         // We assume that the provider will reconnect internally if the connection is lost and stream.next() will eventually return successfully.
         // We ensure that by requiring the `provider_max_retries` and `provider_retry_interval` to be set to high enough values in the configuration s.t. retry is essentially infinite.
@@ -148,12 +143,21 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         // That might lead to skipped events, but that is acceptable for input verification requests as the client will eventually retry.
         // Furthermore, replaying old input verification requests is unnecessary as input verification is a synchronous request/response interaction on the client side.
         // Finally, no data on the GW will be left in an inconsistent state.
-        let mut verify_proof_request = input_verification
+        Ok(input_verification
             .VerifyProofRequest_filter()
             .subscribe()
             .await?
             .into_stream()
-            .fuse();
+            .map(|res| res.map_err(|e| anyhow::anyhow!(e)))
+            .fuse())
+    }
+
+    async fn run_input_verification(
+        &self,
+        db_pool: &Pool<Postgres>,
+        sleep_duration: &mut u64,
+    ) -> anyhow::Result<()> {
+        let mut verify_proof_request = self.new_verify_proof_stream().await?;
         info!("Subscribed to InputVerification.VerifyProofRequest events");
 
         loop {
@@ -172,6 +176,12 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                     let (request, log) = item?;
                     self.verify_proof_request(db_pool, request, log).await?;
                 }
+
+                _ = tokio::time::sleep(self.conf.provider_no_activity_delay) => {
+                    warn!(delay = ?self.conf.provider_no_activity_delay, "No events received, recreating provider and event stream to recover from potential stale connection");
+                    verify_proof_request = self.new_verify_proof_stream().await?;
+                    continue;
+                }
             }
             // Reset sleep duration on successful iteration.
             self.reset_sleep_duration(sleep_duration);
@@ -187,6 +197,8 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
     ) -> anyhow::Result<()> {
         let mut ticker = tokio::time::interval(self.conf.get_logs_poll_interval);
         let mut last_processed_block_num = self.get_last_processed_block_num(db_pool).await?;
+        let provider = new_provider(&self.conf).await?;
+
         if let Some(from_block) = *catchup_kms_generation_from {
             info!(from_block, "Catchup on KMSGeneration, start");
             let from_block = if from_block >= 0 {
@@ -194,7 +206,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                 from_block
             } else {
                 // go N block in past
-                let current_block = self.provider.get_block_number().await?;
+                let current_block = provider.get_block_number().await?;
                 current_block as i64 + from_block
             };
             // clipped to positive block number
@@ -211,7 +223,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                 }
 
                 _ = ticker.tick() => {
-                    let current_block = self.provider.get_block_number().await.inspect(|_| {
+                    let current_block = provider.get_block_number().await.inspect(|_| {
                         GET_BLOCK_NUM_SUCCESS_COUNTER.inc();
                     }).inspect_err(|_| {
                         GET_BLOCK_NUM_FAIL_COUNTER.inc();
@@ -241,7 +253,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                     let mut activate_key_success = 0;
                     let mut key_digest_mismatch = 0;
 
-                    let logs = self.provider.get_logs(&filter).await.inspect(|_| {
+                    let logs = provider.get_logs(&filter).await.inspect(|_| {
                         GET_LOGS_SUCCESS_COUNTER.inc();
                     }).inspect_err(|_| {
                         GET_LOGS_FAIL_COUNTER.inc();
@@ -569,12 +581,18 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             }
         }
 
+        let Ok(provider) = new_provider(&self.conf).await else {
+            error_details.push("Failed to create blockchain provider".to_string());
+            return HealthStatus::unhealthy(
+                database_connected,
+                blockchain_connected,
+                error_details.join("; "),
+            );
+        };
+
         // The provider internal retry may last a long time, so we set a timeout
-        match tokio::time::timeout(
-            self.conf.health_check_timeout,
-            self.provider.get_block_number(),
-        )
-        .await
+        match tokio::time::timeout(self.conf.health_check_timeout, provider.get_block_number())
+            .await
         {
             Ok(Ok(block_num)) => {
                 blockchain_connected = true;
@@ -603,6 +621,42 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             )
         }
     }
+}
+
+async fn new_provider(
+    conf: &ConfigSettings,
+) -> anyhow::Result<impl Provider<Ethereum> + Clone + 'static> {
+    info!(gateway_url = %conf.gw_url, max_retries = %conf.provider_max_retries,
+         retry_interval = ?conf.provider_retry_interval, "Connecting to Gateway");
+    for i in 0..conf.provider_max_retries {
+        match ProviderBuilder::new()
+            .connect_ws(
+                WsConnect::new(conf.gw_url.clone())
+                    .with_max_retries(conf.provider_max_retries)
+                    .with_retry_interval(conf.provider_retry_interval),
+            )
+            .await
+        {
+            Ok(provider) => {
+                info!(gateway_url = %conf.gw_url, "Connected to Gateway");
+                return Ok(provider);
+            }
+            Err(e) => {
+                error!(
+                    retried = i,
+                    gateway_url = %conf.gw_url,
+                    error = %e,
+                    provider_retry_interval = ?conf.provider_retry_interval,
+                    "Failed to connect to Gateway"
+                );
+                tokio::time::sleep(conf.provider_retry_interval).await;
+            }
+        }
+    }
+    anyhow::bail!(
+        "Failed to connect to Gateway after {} retries",
+        conf.provider_max_retries
+    );
 }
 
 fn key_id_to_database_bytes(key_id: KeyId) -> [u8; 32] {
