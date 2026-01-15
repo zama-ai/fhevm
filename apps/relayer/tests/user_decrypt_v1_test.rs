@@ -172,21 +172,59 @@ async fn test_consecutive_duplicate_requests_succeed() {
         ethereum_rpc_mock::SubscriptionTarget::All,
     );
 
-    // Step 1: Send first request with random payload
-    let response1 = reqwest::Client::new()
-        .post(helpers::v1_user_decrypt_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(10))
-        .json(&payload)
-        .send()
-        .await
+    let url = helpers::v1_user_decrypt_url(&setup);
+    let payload_clone = payload.clone();
+
+    // Send both requests concurrently using tokio::spawn to expose the deduplication bug
+    let request1 = tokio::spawn({
+        let url = url.clone();
+        let payload = payload.clone();
+        async move {
+            reqwest::Client::new()
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .timeout(std::time::Duration::from_secs(10))
+                .json(&payload)
+                .send()
+                .await
+        }
+    });
+
+    let request2 = tokio::spawn({
+        let url = url.clone();
+        let payload = payload_clone;
+        async move {
+            reqwest::Client::new()
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .timeout(std::time::Duration::from_secs(10))
+                .json(&payload)
+                .send()
+                .await
+        }
+    });
+
+    // Wait for both to complete
+    let (result1, result2) = tokio::join!(request1, request2);
+
+    let response1 = result1
+        .expect("First request task failed")
         .expect("Failed to send first request");
+    let response2 = result2
+        .expect("Second request task failed")
+        .expect("Failed to send second request");
 
     let response1_status = response1.status();
+    let response2_status = response2.status();
+
     let response1_text = response1
         .text()
         .await
         .expect("Failed to get first response text");
+    let response2_text = response2
+        .text()
+        .await
+        .expect("Failed to get second response text");
 
     assert_eq!(
         response1_status,
@@ -196,26 +234,13 @@ async fn test_consecutive_duplicate_requests_succeed() {
         response1_text
     );
 
-    // Step 2: Immediately send consecutive duplicate request (same payload)
-    let response2 = reqwest::Client::new()
-        .post(helpers::v1_user_decrypt_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(10))
-        .json(&payload)
-        .send()
-        .await
-        .expect("Failed to send second request");
-
     assert_eq!(
-        response2.status(),
+        response2_status,
         reqwest::StatusCode::OK,
-        "Second request should return 200 OK"
+        "Second request should return 200 OK. Got status: {} with body: {}",
+        response2_status,
+        response2_text
     );
-
-    let response2_text = response2
-        .text()
-        .await
-        .expect("Failed to get second response text");
 
     // Step 3: CRITICAL TEST - Both responses should be identical
     // This documents the expected behavior where duplicate consecutive requests

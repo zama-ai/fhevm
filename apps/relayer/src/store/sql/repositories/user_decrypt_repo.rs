@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
-use crate::core::event::UserDecryptRequest;
+use crate::core::event::{UserDecryptRequest, UserDecryptResponse};
 use crate::metrics;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::models::user_decrypt_req_model::ConsensusReqState;
@@ -16,6 +16,7 @@ use crate::store::sql::{
 };
 use alloy::primitives::U256;
 use sqlx::types::{Json, Uuid};
+use std::str::FromStr;
 use std::time::Instant;
 
 // Import conversion functions privately within this repository
@@ -44,6 +45,18 @@ pub enum ShareCompletionOutcome {
         count: i64,
         current_status: ReqStatus,
     },
+}
+
+pub enum UserDecryptInsertResult {
+    /// New request inserted into DB
+    Inserted { ext_job_id: Uuid },
+    /// Duplicate request that already completed
+    DuplicateCompleted {
+        ext_job_id: Uuid,
+        response: UserDecryptResponse,
+    },
+    /// Duplicate request still being processed
+    DuplicateProcessing { ext_job_id: Uuid },
 }
 
 pub struct UserDecryptRepository {
@@ -98,14 +111,14 @@ impl UserDecryptRepository {
     }
 
     /// Insert req, ext_job_id, int_job_id.
-    /// If conflict on int_job_id, it returns the EXISTING ext_job_id.
-    /// If no conflict, it inserts and returns the NEW ext_job_id.
+    /// Returns an enum indicating whether the request was inserted or was a duplicate.
+    /// For duplicates, includes the current state (completed with response, or still processing).
     pub async fn insert_data_on_conflict_and_get_ext_job_id(
         &self,
         ext_job_id: Uuid,
         int_job_id_bytes: &[u8],
         request: UserDecryptRequest,
-    ) -> SqlResult<Uuid> {
+    ) -> SqlResult<UserDecryptInsertResult> {
         let req = serde_json::to_value(&request).map_err(|e| {
             SqlError::conversion_error(
                 "request",
@@ -128,8 +141,8 @@ impl UserDecryptRepository {
             VALUES ($1, $2, $3)
             ON CONFLICT (int_job_id)
             WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
-            DO UPDATE SET updated_at = NOW() 
-            RETURNING ext_job_id, (xmax = 0) AS "is_inserted!"
+            DO UPDATE SET updated_at = NOW()
+            RETURNING ext_job_id, (xmax = 0) AS "is_inserted!", req_status AS "req_status!: ReqStatus", gw_reference_id
             "#,
             ext_job_id,
             int_job_id_bytes,
@@ -145,15 +158,107 @@ impl UserDecryptRepository {
 
         let record = result?;
 
-        // Only increment metrics if a new row was actually created
-        if record.is_inserted {
-            metrics::increment_req_status_count(
-                metrics::RequestType::UserDecrypt,
-                ReqStatus::Queued,
-            );
-        }
+        // Match on the state and return appropriate enum variant
+        let insert_result = match (record.is_inserted, record.req_status) {
+            (true, _) => {
+                // New request inserted
+                metrics::increment_req_status_count(
+                    metrics::RequestType::UserDecrypt,
+                    ReqStatus::Queued,
+                );
+                UserDecryptInsertResult::Inserted {
+                    ext_job_id: record.ext_job_id,
+                }
+            }
+            (false, ReqStatus::Completed) => {
+                // Duplicate, already completed - fetch shares to assemble response
+                let gw_reference_id = record.gw_reference_id.ok_or_else(|| {
+                    SqlError::conversion_error(
+                        "gw_reference_id",
+                        "BYTEA",
+                        "completed request missing gw_reference_id".to_string(),
+                    )
+                })?;
 
-        Ok(record.ext_job_id)
+                // Second query: Fetch shares from user_decrypt_share table
+                let query_start = Instant::now();
+                let shares_result = sqlx::query_as::<_, UserDecryptShare>(
+                    r#"
+                    SELECT id, gw_reference_id, tx_hash, share_index, share, kms_signature, extra_data, created_at, updated_at
+                    FROM user_decrypt_share
+                    WHERE gw_reference_id = $1
+                    ORDER BY share_index
+                    "#,
+                )
+                .bind(&gw_reference_id)
+                .fetch_all(&self.pool.get_app_pool())
+                .await;
+
+                match &shares_result {
+                    Ok(_) => metrics::observe_query(
+                        metrics::Table::UserDecryptShares,
+                        query_start.elapsed(),
+                    ),
+                    Err(_) => metrics::increment_error(metrics::Table::UserDecryptShares),
+                }
+
+                let shares = shares_result?;
+
+                if shares.is_empty() {
+                    return Err(SqlError::conversion_error(
+                        "shares",
+                        "Vec<UserDecryptShare>",
+                        "completed request has no shares in user_decrypt_share table".to_string(),
+                    ));
+                }
+
+                // Assemble UserDecryptResponse from shares
+                let gateway_request_id = U256::from_be_slice(&gw_reference_id);
+                let reencrypted_shares = shares
+                    .iter()
+                    .map(|s| alloy::primitives::Bytes::from_str(&s.share))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| {
+                        SqlError::conversion_error(
+                            "share",
+                            "Bytes",
+                            format!("Failed to parse share: {}", e),
+                        )
+                    })?;
+                let signatures = shares
+                    .iter()
+                    .map(|s| alloy::primitives::Bytes::from_str(&s.kms_signature))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| {
+                        SqlError::conversion_error(
+                            "kms_signature",
+                            "Bytes",
+                            format!("Failed to parse signature: {}", e),
+                        )
+                    })?;
+                let extra_data = shares.first().unwrap().extra_data.clone();
+
+                let response = UserDecryptResponse {
+                    gateway_request_id,
+                    reencrypted_shares,
+                    signatures,
+                    extra_data,
+                };
+
+                UserDecryptInsertResult::DuplicateCompleted {
+                    ext_job_id: record.ext_job_id,
+                    response,
+                }
+            }
+            (false, _) => {
+                // Duplicate, still processing (queued, processing, etc.)
+                UserDecryptInsertResult::DuplicateProcessing {
+                    ext_job_id: record.ext_job_id,
+                }
+            }
+        };
+
+        Ok(insert_result)
     }
 
     // GW READINESS LOGIC CHECK.

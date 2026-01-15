@@ -17,7 +17,9 @@ use crate::metrics::http::{self as http_metrics, HttpApiVersion, HttpEndpoint, H
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::OnceHandler;
 use crate::orchestrator::{ContentHasher, Orchestrator};
-use crate::store::sql::repositories::user_decrypt_repo::UserDecryptRepository;
+use crate::store::sql::repositories::user_decrypt_repo::{
+    UserDecryptInsertResult, UserDecryptRepository,
+};
 use axum::{body::Bytes as AxumBytes, extract::FromRequest, http::Request, response::IntoResponse};
 use axum::{http::StatusCode, Json};
 use std::sync::Arc;
@@ -216,7 +218,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         info!("Registered once handler for user decrypt failure");
 
         let proposed_ext_job_id = self.orchestrator.new_ext_job_id();
-        let _assigned_ext_job_id = match self
+        let insert_result = match self
             .user_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 proposed_ext_job_id,
@@ -225,7 +227,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             )
             .await
         {
-            Ok(assigned_ext_job_id) => assigned_ext_job_id,
+            Ok(result) => result,
             Err(e) => {
                 error!(
                     "Failed to insert/get user decrypt into/from database: {}",
@@ -237,25 +239,53 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 .into_response();
             }
         };
-        // V1 is synchronous - assigned job_id not returned to user
 
-        let request_data = UserDecryptEventData::ReqRcvdFromUser {
-            decrypt_request: user_decrypt_request,
-        };
-        let event = RelayerEvent::new(
-            int_job_id,
-            self.api_version,
-            RelayerEventData::UserDecrypt(request_data),
-        );
+        // Handle the three cases based on insert result
+        match insert_result {
+            UserDecryptInsertResult::Inserted { ext_job_id: _ } => {
+                // ext_job_id unused - V1 is synchronous, job_id not returned to client
+                // New request - dispatch event to orchestrator
+                let request_data = UserDecryptEventData::ReqRcvdFromUser {
+                    decrypt_request: user_decrypt_request,
+                };
+                let event = RelayerEvent::new(
+                    int_job_id,
+                    self.api_version,
+                    RelayerEventData::UserDecrypt(request_data),
+                );
 
-        if let Err(e) = self.orchestrator.dispatch_event(event).await {
-            error!("Failed to dispatch event to orchestrator: {:?}", e);
-            return AppResponse::<()>::internal_server_error_with_request_id(
-                request_id.to_string(),
-            )
-            .into_response();
+                if let Err(e) = self.orchestrator.dispatch_event(event).await {
+                    error!("Failed to dispatch event to orchestrator: {:?}", e);
+                    return AppResponse::<()>::internal_server_error_with_request_id(
+                        request_id.to_string(),
+                    )
+                    .into_response();
+                }
+                info!("Dispatched event to orchestrator to initiate processing");
+            }
+            UserDecryptInsertResult::DuplicateCompleted {
+                ext_job_id: _,
+                response,
+            } => {
+                // ext_job_id unused - V1 is synchronous, job_id not returned to client
+                // Duplicate request that already completed - return immediately
+                info!("Duplicate request found completed result, returning immediately");
+
+                // Clean up handlers to prevent memory leak
+                self.orchestrator
+                    .unregister_once_handler(UserDecryptEventId::RespRcvdFromGw.into(), int_job_id);
+                self.orchestrator
+                    .unregister_once_handler(UserDecryptEventId::Failed.into(), int_job_id);
+
+                let response_json = UserDecryptResponseJson::from(response);
+                return (StatusCode::OK, Json(response_json)).into_response();
+            }
+            UserDecryptInsertResult::DuplicateProcessing { ext_job_id: _ } => {
+                // ext_job_id unused - V1 is synchronous, job_id not returned to client
+                // Duplicate request still processing - just wait for response
+                info!("Duplicate request detected, waiting for original request to complete");
+            }
         }
-        info!("Dispatched event to orchestrator to initiate processing");
 
         use futures::pin_mut;
         pin_mut!(response_rx);
