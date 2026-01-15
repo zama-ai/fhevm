@@ -461,8 +461,8 @@ gwListener:
     - --provider-max-retries=4294967295
     - --provider-retry-interval=4s
     - --log-level=INFO
-    - --get-logs-poll-interval=1s
-    - --get-logs-block-batch-size=100
+    - --get-logs-poll-interval=500ms
+    - --get-logs-block-batch-size=10
     - --service-name=gw-listener
     ### Catchup parameters (optional)
     # --catchup-kms-generation-from-block BLOCK_NUMBER
