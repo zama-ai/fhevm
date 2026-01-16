@@ -69,15 +69,18 @@ struct Conf {
     #[arg(long, default_value = "500ms", value_parser = parse_duration)]
     get_logs_poll_interval: Duration,
 
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 100)]
     get_logs_block_batch_size: u64,
+
+    #[arg(long, default_value_t = 50)]
+    log_last_processed_every_number_of_updates: u64,
 
     /// gw-listener service name in OTLP traces
     #[arg(long, default_value = "gw-listener")]
     pub service_name: String,
 
-    #[arg(long, default_value = None, help = "Can be negative from last processed block", allow_hyphen_values = true)]
-    pub catchup_kms_generation_from_block: Option<i64>,
+    #[arg(long, default_value = None, help = "Can be negative from last processed block", allow_hyphen_values = true, alias = "catchup-kms-generation-from-block")]
+    pub replay_from_block: Option<i64>,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -158,7 +161,8 @@ async fn main() -> anyhow::Result<()> {
         health_check_timeout: conf.health_check_timeout,
         get_logs_poll_interval: conf.get_logs_poll_interval,
         get_logs_block_batch_size: conf.get_logs_block_batch_size,
-        catchup_kms_generation_from_block: conf.catchup_kms_generation_from_block,
+        replay_from_block: conf.replay_from_block,
+        log_last_processed_every_number_of_updates: conf.log_last_processed_every_number_of_updates,
     };
 
     let gw_listener = GatewayListener::new(

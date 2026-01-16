@@ -88,11 +88,11 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             let s = self.clone();
             let d = db_pool.clone();
             tokio::spawn(async move {
-                let mut catchup_kms_generation_from = s.conf.catchup_kms_generation_from_block;
+                let mut replay_from_block = s.conf.replay_from_block;
                 let mut sleep_duration = s.conf.error_sleep_initial_secs as u64;
                 loop {
                     match s
-                        .run_get_logs(&d, &mut sleep_duration, &mut catchup_kms_generation_from)
+                        .run_get_logs(&d, &mut sleep_duration, &mut replay_from_block)
                         .await
                     {
                         Ok(_) => {
@@ -117,12 +117,13 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         &self,
         db_pool: &Pool<Postgres>,
         sleep_duration: &mut u64,
-        catchup_kms_generation_from: &mut Option<i64>,
+        replay_from_block: &mut Option<i64>,
     ) -> anyhow::Result<()> {
         let mut ticker = tokio::time::interval(self.conf.get_logs_poll_interval);
         let mut last_processed_block_num = self.get_last_processed_block_num(db_pool).await?;
-        if let Some(from_block) = *catchup_kms_generation_from {
-            info!(from_block, "Catchup on KMSGeneration, start");
+        let mut number_of_last_processed_updates: u64 = 0;
+        if let Some(from_block) = *replay_from_block {
+            info!(from_block, "Replay starts");
             let from_block = if from_block >= 0 {
                 // start from specified block
                 from_block
@@ -132,7 +133,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                 current_block as i64 + from_block
             };
             // clipped to positive block number
-            // note, we cannot catchup block 0
+            // note, we cannot replay block 0
             last_processed_block_num = Some((from_block - 1).try_into().unwrap_or(0));
         }
 
@@ -153,6 +154,10 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
 
                     let from_block = if let Some(last) = last_processed_block_num {
                         if last >= current_block {
+                            if last > current_block {
+                                error!(last_processed_block = last, current_block = current_block,
+                                    "Unexpectedly, last processed is ahead of current block, skipping this iteration");
+                            }
                             continue;
                         }
                         last + 1
@@ -170,6 +175,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                         .from_block(from_block)
                         .to_block(to_block);
 
+                    let mut verify_proof_success = 0;
                     let mut activate_crs_success = 0;
                     let mut crs_digest_mismatch = 0;
                     let mut activate_key_success = 0;
@@ -180,15 +186,21 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                     }).inspect_err(|_| {
                         GET_LOGS_FAIL_COUNTER.inc();
                     })?;
-                    if catchup_kms_generation_from.is_some() && from_block < current_block {
-                        info!(from_block, to_block, nb_events=logs.len(), "Catchup on KMSGeneration, get_logs");
+                    if replay_from_block.is_some() && from_block < current_block {
+                        info!(from_block, to_block, nb_events=logs.len(), "Replay get_logs");
                     }
                     for log in logs {
                         if log.address() == self.input_verification_address {
                             if let Ok(event) = InputVerification::InputVerificationEvents::decode_log(&log.inner) {
                                 match event.data {
                                     InputVerification::InputVerificationEvents::VerifyProofRequest(request) => {
-                                        self.verify_proof_request(db_pool, request, log.clone()).await?;
+                                        self.verify_proof_request(db_pool, request, log.clone()).await.
+                                            inspect(|_| {
+                                                verify_proof_success += 1;
+                                            }).inspect_err(|e| {
+                                                error!(error = %e, "VerifyProofRequest processing failed");
+                                                VERIFY_PROOF_FAIL_COUNTER.inc();
+                                        })?;
                                     },
                                     _ => {
                                         error!(log = ?log, "Unknown InputVerification event");
@@ -247,20 +259,21 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                         }
                     }
                     last_processed_block_num = Some(to_block);
-                    if catchup_kms_generation_from.is_some() {
+                    if replay_from_block.is_some() {
                         if to_block == current_block {
-                            info!("Catchup on KMSGeneration, finished");
-                            *catchup_kms_generation_from = None;
+                            info!("Replay finished");
+                            *replay_from_block = None;
                         } else {
-                            // if an error happens catchup will restart here
-                            *catchup_kms_generation_from = Some(to_block as i64 + 1);
-                            info!(catchup_kms_generation_from, "Catchup on KMSGeneration continue");
+                            // if an error happens replay will restart here
+                            *replay_from_block = Some(to_block as i64 + 1);
+                            info!(replay_from_block, "Replay continues");
                         }
                     }
-                    self.update_last_block_num(db_pool, last_processed_block_num).await?;
+                    self.update_last_block_num(db_pool, last_processed_block_num, &mut number_of_last_processed_updates).await?;
 
                     // Update metrics only after a successful DB update as we don't want to consider events that will be processed again
                     // if the DB update fails.
+                    VERIFY_PROOF_SUCCESS_COUNTER.inc_by(verify_proof_success);
                     ACTIVATE_CRS_SUCCESS_COUNTER.inc_by(activate_crs_success);
                     CRS_DIGEST_MISMATCH_COUNTER.inc_by(crs_digest_mismatch);
                     ACTIVATE_KEY_SUCCESS_COUNTER.inc_by(activate_key_success);
@@ -476,12 +489,9 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         &self,
         db_pool: &Pool<Postgres>,
         last_block: Option<u64>,
+        number_of_last_processed_updates: &mut u64,
     ) -> anyhow::Result<()> {
         let last_block = last_block.map(i64::try_from).transpose()?;
-        debug!(
-            last_block = last_block,
-            "Updating last processed block number"
-        );
         sqlx::query!(
             "INSERT into gw_listener_last_block (dummy_id, last_block_num)
             VALUES (true, $1)
@@ -490,6 +500,16 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         )
         .execute(db_pool)
         .await?;
+
+        *number_of_last_processed_updates += 1;
+        if (*number_of_last_processed_updates)
+            .is_multiple_of(self.conf.log_last_processed_every_number_of_updates)
+        {
+            info!(
+                last_block = last_block,
+                "Updated last processed block number"
+            );
+        }
         Ok(())
     }
 
@@ -511,13 +531,16 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                 match sqlx::query("SELECT 1").execute(&pool).await {
                     Ok(_) => {
                         database_connected = true;
+                        info!("Database connection healthy");
                     }
                     Err(e) => {
+                        error!(error = %e, "Database check failed");
                         error_details.push(format!("Database query error: {}", e));
                     }
                 }
             }
             Err(e) => {
+                error!(error = %e, "Database connection error");
                 error_details.push(format!("Database connection error: {}", e));
             }
         }
@@ -538,9 +561,11 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             }
 
             Ok(Err(e)) => {
+                error!(error = %e, "Blockchain connection error");
                 error_details.push(format!("Blockchain connection error: {}", e));
             }
             Err(_) => {
+                error!("Blockchain connection timeout");
                 error_details.push("Blockchain connection timeout".to_string());
             }
         }

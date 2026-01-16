@@ -462,12 +462,13 @@ gwListener:
     - --provider-retry-interval=4s
     - --log-level=INFO
     - --get-logs-poll-interval=500ms
-    - --get-logs-block-batch-size=10
+    - --get-logs-block-batch-size=100
     - --service-name=gw-listener
-    ### Catchup parameters (optional)
-    # --catchup-kms-generation-from-block BLOCK_NUMBER
+    - --log-last-processed-every-number-of-updates=50
+    ### Replay parameters (optional)
+    # --replay-from-block BLOCK_NUMBER
     # To go back in time from latest block
-    # --catchup-kms-generation-from-block -NB_BLOCK
+    # --replay-from-block -NB_BLOCK
 
   # Service ports configuration
   ports:
