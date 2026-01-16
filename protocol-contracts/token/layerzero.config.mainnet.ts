@@ -15,8 +15,14 @@ const zamaMainnetContract: OmniPointHardhat = {
     contractName: 'ZamaOFT',
 }
 
-// To connect all the above chains to each other, we need the following pathways:
+const bnbContract: OmniPointHardhat = {
+    eid: EndpointId.BSC_V2_MAINNET,
+    contractName: 'ZamaOFT',
+}
+
+// We need the following pathways:
 // ZamaGatewayMainnet <-> Ethereum
+// BNB <-> Ethereum
 
 // For this example's simplicity, we will use the same enforced options values for sending to all chains
 // For production, you should ensure `gas` is set to the correct value through profiling the gas usage of calling OFT._lzReceive(...) on the destination chain
@@ -41,13 +47,21 @@ const pathways: TwoWayConfig[] = [
         [15, 20], // [A to B confirmations, B to A confirmations]
         [EVM_ENFORCED_OPTIONS, EVM_ENFORCED_OPTIONS], // Chain B enforcedOptions, Chain A enforcedOptions
     ],
+    [
+        ethereumContract, // Chain A contract
+        bnbContract, // Chain B contract
+        // TODO: Add custom ZAMA DVN in next line?
+        [['LayerZero Labs'], [['Nethermind', 'Luganodes', 'P2P'], 2]], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
+        [15, 20], // [A to B confirmations, B to A confirmations]
+        [EVM_ENFORCED_OPTIONS, EVM_ENFORCED_OPTIONS], // Chain B enforcedOptions, Chain A enforcedOptions
+    ],
 ]
 
 export default async function () {
     // Generate the connections config based on the pathways
     const connections = await generateConnectionsConfig(pathways)
     return {
-        contracts: [{ contract: zamaMainnetContract }, { contract: ethereumContract }],
+        contracts: [{ contract: zamaMainnetContract }, { contract: ethereumContract }, { contract: bnbContract }],
         connections,
     }
 }
