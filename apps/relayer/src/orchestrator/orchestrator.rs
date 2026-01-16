@@ -92,7 +92,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
         self.task_manager.run_until_shutdown(shutdown_token).await
     }
 
-    #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=%(event.job_id())))]
+    #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]
     async fn run_pre_dispatch_hooks_sequentially(&self, event: E) {
         // Acquire lock and prepare all hooks as Futures.
         let hooks: Vec<_> = if let Ok(hooks_guard) = self.pre_dispatch_hooks.read() {
@@ -114,7 +114,7 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> Orchestrator<D, E> {
 impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> EventDispatcher<E>
     for Orchestrator<D, E>
 {
-    #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=%(event.job_id())))]
+    #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]
     async fn dispatch_event(&self, event: E) -> Result<(), Error> {
         self.run_pre_dispatch_hooks_sequentially(event.clone())
             .await;
@@ -161,7 +161,6 @@ mod tests {
     use crate::core::event::{
         ApiCategory, ApiVersion, PublicDecryptEventData, RelayerEvent, RelayerEventData,
     };
-    use crate::core::job_id::JobId;
     use crate::orchestrator::traits::{Event, EventDispatcher, EventHandler, HandlerRegistry};
     use crate::orchestrator::{Orchestrator, TokioEventDispatcher};
     use alloy::primitives::U256;
@@ -181,10 +180,10 @@ mod tests {
         let pubsub = Arc::new(TokioEventDispatcher::<RelayerEvent>::new());
         let orchestrator = Orchestrator::new(pubsub.clone());
 
-        let id = orchestrator.new_internal_request_id();
+        let _id = orchestrator.new_internal_request_id();
 
         let event = RelayerEvent::new(
-            JobId::from_uuid_v7(id),
+            crate::core::job_id::INTERNAL_EVENT_JOB_ID,
             ApiVersion {
                 category: ApiCategory::PRODUCTION,
                 number: 1,

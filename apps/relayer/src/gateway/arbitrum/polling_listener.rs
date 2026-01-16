@@ -3,7 +3,7 @@ use tracing::{debug, error, info, warn};
 use crate::{
     config::settings::GatewayConfig,
     core::event::{ApiCategory, ApiVersion, GatewayChainEventData, RelayerEvent, RelayerEventData},
-    core::job_id::JobId,
+    core::job_id::INTERNAL_EVENT_JOB_ID,
     gateway::arbitrum::bindings::{Decryption, InputVerification},
     gateway::arbitrum::event_deduplicator::{EventDeduplicator, EventKey},
     orchestrator::{
@@ -404,7 +404,7 @@ where
         );
 
         let event = RelayerEvent::new(
-            JobId::from_uuid_v7(self.orchestrator.new_internal_request_id()),
+            INTERNAL_EVENT_JOB_ID,
             ApiVersion {
                 category: ApiCategory::PRODUCTION,
                 number: 1,

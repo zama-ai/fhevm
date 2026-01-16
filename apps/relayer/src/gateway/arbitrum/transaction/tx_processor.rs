@@ -136,7 +136,7 @@ impl GatewayTxProcessor {
                 error!(error = ?dispatch_err, "CRITICAL: Failed to dispatch processor failure event");
             } else {
                 info!(
-                    "Processor event failure response successfully sent for {}",
+                    "Processor event failure response successfully sent for {:?}",
                     task.job_id
                 );
             }

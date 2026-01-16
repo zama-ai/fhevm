@@ -17,7 +17,7 @@ use crate::{
     store::sql::{models::req_status_enum_model::ReqStatus, repositories::Repositories},
 };
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 /// Initialize metrics gauges from current database state.
 /// Must be called before any operations that modify metrics.
@@ -154,7 +154,18 @@ async fn recover_public_decrypt_requests(
     for (int_job_id, req_json, status, _updated_at) in requests {
         match serde_json::from_value::<PublicDecryptRequest>(req_json.clone()) {
             Ok(request) => {
-                let job_id = JobId::from_sha256_hash(int_job_id.try_into().unwrap_or([0u8; 32]));
+                let int_job_id_len = int_job_id.len();
+                let job_id: JobId = match int_job_id.try_into() {
+                    Ok(id) => id,
+                    Err(_) => {
+                        error!(
+                            alert = true,
+                            int_job_id_len,
+                            "int_job_id has invalid length in public_decrypt recovery, expected 32 bytes, skipping"
+                        );
+                        continue;
+                    }
+                };
                 let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
 
                 let event_data = match status {
@@ -214,7 +225,18 @@ async fn recover_user_decrypt_requests(
 
     for (int_job_id, req_json, status, _updated_at) in requests {
         if let Ok(request) = serde_json::from_value::<UserDecryptRequest>(req_json) {
-            let job_id = JobId::from_sha256_hash(int_job_id.try_into().unwrap_or([0u8; 32]));
+            let int_job_id_len = int_job_id.len();
+            let job_id: JobId = match int_job_id.try_into() {
+                Ok(id) => id,
+                Err(_) => {
+                    error!(
+                        alert = true,
+                        int_job_id_len,
+                        "int_job_id has invalid length in user_decrypt recovery, expected 32 bytes, skipping"
+                    );
+                    continue;
+                }
+            };
             let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
 
             let event_data = match status {
@@ -263,9 +285,20 @@ async fn recover_input_proof_requests(
 
     let mut recovered = 0;
 
-    for (int_request_id, req_json, _status, _updated_at) in requests {
+    for (int_job_id, req_json, _status, _updated_at) in requests {
         if let Ok(request) = serde_json::from_value::<InputProofRequest>(req_json) {
-            let job_id = JobId::from_uuid_v7(int_request_id);
+            let int_job_id_len = int_job_id.len();
+            let job_id: JobId = match int_job_id.try_into() {
+                Ok(id) => id,
+                Err(_) => {
+                    error!(
+                        alert = true,
+                        int_job_id_len,
+                        "int_job_id has invalid length in input_proof recovery, expected 32 bytes, skipping"
+                    );
+                    continue;
+                }
+            };
             let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
 
             let event_data = RelayerEventData::InputProof(InputProofEventData::ReqRcvdFromUser {

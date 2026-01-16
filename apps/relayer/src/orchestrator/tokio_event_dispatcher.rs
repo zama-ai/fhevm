@@ -29,7 +29,7 @@ impl<E: Event + std::fmt::Debug> TokioEventDispatcher<E> {
 
 #[async_trait]
 impl<E: Event + std::fmt::Debug> EventDispatcher<E> for TokioEventDispatcher<E> {
-    #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=%(event.job_id())))]
+    #[instrument(skip_all, fields(event_type=%(event.event_name()), job_id=?event.job_id()))]
     async fn dispatch_event(&self, event: E) -> Result<(), Error> {
         let event = event.clone();
         // Handle once subscriptions
@@ -40,7 +40,7 @@ impl<E: Event + std::fmt::Debug> EventDispatcher<E> for TokioEventDispatcher<E> 
         {
             let handlers = handlers.clone();
             debug!(
-                "Dispatching {}({}) to {} once-handlers.",
+                "Dispatching {}({:?}) to {} once-handlers.",
                 event.event_name(),
                 event.job_id(),
                 handlers.len()
@@ -56,7 +56,7 @@ impl<E: Event + std::fmt::Debug> EventDispatcher<E> for TokioEventDispatcher<E> 
         } else if let Some(handlers) = self.suscribers.get(&event.event_id()) {
             let handlers = handlers.clone();
             debug!(
-                "Dispatching {}({}) to {} generic-handlers.",
+                "Dispatching {}({:?}) to {} generic-handlers.",
                 event.event_name(),
                 event.job_id(),
                 handlers.len()
@@ -70,7 +70,7 @@ impl<E: Event + std::fmt::Debug> EventDispatcher<E> for TokioEventDispatcher<E> 
             }
         } else {
             debug!(
-                "Dispatching event {}({}) didn't match any handler.",
+                "Dispatching event {}({:?}) didn't match any handler.",
                 event.event_name(),
                 event.job_id(),
             );
@@ -106,12 +106,16 @@ impl<E: Event + std::fmt::Debug> HandlerRegistry<E> for TokioEventDispatcher<E> 
             .entry((event_id, job_id))
             .or_default()
             .push(handler);
-        debug!("Once-Handler registered for {},{}", event_id, job_id);
+        debug!("Once-Handler registered for {},{:?}", event_id, job_id);
     }
 
     #[instrument(skip(self))]
     fn unregister_once_handler(&self, event_id: u8, job_id: JobId) {
         self.once_subscribers.remove(&(event_id, job_id));
-        debug!("Once-Handler unregistered for {},{}", event_id, job_id);
+        debug!(
+            "Once-Handler unregistered for {},{}",
+            event_id,
+            hex::encode(job_id)
+        );
     }
 }

@@ -11,7 +11,7 @@ use crate::store::sql::models::req_status_enum_model::ReqStatus;
 pub struct InputProofReq {
     pub id: i32,
     pub ext_job_id: Uuid,
-    pub int_request_id: Uuid,
+    pub int_job_id: Vec<u8>,
     pub gw_reference_id: Option<Vec<u8>>,
     pub accepted: Option<bool>,
     pub req: Value,

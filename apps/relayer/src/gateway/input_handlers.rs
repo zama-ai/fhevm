@@ -152,19 +152,11 @@ impl InputProofGatewayHandler {
         input_proof_request: InputProofRequest,
     ) -> Result<(), EventProcessingError> {
         info!(
-            "Sending input proof request to gateway for {}",
+            "Sending input proof request to gateway for {:?}",
             event.job_id
         );
 
-        let int_request_id = event.job_id.as_uuid_v7().ok_or_else(|| {
-            error!(job_id = %event.job_id, "job_id is not uuid");
-            EventProcessingError::ValidationFailed {
-                field: "job_id".to_string(),
-                reason: "not a valid UUID".to_string(),
-            }
-        })?;
-
-        self.send_to_gateway(&input_proof_request, int_request_id)
+        self.send_to_gateway(&input_proof_request, &event.job_id)
             .await?;
         info!("Input proof request sent to gateway for {}", event.job_id);
         Ok(())
@@ -176,7 +168,7 @@ impl InputProofGatewayHandler {
     async fn send_to_gateway(
         &self,
         input_proof_request: &InputProofRequest,
-        int_request_id: uuid::Uuid,
+        int_job_id_bytes: &[u8; 32],
     ) -> Result<(), EventProcessingError> {
         let input_verification_address =
             Address::from_str(&self.contracts.input_verification_address).map_err(|_| {
@@ -194,12 +186,10 @@ impl InputProofGatewayHandler {
             input_proof_request.extra_data.clone(),
         )?;
 
-        let job_id = JobId::from_uuid_v7(int_request_id);
-
         // CONSTRUCT TASK
         let task = GatewayTxTask {
-            id: int_request_id.to_string(), // Used for Queue tracking/dedup
-            job_id,
+            id: hex::encode(int_job_id_bytes), // Used for Queue tracking/dedup
+            job_id: JobId::from(*int_job_id_bytes),
             transaction_type: TransactionType::InputRequest,
             target: input_verification_address,
             calldata: calldata_bytes,
@@ -209,7 +199,7 @@ impl InputProofGatewayHandler {
 
         info!(
             step = %InputProofStep::TxQueued,
-            int_job_id = %job_id,
+            int_job_id = %task.job_id,
             "Enqueuing input proof request to tx throttler"
         );
 
@@ -287,58 +277,50 @@ impl InputProofGatewayHandler {
             })?;
 
         match outcome {
-            InputProofCompletionOutcome::Completed { int_request_id } => {
+            InputProofCompletionOutcome::Completed { int_job_id } => {
                 let next_event_data: RelayerEventData =
                     RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
                         accepted: true,
                         input_proof_response: Some(input_proof_response),
                     });
 
-                let next_event = RelayerEvent::new(
-                    JobId::from_uuid_v7(int_request_id),
-                    event.api_version,
-                    next_event_data,
-                );
+                let next_event = RelayerEvent::new(int_job_id, event.api_version, next_event_data);
 
                 if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
                     error!(?e, "Failed to dispatch input proof response event");
                 } else {
                     info!(
                         step = %InputProofStep::RespSent,
-                        int_job_id = %int_request_id,
+                        int_job_id = %int_job_id,
                         "Response dispatched to HTTP handlers"
                     );
                 }
             }
-            InputProofCompletionOutcome::AlreadyCompleted { int_request_id } => {
+            InputProofCompletionOutcome::AlreadyCompleted { int_job_id } => {
                 debug!(
-                    job_id = %event.job_id,
-                    int_request_id = %int_request_id,
+                    int_job_id = %int_job_id,
                     "Input proof already completed (duplicate event), skipping"
                 );
             }
             InputProofCompletionOutcome::AlreadyInFinalState {
-                int_request_id,
+                int_job_id,
                 current_status,
             } => match current_status {
                 ReqStatus::Failure => {
                     debug!(
-                        job_id = %event.job_id,
-                        int_request_id = %int_request_id,
+                        int_job_id = %int_job_id,
                         "Input proof already in failure state, skipping accept event"
                     );
                 }
                 ReqStatus::TimedOut => {
                     debug!(
-                        job_id = %event.job_id,
-                        int_request_id = %int_request_id,
+                        int_job_id = %int_job_id,
                         "Input proof already timed out (late accept event), skipping"
                     );
                 }
                 other_status => {
                     warn!(
-                        job_id = %event.job_id,
-                        int_request_id = %int_request_id,
+                        int_job_id = %int_job_id,
                         current_status = ?other_status,
                         "Input proof in unexpected state, skipping accept event - possible race condition or late event"
                     );
@@ -346,7 +328,6 @@ impl InputProofGatewayHandler {
             },
             InputProofCompletionOutcome::NotFound => {
                 warn!(
-                    job_id = %event.job_id,
                     gw_reference_id = ?request_event.zkProofId,
                     "Input proof not found for gw_reference_id"
                 );
@@ -391,58 +372,50 @@ impl InputProofGatewayHandler {
             })?;
 
         match outcome {
-            InputProofCompletionOutcome::Completed { int_request_id } => {
+            InputProofCompletionOutcome::Completed { int_job_id } => {
                 let next_event_data: RelayerEventData =
                     RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
                         accepted: false,
                         input_proof_response: None,
                     });
 
-                let next_event = RelayerEvent::new(
-                    JobId::from_uuid_v7(int_request_id),
-                    event.api_version,
-                    next_event_data,
-                );
+                let next_event = RelayerEvent::new(int_job_id, event.api_version, next_event_data);
 
                 if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
                     error!(?e, "Failed to dispatch input proof rejection event");
                 } else {
                     info!(
                         step = %InputProofStep::RespSent,
-                        int_job_id = %int_request_id,
+                        int_job_id = %int_job_id,
                         "Rejection response dispatched to HTTP handlers"
                     );
                 }
             }
-            InputProofCompletionOutcome::AlreadyCompleted { int_request_id } => {
+            InputProofCompletionOutcome::AlreadyCompleted { int_job_id } => {
                 debug!(
-                    job_id = %event.job_id,
-                    int_request_id = %int_request_id,
+                    int_job_id = %int_job_id,
                     "Input proof already completed (duplicate rejection event), skipping"
                 );
             }
             InputProofCompletionOutcome::AlreadyInFinalState {
-                int_request_id,
+                int_job_id,
                 current_status,
             } => match current_status {
                 ReqStatus::Failure => {
                     debug!(
-                        job_id = %event.job_id,
-                        int_request_id = %int_request_id,
+                        int_job_id = %int_job_id,
                         "Input proof already in failure state, skipping reject event"
                     );
                 }
                 ReqStatus::TimedOut => {
                     debug!(
-                        job_id = %event.job_id,
-                        int_request_id = %int_request_id,
+                        int_job_id = %int_job_id,
                         "Input proof already timed out (late reject event), skipping"
                     );
                 }
                 other_status => {
                     warn!(
-                        job_id = %event.job_id,
-                        int_request_id = %int_request_id,
+                        int_job_id = %int_job_id,
                         current_status = ?other_status,
                         "Input proof in unexpected state, skipping reject event - possible race condition or late event"
                     );
@@ -450,7 +423,6 @@ impl InputProofGatewayHandler {
             },
             InputProofCompletionOutcome::NotFound => {
                 warn!(
-                    job_id = %event.job_id,
                     gw_reference_id = ?reject_proof_response.zkProofId,
                     "Input proof not found for gw_reference_id (rejection)"
                 );
@@ -492,12 +464,10 @@ impl InputProofGatewayHandler {
                     "Request processing failed - notifying user"
                 );
 
-                if let Some(uuid) = event.job_id.as_uuid_v7() {
-                    let _ = self
-                        .input_proof_repo
-                        .update_status_to_failure(uuid, &error.to_string())
-                        .await;
-                }
+                let _ = self
+                    .input_proof_repo
+                    .update_status_to_failure(event.job_id.as_ref(), &error.to_string())
+                    .await;
             }
         }
 
@@ -521,15 +491,8 @@ impl InputProofGatewayHandler {
 #[async_trait]
 impl TxLifecycleHooks for InputProofGatewayHandler {
     async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError> {
-        let uuid = job_id
-            .as_uuid_v7()
-            .ok_or_else(|| EventProcessingError::ValidationFailed {
-                field: "job_id".to_string(),
-                reason: "Expected UUID for input proof".to_string(),
-            })?;
-
         self.input_proof_repo
-            .update_status_to_tx_in_flight(uuid)
+            .update_status_to_tx_in_flight(job_id.as_ref())
             .await
             .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
@@ -552,12 +515,6 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
         )?;
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
-        let uuid = job_id
-            .as_uuid_v7()
-            .ok_or_else(|| EventProcessingError::ValidationFailed {
-                field: "job_id".to_string(),
-                reason: "Expected UUID for input proof".to_string(),
-            })?;
 
         info!(
             step = %InputProofStep::TxConfirmed,
@@ -568,7 +525,11 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
         );
 
         self.input_proof_repo
-            .update_input_proof_status_to_receipt_received(uuid, &tx_hash, gw_reference_id)
+            .update_input_proof_status_to_receipt_received(
+                job_id.as_ref(),
+                &tx_hash,
+                gw_reference_id,
+            )
             .await
             .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
@@ -588,15 +549,8 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
             crate::metrics::transaction::track_revert_with_request_type(reason, "input_proof");
         }
 
-        let uuid = job_id
-            .as_uuid_v7()
-            .ok_or_else(|| EventProcessingError::ValidationFailed {
-                field: "job_id".to_string(),
-                reason: "Expected UUID for input proof".to_string(),
-            })?;
-
         self.input_proof_repo
-            .update_status_to_failure(uuid, err_reason)
+            .update_status_to_failure(job_id.as_ref(), err_reason)
             .await
             .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {

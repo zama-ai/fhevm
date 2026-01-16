@@ -204,12 +204,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!("Successfully parsed and validated request");
 
-        let int_job_id = user_decrypt_request.content_hash();
+        let int_job_id: JobId = user_decrypt_request.content_hash().into();
 
         // Queue full Bouncing logic.
         let active_external_job_id = self
             .user_decrypt_repo
-            .find_active_ext_ref_by_int_job_id(&int_job_id)
+            .find_active_ext_ref_by_int_job_id(int_job_id.as_ref())
             .await;
 
         match active_external_job_id {
@@ -254,7 +254,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             .user_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 proposed_ext_job_id,
-                &int_job_id[..],
+                int_job_id.as_ref(),
                 user_decrypt_request.clone(),
             )
             .await
@@ -281,12 +281,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         // Only dispatch event for new requests (deduplication)
         if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
-            let job_id = JobId::from_sha256_hash(int_job_id);
             let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: user_decrypt_request,
             };
             let event = RelayerEvent::new(
-                job_id,
+                int_job_id,
                 self.api_version,
                 RelayerEventData::UserDecrypt(request_data),
             );

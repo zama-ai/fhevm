@@ -415,3 +415,283 @@ async fn test_unknown_selector_returns_500() {
 
     setup.shutdown().await;
 }
+
+/// Test consecutive duplicate requests return same job_id (deduplication)
+/// Validates that identical input-proof requests submitted while the first is still active
+/// return the same ext_job_id, enabling proper deduplication behavior.
+#[tokio::test]
+async fn test_consecutive_duplicate_requests_return_same_job_id() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    // Create a fixed payload to use for both requests
+    let contract_address = helpers::random_address();
+    let user_address = helpers::random_address();
+    let ciphertext_data = helpers::random_bytes();
+
+    let payload = json!({
+        "contractChainId": setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        "contractAddress": format!("{:?}", contract_address),
+        "userAddress": format!("{:?}", user_address),
+        "ciphertextWithInputVerification": hex::encode(&ciphertext_data),
+        "extraData": constants::EXTRA_DATA
+    });
+
+    // Setup mock for success
+    setup.fhevm_mock.on_input_proof_success(
+        user_address,
+        ciphertext_data.clone(),
+        1,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let client = reqwest::Client::new();
+    let url = helpers::v2_input_proof_post_url(&setup);
+
+    // Send first POST request
+    let response1 = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send first POST request");
+
+    assert_eq!(response1.status(), reqwest::StatusCode::ACCEPTED);
+    let post_response1: InputProofPostResponseJson = response1
+        .json()
+        .await
+        .expect("Failed to parse first POST response");
+
+    assert_eq!(post_response1.status, "queued");
+    let job_id_1 = &post_response1.result.job_id;
+
+    // Send consecutive duplicate request (same payload)
+    let response2 = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send second POST request");
+
+    assert_eq!(response2.status(), reqwest::StatusCode::ACCEPTED);
+    let post_response2: InputProofPostResponseJson = response2
+        .json()
+        .await
+        .expect("Failed to parse second POST response");
+
+    assert_eq!(post_response2.status, "queued");
+    let job_id_2 = &post_response2.result.job_id;
+
+    // Print job_ids for debugging
+    println!("First request job_id: {}", job_id_1);
+    println!("Second request job_id: {}", job_id_2);
+
+    // CRITICAL ASSERTION: For duplicate requests sent while first is still active,
+    // the system should return the SAME ext_job_id (deduplication behavior)
+    assert_eq!(
+        job_id_1, job_id_2,
+        "Duplicate input-proof requests with identical content should return the same job_id when \
+         the first request is still active. Got different job_ids: '{}' vs '{}'",
+        job_id_1, job_id_2
+    );
+
+    // Wait for processing
+    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+
+    // GET with first job_id should work
+    let get_response1 = client
+        .get(helpers::v2_input_proof_get_url(&setup, job_id_1))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .expect("Failed to send first GET request");
+
+    let status1 = get_response1.status();
+    println!("First GET job_id '{}' - Status: {}", job_id_1, status1);
+
+    // Should NOT be 404
+    assert_ne!(
+        status1,
+        reqwest::StatusCode::NOT_FOUND,
+        "GET request for first job_id '{}' returned 404. This indicates the job_id \
+         returned by POST doesn't exist in the database.",
+        job_id_1
+    );
+
+    // GET with second job_id should also work (since they should be identical)
+    let get_response2 = client
+        .get(helpers::v2_input_proof_get_url(&setup, job_id_2))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .expect("Failed to send second GET request");
+
+    let status2 = get_response2.status();
+    println!("Second GET job_id '{}' - Status: {}", job_id_2, status2);
+
+    // Should NOT be 404 - documents expected behavior
+    assert_ne!(
+        status2,
+        reqwest::StatusCode::NOT_FOUND,
+        "GET request for second job_id '{}' returned 404. This indicates the job_id \
+         returned by POST doesn't exist in the database. Both job_ids should be retrievable \
+         for duplicate requests with identical content.",
+        job_id_2
+    );
+
+    setup.shutdown().await;
+}
+
+/// Test that modifying any field in the payload produces a different job_id
+/// Validates that content hashing correctly distinguishes between different requests
+#[tokio::test]
+async fn test_different_payloads_produce_different_job_ids() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    let contract_address = helpers::random_address();
+    let user_address = helpers::random_address();
+    let ciphertext_data1 = helpers::random_bytes();
+    let ciphertext_data2 = helpers::random_bytes();
+
+    let payload1 = json!({
+        "contractChainId": setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        "contractAddress": format!("{:?}", contract_address),
+        "userAddress": format!("{:?}", user_address),
+        "ciphertextWithInputVerification": hex::encode(&ciphertext_data1),
+        "extraData": constants::EXTRA_DATA
+    });
+
+    let payload2 = json!({
+        "contractChainId": setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        "contractAddress": format!("{:?}", contract_address),
+        "userAddress": format!("{:?}", user_address),
+        "ciphertextWithInputVerification": hex::encode(&ciphertext_data2), // Different ciphertext
+        "extraData": constants::EXTRA_DATA
+    });
+
+    // Setup mocks for both requests
+    setup.fhevm_mock.on_input_proof_success(
+        user_address,
+        ciphertext_data1,
+        1,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+    setup.fhevm_mock.on_input_proof_success(
+        user_address,
+        ciphertext_data2,
+        2,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id_1 = helpers::submit_request(&setup, &payload1).await;
+    let job_id_2 = helpers::submit_request(&setup, &payload2).await;
+
+    println!("First request job_id: {}", job_id_1);
+    println!("Second request job_id: {}", job_id_2);
+
+    // Different payloads should produce different job_ids
+    assert_ne!(
+        job_id_1, job_id_2,
+        "Different input-proof requests should produce different job_ids. \
+         Got same job_id '{}' for both requests.",
+        job_id_1
+    );
+
+    setup.shutdown().await;
+}
+
+/// Test that retrying a failed request creates a new job_id
+/// Validates that the migration to allow multiple rows with same int_job_id works correctly
+#[tokio::test]
+async fn test_retry_after_failure_creates_new_job_id() {
+    let setup = TestSetup::new_with_low_retries()
+        .await
+        .expect("Failed to create test setup with low retries");
+
+    let contract_address = helpers::random_address();
+    let user_address = helpers::random_address();
+    let ciphertext_data = helpers::random_bytes();
+
+    // Generate payload once - will be used for both attempts
+    let payload = json!({
+        "contractChainId": setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        "contractAddress": format!("{:?}", contract_address),
+        "userAddress": format!("{:?}", user_address),
+        "ciphertextWithInputVerification": hex::encode(&ciphertext_data),
+        "extraData": constants::EXTRA_DATA
+    });
+
+    // Configure mock to fail with max retries exceeded
+    setup.fhevm_mock.queue_tx_responses_for_selector(
+        setup.fhevm_mock.input_proof_contract,
+        constants::INPUT_PROOF_SELECTOR,
+        vec![
+            Response::error("nonce too low".to_string()),
+            Response::error("nonce too low".to_string()),
+            Response::error("nonce too low".to_string()),
+        ],
+    );
+
+    let client = reqwest::Client::new();
+    let url = helpers::v2_input_proof_post_url(&setup);
+
+    // First attempt - will fail
+    let response1 = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send first POST request");
+
+    assert_eq!(response1.status(), reqwest::StatusCode::ACCEPTED);
+    let post_response1: InputProofPostResponseJson = response1
+        .json()
+        .await
+        .expect("Failed to parse first POST response");
+
+    let job_id_1 = post_response1.result.job_id.clone();
+    println!("First attempt job_id: {}", job_id_1);
+
+    // Wait for it to fail
+    let (status1, body1) = helpers::poll_until_terminal(&setup, &job_id_1).await;
+    assert_ne!(status1, reqwest::StatusCode::OK);
+    assert_eq!(body1.status, "failed");
+    println!("First attempt failed as expected");
+
+    // Retry with same payload after failure
+    let response2 = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Failed to send retry POST request");
+
+    assert_eq!(response2.status(), reqwest::StatusCode::ACCEPTED);
+    let post_response2: InputProofPostResponseJson = response2
+        .json()
+        .await
+        .expect("Failed to parse retry POST response");
+
+    let job_id_2 = post_response2.result.job_id.clone();
+    println!("Retry attempt job_id: {}", job_id_2);
+
+    // CRITICAL: After migration, retrying a failed request should create a NEW job_id
+    assert_ne!(
+        job_id_1, job_id_2,
+        "Retry after failure should create a new job_id. \
+         Before migration fix, this would return the same job_id or fail with duplicate key error. \
+         Got same job_id '{}' for both attempts.",
+        job_id_1
+    );
+
+    println!("✅ Retry created new job_id as expected");
+
+    setup.shutdown().await;
+}

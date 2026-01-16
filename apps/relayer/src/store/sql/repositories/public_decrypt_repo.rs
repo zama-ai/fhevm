@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use crate::core::event::{PublicDecryptRequest, PublicDecryptResponse};
+use crate::core::job_id::JobId;
 use crate::metrics;
 use crate::store::sql::models::public_decrypt_req_model::{
     PublicDecryptResponseModel, PublicReqStateModelWithOldStatusAndTimestamp,
@@ -32,12 +33,12 @@ pub enum PublicDecryptInsertResult {
 #[derive(Debug)]
 pub enum PublicDecryptCompletionOutcome {
     /// Request completed successfully in this operation
-    Completed { int_job_id: Vec<u8> },
+    Completed { int_job_id: JobId },
     /// Request was already completed (idempotent duplicate)
-    AlreadyCompleted { int_job_id: Vec<u8> },
+    AlreadyCompleted { int_job_id: JobId },
     /// Request is already in a final failure/timed_out state
     AlreadyInFinalState {
-        int_job_id: Vec<u8>,
+        int_job_id: JobId,
         current_status: ReqStatus,
     },
     /// Request with this gw_reference_id was not found
@@ -614,15 +615,24 @@ impl PublicDecryptRepository {
             return Ok(PublicDecryptCompletionOutcome::NotFound);
         };
 
+        // Convert Vec<u8> to JobId for use in outcomes
+        let state_int_job_id: JobId = state.int_job_id.clone().try_into().map_err(|_| {
+            SqlError::conversion_error(
+                "int_job_id",
+                format!("Vec<u8> of length {}", state.int_job_id.len()),
+                "Expected exactly 32 bytes for int_job_id".to_string(),
+            )
+        })?;
+
         match state.req_status {
             ReqStatus::Completed => {
                 return Ok(PublicDecryptCompletionOutcome::AlreadyCompleted {
-                    int_job_id: state.int_job_id,
+                    int_job_id: state_int_job_id,
                 });
             }
             ReqStatus::Failure | ReqStatus::TimedOut => {
                 return Ok(PublicDecryptCompletionOutcome::AlreadyInFinalState {
-                    int_job_id: state.int_job_id,
+                    int_job_id: state_int_job_id,
                     current_status: state.req_status,
                 });
             }
@@ -632,7 +642,7 @@ impl PublicDecryptRepository {
             _ => {
                 // Unexpected state (e.g., Processing, TxInFlight) - treat as not ready
                 return Ok(PublicDecryptCompletionOutcome::AlreadyInFinalState {
-                    int_job_id: state.int_job_id,
+                    int_job_id: state_int_job_id,
                     current_status: state.req_status,
                 });
             }
@@ -696,14 +706,21 @@ impl PublicDecryptRepository {
                     r.old_updated_at,
                     r.updated_at,
                 );
-                Ok(PublicDecryptCompletionOutcome::Completed {
-                    int_job_id: r.int_job_id,
-                })
+                // Convert Vec<u8> to JobId
+                let int_job_id: JobId = r.int_job_id.try_into().map_err(|_| {
+                    SqlError::conversion_error(
+                        "int_job_id",
+                        "Vec<u8>".to_string(),
+                        "Expected exactly 32 bytes for int_job_id".to_string(),
+                    )
+                })?;
+
+                Ok(PublicDecryptCompletionOutcome::Completed { int_job_id })
             }
             None => {
                 // Race condition: state changed between check and update
                 Ok(PublicDecryptCompletionOutcome::AlreadyCompleted {
-                    int_job_id: state.int_job_id,
+                    int_job_id: state_int_job_id,
                 })
             }
         }

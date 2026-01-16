@@ -41,11 +41,11 @@ async fn test_concurrent_schema_isolation_1() {
     // Insert test data - this should not affect other tests
     sqlx::query!(
         r#"
-        INSERT INTO input_proof_req (ext_job_id, int_request_id, req, req_status)
+        INSERT INTO input_proof_req (ext_job_id, int_job_id, req, req_status)
         VALUES ($1, $2, '{}', 'processing')
         "#,
         uuid::Uuid::new_v4(),
-        uuid::Uuid::new_v4()
+        vec![0u8; 32] as Vec<u8>
     )
     .execute(&pool)
     .await

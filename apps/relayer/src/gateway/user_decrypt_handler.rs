@@ -162,7 +162,10 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                                 .await
                         }
                         topic if topic == consensus_topic => {
-                            info!("Processing consensus response for request {}", event.job_id);
+                            info!(
+                                "Processing consensus response for request {:?}",
+                                event.job_id
+                            );
                             self.update_consensus_hash(log, event.clone(), *tx_hash)
                                 .await;
                             return;
@@ -198,11 +201,9 @@ impl GatewayHandler {
         job_id_hash: [u8; 32],
         decrypt_request: &UserDecryptRequest,
     ) -> Result<(), EventProcessingError> {
-        let job_id = JobId::from_sha256_hash(job_id_hash);
-
         let task: UserDecryptReadinessTask = UserDecryptReadinessTask {
-            id: job_id.to_string(),
-            job_id,
+            id: hex::encode(job_id_hash),
+            job_id: JobId::from(job_id_hash),
             request: decrypt_request.clone(),
         };
 
@@ -253,14 +254,17 @@ impl GatewayHandler {
         decrypt_request: UserDecryptRequest,
     ) -> Result<(), EventProcessingError> {
         info!(
-            "Sending user decrypt request to gateway for {}",
+            "Sending user decrypt request to gateway for {:?}",
             event.job_id
         );
 
         let job_id_hash = decrypt_request.content_hash();
         self.send_to_gateway(decrypt_request.clone(), job_id_hash)
             .await?;
-        info!("User decrypt request sent to gateway for {}", event.job_id);
+        info!(
+            "User decrypt request sent to gateway for {:?}",
+            event.job_id
+        );
         Ok(())
     }
 
@@ -276,10 +280,10 @@ impl GatewayHandler {
 
         let calldata_bytes = ComputeCalldata::user_decryption_req(user_decrypt_request.clone())?;
 
-        let job_id = JobId::from_sha256_hash(job_id_hash);
+        let job_id = JobId::from(job_id_hash);
 
         let task = GatewayTxTask {
-            id: job_id.to_string(), // Used for Queue tracking/dedup
+            id: hex::encode(job_id_hash), // Used for Queue tracking/dedup
             job_id,
             transaction_type: TransactionType::UserDecryptRequest, // Important to dispatch errors.
             target: decryption_address,
@@ -409,15 +413,18 @@ impl GatewayHandler {
             }
             ShareCompletionOutcome::AlreadyCompleted {
                 count,
-                metadata: _,
-                shares: _,
+                metadata,
+                shares,
             } => {
-                debug!(
+                info!(
                     job_id = %event.job_id,
                     gw_reference_id = %user_decryption_id,
                     share_count = count,
-                    "Threshold reached but request already completed (duplicate share), skipping"
+                    threshold = threshold,
+                    "Threshold reached but request already completed (duplicate share)"
                 );
+                // Request already completed - re-dispatch the response for any waiting HTTP handlers
+                self.assemble_final_response(event, metadata, shares).await;
             }
             ShareCompletionOutcome::AlreadyInFinalState {
                 count,
@@ -513,14 +520,25 @@ impl GatewayHandler {
         match assemble_final_response(shares) {
             Ok(final_response) => {
                 info!(
-                    "Response assembled and sending to user for {}",
+                    "Response assembled and sending to user for {:?}",
                     event.job_id
                 );
 
                 // Create JobId from the stored content hash (int_job_id database field)
-                let job_id = JobId::from_sha256_hash(
-                    consensus_state.int_job_id.try_into().unwrap_or([0u8; 32]), // TODO(xyz): return an error
-                );
+                let int_job_id_hex = hex::encode(&consensus_state.int_job_id);
+                let int_job_id_len = consensus_state.int_job_id.len();
+                let job_id: JobId = match consensus_state.int_job_id.try_into() {
+                    Ok(id) => id,
+                    Err(_) => {
+                        error!(
+                            alert = true,
+                            int_job_id_len,
+                            int_job_id_hex,
+                            "int_job_id has invalid length, expected 32 bytes, HTTP handler will timeout"
+                        );
+                        return;
+                    }
+                };
 
                 let response_event_data =
                     RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
@@ -777,16 +795,8 @@ impl GatewayHandler {
 #[async_trait]
 impl TxLifecycleHooks for GatewayHandler {
     async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError> {
-        let hash =
-            job_id
-                .as_sha256_hash()
-                .ok_or_else(|| EventProcessingError::ValidationFailed {
-                    field: "job_id".to_string(),
-                    reason: "Expected SHA256 hash for user decrypt".to_string(),
-                })?;
-
         self.user_decrypt_repo
-            .update_status_to_tx_in_flight(&hash[..])
+            .update_status_to_tx_in_flight(&job_id[..])
             .await
             .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
@@ -809,13 +819,6 @@ impl TxLifecycleHooks for GatewayHandler {
         )?;
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
-        let hash =
-            job_id
-                .as_sha256_hash()
-                .ok_or_else(|| EventProcessingError::ValidationFailed {
-                    field: "job_id".to_string(),
-                    reason: "Expected SHA256 hash for user decrypt".to_string(),
-                })?;
 
         info!(
             step = %UserDecryptStep::TxConfirmed,
@@ -826,7 +829,7 @@ impl TxLifecycleHooks for GatewayHandler {
         );
 
         self.user_decrypt_repo
-            .update_status_to_receipt_received_on_tx_success(&hash[..], &tx_hash, gw_reference_id)
+            .update_status_to_receipt_received_on_tx_success(&job_id[..], &tx_hash, gw_reference_id)
             .await
             .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
@@ -847,16 +850,8 @@ impl TxLifecycleHooks for GatewayHandler {
             crate::metrics::transaction::track_revert_with_request_type(reason, "user_decrypt");
         }
 
-        let hash =
-            job_id
-                .as_sha256_hash()
-                .ok_or_else(|| EventProcessingError::ValidationFailed {
-                    field: "job_id".to_string(),
-                    reason: "Expected SHA256 hash for user decrypt".to_string(),
-                })?;
-
         self.user_decrypt_repo
-            .update_status_to_failure_on_tx_failed(&hash[..], err_reason)
+            .update_status_to_failure_on_tx_failed(&job_id[..], err_reason)
             .await
             .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {

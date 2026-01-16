@@ -1,12 +1,12 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT int_request_id, req_status as \"req_status!: ReqStatus\"\n            FROM input_proof_req\n            WHERE gw_reference_id = $1\n            ",
+  "query": "\n            SELECT int_job_id, req_status as \"req_status!: ReqStatus\"\n            FROM input_proof_req\n            WHERE gw_reference_id = $1\n            ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "int_request_id",
-        "type_info": "Uuid"
+        "name": "int_job_id",
+        "type_info": "Bytea"
       },
       {
         "ordinal": 1,
@@ -39,5 +39,5 @@
       false
     ]
   },
-  "hash": "cf04d2e31f6af8de4987a9df904e88404ccd8e87ecec57730a5a0f0fd5bb7b16"
+  "hash": "d9ddcf75e720d292e45f7c150f2532ddc7ca9c4fdd00d8dbbc95e5477b27d109"
 }

@@ -1,12 +1,12 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT int_request_id, req, req_status as \"req_status!: ReqStatus\", updated_at\n            FROM input_proof_req\n            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n            ORDER BY created_at ASC\n            ",
+  "query": "\n            SELECT int_job_id, req, req_status as \"req_status!: ReqStatus\", updated_at\n            FROM input_proof_req\n            WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n            ORDER BY created_at ASC\n            ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "int_request_id",
-        "type_info": "Uuid"
+        "name": "int_job_id",
+        "type_info": "Bytea"
       },
       {
         "ordinal": 1,
@@ -49,5 +49,5 @@
       false
     ]
   },
-  "hash": "81421b517a3046d0c65409a9743c9ce1945384b404aa9ad9c9b6505d0ff0f1f6"
+  "hash": "b2f782ad005c63ae6a6d1af2653e2cc3f894e010454b09bdd91ed82124179835"
 }

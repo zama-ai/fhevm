@@ -1,0 +1,63 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO input_proof_req (\n                ext_job_id,\n                int_job_id,\n                req,\n                req_status\n            )\n            VALUES ($1, $2, $3, 'processing'::req_status)\n            ON CONFLICT (int_job_id)\n            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)\n              AND int_job_id != '\\x0000000000000000000000000000000000000000000000000000000000000000'\n            DO UPDATE SET updated_at = NOW()\n            RETURNING ext_job_id, (xmax = 0) AS \"is_inserted!\", req_status AS \"req_status!: ReqStatus\", accepted, res\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ext_job_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_inserted!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "req_status!: ReqStatus",
+        "type_info": {
+          "Custom": {
+            "name": "req_status",
+            "kind": {
+              "Enum": [
+                "queued",
+                "processing",
+                "tx_in_flight",
+                "receipt_received",
+                "completed",
+                "timed_out",
+                "failure"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "accepted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "res",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "aa60caa1629bcc2e0bc5bc3c5aa1b9fc4ccf0849cf1132dd141b4199e88b65c9"
+}

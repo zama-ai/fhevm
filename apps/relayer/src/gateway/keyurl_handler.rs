@@ -7,12 +7,11 @@ use crate::{
         ApiCategory, ApiVersion, KeyData, KeyUrlData, KeyUrlEventData, RelayerEvent,
         RelayerEventData,
     },
-    core::job_id::JobId,
+    core::job_id::INTERNAL_EVENT_JOB_ID,
     orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
 };
 use std::sync::Arc;
 use tracing::{error, info};
-use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct KeyUrlGatewayHandler {
@@ -38,7 +37,7 @@ impl KeyUrlGatewayHandler {
 
         // Emit KeyDataUpdated event through orchestrator
         let event = RelayerEvent::new(
-            JobId::from_uuid_v7(Uuid::new_v4()),
+            INTERNAL_EVENT_JOB_ID,
             ApiVersion::new(ApiCategory::PRODUCTION, 1),
             RelayerEventData::KeyUrl(KeyUrlEventData::KeyDataUpdated { key_data }),
         );

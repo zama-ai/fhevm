@@ -18,9 +18,12 @@ use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
+use crate::orchestrator::ContentHasher;
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
-use crate::store::sql::repositories::input_proof_repo::InputProofRepository;
+use crate::store::sql::repositories::input_proof_repo::{
+    InputProofInsertResult, InputProofRepository,
+};
 use axum::{
     body::Bytes,
     extract::{FromRequest, Path},
@@ -190,52 +193,94 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!("Successfully parsed and validated request");
 
-        let full = bounce_check(self.tx_throttler.clone()).await;
-        if full {
-            info!("Input proof v2 is bounced by full queue");
-            return AppResponse::<()>::protocol_overloaded(
-                "relayer is currently processing too many requests",
-                &self.retry_after_seconds.to_string(),
-                &request_id.to_string(),
-            )
-            .into_response();
+        let int_job_id: JobId = request_data.content_hash().into();
+
+        // Queue full bouncing logic: check if active request exists first
+        let active_external_job_id = self
+            .input_proof_repo
+            .find_active_ext_ref_by_int_job_id(int_job_id.as_ref())
+            .await;
+
+        match active_external_job_id {
+            Ok(res) => {
+                if res.is_none() {
+                    // No active request exists, check if queue is full and bounce if needed
+                    let full = bounce_check(self.tx_throttler.clone()).await;
+                    if full {
+                        info!("Input proof v2 is bounced by full queue");
+                        return AppResponse::<()>::protocol_overloaded(
+                            "relayer is currently processing too many requests",
+                            &self.retry_after_seconds.to_string(),
+                            &request_id.to_string(),
+                        )
+                        .into_response();
+                    }
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Failed to check for active input proof request in database: {}",
+                    e
+                );
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
         }
 
-        let ext_job_id = self.orchestrator.new_ext_job_id();
+        let proposed_ext_job_id = self.orchestrator.new_ext_job_id();
 
-        // Insert into database immediately
-        if let Err(e) = self
+        // Insert into database or get existing result for duplicate
+        let insert_result = match self
             .input_proof_repo
-            .insert_new_input_proof(ext_job_id, request_id, request_data.clone())
+            .insert_data_on_conflict_and_get_ext_job_id(
+                proposed_ext_job_id,
+                int_job_id.as_ref(),
+                request_data.clone(),
+            )
             .await
         {
-            error!("Failed to insert input proof into database: {}", e);
-            return AppResponse::<()>::internal_server_error_with_request_id(
-                request_id.to_string(),
-            )
-            .into_response();
-        }
-
-        // Trigger orchestrator processing
-        let event_data = InputProofEventData::ReqRcvdFromUser {
-            input_proof_request: request_data,
+            Ok(result) => result,
+            Err(e) => {
+                error!("Failed to insert input proof into database: {}", e);
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
         };
 
-        let event = RelayerEvent::new(
-            JobId::from_uuid_v7(request_id),
-            self.api_version,
-            RelayerEventData::InputProof(event_data),
-        );
+        // Extract ext_job_id from any variant
+        let assigned_ext_job_id = match &insert_result {
+            InputProofInsertResult::Inserted { ext_job_id } => *ext_job_id,
+            InputProofInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
+            InputProofInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
+        };
 
-        if let Err(e) = self.orchestrator.dispatch_event(event).await {
-            error!("Failed to dispatch event to orchestrator: {:?}", e);
-            return AppResponse::<()>::internal_server_error_with_request_id(
-                request_id.to_string(),
-            )
-            .into_response();
+        // Only dispatch event for new requests (deduplication)
+        if matches!(insert_result, InputProofInsertResult::Inserted { .. }) {
+            let event_data = InputProofEventData::ReqRcvdFromUser {
+                input_proof_request: request_data,
+            };
+
+            let event = RelayerEvent::new(
+                int_job_id,
+                self.api_version,
+                RelayerEventData::InputProof(event_data),
+            );
+
+            if let Err(e) = self.orchestrator.dispatch_event(event).await {
+                error!("Failed to dispatch event to orchestrator: {:?}", e);
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
+            info!("dispatched event to orchestrator to initiate processing");
+        } else {
+            info!("Duplicate request detected, skipping event dispatch");
         }
-
-        info!("dispatched event to orchestrator to initiate processing");
 
         // Generate a new request_id for this HTTP request (not stored)
         let request_id_for_response = uuid::Uuid::new_v4();
@@ -259,8 +304,8 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!(
             req_id = %request_id_for_response,
-            int_job_id = %request_id,
-            ext_job_id = %ext_job_id,
+            int_job_id = %int_job_id,
+            ext_job_id = %assigned_ext_job_id,
             retry_after_secs = retry_after,
             "Computed retry-after for input proof POST"
         );
@@ -270,7 +315,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             status: "queued".to_string(),
             request_id: request_id_for_response.to_string(), // New per-request UUID
             result: InputProofQueuedResult {
-                job_id: ext_job_id.to_string(),
+                job_id: assigned_ext_job_id.to_string(),
             },
         };
 

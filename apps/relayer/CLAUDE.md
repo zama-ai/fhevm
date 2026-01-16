@@ -96,6 +96,34 @@ The system follows an **event-driven architecture** with these key components:
 - **Hooks**: Meta-handlers for cross-cutting concerns (persistence, logging, metrics)
 - **Dispatchers**: Pluggable execution strategies (Tokio, distributed queues, etc.)
 
+### Request Deduplication Pattern
+
+The system uses **content-hash-based deduplication** to prevent duplicate processing of identical requests:
+
+#### JobId Type
+- **JobId**: Simple `[u8; 32]` type alias representing a 32-byte identifier
+- **User requests** (input-proof, user-decrypt, public-decrypt): JobId is the SHA-256 content hash of request payload
+- **Internal events** (keyurl, gateway listener): JobId is the `INTERNAL_EVENT_JOB_ID` constant (`[0u8; 32]`)
+
+#### Deduplication Mechanism
+1. **Content Hashing**: Each request type implements `ContentHasher` trait computing SHA-256 from all semantically meaningful fields
+2. **Database Storage**: Requests stored with both:
+   - `ext_job_id` (UUID): External reference returned to users
+   - `int_job_id` (BYTEA): Content hash for internal deduplication
+3. **Partial Unique Index**: Database enforces uniqueness on `int_job_id` only for active requests (excludes 'completed', 'failure', 'timed_out')
+4. **Check-Then-Insert**: HTTP handlers check for active requests before insertion, returning existing `ext_job_id` for duplicates
+
+#### Fields Included in Content Hash
+- **Input Proof**: contract_chain_id, contract_address, user_address, ciphetext_with_zk_proof, extra_data
+- **User Decrypt**: contract_chain_id, contract_address, user_address, ciphertext_handles, share_addresses, share_signers
+- **Public Decrypt**: contract_chain_id, contract_address, ciphertext_digest
+
+#### Benefits
+- Automatic deduplication prevents redundant processing
+- Same request → same job_id → same ext_job_id (while active)
+- Failed/timed-out requests can be retried (create new ext_job_id)
+- No enumeration or branching complexity - JobId is just bytes
+
 ## Project Structure
 
 ```
