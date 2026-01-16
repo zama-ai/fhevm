@@ -25,6 +25,14 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use std::{str::FromStr, sync::Arc, time::Duration};
 
+/// Reason why process_events() returned
+enum RecycleReason {
+    /// WebSocket stream ended unexpectedly
+    StreamEnded,
+    /// Planned connection recycle timer triggered
+    RecycleTimer,
+}
+
 pub struct ArbitrumListener<D>
 where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
@@ -36,6 +44,8 @@ where
     instance_id: usize,
     /// Instance-specific WebSocket URL
     ws_url: String,
+    /// Total number of listener instances (for staggered recycle timing)
+    num_listeners: usize,
 }
 
 impl<D> ArbitrumListener<D>
@@ -49,6 +59,7 @@ where
         deduplicator: Arc<EventDeduplicator>,
         instance_id: usize,
         ws_url: String,
+        num_listeners: usize,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             gateway_config,
@@ -57,6 +68,7 @@ where
             deduplicator,
             instance_id,
             ws_url,
+            num_listeners,
         })
     }
 
@@ -279,119 +291,164 @@ where
             );
             let mut subscription = sub.into_stream();
 
-            // Process events (returns on stream end)
-            self.process_events(&mut subscription, &mut last_processed_block)
+            // Process events (returns when stream ends or recycle timer triggers)
+            let reason = self
+                .process_events(&mut subscription, &mut last_processed_block)
                 .await;
 
-            // Stream ended - increment failures and log warning
-            consecutive_failures += 1;
-            warn!(
-                instance_id = self.instance_id,
-                last_block = ?last_processed_block,
-                attempt = consecutive_failures,
-                max_attempts = max_attempts,
-                "Gateway WebSocket connection dropped, reconnecting..."
-            );
-
-            tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+            match reason {
+                RecycleReason::StreamEnded => {
+                    // Unexpected stream end - increment failures and wait before retry
+                    consecutive_failures += 1;
+                    warn!(
+                        instance_id = self.instance_id,
+                        last_block = ?last_processed_block,
+                        attempt = consecutive_failures,
+                        max_attempts = max_attempts,
+                        "Gateway WebSocket connection dropped, reconnecting..."
+                    );
+                    tokio::time::sleep(Duration::from_millis(retry_interval)).await;
+                }
+                RecycleReason::RecycleTimer => {
+                    // Planned recycle - reconnect immediately without delay
+                    info!(
+                        instance_id = self.instance_id,
+                        last_block = ?last_processed_block,
+                        "Recycling WebSocket connection as scheduled"
+                    );
+                }
+            }
         }
     }
 
-    /// Process events from subscription stream. Returns when stream ends.
+    /// Process events from subscription stream.
+    /// Returns `RecycleReason` indicating why processing stopped.
     /// Updates last_block with the last successfully processed block number.
     async fn process_events(
         &self,
         subscription: &mut SubscriptionStream<Log>,
         last_block: &mut Option<u64>,
-    ) {
+    ) -> RecycleReason {
+        // Calculate staggered recycle duration
+        // Each instance recycles at: base_interval + (base_interval / num_listeners) * instance_id
+        let base_interval_secs = self.gateway_config.listener.ws_recycle_interval_mins * 60;
+        let stagger_secs = if self.num_listeners > 0 {
+            (base_interval_secs / self.num_listeners as u64) * self.instance_id as u64
+        } else {
+            0
+        };
+        let recycle_duration = Duration::from_secs(base_interval_secs + stagger_secs);
+
+        info!(
+            instance_id = self.instance_id,
+            recycle_interval_mins = self.gateway_config.listener.ws_recycle_interval_mins,
+            stagger_secs = stagger_secs,
+            total_recycle_secs = recycle_duration.as_secs(),
+            "WebSocket recycle timer configured"
+        );
+
+        let recycle_timer = tokio::time::sleep(recycle_duration);
+        tokio::pin!(recycle_timer);
+
         loop {
-            match subscription.next().await {
-                Some(event_log) => {
-                    let tx_hash = event_log
-                        .transaction_hash
-                        .expect("Event log must have transaction hash");
+            tokio::select! {
+                event = subscription.next() => {
+                    match event {
+                        Some(event_log) => {
+                            let tx_hash = event_log
+                                .transaction_hash
+                                .expect("Event log must have transaction hash");
 
-                    // Extract event details for logging
-                    let block_number = event_log.block_number.unwrap_or(0);
-                    let block_hash = event_log
-                        .block_hash
-                        .map(|h| format!("{:#x}", h))
-                        .unwrap_or_else(|| "0x0".to_string());
-                    let log_index = event_log.log_index.unwrap_or(0);
+                            // Extract event details for logging
+                            let block_number = event_log.block_number.unwrap_or(0);
+                            let block_hash = event_log
+                                .block_hash
+                                .map(|h| format!("{:#x}", h))
+                                .unwrap_or_else(|| "0x0".to_string());
+                            let log_index = event_log.log_index.unwrap_or(0);
 
-                    // Extract topics for logging
-                    let topic0 = event_log
-                        .topics()
-                        .first()
-                        .map(|t| format!("{:#x}", t))
-                        .unwrap_or_else(|| "none".to_string());
-                    let topic1 = event_log
-                        .topics()
-                        .get(1)
-                        .map(|t| format!("{:#x}", t))
-                        .unwrap_or_else(|| "none".to_string());
+                            // Extract topics for logging
+                            let topic0 = event_log
+                                .topics()
+                                .first()
+                                .map(|t| format!("{:#x}", t))
+                                .unwrap_or_else(|| "none".to_string());
+                            let topic1 = event_log
+                                .topics()
+                                .get(1)
+                                .map(|t| format!("{:#x}", t))
+                                .unwrap_or_else(|| "none".to_string());
 
-                    // Create deduplication key
-                    let dedup_key = EventKey {
-                        block_number,
-                        block_hash: event_log.block_hash.unwrap_or_default(),
-                        log_index,
-                    };
+                            // Create deduplication key
+                            let dedup_key = EventKey {
+                                block_number,
+                                block_hash: event_log.block_hash.unwrap_or_default(),
+                                log_index,
+                            };
 
-                    // Check deduplication - skip if already processed
-                    if !self.deduplicator.try_insert(dedup_key).await {
-                        debug!(
-                            "Listener {} skipping duplicate event: block={}, log_index={}, topic0={}",
-                            self.instance_id, block_number, log_index, topic0
-                        );
-                        continue;
-                    }
+                            // Check deduplication - skip if already processed
+                            if !self.deduplicator.try_insert(dedup_key).await {
+                                debug!(
+                                    "Listener {} skipping duplicate event: block={}, log_index={}, topic0={}",
+                                    self.instance_id, block_number, log_index, topic0
+                                );
+                                continue;
+                            }
 
-                    info!(
-                        "Listener {} processing event: block={}, block_hash={}, log_index={}, topic0={}, topic1={}, tx_hash={:#x}",
-                        self.instance_id, block_number, block_hash, log_index, topic0, topic1, tx_hash
-                    );
-
-                    let event = RelayerEvent::new(
-                        JobId::from_uuid_v7(self.orchestrator.new_internal_request_id()),
-                        ApiVersion {
-                            category: ApiCategory::PRODUCTION,
-                            number: 1,
-                        },
-                        RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
-                            log: event_log.clone(),
-                            tx_hash,
-                        }),
-                    );
-                    self.orchestrator
-                        .dispatch_event(event)
-                        .await
-                        .unwrap_or_else(|e| {
-                            error!(error = %e, "dispatching event");
-                        });
-
-                    if event_log.block_number.is_some() {
-                        // Update last_block for reconnection tracking
-                        *last_block = Some(block_number);
-
-                        // Update block progress - log error but don't stop processing
-                        if let Err(e) = self
-                            .block_number_repo
-                            .update_block_info(block_number, block_hash.clone(), self.instance_id)
-                            .await
-                        {
-                            error!(
-                                block_number = %block_number,
-                                block_hash = %block_hash,
-                                error = %e,
-                                "Failed to update block progress - continuing without persistence"
+                            info!(
+                                "Listener {} processing event: block={}, block_hash={}, log_index={}, topic0={}, topic1={}, tx_hash={:#x}",
+                                self.instance_id, block_number, block_hash, log_index, topic0, topic1, tx_hash
                             );
+
+                            let event = RelayerEvent::new(
+                                JobId::from_uuid_v7(self.orchestrator.new_internal_request_id()),
+                                ApiVersion {
+                                    category: ApiCategory::PRODUCTION,
+                                    number: 1,
+                                },
+                                RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+                                    log: event_log.clone(),
+                                    tx_hash,
+                                }),
+                            );
+                            self.orchestrator
+                                .dispatch_event(event)
+                                .await
+                                .unwrap_or_else(|e| {
+                                    error!(error = %e, "dispatching event");
+                                });
+
+                            if event_log.block_number.is_some() {
+                                // Update last_block for reconnection tracking
+                                *last_block = Some(block_number);
+
+                                // Update block progress - log error but don't stop processing
+                                if let Err(e) = self
+                                    .block_number_repo
+                                    .update_block_info(block_number, block_hash.clone(), self.instance_id)
+                                    .await
+                                {
+                                    error!(
+                                        block_number = %block_number,
+                                        block_hash = %block_hash,
+                                        error = %e,
+                                        "Failed to update block progress - continuing without persistence"
+                                    );
+                                }
+                            }
+                        }
+                        None => {
+                            // Stream ended - return to allow reconnection
+                            return RecycleReason::StreamEnded;
                         }
                     }
                 }
-                None => {
-                    // Stream ended - return to allow reconnection
-                    return;
+                _ = &mut recycle_timer => {
+                    info!(
+                        instance_id = self.instance_id,
+                        "WebSocket connection recycle timer triggered, reconnecting"
+                    );
+                    return RecycleReason::RecycleTimer;
                 }
             }
         }

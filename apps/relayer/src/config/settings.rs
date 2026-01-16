@@ -85,6 +85,10 @@ pub struct ListenerConfig {
     pub listener_instances: usize,
     /// TTL for event deduplication cache in seconds (1-10, required)
     pub dedup_ttl_seconds: u64,
+    /// WebSocket connection recycle interval in minutes
+    /// Connections are recycled periodically to prevent staleness issues
+    /// Staggered across listener instances to avoid simultaneous reconnections
+    pub ws_recycle_interval_mins: u64,
     /// Maximum capacity for deduplication cache (required)
     ///
     /// **Sizing guidance:**

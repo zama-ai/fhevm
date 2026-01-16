@@ -26,6 +26,10 @@ gateway:
     listener_instances: 3
     # TTL for event deduplication cache in seconds (1-10)
     dedup_ttl_seconds: 5
+    # WebSocket connection recycle interval in minutes
+    # Connections are recycled periodically to prevent staleness issues
+    # Staggered across listener instances to avoid simultaneous reconnections
+    ws_recycle_interval_mins: 30
     # Maximum capacity for deduplication cache
     #
     # Sizing formula: events_per_second * listener_instances * dedup_ttl_seconds * 1.2 (safety buffer)

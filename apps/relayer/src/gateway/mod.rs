@@ -178,6 +178,7 @@ pub async fn initialize_gateway(
                 deduplicator.clone(),
                 instance_id,
                 ws_url,
+                listener_instances,
             )
             .await
             .map_err(|e| {
