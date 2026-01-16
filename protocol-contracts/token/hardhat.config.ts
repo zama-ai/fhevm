@@ -91,6 +91,16 @@ const config: HardhatUserConfig = {
             url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET || '',
             accounts,
         },
+        'bnb-mainnet': {
+            eid: EndpointId.BSC_V2_MAINNET,
+            url: process.env.RPC_URL_BNB_MAINNET || '',
+            accounts,
+        },
+        'bnb-testnet': {
+            eid: EndpointId.BSC_V2_TESTNET,
+            url: process.env.RPC_URL_BNB_TESTNET || '',
+            accounts,
+        },
         hardhat: {
             // Need this for testing because TestHelperOz5.sol is exceeding the compiled contract size limit
             allowUnlimitedContractSize: true,
