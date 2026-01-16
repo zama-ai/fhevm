@@ -18,6 +18,8 @@
 
 mod common;
 
+use std::slice;
+
 use alloy::primitives::{Address, Bytes, B256};
 use ethereum_rpc_mock::{
     fhevm::FhevmMockWrapper, MockConfig, MockServer, MockServerHandle, SubscriptionTarget,
