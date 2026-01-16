@@ -30,6 +30,7 @@ use rand::{rng, Rng};
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
 use std::net::TcpListener;
+use std::slice;
 use std::str::FromStr;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -224,6 +225,7 @@ impl RecoveryTestSetup {
     /// Configure broken gateway for 'tx_in_flight' status:
     /// - Requests pass readiness check and transaction is sent
     /// - No events emitted so request stays in processing/tx_in_flight
+    #[allow(dead_code)]
     fn configure_for_tx_in_flight_stuck(&self, _handles: &[String]) {
         // Set readiness to pass so requests can leave queued status
         self.broken_gateway.set_readiness_success();
@@ -369,6 +371,7 @@ async fn send_public_decrypt_request(base_url: &str, handle: &str) -> eyre::Resu
     }
 }
 
+#[allow(dead_code)]
 async fn send_input_proof_request(base_url: &str) -> eyre::Result<String> {
     let client = reqwest::Client::new();
     let payload = json!({
@@ -504,7 +507,7 @@ async fn test_recovery_from_processing_status() {
 
     // Phase 1: Pre-generate handles and configure broken gateway
     let handle1 = random_handle();
-    setup.configure_for_processing_stuck(&[handle1.clone()]);
+    setup.configure_for_processing_stuck(slice::from_ref(&handle1));
 
     // Phase 2: Start relayer with broken gateway
     tracing::info!("Phase 1: Starting relayer with broken gateway");
@@ -745,7 +748,7 @@ async fn test_recovery_from_tx_in_flight_status() {
 
     // Phase 1: Pre-generate handles and configure broken gateway
     let handle1 = random_handle();
-    setup.configure_for_processing_stuck(&[handle1.clone()]);
+    setup.configure_for_processing_stuck(slice::from_ref(&handle1));
 
     // Phase 2: Start relayer with broken gateway
     tracing::info!(
