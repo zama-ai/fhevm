@@ -32,6 +32,8 @@ where
     block_number_repo: Arc<BlockNumberRepository>,
     deduplicator: Arc<EventDeduplicator>,
     instance_id: usize,
+    /// Instance-specific WebSocket URL
+    ws_url: String,
 }
 
 impl<D> ArbitrumListener<D>
@@ -44,6 +46,7 @@ where
         block_number_repo: Arc<BlockNumberRepository>,
         deduplicator: Arc<EventDeduplicator>,
         instance_id: usize,
+        ws_url: String,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             gateway_config,
@@ -51,6 +54,7 @@ where
             block_number_repo,
             deduplicator,
             instance_id,
+            ws_url,
         })
     }
 
@@ -413,7 +417,8 @@ where
         // 256MB instead of 64MB max for websocket size (copro bug with payload over 64MB)
         let ws_config = WebSocketConfig::default().max_message_size(Some(256 * 1024 * 1024));
         // Disable implicit reconnect - we handle reconnection at application level
-        let ws = WsConnect::new(&self.gateway_config.blockchain_rpc.ws_url)
+        // Use instance-specific WebSocket URL
+        let ws = WsConnect::new(&self.ws_url)
             .with_config(ws_config)
             .with_max_retries(0);
 

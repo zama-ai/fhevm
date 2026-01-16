@@ -162,6 +162,14 @@ pub async fn initialize_gateway(
 
     // Initialize and spawn multiple listener instances
     for instance_id in 0..listener_instances {
+        // Get per-instance WebSocket URL (falls back to default if not configured)
+        let ws_url = settings
+            .gateway
+            .listener
+            .get_ws_url_for_instance(instance_id, &settings.gateway.blockchain_rpc);
+
+        info!("Listener {} using ws_url: {}", instance_id, ws_url);
+
         let listener = Arc::new(
             ArbitrumListener::new(
                 settings.gateway.clone(),
@@ -169,6 +177,7 @@ pub async fn initialize_gateway(
                 repositories.block_number.clone(),
                 deduplicator.clone(),
                 instance_id,
+                ws_url,
             )
             .await
             .map_err(|e| {

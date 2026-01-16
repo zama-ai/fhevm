@@ -68,6 +68,13 @@ impl BlockchainRpcConfig {
     }
 }
 
+/// Per-listener RPC endpoint configuration
+#[derive(Debug, Deserialize, Clone)]
+pub struct ListenerRpcConfig {
+    /// WebSocket URL for this listener instance (e.g., "ws://localhost:8757")
+    pub ws_url: String,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct ListenerConfig {
     /// Optional starting block number for event subscriptions
@@ -91,6 +98,30 @@ pub struct ListenerConfig {
     /// - 1000 events/sec → 18,000
     /// - 5000 events/sec → 90,000
     pub dedup_max_capacity: usize,
+    /// Per-listener RPC URLs (optional)
+    /// If provided, each listener instance uses its corresponding URL from this list.
+    /// If not provided, all instances use the default blockchain_rpc URLs.
+    /// The number of entries must equal listener_instances.
+    #[serde(default)]
+    pub listener_urls: Option<Vec<ListenerRpcConfig>>,
+}
+
+impl ListenerConfig {
+    /// Get the WebSocket URL for a specific listener instance.
+    /// If listener_urls is configured, returns the URL for the given instance_id.
+    /// Otherwise, falls back to the default blockchain_rpc ws_url.
+    pub fn get_ws_url_for_instance(
+        &self,
+        instance_id: usize,
+        default: &BlockchainRpcConfig,
+    ) -> String {
+        if let Some(ref urls) = self.listener_urls {
+            if let Some(cfg) = urls.get(instance_id) {
+                return cfg.ws_url.clone();
+            }
+        }
+        default.ws_url.clone()
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -571,6 +602,28 @@ impl Settings {
                 "dedup_max_capacity must be between 1000 and 10,000,000, got: {}",
                 listener_config.dedup_max_capacity
             )));
+        }
+
+        // Validate listener_urls if provided
+        if let Some(ref urls) = listener_config.listener_urls {
+            // URL count must match listener_instances
+            if urls.len() != listener_config.listener_instances {
+                return Err(AppConfigError::Config(format!(
+                    "listener_urls count ({}) must equal listener_instances ({})",
+                    urls.len(),
+                    listener_config.listener_instances
+                )));
+            }
+
+            // Validate each URL format
+            for (i, url_cfg) in urls.iter().enumerate() {
+                if !url_cfg.ws_url.starts_with("ws://") && !url_cfg.ws_url.starts_with("wss://") {
+                    return Err(AppConfigError::Config(format!(
+                        "listener_urls[{}].ws_url invalid (must start with ws:// or wss://): {}",
+                        i, url_cfg.ws_url
+                    )));
+                }
+            }
         }
 
         Ok(())
