@@ -1,4 +1,4 @@
-use std::net::TcpListener;
+use std::{net::TcpListener, time::Duration};
 
 use alloy::signers::k256::pkcs8::EncodePrivateKey;
 use aws_config::BehaviorVersion;
@@ -28,6 +28,7 @@ pub async fn start_localstack() -> anyhow::Result<LocalstackContainer> {
         .with_exposed_port(LOCALSTACK_PORT.into())
         .with_wait_for(WaitFor::message_on_stdout("Ready."))
         .with_mapped_port(host_port, LOCALSTACK_PORT.into())
+        .with_startup_timeout(Duration::from_hours(2))
         .start()
         .await?;
     Ok(LocalstackContainer {
