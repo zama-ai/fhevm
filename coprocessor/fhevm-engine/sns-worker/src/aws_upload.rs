@@ -590,7 +590,7 @@ async fn try_resubmit(
                 for task in jobs {
                     select! {
                         _ = tasks.send(task.clone()) => {
-                            info!(handle = to_hex(task.handle()), "resubmitted");
+                            info!(handle = to_hex(task.handle()), "upload-task, resubmitted");
                         },
                         _ = token.cancelled() => {
                             return Ok(());
