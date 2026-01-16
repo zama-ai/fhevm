@@ -3,13 +3,13 @@ use std::{fs::read, sync::Arc};
 #[cfg(feature = "gpu")]
 use tfhe::core_crypto::gpu::get_number_of_gpus;
 #[cfg(feature = "gpu")]
-use tfhe::shortint::parameters::v1_4::meta::gpu::V1_4_META_PARAM_GPU_2_2_MULTI_BIT_GROUP_4_KS_PBS_TUNIFORM_2M128 as gpu_meta_parameters;
+use tfhe::shortint::parameters::v1_5::meta::cpu::V1_5_META_PARAM_CPU_2_2_KS_PBS_PKE_TO_SMALL_ZKV2_TUNIFORM_2M128 as gpu_meta_parameters;
 use tfhe::shortint::AtomicPatternParameters;
 use tfhe::{
     set_server_key,
     shortint::parameters::{
         meta::DedicatedCompactPublicKeyParameters,
-        v1_4::meta::cpu::V1_4_META_PARAM_CPU_2_2_KS_PBS_PKE_TO_SMALL_ZKV2_TUNIFORM_2M128 as cpu_meta_parameters,
+        v1_5::meta::cpu::V1_5_META_PARAM_CPU_2_2_KS_PBS_PKE_TO_SMALL_ZKV2_TUNIFORM_2M128 as cpu_meta_parameters,
         CompressionParameters, MetaNoiseSquashingParameters, ShortintKeySwitchingParameters,
     },
     zk::CompactPkeCrs,
@@ -31,7 +31,7 @@ pub const TFHE_COMPACT_PK_PARAMS: DedicatedCompactPublicKeyParameters = cpu_meta
 pub const TFHE_NOISE_SQUASHING_PARAMS: MetaNoiseSquashingParameters = cpu_meta_parameters
     .noise_squashing_parameters
     .expect("Missing noise squashing parameters");
-pub const TFHE_PKS_RERANDOMIZATION_PARAMS: ShortintKeySwitchingParameters = cpu_meta_parameters
+pub const TFHE_PKS_RERANDOMIZATION_PARAMS: ShortintKeySwitchingParameters = TFHE_COMPACT_PK_PARAMS
     .re_randomization_parameters
     .expect("Missing rerandomisation parameters");
 
