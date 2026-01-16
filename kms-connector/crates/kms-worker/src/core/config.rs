@@ -1,4 +1,4 @@
-use alloy::transports::http::reqwest::Url;
+use alloy::{primitives::Address, transports::http::reqwest::Url};
 use connector_utils::{
     config::{
         ContractConfig, DeserializeConfig,
@@ -14,6 +14,35 @@ use connector_utils::{
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{net::SocketAddr, str::FromStr, time::Duration};
+
+/// Configuration for the host chain connection used for ACL verification.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[cfg_attr(debug_assertions, derive(Serialize))]
+pub struct HostChainConfig {
+    /// The RPC URL of the host chain.
+    pub rpc_url: Url,
+    /// The chain ID of the host chain.
+    pub chain_id: u64,
+    /// The address of the ACL contract on the host chain.
+    #[serde(deserialize_with = "deserialize_address")]
+    pub acl_contract_address: Address,
+}
+
+fn deserialize_address<'de, D>(deserializer: D) -> std::result::Result<Address, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+    Address::from_str(&s).map_err(serde::de::Error::custom)
+}
+
+fn default_host_chain_config() -> HostChainConfig {
+    HostChainConfig {
+        rpc_url: Url::from_str("http://localhost:8546").unwrap(),
+        chain_id: 1,
+        acl_contract_address: Address::ZERO,
+    }
+}
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -47,6 +76,10 @@ pub struct Config {
     /// The `KMSGeneration` contract configuration.
     #[serde(deserialize_with = "deserialize_kms_generation_contract_config")]
     pub kms_generation_contract: ContractConfig,
+
+    /// The host chain configuration for ACL verification.
+    #[serde(default = "default_host_chain_config")]
+    pub host_chain: HostChainConfig,
 
     /// The limit number of events to fetch from the database.
     #[serde(default = "default_events_batch_size")]
@@ -127,6 +160,7 @@ impl Default for Config {
             decryption_contract: default_decryption_contract_config(),
             gateway_config_contract: default_gateway_config_contract_config(),
             kms_generation_contract: default_kms_generation_contract_config(),
+            host_chain: default_host_chain_config(),
             service_name: default_service_name(),
             events_batch_size: default_events_batch_size(),
             grpc_request_retries: default_grpc_request_retries(),
@@ -177,6 +211,9 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_HOST_CHAIN__RPC_URL");
+            env::remove_var("KMS_CONNECTOR_HOST_CHAIN__CHAIN_ID");
+            env::remove_var("KMS_CONNECTOR_HOST_CHAIN__ACL_CONTRACT_ADDRESS");
         }
     }
 
@@ -224,6 +261,12 @@ mod tests {
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
             env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4s");
+            env::set_var("KMS_CONNECTOR_HOST_CHAIN__RPC_URL", "http://localhost:9546");
+            env::set_var("KMS_CONNECTOR_HOST_CHAIN__CHAIN_ID", "1");
+            env::set_var(
+                "KMS_CONNECTOR_HOST_CHAIN__ACL_CONTRACT_ADDRESS",
+                "0x0000000000000000000000000000000000000000",
+            );
         }
 
         // Load config from environment

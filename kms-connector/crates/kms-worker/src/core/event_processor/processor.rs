@@ -25,12 +25,12 @@ pub trait EventProcessor: Send {
 
 /// Struct that processes Gateway's events coming from a `Postgres` database.
 #[derive(Clone)]
-pub struct DbEventProcessor<P: Provider> {
+pub struct DbEventProcessor<P: Provider, H: Provider = P> {
     /// The GRPC client used to communicate with the KMS Core.
     kms_client: KmsClient,
 
     /// The entity used to process decryption requests.
-    decryption_processor: DecryptionProcessor<P>,
+    decryption_processor: DecryptionProcessor<P, H>,
 
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor,
@@ -42,7 +42,7 @@ pub struct DbEventProcessor<P: Provider> {
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider> EventProcessor for DbEventProcessor<P> {
+impl<P: Provider, H: Provider> EventProcessor for DbEventProcessor<P, H> {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
@@ -98,10 +98,10 @@ pub enum ProcessingError {
     Recoverable(anyhow::Error),
 }
 
-impl<P: Provider> DbEventProcessor<P> {
+impl<P: Provider, H: Provider> DbEventProcessor<P, H> {
     pub fn new(
         kms_client: KmsClient,
-        decryption_processor: DecryptionProcessor<P>,
+        decryption_processor: DecryptionProcessor<P, H>,
         kms_generation_processor: KMSGenerationProcessor,
         max_decryption_attempts: u16,
         db_pool: Pool<Postgres>,
@@ -127,6 +127,9 @@ impl<P: Provider> DbEventProcessor<P> {
                     .check_decryption_not_already_done(req.decryptionId)
                     .await?;
                 self.decryption_processor
+                    .check_acl_for_public_decryption(&req.snsCtMaterials)
+                    .await?;
+                self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
                         &req.snsCtMaterials,
@@ -138,6 +141,10 @@ impl<P: Provider> DbEventProcessor<P> {
             GatewayEventKind::UserDecryption(req) => {
                 // No need to check decryption is done for user decrypt, as MPC parties don't
                 // communicate between each other for user decrypt
+                // Check ACL authorization on host chain before processing decryption
+                self.decryption_processor
+                .check_acl_for_user_decryption(&req.snsCtMaterials, req.userAddress)
+                .await?;
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -174,7 +181,14 @@ impl<P: Provider> DbEventProcessor<P> {
         &mut self,
         event: &mut GatewayEvent,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
-        let request = self.prepare_request(event).await?;
+        let request = match self.prepare_request(event).await {
+            Ok(req) => req,
+            Err(ProcessingError::Recoverable(e)) => {
+                event.error_counter += 1;
+                return Err(ProcessingError::Recoverable(e));
+            }
+            Err(e) => return Err(e),
+        };
 
         if !event.already_sent {
             let (error_count, result) = self.kms_client.send_request(&request).await;

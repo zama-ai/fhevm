@@ -86,6 +86,14 @@ async fn test_processing_request(event_type: EventType) -> anyhow::Result<()> {
     if matches!(event_type, EventType::PublicDecryptionRequest) {
         let is_decryption_done_call_response = false;
         asserter.push_success(&is_decryption_done_call_response.abi_encode());
+        // Mock ACL isAllowedForDecryption call - return true (allowed)
+        let acl_allowed_response = true;
+        asserter.push_success(&acl_allowed_response.abi_encode());
+    }
+    if matches!(event_type, EventType::UserDecryptionRequest) {
+        // Mock ACL isAllowed call - return true (allowed)
+        let acl_allowed_response = true;
+        asserter.push_success(&acl_allowed_response.abi_encode());
     }
     let get_copro_call_response = Coprocessor {
         s3BucketUrl: format!("{}/ct128", test_instance.s3_url()),
@@ -95,6 +103,14 @@ async fn test_processing_request(event_type: EventType) -> anyhow::Result<()> {
     if matches!(event_type, EventType::PublicDecryptionRequest) {
         let is_decryption_done_call_response = false;
         asserter.push_success(&is_decryption_done_call_response.abi_encode());
+        // Mock ACL isAllowedForDecryption call again for retry - return true (allowed)
+        let acl_allowed_response = true;
+        asserter.push_success(&acl_allowed_response.abi_encode());
+    }
+    if matches!(event_type, EventType::UserDecryptionRequest) {
+        // Mock ACL isAllowed call again for retry - return true (allowed)
+        let acl_allowed_response = true;
+        asserter.push_success(&acl_allowed_response.abi_encode());
     }
 
     let mock_provider = ProviderBuilder::new()
@@ -200,13 +216,15 @@ async fn init_kms_worker<P: Provider + Clone + 'static>(
     config: Config,
     provider: P,
     db: &Pool<Postgres>,
-) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P>>> {
+) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P, P>>> {
     let kms_client = KmsClient::connect(&config).await?;
     let s3_client = reqwest::Client::new();
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
     let s3_service = S3Service::new(&config, provider.clone(), s3_client);
-    let decryption_processor = DecryptionProcessor::new(&config, provider.clone(), s3_service);
+    // Use the same provider for both gateway and host chain in tests
+    let decryption_processor =
+        DecryptionProcessor::new(&config, provider.clone(), provider.clone(), s3_service);
     let kms_generation_processor = KMSGenerationProcessor::new(&config);
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),

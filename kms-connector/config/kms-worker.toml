@@ -106,3 +106,17 @@ address = "0x0000000000000000000000000000000000000000"
 # EIP-712 domain version for KMSGeneration contract (optional, defaults to "1")
 # ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
+
+# Configuration of the Host Chain for ACL verification (optional, defaults shown below)
+# The KMS Worker will verify decryption authorization by calling view functions on the host chain ACL contract.
+[host_chain]
+# RPC URL of the host chain (required if host_chain section is present)
+# ENV: KMS_CONNECTOR_HOST_CHAIN__RPC_URL
+rpc_url = "http://localhost:8546"
+# Chain ID of the host chain (required if host_chain section is present)
+# ENV: KMS_CONNECTOR_HOST_CHAIN__CHAIN_ID
+chain_id = 1
+# Address of the ACL contract on the host chain (required if host_chain section is present)
+# Format: hex string with 0x prefix
+# ENV: KMS_CONNECTOR_HOST_CHAIN__ACL_CONTRACT_ADDRESS
+acl_contract_address = "0x0000000000000000000000000000000000000000"

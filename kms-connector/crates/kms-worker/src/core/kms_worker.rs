@@ -22,6 +22,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+/// Type alias for the host chain provider (same type as gateway provider but for host chain).
+pub type HostChainProvider = GatewayProvider;
+
 /// Struct processing stored Gateway's events.
 pub struct KmsWorker<E, Proc> {
     /// The entity responsible for picking events to process.
@@ -106,11 +109,17 @@ where
     }
 }
 
-impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>> {
+impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider, HostChainProvider>> {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let provider = connect_to_gateway(config.gateway_url.clone(), config.chain_id).await?;
+        let gateway_provider =
+            connect_to_gateway(config.gateway_url.clone(), config.chain_id).await?;
+        let host_chain_provider = connect_to_gateway(
+            config.host_chain.rpc_url.clone(),
+            config.host_chain.chain_id,
+        )
+        .await?;
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
         let s3_client = reqwest::Client::builder()
@@ -120,8 +129,13 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>> {
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
-        let s3_service = S3Service::new(&config, provider.clone(), s3_client);
-        let decryption_processor = DecryptionProcessor::new(&config, provider.clone(), s3_service);
+        let s3_service = S3Service::new(&config, gateway_provider.clone(), s3_client);
+        let decryption_processor = DecryptionProcessor::new(
+            &config,
+            gateway_provider.clone(),
+            host_chain_provider,
+            s3_service,
+        );
         let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let event_processor = DbEventProcessor::new(
             kms_client.clone(),
@@ -134,7 +148,7 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>> {
 
         let state = State::new(
             db_pool,
-            provider,
+            gateway_provider,
             kms_health_client,
             config.healthcheck_timeout,
         );

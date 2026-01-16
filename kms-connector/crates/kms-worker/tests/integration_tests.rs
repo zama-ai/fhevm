@@ -34,6 +34,13 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
+#[derive(Clone, Copy, Debug)]
+enum AclBehavior {
+    Allowed,
+    Denied,
+    TransportError,
+}
+
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
@@ -129,6 +136,15 @@ async fn test_processing_request(event_type: EventType, already_sent: bool) -> a
     if matches!(event_type, EventType::PublicDecryptionRequest) {
         let is_decryption_done_call_response = false;
         asserter.push_success(&is_decryption_done_call_response.abi_encode());
+        // Mock ACL isAllowedForDecryption call - return true (allowed)
+        let acl_allowed_response = true;
+        asserter.push_success(&acl_allowed_response.abi_encode());
+    }
+
+    if matches!(event_type, EventType::UserDecryptionRequest) {
+        // Mock ACL isAllowed call - return true (allowed)
+        let acl_allowed_response = true;
+        asserter.push_success(&acl_allowed_response.abi_encode());
     }
 
     let get_copro_call_response = Coprocessor {
@@ -182,6 +198,91 @@ async fn test_processing_request(event_type: EventType, already_sent: bool) -> a
     // Stopping the test
     cancel_token.cancel();
     kms_worker_task.await.unwrap();
+    Ok(())
+}
+
+#[rstest]
+#[case::public_denied(EventType::PublicDecryptionRequest, AclBehavior::Denied)]
+#[case::user_denied(EventType::UserDecryptionRequest, AclBehavior::Denied)]
+#[case::public_transport_error(
+    EventType::PublicDecryptionRequest,
+    AclBehavior::TransportError
+)]
+#[case::user_transport_error(
+    EventType::UserDecryptionRequest,
+    AclBehavior::TransportError
+)]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_decryption_acl_behavior(
+    #[case] event_type: EventType,
+    #[case] acl_behavior: AclBehavior,
+) -> anyhow::Result<()> {
+    // Setup real DB and S3 instance
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup().await?)
+        .with_s3(S3Instance::setup().await?)
+        .build();
+
+    let asserter = Asserter::new();
+
+    if matches!(event_type, EventType::PublicDecryptionRequest) {
+        let is_decryption_done_call_response = false;
+        asserter.push_success(&is_decryption_done_call_response.abi_encode());
+    }
+
+    match acl_behavior {
+        AclBehavior::Allowed => {
+            let acl_allowed_response = true;
+            asserter.push_success(&acl_allowed_response.abi_encode());
+        }
+        AclBehavior::Denied => {
+            let acl_allowed_response = false;
+            asserter.push_success(&acl_allowed_response.abi_encode());
+        }
+        AclBehavior::TransportError => {
+            asserter.push_failure_msg("Transport Error");
+        }
+    }
+
+    let mock_provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_mocked_client(asserter.clone());
+    info!("Gateway mock started!");
+
+    let request = insert_rand_request(test_instance.db(), event_type, None, false, None).await?;
+
+    let kms_mocks = prepare_mocks(&request, false);
+    let kms_mock_server =
+        MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint").with_mocks(kms_mocks);
+    kms_mock_server.start().await?;
+    info!("KMS mock server started!");
+
+    let config = Config {
+        kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
+        // Avoid rapid repicks for recoverable ACL errors.
+        db_fast_event_polling: Duration::from_secs(5),
+        ..Default::default()
+    };
+    let kms_worker = init_kms_worker(config, mock_provider, test_instance.db()).await?;
+    let cancel_token = CancellationToken::new();
+    let kms_worker_task = tokio::spawn(kms_worker.start(cancel_token.clone()));
+    info!("KmsWorker started!");
+
+    match acl_behavior {
+        AclBehavior::Denied => {
+            wait_for_request_status(test_instance.db(), &request, "failed").await?;
+        }
+        AclBehavior::TransportError => {
+            wait_for_request_status(test_instance.db(), &request, "pending").await?;
+        }
+        AclBehavior::Allowed => unreachable!("acl behavior helper is only for failure cases"),
+    }
+
+    cancel_token.cancel();
+    kms_worker_task.await.unwrap();
+
+    assert_no_response_in_db(test_instance.db(), &request).await?;
     Ok(())
 }
 
@@ -300,6 +401,48 @@ async fn wait_for_response_in_db(
     Ok(response)
 }
 
+async fn wait_for_request_status(
+    db: &Pool<Postgres>,
+    req: &GatewayEventKind,
+    expected: &str,
+) -> anyhow::Result<()> {
+    let (query, id) = match req {
+        GatewayEventKind::PublicDecryption(r) => (
+            "SELECT status::text FROM public_decryption_requests WHERE decryption_id = $1",
+            r.decryptionId.as_le_slice(),
+        ),
+        GatewayEventKind::UserDecryption(r) => (
+            "SELECT status::text FROM user_decryption_requests WHERE decryption_id = $1",
+            r.decryptionId.as_le_slice(),
+        ),
+        _ => unimplemented!(),
+    };
+
+    loop {
+        let status: String = sqlx::query_scalar(query).bind(id).fetch_one(db).await?;
+        if status == expected {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+async fn assert_no_response_in_db(
+    db: &Pool<Postgres>,
+    req: &GatewayEventKind,
+) -> anyhow::Result<()> {
+    let query = match req {
+        GatewayEventKind::PublicDecryption(_) => {
+            "SELECT COUNT(*) FROM public_decryption_responses"
+        }
+        GatewayEventKind::UserDecryption(_) => "SELECT COUNT(*) FROM user_decryption_responses",
+        _ => unimplemented!(),
+    };
+    let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
+    assert_eq!(count, 0, "Expected no response row to be stored");
+    Ok(())
+}
+
 fn check_response_data(request: &GatewayEventKind, response: KmsResponse) -> anyhow::Result<()> {
     info!("Checking response data...");
     let expected_response = match request {
@@ -346,13 +489,15 @@ async fn init_kms_worker<P: Provider + Clone + 'static>(
     config: Config,
     provider: P,
     db: &Pool<Postgres>,
-) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P>>> {
+) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P, P>>> {
     let kms_client = KmsClient::connect(&config).await?;
     let s3_client = reqwest::Client::new();
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
     let s3_service = S3Service::new(&config, provider.clone(), s3_client);
-    let decryption_processor = DecryptionProcessor::new(&config, provider.clone(), s3_service);
+    // Use the same provider for both gateway and host chain in tests
+    let decryption_processor =
+        DecryptionProcessor::new(&config, provider.clone(), provider.clone(), s3_service);
     let kms_generation_processor = KMSGenerationProcessor::new(&config);
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),
