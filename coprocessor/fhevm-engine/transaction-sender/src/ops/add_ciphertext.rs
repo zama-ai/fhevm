@@ -181,6 +181,13 @@ where
         .execute(&self.db_pool)
         .await?;
 
+        // Delete the local 128-bit ciphertext after successful transaction
+        // The db copy is no longer needed once the ciphertext commit has been added on-chain
+        //
+        // The deletion happens here but not in the SNS worker after upload because
+        // here it is less probable that the deletion fails due to a race condition
+        delete_ct128_from_db(&self.db_pool, handle.to_vec()).await?;
+
         if let Some(txn_hash) = src_transaction_id {
             telemetry::try_end_l1_transaction(&self.db_pool, &txn_hash).await?;
         }
@@ -406,4 +413,24 @@ where
 
         Ok(maybe_has_more_work)
     }
+}
+
+/// Deletes the local record of a 128-bit ciphertext
+async fn delete_ct128_from_db(
+    pool: &sqlx::Pool<Postgres>,
+    handle: Vec<u8>,
+) -> Result<(), sqlx::Error> {
+    let rows_affected = sqlx::query!("DELETE FROM ciphertexts128 WHERE  handle = $1", handle)
+        .execute(pool)
+        .await?
+        .rows_affected();
+
+    if rows_affected > 0 {
+        info!(
+            rows_affected,
+            handle = to_hex(&handle),
+            "Deleted local ct128"
+        );
+    }
+    Ok(())
 }
