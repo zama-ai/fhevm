@@ -217,13 +217,14 @@ where
         );
 
         loop {
-            // Check if max retries exceeded
+            // Log ERROR continuously when exceeding threshold (fatal state)
             if consecutive_failures >= max_attempts {
-                return Err(anyhow::anyhow!(
-                    "Listener {} exceeded max reconnection attempts ({})",
-                    self.instance_id,
-                    max_attempts
-                ));
+                error!(
+                    instance_id = self.instance_id,
+                    consecutive_failures = consecutive_failures,
+                    max_attempts = max_attempts,
+                    "WebSocket listener exceeded max consecutive connection failures, will keep retrying"
+                );
             }
 
             // Create provider (retry on failure)
