@@ -12,7 +12,7 @@ pub use keyurl_handler::KeyUrlGatewayHandler;
 pub use public_decrypt_handler::GatewayHandler as PublicDecryptGatewayHandler;
 pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 
-use crate::config::settings::Settings;
+use crate::config::settings::{ListenerType, Settings};
 use crate::core::event::RelayerEvent;
 use crate::gateway::arbitrum::transaction::tx_processor::GatewayTxProcessor;
 use crate::gateway::readiness_check::public_decrypt_processor::PublicDecryptReadinessProcessor;
@@ -27,7 +27,7 @@ use arbitrum::{
     transaction::{
         helper::GatewayTransactionEngine, TransactionHelper as GatewayTransactionHelper,
     },
-    ArbitrumListener,
+    ArbitrumListener, PollingListener,
 };
 use std::{str::FromStr, sync::Arc};
 use tracing::{error, info};
@@ -148,73 +148,148 @@ pub async fn initialize_gateway(
     );
 
     // Create shared event deduplicator
+    let pool_config = &settings.gateway.listener_pool;
     let deduplicator = Arc::new(EventDeduplicator::new(
-        settings.gateway.listener.dedup_ttl_seconds,
-        settings.gateway.listener.dedup_max_capacity,
+        pool_config.dedup_ttl_seconds,
+        pool_config.dedup_max_capacity,
     ));
 
-    // Get number of listener instances from configuration
-    let listener_instances = settings.gateway.listener.listener_instances;
+    // Count only WebSocket listeners for stagger calculation
+    // Staggered recycling is only needed for WS connections to prevent all listeners
+    // from recycling at the same time. Polling listeners don't need staggering.
+    let num_ws_listeners = pool_config
+        .listeners
+        .iter()
+        .filter(|l| matches!(l.listener_type, ListenerType::Subscription))
+        .count();
+    let num_listeners = pool_config.listeners.len();
     info!(
-        "Initializing {} gateway listener instances",
-        listener_instances
+        "Initializing {} gateway listeners from pool ({} WebSocket, {} polling)",
+        num_listeners,
+        num_ws_listeners,
+        num_listeners - num_ws_listeners
     );
 
-    // Initialize and spawn multiple listener instances
-    for instance_id in 0..listener_instances {
-        // Get per-instance WebSocket URL (falls back to default if not configured)
-        let ws_url = settings
-            .gateway
-            .listener
-            .get_ws_url_for_instance(instance_id, &settings.gateway.blockchain_rpc);
+    // Track WS-specific index for stagger calculation
+    let mut ws_instance_idx = 0;
 
-        info!("Listener {} using ws_url: {}", instance_id, ws_url);
+    // Initialize and spawn listeners based on their type
+    for (instance_id, listener_config) in pool_config.listeners.iter().enumerate() {
+        let url = &listener_config.url;
 
-        let listener = Arc::new(
-            ArbitrumListener::new(
-                settings.gateway.clone(),
-                orchestrator.clone(),
-                repositories.block_number.clone(),
-                deduplicator.clone(),
-                instance_id,
-                ws_url,
-                listener_instances,
-            )
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to initialize gateway listener {}: {}",
-                    instance_id,
-                    e
-                )
-            })?,
-        );
+        match listener_config.listener_type {
+            ListenerType::Subscription => {
+                info!(
+                    instance_id = instance_id,
+                    ws_instance_idx = ws_instance_idx,
+                    url = %url,
+                    "Initializing WebSocket subscription listener"
+                );
 
-        let task_name = format!("gateway_listener_{}", instance_id);
+                let listener = Arc::new(
+                    ArbitrumListener::new(
+                        settings.gateway.clone(),
+                        orchestrator.clone(),
+                        repositories.block_number.clone(),
+                        deduplicator.clone(),
+                        ws_instance_idx,
+                        url.clone(),
+                        num_ws_listeners,
+                    )
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "Failed to initialize subscription listener {}: {}",
+                            instance_id,
+                            e
+                        )
+                    })?,
+                );
 
-        // Register THIS listener's health check
-        orchestrator.add_health_check(
-            format!("gateway_ws_{}", instance_id),
-            listener.clone() as Arc<dyn HealthCheck>,
-        );
+                let task_name = format!("gateway_listener_{}", instance_id);
 
-        // Spawn listener and wait for it to be ready (verifies gateway connection)
-        let listener_clone = listener.clone();
-        let health_listener = listener.clone();
-        orchestrator
-            .spawn_task_and_wait_ready(
-                &task_name,
-                async move {
-                    if let Err(e) = listener_clone.run().await {
-                        error!("Gateway listener {} failed: {}", instance_id, e);
-                    }
-                },
-                async move { health_listener.check().await },
-            )
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to start gateway listener {}: {}", instance_id, e)
-            })?;
+                // Register health check
+                orchestrator.add_health_check(
+                    format!("gateway_listener_{}", instance_id),
+                    listener.clone() as Arc<dyn HealthCheck>,
+                );
+
+                // Spawn listener and wait for it to be ready
+                let listener_clone = listener.clone();
+                let health_listener = listener.clone();
+                orchestrator
+                    .spawn_task_and_wait_ready(
+                        &task_name,
+                        async move {
+                            if let Err(e) = listener_clone.run().await {
+                                error!("Subscription listener {} failed: {}", instance_id, e);
+                            }
+                        },
+                        async move { health_listener.check().await },
+                    )
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "Failed to start subscription listener {}: {}",
+                            instance_id,
+                            e
+                        )
+                    })?;
+
+                ws_instance_idx += 1;
+            }
+            ListenerType::Polling => {
+                info!(
+                    instance_id = instance_id,
+                    url = %url,
+                    "Initializing HTTP polling listener"
+                );
+
+                let listener = Arc::new(
+                    PollingListener::new(
+                        settings.gateway.clone(),
+                        orchestrator.clone(),
+                        repositories.block_number.clone(),
+                        deduplicator.clone(),
+                        instance_id,
+                        url.clone(),
+                    )
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "Failed to initialize polling listener {}: {}",
+                            instance_id,
+                            e
+                        )
+                    })?,
+                );
+
+                let task_name = format!("gateway_listener_{}", instance_id);
+
+                // Register health check
+                orchestrator.add_health_check(
+                    format!("gateway_listener_{}", instance_id),
+                    listener.clone() as Arc<dyn HealthCheck>,
+                );
+
+                // Spawn listener and wait for it to be ready
+                let listener_clone = listener.clone();
+                let health_listener = listener.clone();
+                orchestrator
+                    .spawn_task_and_wait_ready(
+                        &task_name,
+                        async move {
+                            if let Err(e) = listener_clone.run().await {
+                                error!("Polling listener {} failed: {}", instance_id, e);
+                            }
+                        },
+                        async move { health_listener.check().await },
+                    )
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!("Failed to start polling listener {}: {}", instance_id, e)
+                    })?;
+            }
+        }
     }
 
     // Create KeyUrl handler (but don't initialize yet - that happens after HTTP server)

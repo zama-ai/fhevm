@@ -107,7 +107,7 @@ where
             .await?;
 
         let block_number = match (
-            self.gateway_config.listener.last_block_number,
+            self.gateway_config.listener_pool.last_block_number,
             block_info_from_db,
         ) {
             // Config takes precedence
@@ -202,13 +202,13 @@ where
         let mut consecutive_failures: u32 = 0;
         let max_attempts = self
             .gateway_config
-            .listener
-            .ws_reconnect_config
+            .listener_pool
+            .reconnect_config
             .max_attempts;
         let retry_interval = self
             .gateway_config
-            .listener
-            .ws_reconnect_config
+            .listener_pool
+            .reconnect_config
             .retry_interval_ms;
 
         info!(
@@ -331,7 +331,7 @@ where
     ) -> RecycleReason {
         // Calculate staggered recycle duration
         // Each instance recycles at: base_interval + (base_interval / num_listeners) * instance_id
-        let base_interval_secs = self.gateway_config.listener.ws_recycle_interval_mins * 60;
+        let base_interval_secs = self.gateway_config.listener_pool.recycle_interval_mins * 60;
         let stagger_secs = if self.num_listeners > 0 {
             (base_interval_secs / self.num_listeners as u64) * self.instance_id as u64
         } else {
@@ -341,7 +341,7 @@ where
 
         info!(
             instance_id = self.instance_id,
-            recycle_interval_mins = self.gateway_config.listener.ws_recycle_interval_mins,
+            recycle_interval_mins = self.gateway_config.listener_pool.recycle_interval_mins,
             stagger_secs = stagger_secs,
             total_recycle_secs = recycle_duration.as_secs(),
             "WebSocket recycle timer configured"

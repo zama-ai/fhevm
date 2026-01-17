@@ -171,8 +171,13 @@ impl TestSetup {
         // Configure with dynamic ports (use :0 for automatic allocation for relayer HTTP/metrics)
         settings.http.endpoint = Some("0.0.0.0:0".to_string());
         settings.gateway.blockchain_rpc.http_url = format!("http://localhost:{}", gateway_port);
-        settings.gateway.blockchain_rpc.ws_url = format!("ws://localhost:{}", gateway_port);
         settings.metrics.endpoint = "0.0.0.0:0".to_string();
+
+        // Update listener pool URLs to use the mock server
+        let ws_url = format!("ws://localhost:{}", gateway_port);
+        for listener in &mut settings.gateway.listener_pool.listeners {
+            listener.url = ws_url.clone();
+        }
 
         // Start relayer service with isolated settings
         let cancellation_token = CancellationToken::new();
@@ -193,9 +198,12 @@ impl TestSetup {
         relayer_settings.http.endpoint = settings.http.endpoint.clone();
         relayer_settings.gateway.blockchain_rpc.http_url =
             settings.gateway.blockchain_rpc.http_url.clone();
-        relayer_settings.gateway.blockchain_rpc.ws_url =
-            settings.gateway.blockchain_rpc.ws_url.clone();
         relayer_settings.metrics.endpoint = settings.metrics.endpoint.clone();
+
+        // Update relayer listener pool URLs to use the mock server
+        for listener in &mut relayer_settings.gateway.listener_pool.listeners {
+            listener.url = ws_url.clone();
+        }
 
         // Create a channel to receive settings with actual ports
         let (settings_tx, settings_rx) = oneshot::channel::<Settings>();
@@ -390,11 +398,24 @@ fn create_listener_config(
     let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
         .map_err(|e| eyre::eyre!("Failed to parse YAML config: {}", e))?;
 
-    // Modify the listener instances count
+    // Modify the listeners array in listener_pool
     if let Some(gateway) = config.get_mut("gateway") {
-        if let Some(listener) = gateway.get_mut("listener") {
-            listener["listener_instances"] =
-                serde_yaml::Value::Number(serde_yaml::Number::from(listener_count));
+        if let Some(listener_pool) = gateway.get_mut("listener_pool") {
+            // Build the listeners array based on count
+            let mut listeners = Vec::new();
+            for _ in 0..listener_count {
+                let mut listener = serde_yaml::Mapping::new();
+                listener.insert(
+                    serde_yaml::Value::String("type".to_string()),
+                    serde_yaml::Value::String("subscription".to_string()),
+                );
+                listener.insert(
+                    serde_yaml::Value::String("url".to_string()),
+                    serde_yaml::Value::String("ws://localhost:8757".to_string()),
+                );
+                listeners.push(serde_yaml::Value::Mapping(listener));
+            }
+            listener_pool["listeners"] = serde_yaml::Value::Sequence(listeners);
         }
     }
 

@@ -73,8 +73,8 @@ pub async fn run_fhevm_relayer(
         .validate_addresses()
         .map_err(|e| eyre::eyre!("Configuration validation failed: {}", e))?;
     settings
-        .validate_listener_config()
-        .map_err(|e| eyre::eyre!("Listener configuration validation failed: {}", e))?;
+        .validate_listener_pool_config()
+        .map_err(|e| eyre::eyre!("Listener pool configuration validation failed: {}", e))?;
 
     // === Orchestration Phase ===
     // Create orchestrator, repositories, and gateway components

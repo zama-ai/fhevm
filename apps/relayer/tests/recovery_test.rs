@@ -138,8 +138,13 @@ impl RecoveryTestSetup {
         // Configure with specified gateway
         settings.http.endpoint = Some("0.0.0.0:0".to_string());
         settings.gateway.blockchain_rpc.http_url = format!("http://localhost:{}", gateway_port);
-        settings.gateway.blockchain_rpc.ws_url = format!("ws://localhost:{}", gateway_port);
         settings.metrics.endpoint = "0.0.0.0:0".to_string();
+
+        // Update listener pool URLs to use the mock server
+        let ws_url = format!("ws://localhost:{}", gateway_port);
+        for listener in &mut settings.gateway.listener_pool.listeners {
+            listener.url = ws_url.clone();
+        }
 
         // Store storage settings for DB access
         self.storage_settings = Some(settings.storage.clone());

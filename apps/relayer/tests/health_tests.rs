@@ -99,9 +99,9 @@ async fn test_health_endpoint_all_healthy() {
     // Verify expected dependencies are present
     assert!(dependencies.contains_key("gateway_http"));
     // Check for multiple listener instances (default is 3 from config)
-    assert!(dependencies.contains_key("gateway_ws_0"));
-    assert!(dependencies.contains_key("gateway_ws_1"));
-    assert!(dependencies.contains_key("gateway_ws_2"));
+    assert!(dependencies.contains_key("gateway_listener_0"));
+    assert!(dependencies.contains_key("gateway_listener_1"));
+    assert!(dependencies.contains_key("gateway_listener_2"));
     assert!(dependencies.contains_key("database"));
 
     setup.shutdown().await;

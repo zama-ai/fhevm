@@ -5,15 +5,16 @@ use std::env;
 use std::fmt;
 use std::time::Duration;
 
-// Listener configuration limits
-const MAX_LISTENER_INSTANCES: usize = 3;
+// Listener pool configuration limits
+const MIN_LISTENERS: usize = 2;
+const MAX_LISTENERS: usize = 5;
 const MIN_DEDUP_TTL_SECONDS: u64 = 1;
 const MAX_DEDUP_TTL_SECONDS: u64 = 10;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct GatewayConfig {
     pub blockchain_rpc: BlockchainRpcConfig,
-    pub listener: ListenerConfig,
+    pub listener_pool: ListenerPoolConfig,
     pub tx_engine: TxEngineConfig,
     pub readiness_checker: ReadinessCheckConfig,
     pub contracts: ContractConfig,
@@ -42,7 +43,6 @@ impl GatewayConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct BlockchainRpcConfig {
-    pub ws_url: String,
     pub http_url: String,
     pub chain_id: u64,
     pub ws_health_check_timeout_secs: u64,
@@ -51,13 +51,6 @@ pub struct BlockchainRpcConfig {
 
 impl BlockchainRpcConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
-        // Validate URLs
-        if !self.ws_url.starts_with("ws://") && !self.ws_url.starts_with("wss://") {
-            return Err(AppConfigError::InvalidNetworkConfig(format!(
-                "Invalid WebSocket URL: {}",
-                self.ws_url
-            )));
-        }
         if !self.http_url.starts_with("http://") && !self.http_url.starts_with("https://") {
             return Err(AppConfigError::InvalidNetworkConfig(format!(
                 "Invalid HTTP URL: {}",
@@ -68,33 +61,54 @@ impl BlockchainRpcConfig {
     }
 }
 
-/// Per-listener RPC endpoint configuration
-#[derive(Debug, Deserialize, Clone)]
-pub struct ListenerRpcConfig {
-    /// WebSocket URL for this listener instance (e.g., "ws://localhost:8757")
-    pub ws_url: String,
+/// Type of listener in the pool
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ListenerType {
+    /// WebSocket subscription listener (real-time events)
+    Subscription,
+    /// HTTP polling listener (eth_getLogs at intervals)
+    Polling,
 }
 
+/// Configuration for a single listener instance
 #[derive(Debug, Deserialize, Clone)]
-pub struct ListenerConfig {
+pub struct ListenerInstanceConfig {
+    /// Type of listener: "subscription" (WebSocket) or "polling" (HTTP eth_getLogs)
+    #[serde(rename = "type")]
+    pub listener_type: ListenerType,
+    /// URL for this listener
+    /// - For subscription: ws:// or wss:// URL
+    /// - For polling: http:// or https:// URL
+    pub url: String,
+}
+
+/// Unified listener pool configuration
+/// Supports multiple listener types (WebSocket subscriptions and HTTP polling)
+/// with shared deduplication and staggered connection recycling
+#[derive(Debug, Deserialize, Clone)]
+pub struct ListenerPoolConfig {
     /// Optional starting block number for event subscriptions
     pub last_block_number: Option<u64>,
-    /// WebSocket reconnection configuration
-    pub ws_reconnect_config: RetrySettings,
-    /// Number of parallel listener instances (1-3, required)
-    pub listener_instances: usize,
-    /// TTL for event deduplication cache in seconds (1-10, required)
+    /// Reconnection configuration for WebSocket connection failures
+    pub reconnect_config: RetrySettings,
+    /// Max consecutive poll failures before giving up (polling listeners only)
+    /// Should be higher than reconnect_config.max_attempts to tolerate transient errors (503, 429)
+    /// Recommended: 40+ for polling vs 20 for WebSocket
+    pub polling_max_attempts: u32,
+    /// Connection recycle interval in minutes
+    /// Staggered across all listeners to avoid simultaneous reconnections
+    pub recycle_interval_mins: u64,
+    /// Polling interval in milliseconds (for polling type listeners)
+    pub poll_interval_ms: u64,
+    /// TTL for event deduplication cache in seconds (1-10)
     pub dedup_ttl_seconds: u64,
-    /// WebSocket connection recycle interval in minutes
-    /// Connections are recycled periodically to prevent staleness issues
-    /// Staggered across listener instances to avoid simultaneous reconnections
-    pub ws_recycle_interval_mins: u64,
-    /// Maximum capacity for deduplication cache (required)
+    /// Maximum capacity for deduplication cache
     ///
     /// **Sizing guidance:**
     /// The cache should accommodate all events received during the TTL window with a safety buffer.
     ///
-    /// **Formula:** `events_per_second * listener_instances * dedup_ttl_seconds * safety_buffer`
+    /// **Formula:** `events_per_second * num_listeners * dedup_ttl_seconds * safety_buffer`
     ///
     /// **Recommended values (with 3 listeners, 5s TTL, 1.2x buffer):**
     /// - 100 events/sec → 1,800
@@ -102,30 +116,9 @@ pub struct ListenerConfig {
     /// - 1000 events/sec → 18,000
     /// - 5000 events/sec → 90,000
     pub dedup_max_capacity: usize,
-    /// Per-listener RPC URLs (optional)
-    /// If provided, each listener instance uses its corresponding URL from this list.
-    /// If not provided, all instances use the default blockchain_rpc URLs.
-    /// The number of entries must equal listener_instances.
-    #[serde(default)]
-    pub listener_urls: Option<Vec<ListenerRpcConfig>>,
-}
-
-impl ListenerConfig {
-    /// Get the WebSocket URL for a specific listener instance.
-    /// If listener_urls is configured, returns the URL for the given instance_id.
-    /// Otherwise, falls back to the default blockchain_rpc ws_url.
-    pub fn get_ws_url_for_instance(
-        &self,
-        instance_id: usize,
-        default: &BlockchainRpcConfig,
-    ) -> String {
-        if let Some(ref urls) = self.listener_urls {
-            if let Some(cfg) = urls.get(instance_id) {
-                return cfg.ws_url.clone();
-            }
-        }
-        default.ws_url.clone()
-    }
+    /// List of listeners in the pool
+    /// Each listener has a type and URL; instance_id is assigned by position (0-indexed)
+    pub listeners: Vec<ListenerInstanceConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -575,57 +568,58 @@ impl Settings {
         Ok(())
     }
 
-    pub fn validate_listener_config(&self) -> Result<(), AppConfigError> {
-        let listener_config = &self.gateway.listener;
+    pub fn validate_listener_pool_config(&self) -> Result<(), AppConfigError> {
+        let pool_config = &self.gateway.listener_pool;
 
-        // Validate listener instances count
-        if listener_config.listener_instances < 1
-            || listener_config.listener_instances > MAX_LISTENER_INSTANCES
+        // Validate listener count
+        if pool_config.listeners.len() < MIN_LISTENERS
+            || pool_config.listeners.len() > MAX_LISTENERS
         {
             return Err(AppConfigError::Config(format!(
-                "listener_instances must be between 1 and {}, got: {}",
-                MAX_LISTENER_INSTANCES, listener_config.listener_instances
+                "listener_pool.listeners must have between {} and {} entries, got: {}",
+                MIN_LISTENERS,
+                MAX_LISTENERS,
+                pool_config.listeners.len()
             )));
         }
 
         // Validate dedup TTL seconds
-        if listener_config.dedup_ttl_seconds < MIN_DEDUP_TTL_SECONDS
-            || listener_config.dedup_ttl_seconds > MAX_DEDUP_TTL_SECONDS
+        if pool_config.dedup_ttl_seconds < MIN_DEDUP_TTL_SECONDS
+            || pool_config.dedup_ttl_seconds > MAX_DEDUP_TTL_SECONDS
         {
             return Err(AppConfigError::Config(format!(
                 "dedup_ttl_seconds must be between {} and {}, got: {}",
-                MIN_DEDUP_TTL_SECONDS, MAX_DEDUP_TTL_SECONDS, listener_config.dedup_ttl_seconds
+                MIN_DEDUP_TTL_SECONDS, MAX_DEDUP_TTL_SECONDS, pool_config.dedup_ttl_seconds
             )));
         }
 
         // Validate dedup max capacity (should be reasonable)
-        if listener_config.dedup_max_capacity < 1000
-            || listener_config.dedup_max_capacity > 10_000_000
-        {
+        if pool_config.dedup_max_capacity < 1000 || pool_config.dedup_max_capacity > 10_000_000 {
             return Err(AppConfigError::Config(format!(
                 "dedup_max_capacity must be between 1000 and 10,000,000, got: {}",
-                listener_config.dedup_max_capacity
+                pool_config.dedup_max_capacity
             )));
         }
 
-        // Validate listener_urls if provided
-        if let Some(ref urls) = listener_config.listener_urls {
-            // URL count must match listener_instances
-            if urls.len() != listener_config.listener_instances {
-                return Err(AppConfigError::Config(format!(
-                    "listener_urls count ({}) must equal listener_instances ({})",
-                    urls.len(),
-                    listener_config.listener_instances
-                )));
-            }
-
-            // Validate each URL format
-            for (i, url_cfg) in urls.iter().enumerate() {
-                if !url_cfg.ws_url.starts_with("ws://") && !url_cfg.ws_url.starts_with("wss://") {
-                    return Err(AppConfigError::Config(format!(
-                        "listener_urls[{}].ws_url invalid (must start with ws:// or wss://): {}",
-                        i, url_cfg.ws_url
-                    )));
+        // Validate each listener's URL format based on type
+        for (i, listener) in pool_config.listeners.iter().enumerate() {
+            match listener.listener_type {
+                ListenerType::Subscription => {
+                    if !listener.url.starts_with("ws://") && !listener.url.starts_with("wss://") {
+                        return Err(AppConfigError::Config(format!(
+                            "listeners[{}].url invalid for subscription type (must start with ws:// or wss://): {}",
+                            i, listener.url
+                        )));
+                    }
+                }
+                ListenerType::Polling => {
+                    if !listener.url.starts_with("http://") && !listener.url.starts_with("https://")
+                    {
+                        return Err(AppConfigError::Config(format!(
+                            "listeners[{}].url invalid for polling type (must start with http:// or https://): {}",
+                            i, listener.url
+                        )));
+                    }
                 }
             }
         }
