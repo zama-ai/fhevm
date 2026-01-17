@@ -121,12 +121,23 @@ pub struct ListenerPoolConfig {
     pub listeners: Vec<ListenerInstanceConfig>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct TxEngineConfig {
     pub private_key: String,
     pub max_concurrency: u16,
     pub retry: RetrySettings,
     pub tx_throttlers: TxThrottlersConfig,
+}
+
+impl fmt::Debug for TxEngineConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TxEngineConfig")
+            .field("private_key", &"[REDACTED]")
+            .field("max_concurrency", &self.max_concurrency)
+            .field("retry", &self.retry)
+            .field("tx_throttlers", &self.tx_throttlers)
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -769,5 +780,104 @@ mod tests {
 
         // Verify the value was parsed correctly (value from local.yaml.example)
         assert_eq!(settings.gateway.contracts.user_decrypt_shares_threshold, 9);
+    }
+
+    #[test]
+    fn test_private_key_is_redacted_in_debug_output() {
+        // Create a test TxEngineConfig with a dummy private key
+        let tx_engine_config = TxEngineConfig {
+            private_key: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                .to_string(),
+            max_concurrency: 10,
+            retry: RetrySettings {
+                max_attempts: 3,
+                retry_interval_ms: 1000,
+            },
+            tx_throttlers: TxThrottlersConfig {
+                input_proof: TxThrottlingConfig {
+                    per_seconds: 10,
+                    capacity: 100,
+                    safety_margin: 10,
+                },
+                public_decrypt: TxThrottlingConfig {
+                    per_seconds: 10,
+                    capacity: 100,
+                    safety_margin: 10,
+                },
+                user_decrypt: TxThrottlingConfig {
+                    per_seconds: 10,
+                    capacity: 100,
+                    safety_margin: 10,
+                },
+            },
+        };
+
+        // Get the debug output
+        let debug_output = format!("{:?}", tx_engine_config);
+
+        // Verify that the actual private key is NOT in the debug output
+        assert!(
+            !debug_output.contains("1234567890abcdef"),
+            "Private key should not appear in debug output. Got: {}",
+            debug_output
+        );
+
+        // Verify the exact format: private_key: "[REDACTED]"
+        assert!(
+            debug_output.contains("private_key: \"[REDACTED]\""),
+            "Debug output should contain 'private_key: \"[REDACTED]\"' but got: {}",
+            debug_output
+        );
+    }
+
+    #[test]
+    fn test_sql_database_url_is_redacted_in_debug_output() {
+        // Create a test StorageConfig with a dummy database URL
+        let storage_config = StorageConfig {
+            sql_database_url: "postgresql://user:password@localhost:5432/testdb".to_string(),
+            app_pool: SqlPoolConfig {
+                max_connections: 10,
+                min_connections: 2,
+                acquire_timeout_secs: 30,
+                idle_timeout_secs: 600,
+                max_lifetime_secs: 1800,
+            },
+            cron_pool: SqlPoolConfig {
+                max_connections: 5,
+                min_connections: 1,
+                acquire_timeout_secs: 30,
+                idle_timeout_secs: 600,
+                max_lifetime_secs: 1800,
+            },
+            sql_health_check_timeout_secs: 5,
+            cron: CronConfig {
+                timeout_cron_interval: Duration::from_secs(60),
+                public_decrypt_timeout: Duration::from_secs(300),
+                user_decrypt_timeout: Duration::from_secs(300),
+                input_proof_timeout: Duration::from_secs(300),
+                expiry_cron_interval: Duration::from_secs(3600),
+                public_decrypt_expiry: Duration::from_secs(7200),
+                user_decrypt_expiry: Duration::from_secs(7200),
+                input_proof_expiry: Duration::from_secs(7200),
+                cron_startup_delay_after_recovery: Duration::from_secs(5),
+            },
+        };
+
+        // Get the debug output
+        let debug_output = format!("{:?}", storage_config);
+
+        // Verify that the actual database URL (including password) is NOT in the debug output
+        assert!(
+            !debug_output.contains("password"),
+            "Database password should not appear in debug output. Got: {}",
+            debug_output
+        );
+
+        // Verify the exact format: sql_database_url: "[REDACTED]"
+        assert!(
+            debug_output.contains("sql_database_url: \"[REDACTED]\""),
+            "Debug output should contain 'sql_database_url: \"[REDACTED]\"' but got: {}",
+            debug_output
+        );
     }
 }
