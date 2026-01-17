@@ -1,6 +1,7 @@
 use config::{Config, Environment, File};
 use serde::Deserializer;
 use serde::{de::Error, Deserialize, Serialize};
+use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::time::Duration;
@@ -83,6 +84,39 @@ pub struct ListenerInstanceConfig {
     pub url: String,
 }
 
+/// Custom deserializer to handle both standard YAML arrays and
+/// Env Variable indexed maps (e.g., listeners__0__url).
+fn deserialize_listeners_from_map_or_seq<'de, D>(
+    deserializer: D,
+) -> Result<Vec<ListenerInstanceConfig>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // Helper enum to capture either a Sequence (YAML) or a Map (Env Var)
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum MapOrSeq {
+        List(Vec<ListenerInstanceConfig>),
+        Map(HashMap<String, ListenerInstanceConfig>),
+    }
+
+    match MapOrSeq::deserialize(deserializer)? {
+        MapOrSeq::List(list) => Ok(list),
+        MapOrSeq::Map(map) => {
+            // Filter keys that look like integers ("0", "1"), parse them, and sort
+            let mut items: Vec<(usize, ListenerInstanceConfig)> = map
+                .into_iter()
+                .filter_map(|(k, v)| k.parse::<usize>().ok().map(|idx| (idx, v)))
+                .collect();
+
+            // Sort by index to ensure "0" comes before "1"
+            items.sort_by_key(|(idx, _)| *idx);
+
+            Ok(items.into_iter().map(|(_, v)| v).collect())
+        }
+    }
+}
+
 /// Unified listener pool configuration
 /// Supports multiple listener types (WebSocket subscriptions and HTTP polling)
 /// with shared deduplication and staggered connection recycling
@@ -118,6 +152,7 @@ pub struct ListenerPoolConfig {
     pub dedup_max_capacity: usize,
     /// List of listeners in the pool
     /// Each listener has a type and URL; instance_id is assigned by position (0-indexed)
+    #[serde(deserialize_with = "deserialize_listeners_from_map_or_seq")]
     pub listeners: Vec<ListenerInstanceConfig>,
 }
 
@@ -878,6 +913,90 @@ mod tests {
             debug_output.contains("sql_database_url: \"[REDACTED]\""),
             "Debug output should contain 'sql_database_url: \"[REDACTED]\"' but got: {}",
             debug_output
+        );
+    }
+
+    #[test]
+    fn test_deserialize_listeners_from_indexed_env_vars() {
+        // We reuse the ConfigBuilder logic from your existing tests
+        let config_path = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .to_temp_file()
+            .expect("Failed to create temp config file");
+
+        // This simulates exactly what happens when you do:
+        // export APP_GATEWAY__LISTENER_POOL__LISTENERS__0__TYPE=polling
+        let config = Config::builder()
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
+            // Simulate Env Var: Index 0
+            .set_override("gateway.listener_pool.listeners.0.type", "polling")
+            .expect("Failed to set override")
+            .set_override(
+                "gateway.listener_pool.listeners.0.url",
+                "http://localhost:1111",
+            )
+            .expect("Failed to set override")
+            // Simulate Env Var: Index 1
+            .set_override("gateway.listener_pool.listeners.1.type", "subscription")
+            .expect("Failed to set override")
+            .set_override(
+                "gateway.listener_pool.listeners.1.url",
+                "ws://localhost:2222",
+            )
+            .expect("Failed to set override")
+            // Simulate Env Var: Index 2
+            .set_override("gateway.listener_pool.listeners.2.type", "polling")
+            .expect("Failed to set override")
+            .set_override(
+                "gateway.listener_pool.listeners.2.url",
+                "http://localhost:3333",
+            )
+            .expect("Failed to set override")
+            .build()
+            .expect("Failed to build config");
+
+        // 3. Deserialize
+        let settings: Settings = config
+            .try_deserialize()
+            .expect("Failed to deserialize settings");
+        let listeners = settings.gateway.listener_pool.listeners;
+
+        assert_eq!(
+            listeners.len(),
+            3,
+            "Should have 3 listeners from indexed overrides"
+        );
+
+        // Check Index 0
+        assert_eq!(listeners[0].listener_type, ListenerType::Polling);
+        assert_eq!(listeners[0].url, "http://localhost:1111");
+
+        // Check Index 1 (Order must be preserved!)
+        assert_eq!(listeners[1].listener_type, ListenerType::Subscription);
+        assert_eq!(listeners[1].url, "ws://localhost:2222");
+
+        // Check Index 2
+        assert_eq!(listeners[2].listener_type, ListenerType::Polling);
+        assert_eq!(listeners[2].url, "http://localhost:3333");
+    }
+
+    #[test]
+    fn test_deserialize_listeners_standard_yaml_still_works() {
+        let config_path = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            // Reset listeners to a single item array for this test
+            .to_temp_file()
+            .expect("Failed to create temp config file");
+
+        let config = Config::builder()
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
+            .build()
+            .expect("Failed to build config");
+
+        let settings: Settings = config.try_deserialize().expect("Failed to deserialize");
+        assert_eq!(
+            settings.gateway.listener_pool.listeners[0].url,
+            "ws://localhost:8757"
         );
     }
 }
