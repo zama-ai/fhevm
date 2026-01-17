@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::core::event::{PublicDecryptRequest, PublicDecryptResponse};
 use crate::metrics;
 use crate::store::sql::models::public_decrypt_req_model::{
-    PublicDecryptResponseModel, PublicReqStateModel, PublicReqStateModelWithOldStatusAndTimestamp,
+    PublicDecryptResponseModel, PublicReqStateModelWithOldStatusAndTimestamp,
 };
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::{
@@ -26,6 +26,22 @@ pub enum PublicDecryptInsertResult {
     },
     /// Duplicate request still being processed
     DuplicateProcessing { ext_job_id: Uuid },
+}
+
+/// Outcome of completing a public decrypt request with response.
+#[derive(Debug)]
+pub enum PublicDecryptCompletionOutcome {
+    /// Request completed successfully in this operation
+    Completed { int_job_id: Vec<u8> },
+    /// Request was already completed (idempotent duplicate)
+    AlreadyCompleted { int_job_id: Vec<u8> },
+    /// Request is already in a final failure/timed_out state
+    AlreadyInFinalState {
+        int_job_id: Vec<u8>,
+        current_status: ReqStatus,
+    },
+    /// Request with this gw_reference_id was not found
+    NotFound,
 }
 
 pub struct PublicDecryptRepository {
@@ -552,14 +568,13 @@ impl PublicDecryptRepository {
 
     // update by gw_reference_id, res, and status completed, where status != 'timed_out' or 'failure', returns int_job_id, status, updated_at, err_reason
     /// Update res, req_status to 'completed', and gw_response_tx_hash.
-    /// Condition: req_status is NOT 'timed_out' AND NOT 'failure'.
-    /// Returns: (int_job_id, req_status, updated_at, err_reason).
+    /// Returns an outcome enum indicating success, already completed, already in final state, or not found.
     pub async fn complete_req_with_res(
         &self,
         gw_reference_id: U256,
         response: PublicDecryptResponse,
         gw_response_tx_hash: &str,
-    ) -> SqlResult<Option<PublicReqStateModel>> {
+    ) -> SqlResult<PublicDecryptCompletionOutcome> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
         let res = serde_json::to_value(&response).map_err(|e| {
@@ -572,6 +587,58 @@ impl PublicDecryptRepository {
 
         let mut conn = self.pool.get_app_connection().await?;
 
+        // Step 1: Query current state
+        let query_start = Instant::now();
+        let current_state = sqlx::query!(
+            r#"
+            SELECT int_job_id, req_status as "req_status!: ReqStatus"
+            FROM public_decrypt_req
+            WHERE gw_reference_id = $1
+            "#,
+            gw_ref_id
+        )
+        .fetch_optional(&mut *conn)
+        .await;
+
+        match &current_state {
+            Ok(_) => {
+                metrics::observe_query(metrics::Table::PublicDecryptReq, query_start.elapsed())
+            }
+            Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
+        }
+
+        let current_state = current_state?;
+
+        // Step 2: Check state and return appropriate outcome
+        let Some(state) = current_state else {
+            return Ok(PublicDecryptCompletionOutcome::NotFound);
+        };
+
+        match state.req_status {
+            ReqStatus::Completed => {
+                return Ok(PublicDecryptCompletionOutcome::AlreadyCompleted {
+                    int_job_id: state.int_job_id,
+                });
+            }
+            ReqStatus::Failure | ReqStatus::TimedOut => {
+                return Ok(PublicDecryptCompletionOutcome::AlreadyInFinalState {
+                    int_job_id: state.int_job_id,
+                    current_status: state.req_status,
+                });
+            }
+            ReqStatus::ReceiptReceived => {
+                // Continue with update
+            }
+            _ => {
+                // Unexpected state (e.g., Processing, TxInFlight) - treat as not ready
+                return Ok(PublicDecryptCompletionOutcome::AlreadyInFinalState {
+                    int_job_id: state.int_job_id,
+                    current_status: state.req_status,
+                });
+            }
+        }
+
+        // Step 3: Attempt update (only for ReceiptReceived state)
         let query_start = Instant::now();
         let result = sqlx::query_as!(
             PublicReqStateModelWithOldStatusAndTimestamp,
@@ -589,13 +656,13 @@ impl PublicDecryptRepository {
                     gw_response_tx_hash = $2
                 WHERE gw_reference_id = $3
                   AND req_status = 'receipt_received'::req_status
-                RETURNING 
-                    int_job_id, 
-                    req_status, 
+                RETURNING
+                    int_job_id,
+                    req_status,
                     updated_at,
                     err_reason
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.int_job_id as "int_job_id!",
@@ -618,25 +685,27 @@ impl PublicDecryptRepository {
             Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
         }
 
-        let record = result?;
+        let result = result?;
 
-        if let Some(r) = record {
-            metrics::record_status_transition(
-                metrics::RequestType::PublicDecrypt,
-                r.old_status,
-                ReqStatus::Completed,
-                r.old_updated_at,
-                r.updated_at,
-            );
-
-            Ok(Some(PublicReqStateModel {
-                int_job_id: r.int_job_id,
-                req_status: r.req_status,
-                updated_at: r.updated_at,
-                err_reason: r.err_reason,
-            }))
-        } else {
-            Ok(None)
+        match result {
+            Some(r) => {
+                metrics::record_status_transition(
+                    metrics::RequestType::PublicDecrypt,
+                    r.old_status,
+                    ReqStatus::Completed,
+                    r.old_updated_at,
+                    r.updated_at,
+                );
+                Ok(PublicDecryptCompletionOutcome::Completed {
+                    int_job_id: r.int_job_id,
+                })
+            }
+            None => {
+                // Race condition: state changed between check and update
+                Ok(PublicDecryptCompletionOutcome::AlreadyCompleted {
+                    int_job_id: state.int_job_id,
+                })
+            }
         }
     }
 

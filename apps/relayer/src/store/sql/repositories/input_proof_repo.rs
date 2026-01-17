@@ -14,6 +14,22 @@ use crate::store::sql::{
 use alloy::primitives::U256;
 use uuid::Uuid;
 
+/// Outcome of completing an input proof request (accept or reject).
+#[derive(Debug)]
+pub enum InputProofCompletionOutcome {
+    /// Request completed successfully in this operation
+    Completed { int_request_id: Uuid },
+    /// Request was already completed (idempotent duplicate)
+    AlreadyCompleted { int_request_id: Uuid },
+    /// Request is already in a final failure/timed_out state
+    AlreadyInFinalState {
+        int_request_id: Uuid,
+        current_status: ReqStatus,
+    },
+    /// Request with this gw_reference_id was not found
+    NotFound,
+}
+
 pub struct InputProofRepository {
     pool: PgClient,
 }
@@ -318,13 +334,13 @@ impl InputProofRepository {
 
     // update by gateway_reference_id ->accepted = true res, req_status to 'completed' and gw_response_tx_hash, returns int_request_id
     /// Update res, req_status to 'completed', gw_response_tx_hash, and accepted status.
-    /// Returns the int_request_id.
+    /// Returns an outcome enum indicating success, already completed, already in final state, or not found.
     pub async fn accept_and_complete_input_proof_req(
         &self,
         gw_reference_id: U256,
         response: InputProofResponse,
         gw_response_tx_hash: &str,
-    ) -> SqlResult<Uuid> {
+    ) -> SqlResult<InputProofCompletionOutcome> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
         let res = serde_json::to_value(&response).map_err(|e| {
@@ -337,6 +353,56 @@ impl InputProofRepository {
 
         let mut conn = self.pool.get_app_connection().await?;
 
+        // Step 1: Query current state
+        let query_start = Instant::now();
+        let current_state = sqlx::query!(
+            r#"
+            SELECT int_request_id, req_status as "req_status!: ReqStatus"
+            FROM input_proof_req
+            WHERE gw_reference_id = $1
+            "#,
+            gw_ref_id
+        )
+        .fetch_optional(&mut *conn)
+        .await;
+
+        match &current_state {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+
+        let current_state = current_state?;
+
+        // Step 2: Check state and return appropriate outcome
+        let Some(state) = current_state else {
+            return Ok(InputProofCompletionOutcome::NotFound);
+        };
+
+        match state.req_status {
+            ReqStatus::Completed => {
+                return Ok(InputProofCompletionOutcome::AlreadyCompleted {
+                    int_request_id: state.int_request_id,
+                });
+            }
+            ReqStatus::Failure | ReqStatus::TimedOut => {
+                return Ok(InputProofCompletionOutcome::AlreadyInFinalState {
+                    int_request_id: state.int_request_id,
+                    current_status: state.req_status,
+                });
+            }
+            ReqStatus::ReceiptReceived => {
+                // Continue with update
+            }
+            _ => {
+                // Unexpected state (e.g., Processing, TxInFlight) - treat as not ready
+                return Ok(InputProofCompletionOutcome::AlreadyInFinalState {
+                    int_request_id: state.int_request_id,
+                    current_status: state.req_status,
+                });
+            }
+        }
+
+        // Step 3: Attempt update (only for ReceiptReceived state)
         let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
@@ -354,8 +420,8 @@ impl InputProofRepository {
                   AND req_status = 'receipt_received'::req_status
                 RETURNING int_request_id, updated_at
             )
-            SELECT 
-                old.req_status as "old_status!: ReqStatus", 
+            SELECT
+                old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.int_request_id as "int_request_id!",
                 upd.updated_at as "new_updated_at!"
@@ -365,7 +431,7 @@ impl InputProofRepository {
             gw_response_tx_hash,
             gw_ref_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_optional(&mut *conn)
         .await;
 
         match &result {
@@ -373,33 +439,94 @@ impl InputProofRepository {
             Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
         }
 
-        let record = result?;
+        let result = result?;
 
-        metrics::record_status_transition(
-            metrics::RequestType::InputProof,
-            record.old_status,
-            ReqStatus::Completed,
-            record.old_updated_at,
-            record.new_updated_at,
-        );
-
-        Ok(record.int_request_id)
+        match result {
+            Some(record) => {
+                metrics::record_status_transition(
+                    metrics::RequestType::InputProof,
+                    record.old_status,
+                    ReqStatus::Completed,
+                    record.old_updated_at,
+                    record.new_updated_at,
+                );
+                Ok(InputProofCompletionOutcome::Completed {
+                    int_request_id: record.int_request_id,
+                })
+            }
+            None => {
+                // Race condition: state changed between check and update
+                Ok(InputProofCompletionOutcome::AlreadyCompleted {
+                    int_request_id: state.int_request_id,
+                })
+            }
+        }
     }
 
     // update accepted to false , req_status=completed, gw_response_tx_hash, and res, return int_request_id
     /// Update accepted to false, req_status to 'completed', set res and tx hash.
-    /// Returns the int_request_id.
+    /// Returns an outcome enum indicating success, already completed, already in final state, or not found.
     pub async fn reject_and_complete_input_proof_req(
         &self,
         gw_reference_id: U256,
         rejection_reason: String,
         gw_response_tx_hash: &str,
-    ) -> SqlResult<Uuid> {
+    ) -> SqlResult<InputProofCompletionOutcome> {
         let id_as_bytes_array: [u8; 32] = gw_reference_id.to_be_bytes();
         let gw_ref_id = id_as_bytes_array.to_vec();
 
         let mut conn = self.pool.get_app_connection().await?;
 
+        // Step 1: Query current state
+        let query_start = Instant::now();
+        let current_state = sqlx::query!(
+            r#"
+            SELECT int_request_id, req_status as "req_status!: ReqStatus"
+            FROM input_proof_req
+            WHERE gw_reference_id = $1
+            "#,
+            gw_ref_id
+        )
+        .fetch_optional(&mut *conn)
+        .await;
+
+        match &current_state {
+            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
+            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+        }
+
+        let current_state = current_state?;
+
+        // Step 2: Check state and return appropriate outcome
+        let Some(state) = current_state else {
+            return Ok(InputProofCompletionOutcome::NotFound);
+        };
+
+        match state.req_status {
+            ReqStatus::Completed => {
+                return Ok(InputProofCompletionOutcome::AlreadyCompleted {
+                    int_request_id: state.int_request_id,
+                });
+            }
+            ReqStatus::Failure | ReqStatus::TimedOut => {
+                return Ok(InputProofCompletionOutcome::AlreadyInFinalState {
+                    int_request_id: state.int_request_id,
+                    current_status: state.req_status,
+                });
+            }
+            ReqStatus::ReceiptReceived => {
+                // Continue with update
+            }
+            _ => {
+                // Unexpected state (e.g., Processing, TxInFlight) - treat as not ready
+                return Ok(InputProofCompletionOutcome::AlreadyInFinalState {
+                    int_request_id: state.int_request_id,
+                    current_status: state.req_status,
+                });
+            }
+        }
+
+        // Step 3: Attempt update (only for ReceiptReceived state)
         let query_start = Instant::now();
         let result = sqlx::query!(
             r#"
@@ -417,7 +544,7 @@ impl InputProofRepository {
                   AND req_status = 'receipt_received'::req_status
                 RETURNING int_request_id, updated_at
             )
-            SELECT 
+            SELECT
                 old.req_status as "old_status!: ReqStatus",
                 old.updated_at as "old_updated_at!",
                 upd.int_request_id as "int_request_id!",
@@ -428,7 +555,7 @@ impl InputProofRepository {
             rejection_reason,
             gw_ref_id
         )
-        .fetch_one(&mut *conn)
+        .fetch_optional(&mut *conn)
         .await;
 
         match &result {
@@ -436,16 +563,28 @@ impl InputProofRepository {
             Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
         }
 
-        let record = result?;
-        metrics::record_status_transition(
-            metrics::RequestType::InputProof,
-            record.old_status,
-            ReqStatus::Completed,
-            record.old_updated_at,
-            record.new_updated_at,
-        );
+        let result = result?;
 
-        Ok(record.int_request_id)
+        match result {
+            Some(record) => {
+                metrics::record_status_transition(
+                    metrics::RequestType::InputProof,
+                    record.old_status,
+                    ReqStatus::Completed,
+                    record.old_updated_at,
+                    record.new_updated_at,
+                );
+                Ok(InputProofCompletionOutcome::Completed {
+                    int_request_id: record.int_request_id,
+                })
+            }
+            None => {
+                // Race condition: state changed between check and update
+                Ok(InputProofCompletionOutcome::AlreadyCompleted {
+                    int_request_id: state.int_request_id,
+                })
+            }
+        }
     }
 
     // GET REQUEST.

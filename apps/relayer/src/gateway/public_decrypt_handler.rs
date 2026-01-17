@@ -25,13 +25,18 @@ use crate::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
         ContentHasher, Orchestrator, TokioEventDispatcher,
     },
-    store::sql::repositories::public_decrypt_repo::PublicDecryptRepository,
+    store::sql::{
+        models::req_status_enum_model::ReqStatus,
+        repositories::public_decrypt_repo::{
+            PublicDecryptCompletionOutcome, PublicDecryptRepository,
+        },
+    },
 };
 use alloy::primitives::{Address, Bytes, FixedBytes, TxHash};
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 #[derive(Clone)]
 pub struct GatewayHandler {
@@ -293,7 +298,7 @@ impl GatewayHandler {
     /// Steps:
     /// 1. Decode PublicDecryptionResponse event from log
     /// 2. Update database with decrypted value and signatures
-    /// 3. Dispatch response event to notify HTTP handler
+    /// 3. Dispatch response event to notify HTTP handler (only if newly completed)
     async fn process_decrypt_response(
         &self,
         event: &RelayerEvent,
@@ -323,43 +328,79 @@ impl GatewayHandler {
         };
 
         let tx_hash_str = format!("{:?}", tx_hash);
-        let req_state = self
+        let outcome = self
             .public_decrypt_repo
             .complete_req_with_res(public_decryption_id, decrypt_response.clone(), &tx_hash_str)
             .await
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "public_decrypt.complete_req_with_res".to_string(),
                 reason: e.to_string(),
-            })?
-            .ok_or_else(|| {
-                warn!(
-                    "Request not found or already completed/failed for gw_reference_id: {}",
-                    public_decryption_id
-                );
-                EventProcessingError::ValidationFailed {
-                    field: "gw_reference_id".to_string(),
-                    reason: "Request not found or already completed/failed".to_string(),
-                }
             })?;
 
-        // Create JobId from content hash stored in database
-        let job_id = JobId::from_sha256_hash(req_state.int_job_id.try_into().unwrap_or([0u8; 32]));
+        match outcome {
+            PublicDecryptCompletionOutcome::Completed { int_job_id } => {
+                // Create JobId from content hash stored in database
+                let job_id = JobId::from_sha256_hash(int_job_id.try_into().unwrap_or([0u8; 32]));
 
-        // Dispatch response event to notify waiting HTTP handlers
-        let response_event_data =
-            RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
-                decrypt_response: decrypt_response.clone(),
-            });
+                // Dispatch response event to notify waiting HTTP handlers
+                let response_event_data =
+                    RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
+                        decrypt_response: decrypt_response.clone(),
+                    });
 
-        let response_event = RelayerEvent::new(job_id, event.api_version, response_event_data);
+                let response_event =
+                    RelayerEvent::new(job_id, event.api_version, response_event_data);
 
-        if let Err(e) = self.dispatcher.dispatch_event(response_event).await {
-            error!(?e, "Failed to dispatch response event to HTTP handlers");
-        } else {
-            info!(
-                "Public decrypt response successfully sent for {}",
-                event.job_id
-            );
+                if let Err(e) = self.dispatcher.dispatch_event(response_event).await {
+                    error!(?e, "Failed to dispatch response event to HTTP handlers");
+                } else {
+                    info!(
+                        "Public decrypt response successfully sent for {}",
+                        event.job_id
+                    );
+                }
+            }
+            PublicDecryptCompletionOutcome::AlreadyCompleted { int_job_id } => {
+                debug!(
+                    job_id = %event.job_id,
+                    int_job_id = ?int_job_id,
+                    "Public decrypt already completed (duplicate event), skipping"
+                );
+            }
+            PublicDecryptCompletionOutcome::AlreadyInFinalState {
+                int_job_id,
+                current_status,
+            } => match current_status {
+                ReqStatus::Failure => {
+                    debug!(
+                        job_id = %event.job_id,
+                        int_job_id = ?int_job_id,
+                        "Public decrypt already in failure state, skipping response event"
+                    );
+                }
+                ReqStatus::TimedOut => {
+                    debug!(
+                        job_id = %event.job_id,
+                        int_job_id = ?int_job_id,
+                        "Public decrypt already timed out (late response event), skipping"
+                    );
+                }
+                other_status => {
+                    warn!(
+                        job_id = %event.job_id,
+                        int_job_id = ?int_job_id,
+                        current_status = ?other_status,
+                        "Public decrypt in unexpected state, skipping response event - possible race condition or late event"
+                    );
+                }
+            },
+            PublicDecryptCompletionOutcome::NotFound => {
+                warn!(
+                    job_id = %event.job_id,
+                    gw_reference_id = %public_decryption_id,
+                    "Public decrypt not found for gw_reference_id"
+                );
+            }
         }
 
         Ok(())

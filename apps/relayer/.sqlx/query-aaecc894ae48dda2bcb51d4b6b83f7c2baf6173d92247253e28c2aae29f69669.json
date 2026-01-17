@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM input_proof_req WHERE gw_reference_id = $3\n            ),\n            upd AS (\n                UPDATE input_proof_req\n                SET\n                    accepted = false,\n                    req_status = 'completed'::req_status,\n                    gw_response_tx_hash = $1,\n                    err_reason = $2\n                WHERE gw_reference_id = $3\n                  AND req_status = 'receipt_received'::req_status\n                RETURNING int_request_id, updated_at\n            )\n            SELECT \n                old.req_status as \"old_status!: ReqStatus\",\n                old.updated_at as \"old_updated_at!\",\n                upd.int_request_id as \"int_request_id!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
+  "query": "\n            WITH old AS (\n                SELECT req_status, updated_at FROM input_proof_req WHERE gw_reference_id = $3\n            ),\n            upd AS (\n                UPDATE input_proof_req\n                SET\n                    accepted = false,\n                    req_status = 'completed'::req_status,\n                    gw_response_tx_hash = $1,\n                    err_reason = $2\n                WHERE gw_reference_id = $3\n                  AND req_status = 'receipt_received'::req_status\n                RETURNING int_request_id, updated_at\n            )\n            SELECT\n                old.req_status as \"old_status!: ReqStatus\",\n                old.updated_at as \"old_updated_at!\",\n                upd.int_request_id as \"int_request_id!\",\n                upd.updated_at as \"new_updated_at!\"\n            FROM old, upd\n            ",
   "describe": {
     "columns": [
       {
@@ -53,5 +53,5 @@
       false
     ]
   },
-  "hash": "f0d5667a1f49a6b80b6488cabac97c61504814c4963e287c2793a62dabccb28a"
+  "hash": "aaecc894ae48dda2bcb51d4b6b83f7c2baf6173d92247253e28c2aae29f69669"
 }

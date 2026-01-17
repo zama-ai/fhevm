@@ -387,20 +387,18 @@ impl GatewayHandler {
             }
             ShareCompletionOutcome::AlreadyCompleted {
                 count,
-                metadata,
-                shares,
+                metadata: _,
+                shares: _,
             } => {
                 info!(
                     "COUNT after insert of index: {:?} {} for Gateway reference ID {}",
                     user_decrypt_response.indexShare, count, user_decryption_id
                 );
-                info!(
+                debug!(
                     job_id = %event.job_id,
-                    "Threshold reached but request already completed (duplicate share): {}/{}",
+                    "Threshold reached but request already completed (duplicate share), skipping: {}/{}",
                     count, threshold
                 );
-                // Request already completed - re-dispatch the response for any waiting HTTP handlers
-                self.assemble_final_response(event, metadata, shares).await;
             }
             ShareCompletionOutcome::AlreadyInFinalState {
                 count,
@@ -412,33 +410,25 @@ impl GatewayHandler {
                 );
                 match current_status {
                     ReqStatus::Failure => {
-                        info!(
+                        debug!(
                             job_id = %event.job_id,
-                            "Threshold reached but request already in failure state: {}/{}",
+                            "Threshold reached but request already in failure state, skipping: {}/{}",
                             count, threshold
                         );
-                        // Already failed, no need to error again
                     }
                     ReqStatus::TimedOut => {
-                        info!(
+                        debug!(
                             job_id = %event.job_id,
-                            "Threshold reached but request already timed out (late share arrival): {}/{}",
+                            "Threshold reached but request already timed out (late share arrival), skipping: {}/{}",
                             count, threshold
                         );
-                        // Timeout handling already completed, user was notified.
-                        // Late share arrival is expected in distributed systems - just skip.
                     }
                     other_status => {
-                        error!(
+                        warn!(
                             job_id = %event.job_id,
-                            "Threshold reached but request in unexpected status {:?}: {}/{} - possible state corruption",
+                            "Threshold reached but request in unexpected state {:?}, skipping: {}/{} - possible race condition or late event",
                             other_status, count, threshold
                         );
-                        return Err(EventProcessingError::ShareAggregationFailed(format!(
-                            "Cannot aggregate shares - request in unexpected status {:?}. \
-                                 Shares should only arrive after ReceiptReceived status.",
-                            other_status
-                        )));
                     }
                 }
             }

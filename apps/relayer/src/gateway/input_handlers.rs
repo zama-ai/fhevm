@@ -24,7 +24,10 @@ use crate::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
     },
-    store::sql::repositories::input_proof_repo::InputProofRepository,
+    store::sql::{
+        models::req_status_enum_model::ReqStatus,
+        repositories::input_proof_repo::{InputProofCompletionOutcome, InputProofRepository},
+    },
 };
 use std::str::FromStr;
 
@@ -33,7 +36,7 @@ use alloy::primitives::{Address, FixedBytes, TxHash};
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 #[derive(Clone)]
 pub struct InputProofGatewayHandler {
@@ -233,7 +236,7 @@ impl InputProofGatewayHandler {
     /// Steps:
     /// 1. Decode VerifyProofResponse event from log
     /// 2. Update database with handles and signatures
-    /// 3. Dispatch response event to notify HTTP handler
+    /// 3. Dispatch response event to notify HTTP handler (only if newly completed)
     async fn complete_proof_verification(
         &self,
         event: RelayerEvent,
@@ -262,7 +265,7 @@ impl InputProofGatewayHandler {
         };
 
         let tx_hash_str = format!("{:?}", tx_hash);
-        let int_request_id = self
+        let outcome = self
             .input_proof_repo
             .accept_and_complete_input_proof_req(
                 request_event.zkProofId,
@@ -270,36 +273,75 @@ impl InputProofGatewayHandler {
                 &tx_hash_str,
             )
             .await
-            .map_err(|e| {
-                error!(
-                    conversion_error = %e,
-                    "Failed to convert U256 zkproof ID to i64"
-                );
-                EventProcessingError::ValidationFailed {
-                    field: "zkproof_id".to_string(),
-                    reason: "value too large for i64".to_string(),
-                }
+            .map_err(|e| EventProcessingError::SqlOperationFailed {
+                operation: "input_proof.accept_and_complete_input_proof_req".to_string(),
+                reason: e.to_string(),
             })?;
 
-        let next_event_data: RelayerEventData =
-            RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
-                accepted: true,
-                input_proof_response: Some(input_proof_response),
-            });
+        match outcome {
+            InputProofCompletionOutcome::Completed { int_request_id } => {
+                let next_event_data: RelayerEventData =
+                    RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
+                        accepted: true,
+                        input_proof_response: Some(input_proof_response),
+                    });
 
-        let next_event = RelayerEvent::new(
-            JobId::from_uuid_v7(int_request_id),
-            event.api_version,
-            next_event_data,
-        );
+                let next_event = RelayerEvent::new(
+                    JobId::from_uuid_v7(int_request_id),
+                    event.api_version,
+                    next_event_data,
+                );
 
-        if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
-            error!(?e, "Failed to dispatch input proof response event");
-        } else {
-            info!(
-                "Input proof response successfully sent for {}",
-                event.job_id
-            );
+                if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+                    error!(?e, "Failed to dispatch input proof response event");
+                } else {
+                    info!(
+                        "Input proof response successfully sent for {}",
+                        event.job_id
+                    );
+                }
+            }
+            InputProofCompletionOutcome::AlreadyCompleted { int_request_id } => {
+                debug!(
+                    job_id = %event.job_id,
+                    int_request_id = %int_request_id,
+                    "Input proof already completed (duplicate event), skipping"
+                );
+            }
+            InputProofCompletionOutcome::AlreadyInFinalState {
+                int_request_id,
+                current_status,
+            } => match current_status {
+                ReqStatus::Failure => {
+                    debug!(
+                        job_id = %event.job_id,
+                        int_request_id = %int_request_id,
+                        "Input proof already in failure state, skipping accept event"
+                    );
+                }
+                ReqStatus::TimedOut => {
+                    debug!(
+                        job_id = %event.job_id,
+                        int_request_id = %int_request_id,
+                        "Input proof already timed out (late accept event), skipping"
+                    );
+                }
+                other_status => {
+                    warn!(
+                        job_id = %event.job_id,
+                        int_request_id = %int_request_id,
+                        current_status = ?other_status,
+                        "Input proof in unexpected state, skipping accept event - possible race condition or late event"
+                    );
+                }
+            },
+            InputProofCompletionOutcome::NotFound => {
+                warn!(
+                    job_id = %event.job_id,
+                    gw_reference_id = ?request_event.zkProofId,
+                    "Input proof not found for gw_reference_id"
+                );
+            }
         }
 
         Ok(())
@@ -310,7 +352,7 @@ impl InputProofGatewayHandler {
     /// Steps:
     /// 1. Decode RejectProofResponse event from log
     /// 2. Update database with rejection status
-    /// 3. Dispatch rejection event to notify HTTP handler
+    /// 3. Dispatch rejection event to notify HTTP handler (only if newly completed)
     async fn reject_proof_verification(
         &self,
         event: RelayerEvent,
@@ -326,7 +368,7 @@ impl InputProofGatewayHandler {
                 }
             })?;
 
-        let int_request_id = self
+        let outcome = self
             .input_proof_repo
             .reject_and_complete_input_proof_req(
                 reject_proof_response.zkProofId,
@@ -339,19 +381,65 @@ impl InputProofGatewayHandler {
                 reason: e.to_string(),
             })?;
 
-        let next_event_data: RelayerEventData =
-            RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
-                accepted: false,
-                input_proof_response: None,
-            });
+        match outcome {
+            InputProofCompletionOutcome::Completed { int_request_id } => {
+                let next_event_data: RelayerEventData =
+                    RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
+                        accepted: false,
+                        input_proof_response: None,
+                    });
 
-        let next_event = RelayerEvent::new(
-            JobId::from_uuid_v7(int_request_id),
-            event.api_version,
-            next_event_data,
-        );
+                let next_event = RelayerEvent::new(
+                    JobId::from_uuid_v7(int_request_id),
+                    event.api_version,
+                    next_event_data,
+                );
 
-        let _ = self.dispatcher.dispatch_event(next_event).await;
+                let _ = self.dispatcher.dispatch_event(next_event).await;
+                info!("Input proof rejection response sent for {}", event.job_id);
+            }
+            InputProofCompletionOutcome::AlreadyCompleted { int_request_id } => {
+                debug!(
+                    job_id = %event.job_id,
+                    int_request_id = %int_request_id,
+                    "Input proof already completed (duplicate rejection event), skipping"
+                );
+            }
+            InputProofCompletionOutcome::AlreadyInFinalState {
+                int_request_id,
+                current_status,
+            } => match current_status {
+                ReqStatus::Failure => {
+                    debug!(
+                        job_id = %event.job_id,
+                        int_request_id = %int_request_id,
+                        "Input proof already in failure state, skipping reject event"
+                    );
+                }
+                ReqStatus::TimedOut => {
+                    debug!(
+                        job_id = %event.job_id,
+                        int_request_id = %int_request_id,
+                        "Input proof already timed out (late reject event), skipping"
+                    );
+                }
+                other_status => {
+                    warn!(
+                        job_id = %event.job_id,
+                        int_request_id = %int_request_id,
+                        current_status = ?other_status,
+                        "Input proof in unexpected state, skipping reject event - possible race condition or late event"
+                    );
+                }
+            },
+            InputProofCompletionOutcome::NotFound => {
+                warn!(
+                    job_id = %event.job_id,
+                    gw_reference_id = ?reject_proof_response.zkProofId,
+                    "Input proof not found for gw_reference_id (rejection)"
+                );
+            }
+        }
 
         Ok(())
     }
