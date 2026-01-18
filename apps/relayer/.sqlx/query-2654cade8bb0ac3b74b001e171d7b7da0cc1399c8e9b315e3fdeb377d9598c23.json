@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO user_decrypt_req (\n                ext_job_id,\n                int_job_id,\n                req\n            )\n            VALUES ($1, $2, $3)\n            ON CONFLICT (int_job_id)\n            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)\n            DO UPDATE SET updated_at = NOW()\n            RETURNING ext_job_id, (xmax = 0) AS \"is_inserted!\", req_status AS \"req_status!: ReqStatus\", gw_reference_id\n            ",
+  "query": "\n            INSERT INTO user_decrypt_req (\n                ext_job_id,\n                int_job_id,\n                req\n            )\n            VALUES ($1, $2, $3)\n            ON CONFLICT (int_job_id)\n            WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)\n            DO UPDATE SET updated_at = user_decrypt_req.updated_at\n            RETURNING ext_job_id, (xmax = 0) AS \"is_inserted!\", req_status AS \"req_status!: ReqStatus\", gw_reference_id\n            ",
   "describe": {
     "columns": [
       {
@@ -53,5 +53,5 @@
       true
     ]
   },
-  "hash": "7f5fd53005d1d219b9e3eb8bd2cdeb14a78ad8f3036e246c0d46892de95c5bf6"
+  "hash": "2654cade8bb0ac3b74b001e171d7b7da0cc1399c8e9b315e3fdeb377d9598c23"
 }

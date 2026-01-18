@@ -127,7 +127,10 @@ impl UserDecryptRepository {
             )
         })?;
 
-        let mut conn = self.pool.get_app_connection().await?;
+        // Use a transaction to ensure atomic read of status + shares for completed duplicates.
+        // This prevents race conditions where shares could be deleted between the INSERT
+        // and the subsequent SELECT query.
+        let mut tx = self.pool.get_app_pool().begin().await?;
 
         let query_start = Instant::now();
         // Logic: Use (xmax=0) to detect if this was a true INSERT or an ON CONFLICT update.
@@ -141,14 +144,14 @@ impl UserDecryptRepository {
             VALUES ($1, $2, $3)
             ON CONFLICT (int_job_id)
             WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
-            DO UPDATE SET updated_at = NOW()
+            DO UPDATE SET updated_at = user_decrypt_req.updated_at
             RETURNING ext_job_id, (xmax = 0) AS "is_inserted!", req_status AS "req_status!: ReqStatus", gw_reference_id
             "#,
             ext_job_id,
             int_job_id_bytes,
             req,
         )
-        .fetch_one(&mut *conn)
+        .fetch_one(&mut *tx)
         .await;
 
         match &result {
@@ -181,7 +184,7 @@ impl UserDecryptRepository {
                 })?;
 
                 // Second query: Fetch shares from user_decrypt_share table
-                // Use same connection to ensure transaction consistency
+                // Uses same transaction to ensure atomic read of status + shares
                 let query_start = Instant::now();
                 let shares_result = sqlx::query_as::<_, UserDecryptShare>(
                     r#"
@@ -192,7 +195,7 @@ impl UserDecryptRepository {
                     "#,
                 )
                 .bind(&gw_reference_id)
-                .fetch_all(&mut *conn)
+                .fetch_all(&mut *tx)
                 .await;
 
                 match &shares_result {
@@ -259,6 +262,7 @@ impl UserDecryptRepository {
             }
         };
 
+        tx.commit().await?;
         Ok(insert_result)
     }
 
