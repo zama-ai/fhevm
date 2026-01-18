@@ -45,6 +45,7 @@ impl GatewayConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct BlockchainRpcConfig {
     pub http_url: String,
+    pub read_http_url: String,
     pub chain_id: u64,
     pub ws_health_check_timeout_secs: u64,
     pub http_health_check_timeout_secs: u64,
@@ -54,7 +55,13 @@ impl BlockchainRpcConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         if !self.http_url.starts_with("http://") && !self.http_url.starts_with("https://") {
             return Err(AppConfigError::InvalidNetworkConfig(format!(
-                "Invalid HTTP URL: {}",
+                "Invalid WRITE NODE HTTP URL: {}",
+                self.http_url
+            )));
+        }
+        if !self.read_http_url.starts_with("http") && !self.read_http_url.starts_with("https://") {
+            return Err(AppConfigError::InvalidNetworkConfig(format!(
+                "Invalid READ NODE HTTP URL: {}",
                 self.http_url
             )));
         }

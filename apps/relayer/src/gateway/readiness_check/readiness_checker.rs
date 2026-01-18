@@ -59,7 +59,7 @@ impl ReadinessChecker {
             })?;
 
         // Create provider once
-        let url = Url::parse(&gateway_config.blockchain_rpc.http_url).map_err(|e| {
+        let url = Url::parse(&gateway_config.blockchain_rpc.read_http_url).map_err(|e| {
             EventProcessingError::ValidationFailed {
                 field: "blockchain_rpc_url".to_string(),
                 reason: format!("invalid URL: {}", e),

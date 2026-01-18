@@ -11,7 +11,10 @@ global:
   test_mock: true
 gateway:
   blockchain_rpc:
+    # MUST support method eth_sendRawTransactionSync
     http_url: "http://localhost:8757"
+    # Useful to spread the load between two nodes for reading to a full node instead
+    read_http_url: "http://localhost:8757"
     chain_id: 654321
     ws_health_check_timeout_secs: 5
     http_health_check_timeout_secs: 5
