@@ -442,9 +442,17 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             .into_response()
                     }
                     ReqStatus::Failure => {
-                        let error_msg = response_model
-                            .err_reason
-                            .unwrap_or("Unknown error".to_string());
+                        let error_msg = match response_model.err_reason {
+                            Some(reason) => reason,
+                            None => {
+                                error!(
+                                    alert = true,
+                                    request_id = %request_id,
+                                    "Failure request missing error reason in database"
+                                );
+                                "Unknown error".to_string()
+                            }
+                        };
 
                         // Classify the error to determine appropriate status code and label
                         let (status_code, error_value) = classify_error(&error_msg);
