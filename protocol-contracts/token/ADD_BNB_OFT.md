@@ -1,7 +1,8 @@
 # How to add ZamaOFT on BNB Chain
 
 Currently, we have `ZamaERC20` and `ZamaOFTAdapter` deployed on Ethereum mainnet, and `ZamaOFT` deployed on Gateway mainnet. The `ZamaOFTAdapter` contract's owner and delegate are already setup to be an Aragon DAO contract.
-The goal of this runbook is to guide you step by step on how to deploy a `ZamaOFT` instance on BNB Chain, and how to wire it to the already deployed `ZamaOFTAdapter` on Ethereum, via the Aragon DAO.
+
+The goal of this runbook is to guide you step by step on how to deploy a `ZamaOFT` instance on BNB Chain, and how to wire it to the already deployed `ZamaOFTAdapter` on Ethereum, via the Aragon DAO. We only add a single bidirectional pathway: `BNB <-> Ethereum` (i.e no step to wire `BNB <-> Gateway`).
 
 ## Step 1 : Recreating deployments
 
@@ -43,3 +44,19 @@ oftAdapter: {
 ```
 
 Finally, run `npx hardhat compile` to ensure relevant artifacts that are required by Hardhat helper tasks involving the EVM OFT are generated.
+
+## Step 2 : Deploy ZamaOFT on BNB Chain
+
+Run `npx hardhat deploy --network bnb-mainnet --tags ZamaOFT` command.
+
+You can then verify the contract by running `pnpm verify:etherscan:bnb:mainnet`.
+
+## Step 3 : Wire the BNB OFT
+
+This can be done easily, since your deployer hot wallet is still the owner and delegate of the `ZamaOFT` instance on BNB Chain - later, after full wiring on both chains, ownership and delegate roles should be transferred to governance on BNB Chain, which should be a Safe multisig deployed on BNB mainnet.
+
+You just have to run: 
+
+```npx hardhat lz:oapp:wire --oapp-config layerzero.config.mainnet.bnb.ts --skip-connections-from-eids <EID_ETHEREUM_V2_MAINNET>,<EID_ZAMA_V2_MAINNET>```
+
+In previous command, replace `<EID_ETHEREUM_V2_MAINNET>` by `30101` and `EID_ZAMA_V2_MAINNET` by `30397`.
