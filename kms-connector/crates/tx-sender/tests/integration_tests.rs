@@ -2,7 +2,7 @@ use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::{
     config::KmsWallet,
-    conn::connect_to_gateway_with_wallet,
+    conn::connect_to_rpc_node_with_wallet,
     tests::{
         db::responses::{
             insert_rand_crsgen_response, insert_rand_keygen_response,
@@ -357,7 +357,7 @@ async fn start_test_tx_sender(
 ) -> anyhow::Result<JoinHandle<()>> {
     let response_picker =
         DbKmsResponsePicker::connect(test_instance.db().clone(), &Config::default()).await?;
-    let provider = connect_to_gateway_with_wallet(
+    let provider = connect_to_rpc_node_with_wallet(
         test_instance.anvil_http_endpoint(),
         *CHAIN_ID as u64,
         KmsWallet::from_private_key_str(DEPLOYER_PRIVATE_KEY, Some(*CHAIN_ID as u64))?,
