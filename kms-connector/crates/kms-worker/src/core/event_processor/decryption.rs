@@ -8,46 +8,59 @@ use alloy::{
     providers::Provider,
 };
 use anyhow::anyhow;
-use connector_utils::types::KmsGrpcRequest;
+use connector_utils::types::{KmsGrpcRequest, fhe::extract_chain_id_from_handle};
 use fhevm_gateway_bindings::decryption::Decryption::{
     self, DecryptionInstance, SnsCiphertextMaterial,
 };
+use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_grpc::kms::v1::{
     Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
+use std::collections::HashMap;
 use tracing::info;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
-pub struct DecryptionProcessor<P: Provider> {
+pub struct DecryptionProcessor<GP: Provider, HP: Provider> {
     /// The EIP712 domain of the `Decryption` contract.
     domain: Eip712DomainMsg,
 
     /// The instance of the `Decryption` contract used to check decryption were not already done.
-    decryption_contract: DecryptionInstance<P>,
+    decryption_contract: DecryptionInstance<GP>,
+
+    /// The instances of the host chains `ACL` contracts used to check the decryption ACL.
+    acl_contracts: HashMap<u64, ACLInstance<HP>>,
 
     /// The entity used to collect ciphertexts from S3 buckets.
-    s3_service: S3Service<P>,
+    s3_service: S3Service<GP>,
 }
 
-impl<P> DecryptionProcessor<P>
+impl<GP, HP> DecryptionProcessor<GP, HP>
 where
-    P: Provider,
+    GP: Provider,
+    HP: Provider,
 {
-    pub fn new(config: &Config, provider: P, s3_service: S3Service<P>) -> Self {
+    pub fn new(
+        config: &Config,
+        gateway_provider: GP,
+        acl_contracts: HashMap<u64, ACLInstance<HP>>,
+        s3_service: S3Service<GP>,
+    ) -> Self {
         let domain = Eip712DomainMsg {
             name: config.decryption_contract.domain_name.clone(),
             version: config.decryption_contract.domain_version.clone(),
-            chain_id: U256::from(config.chain_id).to_be_bytes_vec(),
+            chain_id: U256::from(config.gateway_chain_id).to_be_bytes_vec(),
             verifying_contract: config.decryption_contract.address.to_string(),
             salt: None,
         };
-        let decryption_contract = Decryption::new(config.decryption_contract.address, provider);
+        let decryption_contract =
+            Decryption::new(config.decryption_contract.address, gateway_provider);
 
         Self {
-            decryption_contract,
-            s3_service,
             domain,
+            decryption_contract,
+            acl_contracts,
+            s3_service,
         }
     }
 
@@ -66,6 +79,65 @@ where
             return Err(ProcessingError::Irrecoverable(anyhow!(
                 "Decryption already done on the Gateway"
             )));
+        }
+
+        Ok(())
+    }
+
+    pub async fn check_ciphertexts_allowed_for_public_decryption(
+        &self,
+        sns_ciphertexts: &[SnsCiphertextMaterial],
+    ) -> Result<(), ProcessingError> {
+        for ct in sns_ciphertexts {
+            let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
+                .map_err(ProcessingError::Irrecoverable)?;
+            let Some(acl_contract) = self.acl_contracts.get(&ct_chain_id) else {
+                return Err(ProcessingError::Irrecoverable(anyhow!(
+                    "No ACL contract config found for chain id {ct_chain_id}"
+                )));
+            };
+
+            if !acl_contract
+                .isAllowedForDecryption(ct.ctHandle)
+                .call()
+                .await
+                .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
+            {
+                return Err(ProcessingError::Irrecoverable(anyhow!(
+                    "{} is not allowed for decrypt!",
+                    hex::encode(ct.ctHandle)
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn check_ciphertexts_allowed_for_user_decryption(
+        &self,
+        sns_ciphertexts: &[SnsCiphertextMaterial],
+        user_address: Address,
+    ) -> Result<(), ProcessingError> {
+        for ct in sns_ciphertexts {
+            let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
+                .map_err(ProcessingError::Irrecoverable)?;
+            let Some(acl_contract) = self.acl_contracts.get(&ct_chain_id) else {
+                return Err(ProcessingError::Irrecoverable(anyhow!(
+                    "No ACL contract config found for chain id {ct_chain_id}"
+                )));
+            };
+
+            if !acl_contract
+                .isAllowed(ct.ctHandle, user_address)
+                .call()
+                .await
+                .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
+            {
+                return Err(ProcessingError::Irrecoverable(anyhow!(
+                    "{} is not allowed for decrypt!",
+                    hex::encode(ct.ctHandle)
+                )));
+            }
         }
 
         Ok(())
@@ -177,6 +249,8 @@ mod tests {
         sol_types::SolValue,
         transports::http::reqwest,
     };
+    use connector_utils::tests::rand::rand_sns_ct;
+    use fhevm_host_bindings::acl::ACL;
 
     #[tokio::test]
     async fn check_decryption_not_already_done() {
@@ -184,10 +258,15 @@ mod tests {
         let mock_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter.clone());
+        let acl_contracts_mock = HashMap::from([(
+            u64::default(),
+            ACL::new(Address::default(), mock_provider.clone()),
+        )]);
 
         let config = Config::default();
         let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor = DecryptionProcessor::new(&config, mock_provider, s3_service);
+        let decryption_processor =
+            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
 
         asserter.push_failure_msg("Transport Error");
         assert!(matches!(
@@ -208,6 +287,50 @@ mod tests {
         assert!(matches!(
             decryption_processor
                 .check_decryption_not_already_done(U256::ZERO)
+                .await
+                .unwrap_err(),
+            ProcessingError::Irrecoverable(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn check_ciphertexts_allowed_for_decryption() {
+        let asserter = Asserter::new();
+        let mock_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+
+        let sns_ct = rand_sns_ct();
+        let acl_contracts_mock = HashMap::from([(
+            extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap(),
+            ACL::new(Address::default(), mock_provider.clone()),
+        )]);
+
+        let sns_ciphertexts = vec![sns_ct];
+        let config = Config::default();
+        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
+        let decryption_processor =
+            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
+
+        asserter.push_failure_msg("Transport Error");
+        assert!(matches!(
+            decryption_processor
+                .check_ciphertexts_allowed_for_public_decryption(&sns_ciphertexts)
+                .await
+                .unwrap_err(),
+            ProcessingError::Recoverable(_)
+        ));
+
+        asserter.push_success(&true.abi_encode());
+        decryption_processor
+            .check_ciphertexts_allowed_for_public_decryption(&sns_ciphertexts)
+            .await
+            .unwrap();
+
+        asserter.push_success(&false.abi_encode());
+        assert!(matches!(
+            decryption_processor
+                .check_ciphertexts_allowed_for_public_decryption(&sns_ciphertexts)
                 .await
                 .unwrap_err(),
             ProcessingError::Irrecoverable(_)

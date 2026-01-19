@@ -2400,6 +2400,7 @@ dependencies = [
  "clap",
  "config",
  "fhevm_gateway_bindings",
+ "fhevm_host_bindings",
  "futures",
  "git-version",
  "humantime-serde",
@@ -2905,7 +2906,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2982,7 +2983,16 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.10.3#edb4c81c4d45f557faab569055957dd21991223d"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=96f31548861bedbf9b3d99f66e42364cebb69ba9#96f31548861bedbf9b3d99f66e42364cebb69ba9"
+dependencies = [
+ "alloy",
+ "serde",
+]
+
+[[package]]
+name = "fhevm_host_bindings"
+version = "0.10.0"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=96f31548861bedbf9b3d99f66e42364cebb69ba9#96f31548861bedbf9b3d99f66e42364cebb69ba9"
 dependencies = [
  "alloy",
  "serde",
@@ -3889,7 +3899,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.0",
  "serde",
  "serde_core",
 ]
@@ -4060,12 +4070,14 @@ dependencies = [
  "connector-utils",
  "dashmap",
  "fhevm_gateway_bindings",
+ "fhevm_host_bindings",
  "humantime-serde",
  "kms-grpc",
  "mocktail",
  "prometheus",
  "rstest",
  "serde",
+ "serde_json",
  "serial_test",
  "sha3",
  "sqlx",
@@ -4392,7 +4404,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5572,7 +5584,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6522,7 +6534,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
