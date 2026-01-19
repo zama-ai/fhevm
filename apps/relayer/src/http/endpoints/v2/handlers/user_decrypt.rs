@@ -370,17 +370,35 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         let required_threshold = self.user_decrypt_shares_threshold as usize;
                         if response_model.shares.len() >= required_threshold {
                             // Convert from database model to API response
-                            let api_response = UserDecryptResponseJson::from(response_model);
-                            (
-                                StatusCode::OK,
-                                Json(UserDecryptStatusResponseJson {
-                                    status: "succeeded".to_string(),
-                                    request_id: request_id.to_string(), // Per-request UUID
-                                    result: Some(api_response),
-                                    error: None,
-                                }),
-                            )
-                                .into_response()
+                            match UserDecryptResponseJson::try_from(response_model) {
+                                Ok(api_response) => (
+                                    StatusCode::OK,
+                                    Json(UserDecryptStatusResponseJson {
+                                        status: "succeeded".to_string(),
+                                        request_id: request_id.to_string(), // Per-request UUID
+                                        result: Some(api_response),
+                                        error: None,
+                                    }),
+                                )
+                                    .into_response(),
+                                Err(e) => {
+                                    error!(error = %e, "Internal error: failed to convert response");
+                                    (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        Json(UserDecryptStatusResponseJson {
+                                            status: "failed".to_string(),
+                                            request_id: request_id.to_string(),
+                                            result: None,
+                                            error: Some(
+                                                RelayerV2ApiError500::internal_server_error(
+                                                    "Internal server error",
+                                                ),
+                                            ),
+                                        }),
+                                    )
+                                        .into_response()
+                                }
+                            }
                         } else {
                             error!(
                                 "Request marked as completed but insufficient shares: got {}, needed {}",

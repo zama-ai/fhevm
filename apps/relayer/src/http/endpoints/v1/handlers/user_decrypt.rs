@@ -277,8 +277,21 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 self.orchestrator
                     .unregister_once_handler(UserDecryptEventId::Failed.into(), int_job_id);
 
-                let response_json = UserDecryptResponseJson::from(response);
-                return (StatusCode::OK, Json(response_json)).into_response();
+                match UserDecryptResponseJson::try_from(response) {
+                    Ok(response_json) => {
+                        return (StatusCode::OK, Json(response_json)).into_response();
+                    }
+                    Err(e) => {
+                        error!(error = %e, "Internal error: failed to convert response");
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(UserDecryptErrorResponseJson {
+                                message: "Internal Server Error".to_string(),
+                            }),
+                        )
+                            .into_response();
+                    }
+                }
             }
             UserDecryptInsertResult::DuplicateProcessing { ext_job_id: _ } => {
                 // ext_job_id unused - V1 is synchronous, job_id not returned to client
@@ -302,8 +315,21 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
                                 decrypt_response,
                             }) => {
-                                let response_json = UserDecryptResponseJson::from(decrypt_response.clone());
-                                (StatusCode::OK, Json(response_json)).into_response()
+                                match UserDecryptResponseJson::try_from(decrypt_response.clone()) {
+                                    Ok(response_json) => {
+                                        (StatusCode::OK, Json(response_json)).into_response()
+                                    }
+                                    Err(e) => {
+                                        error!(error = %e, "Internal error: failed to convert response");
+                                        (
+                                            StatusCode::INTERNAL_SERVER_ERROR,
+                                            Json(UserDecryptErrorResponseJson {
+                                                message: "Internal Server Error".to_string(),
+                                            }),
+                                        )
+                                            .into_response()
+                                    }
+                                }
                             }
                             _ => (
                                 StatusCode::INTERNAL_SERVER_ERROR,

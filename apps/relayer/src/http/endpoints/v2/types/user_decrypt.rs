@@ -133,18 +133,22 @@ impl From<crate::core::event::UserDecryptResponse> for UserDecryptResponseJson {
 }
 
 // Implementation for converting database model to response format
-impl From<crate::store::sql::models::user_decrypt_req_model::UserDecryptResponseModel>
+impl TryFrom<crate::store::sql::models::user_decrypt_req_model::UserDecryptResponseModel>
     for UserDecryptResponseJson
 {
-    fn from(
+    type Error = String;
+
+    fn try_from(
         model: crate::store::sql::models::user_decrypt_req_model::UserDecryptResponseModel,
-    ) -> Self {
+    ) -> Result<Self, Self::Error> {
         let mut result_items = Vec::new();
 
         for share in model.shares.0 {
             // Convert hex strings back to bytes
-            let payload_bytes = hex::decode(&share.share).unwrap_or_default();
-            let signature_bytes = hex::decode(&share.kms_signature).unwrap_or_default();
+            let payload_bytes =
+                hex::decode(&share.share).map_err(|e| format!("Failed to decode share: {}", e))?;
+            let signature_bytes = hex::decode(&share.kms_signature)
+                .map_err(|e| format!("Failed to decode kms_signature: {}", e))?;
 
             result_items.push(UserDecryptResponsePayloadJson {
                 payload: Bytes::from(payload_bytes),
@@ -153,8 +157,8 @@ impl From<crate::store::sql::models::user_decrypt_req_model::UserDecryptResponse
             });
         }
 
-        UserDecryptResponseJson {
+        Ok(UserDecryptResponseJson {
             result: result_items,
-        }
+        })
     }
 }
