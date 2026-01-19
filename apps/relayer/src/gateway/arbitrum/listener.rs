@@ -6,6 +6,7 @@ use crate::{
     core::job_id::JobId,
     gateway::arbitrum::bindings::{Decryption, InputVerification},
     gateway::arbitrum::event_deduplicator::{EventDeduplicator, EventKey},
+    logging::ListenerStep,
     orchestrator::{
         traits::{EventDispatcher, HandlerRegistry},
         HealthCheck, Orchestrator,
@@ -212,8 +213,9 @@ where
             .retry_interval_ms;
 
         info!(
-            "Starting Relayer Gateway Listener instance {}",
-            self.instance_id
+            step = %ListenerStep::ListenerStarted,
+            instance_id = self.instance_id,
+            "Listener started"
         );
 
         loop {
@@ -229,15 +231,23 @@ where
 
             // Create provider (retry on failure)
             let provider = match self.create_provider().await {
-                Ok(p) => p,
+                Ok(p) => {
+                    info!(
+                        step = %ListenerStep::ProviderConnected,
+                        instance_id = self.instance_id,
+                        "Provider connected"
+                    );
+                    p
+                }
                 Err(e) => {
                     consecutive_failures += 1;
                     warn!(
+                        step = %ListenerStep::ProviderRetrying,
                         instance_id = self.instance_id,
                         error = %e,
                         attempt = consecutive_failures,
                         max_attempts = max_attempts,
-                        "Failed to create provider, retrying..."
+                        "Failed to create provider"
                     );
                     tokio::time::sleep(Duration::from_millis(retry_interval)).await;
                     continue;
@@ -252,11 +262,12 @@ where
                     Err(e) => {
                         consecutive_failures += 1;
                         warn!(
+                            step = %ListenerStep::ProviderRetrying,
                             instance_id = self.instance_id,
                             error = %e,
                             attempt = consecutive_failures,
                             max_attempts = max_attempts,
-                            "Failed to resolve starting block, retrying..."
+                            "Failed to resolve starting block"
                         );
                         tokio::time::sleep(Duration::from_millis(retry_interval)).await;
                         continue;
@@ -273,11 +284,12 @@ where
                 Err(e) => {
                     consecutive_failures += 1;
                     warn!(
+                        step = %ListenerStep::ProviderRetrying,
                         instance_id = self.instance_id,
                         error = %e,
                         attempt = consecutive_failures,
                         max_attempts = max_attempts,
-                        "Failed to subscribe, retrying..."
+                        "Failed to subscribe"
                     );
                     tokio::time::sleep(Duration::from_millis(retry_interval)).await;
                     continue;
@@ -287,8 +299,10 @@ where
             // Reset failure counter on successful connection
             consecutive_failures = 0;
             info!(
-                "Listener {} subscription to gateway chain is successful. Listening for logs...",
-                self.instance_id
+                step = %ListenerStep::SubscriptionActive,
+                instance_id = self.instance_id,
+                starting_block = starting_block,
+                "Subscription active, listening for events"
             );
             let mut subscription = sub.into_stream();
 
@@ -302,11 +316,12 @@ where
                     // Unexpected stream end - increment failures and wait before retry
                     consecutive_failures += 1;
                     warn!(
+                        step = %ListenerStep::SubscriptionDropped,
                         instance_id = self.instance_id,
                         last_block = ?last_processed_block,
                         attempt = consecutive_failures,
                         max_attempts = max_attempts,
-                        "Gateway WebSocket connection dropped, reconnecting..."
+                        "WebSocket connection dropped"
                     );
                     tokio::time::sleep(Duration::from_millis(retry_interval)).await;
                 }
@@ -389,16 +404,25 @@ where
 
                             // Check deduplication - skip if already processed
                             if !self.deduplicator.try_insert(dedup_key).await {
-                                debug!(
-                                    "Listener {} skipping duplicate event: block={}, log_index={}, topic0={}",
-                                    self.instance_id, block_number, log_index, topic0
+                                info!(
+                                    step = %ListenerStep::EventDuplicate,
+                                    instance_id = self.instance_id,
+                                    block_number = block_number,
+                                    log_index = log_index,
+                                    "Duplicate event skipped"
                                 );
                                 continue;
                             }
 
                             info!(
-                                "Listener {} processing event: block={}, block_hash={}, log_index={}, topic0={}, topic1={}, tx_hash={:#x}",
-                                self.instance_id, block_number, block_hash, log_index, topic0, topic1, tx_hash
+                                step = %ListenerStep::EventReceived,
+                                instance_id = self.instance_id,
+                                block_number = block_number,
+                                log_index = log_index,
+                                tx_hash = %format!("{:#x}", tx_hash),
+                                topic0 = %topic0,
+                                topic1 = %topic1,
+                                "Event received"
                             );
 
                             let event = RelayerEvent::new(
@@ -424,17 +448,28 @@ where
                                 *last_block = Some(block_number);
 
                                 // Update block progress - log error but don't stop processing
-                                if let Err(e) = self
+                                match self
                                     .block_number_repo
                                     .update_block_info(block_number, block_hash.clone(), self.instance_id)
                                     .await
                                 {
-                                    error!(
-                                        block_number = %block_number,
-                                        block_hash = %block_hash,
-                                        error = %e,
-                                        "Failed to update block progress - continuing without persistence"
-                                    );
+                                    Ok(_) => {
+                                        debug!(
+                                            step = %ListenerStep::BlockProgressUpdated,
+                                            instance_id = self.instance_id,
+                                            block_number = block_number,
+                                            "Block progress updated"
+                                        );
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            step = %ListenerStep::BlockUpdateFailed,
+                                            instance_id = self.instance_id,
+                                            block_number = block_number,
+                                            error = %e,
+                                            "Failed to update block progress"
+                                        );
+                                    }
                                 }
                             }
                         }
