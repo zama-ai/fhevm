@@ -21,11 +21,13 @@ RUN --mount=type=bind,source=apps/relayer/relayer-migrate/Cargo.toml,target=Carg
     --mount=type=bind,source=apps/relayer/relayer-migrate/Cargo.lock,target=Cargo.lock \
     --mount=type=bind,source=apps/relayer/relayer-migrate/src,target=src \
     --mount=type=bind,source=apps/relayer/relayer-migrate/migrations,target=migrations \
+    --mount=type=bind,source=apps/relayer/relayer-migrate/down,target=down \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     --mount=type=cache,target=/usr/local/cargo/git/ \
     cargo build --locked --release && \
-    cp ./target/release/$APP_NAME /bin/server
+    cp ./target/release/$APP_NAME /bin/server && \
+    cp ./target/release/down-migrate-v0_8_8-to-v0_8_7 /bin/
 
 
 ################################################################################
@@ -53,6 +55,8 @@ WORKDIR /app/config
 
 # Copy the executable from the "build" stage.
 COPY --from=build /bin/server /bin/
+# Down migration binary for v0.8.8 → v0.8.7 rollback
+COPY --from=build /bin/down-migrate-v0_8_8-to-v0_8_7 /bin/
 
 # What the container should run when it is started.
 CMD ["/bin/server"]

@@ -3,6 +3,10 @@ name = "relayer-migrate"
 version = "0.8.7"
 edition = "2024"
 
+[[bin]]
+name = "down-migrate-v0_8_8-to-v0_8_7"
+path = "src/bin/down_migrate_from_v0_8_8_to_v0_8_7.rs"
+
 [dependencies]
 anyhow = "1.0.100"
 dotenvy = "0.15.7"
