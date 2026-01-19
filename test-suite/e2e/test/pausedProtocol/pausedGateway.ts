@@ -37,7 +37,7 @@ describe('Paused gateway', function () {
     );
     inputAlice.add64(18446744073709550042n);
 
-    await expect(inputAlice.encrypt()).to.be.rejectedWith(new RegExp('Input request failed'));
+    await expect(inputAlice.encrypt()).to.be.rejectedWith(new RegExp('Could not estimate gas'));
   });
 
   // The following test case should cover the Decryption.userDecryptionRequest method calling.

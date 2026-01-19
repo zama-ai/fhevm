@@ -39,7 +39,7 @@ gateway:
   readiness_checker:
     retry:
       max_attempts: 30
-      retry_interval_ms: 2000
+      retry_interval_ms: 5000
     public_decrypt:
       max_concurrency: 250
       capacity: 11000
