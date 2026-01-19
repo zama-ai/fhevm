@@ -98,13 +98,13 @@ After voting and execution of the wiring proposal, your OFT is now successfully 
 You can test that the OFT BNB has been correctly wired by sending some amount of tokens from Ethereum to BNB Chain, and the other way around, by using commands such as: 
 
 ```
-npx hardhat lz:oft:send --src-eid 30101 --dst-eid 30102 --amount 0.1 --to <RECEIVER_ADDRESS>
+npx hardhat lz:oft:send --src-eid 30101 --dst-eid 30102 --amount 0.1 --to <RECEIVER_ADDRESS> --oapp-config layerzero.config.mainnet.bnb.ts
 ```
 
 to send 0.1 Zama token from Ethereum to BNB mainnet, and: 
 
 ```
-npx hardhat lz:oft:send --src-eid 30102 --dst-eid 30101 --amount 0.1 --to <RECEIVER_ADDRESS>
+npx hardhat lz:oft:send --src-eid 30102 --dst-eid 30101 --amount 0.1 --to <RECEIVER_ADDRESS> --oapp-config layerzero.config.mainnet.bnb.ts
 ```
 
 to send 0.1 Zama token from BNB mainnet to Ethereum.
