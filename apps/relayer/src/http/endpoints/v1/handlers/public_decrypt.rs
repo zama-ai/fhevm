@@ -13,6 +13,7 @@ use crate::gateway::readiness_check::readiness_throttler::{
 };
 use crate::http::utils::public_decrypt_bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
+use crate::logging::PublicDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpApiVersion, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::OnceHandler;
@@ -92,8 +93,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         let _span = span!(Level::INFO, "handle-public-decrypt-req", request_id = %request_id);
 
         info!(
-            "Handling public decryption request, generated request id: {}",
-            request_id
+            step = %PublicDecryptStep::ReqReceived,
+            request_id = %request_id,
+            "Handling public decryption request"
         );
 
         let body = match AxumBytes::from_request(req, _state).await {
@@ -135,7 +137,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                     )
                     .await;
                     if full {
-                        info!("Public decrypt v1 is bounced by full queue");
+                        info!(
+                            step = %PublicDecryptStep::Bounced,
+                            int_job_id = %int_job_id,
+                            "Public decrypt v1 is bounced by full queue"
+                        );
                         // NOTE: Could return 500 to not change the behaviour of the v1.
                         // Here return 429
                         return AppResponse::<()>::protocol_overloaded(
@@ -208,10 +214,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             }
         };
 
+        // Extract ext_job_id from any variant for logging
+        let assigned_ext_job_id = match &insert_result {
+            PublicDecryptInsertResult::Inserted { ext_job_id } => *ext_job_id,
+            PublicDecryptInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
+            PublicDecryptInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
+        };
+
         // Handle the three cases based on insert result
         match insert_result {
             PublicDecryptInsertResult::Inserted { ext_job_id: _ } => {
-                // ext_job_id unused - V1 is synchronous, job_id not returned to client
                 // New request - dispatch event to orchestrator
                 let event_data = PublicDecryptEventData::ReqRcvdFromUser {
                     decrypt_request: request.clone(),
@@ -230,15 +242,26 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                     )
                     .into_response();
                 }
-                info!("Dispatched event to orchestrator to initiate processing");
+                info!(
+                    step = %PublicDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = %int_job_id,
+                    "Dispatched event to orchestrator"
+                );
             }
             PublicDecryptInsertResult::DuplicateCompleted {
                 ext_job_id: _,
                 response,
             } => {
-                // ext_job_id unused - V1 is synchronous, job_id not returned to client
                 // Duplicate request that already completed - return immediately
-                info!("Duplicate request found completed result, returning immediately");
+                info!(
+                    step = %PublicDecryptStep::DedupHit,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = %int_job_id,
+                    "Returning cached response"
+                );
 
                 // Clean up handlers to prevent memory leak
                 self.orchestrator.unregister_once_handler(
@@ -252,9 +275,14 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 return (StatusCode::OK, Json(response_json)).into_response();
             }
             PublicDecryptInsertResult::DuplicateProcessing { ext_job_id: _ } => {
-                // ext_job_id unused - V1 is synchronous, job_id not returned to client
                 // Duplicate request still processing - just wait for response
-                info!("Duplicate request detected, waiting for original request to complete");
+                info!(
+                    step = %PublicDecryptStep::DedupHit,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = %int_job_id,
+                    "Duplicate request detected"
+                );
             }
         }
 
@@ -268,7 +296,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             res = &mut response_rx => {
                 match res {
                     Ok(event) => {
-                        info!("Received public decrypt response event");
+                        info!(
+                            step = %PublicDecryptStep::RespSent,
+                            int_job_id = %int_job_id,
+                            "Received public decrypt response event"
+                        );
                         info!("Response event type {:?}", event.data);
                         match event.data {
                             RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {

@@ -1,6 +1,6 @@
 use crate::{
     config::settings::{AppConfigError, GatewayConfig, RetrySettings},
-    core::errors::EventProcessingError,
+    core::{errors::EventProcessingError, job_id::JobId},
     gateway::arbitrum::bindings::Decryption,
 };
 use alloy::{
@@ -8,10 +8,31 @@ use alloy::{
     providers::{fillers::FillProvider, ProviderBuilder, RootProvider},
 };
 use reqwest::Url;
+use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
+
+/// Steps for readiness checker operations
+#[derive(Debug, Clone, Copy)]
+pub enum ReadinessStep {
+    Started,
+    Passed,
+    Failed,
+    Retrying,
+}
+
+impl fmt::Display for ReadinessStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Started => write!(f, "readiness_started"),
+            Self::Passed => write!(f, "readiness_passed"),
+            Self::Failed => write!(f, "readiness_failed"),
+            Self::Retrying => write!(f, "readiness_retrying"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum ReadinessCheckError {
@@ -82,6 +103,7 @@ impl ReadinessChecker {
     /// Checks if the gateway is ready for public decryption, with retry logic.
     ///
     /// # Arguments
+    /// * `job_id` - Job ID for logging
     /// * `handles` - Vector of handles to decrypt
     /// * `extra_data` - Extra data for the decryption
     ///
@@ -90,15 +112,20 @@ impl ReadinessChecker {
     /// * `Err(ReadinessCheckError)` with raw error details
     pub async fn check_public_decryption_readiness(
         &self,
+        job_id: &JobId,
         handles: Vec<FixedBytes<32>>,
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
         let decryption = Decryption::new(self.decryption_address, self.provider.clone());
 
-        info!("Starting public decryption readiness check");
+        info!(
+            step = %ReadinessStep::Started,
+            int_job_id = %job_id,
+            "Starting public decryption readiness check"
+        );
 
         let result = self
-            .check_readiness_internal(|| {
+            .check_readiness_internal(job_id, || {
                 let decryption = decryption.clone();
                 let handles = handles.clone();
                 let extra_data = extra_data.clone();
@@ -112,8 +139,17 @@ impl ReadinessChecker {
             .await;
 
         match &result {
-            Ok(()) => info!("Public decryption readiness check passed"),
-            Err(e) => error!(error = ?e, "Public decryption readiness check failed"),
+            Ok(()) => info!(
+                step = %ReadinessStep::Passed,
+                int_job_id = %job_id,
+                "Public decryption readiness check passed"
+            ),
+            Err(e) => error!(
+                step = %ReadinessStep::Failed,
+                int_job_id = %job_id,
+                error = ?e,
+                "Public decryption readiness check failed"
+            ),
         }
 
         result
@@ -122,6 +158,7 @@ impl ReadinessChecker {
     /// Checks if the gateway is ready for user decryption, with retry logic.
     ///
     /// # Arguments
+    /// * `job_id` - Job ID for logging
     /// * `user_address` - User's address
     /// * `contract_pairs` - Contract pairs for decryption
     /// * `extra_data` - Extra data for the decryption
@@ -131,16 +168,21 @@ impl ReadinessChecker {
     /// * `Err(ReadinessCheckError)` with raw error details
     pub async fn check_user_decryption_readiness(
         &self,
+        job_id: &JobId,
         user_address: Address,
         contract_pairs: Vec<Decryption::CtHandleContractPair>,
         extra_data: Bytes,
     ) -> Result<(), ReadinessCheckError> {
         let decryption = Decryption::new(self.decryption_address, self.provider.clone());
 
-        info!("Starting user decryption readiness check");
+        info!(
+            step = %ReadinessStep::Started,
+            int_job_id = %job_id,
+            "Starting user decryption readiness check"
+        );
 
         let result = self
-            .check_readiness_internal(|| {
+            .check_readiness_internal(job_id, || {
                 let decryption = decryption.clone();
                 let pairs = contract_pairs.clone();
                 let extra_data = extra_data.clone();
@@ -154,14 +196,27 @@ impl ReadinessChecker {
             .await;
 
         match &result {
-            Ok(()) => info!("User decryption readiness check passed"),
-            Err(e) => error!(error = ?e, "User decryption readiness check failed"),
+            Ok(()) => info!(
+                step = %ReadinessStep::Passed,
+                int_job_id = %job_id,
+                "User decryption readiness check passed"
+            ),
+            Err(e) => error!(
+                step = %ReadinessStep::Failed,
+                int_job_id = %job_id,
+                error = ?e,
+                "User decryption readiness check failed"
+            ),
         }
 
         result
     }
 
-    async fn check_readiness_internal<F, Fut>(&self, check_fn: F) -> Result<(), ReadinessCheckError>
+    async fn check_readiness_internal<F, Fut>(
+        &self,
+        job_id: &JobId,
+        check_fn: F,
+    ) -> Result<(), ReadinessCheckError>
     where
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<bool, alloy::contract::Error>>,
@@ -177,11 +232,11 @@ impl ReadinessChecker {
                     if is_ready {
                         return Ok(());
                     } else {
-                        info!("Gateway not ready, will retry");
+                        info!(int_job_id = %job_id, "Gateway not ready, will retry");
                     }
                 }
                 Err(err) => {
-                    error!(error = %err, "Contract call failed, will retry");
+                    error!(int_job_id = %job_id, error = %err, "Contract call failed, will retry");
                     last_error = Some(err);
                 }
             }
@@ -189,6 +244,7 @@ impl ReadinessChecker {
             retries += 1;
             if retries >= max_retries {
                 warn!(
+                    int_job_id = %job_id,
                     max_retries = max_retries,
                     retry_interval_ms = self.retry_config.retry_interval_ms,
                     "Max retries reached for readiness check"
@@ -200,10 +256,11 @@ impl ReadinessChecker {
                 };
             }
 
-            info!(
+            warn!(
+                step = %ReadinessStep::Retrying,
+                int_job_id = %job_id,
                 attempt = retries,
                 max_attempts = max_retries,
-                retry_interval_ms = self.retry_config.retry_interval_ms,
                 "Retrying readiness check"
             );
             tokio::time::sleep(retry_interval).await;

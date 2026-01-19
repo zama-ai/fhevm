@@ -21,6 +21,7 @@ use crate::{
         readiness_check::readiness_throttler::{PublicDecryptReadinessTask, ReadinessSender},
         utils::{classify_revert_selector, extract_revert_selector},
     },
+    logging::PublicDecryptStep,
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
         ContentHasher, Orchestrator, TokioEventDispatcher,
@@ -106,9 +107,10 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 } => {
                     async {
                         info!(
-                        "Readiness check passed, Throttling public decrypt request to gateway {}",
-                        event.job_id
-                    );
+                            step = %PublicDecryptStep::ReadinessCheckPassed,
+                            int_job_id = %event.job_id,
+                            "Readiness check passed"
+                        );
 
                         let job_id_hash = decrypt_request.content_hash();
                         self.mark_processing(job_id_hash).await?;
@@ -178,8 +180,18 @@ impl GatewayHandler {
             request: decrypt_request.clone(),
         };
 
-        match self.public_decrypt_readiness_throttler.push(task).await {
-            Ok(()) => {}
+        match self
+            .public_decrypt_readiness_throttler
+            .push(task.clone())
+            .await
+        {
+            Ok(()) => {
+                info!(
+                    step = %PublicDecryptStep::ReadinessQueued,
+                    int_job_id = %task.job_id,
+                    "Request queued for readiness check"
+                );
+            }
             // Thoses errors are putting request in failure mode.
             // This introduce a new termination error, which is failure for readiness,
             // should NEVER happen with the bouncer.
@@ -266,7 +278,11 @@ impl GatewayHandler {
             hook: DynTxHook(Arc::new(self.clone())),
         };
 
-        info!(job_id = %job_id, "Enqueuing public decrypt request to tx throttler");
+        info!(
+            step = %PublicDecryptStep::TxQueued,
+            int_job_id = %job_id,
+            "Request enqueued to tx throttler"
+        );
 
         // PUSH TO QUEUE
         // Catch error from here and pass the request to failure.
@@ -316,8 +332,11 @@ impl GatewayHandler {
 
         let public_decryption_id = req.decryptionId;
         info!(
-            "Gateway response received for decryption ID {}",
-            public_decryption_id
+            step = %PublicDecryptStep::GwEventReceived,
+            int_job_id = %event.job_id,
+            tx_hash = %tx_hash,
+            gw_reference_id = %public_decryption_id,
+            "Gateway response received"
         );
 
         let decrypt_response = PublicDecryptResponse {
@@ -355,8 +374,9 @@ impl GatewayHandler {
                     error!(?e, "Failed to dispatch response event to HTTP handlers");
                 } else {
                     info!(
-                        "Public decrypt response successfully sent for {}",
-                        event.job_id
+                        step = %PublicDecryptStep::RespSent,
+                        int_job_id = %job_id,
+                        "Response dispatched to HTTP handlers"
                     );
                 }
             }
@@ -608,6 +628,14 @@ impl TxLifecycleHooks for GatewayHandler {
                     field: "job_id".to_string(),
                     reason: "Expected SHA256 hash for public decrypt".to_string(),
                 })?;
+
+        info!(
+            step = %PublicDecryptStep::TxConfirmed,
+            int_job_id = %job_id,
+            tx_hash = %tx_hash,
+            gw_reference_id = %gw_reference_id,
+            "Transaction confirmed, receipt received"
+        );
 
         self.public_decrypt_repo
             .update_status_to_receipt_received_on_tx_success(&hash[..], &tx_hash, gw_reference_id)

@@ -18,6 +18,7 @@ use crate::http::endpoints::v1::types::public_decrypt::PublicDecryptRequestJson;
 use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
 use crate::http::utils::public_decrypt_bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
+use crate::logging::PublicDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -176,8 +177,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         let _span = span!(Level::INFO, "handle-public-decrypt-post-req", request_id = %request_id);
 
         info!(
-            "Handling public decryption POST request, generated request id: {}",
-            request_id
+            step = %PublicDecryptStep::ReqReceived,
+            request_id = %request_id,
+            "Handling public decryption POST request"
         );
 
         let body = match AxumBytes::from_request(req, _state).await {
@@ -219,7 +221,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                     )
                     .await;
                     if full {
-                        info!("Public decrypt v2 is bounced by full queue");
+                        info!(
+                            step = %PublicDecryptStep::Bounced,
+                            int_job_id = ?int_job_id,
+                            "Public decrypt v2 is bounced by full queue"
+                        );
                         return AppResponse::<()>::protocol_overloaded(
                             "relayer is currently processing too many requests",
                             &self.retry_after_seconds.to_string(),
@@ -293,9 +299,21 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 .into_response();
             }
 
-            info!("Dispatched event to orchestrator to initiate processing");
+            info!(
+                step = %PublicDecryptStep::Queued,
+                req_id = %request_id,
+                ext_job_id = %assigned_ext_job_id,
+                int_job_id = ?int_job_id,
+                "Dispatched event to orchestrator"
+            );
         } else {
-            info!("Duplicate request detected, skipping event dispatch");
+            info!(
+                step = %PublicDecryptStep::DedupHit,
+                req_id = %request_id,
+                ext_job_id = %assigned_ext_job_id,
+                int_job_id = ?int_job_id,
+                "Duplicate request detected"
+            );
         }
 
         // Generate a new request_id for this HTTP request (not stored)
@@ -328,7 +346,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!(
             req_id = %request_id_for_response,
-            int_job_id = %int_job_id,
+            int_job_id = ?int_job_id,
             ext_job_id = %assigned_ext_job_id,
             retry_after_secs = retry_after,
             "Computed retry-after for public decrypt POST"
@@ -357,8 +375,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         let request_id = uuid::Uuid::new_v4();
 
         info!(
-            "Handling public decryption GET request for job_id: {}, request_id: {}",
-            job_id, request_id
+            ext_job_id = %job_id,
+            request_id = %request_id,
+            "Handling public decryption GET request"
         );
 
         // Check SQL for current status using job_id (which is the external_reference_id in DB)

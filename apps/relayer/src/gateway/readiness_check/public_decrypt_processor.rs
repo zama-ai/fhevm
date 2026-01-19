@@ -78,7 +78,11 @@ impl PublicDecryptReadinessProcessor {
 
         // 1. EXECUTE CHECK
         let result = checker
-            .check_public_decryption_readiness(handles_fixed_bytes, task.request.extra_data.clone())
+            .check_public_decryption_readiness(
+                &task.job_id,
+                handles_fixed_bytes,
+                task.request.extra_data.clone(),
+            )
             .await;
 
         // 2. DISPATCH RESULT
