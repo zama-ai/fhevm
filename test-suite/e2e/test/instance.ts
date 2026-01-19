@@ -35,6 +35,7 @@ export const createInstance = async () => {
     network: network.config.url,
     relayerUrl: relayerUrl,
     gatewayChainId: gatewayChainID,
+    chainId: network.config.chainId!,
   });
   return instance;
 };
