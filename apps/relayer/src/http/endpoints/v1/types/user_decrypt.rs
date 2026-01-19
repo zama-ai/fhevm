@@ -1,11 +1,14 @@
 use crate::http::endpoints::common::types::{ChainId, HandleContractPairJson, RequestValidityJson};
+use crate::http::utils::redact::{redact_count, redact_len};
 use crate::http::{de_string_or_number, serialize_vec_as_hex};
 use alloy::primitives::Bytes;
+use derivative::Derivative;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 use utoipa::ToSchema;
 use validator::Validate;
 
-#[derive(Debug, Deserialize, Clone, ToSchema, Validate)]
+#[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
+#[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptRequestJson {
     #[validate(
@@ -28,17 +31,21 @@ pub struct UserDecryptRequestJson {
         length(equal = 130, message = "Must be 130 characters long"),
         custom(function = "crate::http::validate_no_0x_hex")
     )]
+    #[derivative(Debug(format_with = "redact_len"))]
     pub signature: String,
     #[validate(length(min = 2, message = "Must not be empty"))]
     #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
+    #[derivative(Debug(format_with = "redact_len"))]
     pub public_key: String,
     #[validate(custom(function = "crate::http::validate_extra_data_field"))]
     #[schema(example = "0x00")]
     pub extra_data: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Clone, ToSchema, Derivative)]
+#[derivative(Debug)]
 pub struct UserDecryptResponseJson {
+    #[derivative(Debug(format_with = "redact_count"))]
     pub response: Vec<UserDecryptResponsePayloadJson>,
 }
 

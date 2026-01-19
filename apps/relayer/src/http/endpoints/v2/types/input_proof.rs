@@ -1,11 +1,14 @@
 use super::ChainId;
 use crate::http::de_string_or_number;
+use crate::http::utils::redact::{redact_count_opt, redact_len};
+use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
 
 // Same request type as v1
-#[derive(Debug, Deserialize, Serialize, Validate, Clone, ToSchema)]
+#[derive(Deserialize, Serialize, Validate, Clone, ToSchema, Derivative)]
+#[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct InputProofRequestJson {
     #[serde(deserialize_with = "de_string_or_number")]
@@ -20,6 +23,7 @@ pub struct InputProofRequestJson {
         length(min = 1, message = "Must not be empty"),
         custom(function = "crate::http::validate_no_0x_hex")
     )]
+    #[derivative(Debug(format_with = "redact_len"))]
     pub ciphertext_with_input_verification: String,
     #[validate(custom(function = "crate::http::validate_extra_data_field"))]
     #[schema(example = "0x00")]
@@ -42,7 +46,8 @@ pub struct InputProofQueuedResult {
 }
 
 // GET response when completed
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Clone, ToSchema, Derivative)]
+#[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct InputProofResponseJson {
     pub accepted: bool,
@@ -53,6 +58,7 @@ pub struct InputProofResponseJson {
     pub handles: Option<Vec<String>>, // Only present if accepted=true, hex with 0x prefix
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<Vec<String>>)]
+    #[derivative(Debug(format_with = "redact_count_opt"))]
     pub signatures: Option<Vec<String>>, // Only present if accepted=true, hex with 0x prefix
 }
 

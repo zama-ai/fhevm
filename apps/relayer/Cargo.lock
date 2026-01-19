@@ -2496,6 +2496,7 @@ dependencies = [
  "clap",
  "config",
  "dashmap",
+ "derivative",
  "ethereum_rpc_mock",
  "eyre",
  "fhevm_gateway_bindings",

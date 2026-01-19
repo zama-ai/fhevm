@@ -1,3 +1,5 @@
+use crate::http::utils::redact::{redact_count, redact_len};
+use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
@@ -32,12 +34,15 @@ pub struct PublicDecryptQueuedResult {
 }
 
 // GET response when completed
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[derive(Serialize, Deserialize, Clone, ToSchema, Derivative)]
+#[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicDecryptResponseJson {
     #[schema(value_type = String)]
+    #[derivative(Debug(format_with = "redact_len"))]
     pub decrypted_value: String, // Hex string without 0x prefix
     #[schema(value_type = Vec<String>)]
+    #[derivative(Debug(format_with = "redact_count"))]
     pub signatures: Vec<String>, // Hex strings without 0x prefix
     #[schema(value_type = String)]
     pub extra_data: String, // Hex string WITH 0x prefix

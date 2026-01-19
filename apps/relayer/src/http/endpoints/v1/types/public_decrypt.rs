@@ -1,9 +1,11 @@
+use crate::http::utils::redact::{redact_bytes_len, redact_count};
 use alloy::primitives::Bytes;
-use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
+use derivative::Derivative;
+use serde::{ser::SerializeStruct, Serialize, Serializer};
 use utoipa::ToSchema;
 use validator::Validate;
 
-#[derive(Debug, Deserialize, Validate, Clone, ToSchema)]
+#[derive(Debug, serde::Deserialize, Validate, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicDecryptRequestJson {
     #[validate(
@@ -16,16 +18,21 @@ pub struct PublicDecryptRequestJson {
     pub extra_data: String,
 }
 
-#[derive(Debug, Serialize, Clone, ToSchema)]
+#[derive(Serialize, Clone, ToSchema, Derivative)]
+#[derivative(Debug)]
 pub struct PublicDecryptResponseJson {
+    #[derivative(Debug(format_with = "redact_count"))]
     pub response: Vec<PublicDecryptResponsePayloadJson>,
 }
 
-#[derive(Debug, Clone, ToSchema)]
+#[derive(Clone, ToSchema, Derivative)]
+#[derivative(Debug)]
 pub struct PublicDecryptResponsePayloadJson {
     #[schema(value_type = String)]
+    #[derivative(Debug(format_with = "redact_bytes_len"))]
     pub decrypted_value: Bytes,
     #[schema(value_type = Vec<String>)]
+    #[derivative(Debug(format_with = "redact_count"))]
     pub signatures: Vec<Bytes>,
     #[schema(value_type = String)]
     pub extra_data: String,
@@ -51,7 +58,7 @@ impl Serialize for PublicDecryptResponsePayloadJson {
     }
 }
 
-#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Clone, serde::Deserialize, ToSchema)]
 pub struct PublicDecryptErrorResponseJson {
     pub message: String,
 }

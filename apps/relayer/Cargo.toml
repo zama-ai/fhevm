@@ -17,6 +17,7 @@ long-running-tests = []
 alloy = { version = "1.2.1", features = ["consensus", "json-rpc", "provider-ws", "serde"] }
 alloy-dyn-abi = "1.4.1"
 dashmap = "6.1.0"
+derivative = "2.2"
 eyre = "0.6.12"
 futures = "0.3.31"
 hex = "0.4.3"
