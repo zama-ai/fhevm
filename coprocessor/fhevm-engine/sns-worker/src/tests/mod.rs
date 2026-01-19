@@ -182,8 +182,7 @@ async fn run_batch_computations(
         // However the ciphertext64 will be the same
         handle[0] = (i >> 8) as u8;
         handle[1] = (i & 0xFF) as u8;
-        test_harness::db_utils::insert_ciphertext64(pool, tenant_id, &handle, ciphertext, &[])
-            .await?;
+        test_harness::db_utils::insert_ciphertext64(pool, tenant_id, &handle, ciphertext).await?;
         test_harness::db_utils::insert_into_pbs_computations(pool, tenant_id, &handle).await?;
         handles.push(handle);
     }
@@ -255,7 +254,6 @@ async fn test_lifo_mode() {
             1,
             &Vec::from([i as u8; 32]),
             &Vec::from([i as u8; 32]),
-            &[i as u8; 32],
         )
         .await
         .unwrap();
@@ -337,33 +335,37 @@ async fn test_garbage_collect() {
         let mut handle = [0u8; 32];
         handle[..4].copy_from_slice(&i.to_le_bytes());
 
-        test_harness::db_utils::insert_ciphertext64(
-            &pool,
+        let _ = sqlx::query!(
+            "INSERT INTO ciphertexts128(tenant_id, handle, ciphertext)
+                VALUES ($1, $2, $3)
+            ON CONFLICT DO NOTHING;",
             tenant_id,
-            &handle.to_vec(),
-            &handle.to_vec(),
+            &handle,
             &[i as u8; 32],
         )
+        .execute(&pool)
         .await
-        .unwrap();
+        .expect("insert into ciphertexts");
 
-        test_harness::db_utils::insert_ciphertext_digest(
-            &pool,
+        let _ = sqlx::query!(
+            "INSERT INTO ciphertext_digest(tenant_id, handle, ciphertext, ciphertext128 )
+                VALUES ($1, $2, $3, $4)
+            ON CONFLICT DO NOTHING;",
             tenant_id,
             &handle,
             &[i as u8; 32],
             &[i as u8; 32],
-            0,
         )
+        .execute(&pool)
         .await
-        .unwrap();
+        .expect("insert into ciphertext_digest");
     }
 
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts where ciphertext128 IS not NULL")
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128 where ciphertext IS not NULL")
             .fetch_one(&pool)
             .await
-            .expect("count ciphertext_digest");
+            .expect("count ciphertexts128");
     assert_eq!(
         count, HANDLES_COUNT as i64,
         "ciphertext128 should not be empty before garbage_collect"
@@ -393,13 +395,12 @@ async fn test_garbage_collect() {
         "garbage_collect tasks did not complete in time"
     );
 
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts where ciphertext128 IS NULL")
-            .fetch_one(&pool)
-            .await
-            .expect("count ciphertext_digest");
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128")
+        .fetch_one(&pool)
+        .await
+        .expect("ciphertexts128 is empty");
     assert_eq!(
-        count, HANDLES_COUNT as i64,
+        count, 0,
         "ciphertext128 should be empty after garbage_collect"
     );
 }
@@ -567,7 +568,7 @@ async fn insert_ciphertext64(
     ciphertext: &Vec<u8>,
 ) -> anyhow::Result<()> {
     let tenant_id = get_tenant_id_from_db(pool, TENANT_API_KEY).await;
-    test_harness::db_utils::insert_ciphertext64(pool, tenant_id, handle, ciphertext, &[]).await?;
+    test_harness::db_utils::insert_ciphertext64(pool, tenant_id, handle, ciphertext).await?;
 
     // Notify sns_worker
     sqlx::query("SELECT pg_notify($1, '')")

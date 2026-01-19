@@ -37,16 +37,14 @@ pub async fn insert_ciphertext64(
     tenant_id: i32,
     handle: &Vec<u8>,
     ciphertext: &Vec<u8>,
-    ciphertext128: &[u8],
 ) -> anyhow::Result<()> {
     let _ = query!(
-        "INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext128, ciphertext_version, ciphertext_type) 
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type) 
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT DO NOTHING;",
          tenant_id,
         handle,
         ciphertext,
-        ciphertext128,
         0,
         0,
     )
@@ -109,7 +107,7 @@ pub async fn wait_for_ciphertext(
 ) -> anyhow::Result<Vec<u8>> {
     for retry in 0..retries {
         let record = sqlx::query!(
-            "SELECT ciphertext128 FROM ciphertexts WHERE tenant_id = $1 AND handle = $2",
+            "SELECT ciphertext FROM ciphertexts128 WHERE tenant_id = $1 AND handle = $2",
             tenant_id,
             handle
         )
@@ -117,7 +115,7 @@ pub async fn wait_for_ciphertext(
         .await;
 
         if let Ok(record) = record {
-            if let Some(ciphertext128) = record.ciphertext128.filter(|c| !c.is_empty()) {
+            if let Some(ciphertext128) = record.ciphertext.filter(|c| !c.is_empty()) {
                 return Ok(ciphertext128);
             }
         }
