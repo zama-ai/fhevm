@@ -4,5 +4,6 @@ pub mod engine;
 pub mod fhevm;
 pub mod nonce_manager;
 pub mod provider;
+pub mod selectors;
 pub mod tx_processor;
 pub mod tx_throttler;

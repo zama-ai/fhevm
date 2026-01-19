@@ -112,6 +112,7 @@ pub enum TransactionErrorType {
     Nonce,
     Transport,
     Reverted,
+    RevertedACLSelector,
     Rpc,
     Unknown,
     // This should raise a critical alert.
@@ -125,6 +126,7 @@ impl TransactionErrorType {
             TransactionErrorType::Nonce => "nonce_error",
             TransactionErrorType::Transport => "transport_error",
             TransactionErrorType::Reverted => "reverted",
+            TransactionErrorType::RevertedACLSelector => "reverted_acl_selector",
             TransactionErrorType::Rpc => "rpc_error",
             TransactionErrorType::Unknown => "unknown_error",
             TransactionErrorType::MaxRetriesExceeded => "max_retries_exceeded",

@@ -23,7 +23,14 @@ use crate::{
     config::settings::{BlockchainRpcConfig, TxEngineConfig},
     gateway::arbitrum::{
         parse_private_key,
-        transaction::{nonce_manager::NonceManagerNonOptimistic, provider::NonceManagedProvider},
+        transaction::{
+            nonce_manager::NonceManagerNonOptimistic,
+            provider::NonceManagedProvider,
+            selectors::{
+                SELECTOR_ACCOUNT_NOT_ALLOWED_TO_USE_CIPHERTEXT,
+                SELECTOR_CIPHERTEXT_MATERIAL_NOT_READY, SELECTOR_PUBLIC_DECRYPT_NOT_ALLOWED,
+            },
+        },
     },
     metrics,
 };
@@ -248,6 +255,38 @@ impl
                         // These are generally not recoverable by retrying.
                         RpcError::ErrorResp(ErrorPayload { message, .. }) => {
                             let response_error_string = message.to_lowercase();
+
+                            // Control flow for ACL check passed error due to RPC node inconsistency.
+                            // Should NEVER happen with consistent state.
+                            // NOTE (Nico): This control flow makes the tx engine less generic.
+                            if response_error_string
+                                .contains(SELECTOR_CIPHERTEXT_MATERIAL_NOT_READY)
+                                || response_error_string
+                                    .contains(SELECTOR_PUBLIC_DECRYPT_NOT_ALLOWED)
+                                || response_error_string
+                                    .contains(SELECTOR_ACCOUNT_NOT_ALLOWED_TO_USE_CIPHERTEXT)
+                            {
+                                // Not passing in loop initial check to get a max retry exceeded fails 1 retry before.
+                                if retries >= self.gas_estimation_max_retries - 1 {
+                                    metrics::track_engine_error(
+                                        metrics::TransactionErrorType::RevertedACLSelector,
+                                    );
+                                    error!(error = %err_msg, alert=true, "Simulation failed due to revert for RPC node inconsistent state and ACL readiness: Unrecoverable");
+                                    return Err(GatewayTxnError::SimulationFailed(format!(
+                                        "Execution reverted: {}",
+                                        message
+                                    )));
+                                }
+                                warn!(retries = %retries, error = %err_msg, "Simulation failed due to revert for RPC node inconsistent state and ACL readiness: Retrying..");
+                                retries += 1;
+                                tokio::time::sleep(std::time::Duration::from_millis(
+                                    self.ms_retry_delay,
+                                ))
+                                .await;
+                                continue;
+                            }
+
+                            // Classic reverts control flow.
                             if response_error_string.contains("execution reverted") {
                                 metrics::track_engine_error(
                                     metrics::TransactionErrorType::Reverted,
@@ -392,6 +431,8 @@ impl
                                     .release_nonce(self.sender_address(), nonce)
                                     .await;
                             } else {
+                                // NOTE: be careful here: Now we are letting pass inconsistent node state and retrying for some reverts,
+                                // could result in this flow, if inconsistency is propagated here, ok for nonce release.
                                 metrics::track_engine_error(metrics::TransactionErrorType::Rpc);
                                 // TODO create a proper Rpc error response triage error: e.g, "transaction underpriced" and so on.
                                 error!("Non-handled RPC error response: {:?}", err_msg);
