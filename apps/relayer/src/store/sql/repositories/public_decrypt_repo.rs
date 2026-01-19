@@ -764,4 +764,21 @@ impl PublicDecryptRepository {
             .map(|row| (row.int_job_id, row.req, row.req_status, row.updated_at))
             .collect())
     }
+
+    pub async fn count_by_status(&self) -> SqlResult<Vec<(ReqStatus, i64)>> {
+        let result = sqlx::query!(
+            r#"
+            SELECT req_status as "req_status!: ReqStatus", COUNT(*) as "count!"
+            FROM public_decrypt_req
+            GROUP BY req_status
+            "#
+        )
+        .fetch_all(&self.pool.get_app_pool())
+        .await?;
+
+        Ok(result
+            .into_iter()
+            .map(|row| (row.req_status, row.count))
+            .collect())
+    }
 }

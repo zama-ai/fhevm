@@ -81,6 +81,16 @@ pub fn decrement_req_status_count(req_type: RequestType, status: ReqStatus) {
         .dec();
 }
 
+pub fn set_req_status_count(req_type: RequestType, status: ReqStatus, count: i64) {
+    let metrics = STATUS_METRICS
+        .get()
+        .expect("Statuses metrics not initialized.");
+    metrics
+        .request_status_count
+        .with_label_values(&[req_type.as_str(), status.as_str()])
+        .set(count as f64);
+}
+
 // Helper to handle the logic in one place.
 // TODO: verify the seconds logic, and create the subsequent histogram bucket.
 pub fn record_status_transition(

@@ -12,11 +12,46 @@ use crate::{
         UserDecryptRequest,
     },
     core::job_id::JobId,
+    metrics,
     orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
     store::sql::{models::req_status_enum_model::ReqStatus, repositories::Repositories},
 };
 use std::sync::Arc;
 use tracing::{info, warn};
+
+/// Initialize metrics gauges from current database state.
+/// Must be called before any operations that modify metrics.
+async fn init_status_counts_from_db(repositories: &Arc<Repositories>) -> eyre::Result<()> {
+    let counts = repositories
+        .public_decrypt
+        .count_by_status()
+        .await
+        .map_err(|e| eyre::eyre!("Failed to count public_decrypt by status: {}", e))?;
+    for (status, count) in counts {
+        metrics::set_req_status_count(metrics::RequestType::PublicDecrypt, status, count);
+    }
+
+    let counts = repositories
+        .user_decrypt
+        .count_by_status()
+        .await
+        .map_err(|e| eyre::eyre!("Failed to count user_decrypt by status: {}", e))?;
+    for (status, count) in counts {
+        metrics::set_req_status_count(metrics::RequestType::UserDecrypt, status, count);
+    }
+
+    let counts = repositories
+        .input_proof
+        .count_by_status()
+        .await
+        .map_err(|e| eyre::eyre!("Failed to count input_proof by status: {}", e))?;
+    for (status, count) in counts {
+        metrics::set_req_status_count(metrics::RequestType::InputProof, status, count);
+    }
+
+    info!("Initialized request status metrics from database");
+    Ok(())
+}
 
 /// Reset all tx_in_flight requests to processing before recovery.
 /// This ensures clean state transitions and proper idempotency checks.
@@ -69,6 +104,9 @@ pub async fn recover_incomplete_requests(
     repositories: &Arc<Repositories>,
 ) -> eyre::Result<usize> {
     info!("Starting request recovery...");
+
+    // Initialize metrics from DB before any operations that modify them
+    init_status_counts_from_db(repositories).await?;
 
     // Reset tx_in_flight to processing
     reset_tx_in_flight_requests(repositories).await?;
