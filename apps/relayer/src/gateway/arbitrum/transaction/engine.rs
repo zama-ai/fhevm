@@ -190,9 +190,7 @@ impl
                     "Gas estimation failed, transaction will not be sent: {:?}",
                     e
                 );
-                return Err(GatewayTxnError::RpcError(
-                    "Could not estimate gas".to_string(),
-                ));
+                return Err(e);
             }
         };
         // TODO: Balance (of signer) before sending a transaction for gas with a buffer as we used in estimateGas
