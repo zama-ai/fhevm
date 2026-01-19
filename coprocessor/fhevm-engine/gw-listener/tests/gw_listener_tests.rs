@@ -567,13 +567,13 @@ async fn keygen_ok_catchup_gen(positive: bool) -> anyhow::Result<()> {
     assert!(has_not_server_key(&env.db_pool.clone()).await?);
     assert!(has_not_crs(&env.db_pool.clone()).await?);
 
-    let catchup_kms_generation_from_block = if positive {
+    let replay_from_block = if positive {
         Some(0)
     } else {
         Some(-(provider.get_block_number().await? as i64))
     };
     let conf = ConfigSettings {
-        catchup_kms_generation_from_block,
+        replay_from_block,
         ..env.conf.clone()
     };
     let gw_listener = GatewayListener::new(
