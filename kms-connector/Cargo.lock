@@ -2400,6 +2400,7 @@ dependencies = [
  "clap",
  "config",
  "fhevm_gateway_bindings",
+ "fhevm_host_bindings",
  "futures",
  "git-version",
  "humantime-serde",
@@ -2989,7 +2990,16 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.10.3#edb4c81c4d45f557faab569055957dd21991223d"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=96f31548861bedbf9b3d99f66e42364cebb69ba9#96f31548861bedbf9b3d99f66e42364cebb69ba9"
+dependencies = [
+ "alloy",
+ "serde",
+]
+
+[[package]]
+name = "fhevm_host_bindings"
+version = "0.10.0"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=96f31548861bedbf9b3d99f66e42364cebb69ba9#96f31548861bedbf9b3d99f66e42364cebb69ba9"
 dependencies = [
  "alloy",
  "serde",
@@ -4068,6 +4078,7 @@ dependencies = [
  "connector-utils",
  "dashmap",
  "fhevm_gateway_bindings",
+ "fhevm_host_bindings",
  "futures",
  "humantime-serde",
  "kms-grpc",
@@ -4075,6 +4086,7 @@ dependencies = [
  "prometheus",
  "rstest",
  "serde",
+ "serde_json",
  "serial_test",
  "sha3",
  "sqlx",

@@ -4,9 +4,13 @@
 # ENV: KMS_CONNECTOR_SERVICE_NAME
 # service_name = "kms-connector-kms-worker"
 
+# Gateway HTTP RPC URL endpoint (required)
+# ENV: KMS_CONNECTOR_GATEWAY_URL
+gateway_url = "http://localhost:8545"
+
 # Chain ID for the Gateway network (required)
-# ENV: KMS_CONNECTOR_CHAIN_ID
-chain_id = 54321
+# ENV: KMS_CONNECTOR_GATEWAY_CHAIN_ID
+gateway_chain_id = 54321
 
 # List of KMS-core shards gRPC endpoints (required)
 # Format: http://host:port
@@ -14,10 +18,6 @@ chain_id = 54321
 # If using environment variables, use a comma separated list of URLs
 # Ex: KMS_CONNECTOR_KMS_CORE_ENDPOINTS="http://[::1]:50051,http://[::1]:50052"
 kms_core_endpoints = ["http://localhost:50051"]
-
-# Gateway WebSocket RPC URL endpoint (required)
-# ENV: KMS_CONNECTOR_GATEWAY_URL
-gateway_url = "http://localhost:8545"
 
 # URL of the KMS Connector internal database (required)
 # Format: see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
@@ -106,3 +106,16 @@ address = "0x0000000000000000000000000000000000000000"
 # EIP-712 domain version for KMSGeneration contract (optional, defaults to "1")
 # ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
+
+# List of supported host chains (required)
+# ENV: KMS_CONNECTOR_HOST_CHAINS
+# Env var format: JSON string
+# Ex: KMS_CONNECTOR_HOST_CHAINS='[{"url": "http://localhost:8545", "chain_id": 12345, "acl_address": "0x0000000000000000000000000000000000000000"}]'
+[[host_chains]]
+# Host chain HTTP RPC URL endpoint (required)
+url = "http://localhost:8545"
+# Chain ID of the host chain (required)
+chain_id = 12345
+# Address of the ACL contract (required)
+# Format: hex string with 0x prefix
+acl_address = "0x0000000000000000000000000000000000000000"

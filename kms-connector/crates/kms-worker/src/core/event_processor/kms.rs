@@ -22,7 +22,7 @@ impl KMSGenerationProcessor {
         let domain = Eip712DomainMsg {
             name: config.kms_generation_contract.domain_name.clone(),
             version: config.kms_generation_contract.domain_version.clone(),
-            chain_id: U256::from(config.chain_id).to_be_bytes_vec(),
+            chain_id: U256::from(config.gateway_chain_id).to_be_bytes_vec(),
             verifying_contract: config.kms_generation_contract.address.to_string(),
             salt: None,
         };
