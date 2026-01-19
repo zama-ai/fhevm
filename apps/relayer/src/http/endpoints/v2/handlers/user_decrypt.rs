@@ -18,6 +18,7 @@ use crate::http::endpoints::v1::types::user_decrypt::UserDecryptRequestJson;
 use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
 use crate::http::utils::user_decrypt_bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
+use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -177,8 +178,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         let _span = span!(Level::INFO, "handle-user-decrypt-post-req", request_id = %request_id);
 
         info!(
-            "Handling user decryption POST request, generated request id: {}",
-            request_id
+            step = %UserDecryptStep::ReqReceived,
+            request_id = %request_id,
+            "Handling user decryption POST request"
         );
 
         let body = match AxumBytes::from_request(req, _state).await {
@@ -220,7 +222,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                     )
                     .await;
                     if full {
-                        info!("User decrypt v2 is bounced by full queue");
+                        info!(
+                            step = %UserDecryptStep::Bounced,
+                            int_job_id = ?int_job_id,
+                            "User decrypt v2 is bounced by full queue"
+                        );
                         return AppResponse::<()>::protocol_overloaded(
                             "relayer is currently processing too many requests",
                             &self.retry_after_seconds.to_string(),
@@ -292,9 +298,21 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 )
                 .into_response();
             }
-            info!("Dispatched event to orchestrator to initiate processing");
+            info!(
+                step = %UserDecryptStep::Queued,
+                req_id = %request_id,
+                ext_job_id = %assigned_ext_job_id,
+                int_job_id = ?int_job_id,
+                "Dispatched event to orchestrator"
+            );
         } else {
-            info!("Duplicate request detected, skipping event dispatch");
+            info!(
+                step = %UserDecryptStep::DedupHit,
+                req_id = %request_id,
+                ext_job_id = %assigned_ext_job_id,
+                int_job_id = ?int_job_id,
+                "Duplicate request detected"
+            );
         }
 
         // Generate a new request_id for this HTTP request (not stored)
@@ -324,7 +342,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!(
             req_id = %request_id_for_response,
-            int_job_id = %int_job_id,
+            int_job_id = ?int_job_id,
             ext_job_id = %assigned_ext_job_id,
             retry_after_secs = retry_after,
             "Computed retry-after for user decrypt POST"
@@ -382,7 +400,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 )
                                     .into_response(),
                                 Err(e) => {
-                                    error!(error = %e, "Internal error: failed to convert response");
+                                    error!(
+                                        request_id = %request_id,
+                                        ext_job_id = %job_id,
+                                        error = %e,
+                                        "Response conversion failed"
+                                    );
                                     (
                                         StatusCode::INTERNAL_SERVER_ERROR,
                                         Json(UserDecryptStatusResponseJson {

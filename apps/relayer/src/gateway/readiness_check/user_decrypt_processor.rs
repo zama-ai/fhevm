@@ -81,6 +81,7 @@ impl UserDecryptReadinessProcessor {
         // 1. EXECUTE CHECK
         let result = checker
             .check_user_decryption_readiness(
+                &task.job_id,
                 task.request.user_address,
                 contract_pairs,
                 task.request.extra_data.clone(),

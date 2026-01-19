@@ -13,6 +13,7 @@ use crate::gateway::readiness_check::readiness_throttler::{
 };
 use crate::http::utils::user_decrypt_bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
+use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpApiVersion, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::OnceHandler;
@@ -124,8 +125,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         let _span = span!(Level::INFO, "handle-user-decrypt-req", request_id = %request_id);
 
         info!(
-            "Handling user decryption request, generated request id: {}",
-            request_id
+            step = %UserDecryptStep::ReqReceived,
+            request_id = %request_id,
+            "Handling user decryption request"
         );
 
         let body = match AxumBytes::from_request(req, _state).await {
@@ -167,7 +169,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                     )
                     .await;
                     if full {
-                        info!("User decrypt v1 is bounced by full queue");
+                        info!(
+                            step = %UserDecryptStep::Bounced,
+                            int_job_id = %int_job_id,
+                            "User decrypt v1 is bounced by full queue"
+                        );
                         // NOTE: Could return 500 to not change the behaviour of the v1.
                         // Here return 429
                         return AppResponse::<()>::protocol_overloaded(
@@ -240,10 +246,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             }
         };
 
+        // Extract ext_job_id from any variant for logging
+        let assigned_ext_job_id = match &insert_result {
+            UserDecryptInsertResult::Inserted { ext_job_id } => *ext_job_id,
+            UserDecryptInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
+            UserDecryptInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
+        };
+
         // Handle the three cases based on insert result
         match insert_result {
             UserDecryptInsertResult::Inserted { ext_job_id: _ } => {
-                // ext_job_id unused - V1 is synchronous, job_id not returned to client
                 // New request - dispatch event to orchestrator
                 let request_data = UserDecryptEventData::ReqRcvdFromUser {
                     decrypt_request: user_decrypt_request,
@@ -261,15 +273,26 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                     )
                     .into_response();
                 }
-                info!("Dispatched event to orchestrator to initiate processing");
+                info!(
+                    step = %UserDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = %int_job_id,
+                    "Dispatched event to orchestrator"
+                );
             }
             UserDecryptInsertResult::DuplicateCompleted {
                 ext_job_id: _,
                 response,
             } => {
-                // ext_job_id unused - V1 is synchronous, job_id not returned to client
                 // Duplicate request that already completed - return immediately
-                info!("Duplicate request found completed result, returning immediately");
+                info!(
+                    step = %UserDecryptStep::DedupHit,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = %int_job_id,
+                    "Returning cached response"
+                );
 
                 // Clean up handlers to prevent memory leak
                 self.orchestrator
@@ -282,7 +305,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         return (StatusCode::OK, Json(response_json)).into_response();
                     }
                     Err(e) => {
-                        error!(error = %e, "Internal error: failed to convert response");
+                        error!(
+                            request_id = %request_id,
+                            int_job_id = %int_job_id,
+                            error = %e,
+                            "Response conversion failed"
+                        );
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             Json(UserDecryptErrorResponseJson {
@@ -294,9 +322,14 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 }
             }
             UserDecryptInsertResult::DuplicateProcessing { ext_job_id: _ } => {
-                // ext_job_id unused - V1 is synchronous, job_id not returned to client
                 // Duplicate request still processing - just wait for response
-                info!("Duplicate request detected, waiting for original request to complete");
+                info!(
+                    step = %UserDecryptStep::DedupHit,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = %int_job_id,
+                    "Duplicate request detected"
+                );
             }
         }
 
@@ -309,7 +342,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             res = &mut response_rx => {
                 match res {
                     Ok(event) => {
-                        info!("Received user decrypt response event");
+                        info!(
+                            step = %UserDecryptStep::RespSent,
+                            int_job_id = %int_job_id,
+                            "Received user decrypt response event"
+                        );
                         info!("Response event type {:?}", event.data);
                         match event.data {
                             RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
@@ -320,7 +357,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                         (StatusCode::OK, Json(response_json)).into_response()
                                     }
                                     Err(e) => {
-                                        error!(error = %e, "Internal error: failed to convert response");
+                                        error!(
+                                            request_id = %request_id,
+                                            int_job_id = %int_job_id,
+                                            error = %e,
+                                            "Response conversion failed"
+                                        );
                                         (
                                             StatusCode::INTERNAL_SERVER_ERROR,
                                             Json(UserDecryptErrorResponseJson {

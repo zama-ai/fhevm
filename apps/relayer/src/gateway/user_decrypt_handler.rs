@@ -21,6 +21,7 @@ use crate::{
         readiness_check::readiness_throttler::{ReadinessSender, UserDecryptReadinessTask},
         utils::{classify_revert_selector, extract_revert_selector},
     },
+    logging::UserDecryptStep,
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
         ContentHasher, Orchestrator, TokioEventDispatcher,
@@ -120,9 +121,10 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 } => {
                     async {
                         info!(
-                        "Readiness check passed, Throttling public decrypt request to gateway {}",
-                        event.job_id
-                    );
+                            step = %UserDecryptStep::ReadinessCheckPassed,
+                            int_job_id = %event.job_id,
+                            "Readiness check passed, sending user decrypt request to gateway"
+                        );
 
                         let job_id_hash = decrypt_request.content_hash();
                         self.mark_processing(job_id_hash).await?;
@@ -204,8 +206,18 @@ impl GatewayHandler {
             request: decrypt_request.clone(),
         };
 
-        match self.user_decrypt_readiness_throttler.push(task).await {
-            Ok(()) => {}
+        match self
+            .user_decrypt_readiness_throttler
+            .push(task.clone())
+            .await
+        {
+            Ok(()) => {
+                info!(
+                    step = %UserDecryptStep::ReadinessQueued,
+                    int_job_id = %task.job_id,
+                    "Request queued for readiness check"
+                );
+            }
             // Thoses errors are putting request in failure mode.
             // This introduce a new termination error, which is failure for readiness,
             // should NEVER happen with the bouncer.
@@ -275,7 +287,11 @@ impl GatewayHandler {
             hook: DynTxHook(Arc::new(self.clone())),
         };
 
-        info!(job_id = %job_id, "Enqueuing user decrypt request to tx throttler");
+        info!(
+            step = %UserDecryptStep::TxQueued,
+            int_job_id = %job_id,
+            "Enqueuing user decrypt request to tx throttler"
+        );
 
         // PUSH TO QUEUE
         // Catch error from here and pass the request to failure.
@@ -322,8 +338,12 @@ impl GatewayHandler {
 
         let user_decryption_id = user_decrypt_response.decryptionId;
         info!(
-            "Gateway response received for decryption ID {}, share index {}",
-            user_decryption_id, user_decrypt_response.indexShare
+            step = %UserDecryptStep::ShareReceived,
+            int_job_id = %event.job_id,
+            tx_hash = %tx_hash,
+            gw_reference_id = %user_decryption_id,
+            share_index = %user_decrypt_response.indexShare,
+            "Gateway share response received"
         );
 
         self.store_share_and_check_threshold(event, user_decrypt_response, tx_hash)
@@ -369,66 +389,77 @@ impl GatewayHandler {
                 shares,
             } => {
                 info!(
-                    "COUNT after insert of index: {:?} {} for Gateway reference ID {}",
-                    user_decrypt_response.indexShare, count, user_decryption_id
-                );
-                info!(
-                    "Threshold reached and completion successful: {}/{}",
-                    count, threshold
+                    step = %UserDecryptStep::ThresholdReached,
+                    int_job_id = %event.job_id,
+                    gw_reference_id = %user_decryption_id,
+                    share_count = count,
+                    threshold = threshold,
+                    "Threshold reached and completion successful"
                 );
                 self.assemble_final_response(event, metadata, shares).await;
             }
             ShareCompletionOutcome::ThresholdNotReached { count } => {
-                info!(
-                    "COUNT after insert of index: {:?} {} for Gateway reference ID {}",
-                    user_decrypt_response.indexShare, count, user_decryption_id
+                debug!(
+                    int_job_id = %event.job_id,
+                    gw_reference_id = %user_decryption_id,
+                    share_count = count,
+                    threshold = threshold,
+                    "Threshold not yet reached, waiting for more shares"
                 );
-                info!("Threshold not yet reached: {}/{}", count, threshold);
             }
             ShareCompletionOutcome::AlreadyCompleted {
                 count,
                 metadata: _,
                 shares: _,
             } => {
-                info!(
-                    "COUNT after insert of index: {:?} {} for Gateway reference ID {}",
-                    user_decrypt_response.indexShare, count, user_decryption_id
-                );
                 debug!(
                     job_id = %event.job_id,
-                    "Threshold reached but request already completed (duplicate share), skipping: {}/{}",
-                    count, threshold
+                    gw_reference_id = %user_decryption_id,
+                    share_count = count,
+                    "Threshold reached but request already completed (duplicate share), skipping"
                 );
             }
             ShareCompletionOutcome::AlreadyInFinalState {
                 count,
                 current_status,
             } => {
-                info!(
-                    "COUNT after insert of index: {:?} {} for Gateway reference ID {}",
-                    user_decrypt_response.indexShare, count, user_decryption_id
-                );
                 match current_status {
                     ReqStatus::Failure => {
                         debug!(
                             job_id = %event.job_id,
-                            "Threshold reached but request already in failure state, skipping: {}/{}",
-                            count, threshold
+                            gw_reference_id = %user_decryption_id,
+                            share_count = count,
+                            threshold = threshold,
+                            "Request already in failure state, skipping share"
                         );
+                        // Already failed, no need to error again
                     }
                     ReqStatus::TimedOut => {
-                        debug!(
-                            job_id = %event.job_id,
-                            "Threshold reached but request already timed out (late share arrival), skipping: {}/{}",
-                            count, threshold
+                        info!(
+                            step = %UserDecryptStep::LateShareReceived,
+                            int_job_id = %event.job_id,
+                            gw_reference_id = %user_decryption_id,
+                            share_count = count,
+                            threshold = threshold,
+                            "Late share arrival after timeout, skipping"
                         );
+                        // Timeout handling already completed, user was notified.
+                        // Late share arrival is expected in distributed systems - just skip.
                     }
                     other_status => {
-                        warn!(
+                        error!(
                             job_id = %event.job_id,
-                            "Threshold reached but request in unexpected state {:?}, skipping: {}/{} - possible race condition or late event",
-                            other_status, count, threshold
+                            gw_reference_id = %user_decryption_id,
+                            current_status = ?other_status,
+                            share_count = count,
+                            threshold = threshold,
+                            "Request in unexpected status - possible state corruption"
                         );
+                        return Err(EventProcessingError::ShareAggregationFailed(format!(
+                            "Cannot aggregate shares - request in unexpected status {:?}. \
+                                 Shares should only arrive after ReceiptReceived status.",
+                            other_status
+                        )));
                     }
                 }
             }
@@ -503,8 +534,9 @@ impl GatewayHandler {
                     error!(?e, "Failed to dispatch response event to HTTP handlers");
                 } else {
                     info!(
-                        "User decrypt response successfully sent for {}",
-                        event.job_id
+                        step = %UserDecryptStep::RespSent,
+                        int_job_id = %job_id,
+                        "Response dispatched to HTTP handlers"
                     );
                 }
             }
@@ -784,6 +816,14 @@ impl TxLifecycleHooks for GatewayHandler {
                     field: "job_id".to_string(),
                     reason: "Expected SHA256 hash for user decrypt".to_string(),
                 })?;
+
+        info!(
+            step = %UserDecryptStep::TxConfirmed,
+            int_job_id = %job_id,
+            tx_hash = %tx_hash,
+            gw_reference_id = %gw_reference_id,
+            "Transaction confirmed, receipt received"
+        );
 
         self.user_decrypt_repo
             .update_status_to_receipt_received_on_tx_success(&hash[..], &tx_hash, gw_reference_id)
