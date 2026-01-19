@@ -464,10 +464,18 @@ impl InputProofGatewayHandler {
                     "Request processing failed - notifying user"
                 );
 
-                let _ = self
+                if let Err(db_err) = self
                     .input_proof_repo
                     .update_status_to_failure(event.job_id.as_ref(), &error.to_string())
-                    .await;
+                    .await
+                {
+                    error!(
+                        alert = true,
+                        job_id = %event.job_id,
+                        db_error = %db_err,
+                        "Failed to update failure status in database"
+                    );
+                }
             }
         }
 

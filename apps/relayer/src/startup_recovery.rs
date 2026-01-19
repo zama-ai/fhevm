@@ -224,41 +224,50 @@ async fn recover_user_decrypt_requests(
     let mut recovered = 0;
 
     for (int_job_id, req_json, status, _updated_at) in requests {
-        if let Ok(request) = serde_json::from_value::<UserDecryptRequest>(req_json) {
-            let int_job_id_len = int_job_id.len();
-            let job_id: JobId = match int_job_id.try_into() {
-                Ok(id) => id,
-                Err(_) => {
-                    error!(
-                        alert = true,
-                        int_job_id_len,
-                        "int_job_id has invalid length in user_decrypt recovery, expected 32 bytes, skipping"
-                    );
-                    continue;
-                }
-            };
-            let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
-
-            let event_data = match status {
-                ReqStatus::Queued => {
-                    RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
-                        decrypt_request: request,
-                    })
-                }
-                ReqStatus::Processing | ReqStatus::TxInFlight => {
-                    RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckPassed {
-                        decrypt_request: request,
-                    })
-                }
-                _ => continue,
-            };
-
-            let event = RelayerEvent::new(job_id, api_version, event_data);
-            if let Err(e) = orchestrator.dispatch_event(event).await {
-                warn!("Failed to recover user decrypt request: {}", e);
-            } else {
-                recovered += 1;
+        let request = match serde_json::from_value::<UserDecryptRequest>(req_json.clone()) {
+            Ok(r) => r,
+            Err(e) => {
+                error!(
+                    alert = true,
+                    error = %e,
+                    "Failed to deserialize UserDecryptRequest in recovery, skipping"
+                );
+                continue;
             }
+        };
+        let int_job_id_len = int_job_id.len();
+        let job_id: JobId = match int_job_id.try_into() {
+            Ok(id) => id,
+            Err(_) => {
+                error!(
+                    alert = true,
+                    int_job_id_len,
+                    "int_job_id has invalid length in user_decrypt recovery, expected 32 bytes, skipping"
+                );
+                continue;
+            }
+        };
+        let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
+
+        let event_data = match status {
+            ReqStatus::Queued => {
+                RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser {
+                    decrypt_request: request,
+                })
+            }
+            ReqStatus::Processing | ReqStatus::TxInFlight => {
+                RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckPassed {
+                    decrypt_request: request,
+                })
+            }
+            _ => continue,
+        };
+
+        let event = RelayerEvent::new(job_id, api_version, event_data);
+        if let Err(e) = orchestrator.dispatch_event(event).await {
+            warn!("Failed to recover user decrypt request: {}", e);
+        } else {
+            recovered += 1;
         }
     }
 
@@ -286,31 +295,40 @@ async fn recover_input_proof_requests(
     let mut recovered = 0;
 
     for (int_job_id, req_json, _status, _updated_at) in requests {
-        if let Ok(request) = serde_json::from_value::<InputProofRequest>(req_json) {
-            let int_job_id_len = int_job_id.len();
-            let job_id: JobId = match int_job_id.try_into() {
-                Ok(id) => id,
-                Err(_) => {
-                    error!(
-                        alert = true,
-                        int_job_id_len,
-                        "int_job_id has invalid length in input_proof recovery, expected 32 bytes, skipping"
-                    );
-                    continue;
-                }
-            };
-            let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
-
-            let event_data = RelayerEventData::InputProof(InputProofEventData::ReqRcvdFromUser {
-                input_proof_request: request,
-            });
-
-            let event = RelayerEvent::new(job_id, api_version, event_data);
-            if let Err(e) = orchestrator.dispatch_event(event).await {
-                warn!("Failed to recover input proof request: {}", e);
-            } else {
-                recovered += 1;
+        let request = match serde_json::from_value::<InputProofRequest>(req_json.clone()) {
+            Ok(r) => r,
+            Err(e) => {
+                error!(
+                    alert = true,
+                    error = %e,
+                    "Failed to deserialize InputProofRequest in recovery, skipping"
+                );
+                continue;
             }
+        };
+        let int_job_id_len = int_job_id.len();
+        let job_id: JobId = match int_job_id.try_into() {
+            Ok(id) => id,
+            Err(_) => {
+                error!(
+                    alert = true,
+                    int_job_id_len,
+                    "int_job_id has invalid length in input_proof recovery, expected 32 bytes, skipping"
+                );
+                continue;
+            }
+        };
+        let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
+
+        let event_data = RelayerEventData::InputProof(InputProofEventData::ReqRcvdFromUser {
+            input_proof_request: request,
+        });
+
+        let event = RelayerEvent::new(job_id, api_version, event_data);
+        if let Err(e) = orchestrator.dispatch_event(event).await {
+            warn!("Failed to recover input proof request: {}", e);
+        } else {
+            recovered += 1;
         }
     }
 

@@ -26,6 +26,7 @@ pub struct GatewayConfig {
 impl GatewayConfig {
     pub fn validate(&self) -> Result<(), AppConfigError> {
         self.blockchain_rpc.validate()?;
+        self.contracts.validate()?;
         self.readiness_checker.public_decrypt.validate()?;
         self.readiness_checker.user_decrypt.validate()?;
         self.tx_engine
@@ -481,6 +482,17 @@ pub struct ContractConfig {
     pub input_verification_address: String,
     /// Number of shares required for user decryption threshold consensus
     pub user_decrypt_shares_threshold: u16,
+}
+
+impl ContractConfig {
+    pub fn validate(&self) -> Result<(), AppConfigError> {
+        if self.user_decrypt_shares_threshold < 1 {
+            return Err(AppConfigError::Config(
+                "user_decrypt_shares_threshold must be at least 1".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

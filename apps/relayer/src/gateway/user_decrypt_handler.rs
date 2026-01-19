@@ -868,6 +868,12 @@ impl TxLifecycleHooks for GatewayHandler {
 /// 2. Hex decode all shares, signatures, and extra_data
 /// 3. Construct final response with decryption_id from first share
 fn assemble_final_response(shares: Vec<UserDecryptShare>) -> Result<UserDecryptResponse, String> {
+    // Defensive check: should never occur since threshold >= 1 is validated at startup
+    // and caller validates shares.len() == threshold before calling.
+    if shares.is_empty() {
+        return Err("assemble_final_response called with empty shares".to_string());
+    }
+
     // Sort shares by index_share to maintain order
     let mut shares_vec: Vec<_> = shares.to_vec();
     shares_vec.sort_by_key(|share| share.share_index);
