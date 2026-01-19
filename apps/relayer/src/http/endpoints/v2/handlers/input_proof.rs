@@ -259,8 +259,8 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         info!(
             req_id = %request_id_for_response,
-            int_job_id = %int_job_id,
-            ext_job_id = %assigned_ext_job_id,
+            int_job_id = %request_id,
+            ext_job_id = %ext_job_id,
             retry_after_secs = retry_after,
             "Computed retry-after for input proof POST"
         );

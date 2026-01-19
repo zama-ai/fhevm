@@ -20,6 +20,7 @@ use crate::{
         },
         utils::{classify_revert_selector, extract_revert_selector},
     },
+    logging::InputProofStep,
     orchestrator::{
         traits::{Event, EventDispatcher, EventHandler, HandlerRegistry},
         Orchestrator, TokioEventDispatcher,
@@ -107,16 +108,18 @@ impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
                     match topic0_fixed {
                         InputVerification::VerifyProofResponse::SIGNATURE_HASH => {
                             info!(
-                                "Processing accepted proof response for request {}",
-                                event.job_id
+                                step = %InputProofStep::ProofAccepted,
+                                int_job_id = %event.job_id,
+                                "Processing accepted proof response"
                             );
                             self.complete_proof_verification(event.clone(), log, *tx_hash)
                                 .await
                         }
                         InputVerification::RejectProofResponse::SIGNATURE_HASH => {
                             info!(
-                                "Processing rejected proof response for request {}",
-                                event.job_id
+                                step = %InputProofStep::ProofRejected,
+                                int_job_id = %event.job_id,
+                                "Processing rejected proof response"
                             );
                             self.reject_proof_verification(event.clone(), log, *tx_hash)
                                 .await
@@ -204,7 +207,11 @@ impl InputProofGatewayHandler {
             hook: DynTxHook(Arc::new(self.clone())),
         };
 
-        info!(job_id = %job_id, "Enqueuing input proof request to tx throttler");
+        info!(
+            step = %InputProofStep::TxQueued,
+            int_job_id = %job_id,
+            "Enqueuing input proof request to tx throttler"
+        );
 
         // PUSH TO QUEUE
         // Catch error from here and pass the request to failure.
@@ -253,10 +260,11 @@ impl InputProofGatewayHandler {
             })?;
 
         info!(
-            input_verification_id = ?request_event.zkProofId,
-            handles = ?request_event.ctHandles,
-            signatures = ?request_event.signatures,
-            "Processing InputResponse event"
+            step = %InputProofStep::GwEventReceived,
+            int_job_id = %event.job_id,
+            tx_hash = %tx_hash,
+            gw_reference_id = ?request_event.zkProofId,
+            "Gateway response received"
         );
 
         let input_proof_response = InputProofResponse {
@@ -296,8 +304,9 @@ impl InputProofGatewayHandler {
                     error!(?e, "Failed to dispatch input proof response event");
                 } else {
                     info!(
-                        "Input proof response successfully sent for {}",
-                        event.job_id
+                        step = %InputProofStep::RespSent,
+                        int_job_id = %int_request_id,
+                        "Response dispatched to HTTP handlers"
                     );
                 }
             }
@@ -395,8 +404,15 @@ impl InputProofGatewayHandler {
                     next_event_data,
                 );
 
-                let _ = self.dispatcher.dispatch_event(next_event).await;
-                info!("Input proof rejection response sent for {}", event.job_id);
+                if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+                    error!(?e, "Failed to dispatch input proof rejection event");
+                } else {
+                    info!(
+                        step = %InputProofStep::RespSent,
+                        int_job_id = %int_request_id,
+                        "Rejection response dispatched to HTTP handlers"
+                    );
+                }
             }
             InputProofCompletionOutcome::AlreadyCompleted { int_request_id } => {
                 debug!(
@@ -542,6 +558,14 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
                 field: "job_id".to_string(),
                 reason: "Expected UUID for input proof".to_string(),
             })?;
+
+        info!(
+            step = %InputProofStep::TxConfirmed,
+            int_job_id = %job_id,
+            tx_hash = %tx_hash,
+            gw_reference_id = %gw_reference_id,
+            "Transaction confirmed, receipt received"
+        );
 
         self.input_proof_repo
             .update_input_proof_status_to_receipt_received(uuid, &tx_hash, gw_reference_id)
