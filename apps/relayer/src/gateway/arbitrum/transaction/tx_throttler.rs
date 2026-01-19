@@ -1,6 +1,7 @@
 use crate::core::{errors::EventProcessingError, job_id::JobId};
 use crate::gateway::arbitrum::transaction::helper::TransactionType;
 use crate::gateway::arbitrum::transaction::TxLifecycleHooks;
+use crate::logging::ThrottlerStep;
 use crate::metrics;
 use alloy::primitives::{Address, Bytes};
 use governor::{Quota, RateLimiter};
@@ -12,7 +13,7 @@ use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 /// Queue information for ETA computation (TPS-based throttler)
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -230,12 +231,23 @@ where
         match self.sender.try_send(item) {
             Ok(_) => {
                 // Success: Add ID to tracker
-                tracker.insert(id, ());
+                tracker.insert(id.clone(), ());
                 metrics::queue::increment_queue_size(self.tx_type.as_metrics_type());
+                debug!(
+                    step = %ThrottlerStep::TaskEnqueued,
+                    throttler = %self.tx_type,
+                    task_id = %id,
+                    "Task enqueued"
+                );
                 Ok(())
             }
             Err(mpsc::error::TrySendError::Full(_)) => {
-                warn!("Throttler queue is full! Bouncing request.");
+                warn!(
+                    step = %ThrottlerStep::QueueFull,
+                    throttler = %self.tx_type,
+                    task_id = %id,
+                    "Queue full, bouncing request"
+                );
                 Err(EventProcessingError::QueueFull)
             }
             Err(mpsc::error::TrySendError::Closed(_)) => {
@@ -243,7 +255,11 @@ where
                 // Note: Self healing infinite loop or auto restart within kubernetes should be implemented.
                 // Following die-fast principle, a restart should restart as soon as possible.
                 error!(
-                    "CRITICAL: Throttler channel is closed! Worker is dead, Relayer must restart."
+                    step = %ThrottlerStep::QueueClosed,
+                    alert = true,
+                    throttler = %self.tx_type,
+                    task_id = %id,
+                    "Channel closed, worker is dead, relayer must restart"
                 );
                 Err(EventProcessingError::ChannelClosed)
             }
@@ -353,6 +369,13 @@ where
                         tracker.shift_remove(&id);
                         metrics::queue::decrement_queue_size(self.tx_type.as_metrics_type());
                     }
+
+                    debug!(
+                        step = %ThrottlerStep::TaskDequeued,
+                        throttler = %self.tx_type,
+                        task_id = %id,
+                        "Task dequeued for processing"
+                    );
 
                     // 3. Process (Isolated)
                     let proc_clone = processor.clone();
