@@ -1,6 +1,10 @@
 use std::time::Instant;
 
-use crate::{config::settings::CronConfig, metrics, store::sql::client::PgClient};
+use crate::{
+    config::settings::CronConfig,
+    metrics,
+    store::sql::{client::PgClient, models::req_status_enum_model::ReqStatus},
+};
 use anyhow::Result;
 
 pub struct ExpiryRepository {
@@ -19,96 +23,188 @@ impl ExpiryRepository {
         let user_decrypt_expiry_secs = self.cron_config.user_decrypt_expiry.as_secs_f64();
         let input_proof_expiry_secs = self.cron_config.input_proof_expiry.as_secs_f64();
 
-        let mut conn = self.pool.get_cron_connection().await?;
-        let query_start = Instant::now();
+        // Public Decrypt Requests
+        {
+            let mut conn = self.pool.get_cron_connection().await?;
+            let query_start = Instant::now();
 
-        let result = sqlx::query!(
-            r#"
-                DELETE FROM public_decrypt_req 
+            let status_result = sqlx::query!(
+                r#"
+                SELECT req_status as "req_status!: ReqStatus"
+                FROM public_decrypt_req
                 WHERE updated_at < NOW() - make_interval(secs => $1)
                 "#,
-            public_decrypt_expiry_secs
-        )
-        .execute(&mut *conn)
-        .await;
+                public_decrypt_expiry_secs
+            )
+            .fetch_all(&mut *conn)
+            .await;
 
-        match &result {
-            Ok(_) => {
-                metrics::observe_query(metrics::Table::PublicDecryptReq, query_start.elapsed())
+            match &status_result {
+                Ok(_) => {
+                    metrics::observe_query(metrics::Table::PublicDecryptReq, query_start.elapsed())
+                }
+                Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
             }
-            Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
-        }
-        total_deleted += result?.rows_affected();
 
-        // User decrypt: Delete shares and requests atomically using JOIN.
-        // This ensures shares are only deleted when their parent request is also expiring,
-        // preventing orphaned shares or race conditions.
-        let mut tx = self.pool.get_cron_pool().begin().await?;
-        let query_start = Instant::now();
+            let statuses = status_result?;
 
-        // First, delete shares whose PARENT request is expiring (based on request.updated_at)
-        let shares_result = sqlx::query!(
-            r#"
-                DELETE FROM user_decrypt_share s
-                USING user_decrypt_req r
-                WHERE s.gw_reference_id = r.gw_reference_id
-                  AND r.updated_at < NOW() - make_interval(secs => $1)
+            let query_start = Instant::now();
+            let delete_result = sqlx::query!(
+                r#"
+                DELETE FROM public_decrypt_req
+                WHERE updated_at < NOW() - make_interval(secs => $1)
                 "#,
-            user_decrypt_expiry_secs
-        )
-        .execute(&mut *tx)
-        .await;
+                public_decrypt_expiry_secs
+            )
+            .execute(&mut *conn)
+            .await;
 
-        match &shares_result {
-            Ok(_) => {
-                metrics::observe_query(metrics::Table::UserDecryptShares, query_start.elapsed())
+            match &delete_result {
+                Ok(_) => {
+                    metrics::observe_query(metrics::Table::PublicDecryptReq, query_start.elapsed())
+                }
+                Err(_) => metrics::increment_error(metrics::Table::PublicDecryptReq),
             }
-            Err(_) => metrics::increment_error(metrics::Table::UserDecryptShares),
+
+            total_deleted += delete_result?.rows_affected();
+
+            for row in statuses {
+                metrics::decrement_req_status_count(
+                    metrics::RequestType::PublicDecrypt,
+                    row.req_status,
+                );
+            }
         }
-        total_deleted += shares_result?.rows_affected();
 
-        let query_start = Instant::now();
+        // User Decrypt Shares
+        {
+            let mut conn = self.pool.get_cron_connection().await?;
+            let query_start = Instant::now();
 
-        // Then, delete expired requests
-        let req_result = sqlx::query!(
-            r#"
+            let result = sqlx::query!(
+                r#"
+                DELETE FROM user_decrypt_share
+                WHERE updated_at < NOW() - make_interval(secs => $1)
+                "#,
+                user_decrypt_expiry_secs
+            )
+            .execute(&mut *conn)
+            .await;
+
+            match &result {
+                Ok(_) => {
+                    metrics::observe_query(metrics::Table::UserDecryptShares, query_start.elapsed())
+                }
+                Err(_) => metrics::increment_error(metrics::Table::UserDecryptShares),
+            }
+            total_deleted += result?.rows_affected();
+        }
+
+        // User Decrypt Requests
+        {
+            let mut conn = self.pool.get_cron_connection().await?;
+            let query_start = Instant::now();
+
+            let status_result = sqlx::query!(
+                r#"
+                SELECT req_status as "req_status!: ReqStatus"
+                FROM user_decrypt_req
+                WHERE updated_at < NOW() - make_interval(secs => $1)
+                "#,
+                user_decrypt_expiry_secs
+            )
+            .fetch_all(&mut *conn)
+            .await;
+
+            match &status_result {
+                Ok(_) => {
+                    metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed())
+                }
+                Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+            }
+
+            let statuses = status_result?;
+
+            let query_start = Instant::now();
+            let delete_result = sqlx::query!(
+                r#"
                 DELETE FROM user_decrypt_req
                 WHERE updated_at < NOW() - make_interval(secs => $1)
                 "#,
-            user_decrypt_expiry_secs
-        )
-        .execute(&mut *tx)
-        .await;
+                user_decrypt_expiry_secs
+            )
+            .execute(&mut *conn)
+            .await;
 
-        match &req_result {
-            Ok(_) => metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed()),
-            Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+            match &delete_result {
+                Ok(_) => {
+                    metrics::observe_query(metrics::Table::UserDecryptReq, query_start.elapsed())
+                }
+                Err(_) => metrics::increment_error(metrics::Table::UserDecryptReq),
+            }
+
+            total_deleted += delete_result?.rows_affected();
+
+            for row in statuses {
+                metrics::decrement_req_status_count(
+                    metrics::RequestType::UserDecrypt,
+                    row.req_status,
+                );
+            }
         }
-        total_deleted += req_result?.rows_affected();
 
-        tx.commit().await?;
+        // Input Proof Requests
+        {
+            let mut conn = self.pool.get_cron_connection().await?;
+            let query_start = Instant::now();
 
-        // ---------------------------------------------------------------------
-        // 4. Input Proof Requests (7 days)
-        // ---------------------------------------------------------------------
-        let mut conn = self.pool.get_cron_connection().await?;
-        let query_start = Instant::now();
-
-        let result = sqlx::query!(
-            r#"
-                DELETE FROM input_proof_req 
+            let status_result = sqlx::query!(
+                r#"
+                SELECT req_status as "req_status!: ReqStatus"
+                FROM input_proof_req
                 WHERE updated_at < NOW() - make_interval(secs => $1)
                 "#,
-            input_proof_expiry_secs
-        )
-        .execute(&mut *conn)
-        .await;
+                input_proof_expiry_secs
+            )
+            .fetch_all(&mut *conn)
+            .await;
 
-        match &result {
-            Ok(_) => metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed()),
-            Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+            match &status_result {
+                Ok(_) => {
+                    metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed())
+                }
+                Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+            }
+
+            let statuses = status_result?;
+
+            let query_start = Instant::now();
+            let delete_result = sqlx::query!(
+                r#"
+                DELETE FROM input_proof_req
+                WHERE updated_at < NOW() - make_interval(secs => $1)
+                "#,
+                input_proof_expiry_secs
+            )
+            .execute(&mut *conn)
+            .await;
+
+            match &delete_result {
+                Ok(_) => {
+                    metrics::observe_query(metrics::Table::InputProofReq, query_start.elapsed())
+                }
+                Err(_) => metrics::increment_error(metrics::Table::InputProofReq),
+            }
+
+            total_deleted += delete_result?.rows_affected();
+
+            for row in statuses {
+                metrics::decrement_req_status_count(
+                    metrics::RequestType::InputProof,
+                    row.req_status,
+                );
+            }
         }
-        total_deleted += result?.rows_affected();
 
         Ok(total_deleted)
     }
