@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO ciphertexts128 (\n                        tenant_id,\n                        handle,\n                        ciphertext\n                )\n                VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "da2a26634646e61cb8d69807bfac6d010dc9e150057edd06199ee37f0371c1c5"
+}
