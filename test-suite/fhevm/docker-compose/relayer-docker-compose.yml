@@ -4,7 +4,7 @@ services:
     platform: linux/amd64
     image: ghcr.io/zama-ai/console/relayer:${RELAYER_VERSION}
     env_file:
-      - ../env/staging/.env.relayer.local
+      - ../env/staging/.env.relayer
     command:
     - /bin/server
     - --config-file=/app/config/local.yaml

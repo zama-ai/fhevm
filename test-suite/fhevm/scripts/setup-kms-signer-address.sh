@@ -23,7 +23,7 @@ log_error() {
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 BASE_URL="http://localhost:9000/kms-public/PUB/VerfAddress"
 ENV_HOST="${SCRIPT_DIR}/../env/staging/.env.host-sc.local"
-ENV_GATEWAY="${SCRIPT_DIR}/../env/staging/.env.gateway-sc.local"
+ENV_GATEWAY="${SCRIPT_DIR}/../env/staging/.env.gateway-sc"
 KEY_SIGNER_ID=$(docker logs kms-core | grep "Successfully stored public server signing key under the handle" | sed 's/.*handle \([^ ]*\).*/\1/')
 SIGNER_ADDRESS_URL="$BASE_URL/$KEY_SIGNER_ID"
 

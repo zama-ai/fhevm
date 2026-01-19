@@ -76,7 +76,7 @@ const chainIds = {
   localNative: 8009,
   devnetNative: 9000,
   localCoprocessor: 12345,
-  staging: 12345,
+  staging: 80002, // polygonAmoy
   zwsDev: 1337,
   sepolia: 11155111,
   mainnet: 1,

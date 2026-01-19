@@ -68,6 +68,7 @@ const chainIds = {
   staging: 12345,
   zwsDev: 1337,
   mainnet: 1,
+  polygonAmoy: 80002,
   custom: 9999,
 };
 
@@ -113,6 +114,7 @@ const config: HardhatUserConfig = {
     sepolia: getChainConfig('sepolia'),
     localHostChain: getChainConfig('localHostChain'),
     mainnet: getChainConfig('mainnet'),
+    polygonAmoy: getChainConfig('polygonAmoy'),
     custom: getChainConfig('custom'),
   },
   paths: {
