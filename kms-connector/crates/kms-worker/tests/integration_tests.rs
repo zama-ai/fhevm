@@ -8,7 +8,7 @@ use alloy::{
 use connector_utils::{
     tests::{
         db::requests::{check_no_uncompleted_request_in_db, insert_rand_request},
-        setup::{DbInstance, S3Instance, TestInstanceBuilder},
+        setup::{DbInstance, S3Instance, TestInstanceBuilder, init_host_chains_acl_contracts_mock},
     },
     types::{
         GatewayEventKind, KmsGrpcResponse, KmsResponse, KmsResponseKind, db::EventType,
@@ -16,6 +16,7 @@ use connector_utils::{
     },
 };
 use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
+use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_grpc::kms::v1::{
     CrsGenResult, Empty, InitiateResharingResponse, KeyGenPreprocResult, KeyGenResult,
     PublicDecryptionResponse, PublicDecryptionResponsePayload, RequestId, UserDecryptionResponse,
@@ -30,7 +31,7 @@ use kms_worker::core::{
 use mocktail::{MockSet, server::MockServer};
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -125,7 +126,6 @@ async fn test_processing_request(event_type: EventType, already_sent: bool) -> a
 
     // Mocking Gateway
     let asserter = Asserter::new();
-
     if matches!(event_type, EventType::PublicDecryptionRequest) {
         let is_decryption_done_call_response = false;
         asserter.push_success(&is_decryption_done_call_response.abi_encode());
@@ -136,7 +136,7 @@ async fn test_processing_request(event_type: EventType, already_sent: bool) -> a
         ..Default::default()
     };
     asserter.push_success(&get_copro_call_response.abi_encode());
-    let mock_provider = ProviderBuilder::new()
+    let gateway_mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter.clone());
     info!("Gateway mock started!");
@@ -144,6 +144,17 @@ async fn test_processing_request(event_type: EventType, already_sent: bool) -> a
     // Insert request in DB to trigger kms_worker job
     let request =
         insert_rand_request(test_instance.db(), event_type, None, already_sent, None).await?;
+
+    // Mocking Host chain
+    let acl_contracts_mock = match &request {
+        GatewayEventKind::PublicDecryption(r) => init_host_chains_acl_contracts_mock(
+            r.snsCtMaterials.first().unwrap().ctHandle.as_slice(),
+        ),
+        GatewayEventKind::UserDecryption(r) => init_host_chains_acl_contracts_mock(
+            r.snsCtMaterials.first().unwrap().ctHandle.as_slice(),
+        ),
+        _ => HashMap::new(),
+    };
 
     // Mocking KMS responses
     let kms_mocks = prepare_mocks(&request, already_sent);
@@ -157,7 +168,13 @@ async fn test_processing_request(event_type: EventType, already_sent: bool) -> a
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         ..Default::default()
     };
-    let kms_worker = init_kms_worker(config, mock_provider, test_instance.db()).await?;
+    let kms_worker = init_kms_worker(
+        config,
+        gateway_mock_provider,
+        acl_contracts_mock,
+        test_instance.db(),
+    )
+    .await?;
     let cancel_token = CancellationToken::new();
     let kms_worker_task = tokio::spawn(kms_worker.start(cancel_token.clone()));
     info!("KmsWorker started!");
@@ -342,17 +359,23 @@ fn u256_to_request_id(value: U256) -> Option<RequestId> {
     })
 }
 
-async fn init_kms_worker<P: Provider + Clone + 'static>(
+async fn init_kms_worker<GP: Provider + Clone + 'static, HP: Provider + Clone + 'static>(
     config: Config,
-    provider: P,
+    gateway_provider: GP,
+    acl_contracts_mock: HashMap<u64, ACLInstance<HP>>,
     db: &Pool<Postgres>,
-) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P>>> {
+) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<GP, HP>>> {
     let kms_client = KmsClient::connect(&config).await?;
     let s3_client = reqwest::Client::new();
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
-    let s3_service = S3Service::new(&config, provider.clone(), s3_client);
-    let decryption_processor = DecryptionProcessor::new(&config, provider.clone(), s3_service);
+    let s3_service = S3Service::new(&config, gateway_provider.clone(), s3_client);
+    let decryption_processor = DecryptionProcessor::new(
+        &config,
+        gateway_provider.clone(),
+        acl_contracts_mock,
+        s3_service,
+    );
     let kms_generation_processor = KMSGenerationProcessor::new(&config);
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),
