@@ -9,9 +9,19 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::future::Future;
 use std::num::NonZeroU32;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info, instrument, warn};
+
+/// Queue information for ETA computation (TPS-based throttler)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TxQueueInfo {
+    /// Current queue size (number of items waiting)
+    pub size: usize,
+    /// Current drain rate (tokens per second)
+    pub drain_rate_tps: u32,
+}
 
 pub struct TxThrottlers {
     pub input_proof_tx_throttler: TxThrottlingSender<GatewayTxTask>,
@@ -135,6 +145,8 @@ pub struct TxThrottlingSender<T> {
     sender: mpsc::Sender<T>,
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
     soft_capacity: usize,
+    // Current TPS value (shared with worker for dynamic updates)
+    current_tps: Arc<AtomicU32>,
 }
 
 // NOTE: There must be at least one instance of this and hence the reciever for the queue channel to stay alive.
@@ -147,6 +159,8 @@ pub struct TxThrottlingWorker<T> {
     tps: u32,
     // Control channel for dynamic TPS updates (optional)
     control_rx: Option<mpsc::Receiver<u32>>,
+    // Shared current TPS value (updated on dynamic rate changes)
+    current_tps: Arc<AtomicU32>,
 }
 
 impl<T> TxThrottlingSender<T>
@@ -174,11 +188,15 @@ where
             (None, None)
         };
 
+        // Shared current TPS value (used for queue info and updated by worker)
+        let current_tps = Arc::new(AtomicU32::new(tps));
+
         let throttler = Self {
             tx_type,
             sender,
             tracker: tracker.clone(),
             soft_capacity,
+            current_tps: current_tps.clone(),
         };
 
         let worker = TxThrottlingWorker {
@@ -187,6 +205,7 @@ where
             tracker,
             tps,
             control_rx,
+            current_tps,
         };
 
         (throttler, worker, control_tx)
@@ -260,6 +279,21 @@ where
         let len = self.len().await;
         len >= self.soft_capacity
     }
+
+    /// Get the current TPS (tokens per second) drain rate.
+    /// This may be dynamically updated via admin endpoint.
+    pub fn current_tps(&self) -> u32 {
+        self.current_tps.load(Ordering::Relaxed)
+    }
+
+    /// Get queue info for ETA computation.
+    /// Returns current queue size and drain rate (TPS).
+    pub async fn get_queue_info(&self) -> TxQueueInfo {
+        TxQueueInfo {
+            size: self.len().await,
+            drain_rate_tps: self.current_tps(),
+        }
+    }
 }
 
 impl<T> TxThrottlingWorker<T>
@@ -332,6 +366,8 @@ where
                 Some(new_tps) = control_fut => {
                     info!("Throttler rate limit updated: {} TPS -> {} TPS", self.tps, new_tps);
                     self.tps = new_tps;
+                    // Update shared current_tps for queue info consumers
+                    self.current_tps.store(new_tps, Ordering::Relaxed);
                     limiter = Self::create_limiter(new_tps);
                 }
 

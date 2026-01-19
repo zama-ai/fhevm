@@ -15,12 +15,14 @@ use crate::gateway::readiness_check::readiness_throttler::{
     ReadinessSender, UserDecryptReadinessTask,
 };
 use crate::http::endpoints::v1::types::user_decrypt::UserDecryptRequestJson;
+use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
 use crate::http::utils::user_decrypt_bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
-use crate::metrics::HttpApiVersion;
+use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::{ContentHasher, Orchestrator};
+use crate::store::sql::models::req_status_enum_model::ReqStatus;
 use crate::store::sql::repositories::user_decrypt_repo::{
     UserDecryptInsertResult, UserDecryptRepository,
 };
@@ -90,11 +92,13 @@ where
     retry_after_seconds: u32,
     tx_throttler: TxThrottlingSender<GatewayTxTask>,
     user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+    retry_after_state: Arc<RetryAfterState>,
 }
 
 impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
     UserDecryptHandler<D>
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
         api_version: ApiVersion,
@@ -103,6 +107,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         retry_after_seconds: u32,
         tx_throttler: TxThrottlingSender<GatewayTxTask>,
         user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+        retry_after_state: Arc<RetryAfterState>,
     ) -> Self {
         Self {
             orchestrator,
@@ -112,6 +117,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             retry_after_seconds,
             tx_throttler,
             user_decrypt_readiness_throttler,
+            retry_after_state,
         }
     }
 
@@ -294,6 +300,36 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         // Generate a new request_id for this HTTP request (not stored)
         let request_id_for_response = uuid::Uuid::new_v4();
 
+        // Compute dynamic retry-after based on dual queue state
+        let readiness_queue_info = self.user_decrypt_readiness_throttler.get_queue_info().await;
+        let tx_queue_info = self.tx_throttler.get_queue_info().await;
+        let decrypt_queue_info = DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
+        let retry_after = self
+            .retry_after_state
+            .compute_for_decrypt_post(
+                &decrypt_queue_info,
+                true, // is_user_decrypt
+            )
+            .await;
+
+        // Record raw ETA for POST histogram metrics
+        let raw_eta_ms = self
+            .retry_after_state
+            .compute_raw_eta_ms_for_decrypt(&decrypt_queue_info, true)
+            .await;
+        observe_raw_eta_seconds(
+            RetryAfterRequestType::UserDecrypt,
+            raw_eta_ms as f64 / 1000.0,
+        );
+
+        info!(
+            req_id = %request_id_for_response,
+            int_job_id = %int_job_id,
+            ext_job_id = %assigned_ext_job_id,
+            retry_after_secs = retry_after,
+            "Computed retry-after for user decrypt POST"
+        );
+
         let response = UserDecryptPostResponseJson {
             status: "queued".to_string(),
             request_id: request_id_for_response.to_string(),
@@ -302,10 +338,10 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             },
         };
 
-        // Add Retry-After header with the configured retry value
+        // Add Retry-After header with the dynamically computed retry value
         (
             StatusCode::ACCEPTED,
-            [(header::RETRY_AFTER, self.retry_after_seconds.to_string())],
+            [(header::RETRY_AFTER, retry_after.to_string())],
             Json(response),
         )
             .into_response()
@@ -329,7 +365,6 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             .await
         {
             Ok(Some(response_model)) => {
-                use crate::store::sql::models::req_status_enum_model::ReqStatus;
                 match response_model.req_status {
                     ReqStatus::Completed => {
                         let required_threshold = self.user_decrypt_shares_threshold as usize;
@@ -411,10 +446,42 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                     | ReqStatus::Processing
                     | ReqStatus::TxInFlight
                     | ReqStatus::ReceiptReceived => {
-                        // Request is still in progress, return 202 immediately
+                        // Request is still in progress, return 202 with dynamic Retry-After header
                         info!("Request still in progress, returning queued status");
+
+                        // Compute dynamic retry-after based on current state
+                        let state_info = RequestStateInfo::new(response_model.req_status, 0, 0);
+
+                        // For Queued status, also get queue info for more accurate ETA
+                        let decrypt_queue_info = if response_model.req_status == ReqStatus::Queued {
+                            let readiness_queue_info =
+                                self.user_decrypt_readiness_throttler.get_queue_info().await;
+                            let tx_queue_info = self.tx_throttler.get_queue_info().await;
+                            Some(DecryptQueueInfo::new(readiness_queue_info, tx_queue_info))
+                        } else {
+                            None
+                        };
+
+                        let retry_after = self
+                            .retry_after_state
+                            .compute_for_decrypt_get(
+                                decrypt_queue_info.as_ref(),
+                                &state_info,
+                                true, // is_user_decrypt
+                            )
+                            .await;
+
+                        info!(
+                            req_id = %request_id,
+                            ext_job_id = %job_id,
+                            retry_after_secs = retry_after,
+                            status = ?response_model.req_status,
+                            "Computed retry-after for user decrypt GET"
+                        );
+
                         (
                             StatusCode::ACCEPTED,
+                            [(header::RETRY_AFTER, retry_after.to_string())],
                             Json(UserDecryptStatusResponseJson {
                                 status: "queued".to_string(),
                                 request_id: request_id.to_string(),

@@ -120,10 +120,53 @@ http:
     jitter_max_ms: 2000
   metrics:
     histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
-  api_retry_after_seconds: 4
+  api_retry_after_seconds: 4  # Fallback for V1 handlers
   # Enable admin endpoints for runtime configuration updates (default: false)
   # NOTE: Authentication and rate limiting should be handled by Kong in production
   enable_admin_endpoint: false
+
+  # Dynamic retry-after configuration for V2 handlers
+  # Computes Retry-After based on queue size, drain rate, and processing stage
+  retry_after:
+    # Minimum retry interval in seconds (floor)
+    min_seconds: 1
+    # Maximum retry interval in seconds (ceiling/cap)
+    # Use this to limit the maximum retry-after value (e.g., 60s or 120s for tighter bounds)
+    max_seconds: 300
+
+    # Safety margin: multiplier applied to computed ETA
+    # Formula: final_eta = computed_eta * (1 + safety_margin)
+    # Range: 0.0 to 1.0 (0% to 100% buffer)
+    # Example: 0.2 = 20% buffer, so 10s ETA becomes 12s
+    safety_margin: 0.2
+
+    # Nominal processing times per stage (used for ETA computation)
+    # These are admin-updatable at runtime via /admin/config
+    # All fields are required - no defaults in code
+    nominal_times:
+      # Expected time for readiness check (user/public decrypt only)
+      readiness_check_seconds: 4
+      # Expected processing time for input proof requests
+      input_proof_processing_seconds: 2
+      # Expected processing time for user decrypt requests
+      user_decrypt_processing_seconds: 6
+      # Expected processing time for public decrypt requests
+      public_decrypt_processing_seconds: 6
+      # Expected time for blockchain TX confirmation (in milliseconds)
+      tx_confirmation_ms: 250
+
+    # Backoff intervals for ReceiptReceived state ONLY
+    # This is the only state where we can't compute a dynamic ETA because
+    # Copro/KMS response time is unpredictable.
+    # Format: [elapsed_threshold_seconds, retry_interval_seconds]
+    # As time in ReceiptReceived increases, we back off polling frequency.
+    # NOTE: Safety margin is NOT applied to backoff intervals
+    copro_kms_backoff_intervals:
+      - [0, 4]       # 0-60s: retry every 4s (expect response soon)
+      - [60, 10]     # 60s-2m: retry every 10s
+      - [120, 30]    # 2-5m: retry every 30s
+      - [300, 60]    # 5-15m: retry every 60s
+      - [900, 300]   # 15m+: retry every 5m (likely stuck)
 
 metrics:
   endpoint: "0.0.0.0:9898"
@@ -131,6 +174,10 @@ metrics:
   pool_wait_duration_seconds_histogram_bucket: [0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 3.0]
   request_status_duration_histogram_bucket: [0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0, 3600.0]
   transaction_duration_secs_histogram_bucket: [0.01, 0.1, 0.25, 0.50, 0.75, 1.0, 1.25, 1.5, 2.0, 5.0, 10.0]
+  # Raw ETA histogram buckets (before safety margin and clamping) for POST requests only.
+  # Higher resolution at small values (1-30s) for typical requests with < 100 queue entries.
+  # Exponential (60-2400s) for full queue scenarios.
+  retry_after_raw_eta_histogram_bucket: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
 
 storage:
   sql_database_url: "postgresql://postgres:postgres@localhost:5433/relayer_db"

@@ -320,11 +320,13 @@ pub struct HttpConfig {
     pub rate_limit_post_endpoints: RateLimitConfig,
     /// HTTP metrics configuration
     pub metrics: HttpMetricsConfig,
-    /// Default retry-after seconds for queued API responses
+    /// Default retry-after seconds for queued API responses (V1 fallback)
     pub api_retry_after_seconds: u32,
     /// Enable admin endpoints for dynamic configuration updates
     #[serde(default)]
     pub enable_admin_endpoint: bool,
+    /// Dynamic retry-after configuration for V2 handlers
+    pub retry_after: super::retry_after::RetryAfterConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -337,6 +339,10 @@ pub struct MetricsConfig {
     pub pool_wait_duration_seconds_histogram_bucket: Vec<f64>,
     pub request_status_duration_histogram_bucket: Vec<f64>,
     pub transaction_duration_secs_histogram_bucket: Vec<f64>,
+    /// Histogram buckets for raw ETA (before clamping) in retry-after computation.
+    /// Higher resolution at small values for typical requests, exponential for full queue.
+    /// Example: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 2400]
+    pub retry_after_raw_eta_histogram_bucket: Vec<f64>,
 }
 
 /// Deserializes strings like "30s", "5m", "1d" into std::time::Duration.

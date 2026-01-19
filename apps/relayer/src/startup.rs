@@ -203,6 +203,13 @@ fn ensure_global_init(settings: &Settings) -> eyre::Result<&'static Registry> {
         metrics::init_statuses_metrics(&registry, settings.metrics.clone());
         metrics::init_db_metrics(&registry, settings.metrics.clone());
         metrics::init_queue_metrics(&registry);
+        metrics::init_retry_after_metrics(
+            &registry,
+            settings
+                .metrics
+                .retry_after_raw_eta_histogram_bucket
+                .clone(),
+        );
 
         registry
     });

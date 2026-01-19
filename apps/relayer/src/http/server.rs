@@ -1,6 +1,7 @@
 use crate::config::settings::HttpConfig;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::gateway::throttlers::BouncerThrottlers;
+use crate::http::admin::AdminConfigRegistry;
 use crate::http::endpoints::{
     admin, health_handler, liveness_handler,
     v1::handlers::{
@@ -13,6 +14,7 @@ use crate::http::endpoints::{
     },
     version_handler,
 };
+use crate::http::retry_after::RetryAfterState;
 use crate::http::{openapi_middleware, with_rate_limiting};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
@@ -21,10 +23,10 @@ use axum::{
     routing::{get, post},
     Extension, Router,
 };
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tracing::info;
 
 async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
@@ -59,6 +61,19 @@ where
         .parse()
         .expect("Invalid http-endpoint address");
     let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
+
+    // Create RetryAfterState directly from config
+    let retry_after_state = Arc::new(RetryAfterState::new(&config.retry_after));
+
+    // Create AdminConfigRegistry for TPS throttling (separate from retry-after)
+    let admin_registry = Arc::new(AdminConfigRegistry::new(
+        HashMap::new(),
+        bouncer_throttlers.input_proof_throttler_control_tx.clone(),
+        bouncer_throttlers.user_decrypt_throttler_control_tx.clone(),
+        bouncer_throttlers
+            .public_decrypt_throttler_control_tx
+            .clone(),
+    ));
 
     // Initialize v1 handlers
     let input_proof_handler_v1 = Arc::new(InputProofHandlerV1::new(
@@ -102,7 +117,7 @@ where
             .clone(),
     ));
 
-    // Initialize v2 handlers
+    // Initialize v2 handlers with dynamic retry-after state
     let input_proof_handler_v2 = Arc::new(InputProofHandlerV2::new(
         orchestrator.clone(),
         api_version,
@@ -112,6 +127,7 @@ where
             .tx_throttlers
             .input_proof_tx_throttler
             .clone(),
+        retry_after_state.clone(),
     ));
 
     let user_decrypt_handler_v2 = Arc::new(UserDecryptHandlerV2::new(
@@ -128,6 +144,7 @@ where
             .readiness_throttling_senders
             .user_decrypt_readiness_throttler
             .clone(),
+        retry_after_state.clone(),
     ));
 
     let public_decrypt_handler_v2 = Arc::new(PublicDecryptHandlerV2::new(
@@ -143,6 +160,7 @@ where
             .readiness_throttling_senders
             .public_decrypt_readiness_throttler
             .clone(),
+        retry_after_state.clone(),
     ));
 
     // Clone orchestrator for health endpoint before using it
@@ -180,29 +198,25 @@ where
         // Add OpenAPI documentation
         .merge(openapi_middleware());
 
-    // Always register admin endpoints, but control availability via extension
-    // Pass Some(tx) when enabled, None when disabled - handler returns 403 for None
-    if config.enable_admin_endpoint {
+    // Admin endpoints configuration
+    // When enabled, pass both registry (for TPS) and retry-after state
+    // When disabled, None is passed so handler returns 403
+    let (admin_registry_option, retry_after_option): (
+        Option<Arc<AdminConfigRegistry>>,
+        Option<Arc<RetryAfterState>>,
+    ) = if config.enable_admin_endpoint {
         info!("Admin endpoints enabled at /admin/config");
-        app = app
-            .route("/admin/config", post(admin::update_config))
-            .layer(Extension(
-                bouncer_throttlers.input_proof_throttler_control_tx,
-            ))
-            .layer(Extension(
-                bouncer_throttlers.user_decrypt_throttler_control_tx,
-            ))
-            .layer(Extension(
-                bouncer_throttlers.public_decrypt_throttler_control_tx,
-            ));
+        (Some(admin_registry), Some(retry_after_state))
     } else {
         info!("Admin endpoints disabled");
-        app = app
-            .route("/admin/config", post(admin::update_config))
-            .layer(Extension(Option::<mpsc::Sender<u32>>::None))
-            .layer(Extension(Option::<mpsc::Sender<u32>>::None))
-            .layer(Extension(Option::<mpsc::Sender<u32>>::None));
-    }
+        (None, None)
+    };
+
+    app = app
+        .route("/admin/config", post(admin::update_config))
+        .route("/admin/config", get(admin::get_config))
+        .layer(Extension(admin_registry_option))
+        .layer(Extension(retry_after_option));
 
     // Setup TCP listener and start server
     let listener = tokio::net::TcpListener::bind(http_endpoint).await.unwrap();

@@ -7,3 +7,4 @@ pub mod provider;
 pub mod selectors;
 pub mod tx_processor;
 pub mod tx_throttler;
+pub use tx_throttler::TxQueueInfo;

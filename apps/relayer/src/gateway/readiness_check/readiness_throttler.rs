@@ -13,6 +13,15 @@ use std::{fmt, future::Future};
 use tokio::sync::{mpsc, RwLock, Semaphore};
 use tracing::{error, info, instrument, warn};
 
+/// Queue information for ETA computation (concurrency-based throttler)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct ReadinessQueueInfo {
+    /// Current queue size (number of items waiting)
+    pub size: usize,
+    /// Maximum concurrency (semaphore permits)
+    pub max_concurrency: usize,
+}
+
 pub struct ReadinessThrottlers {
     pub user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
     pub user_decrypt_readiness_worker: ReadinessWorker<UserDecryptReadinessTask>,
@@ -125,6 +134,8 @@ pub struct ReadinessSender<T> {
     sender: mpsc::Sender<T>,
     tracker: Arc<RwLock<IndexMap<String, ()>>>,
     soft_capacity: usize,
+    // Maximum parallelism (stored for queue info)
+    max_parallelism: usize,
 }
 
 // READINESS WORKER (Consumer)
@@ -160,6 +171,7 @@ where
             sender,
             tracker: tracker.clone(),
             soft_capacity,
+            max_parallelism,
         };
 
         let worker = ReadinessWorker {
@@ -227,6 +239,20 @@ where
     pub async fn is_queue_full(&self) -> bool {
         let len = self.len().await;
         len >= self.soft_capacity
+    }
+
+    /// Get the maximum concurrency (semaphore permits).
+    pub fn max_concurrency(&self) -> usize {
+        self.max_parallelism
+    }
+
+    /// Get queue info for ETA computation.
+    /// Returns current queue size and max concurrency.
+    pub async fn get_queue_info(&self) -> ReadinessQueueInfo {
+        ReadinessQueueInfo {
+            size: self.len().await,
+            max_concurrency: self.max_parallelism,
+        }
     }
 }
 
