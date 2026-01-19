@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use uuid::Uuid;
 
 /// Represents a job identifier that can support different ID types for different flows.
 /// Supports UUIDv7 and SHA256-based variants for different flow types and deduplication strategies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum JobId {
     /// UUIDv7 variant - used for flows that benefit from time-ordered IDs
     /// Provides better database performance and natural chronological ordering
@@ -12,6 +12,15 @@ pub enum JobId {
     /// SHA256 hash variant - used for content-based deduplication
     /// Same input always produces same job ID, enabling efficient duplicate detection
     Sha256Hash([u8; 32]),
+}
+
+impl Debug for JobId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JobId::UuidV7(uuid) => f.debug_tuple("UuidV7").field(uuid).finish(),
+            JobId::Sha256Hash(hash) => write!(f, "Sha256Hash({})", hex::encode(hash)),
+        }
+    }
 }
 
 impl JobId {
