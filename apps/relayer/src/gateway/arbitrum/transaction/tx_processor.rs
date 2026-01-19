@@ -7,10 +7,11 @@ use crate::{
         helper::{TransactionHelper, TransactionType},
         tx_throttler::{GatewayTxTask, TxThrottlingWorker},
     },
+    logging::WorkerStep,
     orchestrator::{traits::EventDispatcher, Orchestrator, TokioEventDispatcher},
 };
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// The Processor is responsible for bridging the throttler (Queue) and the TransactionHelper (Executor).
 pub struct GatewayTxProcessor;
@@ -32,7 +33,11 @@ impl GatewayTxProcessor {
 
         // The Task Future
         let task_future = async move {
-            info!("GatewayTxProcessor started.");
+            info!(
+                step = %WorkerStep::WorkerStarted,
+                worker = "tx_processor",
+                "Worker started"
+            );
 
             // We run the consumer.
             // This function contains the infinite loop reading from the channel.
@@ -45,7 +50,11 @@ impl GatewayTxProcessor {
                 })
                 .await;
 
-            info!("GatewayTxProcessor stopped.");
+            warn!(
+                step = %WorkerStep::WorkerRestarting,
+                worker = "tx_processor",
+                "Worker stopped unexpectedly"
+            );
         };
 
         // Define Readiness (Ready immediately)
