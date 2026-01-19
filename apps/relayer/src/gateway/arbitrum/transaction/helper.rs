@@ -102,7 +102,7 @@ impl TransactionHelper {
         let transaction_start_time = Instant::now();
         let request = match self
             .tx_engine
-            .prepare_transaction(target, calldata_bytes, None)
+            .prepare_transaction(&job_id, target, calldata_bytes, None)
             .await
         {
             Ok(req) => req,
@@ -121,7 +121,7 @@ impl TransactionHelper {
 
         let receipt = match self
             .tx_engine
-            .send_raw_transaction_sync_with_retries(request)
+            .send_raw_transaction_sync_with_retries(&job_id, request)
             .await
         {
             Ok(rec) => rec,

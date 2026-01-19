@@ -21,6 +21,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     config::settings::{BlockchainRpcConfig, TxEngineConfig},
+    core::job_id::JobId,
     gateway::arbitrum::{
         parse_private_key,
         transaction::{
@@ -32,6 +33,7 @@ use crate::{
             },
         },
     },
+    logging::TxEngineStep,
     metrics,
 };
 
@@ -158,6 +160,7 @@ impl
 
     pub async fn prepare_transaction(
         &self,
+        job_id: &JobId,
         target: Address,
         calldata: Bytes,
         // TODO: Remove value with None value.
@@ -182,13 +185,18 @@ impl
             .with_input(calldata.clone())
             .with_value(value.unwrap_or_default());
 
-        let gas_limit_estimate = match self.estimate_gas(target, calldata.clone(), value).await {
+        let gas_limit_estimate = match self
+            .estimate_gas(job_id, target, calldata.clone(), value)
+            .await
+        {
             Ok(gas) => gas,
             Err(e) => {
                 // If gas estimation fails with an unrecoverable error, we must not proceed.
-                warn!(
-                    "Gas estimation failed, transaction will not be sent: {:?}",
-                    e
+                error!(
+                    int_job_id = %job_id,
+                    step = %TxEngineStep::TxFailed,
+                    error = ?e,
+                    "Gas estimation failed"
                 );
                 return Err(e);
             }
@@ -196,11 +204,20 @@ impl
         // TODO: Balance (of signer) before sending a transaction for gas with a buffer as we used in estimateGas
         request = request.with_gas_limit(gas_limit_estimate);
 
+        debug!(
+            int_job_id = %job_id,
+            step = %TxEngineStep::TxPrepared,
+            gas_limit = gas_limit_estimate,
+            target = ?target,
+            "Transaction prepared"
+        );
+
         Ok(request)
     }
 
     pub async fn estimate_gas(
         &self,
+        job_id: &JobId,
         target: Address,
         calldata: Bytes,
         value: Option<U256>,
@@ -227,9 +244,12 @@ impl
                 Err(_) => {
                     // This error is fatal. It means the semaphore was closed,
                     // which should not happen during normal operation.
-                    warn!(
-                            "RPC semaphore has been closed on estimate gas. This is a critical error: Retrying"
-                        );
+                    error!(
+                        int_job_id = %job_id,
+                        step = %TxEngineStep::TxRetrying,
+                        alert = true,
+                        "RPC semaphore closed during gas estimation"
+                    );
                     retries += 1;
                     continue;
                 }
@@ -275,7 +295,13 @@ impl
                                         message
                                     )));
                                 }
-                                warn!(retries = %retries, error = %err_msg, "Simulation failed due to revert for RPC node inconsistent state and ACL readiness: Retrying..");
+                                warn!(
+                                    int_job_id = %job_id,
+                                    step = %TxEngineStep::TxRetrying,
+                                    retries = %retries,
+                                    error = %err_msg,
+                                    "Simulation reverted due to RPC node inconsistency"
+                                );
                                 retries += 1;
                                 tokio::time::sleep(std::time::Duration::from_millis(
                                     self.ms_retry_delay,
@@ -305,7 +331,12 @@ impl
                         // This is a network/transport error. It's recoverable, and should be retried.
                         RpcError::Transport(transport_err) => {
                             metrics::track_engine_error(metrics::TransactionErrorType::Transport);
-                            warn!(error = %transport_err, "Transport error during gas estimation: Retrying");
+                            warn!(
+                                int_job_id = %job_id,
+                                step = %TxEngineStep::TxRetrying,
+                                error = %transport_err,
+                                "Transport error during gas estimation"
+                            );
                         }
                         _ => {
                             metrics::track_engine_error(metrics::TransactionErrorType::Unknown);
@@ -325,6 +356,7 @@ impl
     // TODO: Match all thoses errors code, and make a triage accordingly: https://ethereum-json-rpc.com/errors + Combine with parsing error message for get a clear triage.
     pub async fn send_raw_transaction_sync_with_retries(
         &self,
+        job_id: &JobId,
         mut tx: TransactionRequest,
     ) -> Result<AnyTransactionReceipt, GatewayTxnError> {
         let pending_receipt: AnyTransactionReceipt;
@@ -357,7 +389,12 @@ impl
                 Err(e) => {
                     // If getting the nonce fails (e.g., a transport error while fetching the
                     // initial transaction count), log it and retry the whole loop.
-                    error!(error = %e, "Couldn't aquire next nonce: Retrying");
+                    warn!(
+                        int_job_id = %job_id,
+                        step = %TxEngineStep::TxRetrying,
+                        error = %e,
+                        "Nonce acquisition failed"
+                    );
                     retries += 1;
                     // Wait a bit before the next attempt to avoid hammering the nonce manager again.
                     tokio::time::sleep(std::time::Duration::from_millis(self.ms_retry_delay)).await;
@@ -365,26 +402,38 @@ impl
                 }
             };
 
+            debug!(
+                int_job_id = %job_id,
+                step = %TxEngineStep::NonceAcquired,
+                nonce = nonce,
+                "Nonce acquired"
+            );
+
             // SETTING THE NONCE BEFORE SENDING THE TX.
             tx.set_nonce(nonce);
-
-            debug!(
-                nonce = tx.nonce,
-                "Launching transaction with nonce assigned"
-            );
 
             let _permit = match self.rpc_semaphore.acquire().await {
                 Ok(p) => p,
                 Err(_) => {
                     // This error is fatal. It means the semaphore was closed,
                     // which should not happen during normal operation.
-                    warn!(
-                            "RPC semaphore has been closed on estimate gas. This is a critical error: Retrying"
-                        );
+                    error!(
+                        int_job_id = %job_id,
+                        step = %TxEngineStep::TxRetrying,
+                        alert = true,
+                        "RPC semaphore closed during tx send"
+                    );
                     retries += 1;
                     continue;
                 }
             };
+
+            debug!(
+                int_job_id = %job_id,
+                step = %TxEngineStep::TxSending,
+                nonce = nonce,
+                "Submitting transaction"
+            );
 
             let result = self.provider.send_raw_transaction_sync(tx.clone()).await;
             // TODO: find a way to drop the permit right after the rpc call, even with the condition.
@@ -413,8 +462,11 @@ impl
                             {
                                 metrics::track_engine_error(metrics::TransactionErrorType::Nonce);
                                 warn!(
+                                    int_job_id = %job_id,
+                                    step = %TxEngineStep::TxRetrying,
                                     nonce = tx.nonce,
-                                    "Nonce too low error: {:?}, Retrying", err_msg
+                                    error = %err_msg,
+                                    "Nonce too low"
                                 );
                                 self.nonce_manager
                                     .confirm_nonce(self.sender_address(), nonce)
@@ -422,8 +474,11 @@ impl
                             } else if response_error_string.contains("nonce too high") {
                                 metrics::track_engine_error(metrics::TransactionErrorType::Nonce);
                                 warn!(
+                                    int_job_id = %job_id,
+                                    step = %TxEngineStep::TxRetrying,
                                     nonce = tx.nonce,
-                                    "Nonce too high error: {:?}, Retrying", err_msg
+                                    error = %err_msg,
+                                    "Nonce too high"
                                 );
                                 self.nonce_manager
                                     .release_nonce(self.sender_address(), nonce)
@@ -443,7 +498,13 @@ impl
                         }
                         RpcError::Transport(transport_err) => {
                             metrics::track_engine_error(metrics::TransactionErrorType::Transport);
-                            warn!(nonce = tx.nonce, error = %transport_err, "Transport error during send: Retrying");
+                            warn!(
+                                int_job_id = %job_id,
+                                step = %TxEngineStep::TxRetrying,
+                                nonce = tx.nonce,
+                                error = %transport_err,
+                                "Transport error"
+                            );
                             self.nonce_manager
                                 .release_nonce(self.sender_address(), nonce)
                                 .await;
@@ -470,10 +531,12 @@ impl
 
         let elapsed_time = format!("{:?}ms", start_time.elapsed().as_millis());
         info!(
+            int_job_id = %job_id,
+            step = %TxEngineStep::TxSent,
             elapsed_time = elapsed_time,
             nonce = tx.nonce,
-            ?pending_receipt.transaction_hash,
-            "Transaction has produced a receipt"
+            tx_hash = ?pending_receipt.transaction_hash,
+            "Transaction confirmed"
         );
         Ok(pending_receipt)
     }
