@@ -1,4 +1,6 @@
+use crate::http::utils::redact::redact;
 use config::{Config, Environment, File};
+use derivative::Derivative;
 use serde::Deserializer;
 use serde::{de::Error, Deserialize, Serialize};
 use std::collections::HashMap;
@@ -42,9 +44,12 @@ impl GatewayConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Deserialize, Clone, Derivative)]
+#[derivative(Debug)]
 pub struct BlockchainRpcConfig {
+    #[derivative(Debug(format_with = "redact"))]
     pub http_url: String,
+    #[derivative(Debug(format_with = "redact"))]
     pub read_http_url: String,
     pub chain_id: u64,
     pub ws_health_check_timeout_secs: u64,
@@ -80,7 +85,8 @@ pub enum ListenerType {
 }
 
 /// Configuration for a single listener instance
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Deserialize, Clone, Derivative)]
+#[derivative(Debug)]
 pub struct ListenerInstanceConfig {
     /// Type of listener: "subscription" (WebSocket) or "polling" (HTTP eth_getLogs)
     #[serde(rename = "type")]
@@ -88,6 +94,7 @@ pub struct ListenerInstanceConfig {
     /// URL for this listener
     /// - For subscription: ws:// or wss:// URL
     /// - For polling: http:// or https:// URL
+    #[derivative(Debug(format_with = "redact"))]
     pub url: String,
 }
 
@@ -163,23 +170,14 @@ pub struct ListenerPoolConfig {
     pub listeners: Vec<ListenerInstanceConfig>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Derivative)]
+#[derivative(Debug)]
 pub struct TxEngineConfig {
+    #[derivative(Debug(format_with = "redact"))]
     pub private_key: String,
     pub max_concurrency: u16,
     pub retry: RetrySettings,
     pub tx_throttlers: TxThrottlersConfig,
-}
-
-impl fmt::Debug for TxEngineConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TxEngineConfig")
-            .field("private_key", &"[REDACTED]")
-            .field("max_concurrency", &self.max_concurrency)
-            .field("retry", &self.retry)
-            .field("tx_throttlers", &self.tx_throttlers)
-            .finish()
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -447,9 +445,11 @@ pub struct SqlPoolConfig {
     pub max_lifetime_secs: u64,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Derivative)]
+#[derivative(Debug)]
 pub struct StorageConfig {
     /// PostgreSQL database URL for SQL storage
+    #[derivative(Debug(format_with = "redact"))]
     pub sql_database_url: String,
     /// Connection pool configuration for regular application queries
     pub app_pool: SqlPoolConfig,
@@ -457,20 +457,6 @@ pub struct StorageConfig {
     pub cron_pool: SqlPoolConfig,
     pub sql_health_check_timeout_secs: u64,
     pub cron: CronConfig,
-}
-
-impl fmt::Debug for StorageConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("StorageConfig")
-            .field("sql_database_url", &"[REDACTED]")
-            .field("app_pool", &self.app_pool)
-            .field("cron_pool", &self.cron_pool)
-            .field(
-                "sql_health_check_timeout_secs",
-                &self.sql_health_check_timeout_secs,
-            )
-            .finish()
-    }
 }
 
 impl fmt::Display for StorageConfig {
@@ -870,10 +856,10 @@ mod tests {
             debug_output
         );
 
-        // Verify the exact format: private_key: "[REDACTED]"
+        // Verify the exact format: private_key: [REDACTED]
         assert!(
-            debug_output.contains("private_key: \"[REDACTED]\""),
-            "Debug output should contain 'private_key: \"[REDACTED]\"' but got: {}",
+            debug_output.contains("private_key: [REDACTED]"),
+            "Debug output should contain 'private_key: [REDACTED]' but got: {}",
             debug_output
         );
     }
@@ -921,10 +907,10 @@ mod tests {
             debug_output
         );
 
-        // Verify the exact format: sql_database_url: "[REDACTED]"
+        // Verify the exact format: sql_database_url: [REDACTED]
         assert!(
-            debug_output.contains("sql_database_url: \"[REDACTED]\""),
-            "Debug output should contain 'sql_database_url: \"[REDACTED]\"' but got: {}",
+            debug_output.contains("sql_database_url: [REDACTED]"),
+            "Debug output should contain 'sql_database_url: [REDACTED]' but got: {}",
             debug_output
         );
     }

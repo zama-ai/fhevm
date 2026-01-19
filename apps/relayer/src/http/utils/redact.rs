@@ -2,13 +2,18 @@
 
 use std::fmt;
 
+/// Format function for derivative: completely redacts the value.
+pub fn redact<T>(_val: &T, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "[REDACTED]")
+}
+
 /// Format function for derivative: displays length instead of content.
 pub fn redact_len(val: &str, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "[len: {}]", val.len())
 }
 
 /// Format function for derivative: displays count instead of content for Vec.
-pub fn redact_count<T>(val: &Vec<T>, f: &mut fmt::Formatter) -> fmt::Result {
+pub fn redact_count<T>(val: &[T], f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "[count: {}]", val.len())
 }
 
