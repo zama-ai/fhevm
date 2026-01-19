@@ -1,5 +1,6 @@
 use crate::{
     config::settings::CronConfig,
+    logging::WorkerStep,
     store::sql::{
         client::PgClient,
         repositories::{expiry_repo::ExpiryRepository, timeout_repo::TimeoutRepository},
@@ -8,7 +9,7 @@ use crate::{
 use futures::FutureExt;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 async fn run_timeout_worker_logic(pool: PgClient, cron_config: CronConfig) {
     let repo = TimeoutRepository::new(pool, cron_config.clone());
@@ -28,16 +29,22 @@ async fn run_timeout_worker_logic(pool: PgClient, cron_config: CronConfig) {
 
         match repo.time_out_stale_requests().await {
             Ok(0) => {
-                debug!("Timeout worker tick complete - nothing timed out");
+                debug!(
+                    step = %WorkerStep::TickCompleted,
+                    worker = "timeout",
+                    "Tick complete, no requests timed out"
+                );
             }
             Ok(count) => {
                 info!(
-                    timed_out_count = count,
-                    "Timeout Worker: Moved stale requests to timed_out"
+                    step = %WorkerStep::RowsProcessed,
+                    worker = "timeout",
+                    rows = count,
+                    "Moved stale requests to timed_out"
                 );
             }
             Err(e) => {
-                error!(error = ?e, "Timeout Worker Error (Retrying in next tick)");
+                error!(error = ?e, worker = "timeout", "Database error, retrying next tick");
             }
         }
     }
@@ -48,7 +55,11 @@ pub async fn create_timeout_worker_future(pool: PgClient, cron_config: CronConfi
         let pool_clone = pool.clone();
         let cron_config_clone = cron_config.clone();
 
-        info!("Starting Timeout Worker...");
+        info!(
+            step = %WorkerStep::WorkerStarted,
+            worker = "timeout",
+            "Worker started"
+        );
 
         let result = std::panic::AssertUnwindSafe(async {
             run_timeout_worker_logic(pool_clone, cron_config_clone).await;
@@ -58,10 +69,20 @@ pub async fn create_timeout_worker_future(pool: PgClient, cron_config: CronConfi
 
         match result {
             Ok(_) => {
-                error!("Timeout Worker stopped unexpectedly. Restarting in 5 seconds...");
+                warn!(
+                    step = %WorkerStep::WorkerRestarting,
+                    worker = "timeout",
+                    delay_secs = 5,
+                    "Worker stopped unexpectedly, restarting"
+                );
             }
             Err(_) => {
-                error!("CRITICAL: Timeout Worker PANICKED! Restarting in 5 seconds...");
+                error!(
+                    step = %WorkerStep::WorkerPanicked,
+                    worker = "timeout",
+                    delay_secs = 5,
+                    "Worker panicked, restarting"
+                );
             }
         }
         sleep(Duration::from_secs(5)).await;
@@ -90,16 +111,22 @@ async fn run_expiry_worker_logic(pool: PgClient, cron_config: CronConfig) {
 
         match repo.purge_stale_data().await {
             Ok(0) => {
-                debug!("No request expired.");
+                debug!(
+                    step = %WorkerStep::TickCompleted,
+                    worker = "expiry",
+                    "Tick complete, no requests expired"
+                );
             }
             Ok(count) => {
                 info!(
-                    "Expiry Worker: Purged {} stale rows (requests/shares)",
-                    count
+                    step = %WorkerStep::RowsProcessed,
+                    worker = "expiry",
+                    rows = count,
+                    "Purged stale rows"
                 );
             }
             Err(e) => {
-                error!("Expiry Worker Error (Retrying next hour): {:?}", e);
+                error!(error = ?e, worker = "expiry", "Database error, retrying next interval");
             }
         }
     }
@@ -108,7 +135,12 @@ async fn run_expiry_worker_logic(pool: PgClient, cron_config: CronConfig) {
 pub async fn create_expiry_worker_future(pool: PgClient, cron_config: CronConfig) {
     loop {
         let pool_clone = pool.clone();
-        info!("Starting Expiry/Cleanup Worker...");
+
+        info!(
+            step = %WorkerStep::WorkerStarted,
+            worker = "expiry",
+            "Worker started"
+        );
 
         let result = std::panic::AssertUnwindSafe(async {
             run_expiry_worker_logic(pool_clone, cron_config.clone()).await;
@@ -118,10 +150,20 @@ pub async fn create_expiry_worker_future(pool: PgClient, cron_config: CronConfig
 
         match result {
             Ok(_) => {
-                error!("Expiry Worker stopped unexpectedly. Restarting in 30 seconds...");
+                warn!(
+                    step = %WorkerStep::WorkerRestarting,
+                    worker = "expiry",
+                    delay_secs = 30,
+                    "Worker stopped unexpectedly, restarting"
+                );
             }
             Err(_) => {
-                error!("CRITICAL: Expiry Worker PANICKED! Restarting in 30 seconds...");
+                error!(
+                    step = %WorkerStep::WorkerPanicked,
+                    worker = "expiry",
+                    delay_secs = 30,
+                    "Worker panicked, restarting"
+                );
             }
         }
 
