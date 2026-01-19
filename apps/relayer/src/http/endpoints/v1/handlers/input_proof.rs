@@ -10,6 +10,7 @@ use crate::core::job_id::JobId;
 use crate::gateway::arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender};
 use crate::http::utils::bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
+use crate::logging::InputProofStep;
 use crate::metrics::http::{self as http_metrics, HttpApiVersion, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::ContentHasher;
@@ -22,7 +23,7 @@ use axum::{body::Bytes, extract::FromRequest, http::Request, response::IntoRespo
 use axum::{http::StatusCode, Json};
 use std::sync::Arc;
 use tokio::sync::oneshot;
-use tracing::{error, info, instrument, span, Level};
+use tracing::{error, info, instrument, span, warn, Level};
 
 pub type InputProofResponse = AppResponse<super::super::types::input_proof::InputProofResponseJson>;
 
@@ -87,8 +88,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         let _span = span!(Level::INFO, "handle-input-req", request_id = %request_id);
 
         info!(
-            "Handling input proof request, generated request id: {}",
-            request_id
+            step = %InputProofStep::ReqReceived,
+            int_job_id = %request_id,
+            "Handling input proof v1 request"
         );
 
         let body = match Bytes::from_request(req, _state).await {
@@ -126,7 +128,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                     // No active request exists, check if queue is full and bounce if needed
                     let full = bounce_check(self.tx_throttler.clone()).await;
                     if full {
-                        info!("Input proof v1 is bounced by full queue");
+                        warn!(
+                            step = %InputProofStep::Bounced,
+                            int_job_id = %int_job_id,
+                            "Input proof v1 request bounced by full queue"
+                        );
                         return AppResponse::<()>::protocol_overloaded(
                             "relayer is currently processing too many requests",
                             &self.retry_after_seconds.to_string(),
@@ -196,12 +202,25 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             }
         };
 
+        // Extract ext_job_id from any variant for logging
+        let assigned_ext_job_id = match &insert_result {
+            InputProofInsertResult::Inserted { ext_job_id } => *ext_job_id,
+            InputProofInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
+            InputProofInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
+        };
+
         // Handle DuplicateCompleted immediately - return cached response
         if let InputProofInsertResult::DuplicateCompleted {
             accepted, response, ..
         } = insert_result
         {
-            info!("Returning cached response for duplicate completed request");
+            info!(
+                step = %InputProofStep::DedupHit,
+                req_id = %request_id,
+                ext_job_id = %assigned_ext_job_id,
+                int_job_id = %int_job_id,
+                "Returning cached response"
+            );
             if accepted {
                 if let Some(resp) = response {
                     let response_json = InputProofResponseJson::from(resp);
@@ -239,9 +258,21 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 RelayerEventData::InputProof(event_data),
             );
             let _ = self.orchestrator.dispatch_event(event).await;
-            info!("dispatched event to orchestrator to initiate processing");
+            info!(
+                step = %InputProofStep::Queued,
+                req_id = %request_id,
+                ext_job_id = %assigned_ext_job_id,
+                int_job_id = %int_job_id,
+                "Dispatched event to orchestrator"
+            );
         } else {
-            info!("Duplicate request detected, waiting for existing processing to complete");
+            info!(
+                step = %InputProofStep::DedupHit,
+                req_id = %request_id,
+                ext_job_id = %assigned_ext_job_id,
+                int_job_id = %int_job_id,
+                "Duplicate request detected"
+            );
         }
 
         let _waiting_for_response_span =

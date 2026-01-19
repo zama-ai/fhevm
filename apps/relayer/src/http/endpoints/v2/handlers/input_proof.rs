@@ -15,6 +15,7 @@ use crate::http::endpoints::v1::types::input_proof::InputProofRequestJson;
 use crate::http::retry_after::{RequestStateInfo, RetryAfterState};
 use crate::http::utils::bounce_check;
 use crate::http::{parse_and_validate, AppResponse};
+use crate::logging::InputProofStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
@@ -35,7 +36,7 @@ use axum::{
     Json,
 };
 use std::sync::Arc;
-use tracing::{error, info, instrument, span, Level};
+use tracing::{error, info, instrument, span, warn, Level};
 use uuid::Uuid;
 
 pub type InputProofResponse = AppResponse<InputProofPostResponseJson>;
@@ -168,8 +169,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         let _span = span!(Level::INFO, "handle-input-proof-post-req", request_id = %request_id);
 
         info!(
-            "Handling input proof POST request, generated request id: {}",
-            request_id
+            step = %InputProofStep::ReqReceived,
+            req_id = %request_id,
+            "Handling input proof v2 POST request"
         );
 
         let body = match Bytes::from_request(req, _state).await {
@@ -207,7 +209,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                     // No active request exists, check if queue is full and bounce if needed
                     let full = bounce_check(self.tx_throttler.clone()).await;
                     if full {
-                        info!("Input proof v2 is bounced by full queue");
+                        warn!(
+                            step = %InputProofStep::Bounced,
+                            int_job_id = %int_job_id,
+                            "Input proof v2 request bounced by full queue"
+                        );
                         return AppResponse::<()>::protocol_overloaded(
                             "relayer is currently processing too many requests",
                             &self.retry_after_seconds.to_string(),
@@ -277,9 +283,21 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 )
                 .into_response();
             }
-            info!("dispatched event to orchestrator to initiate processing");
+            info!(
+                step = %InputProofStep::Queued,
+                req_id = %request_id,
+                ext_job_id = %assigned_ext_job_id,
+                int_job_id = %int_job_id,
+                "Dispatched event to orchestrator"
+            );
         } else {
-            info!("Duplicate request detected, skipping event dispatch");
+            info!(
+                step = %InputProofStep::DedupHit,
+                req_id = %request_id,
+                ext_job_id = %assigned_ext_job_id,
+                int_job_id = %int_job_id,
+                "Duplicate request detected"
+            );
         }
 
         // Generate a new request_id for this HTTP request (not stored)
