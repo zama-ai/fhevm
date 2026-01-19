@@ -23,9 +23,11 @@ pub(crate) async fn fetch_keyset(
     }
 
     info!(tenant_api_key, "Cache miss");
+
     let Some((client_key, server_key)) = fetch_keys(pool, tenant_api_key).await? else {
         return Ok(None);
     };
+
     let key_set: KeySet = KeySet {
         client_key,
         server_key,
@@ -45,7 +47,7 @@ pub(crate) async fn fetch_keyset(
 pub async fn fetch_keys(
     pool: &PgPool,
     tenant_api_key: &String,
-) -> anyhow::Result<Option<(Option<tfhe::ClientKey>, tfhe::ServerKey)>> {
+) -> anyhow::Result<Option<(Option<tfhe::ClientKey>, crate::ServerKey)>> {
     let blob = read_keys_from_large_object(
         pool,
         tenant_api_key,
@@ -53,12 +55,29 @@ pub async fn fetch_keys(
         SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
     )
     .await?;
-    info!(bytes_len = blob.len(), "Retrieved sns_pk");
+    info!(
+        bytes_len = blob.len(),
+        "Fetched sns_pk/sks_ns bytes from LOB"
+    );
     if blob.is_empty() {
         return Ok(None);
     }
 
+    #[cfg(not(feature = "gpu"))]
     let server_key: tfhe::ServerKey = safe_deserialize_sns_key(&blob)?;
+
+    #[cfg(feature = "gpu")]
+    let server_key = {
+        let compressed_server_key: tfhe::CompressedServerKey = safe_deserialize_sns_key(&blob)?;
+        info!("Deserialized sns_pk/sks_ns to CompressedServerKey");
+
+        let server_key = compressed_server_key.decompress_to_gpu();
+        info!(
+            gpu_indexes = server_key.gpu_indexes().len(),
+            "Decompressed sns_pk/sks_ns to CudaServerKey"
+        );
+        server_key
+    };
 
     // Optionally retrieve the ClientKey for testing purposes
     let client_key = fetch_client_key(pool, tenant_api_key).await?;
