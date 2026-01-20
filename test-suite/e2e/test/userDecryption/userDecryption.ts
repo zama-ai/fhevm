@@ -57,8 +57,8 @@ describe('User decryption', function () {
           contractAddress: this.signers.alice.address, // this should be impossible, as expected by this test
         },
       ];
-      const startTimeStamp = Math.floor(Date.now() / 1000).toString();
-      const durationDays = '10'; // String for consistency
+      const startTimeStamp = Math.floor(Date.now() / 1000);
+      const durationDays = 10;
       const contractAddresses = [this.signers.alice.address]; // this should be impossible, as expected by this test
 
       // Use the new createEIP712 function
@@ -199,8 +199,8 @@ describe('User decryption', function () {
       },
     ];
     const { publicKey, privateKey } = this.instances.alice.generateKeypair();
-    const startTimeStamp = (BigInt(Math.floor(Date.now() / 1000)) - 20n * 86400n).toString();
-    const durationDays = '10'; // String for consistency
+    const startTimeStamp = Number(BigInt(Math.floor(Date.now() / 1000)) - 20n * 86400n);
+    const durationDays = 10;
     const contractAddresses = [this.contractAddress];
 
     // Use the new createEIP712 function
