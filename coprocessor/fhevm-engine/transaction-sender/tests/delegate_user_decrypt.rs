@@ -45,6 +45,14 @@ async fn insert_delegate_user_decrypt(
         transaction_id,
     );
     query.execute(pool).await?;
+    sqlx::query!(
+        "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status) VALUES ($1, $2, $3, 'pending') ON CONFLICT DO NOTHING",
+        chain_id as i64,
+        block_hash,
+        block_number as i64,
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -77,8 +85,6 @@ async fn delegate_user_decrypt_life_cycle_aux(
     let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
 
     let config = ConfigSettings {
-        delegation_block_delay: 2,
-        delegation_clear_after_n_blocks: 5,
         delegation_fallback_polling: 1000, // disable
         ..env.conf.clone()
     };
@@ -90,7 +96,6 @@ async fn delegate_user_decrypt_life_cycle_aux(
         *multichain_acl.address(),
         env.signer.clone(),
         provider.clone(),
-        provider.inner().clone(), // shared blockchain
         env.cancel_token.clone(),
         config.clone(),
         None,
@@ -141,8 +146,24 @@ async fn delegate_user_decrypt_life_cycle_aux(
     }
 
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-
-    for i in 0..(config.delegation_clear_after_n_blocks + 1) {
+    let finalization_delay = 3;
+    for i in 0..(finalization_delay + 3) {
+        if i == finalization_delay {
+            sqlx::query!(
+                "UPDATE host_chain_blocks_valid SET block_status = 'finalized' WHERE block_number = $1",
+                start_block as i64
+            )
+            .execute(&env.db_pool)
+            .await?;
+        }
+        if i == finalization_delay + 1 {
+            sqlx::query!(
+                "UPDATE host_chain_blocks_valid SET block_status = 'orphaned' WHERE block_number = $1",
+                (start_block + 1) as i64
+            )
+            .execute(&env.db_pool)
+            .await?;
+        }
         sqlx::query!(
             "SELECT pg_notify($1, $2)",
             "new_host_block",
@@ -168,20 +189,14 @@ async fn delegate_user_decrypt_life_cycle_aux(
                 .await?
                 .count
                 .unwrap_or(0);
-        if i < config.delegation_block_delay {
+        if i < finalization_delay {
             assert_eq!(present, 2);
             assert_eq!(reorg_out, 0);
             assert_eq!(on_gateway, 0);
-        } else if i == config.delegation_block_delay {
+        } else if i == finalization_delay {
             assert_eq!(present, 2);
             assert_eq!(reorg_out, 0);
             assert_eq!(on_gateway, 1);
-        } else if i == config.delegation_block_delay + 1 {
-            assert_eq!(present, 2);
-            assert_eq!(reorg_out, 1);
-            assert_eq!(on_gateway, 1);
-        } else if i > config.delegation_clear_after_n_blocks {
-            assert_eq!(present, 0);
         } else {
             assert_eq!(present, 2);
             assert_eq!(reorg_out, 1);
@@ -236,8 +251,6 @@ async fn delegate_user_decrypt_idempotent_error_call(
     let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
 
     let config = ConfigSettings {
-        delegation_block_delay: 2,
-        delegation_clear_after_n_blocks: 5,
         delegation_fallback_polling: 1000, // disable
         ..env.conf.clone()
     };
@@ -249,7 +262,6 @@ async fn delegate_user_decrypt_idempotent_error_call(
         *multichain_acl.address(),
         env.signer.clone(),
         provider.clone(),
-        provider.inner().clone(), // shared blockchain
         env.cancel_token.clone(),
         config.clone(),
         None,
@@ -302,8 +314,16 @@ async fn delegate_user_decrypt_idempotent_error_call(
     }
 
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-
-    for i in 0..(config.delegation_clear_after_n_blocks + 1) {
+    let finalization_delay = 3;
+    for i in 0..(finalization_delay + 3) {
+        if i == finalization_delay {
+            sqlx::query!(
+                "UPDATE host_chain_blocks_valid SET block_status = 'finalized' WHERE block_number = $1",
+                start_block as i64
+            )
+            .execute(&env.db_pool)
+            .await?;
+        }
         sqlx::query!(
             "SELECT pg_notify($1, $2)",
             "new_host_block",
@@ -337,16 +357,10 @@ async fn delegate_user_decrypt_idempotent_error_call(
         .count
         .unwrap_or(0);
         error!("{i} {present} {on_gateway} {reorg_out} {error}");
-        if i < config.delegation_block_delay {
+        if i < finalization_delay {
             assert_eq!(present, 2);
             assert_eq!(reorg_out, 0);
             assert_eq!(on_gateway, 0);
-        } else if i == config.delegation_block_delay {
-            assert_eq!(present, 2);
-            assert_eq!(reorg_out, 0);
-            assert_eq!(on_gateway, 2);
-        } else if i > config.delegation_clear_after_n_blocks {
-            assert_eq!(present, 0);
         } else {
             assert_eq!(present, 2);
             assert_eq!(reorg_out, 0);
@@ -367,8 +381,6 @@ async fn stop_retrying_delegation_on_gw_config_error(
 ) -> anyhow::Result<()> {
     let config_error_mode: u8 = 1;
     let base_conf = ConfigSettings {
-        delegation_block_delay: 0,
-        delegation_clear_after_n_blocks: 5,
         delegation_fallback_polling: 1,
         delegation_max_retry: 3,
         ..Default::default()
@@ -405,7 +417,6 @@ async fn stop_retrying_delegation_on_gw_config_error(
         *multichain_acl.address(),
         env.signer.clone(),
         provider.clone(),
-        provider.inner().clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
@@ -451,13 +462,18 @@ async fn stop_retrying_delegation_on_gw_config_error(
     let mut attempts = 0;
     let row = loop {
         sqlx::query!(
+            "UPDATE host_chain_blocks_valid SET block_status = 'finalized' WHERE block_number = $1",
+            start_block as i64
+        )
+        .execute(&env.db_pool)
+        .await?;
+        sqlx::query!(
             "SELECT pg_notify($1, $2)",
             "new_host_block",
             start_block.to_string()
         )
         .execute(&env.db_pool)
         .await?;
-
         let row = sqlx::query!(
             "SELECT on_gateway, gateway_nb_attempts, gateway_last_error
              FROM delegate_user_decrypt
