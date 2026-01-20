@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE host_chain_blocks_valid SET block_status = 'finalized' WHERE block_number = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e8e1a20c2a71d8658815aed49df37fe3e7ad9a10416da01bfc4a885f78199532"
+}

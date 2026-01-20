@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE delegate_user_decrypt\n            SET reorg_out = true\n            WHERE key = ANY($1)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8e2e1efee7317633a7c75aa4e750db5583341a7a5fda81949d49029db7468829"
+}

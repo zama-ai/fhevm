@@ -114,7 +114,6 @@ async fn allow_call(
         *multichain_acl.address(),
         env.signer.clone(),
         provider.clone(),
-        provider.inner().clone(), // shared blockchain
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
@@ -234,7 +233,6 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
         *multichain_acl.address(),
         env.signer.clone(),
         provider.clone(),
-        provider.inner().clone(), // shared blockchain
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
@@ -327,7 +325,6 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
         *multichain_acl.address(),
         env.signer.clone(),
         provider.clone(),
-        provider.inner().clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
@@ -429,7 +426,6 @@ async fn stop_retrying_allow_handle_on_gw_config_error(
         *multichain_acl.address(),
         env.signer.clone(),
         provider.clone(),
-        provider.inner().clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
         None,

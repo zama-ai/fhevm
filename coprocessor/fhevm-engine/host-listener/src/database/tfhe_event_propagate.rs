@@ -495,19 +495,43 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         block_summary: &BlockSummary,
+        finalized: bool,
     ) -> Result<(), SqlxError> {
+        let status = if finalized { "finalized" } else { "pending" };
+        // 1. Insert if not exists (never overwrites existing row)
         sqlx::query!(
             r#"
-            INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number)
-            VALUES ($1, $2, $3)
+            INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+            VALUES ($1, $2, $3, $4)
             ON CONFLICT (chain_id, block_hash) DO NOTHING;
             "#,
             self.chain_id.as_i64(),
             block_summary.hash.to_vec(),
             block_summary.number as i64,
+            status,
         )
         .execute(tx.deref_mut())
         .await?;
+
+        // 2. Update to finalized or orphan if needed
+        if finalized {
+            sqlx::query!(
+                r#"
+                UPDATE host_chain_blocks_valid
+                SET block_status = CASE
+                    WHEN block_hash = $2
+                        THEN 'finalized'
+                        ELSE 'orphaned'
+                    END
+                WHERE block_status = 'pending' AND block_number = $3 AND chain_id = $1
+                "#,
+                self.chain_id.as_i64(),
+                block_summary.hash.to_vec(),
+                block_summary.number as i64,
+            )
+            .execute(tx.deref_mut())
+            .await?;
+        }
         Ok(())
     }
 
@@ -837,12 +861,9 @@ impl Database {
 
     pub async fn block_notification(
         &mut self,
-        last_block_number: u64,
     ) -> Result<(), SqlxError> {
         let query = sqlx::query!(
-            "SELECT pg_notify($1, $2)",
-            "new_host_block",
-            last_block_number.to_string()
+            "NOTIFY new_host_block",
         );
         query.execute(&self.pool().await).await?;
         Ok(())

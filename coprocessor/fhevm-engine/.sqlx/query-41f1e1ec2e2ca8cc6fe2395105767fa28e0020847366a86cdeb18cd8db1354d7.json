@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE host_chain_blocks_valid SET block_status = 'orphaned' WHERE block_number = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "41f1e1ec2e2ca8cc6fe2395105767fa28e0020847366a86cdeb18cd8db1354d7"
+}
