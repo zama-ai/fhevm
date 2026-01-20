@@ -9,7 +9,7 @@ import { task, types } from 'hardhat/config';
 
 // Verify a protocol staking contract
 // Example usage:
-// npx hardhat task:verifyProtocolStaking --proxyAddress 0x1234567890123456789012345678901234567890 --network testnet
+// npx hardhat task:verifyProtocolStaking --proxy-address 0x1234567890123456789012345678901234567890 --network testnet
 task('task:verifyProtocolStaking')
   .addParam('proxyAddress', 'The address of the protocol staking proxy contract to verify', '', types.string)
   .setAction(async function ({ proxyAddress }, hre) {
@@ -61,7 +61,7 @@ task('task:verifyAllProtocolStakingContracts').setAction(async function (_, hre)
 
 // Verify a single operator staking contract by proxy address
 // Example usage:
-// npx hardhat task:verifyOperatorStaking --proxyAddress 0x1234567890123456789012345678901234567890 --network testnet
+// npx hardhat task:verifyOperatorStaking --proxy-address 0x1234567890123456789012345678901234567890 --network testnet
 task('task:verifyOperatorStaking')
   .addParam('proxyAddress', 'The address of the operator staking proxy contract to verify', '', types.string)
   .setAction(async function ({ proxyAddress }, hre) {
@@ -102,7 +102,7 @@ task('task:verifyAllOperatorStakingContracts').setAction(async function (_, hre)
   }
 });
 
-// Verify a operator rewarder contract
+// Verify an operator rewarder contract
 // Example usage:
 // npx hardhat task:verifyOperatorRewarder --network testnet
 task('task:verifyOperatorRewarder').setAction(async function (_, hre) {
@@ -114,17 +114,21 @@ task('task:verifyOperatorRewarder').setAction(async function (_, hre) {
   const operatorRewarderAddress = (await getAllOperatorRewarderAddresses(hre))[0];
 
   // Get the constructor arguments for the first KMS operator staking contract
-  const kmsOwnerAddress = getRequiredEnvVar(`OPERATOR_STAKING_KMS_OWNER_ADDRESS_0`);
-
-  // Get the protocol staking KMS proxy address
+  const kmsOwnerAddress = getRequiredEnvVar(`OPERATOR_REWARDER_KMS_BENEFICIARY_0`);
   const protocolStakingKMSProxyAddress = await getProtocolStakingKMSProxyAddress(hre);
-
-  // Get the first operator staking address
   const operatorStakingAddress = (await getAllOperatorStakingAddresses(hre))[0];
+  const kmsInitialMaxFee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_MAX_FEE_0`));
+  const kmsInitialFee = parseInt(getRequiredEnvVar(`OPERATOR_REWARDER_KMS_FEE_0`));
 
   console.log(`Verifying operator rewarder contract at ${operatorRewarderAddress}...\n`);
   await run('verify:verify', {
     address: operatorRewarderAddress,
-    constructorArguments: [kmsOwnerAddress, protocolStakingKMSProxyAddress, operatorStakingAddress],
+    constructorArguments: [
+      kmsOwnerAddress,
+      protocolStakingKMSProxyAddress,
+      operatorStakingAddress,
+      kmsInitialMaxFee,
+      kmsInitialFee,
+    ],
   });
 });

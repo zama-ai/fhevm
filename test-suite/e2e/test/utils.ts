@@ -113,7 +113,7 @@ export const userDecryptSingleHandle = async (
     },
   ];
   const startTimeStamp = Math.floor(Date.now() / 1000);
-  const durationDays = 10;
+  const durationDays = 10; // Relayer-sdk expects numbers from now on
   const contractAddresses = [contractAddress];
 
   // Use the new createEIP712 function

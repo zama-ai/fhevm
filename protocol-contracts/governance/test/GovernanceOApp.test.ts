@@ -354,4 +354,142 @@ describe('GovernanceOApp Test', function () {
 
         expect(BigInt(await gatewayConfigMock.value())).to.equal(777n)
     })
+
+    it('should change Safe owners and threshold via remote proposal', async function () {
+        const balance = ethers.utils.hexStripZeros(ethers.utils.parseEther('100').toHexString())
+        await ethers.provider.send('hardhat_setBalance', [governanceOAppSender.address, balance]) // prefund the governanceOAppSender contract
+
+        const signers = await ethers.getSigners()
+        const newOwner = signers[2] // Use third signer as the new owner to add
+
+        // Verify initial state: Safe has 1 owner (owner) with threshold 1
+        const initialOwners = await safeProxy.getOwners()
+        const initialThreshold = await safeProxy.getThreshold()
+        expect(initialOwners.length).to.equal(1)
+        expect(initialOwners[0]).to.equal(owner.address)
+        expect(BigInt(initialThreshold)).to.equal(1n)
+
+        const options = Options.newOptions().addExecutorLzReceiveOption(150000, 0).toHex().toString()
+
+        await governanceOAppSender.sendRemoteProposal(
+            [safeProxy.address],
+            [0n],
+            ['addOwnerWithThreshold(address,uint256)'],
+            [ethers.utils.defaultAbiCoder.encode(['address', 'uint256'], [newOwner.address, 2n])],
+            [0n],
+            options
+        )
+
+        // Verify the new owner was added and threshold was updated
+        const ownersAfterAdd = await safeProxy.getOwners()
+        const thresholdAfterAdd = await safeProxy.getThreshold()
+        expect(ownersAfterAdd.length).to.equal(2)
+        expect(ownersAfterAdd).to.include(owner.address)
+        expect(ownersAfterAdd).to.include(newOwner.address)
+        expect(BigInt(thresholdAfterAdd)).to.equal(2n)
+
+        // Step 2: Change the threshold back to 1
+        await governanceOAppSender.sendRemoteProposal(
+            [safeProxy.address],
+            [0n],
+            ['changeThreshold(uint256)'],
+            [ethers.utils.defaultAbiCoder.encode(['uint256'], [1n])],
+            [0n],
+            options
+        )
+
+        // Verify the threshold was changed
+        const thresholdAfterChange = await safeProxy.getThreshold()
+        expect(BigInt(thresholdAfterChange)).to.equal(1n)
+
+        // Step 3: Swap an owner (replace owner with a new address)
+        const anotherNewOwner = signers[3]
+        // swapOwner(address prevOwner, address oldOwner, address newOwner)
+        // In the Safe linked list, for owner at index 0, prevOwner is the SENTINEL_OWNERS (0x1)
+        const SENTINEL_OWNERS = '0x0000000000000000000000000000000000000001'
+
+        await governanceOAppSender.sendRemoteProposal(
+            [safeProxy.address],
+            [0n],
+            ['swapOwner(address,address,address)'],
+            [
+                ethers.utils.defaultAbiCoder.encode(
+                    ['address', 'address', 'address'],
+                    [SENTINEL_OWNERS, newOwner.address, anotherNewOwner.address]
+                ),
+            ],
+            [0n], // Operation.Call
+            options
+        )
+
+        // Verify the owner was swapped
+        const ownersAfterSwap = await safeProxy.getOwners()
+        expect(ownersAfterSwap.length).to.equal(2)
+        expect(ownersAfterSwap).to.include(owner.address)
+        expect(ownersAfterSwap).to.include(anotherNewOwner.address)
+        expect(ownersAfterSwap).to.not.include(newOwner.address)
+
+        // Step 4: Remove an owner (remove anotherNewOwner, keeping only original owner)
+        // removeOwner(address prevOwner, address owner, uint256 _threshold)
+        // Since anotherNewOwner is at the head (after SENTINEL), prevOwner is SENTINEL_OWNERS
+        await governanceOAppSender.sendRemoteProposal(
+            [safeProxy.address],
+            [0n],
+            ['removeOwner(address,address,uint256)'],
+            [
+                ethers.utils.defaultAbiCoder.encode(
+                    ['address', 'address', 'uint256'],
+                    [SENTINEL_OWNERS, anotherNewOwner.address, 1n]
+                ),
+            ],
+            [0n], // Operation.Call
+            options
+        )
+
+        // Verify the owner was removed
+        const finalOwners = await safeProxy.getOwners()
+        const finalThreshold = await safeProxy.getThreshold()
+        expect(finalOwners.length).to.equal(1)
+        expect(finalOwners[0]).to.equal(owner.address)
+        expect(BigInt(finalThreshold)).to.equal(1n)
+    })
+
+    it('should batch multiple Safe owner changes in a single remote proposal', async function () {
+        const balance = ethers.utils.hexStripZeros(ethers.utils.parseEther('100').toHexString())
+        await ethers.provider.send('hardhat_setBalance', [governanceOAppSender.address, balance]) // prefund the governanceOAppSender contract
+
+        const signers = await ethers.getSigners()
+        const newOwner1 = signers[2]
+        const newOwner2 = signers[3]
+
+        // Verify initial state
+        const initialOwners = await safeProxy.getOwners()
+        expect(initialOwners.length).to.equal(1)
+        expect(initialOwners[0]).to.equal(owner.address)
+
+        const options = Options.newOptions().addExecutorLzReceiveOption(250000, 0).toHex().toString()
+
+        // Batch: Add two owners in a single proposal
+        // First add newOwner1 with threshold 1, then add newOwner2 with threshold 2
+        await governanceOAppSender.sendRemoteProposal(
+            [safeProxy.address, safeProxy.address],
+            [0n, 0n],
+            ['addOwnerWithThreshold(address,uint256)', 'addOwnerWithThreshold(address,uint256)'],
+            [
+                ethers.utils.defaultAbiCoder.encode(['address', 'uint256'], [newOwner1.address, 1n]),
+                ethers.utils.defaultAbiCoder.encode(['address', 'uint256'], [newOwner2.address, 2n]),
+            ],
+            [0n, 0n], // Both are Operation.Call
+            options
+        )
+
+        // Verify both owners were added and threshold is 2
+        const finalOwners = await safeProxy.getOwners()
+        const finalThreshold = await safeProxy.getThreshold()
+        expect(finalOwners.length).to.equal(3)
+        expect(finalOwners).to.include(owner.address)
+        expect(finalOwners).to.include(newOwner1.address)
+        expect(finalOwners).to.include(newOwner2.address)
+        expect(BigInt(finalThreshold)).to.equal(2n)
+    })
 })

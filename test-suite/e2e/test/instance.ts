@@ -8,6 +8,7 @@ const kmsAdd = process.env.KMS_VERIFIER_CONTRACT_ADDRESS;
 const aclAdd = process.env.ACL_CONTRACT_ADDRESS;
 const inputAdd = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS;
 const gatewayChainID = +process.env.CHAIN_ID_GATEWAY!;
+const hostChainID = +process.env.CHAIN_ID_HOST!;
 const verifyingContractAddressDecryption = process.env.DECRYPTION_ADDRESS!;
 const verifyingContractAddressInputVerification = process.env.INPUT_VERIFICATION_ADDRESS!;
 const relayerUrl = process.env.RELAYER_URL!;
@@ -34,8 +35,8 @@ export const createInstance = async () => {
     aclContractAddress: aclAdd,
     network: network.config.url,
     relayerUrl: relayerUrl,
-    gatewayChainId: gatewayChainID,
-    chainId: network.config.chainId!,
+    gatewayChainId: Number(gatewayChainID),
+    chainId: Number(hostChainID),
   });
   return instance;
 };

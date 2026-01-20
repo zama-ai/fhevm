@@ -6,7 +6,7 @@ ARG RUST_IMAGE_VERSION
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 # The profile used to run `cargo build`
-ARG LTO_RELEASE=release
+ARG CARGO_PROFILE=release
 
 # Use root user for build stage
 USER root
@@ -23,15 +23,18 @@ COPY kms-connector ./kms-connector
 # Build with improved caching
 WORKDIR /app/kms-connector
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/app/kms-connector/target,sharing=locked \
     git config --global --add safe.directory /app && \
-    cargo build --profile=${LTO_RELEASE} -p tx-sender
+    cargo fetch && \
+    cargo build --profile=${CARGO_PROFILE} -p tx-sender && \
+    cp target/${CARGO_PROFILE}/tx-sender /tmp/tx-sender
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder --chown=fhevm:fhevm /app/kms-connector/target/release/tx-sender /app/kms-connector/bin/tx-sender
+COPY --from=builder --chown=fhevm:fhevm /tmp/tx-sender /app/kms-connector/bin/tx-sender
 
 USER fhevm:fhevm
 
