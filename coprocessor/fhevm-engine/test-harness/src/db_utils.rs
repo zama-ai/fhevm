@@ -138,6 +138,9 @@ pub async fn setup_test_user(
     pool: &sqlx::PgPool,
     with_sns_pk: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let gpu_enabled = cfg!(feature = "gpu");
+    info!(gpu_enabled, "Setting up test user...");
+
     let (sks, cks, pks, pp, sns_pk) = if !cfg!(feature = "gpu") {
         (
             "../fhevm-keys/sks",
@@ -152,7 +155,7 @@ pub async fn setup_test_user(
             "../fhevm-keys/gpu-cks",
             "../fhevm-keys/gpu-pks",
             "../fhevm-keys/gpu-pp",
-            "../fhevm-keys/sns_pk",
+            "../fhevm-keys/gpu-csks",
         )
     };
     let sks = tokio::fs::read(sks).await.expect("can't read sks key");
