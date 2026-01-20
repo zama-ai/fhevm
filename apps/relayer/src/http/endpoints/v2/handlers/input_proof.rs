@@ -71,7 +71,7 @@ fn classify_error(error_msg: &str) -> (StatusCode, serde_json::Value) {
         ),
         RevertReason::InvalidSignature => (
             StatusCode::BAD_REQUEST,
-            RelayerV2ApiError400NoDetails::invalid_signature(error_msg),
+            RelayerV2ApiError400NoDetails::invalid_signature(),
         ),
         RevertReason::Unknown => (
             StatusCode::INTERNAL_SERVER_ERROR,

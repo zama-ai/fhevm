@@ -103,10 +103,14 @@ impl RelayerV2ApiError400NoDetails {
         .unwrap()
     }
 
-    pub fn invalid_signature(message: &str) -> Value {
-        serde_json::to_value(RelayerV2ApiError400NoDetails {
-            label: "invalid_signature".to_string(),
-            message: message.to_string(),
+    pub fn invalid_signature() -> Value {
+        serde_json::to_value(RelayerV2ApiError400WithDetails {
+            label: "validation_failed".to_string(),
+            message: "Validation failed for 1 field(s)".to_string(),
+            details: vec![RelayerV2ErrorDetail {
+                field: "signature".to_string(),
+                issue: "Signature is invalid".to_string(),
+            }],
         })
         .unwrap()
     }
