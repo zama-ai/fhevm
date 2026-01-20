@@ -2,22 +2,20 @@
 
 Utilities for checking FHEVM protocol contract configurations.
 
-## getCurrentPausers
-
 Returns the current set of active pausers for PauserSet contracts on Ethereum and Gateway chains by analyzing on-chain events.
 
-### Prerequisites
+## Prerequisites
 
 - Node.js (v18+)
 - npm
 
-### Installation
+## Installation
 
 ```bash
 npm install
 ```
 
-### Configuration
+## Configuration
 
 Create a `.env` file based on `.env.example`:
 
@@ -25,22 +23,16 @@ Create a `.env` file based on `.env.example`:
 cp .env.example .env
 ```
 
-Edit `.env` with your values:
+## Available scripts
+
+Currently, most useful scripts are:
 
 ```
-PAUSER_SET_ETHEREUM="0xbBfE1680b4a63ED05f7F80CE330BED7C992A586C"
-PAUSER_SET_GATEWAY="0x571ecb596fCc5c840DA35CbeCA175580db50ac1b"
-RPC_ETHEREUM="https://ethereum-rpc.publicnode.com"
-RPC_GATEWAY="<your-gateway-rpc-url>"
+[*] get-current-pausers
 ```
+### getCurrentPausers
 
-### Usage
-
-```bash
-node utils/getCurrentPausers.js
-```
-
-Or using npm:
+#### Usage
 
 ```bash
 npm run get-current-pausers
@@ -53,7 +45,7 @@ The script will:
 4. Compute the current set of active pausers
 5. Display a summary comparing pausers across chains
 
-### Example Output
+#### Example Output
 
 ```
 [Ethereum]
