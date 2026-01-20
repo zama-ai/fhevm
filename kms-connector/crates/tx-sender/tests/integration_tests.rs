@@ -9,10 +9,7 @@ use connector_utils::{
             insert_rand_prep_keygen_response, insert_rand_public_decrypt_response,
             insert_rand_user_decrypt_response,
         },
-        setup::{
-            CHAIN_ID, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY, KMS_GENERATION_MOCK_ADDRESS,
-            TestInstance, TestInstanceBuilder,
-        },
+        setup::{CHAIN_ID, DEPLOYER_PRIVATE_KEY, TestInstance, TestInstanceBuilder},
     },
     types::db::OperationStatus,
 };
@@ -366,8 +363,11 @@ async fn start_test_tx_sender(
 
     let tx_sender_inner = TransactionSenderInner::new(
         provider.clone(),
-        DecryptionInstance::new(DECRYPTION_MOCK_ADDRESS, provider.clone()),
-        KMSGenerationInstance::new(KMS_GENERATION_MOCK_ADDRESS, provider),
+        DecryptionInstance::new(
+            *test_instance.decryption_contract().address(),
+            provider.clone(),
+        ),
+        KMSGenerationInstance::new(*test_instance.kms_generation_contract().address(), provider),
         TransactionSenderInnerConfig {
             tx_retries: 3,
             tx_retry_interval: Duration::from_millis(100),
