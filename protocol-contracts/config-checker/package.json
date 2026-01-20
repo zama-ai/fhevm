@@ -1,0 +1,13 @@
+{
+  "name": "config-checker",
+  "version": "1.0.0",
+  "description": "FHEVM protocol contract configuration checker utilities",
+  "scripts": {
+    "get-deployment-block": "node utils/get-deployment-block.js",
+    "get-current-pausers": "node utils/getCurrentPausers.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "ethers": "^6.0.0"
+  }
+}
