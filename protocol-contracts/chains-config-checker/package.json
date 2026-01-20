@@ -1,0 +1,13 @@
+{
+  "name": "chains-config-checker",
+  "version": "1.0.0",
+  "description": "FHEVM onchain configuration checker utilities",
+  "scripts": {
+    "get-deployment-block": "node utils/get-deployment-block.js",
+    "get-current-pausers": "node utils/get-current-pausers.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "ethers": "^6.0.0"
+  }
+}
