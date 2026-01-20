@@ -15,6 +15,15 @@ pub const SELECTOR_INSUFFICIENT_ALLOWANCE: &str = "0xfb8f41b2";
 /// InvalidUserSignature - Custom error from contracts/interfaces/IDecryption.sol
 pub const SELECTOR_INVALID_SIGNATURE: &str = "0x2a873d27";
 
+/// ECDSAInvalidSignature() - OpenZeppelin ECDSA invalid signature
+pub const SELECTOR_ECDSA_INVALID_SIGNATURE: &str = "0xf645eedf";
+
+/// ECDSAInvalidSignatureLength(uint256) - OpenZeppelin ECDSA invalid signature length
+pub const SELECTOR_ECDSA_INVALID_SIGNATURE_LENGTH: &str = "0xfce698f7";
+
+/// ECDSAInvalidSignatureS(bytes32) - OpenZeppelin ECDSA invalid signature S value
+pub const SELECTOR_ECDSA_INVALID_SIGNATURE_S: &str = "0xd78bce0c";
+
 // ============================================================================
 // Revert Parser
 // ============================================================================
@@ -75,12 +84,18 @@ pub fn extract_revert_selector(message: &str) -> Option<String> {
 /// - 0xe450d38c: ERC20InsufficientBalance (OpenZeppelin ERC20)
 /// - 0xfb8f41b2: ERC20InsufficientAllowance (OpenZeppelin ERC20)
 /// - 0x2a873d27: InvalidUserSignature (contracts/interfaces/IDecryption.sol)
+/// - 0xf645eedf: ECDSAInvalidSignature (OpenZeppelin ECDSA)
+/// - 0xfce698f7: ECDSAInvalidSignatureLength (OpenZeppelin ECDSA)
+/// - 0xd78bce0c: ECDSAInvalidSignatureS (OpenZeppelin ECDSA)
 pub fn classify_revert_selector(selector: &str) -> RevertReason {
     match selector {
         SELECTOR_ENFORCED_PAUSE => RevertReason::ContractPaused,
         SELECTOR_INSUFFICIENT_BALANCE => RevertReason::InsufficientBalance,
         SELECTOR_INSUFFICIENT_ALLOWANCE => RevertReason::InsufficientAllowance,
-        SELECTOR_INVALID_SIGNATURE => RevertReason::InvalidSignature,
+        SELECTOR_INVALID_SIGNATURE
+        | SELECTOR_ECDSA_INVALID_SIGNATURE
+        | SELECTOR_ECDSA_INVALID_SIGNATURE_LENGTH
+        | SELECTOR_ECDSA_INVALID_SIGNATURE_S => RevertReason::InvalidSignature,
         _ => RevertReason::Unknown,
     }
 }
@@ -171,6 +186,30 @@ mod tests {
     fn test_classify_revert_invalid_signature() {
         assert_eq!(
             classify_revert_selector(SELECTOR_INVALID_SIGNATURE),
+            RevertReason::InvalidSignature
+        );
+    }
+
+    #[test]
+    fn test_classify_revert_ecdsa_invalid_signature() {
+        assert_eq!(
+            classify_revert_selector(SELECTOR_ECDSA_INVALID_SIGNATURE),
+            RevertReason::InvalidSignature
+        );
+    }
+
+    #[test]
+    fn test_classify_revert_ecdsa_invalid_signature_length() {
+        assert_eq!(
+            classify_revert_selector(SELECTOR_ECDSA_INVALID_SIGNATURE_LENGTH),
+            RevertReason::InvalidSignature
+        );
+    }
+
+    #[test]
+    fn test_classify_revert_ecdsa_invalid_signature_s() {
+        assert_eq!(
+            classify_revert_selector(SELECTOR_ECDSA_INVALID_SIGNATURE_S),
             RevertReason::InvalidSignature
         );
     }
