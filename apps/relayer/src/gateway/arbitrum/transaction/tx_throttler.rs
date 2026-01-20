@@ -22,6 +22,8 @@ pub struct TxQueueInfo {
     pub size: usize,
     /// Current drain rate (tokens per second)
     pub drain_rate_tps: u32,
+    /// Position in queue (0-indexed, None if not in queue or request will join at end)
+    pub position: Option<usize>,
 }
 
 pub struct TxThrottlers {
@@ -304,10 +306,22 @@ where
 
     /// Get queue info for ETA computation.
     /// Returns current queue size and drain rate (TPS).
+    /// Position is None since we don't know which specific request this is for.
     pub async fn get_queue_info(&self) -> TxQueueInfo {
         TxQueueInfo {
             size: self.len().await,
             drain_rate_tps: self.current_tps(),
+            position: None,
+        }
+    }
+
+    /// Get queue info for a specific request ID.
+    /// Returns current queue size, drain rate (TPS), and position if request is in queue.
+    pub async fn get_queue_info_for_request(&self, request_id: &str) -> TxQueueInfo {
+        TxQueueInfo {
+            size: self.len().await,
+            drain_rate_tps: self.current_tps(),
+            position: self.get_position(request_id).await,
         }
     }
 }

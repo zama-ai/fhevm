@@ -97,6 +97,7 @@ mod tests {
         let info = TxQueueInfo {
             size: 100,
             drain_rate_tps: 20,
+            position: None,
         };
         assert_eq!(info.size, 100);
         assert_eq!(info.drain_rate_tps, 20);
@@ -107,6 +108,7 @@ mod tests {
         let info = ReadinessQueueInfo {
             size: 50,
             max_concurrency: 250,
+            position: None,
         };
         assert_eq!(info.size, 50);
         assert_eq!(info.max_concurrency, 250);
@@ -117,10 +119,12 @@ mod tests {
         let readiness = ReadinessQueueInfo {
             size: 50,
             max_concurrency: 250,
+            position: None,
         };
         let tx = TxQueueInfo {
             size: 100,
             drain_rate_tps: 20,
+            position: None,
         };
         let info = DecryptQueueInfo::new(readiness, tx);
         assert_eq!(info.readiness.size, 50);
@@ -132,6 +136,7 @@ mod tests {
         let tx = TxQueueInfo {
             size: 100,
             drain_rate_tps: 20,
+            position: None,
         };
         let info = RequestQueueInfo::input_proof(tx);
 
@@ -146,10 +151,12 @@ mod tests {
         let readiness = ReadinessQueueInfo {
             size: 50,
             max_concurrency: 250,
+            position: None,
         };
         let tx = TxQueueInfo {
             size: 100,
             drain_rate_tps: 20,
+            position: None,
         };
         let info = RequestQueueInfo::user_decrypt(readiness, tx);
 
@@ -164,10 +171,12 @@ mod tests {
         let readiness = ReadinessQueueInfo {
             size: 30,
             max_concurrency: 250,
+            position: None,
         };
         let tx = TxQueueInfo {
             size: 80,
             drain_rate_tps: 25,
+            position: None,
         };
         let info = RequestQueueInfo::public_decrypt(readiness, tx);
 

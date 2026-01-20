@@ -8,6 +8,33 @@ use crate::http::retry_after::queue_info::{
 };
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 
+// ========== Decrypt Queue Stage ==========
+
+/// Where a decrypt request currently is in the dual-queue system.
+/// This clarifies which ETA formula applies during the Processing state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DecryptStage {
+    /// Has position in readiness queue (not yet checked for readiness)
+    InReadinessQueue,
+    /// Out of readiness queue, not yet in TX queue (being checked)
+    ProcessingReadiness,
+    /// Has position in TX queue (waiting for transaction submission)
+    InTxQueue,
+}
+
+/// Determine which stage a decrypt request is in based on queue positions.
+fn get_decrypt_stage(info: &DecryptQueueInfo) -> DecryptStage {
+    if info.readiness.position.is_some() {
+        DecryptStage::InReadinessQueue
+    } else if info.tx.position.is_some() {
+        DecryptStage::InTxQueue
+    } else {
+        DecryptStage::ProcessingReadiness
+    }
+}
+
+// ========== Request State Info ==========
+
 /// Request state info for GET request ETA computation.
 #[derive(Debug, Clone, Copy)]
 pub struct RequestStateInfo {
@@ -140,24 +167,31 @@ impl RetryAfterState {
         let raw_eta_ms = match queue_info {
             RequestQueueInfo::InputProof(tx_info) => {
                 let nominal_processing_ms = self.nominal_input_proof_ms().await;
-                compute_tx_queue_wait_ms(tx_info) + nominal_processing_ms + nominal_tx_ms
+                let nominal_tx_confirmation_ms = nominal_tx_ms;
+
+                // Formula: tx_wait_ms + nominal_processing_ms + nominal_tx_confirmation_ms
+                compute_tx_queue_wait_ms(tx_info)
+                    + nominal_processing_ms
+                    + nominal_tx_confirmation_ms
             }
             RequestQueueInfo::UserDecrypt(info) => {
                 let nominal_processing_ms = self.nominal_user_decrypt_ms().await;
+                let nominal_tx_confirmation_ms = nominal_tx_ms;
                 compute_decrypt_eta_ms(
                     info,
                     nominal_processing_ms,
                     nominal_readiness_ms,
-                    nominal_tx_ms,
+                    nominal_tx_confirmation_ms,
                 )
             }
             RequestQueueInfo::PublicDecrypt(info) => {
                 let nominal_processing_ms = self.nominal_public_decrypt_ms().await;
+                let nominal_tx_confirmation_ms = nominal_tx_ms;
                 compute_decrypt_eta_ms(
                     info,
                     nominal_processing_ms,
                     nominal_readiness_ms,
-                    nominal_tx_ms,
+                    nominal_tx_confirmation_ms,
                 )
             }
         };
@@ -177,29 +211,37 @@ impl RetryAfterState {
         let min_secs = self.min_seconds().await;
         let max_secs = self.max_seconds().await;
         let safety_margin = self.safety_margin().await;
-        let nominal_tx_ms = self.nominal_tx_ms().await;
+        let nominal_tx_confirmation_ms = self.nominal_tx_ms().await;
 
-        let elapsed_ms = state_info.elapsed_in_current_state_secs * 1000;
+        let elapsed_in_state_ms = state_info.elapsed_in_current_state_secs * 1000;
 
         match state_info.status {
             Queued => {
+                // Production handlers use specific methods (compute_for_input_proof_get,
+                // compute_for_decrypt_get) which always have queue info.
+                // This fallback handles the None case for tests and legacy callers.
                 if let Some(q_info) = queue_info {
                     self.compute_queued_eta(q_info).await
                 } else {
-                    let raw_ms = self.get_default_processing_ms(queue_info).await + nominal_tx_ms;
-                    let with_margin_ms = apply_safety_margin_ms(raw_ms, safety_margin);
+                    let nominal_processing_ms = self.get_default_processing_ms(queue_info).await;
+                    let raw_eta_ms = nominal_processing_ms + nominal_tx_confirmation_ms;
+                    let with_margin_ms = apply_safety_margin_ms(raw_eta_ms, safety_margin);
                     with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
                 }
             }
             Processing => {
-                let processing_ms = self.get_default_processing_ms(queue_info).await;
-                let raw_ms = (processing_ms + nominal_tx_ms).saturating_sub(elapsed_ms);
-                let with_margin_ms = apply_safety_margin_ms(raw_ms, safety_margin);
+                let nominal_processing_ms = self.get_default_processing_ms(queue_info).await;
+                // Formula: raw_eta_ms = (nominal_processing_ms + nominal_tx_confirmation_ms) - elapsed_in_state_ms
+                let raw_eta_ms = (nominal_processing_ms + nominal_tx_confirmation_ms)
+                    .saturating_sub(elapsed_in_state_ms);
+                let with_margin_ms = apply_safety_margin_ms(raw_eta_ms, safety_margin);
                 with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
             }
             TxInFlight => {
-                let raw_ms = nominal_tx_ms.saturating_sub(elapsed_ms);
-                let with_margin_ms = apply_safety_margin_ms(raw_ms, safety_margin);
+                // TX sent, waiting for processing (copro/KMS). Only P remains.
+                let nominal_processing_ms = self.get_default_processing_ms(queue_info).await;
+                let raw_eta_ms = nominal_processing_ms.saturating_sub(elapsed_in_state_ms);
+                let with_margin_ms = apply_safety_margin_ms(raw_eta_ms, safety_margin);
                 with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
             }
             ReceiptReceived => {
@@ -211,19 +253,24 @@ impl RetryAfterState {
     }
 
     /// Compute retry-after for input proof POST.
+    ///
+    /// Formula: `⌈(p/D + P + T) × (1+M) / 1000⌉` clamped to [min, max]
     pub async fn compute_for_input_proof_post(&self, tx_info: &TxQueueInfo) -> u32 {
         let min_secs = self.min_seconds().await;
         let max_secs = self.max_seconds().await;
-        let safety_margin = self.safety_margin().await;
-        let nominal_tx_ms = self.nominal_tx_ms().await;
-        let nominal_processing_ms = self.nominal_input_proof_ms().await;
+        let margin = self.safety_margin().await;
+        let tx_confirm_ms = self.nominal_tx_ms().await;
+        let processing_ms = self.nominal_input_proof_ms().await;
 
-        let raw_eta_ms = compute_tx_queue_wait_ms(tx_info) + nominal_processing_ms + nominal_tx_ms;
-        let with_margin_ms = apply_safety_margin_ms(raw_eta_ms, safety_margin);
-        with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
+        let tx_wait_ms = compute_tx_queue_wait_ms(tx_info);
+        let raw_eta_ms = tx_wait_ms + processing_ms + tx_confirm_ms;
+
+        to_retry_after_secs(raw_eta_ms, margin, min_secs, max_secs)
     }
 
     /// Compute retry-after for decrypt POST (user or public).
+    ///
+    /// Formula: `⌈(p/C × R + p/D + P + T) × (1+M) / 1000⌉` clamped to [min, max]
     pub async fn compute_for_decrypt_post(
         &self,
         info: &DecryptQueueInfo,
@@ -231,26 +278,31 @@ impl RetryAfterState {
     ) -> u32 {
         let min_secs = self.min_seconds().await;
         let max_secs = self.max_seconds().await;
-        let safety_margin = self.safety_margin().await;
-        let nominal_tx_ms = self.nominal_tx_ms().await;
+        let margin = self.safety_margin().await;
+        let tx_confirm_ms = self.nominal_tx_ms().await;
         let nominal_readiness_ms = self.nominal_readiness_ms().await;
-        let nominal_processing_ms = if is_user_decrypt {
+        let processing_ms = if is_user_decrypt {
             self.nominal_user_decrypt_ms().await
         } else {
             self.nominal_public_decrypt_ms().await
         };
 
-        let raw_eta_ms = compute_decrypt_eta_ms(
-            info,
-            nominal_processing_ms,
-            nominal_readiness_ms,
-            nominal_tx_ms,
-        );
-        let with_margin_ms = apply_safety_margin_ms(raw_eta_ms, safety_margin);
-        with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
+        let readiness_wait_ms =
+            compute_readiness_queue_wait_ms(&info.readiness, nominal_readiness_ms);
+        let tx_wait_ms = compute_tx_queue_wait_ms(&info.tx);
+        let raw_eta_ms = readiness_wait_ms + tx_wait_ms + processing_ms + tx_confirm_ms;
+
+        to_retry_after_secs(raw_eta_ms, margin, min_secs, max_secs)
     }
 
-    /// Compute retry-after for input proof GET.
+    /// Compute retry-after for input proof GET (polling existing request).
+    ///
+    /// | Status         | Formula                          |
+    /// |----------------|----------------------------------|
+    /// | Queued         | `⌈(p/D + P + T) × (1+M) / 1000⌉` |
+    /// | Processing     | `⌈(p/D + P + T) × (1+M) / 1000⌉` |
+    /// | TxInFlight     | `⌈P × (1+M) / 1000⌉`             |
+    /// | ReceiptReceived| Backoff schedule B(elapsed)      |
     pub async fn compute_for_input_proof_get(
         &self,
         tx_info: Option<&TxQueueInfo>,
@@ -260,30 +312,23 @@ impl RetryAfterState {
 
         let min_secs = self.min_seconds().await;
         let max_secs = self.max_seconds().await;
-        let safety_margin = self.safety_margin().await;
-        let nominal_tx_ms = self.nominal_tx_ms().await;
-        let nominal_processing_ms = self.nominal_input_proof_ms().await;
-        let elapsed_ms = state_info.elapsed_in_current_state_secs * 1000;
+        let margin = self.safety_margin().await;
+        let tx_confirm_ms = self.nominal_tx_ms().await;
+        let processing_ms = self.nominal_input_proof_ms().await;
 
         match state_info.status {
-            Queued => {
+            Queued | Processing => {
                 if let Some(info) = tx_info {
                     self.compute_for_input_proof_post(info).await
                 } else {
-                    let raw_ms = nominal_processing_ms + nominal_tx_ms;
-                    let with_margin_ms = apply_safety_margin_ms(raw_ms, safety_margin);
-                    with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
+                    // Fallback: assume no queue wait (P + T)
+                    let raw_eta_ms = processing_ms + tx_confirm_ms;
+                    to_retry_after_secs(raw_eta_ms, margin, min_secs, max_secs)
                 }
             }
-            Processing => {
-                let raw_ms = (nominal_processing_ms + nominal_tx_ms).saturating_sub(elapsed_ms);
-                let with_margin_ms = apply_safety_margin_ms(raw_ms, safety_margin);
-                with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
-            }
             TxInFlight => {
-                let raw_ms = nominal_tx_ms.saturating_sub(elapsed_ms);
-                let with_margin_ms = apply_safety_margin_ms(raw_ms, safety_margin);
-                with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
+                // Just processing time remaining (P)
+                to_retry_after_secs(processing_ms, margin, min_secs, max_secs)
             }
             ReceiptReceived => {
                 self.compute_copro_kms_backoff(state_info.elapsed_in_current_state_secs)
@@ -294,6 +339,15 @@ impl RetryAfterState {
     }
 
     /// Compute retry-after for decrypt GET (user or public).
+    ///
+    /// | Status          | Stage              | Formula                              |
+    /// |-----------------|--------------------|--------------------------------------|
+    /// | Queued          | -                  | `p/C×R + p/D + P + T`                |
+    /// | Processing      | InReadinessQueue   | `p/C×R + p/D + P + T`                |
+    /// | Processing      | ProcessingReadiness| `R + p/D + P + T`                    |
+    /// | Processing      | InTxQueue          | `p/D + P + T`                        |
+    /// | TxInFlight      | -                  | `P`                                  |
+    /// | ReceiptReceived | -                  | Backoff schedule                     |
     pub async fn compute_for_decrypt_get(
         &self,
         info: Option<&DecryptQueueInfo>,
@@ -304,14 +358,13 @@ impl RetryAfterState {
 
         let min_secs = self.min_seconds().await;
         let max_secs = self.max_seconds().await;
-        let safety_margin = self.safety_margin().await;
-        let nominal_tx_ms = self.nominal_tx_ms().await;
-        let nominal_processing_ms = if is_user_decrypt {
+        let margin = self.safety_margin().await;
+        let tx_confirm_ms = self.nominal_tx_ms().await;
+        let processing_ms = if is_user_decrypt {
             self.nominal_user_decrypt_ms().await
         } else {
             self.nominal_public_decrypt_ms().await
         };
-        let elapsed_ms = state_info.elapsed_in_current_state_secs * 1000;
 
         match state_info.status {
             Queued => {
@@ -319,20 +372,45 @@ impl RetryAfterState {
                     self.compute_for_decrypt_post(decrypt_info, is_user_decrypt)
                         .await
                 } else {
-                    let raw_ms = nominal_processing_ms + nominal_tx_ms;
-                    let with_margin_ms = apply_safety_margin_ms(raw_ms, safety_margin);
-                    with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
+                    // Fallback: assume no queue wait
+                    let raw_eta_ms = processing_ms + tx_confirm_ms;
+                    to_retry_after_secs(raw_eta_ms, margin, min_secs, max_secs)
                 }
             }
             Processing => {
-                let raw_ms = (nominal_processing_ms + nominal_tx_ms).saturating_sub(elapsed_ms);
-                let with_margin_ms = apply_safety_margin_ms(raw_ms, safety_margin);
-                with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
+                let Some(decrypt_info) = info else {
+                    // Fallback: P + T
+                    let raw_eta_ms = processing_ms + tx_confirm_ms;
+                    return to_retry_after_secs(raw_eta_ms, margin, min_secs, max_secs);
+                };
+
+                let nominal_readiness_ms = self.nominal_readiness_ms().await;
+                let tx_wait_ms = compute_tx_queue_wait_ms(&decrypt_info.tx);
+
+                let raw_eta_ms = match get_decrypt_stage(decrypt_info) {
+                    DecryptStage::InReadinessQueue => {
+                        // p/C×R + p/D + P + T
+                        let readiness_wait_ms = compute_readiness_queue_wait_ms(
+                            &decrypt_info.readiness,
+                            nominal_readiness_ms,
+                        );
+                        readiness_wait_ms + tx_wait_ms + processing_ms + tx_confirm_ms
+                    }
+                    DecryptStage::ProcessingReadiness => {
+                        // R + p/D + P + T
+                        nominal_readiness_ms + tx_wait_ms + processing_ms + tx_confirm_ms
+                    }
+                    DecryptStage::InTxQueue => {
+                        // p/D + P + T
+                        tx_wait_ms + processing_ms + tx_confirm_ms
+                    }
+                };
+
+                to_retry_after_secs(raw_eta_ms, margin, min_secs, max_secs)
             }
             TxInFlight => {
-                let raw_ms = nominal_tx_ms.saturating_sub(elapsed_ms);
-                let with_margin_ms = apply_safety_margin_ms(raw_ms, safety_margin);
-                with_margin_ms.div_ceil(1000).clamp(min_secs, max_secs)
+                // Just P
+                to_retry_after_secs(processing_ms, margin, min_secs, max_secs)
             }
             ReceiptReceived => {
                 self.compute_copro_kms_backoff(state_info.elapsed_in_current_state_secs)
@@ -347,9 +425,12 @@ impl RetryAfterState {
     /// Compute raw ETA in ms (before margin/clamping) for input proof POST.
     /// This is useful for histogram metrics to track actual estimated times.
     pub async fn compute_raw_eta_ms_for_input_proof(&self, tx_info: &TxQueueInfo) -> u32 {
-        let nominal_tx_ms = self.nominal_tx_ms().await;
+        let nominal_tx_confirmation_ms = self.nominal_tx_ms().await;
         let nominal_processing_ms = self.nominal_input_proof_ms().await;
-        compute_tx_queue_wait_ms(tx_info) + nominal_processing_ms + nominal_tx_ms
+
+        // Formula: raw_eta_ms = tx_wait_ms + nominal_processing_ms + nominal_tx_confirmation_ms
+        let tx_wait_ms = compute_tx_queue_wait_ms(tx_info);
+        tx_wait_ms + nominal_processing_ms + nominal_tx_confirmation_ms
     }
 
     /// Compute raw ETA in ms (before margin/clamping) for decrypt POST.
@@ -359,7 +440,7 @@ impl RetryAfterState {
         info: &DecryptQueueInfo,
         is_user_decrypt: bool,
     ) -> u32 {
-        let nominal_tx_ms = self.nominal_tx_ms().await;
+        let nominal_tx_confirmation_ms = self.nominal_tx_ms().await;
         let nominal_readiness_ms = self.nominal_readiness_ms().await;
         let nominal_processing_ms = if is_user_decrypt {
             self.nominal_user_decrypt_ms().await
@@ -367,11 +448,12 @@ impl RetryAfterState {
             self.nominal_public_decrypt_ms().await
         };
 
+        // Formula: raw_eta_ms = readiness_wait_ms + tx_wait_ms + nominal_processing_ms + nominal_tx_confirmation_ms
         compute_decrypt_eta_ms(
             info,
             nominal_processing_ms,
             nominal_readiness_ms,
-            nominal_tx_ms,
+            nominal_tx_confirmation_ms,
         )
     }
 
@@ -410,9 +492,13 @@ impl RetryAfterState {
 
 // ========== Free functions ==========
 
-fn apply_safety_margin_ms(eta_ms: u32, safety_margin: f32) -> u32 {
-    let result = (eta_ms as f64) * (1.0 + safety_margin as f64);
-    let ceiled = result.ceil();
+/// Apply safety margin to ETA estimate.
+/// Formula: ceil(raw_eta_ms * (1 + safety_margin))
+/// Example: raw_eta_ms=1000, safety_margin=0.2 -> ceil(1000 * 1.2) = 1200
+fn apply_safety_margin_ms(raw_eta_ms: u32, safety_margin: f32) -> u32 {
+    // Formula: eta_with_margin = raw_eta_ms * (1 + safety_margin)
+    let eta_with_margin = (raw_eta_ms as f64) * (1.0 + safety_margin as f64);
+    let ceiled = eta_with_margin.ceil();
     if ceiled > u32::MAX as f64 {
         u32::MAX
     } else {
@@ -420,47 +506,82 @@ fn apply_safety_margin_ms(eta_ms: u32, safety_margin: f32) -> u32 {
     }
 }
 
-/// Compute TX queue wait time in ms.
+/// Convert raw ETA (ms) to retry-after (seconds) with margin and clamping.
+/// Formula: clamp(⌈raw_eta_ms × (1 + margin) / 1000⌉, min, max)
+fn to_retry_after_secs(raw_eta_ms: u32, margin: f32, min: u32, max: u32) -> u32 {
+    let with_margin_ms = apply_safety_margin_ms(raw_eta_ms, margin);
+    with_margin_ms.div_ceil(1000).clamp(min, max)
+}
+
+// ========== Queue Wait Time Computation ==========
+
+/// Compute TX queue wait time in ms using position-based formula.
+/// Formula: position_in_queue / drain_rate_tps * 1000
+/// If position is None, falls back to queue_size / drain_rate_tps * 1000
 pub fn compute_tx_queue_wait_ms(tx_info: &TxQueueInfo) -> u32 {
     if tx_info.drain_rate_tps > 0 {
-        let result = ((tx_info.size as f64 / tx_info.drain_rate_tps as f64) * 1000.0).ceil();
-        if result > u32::MAX as f64 {
+        // Use position if available, otherwise use size (for new requests joining at end)
+        let position_in_queue = tx_info.position.unwrap_or(tx_info.size) as f64;
+        let drain_rate_tps = tx_info.drain_rate_tps as f64;
+
+        // Formula: queue_wait_ms = position_in_queue / drain_rate_tps * 1000
+        let queue_wait_ms = (position_in_queue / drain_rate_tps) * 1000.0;
+        let ceiled = queue_wait_ms.ceil();
+        if ceiled > u32::MAX as f64 {
             u32::MAX
         } else {
-            result as u32
+            ceiled as u32
         }
     } else {
         300_000
     }
 }
 
-/// Compute readiness queue wait time in ms.
+/// Compute readiness queue wait time in ms using position-based formula.
+/// Formula: ceil(position_in_queue / max_concurrency) * nominal_readiness_ms
+/// If position is None, falls back to ceil(queue_size / max_concurrency) * nominal_readiness_ms
 pub fn compute_readiness_queue_wait_ms(
     info: &ReadinessQueueInfo,
     nominal_readiness_ms: u32,
 ) -> u32 {
     if info.max_concurrency > 0 {
-        let batches = (info.size as f64 / info.max_concurrency as f64).ceil();
-        let result = batches * nominal_readiness_ms as f64;
-        if result > u32::MAX as f64 {
+        // Use position if available, otherwise use size (for new requests joining at end)
+        let position_in_queue = info.position.unwrap_or(info.size) as f64;
+        let max_concurrency = info.max_concurrency as f64;
+
+        // Formula: batches = ceil(position_in_queue / max_concurrency)
+        //          wait_ms = batches * nominal_readiness_ms
+        let batches = (position_in_queue / max_concurrency).ceil();
+        let readiness_wait_ms = batches * nominal_readiness_ms as f64;
+        if readiness_wait_ms > u32::MAX as f64 {
             u32::MAX
         } else {
-            result as u32
+            readiness_wait_ms as u32
         }
     } else {
         300_000
     }
 }
 
+/// Compute decrypt ETA in ms.
+/// This is used for new requests (POST) that will join at the end of queues.
+/// Formula: readiness_wait_ms + tx_wait_ms + nominal_processing_ms + nominal_tx_confirmation_ms
+/// Where:
+/// - readiness_wait_ms = ceil(position_in_queue / max_concurrency) * nominal_readiness_ms
+/// - tx_wait_ms = position_in_queue / drain_rate_tps * 1000
+/// - nominal_processing_ms = processing time after TX confirmation
+/// - nominal_tx_confirmation_ms = blockchain transaction confirmation time
 fn compute_decrypt_eta_ms(
     info: &DecryptQueueInfo,
     nominal_processing_ms: u32,
     nominal_readiness_ms: u32,
-    nominal_tx_ms: u32,
+    nominal_tx_confirmation_ms: u32,
 ) -> u32 {
-    let readiness_wait = compute_readiness_queue_wait_ms(&info.readiness, nominal_readiness_ms);
-    let tx_wait = compute_tx_queue_wait_ms(&info.tx);
-    readiness_wait + tx_wait + nominal_readiness_ms + nominal_processing_ms + nominal_tx_ms
+    let readiness_wait_ms = compute_readiness_queue_wait_ms(&info.readiness, nominal_readiness_ms);
+    let tx_wait_ms = compute_tx_queue_wait_ms(&info.tx);
+
+    // Formula: total_eta_ms = readiness_wait_ms + tx_wait_ms + nominal_processing_ms + nominal_tx_confirmation_ms
+    readiness_wait_ms + tx_wait_ms + nominal_processing_ms + nominal_tx_confirmation_ms
 }
 
 #[cfg(test)]
@@ -532,6 +653,7 @@ mod tests {
         let tx_info = TxQueueInfo {
             size: 100,
             drain_rate_tps: 20,
+            position: None,
         };
         // queue_wait = 100/20 * 1000 = 5000ms
         // processing = 2000ms, tx = 250ms
@@ -549,6 +671,7 @@ mod tests {
         let tx_info = TxQueueInfo {
             size: 100,
             drain_rate_tps: 20,
+            position: None,
         };
         let queue_info = RequestQueueInfo::InputProof(tx_info);
         let result = state.compute_queued_eta(&queue_info).await;
@@ -563,6 +686,7 @@ mod tests {
         let tx_info = TxQueueInfo {
             size: 0,
             drain_rate_tps: 100,
+            position: None,
         };
         let queue_info = RequestQueueInfo::InputProof(tx_info);
         let result = state.compute_queued_eta(&queue_info).await;
@@ -578,6 +702,7 @@ mod tests {
         let tx_info = TxQueueInfo {
             size: 10000,
             drain_rate_tps: 1,
+            position: None,
         };
         let queue_info = RequestQueueInfo::InputProof(tx_info);
         let result = state.compute_queued_eta(&queue_info).await;
@@ -589,18 +714,21 @@ mod tests {
         let info = TxQueueInfo {
             size: 100,
             drain_rate_tps: 20,
+            position: None,
         };
         assert_eq!(compute_tx_queue_wait_ms(&info), 5000);
 
         let empty = TxQueueInfo {
             size: 0,
             drain_rate_tps: 20,
+            position: None,
         };
         assert_eq!(compute_tx_queue_wait_ms(&empty), 0);
 
         let zero_tps = TxQueueInfo {
             size: 100,
             drain_rate_tps: 0,
+            position: None,
         };
         assert_eq!(compute_tx_queue_wait_ms(&zero_tps), 300_000);
     }
@@ -610,6 +738,7 @@ mod tests {
         let info = ReadinessQueueInfo {
             size: 500,
             max_concurrency: 250,
+            position: None,
         };
         // batches = ceil(500/250) = 2, wait = 2 * 4000 = 8000ms
         assert_eq!(compute_readiness_queue_wait_ms(&info, 4000), 8000);
@@ -617,6 +746,7 @@ mod tests {
         let zero = ReadinessQueueInfo {
             size: 0,
             max_concurrency: 250,
+            position: None,
         };
         assert_eq!(compute_readiness_queue_wait_ms(&zero, 4000), 0);
     }

@@ -61,65 +61,123 @@ For `ReceiptReceived` state only (Copro/KMS response time is unpredictable):
 | 5m-15m | 60s | Major delay |
 | 15m+ | 300s | Likely stuck, minimal polling |
 
-## ETA Computation
+## Variables
 
-### POST Request (New Request)
+| Var | Description |
+|-----|-------------|
+| `p` | Request's position in queue (0-indexed) |
+| `Q` | TX queue size (used when request will join at end) |
+| `D` | TX drain rate (tps) |
+| `C` | Readiness max concurrency |
+| `R` | Nominal readiness check time (ms) |
+| `P` | Nominal processing time (ms) - 2s for input proof, 4s for decrypt |
+| `T` | Nominal TX confirmation time (ms) |
+| `M` | Safety margin (e.g., 0.2) |
+| `E` | Elapsed time in current state (ms) |
+| `B(E)` | Backoff function based on elapsed time |
 
-**Input Proof (Single Queue - Copro):**
-```
-ETA = tx_queue_wait_time + processing_time
-    = (tx_queue_position / tx_throttler_tps) + nominal_input_proof_processing + nominal_tx_confirmation
-```
+## ETA Computation Formulas
 
-**User/Public Decrypt (Dual Queue - KMS):**
-```
-ETA = readiness_queue_wait + readiness_processing + tx_queue_wait + tx_processing
-    = (readiness_queue_size / max_concurrency * nominal_readiness)
-    + nominal_readiness
-    + (tx_queue_size / tx_tps)
-    + nominal_decrypt_processing + nominal_tx_confirmation
-```
+### Input Proof
 
-Final value: `ETA * (1 + safety_margin)`, clamped to [min_seconds, max_seconds]
+| Status | Formula |
+|--------|---------|
+| **Queued** | `clamp(⌈(p/D + P + T) × (1+M) / 1000⌉, min, max)` |
+| **Processing** | `clamp(⌈(p/D + P + T) × (1+M) / 1000⌉, min, max)` |
+| **TxInFlight** | `clamp(⌈P × (1+M) / 1000⌉, min, max)` |
+| **ReceiptReceived** | `B(E)` |
+| **Completed/TimedOut/Failure** | `0` |
 
-### Max Bounds Illustration (Full Queue Scenario)
+### Decrypt (User & Public)
 
-Example with concrete numbers:
-- **Queue sizes**: 10,000 for all queues
-- **TX drain rate**: 5 TPS for all tx workers
-- **Readiness concurrency**: 50 workers
-- **Nominal readiness check time**: 1 second per batch
+| Status | Queue Location | Formula |
+|--------|----------------|---------|
+| **Queued** | In readiness queue | `clamp(⌈(p/C + Q/D + P + T) × (1+M) / 1000⌉, min, max)` |
+| **Processing** | Out of readiness, not in TX | `clamp(⌈(R + Q/D + P + T) × (1+M) / 1000⌉, min, max)` |
+| **Processing** | In TX queue | `clamp(⌈(p/D + P + T) × (1+M) / 1000⌉, min, max)` |
+| **TxInFlight** | - | `clamp(⌈P × (1+M) / 1000⌉, min, max)` |
+| **ReceiptReceived** | - | `B(E)` |
+| **Completed/TimedOut/Failure** | - | `0` |
 
-**Input Proof (Single Queue - worst case):**
-```
-TX queue wait = 10,000 / 5 TPS = 2,000 seconds = ~33 minutes
-```
+### Key Points
 
-**Decrypt Operations (Dual Queue - worst case):**
-```
-Readiness queue wait = ceil(10,000 / 50) batches * 1 second
-                     = 200 batches * 1 second = 200 seconds
+1. **Queued**: Uses request's actual position `p` in the queue (not total queue size)
+2. **Processing for Decrypt**: Check which queue the request is in:
+   - `readiness_throttler.get_position(id)` returns `None` → removed from readiness, check TX queue
+   - `tx_throttler.get_position(id)` returns `Some(p)` → use TX queue formula
+   - Both return `None` → out of readiness, not yet in TX queue
+3. **TxInFlight**: Uses processing time `P` (time to get response after TX sent)
+4. **ReceiptReceived**: Uses backoff `B(E)` since Copro/KMS response time is unpredictable
 
-TX queue wait        = 10,000 / 5 TPS = 2,000 seconds
+## Example Calculations
 
-Total                = 200 + 2,000 = 2,200 seconds = ~37 minutes
-```
+Using parameters: D=10, C=50, R=2s, P_input=2s, P_decrypt=4s, T=100ms, M=0.2, B(E)=3s
 
-With 20% safety margin:
-- Input Proof max: 2,000 * 1.2 = 2,400 seconds = **40 minutes**
-- Decrypt max: 2,200 * 1.2 = 2,640 seconds = **44 minutes**
+### Input Proof (P = 2000ms)
 
-This demonstrates why `max_seconds` default (300s = 5 min) will clamp these extreme values, providing a reasonable upper bound for client polling while the queue naturally drains.
+#### Queued / Processing: `⌈(p/D × 1000 + P + T) × (1+M) / 1000⌉`
 
-### GET Request (Polling)
+| p | p/D (s) | + P + T (ms) | × 1.2 | Result |
+|---|---------|--------------|-------|--------|
+| 0 | 0 | 2100 | 2520 | **3s** |
+| 1 | 0.1 | 2200 | 2640 | **3s** |
+| 10 | 1 | 3100 | 3720 | **4s** |
+| 100 | 10 | 12100 | 14520 | **15s** |
+| 1000 | 100 | 102100 | 122520 | **123s** |
 
-| State | Retry-After Computation | Safety Margin? |
-|-------|-------------------------|----------------|
-| **Queued** | Dynamic: queue position / drain rate + remaining nominal times | Yes |
-| **Processing** | Dynamic: remaining nominal time - elapsed | Yes |
-| **TxInFlight** | Dynamic: tx_confirmation - elapsed | Yes |
-| **ReceiptReceived** | Backoff intervals (unpredictable Copro/KMS wait) | **No** |
-| **Completed/Failed/TimedOut** | 0 (no retry needed) | N/A |
+#### TxInFlight: `⌈P × 1.2 / 1000⌉`
+= `⌈2000 × 1.2 / 1000⌉` = **3s** (constant)
+
+#### ReceiptReceived: `B(E)` = **3s** (constant)
+
+### Decrypt (P = 4000ms)
+
+#### Queued (in readiness): `⌈(p/C × 1000 + Q/D × 1000 + P + T) × (1+M) / 1000⌉`
+
+Assuming p = Q (same number of entries in both queues):
+
+| p | p/C (s) | Q/D (s) | + P + T (ms) | × 1.2 | Result |
+|---|---------|---------|--------------|-------|--------|
+| 0 | 0 | 0 | 4100 | 4920 | **5s** |
+| 1 | 0.02 | 0.1 | 4220 | 5064 | **6s** |
+| 10 | 0.2 | 1 | 5300 | 6360 | **7s** |
+| 100 | 2 | 10 | 16100 | 19320 | **20s** |
+| 1000 | 20 | 100 | 124100 | 148920 | **149s** |
+
+#### Processing (out of readiness, not in TX): `⌈(R + Q/D × 1000 + P + T) × (1+M) / 1000⌉`
+
+| Q | R (ms) | Q/D (s) | + P + T (ms) | × 1.2 | Result |
+|---|--------|---------|--------------|-------|--------|
+| 0 | 2000 | 0 | 6100 | 7320 | **8s** |
+| 1 | 2000 | 0.1 | 6200 | 7440 | **8s** |
+| 10 | 2000 | 1 | 7100 | 8520 | **9s** |
+| 100 | 2000 | 10 | 16100 | 19320 | **20s** |
+| 1000 | 2000 | 100 | 106100 | 127320 | **128s** |
+
+#### Processing (in TX queue): `⌈(p/D × 1000 + P + T) × (1+M) / 1000⌉`
+
+| p | p/D (s) | + P + T (ms) | × 1.2 | Result |
+|---|---------|--------------|-------|--------|
+| 0 | 0 | 4100 | 4920 | **5s** |
+| 1 | 0.1 | 4200 | 5040 | **6s** |
+| 10 | 1 | 5100 | 6120 | **7s** |
+| 100 | 10 | 14100 | 16920 | **17s** |
+| 1000 | 100 | 104100 | 124920 | **125s** |
+
+#### TxInFlight: `⌈P × 1.2 / 1000⌉`
+= `⌈4000 × 1.2 / 1000⌉` = **5s** (constant)
+
+#### ReceiptReceived: `B(E)` = **3s** (constant)
+
+### Summary Table (p=100, Q=100)
+
+| Status | Input Proof | Decrypt |
+|--------|-------------|---------|
+| Queued | 15s | 20s |
+| Processing (in readiness) | - | 20s |
+| Processing (in TX queue) | 15s | 17s |
+| TxInFlight | 3s | 5s |
+| ReceiptReceived | 3s | 3s |
 
 ## Response Format
 
@@ -158,3 +216,8 @@ All parameters are runtime-updatable via admin endpoints:
 **Why milliseconds internally:**
 - All internal calculations use milliseconds to avoid rounding errors
 - Conversion to seconds only happens when setting the Retry-After header
+
+**Why position-based instead of queue-size-based:**
+- For GET requests polling an existing `Queued` request, using total queue size is incorrect
+- A request that's been waiting and is now at position 5 should get a shorter ETA than a new request at position 100
+- Using `get_position(id)` provides accurate estimates as the request advances through the queue
