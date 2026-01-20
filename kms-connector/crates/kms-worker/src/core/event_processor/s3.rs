@@ -10,6 +10,7 @@ use fhevm_gateway_bindings::{
     decryption::Decryption::SnsCiphertextMaterial,
     gateway_config::GatewayConfig::{self, GatewayConfigInstance},
 };
+use futures::future::try_join_all;
 use kms_grpc::kms::v1::{CiphertextFormat, TypedCiphertext};
 use sha3::{Digest, Keccak256};
 use std::sync::LazyLock;
@@ -49,21 +50,20 @@ where
         }
     }
 
-    /// Helper method to retrieve ciphertext materials from S3.
+    /// Helper method to retrieve ciphertext materials from S3 concurrently.
     pub async fn retrieve_sns_ciphertext_materials(
         &self,
         sns_materials: &[SnsCiphertextMaterial],
     ) -> anyhow::Result<Vec<TypedCiphertext>> {
-        let mut sns_ciphertext_materials = Vec::new();
-        for sns_material in sns_materials {
-            let ciphertext = self.retrieve_s3_ciphertext_with_retry(sns_material).await?;
-            sns_ciphertext_materials.push(ciphertext);
-        }
-        Ok(sns_ciphertext_materials)
+        let fetch_futures = sns_materials
+            .iter()
+            .map(|sns_material| self.retrieve_s3_ciphertext_with_retry(sns_material));
+
+        try_join_all(fetch_futures).await
     }
 
     /// Retrieves a ciphertext from S3 with `self.s3_ct_retrieval_retries` retries.
-    pub async fn retrieve_s3_ciphertext_with_retry(
+    async fn retrieve_s3_ciphertext_with_retry(
         &self,
         sns_material: &SnsCiphertextMaterial,
     ) -> anyhow::Result<TypedCiphertext> {
