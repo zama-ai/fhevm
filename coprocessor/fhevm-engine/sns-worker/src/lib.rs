@@ -38,7 +38,7 @@ use tokio::{
     task,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn, Level};
+use tracing::{error, info, Level};
 
 use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
@@ -506,21 +506,13 @@ pub async fn run_all(
         mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
 
     let rayon_threads = rayon::current_num_threads();
-    let gpu_enabled = cfg!(feature = "gpu");
+    let gpu_enabled = fhevm_engine_common::utils::log_backend();
     info!(gpu_enabled, rayon_threads, config = %config, "Starting SNS worker");
 
     if !config.service_name.is_empty() {
         if let Err(err) = telemetry::setup_otlp(&config.service_name) {
             error!(error = %err, "Failed to setup OTLP");
         }
-    }
-
-    let mut config = config;
-    if gpu_enabled && config.schedule_policy == SchedulePolicy::RayonParallel {
-        // Override to Sequential if GPU feature is enabled
-        // RayonParallel is suitable only for on-CPU computing
-        warn!("Overriding schedule policy to Sequential since GPU feature is enabled");
-        config.schedule_policy = SchedulePolicy::Sequential;
     }
 
     let conf = config.clone();

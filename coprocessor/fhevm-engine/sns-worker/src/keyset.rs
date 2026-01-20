@@ -72,10 +72,7 @@ pub async fn fetch_keys(
         info!("Deserialized sns_pk/sks_ns to CompressedServerKey");
 
         let server_key = compressed_server_key.decompress_to_gpu();
-        info!(
-            gpu_indexes = server_key.gpu_indexes().len(),
-            "Decompressed sns_pk/sks_ns to CudaServerKey"
-        );
+        info!("Decompressed sns_pk/sks_ns to CudaServerKey");
         server_key
     };
 

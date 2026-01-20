@@ -50,7 +50,7 @@ name = "sns_worker"
 path = "src/bin/sns_worker.rs"
 
 [features]
-gpu = ["tfhe/gpu", "fhevm-engine-common/gpu"]
+gpu = ["tfhe/gpu", "fhevm-engine-common/gpu", "test-harness/gpu"]
 test_decrypt_128 = []
 test_s3_use_handle_as_key = []
 
