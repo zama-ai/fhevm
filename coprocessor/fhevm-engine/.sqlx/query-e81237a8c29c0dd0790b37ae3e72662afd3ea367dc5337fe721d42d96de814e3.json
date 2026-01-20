@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE host_chain_blocks_valid\n                SET block_status = CASE\n                    WHEN block_hash = $2\n                        THEN 'finalized'\n                        ELSE 'orphaned'\n                    END\n                WHERE block_status = 'pending' AND block_number = $3 AND chain_id = $1\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e81237a8c29c0dd0790b37ae3e72662afd3ea367dc5337fe721d42d96de814e3"
+}
