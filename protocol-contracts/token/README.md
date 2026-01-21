@@ -116,7 +116,7 @@ If you want to send tokens from/to other chains, you can directly use `lz:oft:se
 For example you can send `1.5` ZAMA token from Ethereum Sepolia to Gateway Testnet from the deployer wallet to a custom receiver address by running this command and following instructions:
 
 ```bash
-npx hardhat lz:oft:send --src-eid 40161 --dst-eid 40424 --amount 1.5 --to <RECEIVER_ADDRESS>
+npx hardhat lz:oft:send --src-eid 40161 --dst-eid 40424 --amount 1.5 --to <RECEIVER_ADDRESS> --oapp-config layerzero.config.testnet.ts
 ```
 
 **Note** In the OFTAdapter case here, contrarily to the OFT case, 2 transactions are sent in previous script instead of 1, because the sender must first approve the corresponding amount of the ERC20 token to the OFTAdapter (i.e calling approve method on the ERC20 method and passing the OFTAdapter address and correct amount as parameters), before locking them to the OFTAdapter contract in a second `send` transaction on OFTAdapter (reminder: in the OFT case, initiating a token transfer happens by directly burning an amount of the OFT contract by calling the `send` method of the OFT contract).
