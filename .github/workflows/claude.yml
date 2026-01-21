@@ -2,12 +2,12 @@ name: claude-review
 
 # Triggered by:
 # 1. @claude mention in PR comments (e.g., "@claude review this function")
-# 2. Manual workflow_dispatch with PR number and custom prompt
+# 2. PR synchronize event (TEMPORARY - for testing on feature branch)
 #
 # How prompt extraction works:
 # - For comments: The action's `extractUserRequest` function automatically
 #   extracts text AFTER "@claude". Example: "@claude review auth" → "review auth"
-# - For workflow_dispatch: We pass an explicit prompt with PR context
+# - For pull_request: Uses a fixed prompt to review the PR
 #
 # See: https://github.com/anthropics/claude-code-action/blob/main/src/utils/extract-user-request.ts
 #
@@ -20,17 +20,11 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: 'PR number to review'
-        required: true
-        type: number
-      prompt:
-        description: 'Custom prompt for Claude (optional)'
-        required: false
-        type: string
-        default: 'Review this PR thoroughly'
+  # TEMPORARY: For testing on feature branch (remove after merge to main)
+  # Triggers on: opened, synchronize (new commits pushed), reopened
+  pull_request:
+    branches:
+      - main
 
 permissions: {}
 
@@ -38,7 +32,7 @@ jobs:
   claude-review:
     name: claude-review/respond
     if: |
-      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
       (contains(github.event.comment.body, '@claude') &&
        (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment'))
     runs-on: ubuntu-latest
@@ -46,15 +40,13 @@ jobs:
       contents: read # Required for checkout
       pull-requests: write # Required for PR review and comment actions
       issues: write # Required for issue comment actions
+      id-token: write # Required for OIDC authentication
       actions: read # Required for reading CI results
     steps:
-      # For workflow_dispatch: checkout the PR branch
-      # For comments: checkout default branch (action has PR context)
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', github.event.inputs.pr_number) || '' }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b
@@ -68,6 +60,6 @@ jobs:
             project-manager@zama-marketplace
             zama-developer@zama-marketplace
           # Prompt handling:
-          # - workflow_dispatch: explicit prompt with PR context (e.g., "Review PR #42 in org/repo. Check security")
+          # - pull_request: review the PR automatically
           # - comments: empty string → action extracts text after @claude automatically
-          prompt: ${{ github.event_name == 'workflow_dispatch' && format('Review PR {0} in {1}. {2}', github.event.inputs.pr_number, github.repository, github.event.inputs.prompt) || '' }}
+          prompt: ${{ github.event_name == 'pull_request' && 'Review this PR thoroughly. Focus on code quality, security, and best practices.' || '' }}
