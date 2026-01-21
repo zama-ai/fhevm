@@ -89,7 +89,7 @@ This will convert the `ethereum-wiring.json` file to a new `aragonProposal.json`
 
 More precisely, in Aragon App, when you reach "Step 2 of 3" of proposal creation, click on the `Upload` button there, in select the newly created `aragonProposal.json` file to upload it and create the wiring proposal on Ethereum.
 
-![Aragon Proposal Upload](AragonUpload.png)
+![Aragon Proposal Upload](images/AragonUpload.png)
 
 After voting and execution of the wiring proposal, your OFT is now successfully setup.
 
