@@ -36,6 +36,9 @@ gateway:
         per_seconds: 20
         capacity: 11000
         safety_margin: 1000
+    tx_throttler_per_secs: 20
+    tx_throttler_capacity: 11000 # To allow actual capacity of 10k, after accounting for safety margin.
+    tx_throttler_safety_margin: 1000
   readiness_checker:
     retry:
       max_attempts: 30

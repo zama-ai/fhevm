@@ -63,7 +63,7 @@ function usage {
   echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build] [--local]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
   echo -e "  ${YELLOW}pause${RESET} ${CYAN}[CONTRACTS]${RESET}     Pause specific contracts (host|gateway)"
   echo -e "  ${YELLOW}unpause${RESET} ${CYAN}[CONTRACTS]${RESET}     Unpause specific contracts (host|gateway)"
-  echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|delegate-user-decryption|random|random-subset|operators|erc20|debug)"
+  echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|delegated-user-decryption|random|random-subset|operators|erc20|debug)"
   echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
   echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
   echo -e "  ${YELLOW}logs${RESET} ${CYAN}[SERVICE]${RESET}      View logs for a specific service"
@@ -243,17 +243,6 @@ case $COMMAND in
         delegated-user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] DELEGATED USER DECRYPTION${RESET}"
           docker_args+=("-g" "test delegated user decrypt")
-          ;;
-        delegate-user-decryption)
-          log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
-          docker_args+=("-g" "test delegation and revocation propagation")
-          echo -e "${log_message}"
-          docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
-          echo Checking transaction-sender logs for DelegateUserDecryption
-          ./fhevm-cli logs coprocessor-transaction-sender | grep "DelegateUserDecryption txn succeeded"
-          echo Checking transaction-sender logs for RevokeUserDecryptionDelegation
-          ./fhevm-cli logs coprocessor-transaction-sender | grep "RevokeUserDecryptionDelegation txn succeeded"
-          exit 0 # the test has been called unlike other case branch
           ;;
         public-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"

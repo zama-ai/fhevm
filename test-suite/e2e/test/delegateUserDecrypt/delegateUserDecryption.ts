@@ -5,7 +5,11 @@ import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { delegatedUserDecryptSingleHandle } from '../utils';
 
+const BLOCK_TIME_MS = 1000;
+
 describe('Delegate user decryption', function () {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
@@ -22,41 +26,14 @@ describe('Delegate user decryption', function () {
     await this.contractDelegate.waitForDeployment();
     this.contractDelegateAddress = await this.contractDelegate.getAddress();
 
-    console.log('Delegator signer address:', this.signers.alice.address);
-    console.log('Delegate signer address:', this.signers.bob.address);
-    console.log('DelegateUserDecryptDelegator', this.contractDelegatorAddress);
-    console.log('DelegateUserDecryptDelegate', this.contractDelegateAddress);
-
-    this.instances = await createInstances(this.signers);
-
     // Delegate user decryption from Alice to Bob
-    const block_time = 1000; // ms
     this.delegateAddress = this.signers.bob.address;
     await this.contractDelegator
       .connect(this.signers.alice)
       .delegateUserDecryption(this.delegateAddress, this.contractDelegateAddress);
 
     // Wait for 15 seconds to ensure delegation is propagated by coprocessor.
-    await sleep(15 * block_time);
-  });
-
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-  it('test delegation and revocation propagation', async function () {
-    const block_time = 1000; // ms
-
-    const delegate = await this.contractDelegator
-      .connect(this.signers.alice)
-      .delegateUserDecryption(this.signers.bob.address, this.contractDelegateAddress);
-    const delegate_result = await delegate.wait(1);
-    expect(delegate_result.status).to.equal(1);
-    await sleep(15 * block_time); // wait for 15 seconds to ensure delegation is active
-
-    const revoke = await this.contractDelegator
-      .connect(this.signers.alice)
-      .revokeUserDecryptionDelegation(this.signers.bob.address, this.contractDelegateAddress);
-    const revoke_result = await revoke.wait(1);
-    expect(revoke_result.status).to.equal(1);
-    await sleep(15 * block_time); // wait for 15 seconds to ensure delegation is revoked
+    await sleep(15 * BLOCK_TIME_MS);
   });
 
   it('test delegated user decrypt ebool', async function () {
@@ -201,5 +178,32 @@ describe('Delegate user decryption', function () {
     );
 
     expect(decryptedValue).to.equal('0x8ba1f109551bD432803012645Ac136ddd64DBA72');
+  });
+
+  it('test delegated user decrypt revoked', async function () {
+    const revoke = await this.contractDelegator
+      .connect(this.signers.alice)
+      .revokeUserDecryptionDelegation(this.signers.bob.address, this.contractDelegateAddress);
+    const revoke_result = await revoke.wait(1);
+    expect(revoke_result.status).to.equal(1);
+
+    // Wait for 15 seconds to ensure revocation is propagated by coprocessor.
+    await sleep(15 * BLOCK_TIME_MS);
+
+    const handle = await this.contractDelegator.xBool();
+    const { publicKey, privateKey } = this.instances.bob.generateKeypair();
+
+    await expect(delegatedUserDecryptSingleHandle(
+        this.instances.bob,
+        handle,
+        this.contractDelegateAddress,
+        this.contractDelegatorAddress,
+        this.delegateAddress,
+        this.signers.bob,
+        privateKey,
+        publicKey,
+      )).to.be.rejectedWith(
+      new RegExp('Could not estimate gas'),
+    );
   });
 });
