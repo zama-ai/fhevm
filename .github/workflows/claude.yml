@@ -1,13 +1,10 @@
 name: claude-review
 
-# Triggered by:
-# 1. @claude mention in PR comments (e.g., "@claude review this function")
-# 2. PR synchronize event (TEMPORARY - for testing on feature branch)
+# Triggered by: @claude mention in PR comments (e.g., "@claude review this function")
 #
 # How prompt extraction works:
-# - For comments: The action's `extractUserRequest` function automatically
-#   extracts text AFTER "@claude". Example: "@claude review auth" → "review auth"
-# - For pull_request: Uses a fixed prompt to review the PR
+# The action's `extractUserRequest` function automatically extracts text AFTER "@claude".
+# Example: "@claude review auth" → "review auth"
 #
 # See: https://github.com/anthropics/claude-code-action/blob/main/src/utils/extract-user-request.ts
 #
@@ -20,11 +17,6 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
-  # TEMPORARY: For testing on feature branch (remove after merge to main)
-  # Triggers on: opened, synchronize (new commits pushed), reopened
-  pull_request:
-    branches:
-      - main
 
 permissions: {}
 
@@ -32,9 +24,8 @@ jobs:
   claude-review:
     name: claude-review/respond
     if: |
-      github.event_name == 'pull_request' ||
-      (contains(github.event.comment.body, '@claude') &&
-       (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment'))
+      contains(github.event.comment.body, '@claude') &&
+      (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment')
     runs-on: ubuntu-latest
     permissions:
       contents: read # Required for checkout
@@ -59,7 +50,4 @@ jobs:
           plugins: |
             project-manager@zama-marketplace
             zama-developer@zama-marketplace
-          # Prompt handling:
-          # - pull_request: review the PR automatically
-          # - comments: empty string → action extracts text after @claude automatically
-          prompt: ${{ github.event_name == 'pull_request' && 'Review this PR thoroughly. Focus on code quality, security, and best practices.' || '' }}
+          # Prompt: empty string → action extracts text after @claude automatically
