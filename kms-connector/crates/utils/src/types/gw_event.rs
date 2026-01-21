@@ -112,7 +112,7 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
         kind,
         error_counter: row.try_get::<i16, _>("error_counter")?,
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -134,7 +134,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
         kind,
         error_counter: row.try_get::<i16, _>("error_counter")?,
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -148,7 +148,7 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
         kind,
         error_counter: 0,
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -161,7 +161,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
         kind,
         error_counter: 0,
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -175,7 +175,7 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
         kind,
         error_counter: 0,
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -185,7 +185,7 @@ pub fn from_prss_init_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
         kind,
         error_counter: 0,
         already_sent: false,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -200,7 +200,7 @@ pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<GatewayEvent
         kind,
         error_counter: 0,
         already_sent: false,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
