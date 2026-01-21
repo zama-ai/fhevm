@@ -335,9 +335,6 @@ pub enum ExecutionError {
     #[error("CtType error: {0}")]
     CtType(#[from] FhevmError),
 
-    #[error("Serialization error: {0}")]
-    SerializationError(#[from] bincode::Error),
-
     #[error("Missing 128-bit ciphertext: {0}")]
     MissingCiphertext128(String),
 
@@ -355,6 +352,9 @@ pub enum ExecutionError {
 
     #[error("Squashed noise error: {0}")]
     SquashedNoiseError(#[from] tfhe::Error),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
 
     #[error("Deserialization error: {0}")]
     DeserializationError(String),

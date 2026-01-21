@@ -159,7 +159,8 @@ pub fn safe_serialize<T: Serialize + Named + Versionize>(
     object: &T,
 ) -> Result<Vec<u8>, ExecutionError> {
     let mut out = vec![];
-    tfhe::safe_serialization::safe_serialize(object, &mut out, SAFE_SER_LIMIT)?;
+    tfhe::safe_serialization::safe_serialize(object, &mut out, SAFE_SER_LIMIT)
+        .map_err(|e| ExecutionError::SerializationError(e.to_string()))?;
     Ok(out)
 }
 
