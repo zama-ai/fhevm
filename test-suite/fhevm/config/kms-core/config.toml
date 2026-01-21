@@ -27,6 +27,7 @@ storage_cache_size = 1000
 
 [public_vault.storage.s3]
 bucket = "kms-public"
+prefix = "PUB"
 
 [private_vault.storage.file]
 path = "./keys"

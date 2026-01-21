@@ -104,7 +104,10 @@ impl KMSGenerationProcessor {
         let request_id = Some(RequestId {
             request_id: hex::encode(id.to_be_bytes::<32>()),
         });
-        KmsGrpcRequest::PrssInit(InitRequest { request_id })
+        KmsGrpcRequest::PrssInit(InitRequest {
+            request_id,
+            context_id: None, // TODO: update once context is implemented
+        })
     }
 
     pub fn prepare_initiate_resharing_request(
@@ -121,6 +124,7 @@ impl KMSGenerationProcessor {
                 key_id: Some(RequestId {
                     request_id: hex::encode(req.keyId.to_be_bytes::<32>()),
                 }),
+                key_digests: vec![], // TODO: update once resharing is implemented
                 preproc_id: Some(RequestId {
                     request_id: hex::encode(req.prepKeygenId.to_be_bytes::<32>()),
                 }),
