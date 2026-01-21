@@ -43,11 +43,10 @@ jobs:
        (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment'))
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: write
-      issues: write
-      id-token: write
-      actions: read
+      contents: read # Required for checkout
+      pull-requests: write # Required for PR review and comment actions
+      issues: write # Required for issue comment actions
+      actions: read # Required for reading CI results
     steps:
       # For workflow_dispatch: checkout the PR branch
       # For comments: checkout default branch (action has PR context)
@@ -63,7 +62,7 @@ jobs:
       - name: Run Claude Code
         uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # 2026-01-16
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: "https://github.com/zama-ai/zama-marketplace.git"
           plugins: |
             project-manager@zama-marketplace
