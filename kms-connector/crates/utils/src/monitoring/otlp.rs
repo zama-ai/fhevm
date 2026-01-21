@@ -120,7 +120,7 @@ mod tests {
     // `PropagationContext`.
     fn test_propagation_context() {
         let context: PropagationContext =
-            bc2wrap::deserialize(&alloy::hex::decode("0000000000000000").unwrap()).unwrap();
+            bc2wrap::deserialize_safe(&alloy::hex::decode("0000000000000000").unwrap()).unwrap();
         assert_eq!(context, PropagationContext::empty());
     }
 }
