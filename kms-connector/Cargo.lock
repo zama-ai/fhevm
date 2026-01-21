@@ -4060,6 +4060,7 @@ dependencies = [
  "connector-utils",
  "dashmap",
  "fhevm_gateway_bindings",
+ "futures",
  "humantime-serde",
  "kms-grpc",
  "mocktail",

@@ -15,6 +15,7 @@ actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
 dashmap.workspace = true
+futures.workspace = true
 humantime-serde.workspace = true
 kms-grpc.workspace = true
 prometheus.workspace = true
