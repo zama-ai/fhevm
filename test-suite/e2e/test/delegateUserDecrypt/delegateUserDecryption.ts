@@ -3,12 +3,11 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { delegatedUserDecryptSingleHandle } from '../utils';
+import { delegatedUserDecryptSingleHandle, waitForBlock } from '../utils';
 
-const BLOCK_TIME_MS = 1000;
+const USER_DECRYPTION_NOT_DELEGATED_SELECTOR = '0x0190c506';
 
 describe('Delegate user decryption', function () {
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   before(async function () {
     await initSigners(2);
@@ -32,8 +31,9 @@ describe('Delegate user decryption', function () {
       .connect(this.signers.alice)
       .delegateUserDecryption(this.delegateAddress, this.contractDelegateAddress);
 
-    // Wait for 15 seconds to ensure delegation is propagated by coprocessor.
-    await sleep(15 * BLOCK_TIME_MS);
+    // Wait for 15 blocks to ensure delegation is propagated by the coprocessor.
+    const currentBlock = await ethers.provider.getBlockNumber();
+    await waitForBlock(currentBlock + 15);
   });
 
   it('test delegated user decrypt ebool', async function () {
@@ -182,17 +182,18 @@ describe('Delegate user decryption', function () {
 
   it('test delegated user decrypt revoked', async function () {
     const revoke = await this.contractDelegator
-      .connect(this.signers.alice)
       .revokeUserDecryptionDelegation(this.signers.bob.address, this.contractDelegateAddress);
     const revoke_result = await revoke.wait(1);
     expect(revoke_result.status).to.equal(1);
 
-    // Wait for 15 seconds to ensure revocation is propagated by coprocessor.
-    await sleep(15 * BLOCK_TIME_MS);
+    // Wait for 15 blocks to ensure revocation is propagated by the coprocessor.
+    const currentBlock = await ethers.provider.getBlockNumber();
+    await waitForBlock(currentBlock + 15);
 
     const handle = await this.contractDelegator.xBool();
     const { publicKey, privateKey } = this.instances.bob.generateKeypair();
 
+    // Check that decryption fails with UserDecryptionNotDelegated (0x0190c506) error
     await expect(delegatedUserDecryptSingleHandle(
         this.instances.bob,
         handle,
@@ -203,7 +204,7 @@ describe('Delegate user decryption', function () {
         privateKey,
         publicKey,
       )).to.be.rejectedWith(
-      new RegExp('Could not estimate gas'),
+      new RegExp(USER_DECRYPTION_NOT_DELEGATED_SELECTOR),
     );
   });
 });

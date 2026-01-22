@@ -17,9 +17,12 @@ contract DelegateUserDecryptDelegator is E2ECoprocessorConfig {
     euint32 public xUint32;
     /// @dev Encrypted 64-bit unsigned integer
     euint64 public xUint64;
+    /// @dev Encrypted 128-bit unsigned integer
     euint128 public xUint128;
-    eaddress public xAddress;
+    /// @dev Encrypted 256-bit unsigned integer
     euint256 public xUint256;
+    /// @dev Encrypted address
+    eaddress public xAddress;
 
     /// @notice Constructor to initialize encrypted values and set permissions
     constructor() {
@@ -48,17 +51,20 @@ contract DelegateUserDecryptDelegator is E2ECoprocessorConfig {
         FHE.allowThis(xUint64);
         FHE.allow(xUint64, msg.sender);
 
+        // Initialize and set permissions for xUint128
         xUint128 = FHE.asEuint128(145275933516363203950142179850024740765);
         FHE.allowThis(xUint128);
         FHE.allow(xUint128, msg.sender);
 
-        xAddress = FHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
-        FHE.allowThis(xAddress);
-        FHE.allow(xAddress, msg.sender);
-
+        // Initialize and set permissions for xUint256
         xUint256 = FHE.asEuint256(74285495974541385002137713624115238327312291047062397922780925695323480915729);
         FHE.allowThis(xUint256);
         FHE.allow(xUint256, msg.sender);
+
+        // Initialize and set permissions for xAddress
+        xAddress = FHE.asEaddress(0x8ba1f109551bD432803012645Ac136ddd64DBA72);
+        FHE.allowThis(xAddress);
+        FHE.allow(xAddress, msg.sender);
     }
 
     function delegateUserDecryption(address delegate, address delegateContractAddress) public {
@@ -68,8 +74,8 @@ contract DelegateUserDecryptDelegator is E2ECoprocessorConfig {
         FHE.allow(xUint32, delegateContractAddress);
         FHE.allow(xUint64, delegateContractAddress);
         FHE.allow(xUint128, delegateContractAddress);
-        FHE.allow(xAddress, delegateContractAddress);
         FHE.allow(xUint256, delegateContractAddress);
+        FHE.allow(xAddress, delegateContractAddress);
 
         FHE.delegateUserDecryption(delegate, delegateContractAddress, uint64(block.timestamp + 1 days));
     }
