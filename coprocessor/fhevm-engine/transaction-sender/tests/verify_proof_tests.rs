@@ -1,8 +1,7 @@
 use alloy::network::TxSigner;
 use alloy::primitives::FixedBytes;
 use alloy::primitives::U256;
-use alloy::providers::{Provider, WsConnect};
-use alloy::signers::local::PrivateKeySigner;
+use alloy::providers::WsConnect;
 use alloy::{providers::ProviderBuilder, sol};
 use common::SignerType;
 use common::{is_coprocessor_config_error, CiphertextCommits, InputVerification, TestEnvironment};
@@ -65,7 +64,6 @@ async fn verify_proof_response_success(#[case] signer_type: SignerType) -> anyho
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -182,7 +180,6 @@ async fn verify_proof_response_empty_handles_success(
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -302,7 +299,6 @@ async fn verify_proof_response_concurrent_success(
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -420,7 +416,6 @@ async fn reject_proof_response_success(#[case] signer_type: SignerType) -> anyho
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -531,7 +526,6 @@ async fn verify_proof_response_reversal_already_verified(
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -634,7 +628,6 @@ async fn reject_proof_response_reversal_already_rejected(
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -737,7 +730,6 @@ async fn verify_proof_response_other_reversal(
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -837,7 +829,6 @@ async fn reject_proof_response_other_reversal(
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -932,7 +923,6 @@ async fn verify_proof_response_other_reversal_gas_estimation(
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -1031,7 +1021,6 @@ async fn reject_proof_response_other_reversal_gas_estimation(
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -1132,7 +1121,6 @@ async fn verify_proof_max_retries_remove_entry(
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
@@ -1223,7 +1211,6 @@ async fn verify_proof_max_retries_do_not_remove_entry(
         env.db_pool.clone(),
         *input_verification.address(),
         *ciphertext_commits.address(),
-        PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
         env.cancel_token.clone(),
