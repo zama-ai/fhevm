@@ -15,11 +15,9 @@ name: claude-review
 # Secrets required:
 # - CLAUDE_CODE_OAUTH_TOKEN: OAuth token from `claude setup-token`
 #
-# Note: Private marketplaces are cloned in a separate step using the Claude GitHub App token:
-# 1. Get OIDC token (requires id-token: write permission)
-# 2. Exchange OIDC token for Claude App token via Anthropic API
-# 3. Use App token to clone marketplace (has access to all repos where app is installed)
-# 4. Pass local path to action to avoid git authentication issues in the action's setup
+# Note: Private marketplaces require git auth in base-action mode.
+# We obtain the Claude GitHub App token and configure git to use it for https clones,
+# so the action can clone marketplaces directly.
 
 on:
   issue_comment:
@@ -91,18 +89,15 @@ jobs:
           echo "token=$APP_TOKEN" >> $GITHUB_OUTPUT
           echo "✓ Claude App token obtained"
 
-      - name: Clone private marketplace
+      - name: Configure git for marketplace
         run: |
-          gh repo clone zama-ai/zama-marketplace /tmp/zama-marketplace
-          echo "✓ Marketplace cloned to /tmp/zama-marketplace"
-        env:
-          GH_TOKEN: ${{ steps.claude-token.outputs.token }}
+          git config --global url."https://x-access-token:${{ steps.claude-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
 
       - name: Run Claude Code
         uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # 2026-01-16
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: "/tmp/zama-marketplace"
+          plugin_marketplaces: "https://github.com/zama-ai/zama-marketplace.git"
           plugins: |
             project-manager@zama-marketplace
             zama-developer@zama-marketplace
