@@ -142,12 +142,19 @@ impl<GP: Provider, HP: Provider> DbEventProcessor<GP, HP> {
             GatewayEventKind::UserDecryption(req) => {
                 // No need to check decryption is done for user decrypt, as MPC parties don't
                 // communicate between each other for user decrypt
-                self.decryption_processor
-                    .check_ciphertexts_allowed_for_user_decryption(
-                        &req.snsCtMaterials,
-                        req.userAddress,
-                    )
-                    .await?;
+
+                // Skip the ACL check if we don't have the `tx_hash` just for v0.11.
+                // This is tracked by this issue: https://github.com/zama-ai/fhevm-internal/issues/916.
+                if let Some(tx_hash) = event.tx_hash {
+                    let calldata = self.decryption_processor.fetch_calldata(tx_hash).await?;
+                    self.decryption_processor
+                        .check_ciphertexts_allowed_for_user_decryption(
+                            calldata,
+                            &req.snsCtMaterials,
+                            req.userAddress,
+                        )
+                        .await?;
+                }
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,

@@ -1,22 +1,26 @@
+use std::collections::HashMap;
+
 use crate::core::{
     config::Config,
     event_processor::{ProcessingError, s3::S3Service},
 };
 use alloy::{
+    consensus::Transaction,
     hex,
-    primitives::{Address, Bytes, U256},
+    primitives::{Address, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
     providers::Provider,
+    sol_types::SolCall,
 };
 use anyhow::anyhow;
 use connector_utils::types::{KmsGrpcRequest, fhe::extract_chain_id_from_handle};
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, SnsCiphertextMaterial,
+    self, DecryptionInstance, SnsCiphertextMaterial, delegatedUserDecryptionRequestCall,
+    userDecryptionRequestCall,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_grpc::kms::v1::{
     Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
-use std::collections::HashMap;
 use tracing::info;
 
 #[derive(Clone)]
@@ -84,10 +88,16 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn check_ciphertexts_allowed_for_public_decryption(
         &self,
         sns_ciphertexts: &[SnsCiphertextMaterial],
     ) -> Result<(), ProcessingError> {
+        info!(
+            "Starting ACL check for {} handles...",
+            sns_ciphertexts.len()
+        );
+
         for ct in sns_ciphertexts {
             let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
                 .map_err(ProcessingError::Irrecoverable)?;
@@ -110,34 +120,116 @@ where
             }
         }
 
+        info!("ACL check passed for {} handles!", sns_ciphertexts.len());
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn check_ciphertexts_allowed_for_user_decryption(
         &self,
+        calldata: Vec<u8>,
         sns_ciphertexts: &[SnsCiphertextMaterial],
         user_address: Address,
     ) -> Result<(), ProcessingError> {
-        for ct in sns_ciphertexts {
-            let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
-                .map_err(ProcessingError::Irrecoverable)?;
-            let Some(acl_contract) = self.acl_contracts.get(&ct_chain_id) else {
-                return Err(ProcessingError::Irrecoverable(anyhow!(
-                    "No ACL contract config found for chain id {ct_chain_id}"
-                )));
+        info!(
+            "Starting ACL check for {} handles...",
+            sns_ciphertexts.len()
+        );
+
+        let (ct_handle_contract_pairs, delegator_address) =
+            match delegatedUserDecryptionRequestCall::abi_decode(calldata.as_slice()) {
+                Ok(parsed_calldata) => (
+                    parsed_calldata.ctHandleContractPairs,
+                    Some(parsed_calldata.delegationAccounts.delegatorAddress),
+                ),
+                Err(e) => {
+                    let parsed_calldata = userDecryptionRequestCall::abi_decode(calldata.as_slice())
+                    .map_err(|e2| ProcessingError::Irrecoverable(
+                        anyhow!("Was not able to parse calldata for both delegatedUserDecryptionRequestCall ({e}) and userDecryptionRequestCall {e2}!"))
+                    )?;
+                    (parsed_calldata.ctHandleContractPairs, None)
+                }
             };
 
-            if !acl_contract
-                .isAllowed(ct.ctHandle, user_address)
+        let contracts_map = HashMap::<FixedBytes<32>, Address, DefaultHashBuilder>::from_iter(
+            ct_handle_contract_pairs
+                .iter()
+                .map(|c| (c.ctHandle, c.contractAddress)),
+        );
+        for ct in sns_ciphertexts {
+            let contract_address = contracts_map.get(ct.ctHandle.as_slice()).ok_or_else(|| {
+                ProcessingError::Irrecoverable(anyhow!(
+                    "Could not find contract address for handle {}",
+                    hex::encode(ct.ctHandle)
+                ))
+            })?;
+            self.inner_check_ciphertext_allowed_for_user_decryption(
+                ct.ctHandle,
+                user_address,
+                *contract_address,
+                delegator_address,
+            )
+            .await?;
+        }
+
+        info!("ACL check passed for {} handles!", sns_ciphertexts.len());
+        Ok(())
+    }
+
+    async fn inner_check_ciphertext_allowed_for_user_decryption(
+        &self,
+        handle: FixedBytes<32>,
+        user_address: Address,
+        contract_address: Address,
+        delegator_address: Option<Address>,
+    ) -> Result<(), ProcessingError> {
+        let ct_chain_id = extract_chain_id_from_handle(handle.as_slice())
+            .map_err(ProcessingError::Irrecoverable)?;
+        let Some(acl_contract) = self.acl_contracts.get(&ct_chain_id) else {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "No ACL contract config found for chain id {ct_chain_id}"
+            )));
+        };
+
+        let handle_hex = hex::encode(handle);
+        if let Some(delegator_addr) = delegator_address
+            && !acl_contract
+                .isHandleDelegatedForUserDecryption(
+                    delegator_addr,
+                    user_address,
+                    contract_address,
+                    handle,
+                )
                 .call()
                 .await
                 .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
-            {
-                return Err(ProcessingError::Irrecoverable(anyhow!(
-                    "{} is not allowed for decrypt!",
-                    hex::encode(ct.ctHandle)
-                )));
-            }
+        {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "{user_address} is not a delegate of {delegator_addr} for contract \
+                    {contract_address} and handle {handle_hex}!",
+            )));
+        }
+
+        if !acl_contract
+            .isAllowed(handle, user_address)
+            .call()
+            .await
+            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
+        {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "{user_address} is not allowed to decrypt {handle_hex}!",
+            )));
+        }
+
+        if !acl_contract
+            .isAllowed(handle, contract_address)
+            .call()
+            .await
+            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
+        {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "{contract_address} is not allowed to decrypt {handle_hex}!",
+            )));
         }
 
         Ok(())
@@ -225,6 +317,21 @@ where
 
         Ok(sns_ciphertext_materials)
     }
+
+    pub async fn fetch_calldata(
+        &self,
+        tx_hash: FixedBytes<32>,
+    ) -> Result<Vec<u8>, ProcessingError> {
+        self.decryption_contract
+            .provider()
+            .get_transaction_by_hash(tx_hash)
+            .await
+            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
+            .ok_or_else(|| {
+                ProcessingError::Irrecoverable(anyhow!("No transaction found with hash {tx_hash}!"))
+            })
+            .map(|tx| tx.input().to_vec())
+    }
 }
 
 pub struct UserDecryptionExtraData {
@@ -249,7 +356,8 @@ mod tests {
         sol_types::SolValue,
         transports::http::reqwest,
     };
-    use connector_utils::tests::rand::rand_sns_ct;
+    use connector_utils::tests::rand::{rand_address, rand_sns_ct};
+    use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
 
@@ -372,6 +480,14 @@ mod tests {
             ACL::new(Address::default(), mock_provider.clone()),
         )]);
 
+        let calldata = delegatedUserDecryptionRequestCall {
+            ctHandleContractPairs: vec![CtHandleContractPair {
+                ctHandle: sns_ct.ctHandle,
+                contractAddress: rand_address(),
+            }],
+            ..Default::default()
+        }
+        .abi_encode();
         let sns_ciphertexts = vec![sns_ct];
         let user_address = Address::default();
         let config = Config::default();
@@ -381,11 +497,15 @@ mod tests {
 
         match mock_response {
             MockResponse::Failure(msg) => asserter.push_failure_msg(msg),
-            MockResponse::Success(val) => asserter.push_success(&val.abi_encode()),
+            MockResponse::Success(val) => {
+                for _ in 0..3 {
+                    asserter.push_success(&val.abi_encode())
+                }
+            }
         }
 
         let result = decryption_processor
-            .check_ciphertexts_allowed_for_user_decryption(&sns_ciphertexts, user_address)
+            .check_ciphertexts_allowed_for_user_decryption(calldata, &sns_ciphertexts, user_address)
             .await;
 
         match expected {
