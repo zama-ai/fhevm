@@ -1,6 +1,7 @@
 mod common;
 
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
+use fhevm_relayer::core::job_id::JobId;
 use fhevm_relayer::gateway::arbitrum::transaction::helper::GatewayTransactionEngine;
 use std::str::FromStr;
 
@@ -45,6 +46,7 @@ async fn test_tx_helper() {
     // since lots of important stuff will come from the provider fillers
     let tx_request = match tx_service
         .prepare_transaction(
+            &JobId::ZERO,
             random_target_address,
             Bytes::from(FixedBytes::from(U256::ZERO)),
             None,
@@ -56,7 +58,7 @@ async fn test_tx_helper() {
     };
 
     let result = tx_service
-        .send_raw_transaction_sync_with_retries(tx_request)
+        .send_raw_transaction_sync_with_retries(&JobId::ZERO, tx_request)
         .await;
 
     println!(

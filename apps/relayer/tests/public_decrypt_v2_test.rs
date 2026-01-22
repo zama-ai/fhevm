@@ -269,7 +269,7 @@ async fn test_contract_paused_returns_503() {
     setup.shutdown().await;
 }
 
-/// Test invalid signature (0x2a873d27) returns HTTP 400 with label "invalid_signature"
+/// Test invalid signature (0x2a873d27) returns HTTP 400 with label "validation_failed" and signature details
 #[tokio::test]
 async fn test_invalid_signature_returns_400() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
@@ -287,11 +287,13 @@ async fn test_invalid_signature_returns_400() {
     assert_eq!(body.status, "failed");
     assert!(body.result.is_none());
 
-    let error = body.error.as_ref().expect("Error should be present");
     assert_eq!(
-        error.get("label").and_then(|v| v.as_str()),
-        Some("invalid_signature"),
-        "Expected label 'invalid_signature' for InvalidUserSignature error"
+        body.error,
+        Some(serde_json::json!({
+            "label": "validation_failed",
+            "message": "Validation failed for 1 field(s)",
+            "details": [{ "field": "signature", "issue": "Signature is invalid" }]
+        }))
     );
 
     setup.shutdown().await;

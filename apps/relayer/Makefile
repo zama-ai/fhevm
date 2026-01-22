@@ -126,7 +126,7 @@ sqlx-migrate: ## Run database migrations for relayer database
 	@cd relayer-migrate && cargo sqlx migrate run --database-url "postgresql://postgres:postgres@localhost:5433/relayer_db"
 
 sqlx-prepare: ## Prepare sqlx offline data for CI (run after schema changes)
-	@cargo sqlx prepare --database-url "postgresql://postgres:postgres@localhost:5433/relayer_db"
+	@cargo sqlx prepare --database-url "postgresql://postgres:postgres@localhost:5433/relayer_db" -- --all-targets
 
 ##@ Release
 release-minor: ## Release minor version bump (no publish, no tag)
