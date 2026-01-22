@@ -15,8 +15,11 @@ name: claude-review
 # Secrets required:
 # - CLAUDE_CODE_OAUTH_TOKEN: OAuth token from `claude setup-token`
 #
-# Note: Private marketplaces are cloned in a separate step using the default GITHUB_TOKEN,
-# then passed to the action as local paths to avoid authentication issues with the action's git setup
+# Note: Private marketplaces are cloned in a separate step using the Claude GitHub App token:
+# 1. Get OIDC token (requires id-token: write permission)
+# 2. Exchange OIDC token for Claude App token via Anthropic API
+# 3. Use App token to clone marketplace (has access to all repos where app is installed)
+# 4. Pass local path to action to avoid git authentication issues in the action's setup
 
 on:
   issue_comment:
@@ -54,12 +57,26 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b
 
+      - name: Get Claude App token
+        id: claude-token
+        run: |
+          # Get OIDC token
+          OIDC_TOKEN=$(curl -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=claude-code-github-action" | jq -r '.value')
+
+          # Exchange for GitHub App token
+          APP_TOKEN=$(curl -s -X POST https://api.anthropic.com/api/github/github-app-token-exchange \
+            -H "Authorization: Bearer $OIDC_TOKEN" | jq -r '.token // .app_token')
+
+          echo "token=$APP_TOKEN" >> $GITHUB_OUTPUT
+          echo "✓ Claude App token obtained"
+
       - name: Clone private marketplace
         run: |
           gh repo clone zama-ai/zama-marketplace /tmp/zama-marketplace
           echo "✓ Marketplace cloned to /tmp/zama-marketplace"
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.claude-token.outputs.token }}
 
       - name: Run Claude Code
         uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # 2026-01-16
