@@ -76,7 +76,9 @@ jobs:
 
       - name: Configure git for marketplace
         run: |
-          git config --global url."https://x-access-token:${{ steps.claude-token.outputs.token }}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${GITHUB_APP_TOKEN}@github.com/".insteadOf "https://github.com/"
+        env:
+          GITHUB_APP_TOKEN: ${{ steps.claude-token.outputs.token }}
 
       - name: Run Claude Code
         uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # 2026-01-16
