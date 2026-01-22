@@ -56,7 +56,7 @@ jobs:
 
       - name: Clone private marketplace
         run: |
-          git clone https://github.com/zama-ai/zama-marketplace.git /tmp/zama-marketplace
+          gh repo clone zama-ai/zama-marketplace /tmp/zama-marketplace
           echo "✓ Marketplace cloned to /tmp/zama-marketplace"
         env:
           GH_TOKEN: ${{ github.token }}
