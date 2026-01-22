@@ -63,25 +63,31 @@ jobs:
           # Get OIDC token
           OIDC_RESPONSE=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=claude-code-github-action")
-          echo "OIDC response: $OIDC_RESPONSE"
           OIDC_TOKEN=$(echo "$OIDC_RESPONSE" | jq -r '.value')
 
           if [ -z "$OIDC_TOKEN" ] || [ "$OIDC_TOKEN" = "null" ]; then
             echo "❌ Failed to get OIDC token"
+            echo "Response: $OIDC_RESPONSE"
             exit 1
           fi
+
+          # Mask the OIDC token
+          echo "::add-mask::$OIDC_TOKEN"
+          echo "✓ OIDC token obtained"
 
           # Exchange for GitHub App token
           APP_RESPONSE=$(curl -s -X POST https://api.anthropic.com/api/github/github-app-token-exchange \
             -H "Authorization: Bearer $OIDC_TOKEN")
-          echo "App token response: $APP_RESPONSE"
           APP_TOKEN=$(echo "$APP_RESPONSE" | jq -r '.token // .app_token')
 
           if [ -z "$APP_TOKEN" ] || [ "$APP_TOKEN" = "null" ]; then
             echo "❌ Failed to exchange for App token"
+            echo "Response (check for error): $(echo "$APP_RESPONSE" | jq -c '.error // .message // .')"
             exit 1
           fi
 
+          # Mask the App token
+          echo "::add-mask::$APP_TOKEN"
           echo "token=$APP_TOKEN" >> $GITHUB_OUTPUT
           echo "✓ Claude App token obtained"
 
