@@ -33,18 +33,6 @@ Note that recommendations assume a smoke test that runs transactions/requests at
  - **Description**: Counts the number of failed add ciphertext material transactions in the transaction-sender.
  - **Alarm**: If the counter increases over a period of time.
     - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
- 
-#### Metric Name: `coprocessor_txn_sender_allow_handle_success_counter`
- - **Type**: Counter
- - **Description**: Counts the number of successful allow handle transactions in the transaction-sender.
- - **Alarm**: If the counter is a flat line over a period of time.
-    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
-
-#### Metric Name: `coprocessor_txn_sender_allow_handle_fail_counter`
- - **Type**: Counter
- - **Description**: Counts the number of failed allow handle transactions in the transaction-sender.
- - **Alarm**: If the counter increases over a period of time.
-    - **Recommendation**: more than 60 failures in 1 minute, i.e. `increase(counter[1m]) > 60`.
 
 #### Metric Name: `coprocessor_allow_handle_unsent_gauge`
  - **Type**: Gauge
