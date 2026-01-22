@@ -11,12 +11,23 @@ name: claude-review
 # Security: Only users with write/admin permissions can trigger Claude.
 # External contributors (fork PRs) are automatically blocked by the action.
 # See: https://github.com/anthropics/claude-code-action/blob/main/src/github/validation/permissions.ts
+#
+# Secrets required:
+# - CLAUDE_CODE_OAUTH_TOKEN: OAuth token from `claude setup-token`
+#
+# Note: Private marketplaces are cloned in a separate step using the default GITHUB_TOKEN,
+# then passed to the action as local paths to avoid authentication issues with the action's git setup
 
 on:
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  # TEMPORARY: For testing marketplace cloning fix
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - main
 
 permissions: {}
 
@@ -24,8 +35,9 @@ jobs:
   claude-review:
     name: claude-review/respond
     if: |
-      contains(github.event.comment.body, '@claude') &&
-      (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment')
+      github.event_name == 'pull_request' ||
+      (contains(github.event.comment.body, '@claude') &&
+       (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment'))
     runs-on: ubuntu-latest
     permissions:
       contents: read # Required for checkout
@@ -42,12 +54,21 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b
 
+      - name: Clone private marketplace
+        run: |
+          git clone https://github.com/zama-ai/zama-marketplace.git /tmp/zama-marketplace
+          echo "✓ Marketplace cloned to /tmp/zama-marketplace"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Run Claude Code
         uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # 2026-01-16
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: "https://github.com/zama-ai/zama-marketplace.git"
+          plugin_marketplaces: "/tmp/zama-marketplace"
           plugins: |
             project-manager@zama-marketplace
             zama-developer@zama-marketplace
-          # Prompt: empty string → action extracts text after @claude automatically
+          # Prompt: empty string for comments (action extracts text after @claude)
+          # For pull_request trigger: explicit prompt to test marketplace fix
+          prompt: ${{ github.event_name == 'pull_request' && '/pr-review this PR thoroughly' || '' }}
