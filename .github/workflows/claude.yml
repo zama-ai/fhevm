@@ -24,11 +24,6 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
-  # TEMPORARY: For testing marketplace cloning fix
-  pull_request:
-    types: [opened, synchronize]
-    branches:
-      - main
 
 permissions: {}
 
@@ -36,9 +31,8 @@ jobs:
   claude-review:
     name: claude-review/respond
     if: |
-      github.event_name == 'pull_request' ||
-      (contains(github.event.comment.body, '@claude') &&
-       (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment'))
+      contains(github.event.comment.body, '@claude') &&
+      (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment')
     runs-on: ubuntu-latest
     permissions:
       contents: read # Required for checkout
@@ -102,5 +96,4 @@ jobs:
             project-manager@zama-marketplace
             zama-developer@zama-marketplace
           # Prompt: empty string for comments (action extracts text after @claude)
-          # For pull_request trigger: explicit prompt to test marketplace fix
-          prompt: ${{ github.event_name == 'pull_request' && '/pr-review this PR thoroughly' || '' }}
+          prompt: ""
