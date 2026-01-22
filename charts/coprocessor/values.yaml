@@ -940,17 +940,11 @@ txSender:
         configMapKeyRef:
           name: gateway-sc-addresses
           key: ciphertext_commits.address
-    - name: MULTICHAIN_ACL_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: gw-sc-addresses
-          key: multichain_acl.address
 
   # Command line arguments for transaction sender
   args:
     - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
     - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-    - --multichain-acl-address=$(MULTICHAIN_ACL_ADDRESS)
     - --gateway-url=ws://gateway-rpc-node:8548
     - --signer-type=private-key
     - --private-key=$(TX_SENDER_PRIVATE_KEY)
@@ -980,16 +974,9 @@ txSender:
     - --gas-limit-overprovision-percent=120
     - --graceful-shutdown-timeout=8s
     - --service-name=txn-sender
-    # New in 0.10
     - --metric-host-txn-latency=0.1:60.0:0.1
     - --metric-zkproof-txn-latency=0.1:60.0:0.1
     - --gauge-update-interval-secs=10
-    - --host-chain-url=$(ETHEREUM_RPC_URL)
-    - --delegation-block-delay=10  # not applied immediately to avoid reorg
-    - --delegation-clear-after-n_blocks=648000  # ~3 months at 12s block time, only on successful delegations
-    - --delegation-fallback-polling=30  # polling fallback in seconds when notification are not received
-    - --delegation-max-retry=100000  # does not include immediate retry on transient error which are infinite
-    - --retry-immediately-on-nonce-error=0  # Deprecated. To be removed in a future release.
 
   # Service ports configuration
   ports:
