@@ -231,6 +231,7 @@ async fn run_batch_computations(
 
 #[tokio::test]
 #[serial(db)]
+#[cfg(not(feature = "gpu"))]
 async fn test_lifo_mode() {
     init_tracing();
 
@@ -311,6 +312,7 @@ async fn test_lifo_mode() {
 
 #[tokio::test]
 #[serial(db)]
+#[cfg(not(feature = "gpu"))]
 async fn test_garbage_collect() {
     init_tracing();
 
@@ -433,7 +435,15 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
         .await?;
 
     // Set up S3 storage
-    let (s3_instance, s3_client) = setup_localstack(&conf).await?;
+    let (s3_instance, s3_client) = if cfg!(feature = "gpu") {
+        info!("GPU feature is enabled, avoid testing S3-related functionality");
+        (
+            None,
+            aws_sdk_s3::Client::new(&aws_config::load_defaults(BehaviorVersion::latest()).await),
+        )
+    } else {
+        setup_localstack(&conf).await?
+    };
 
     let token = db_instance.parent_token.child_token();
     let config: Config = conf.clone();
@@ -684,6 +694,7 @@ async fn assert_ciphertext128(
 }
 
 /// Asserts that ciphertext exists in S3
+#[cfg(not(feature = "gpu"))]
 async fn assert_ciphertext_uploaded(
     test_env: &TestEnvironment,
     bucket: &String,
@@ -700,7 +711,18 @@ async fn assert_ciphertext_uploaded(
     .await;
 }
 
+#[cfg(feature = "gpu")]
+async fn assert_ciphertext_uploaded(
+    _test_env: &TestEnvironment,
+    _bucket: &String,
+    _handle: &Vec<u8>,
+    _expected_ct_len: Option<i64>,
+) {
+    // No-op when GPU feature is enabled
+}
+
 /// Asserts that the number of ciphertext128 objects in S3 matches the expected count
+#[cfg(not(feature = "gpu"))]
 async fn assert_ciphertext_s3_object_count(
     test_env: &TestEnvironment,
     bucket: &String,
@@ -708,6 +730,15 @@ async fn assert_ciphertext_s3_object_count(
 ) {
     s3_utils::assert_object_count(test_env.s3_client.to_owned(), bucket, expected_count as i32)
         .await;
+}
+
+#[cfg(feature = "gpu")]
+async fn assert_ciphertext_s3_object_count(
+    _te: &TestEnvironment,
+    _bucket: &String,
+    _expected_count: i64,
+) {
+    // No-op when GPU feature is enabled
 }
 
 fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {

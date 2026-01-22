@@ -27,7 +27,6 @@ use fhevm_engine_common::{
     utils::{to_hex, DatabaseURL},
 };
 use futures::join;
-use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
@@ -51,10 +50,16 @@ pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
 pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[cfg(feature = "gpu")]
+type ServerKey = tfhe::CudaServerKey;
+#[cfg(not(feature = "gpu"))]
+type ServerKey = tfhe::ServerKey;
+
+#[derive(Clone)]
 pub struct KeySet {
-    pub server_key: tfhe::ServerKey,
+    /// Optional ClientKey for decrypting on testing
     pub client_key: Option<tfhe::ClientKey>,
+    pub server_key: ServerKey,
 }
 
 #[derive(Clone)]
@@ -117,7 +122,7 @@ pub struct Config {
     pub pg_auto_explain_with_min_duration: Option<Duration>,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SchedulePolicy {
     Sequential,
     #[default]
@@ -501,7 +506,8 @@ pub async fn run_all(
         mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
 
     let rayon_threads = rayon::current_num_threads();
-    info!(config = %config, rayon_threads, "Starting SNS worker");
+    let gpu_enabled = fhevm_engine_common::utils::log_backend();
+    info!(gpu_enabled, rayon_threads, config = %config, "Starting SNS worker");
 
     if !config.service_name.is_empty() {
         if let Err(err) = telemetry::setup_otlp(&config.service_name) {

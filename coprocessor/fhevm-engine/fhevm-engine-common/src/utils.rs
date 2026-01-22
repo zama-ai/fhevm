@@ -244,3 +244,27 @@ impl FromStr for DatabaseURL {
         Ok(Self(s.to_owned()))
     }
 }
+
+/// Logs whether the GPU backend is enabled or not.
+pub fn log_backend() -> bool {
+    log_backend_impl()
+}
+
+#[cfg(feature = "gpu")]
+fn log_backend_impl() -> bool {
+    use tfhe::core_crypto::gpu::{get_number_of_gpus, get_number_of_sms};
+    let num_gpus = get_number_of_gpus();
+    let streaming_multiprocessors = get_number_of_sms();
+    tracing::info!(
+        num_gpus,
+        streaming_multiprocessors,
+        "GPU feature is enabled"
+    );
+    true
+}
+
+#[cfg(not(feature = "gpu"))]
+fn log_backend_impl() -> bool {
+    tracing::info!("GPU feature is disabled, using CPU backend");
+    false
+}
