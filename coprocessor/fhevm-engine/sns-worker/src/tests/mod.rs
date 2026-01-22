@@ -50,7 +50,7 @@ async fn test_fhe_ciphertext128_with_compression() {
         &test_env,
         &tf.handle.into(),
         &tf.ciphertext64.clone(),
-        tf.decrypted,
+        tf.cleartext,
         true,
         WITH_COMPRESSION,
     )
@@ -61,7 +61,7 @@ async fn test_fhe_ciphertext128_with_compression() {
         &test_env,
         &tf.handle.into(),
         &tf.ciphertext64,
-        tf.decrypted,
+        tf.cleartext,
         false,
         WITH_COMPRESSION,
     )
@@ -92,7 +92,7 @@ async fn test_batch_execution() {
         &tf.handle,
         batch_size,
         &tf.ciphertext64.clone(),
-        tf.decrypted,
+        tf.cleartext,
         WITH_COMPRESSION,
     )
     .await
@@ -110,7 +110,7 @@ async fn test_fhe_ciphertext128_no_compression() {
         &test_env,
         &tf.handle.into(),
         &tf.ciphertext64.clone(),
-        tf.decrypted,
+        tf.cleartext,
         true,
         NO_COMPRESSION,
     )
@@ -530,7 +530,7 @@ async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> a
 struct TestFile {
     pub handle: [u8; 32],
     pub ciphertext64: Vec<u8>,
-    pub decrypted: i64,
+    pub cleartext: i64,
 }
 
 /// Creates a test-file from handle, ciphertext64 and plaintext
@@ -544,7 +544,7 @@ fn write_test_file(filename: &str) {
     let v = TestFile {
         handle,
         ciphertext64,
-        decrypted: plaintext,
+        cleartext: plaintext,
     };
 
     // Write bytes to a file
