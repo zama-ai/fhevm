@@ -143,7 +143,7 @@ impl DbEventPicker {
                 ) AS req
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
                 RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data,
-                already_sent, error_counter, otlp_context
+                calldata, already_sent, error_counter, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)

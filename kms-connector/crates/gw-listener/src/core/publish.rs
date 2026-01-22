@@ -53,11 +53,14 @@ async fn publish_event_inner(
 
     let event_type = (&event.kind).into();
     let otlp_ctx = event.otlp_context;
+    let calldata = event.calldata;
     let query_result = match event.kind {
         GatewayEventKind::PublicDecryption(e) => {
             publish_public_decryption(db_pool, e, otlp_ctx).await
         }
-        GatewayEventKind::UserDecryption(e) => publish_user_decryption(db_pool, e, otlp_ctx).await,
+        GatewayEventKind::UserDecryption(e) => {
+            publish_user_decryption(db_pool, e, calldata, otlp_ctx).await
+        }
         GatewayEventKind::PrepKeygen(e) => publish_prep_keygen_request(db_pool, e, otlp_ctx).await,
         GatewayEventKind::Keygen(e) => publish_keygen_request(db_pool, e, otlp_ctx).await,
         GatewayEventKind::Crsgen(e) => publish_crsgen_request(db_pool, e, otlp_ctx).await,
@@ -105,6 +108,7 @@ async fn publish_public_decryption(
 async fn publish_user_decryption(
     db_pool: &Pool<Postgres>,
     request: UserDecryptionRequest,
+    calldata: Option<Vec<u8>>,
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
     let sns_ciphertexts_db = request
@@ -115,14 +119,15 @@ async fn publish_user_decryption(
 
     sqlx::query!(
         "INSERT INTO user_decryption_requests(\
-            decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context\
+            decryption_id, sns_ct_materials, user_address, public_key, extra_data, calldata, otlp_context\
         ) \
-        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         request.decryptionId.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
         request.userAddress.as_slice(),
         request.publicKey.as_ref(),
         request.extraData.as_ref(),
+        calldata,
         bc2wrap::serialize(&otlp_ctx)?,
     )
     .execute(db_pool)

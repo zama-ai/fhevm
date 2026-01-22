@@ -7,6 +7,7 @@ use crate::{
     },
 };
 use alloy::{
+    consensus::Transaction,
     contract::{Event, EventPoller},
     network::Ethereum,
     primitives::LogData,
@@ -285,7 +286,8 @@ where
                     .inc();
 
                 let db = self.db_pool.clone();
-                spawn_with_limit(handle_gateway_event(db, event.into(), log.block_number)).await;
+                let provider = self.decryption_contract.provider().clone();
+                spawn_with_limit(handle_gateway_event(db, provider, event.into(), log)).await;
             }
             Err(err) => {
                 error!("Error while listening for {event_type} events: {err}");
@@ -353,18 +355,41 @@ where
 
 /// Main function used to trace a single event handling across all Connector's services.
 #[tracing::instrument(skip_all, fields(event = %event_kind))]
-async fn handle_gateway_event(
+async fn handle_gateway_event<P: Provider>(
     db_pool: Pool<Postgres>,
+    provider: P,
     event_kind: GatewayEventKind,
-    block_number: Option<u64>,
+    log: Log,
 ) {
+    let calldata = if let GatewayEventKind::UserDecryption(_) = event_kind {
+        match fetch_calldata(provider, &log).await {
+            Ok(calldata) => Some(calldata),
+            Err(e) => return error!("{e}"),
+        }
+    } else {
+        None
+    };
     let event = GatewayEvent::new(
         event_kind,
+        calldata,
         PropagationContext::inject(&tracing::Span::current().context()),
     );
-    if let Err(err) = publish_event(&db_pool, event, block_number).await {
+    if let Err(err) = publish_event(&db_pool, event, log.block_number).await {
         error!("Failed to publish event: {err}");
     }
+}
+
+async fn fetch_calldata<P: Provider>(provider: P, log: &Log) -> anyhow::Result<Vec<u8>> {
+    let tx_hash = log
+        .transaction_hash
+        .ok_or_else(|| anyhow!("No tx_hash for this UserDecryption. Can't fetch calldata!"))?;
+    let calldata = provider
+        .get_transaction_by_hash(tx_hash)
+        .await?
+        .ok_or_else(|| anyhow!("No transaction found with hash {tx_hash}!"))?
+        .input()
+        .to_vec();
+    Ok(calldata)
 }
 
 fn decode_log<E: SolEvent>(log: &Log) -> alloy::sol_types::Result<E> {
