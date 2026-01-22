@@ -72,7 +72,7 @@ jobs:
             exit 1
           fi
 
-          echo "token=$APP_TOKEN" >> $GITHUB_OUTPUT
+          echo "token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
 
       - name: Configure git for marketplace
         run: |
