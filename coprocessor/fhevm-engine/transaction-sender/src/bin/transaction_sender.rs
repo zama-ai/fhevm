@@ -45,13 +45,7 @@ struct Conf {
     ciphertext_commits_address: Address,
 
     #[arg(short, long)]
-    multichain_acl_address: Address,
-
-    #[arg(short, long)]
     gateway_url: Url,
-
-    #[arg(long)]
-    host_chain_url: Url,
 
     #[arg(short, long, value_enum, default_value = "private-key")]
     signer_type: SignerType,
@@ -163,43 +157,6 @@ struct Conf {
 
     #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
     pub gauge_update_interval_secs: u64,
-
-    #[arg(
-        long,
-        default_value = "10",
-        help = "Delay for transmitting delegation to gateway in block number (to avoid most reorg)"
-    )]
-    pub delegation_block_delay: u64,
-
-    #[arg(
-        long,
-        default_value = "648000", // 3 months assuming 12s block time on host chain
-        help = "Clear delegation entries after N blocks (default to 3 months)"
-    )]
-    pub delegation_clear_after_n_blocks: u64,
-
-    #[arg(
-        long,
-        default_value = "30",
-        help = "Delay for inspecting delegations without notification (in seconds)"
-    )]
-    pub delegation_fallback_polling: u64,
-
-    #[arg(
-        long,
-        default_value = "100000",
-        help = "Number of total retry before definitively stopping (retry are progressively intermittent and less frequent)"
-    )]
-    pub delegation_max_retry: u64,
-
-    #[deprecated(note = "no longer used and will be removed in future versions")]
-    #[arg(
-        long,
-        default_value_t = 0,
-        help = "Number of immediate retries when concurrent transactions failed due to nonce errors (0 to disable)",
-        hide = true
-    )]
-    pub retry_immediately_on_nonce_error: u64,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -356,18 +313,6 @@ async fn main() -> anyhow::Result<()> {
     };
     let gateway_provider =
         NonceManagedProvider::new(gateway_provider, Some(wallet.default_signer().address()));
-    let Ok(host_chain_provider) = get_provider(
-        &conf,
-        &conf.host_chain_url,
-        "HostChain",
-        wallet.clone(),
-        &cancel_token,
-    )
-    .await
-    else {
-        info!("Cancellation requested before host chain provider was created on startup, exiting");
-        return Ok(());
-    };
 
     let config = ConfigSettings {
         verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
@@ -389,10 +334,6 @@ async fn main() -> anyhow::Result<()> {
         health_check_timeout: conf.health_check_timeout,
         gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
         graceful_shutdown_timeout: conf.graceful_shutdown_timeout,
-        delegation_block_delay: conf.delegation_block_delay,
-        delegation_clear_after_n_blocks: conf.delegation_clear_after_n_blocks,
-        delegation_fallback_polling: conf.delegation_fallback_polling,
-        delegation_max_retry: conf.delegation_max_retry,
     };
 
     let db_pool = sqlx::postgres::PgPoolOptions::new()
@@ -405,10 +346,8 @@ async fn main() -> anyhow::Result<()> {
             db_pool.clone(),
             conf.input_verification_address,
             conf.ciphertext_commits_address,
-            conf.multichain_acl_address,
             abstract_signer,
             gateway_provider,
-            host_chain_provider,
             cancel_token.clone(),
             config.clone(),
             None,

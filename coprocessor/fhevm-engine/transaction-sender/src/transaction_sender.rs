@@ -21,7 +21,6 @@ where
     operations: Vec<Arc<dyn ops::TransactionOperation<P>>>,
     input_verification_address: Address,
     ciphertext_commits_address: Address,
-    multichain_acl_address: Address,
     db_pool: Pool<Postgres>,
     gateway_provider: NonceManagedProvider<P>,
 }
@@ -35,10 +34,8 @@ where
         db_pool: Pool<Postgres>,
         input_verification_address: Address,
         ciphertext_commits_address: Address,
-        multichain_acl_address: Address,
         signer: AbstractSigner,
         gateway_provider: NonceManagedProvider<P>,
-        host_chain_provider: P,
         cancel_token: CancellationToken,
         conf: ConfigSettings,
         gas: Option<u64>,
@@ -62,24 +59,6 @@ where
                 gas,
                 db_pool.clone(),
             )),
-            Arc::new(ops::allow_handle::AllowHandleOperation::new(
-                multichain_acl_address,
-                gateway_provider.clone(),
-                conf.clone(),
-                gas,
-                db_pool.clone(),
-            )),
-            Arc::new(
-                ops::delegate_user_decrypt::DelegateUserDecryptOperation::new(
-                    multichain_acl_address,
-                    gateway_provider.clone(),
-                    host_chain_provider,
-                    conf.clone(),
-                    gas,
-                    db_pool.clone(),
-                    cancel_token.clone(),
-                ),
-            ),
         ];
         Ok(Self {
             cancel_token,
@@ -87,7 +66,6 @@ where
             operations,
             input_verification_address,
             ciphertext_commits_address,
-            multichain_acl_address,
             db_pool,
             gateway_provider,
         })
@@ -97,7 +75,6 @@ where
         info!(
             input_verification_address = %self.input_verification_address,
             ciphertext_commits_address = %self.ciphertext_commits_address,
-            multichain_acl_address = %self.multichain_acl_address,
             "Starting Transaction Sender"
         );
 
