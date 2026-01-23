@@ -131,7 +131,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
-          ISSUE_PR_URL: ${{ github.event.issue.pull_request }}
+          ISSUE_PR_URL: ${{ github.event.issue.pull_request.url || '' }}
           # Pull request event variables
           PR_TITLE_INPUT: ${{ github.event.pull_request.title }}
           PR_AUTHOR_INPUT: ${{ github.event.pull_request.user.login }}
@@ -160,5 +160,5 @@ jobs:
           prompt: ""
           claude_args: |
             --model opus
-            --allowedTools "Bash(uv),Bash(gh),Bash(git),Read,Edit,Write,Glob,Grep,Task"
+            --allowedTools "Bash(uv:*),Bash(gh:*),Bash(git:*),Read,Edit,Write,Glob,Grep,Task"
             --system-prompt "${{ env.CUSTOM_SYSTEM_PROMPT }}"
