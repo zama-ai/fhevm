@@ -10,7 +10,6 @@ license.workspace = true
 # workspace dependencies
 alloy = { workspace = true }
 bigdecimal = { workspace = true }
-bincode = { workspace = true }
 clap = { workspace = true }
 hex = { workspace = true }
 lru = { workspace = true }

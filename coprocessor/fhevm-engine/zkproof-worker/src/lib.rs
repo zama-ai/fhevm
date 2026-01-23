@@ -32,9 +32,6 @@ pub enum ExecutionError {
     #[error("Connection to PostgreSQL is lost")]
     LostDbConnection,
 
-    #[error("Serialization error: {0}")]
-    SerializationError(#[from] bincode::Error),
-
     #[error("IO error: {0}")]
     IOError(#[from] io::Error),
 

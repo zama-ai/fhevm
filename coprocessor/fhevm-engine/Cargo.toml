@@ -42,8 +42,6 @@ aws-credential-types = "1.2.6"
 aws-sdk-kms = { version = "1.68.0", default-features = false }
 aws-sdk-s3 = { version = "1.103.0", features = ["test-util"] }
 bigdecimal = "0.4.8"
-# Do not upgrade bincode and replace asap
-bincode = "=1.3.3"
 clap = { version = "4.5.38", features = ["derive"] }
 daggy = "0.8.1"
 foundry-compilers = { version = "0.19.1", features = ["svm-solc"] }

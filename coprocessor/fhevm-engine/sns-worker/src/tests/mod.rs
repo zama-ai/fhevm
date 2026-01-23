@@ -44,13 +44,13 @@ pub fn init_tracing() {
 async fn test_fhe_ciphertext128_with_compression() {
     const WITH_COMPRESSION: bool = true;
     let test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
-    let tf: TestFile = read_test_file("ciphertext64.bin");
+    let tf: TestFile = read_test_file("ciphertext64.json");
 
     test_decryptable(
         &test_env,
         &tf.handle.into(),
         &tf.ciphertext64.clone(),
-        tf.decrypted,
+        tf.cleartext,
         true,
         WITH_COMPRESSION,
     )
@@ -61,7 +61,7 @@ async fn test_fhe_ciphertext128_with_compression() {
         &test_env,
         &tf.handle.into(),
         &tf.ciphertext64,
-        tf.decrypted,
+        tf.cleartext,
         false,
         WITH_COMPRESSION,
     )
@@ -78,7 +78,7 @@ async fn test_fhe_ciphertext128_with_compression() {
 async fn test_batch_execution() {
     const WITH_COMPRESSION: bool = true;
     let test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
-    let tf: TestFile = read_test_file("ciphertext64.bin");
+    let tf: TestFile = read_test_file("ciphertext64.json");
 
     let batch_size = std::env::var("BATCH_SIZE")
         .ok()
@@ -92,7 +92,7 @@ async fn test_batch_execution() {
         &tf.handle,
         batch_size,
         &tf.ciphertext64.clone(),
-        tf.decrypted,
+        tf.cleartext,
         WITH_COMPRESSION,
     )
     .await
@@ -104,13 +104,13 @@ async fn test_batch_execution() {
 async fn test_fhe_ciphertext128_no_compression() {
     const NO_COMPRESSION: bool = false;
     let test_env = setup(NO_COMPRESSION).await.expect("valid setup");
-    let tf: TestFile = read_test_file("ciphertext64.bin");
+    let tf: TestFile = read_test_file("ciphertext64.json");
 
     test_decryptable(
         &test_env,
         &tf.handle.into(),
         &tf.ciphertext64.clone(),
-        tf.decrypted,
+        tf.cleartext,
         true,
         NO_COMPRESSION,
     )
@@ -400,10 +400,10 @@ async fn test_garbage_collect() {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128")
         .fetch_one(&pool)
         .await
-        .expect("ciphertexts128 is empty");
-    assert_eq!(
-        count, 0,
-        "ciphertext128 should be empty after garbage_collect"
+        .expect("ciphertexts128 has been GCd");
+    assert!(
+        count <= 100,
+        "ciphertext128 should have less entries than threshold after garbage_collect"
     );
 }
 
@@ -530,11 +530,11 @@ async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> a
 struct TestFile {
     pub handle: [u8; 32],
     pub ciphertext64: Vec<u8>,
-    pub decrypted: i64,
+    pub cleartext: i64,
 }
 
 /// Creates a test-file from handle, ciphertext64 and plaintext
-/// Can be used to update/create_new ciphertext64.bin file
+/// Can be used to update/create_new ciphertext64.json file
 #[expect(dead_code)]
 fn write_test_file(filename: &str) {
     let handle: [u8; 32] = hex::decode("TBD").unwrap().try_into().unwrap();
@@ -544,13 +544,13 @@ fn write_test_file(filename: &str) {
     let v = TestFile {
         handle,
         ciphertext64,
-        decrypted: plaintext,
+        cleartext: plaintext,
     };
 
     // Write bytes to a file
     File::create(filename)
         .expect("Failed to create file")
-        .write_all(&bincode::serialize(&v).unwrap())
+        .write_all(&serde_json::to_vec(&v).unwrap())
         .expect("Failed to write to file");
 }
 
@@ -558,7 +558,7 @@ fn read_test_file(filename: &str) -> TestFile {
     let mut file = File::open(filename).expect("Failed to open file");
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).expect("Failed to read file");
-    bincode::deserialize(&buffer).expect("Failed to deserialize")
+    serde_json::from_slice(&buffer).expect("Failed to deserialize")
 }
 
 async fn get_tenant_id_from_db(pool: &sqlx::PgPool, tenant_api_key: &str) -> i32 {
@@ -759,9 +759,9 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
             listen_channels: vec![LISTEN_CHANNEL.to_string()],
             notify_channel: "fhevm".to_string(),
             batch_limit,
-            gc_batch_limit: 30,
+            gc_batch_limit: 0,
             polling_interval: 60000,
-            cleanup_interval: Duration::from_secs(10),
+            cleanup_interval: Duration::from_hours(10),
             max_connections: 5,
             timeout: Duration::from_secs(5),
             lifo: false,

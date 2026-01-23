@@ -8,7 +8,6 @@ license.workspace = true
 [dependencies]
 # workspace dependencies
 aws-config = { workspace = true }
-bincode = { workspace = true }
 clap = { workspace = true }
 hex = { workspace = true }
 prometheus = { workspace = true }
