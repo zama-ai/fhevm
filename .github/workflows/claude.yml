@@ -58,6 +58,77 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
 
+      - name: Build custom system prompt
+        id: custom_prompt
+        run: |
+          # Extract PR metadata from webhook payload
+          if [[ "${{ github.event_name }}" == "pull_request" ]] || [[ -n "${{ github.event.issue.pull_request }}" ]]; then
+            # For pull_request events
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              PR_TITLE="${{ github.event.pull_request.title }}"
+              PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+              PR_HEAD="${{ github.event.pull_request.head.ref }}"
+              PR_BASE="${{ github.event.pull_request.base.ref }}"
+              PR_STATE="${{ github.event.pull_request.state }}"
+              PR_ADDITIONS="${{ github.event.pull_request.additions }}"
+              PR_DELETIONS="${{ github.event.pull_request.deletions }}"
+              PR_COMMITS="${{ github.event.pull_request.commits }}"
+              PR_FILES="${{ github.event.pull_request.changed_files }}"
+            else
+              # For issue_comment on PRs - need to fetch PR data
+              PR_NUMBER="${{ github.event.issue.number }}"
+              PR_DATA=$(gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,state,additions,deletions,commits)
+              PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+              PR_AUTHOR=$(echo "$PR_DATA" | jq -r '.author.login')
+              PR_HEAD=$(echo "$PR_DATA" | jq -r '.headRefName')
+              PR_BASE=$(echo "$PR_DATA" | jq -r '.baseRefName')
+              PR_STATE=$(echo "$PR_DATA" | jq -r '.state')
+              PR_ADDITIONS=$(echo "$PR_DATA" | jq -r '.additions')
+              PR_DELETIONS=$(echo "$PR_DATA" | jq -r '.deletions')
+              PR_COMMITS=$(echo "$PR_DATA" | jq -r '.commits | length')
+              PR_FILES=$(gh pr view "$PR_NUMBER" --json files | jq '.files | length')
+            fi
+
+            # Build formatted context
+            FORMATTED_CONTEXT="PR Title: ${PR_TITLE}
+          PR Author: ${PR_AUTHOR}
+          PR Branch: ${PR_HEAD} -> ${PR_BASE}
+          PR State: ${PR_STATE^^}
+          PR Additions: ${PR_ADDITIONS}
+          PR Deletions: ${PR_DELETIONS}
+          Total Commits: ${PR_COMMITS}
+          Changed Files: ${PR_FILES} files"
+
+            # Build system prompt
+            SYSTEM_PROMPT="You are Claude, an AI assistant designed to help with GitHub issues and pull requests. Think carefully as you analyze the context and respond appropriately. Here's the context for your current task:
+
+          <formatted_context>
+          ${FORMATTED_CONTEXT}
+          </formatted_context>"
+          else
+            # For issues
+            ISSUE_TITLE="${{ github.event.issue.title }}"
+            ISSUE_AUTHOR="${{ github.event.issue.user.login }}"
+            ISSUE_STATE="${{ github.event.issue.state }}"
+
+            FORMATTED_CONTEXT="Issue Title: ${ISSUE_TITLE}
+          Issue Author: ${ISSUE_AUTHOR}
+          Issue State: ${ISSUE_STATE^^}"
+
+            SYSTEM_PROMPT="You are Claude, an AI assistant designed to help with GitHub issues and pull requests. Think carefully as you analyze the context and respond appropriately. Here's the context for your current task:
+
+          <formatted_context>
+          ${FORMATTED_CONTEXT}
+          </formatted_context>"
+          fi
+
+          # Save to environment file for next step
+          echo "CUSTOM_SYSTEM_PROMPT<<EOF" >> $GITHUB_ENV
+          echo "$SYSTEM_PROMPT" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        env:
+          GH_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
+
       - name: Run Claude Code
         uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # 2026-01-16
         with:
@@ -70,3 +141,5 @@ jobs:
           prompt: ""
           claude_args: |
             --model opus
+            --allowedTools "Bash(uv),Bash(gh),Bash(git),Read,Edit,Write,Glob,Grep,Task"
+            --system-prompt "${{ env.CUSTOM_SYSTEM_PROMPT }}"
