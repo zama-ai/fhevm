@@ -191,6 +191,7 @@ jobs:
           cargo test \
           -p tfhe-worker \
           -p sns-worker \
+          -p zkproof-worker \
           --release \
           --features=gpu \
           -- \
