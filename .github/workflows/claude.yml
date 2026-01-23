@@ -160,5 +160,5 @@ jobs:
           prompt: ""
           claude_args: |
             --model opus
-            --allowedTools "Bash(uv),Bash(gh),Bash(git),Read,Edit,Write,Glob,Grep,Task"
+            --allowedTools "Bash(uv:*),Bash(gh:*),Bash(git:*),Read,Edit,Write,Glob,Grep,Task"
             --system-prompt "${{ env.CUSTOM_SYSTEM_PROMPT }}"
