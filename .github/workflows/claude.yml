@@ -14,8 +14,9 @@ name: claude-review
 #
 # Secrets required:
 # - CLAUDE_CODE_OAUTH_TOKEN: OAuth token from `claude setup-token`
+# - CLAUDE_ACCESS_TOKEN: PAT with 'repo' scope for private repos (zama-marketplace, tech-specs)
 #
-# Note: Private marketplaces are cloned in a separate step using the Claude GitHub App token,
+# Note: Private marketplaces are cloned in a separate step using a dedicated PAT,
 # then passed as a local path to avoid git auth issues in the action's setup.
 
 on:
@@ -48,36 +49,12 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b
 
-      - name: Get Claude App token
-        id: claude-token
-        run: |
-          # Get OIDC token
-          OIDC_RESPONSE=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=claude-code-github-action")
-          OIDC_TOKEN=$(echo "$OIDC_RESPONSE" | jq -r '.value')
-
-          if [ -z "$OIDC_TOKEN" ] || [ "$OIDC_TOKEN" = "null" ]; then
-            echo "❌ Failed to get OIDC token"
-            exit 1
-          fi
-
-          # Exchange for GitHub App token
-          APP_RESPONSE=$(curl -s -X POST https://api.anthropic.com/api/github/github-app-token-exchange \
-            -H "Authorization: Bearer $OIDC_TOKEN")
-          APP_TOKEN=$(echo "$APP_RESPONSE" | jq -r '.token // .app_token')
-
-          if [ -z "$APP_TOKEN" ] || [ "$APP_TOKEN" = "null" ]; then
-            echo "❌ Failed to exchange for App token"
-            exit 1
-          fi
-
-          echo "token=$APP_TOKEN" >> "$GITHUB_OUTPUT"
-
-      - name: Clone private marketplace
+      - name: Clone private repositories
         run: |
           gh repo clone zama-ai/zama-marketplace /tmp/zama-marketplace
+          gh repo clone zama-ai/tech-specs /tmp/tech-specs
         env:
-          GH_TOKEN: ${{ steps.claude-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
 
       - name: Run Claude Code
         uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # 2026-01-16
