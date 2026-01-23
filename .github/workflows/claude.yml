@@ -68,3 +68,5 @@ jobs:
             zama-developer@zama-marketplace
           # Prompt: empty string for comments (action extracts text after @claude)
           prompt: ""
+          claude_args: |
+            --model opus
