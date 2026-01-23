@@ -121,7 +121,12 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<DefaultProvider, DefaultProvider>
         for host_chain in &config.host_chains {
             let provider = connect_to_rpc_node(host_chain.url.clone(), host_chain.chain_id).await?;
             let acl_contract = ACL::new(host_chain.acl_address, provider);
-            acl_contracts.insert(host_chain.chain_id, acl_contract);
+            let host_chain_id = host_chain.chain_id;
+            if acl_contracts.insert(host_chain_id, acl_contract).is_some() {
+                return Err(anyhow!(
+                    "Duplicate host chain in config for chain ID {host_chain_id}"
+                ));
+            };
         }
 
         let kms_client = KmsClient::connect(&config).await?;

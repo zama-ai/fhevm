@@ -97,7 +97,7 @@ async fn publish_public_decryption(
 
     sqlx::query!(
             "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, tx_hash, otlp_context) \
-            VALUES ($1, $2, $3, $4, $5)",
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
             request.decryptionId.as_le_slice(),
             sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
             request.extraData.as_ref(),

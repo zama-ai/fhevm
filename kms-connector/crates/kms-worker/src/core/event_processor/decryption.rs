@@ -102,7 +102,7 @@ where
             let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
                 .map_err(ProcessingError::Irrecoverable)?;
             let Some(acl_contract) = self.acl_contracts.get(&ct_chain_id) else {
-                return Err(ProcessingError::Irrecoverable(anyhow!(
+                return Err(ProcessingError::Recoverable(anyhow!(
                     "No ACL contract config found for chain id {ct_chain_id}"
                 )));
             };
@@ -143,10 +143,15 @@ where
                     Some(parsed_calldata.delegationAccounts.delegatorAddress),
                 ),
                 Err(e) => {
-                    let parsed_calldata = userDecryptionRequestCall::abi_decode(calldata.as_slice())
-                    .map_err(|e2| ProcessingError::Irrecoverable(
-                        anyhow!("Was not able to parse calldata for both delegatedUserDecryptionRequestCall ({e}) and userDecryptionRequestCall {e2}!"))
-                    )?;
+                    let parsed_calldata = userDecryptionRequestCall::abi_decode(
+                        calldata.as_slice(),
+                    )
+                    .map_err(|e2| {
+                        ProcessingError::Irrecoverable(anyhow!(
+                            "Was not able to parse calldata for both userDecryptionRequestCall {e2} \
+                            and delegatedUserDecryptionRequestCall ({e})!"
+                        ))
+                    })?;
                     (parsed_calldata.ctHandleContractPairs, None)
                 }
             };
@@ -157,76 +162,110 @@ where
                 .map(|c| (c.ctHandle, c.contractAddress)),
         );
         for ct in sns_ciphertexts {
+            let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
+                .map_err(ProcessingError::Irrecoverable)?;
+            let acl_contract = self.acl_contracts.get(&ct_chain_id).ok_or_else(|| {
+                ProcessingError::Recoverable(anyhow!(
+                    "No ACL contract config found for chain id {ct_chain_id}"
+                ))
+            })?;
             let contract_address = contracts_map.get(ct.ctHandle.as_slice()).ok_or_else(|| {
                 ProcessingError::Irrecoverable(anyhow!(
                     "Could not find contract address for handle {}",
                     hex::encode(ct.ctHandle)
                 ))
             })?;
-            self.inner_check_ciphertext_allowed_for_user_decryption(
-                ct.ctHandle,
-                user_address,
-                *contract_address,
-                delegator_address,
-            )
-            .await?;
+
+            if let Some(delegator_addr) = delegator_address {
+                self.inner_acl_check_for_delegated_user_decryption(
+                    acl_contract,
+                    ct.ctHandle,
+                    user_address,
+                    *contract_address,
+                    delegator_addr,
+                )
+                .await?;
+            } else {
+                self.inner_acl_check_for_user_decryption(
+                    acl_contract,
+                    ct.ctHandle,
+                    user_address,
+                    *contract_address,
+                )
+                .await?;
+            }
         }
 
         info!("ACL check passed for {} handles!", sns_ciphertexts.len());
         Ok(())
     }
 
-    async fn inner_check_ciphertext_allowed_for_user_decryption(
+    async fn inner_acl_check_for_delegated_user_decryption(
         &self,
+        acl_contract: &ACLInstance<HP>,
         handle: FixedBytes<32>,
         user_address: Address,
         contract_address: Address,
-        delegator_address: Option<Address>,
+        delegator_address: Address,
     ) -> Result<(), ProcessingError> {
-        let ct_chain_id = extract_chain_id_from_handle(handle.as_slice())
-            .map_err(ProcessingError::Irrecoverable)?;
-        let Some(acl_contract) = self.acl_contracts.get(&ct_chain_id) else {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
-                "No ACL contract config found for chain id {ct_chain_id}"
-            )));
-        };
-
         let handle_hex = hex::encode(handle);
-        if let Some(delegator_addr) = delegator_address
-            && !acl_contract
-                .isHandleDelegatedForUserDecryption(
-                    delegator_addr,
-                    user_address,
-                    contract_address,
-                    handle,
-                )
-                .call()
-                .await
-                .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
-        {
+        let is_delegated_call = acl_contract.isHandleDelegatedForUserDecryption(
+            delegator_address,
+            user_address,
+            contract_address,
+            handle,
+        );
+        let delegator_allowed_call = acl_contract.isAllowed(handle, delegator_address);
+        let contract_allowed_call = acl_contract.isAllowed(handle, contract_address);
+
+        let (is_delegated, delegator_allowed, contract_allowed) = tokio::try_join!(
+            is_delegated_call.call(),
+            delegator_allowed_call.call(),
+            contract_allowed_call.call(),
+        )
+        .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+
+        if !is_delegated {
             return Err(ProcessingError::Irrecoverable(anyhow!(
-                "{user_address} is not a delegate of {delegator_addr} for contract \
+                "{user_address} is not a delegate of {delegator_address} for contract \
                     {contract_address} and handle {handle_hex}!",
             )));
         }
+        if !delegator_allowed {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "{delegator_address} is not allowed to decrypt {handle_hex}!",
+            )));
+        }
+        if !contract_allowed {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "{contract_address} is not allowed to decrypt {handle_hex}!",
+            )));
+        }
 
-        if !acl_contract
-            .isAllowed(handle, user_address)
-            .call()
-            .await
-            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
-        {
+        Ok(())
+    }
+
+    async fn inner_acl_check_for_user_decryption(
+        &self,
+        acl_contract: &ACLInstance<HP>,
+        handle: FixedBytes<32>,
+        user_address: Address,
+        contract_address: Address,
+    ) -> Result<(), ProcessingError> {
+        let handle_hex = hex::encode(handle);
+        let user_allowed_call = acl_contract.isAllowed(handle, user_address);
+        let contract_allowed_call = acl_contract.isAllowed(handle, contract_address);
+
+        let (user_allowed, contract_allowed) =
+            tokio::try_join!(user_allowed_call.call(), contract_allowed_call.call())
+                .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+
+        if !user_allowed {
             return Err(ProcessingError::Irrecoverable(anyhow!(
                 "{user_address} is not allowed to decrypt {handle_hex}!",
             )));
         }
-
-        if !acl_contract
-            .isAllowed(handle, contract_address)
-            .call()
-            .await
-            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
-        {
+        if !contract_allowed {
             return Err(ProcessingError::Irrecoverable(anyhow!(
                 "{contract_address} is not allowed to decrypt {handle_hex}!",
             )));

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, tx_hash, otlp_context) VALUES ($1, $2, $3, $4, $5)",
+  "query": "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, tx_hash, otlp_context) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
@@ -45,5 +45,5 @@
     },
     "nullable": []
   },
-  "hash": "688f4c356f80a06af4c4b4c18aa5eeeb4669973243b9360c4d3bafb5bfb7b83e"
+  "hash": "8d263f325dea4d2b8fd29e8bb60f34fd2fa1300e3da98713b047c8bfb90c351c"
 }

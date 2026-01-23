@@ -11,7 +11,7 @@ use connector_utils::types::{
 use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use tonic::Code;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -154,6 +154,8 @@ impl<GP: Provider, HP: Provider> DbEventProcessor<GP, HP> {
                             req.userAddress,
                         )
                         .await?;
+                } else {
+                    warn!("No `tx_hash` found. Skipping the ACL check!");
                 }
                 self.decryption_processor
                     .prepare_decryption_request(
