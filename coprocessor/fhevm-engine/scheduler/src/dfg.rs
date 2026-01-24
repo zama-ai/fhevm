@@ -1,7 +1,10 @@
 pub mod scheduler;
 pub mod types;
 
-use std::{collections::HashMap, sync::atomic::AtomicUsize};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::atomic::AtomicUsize,
+};
 use tracing::{error, warn};
 
 use crate::dfg::types::*;
@@ -665,7 +668,9 @@ pub fn add_execution_depedences<TNode, TEdge>(
     node_map: HashMap<NodeIndex, NodeIndex>,
 ) -> Result<()> {
     // Once the DFG is partitioned, we need to add dependences as
-    // edges in the execution graph
+    // edges in the execution graph. We use a HashSet to track added
+    // edges for O(1) deduplication.
+    let mut added_edges: HashSet<(NodeIndex, NodeIndex)> = HashSet::new();
     for edge in graph.edge_references() {
         let (xsrc, xdst) = (
             node_map
@@ -675,7 +680,7 @@ pub fn add_execution_depedences<TNode, TEdge>(
                 .get(&edge.target())
                 .ok_or(SchedulerError::DataflowGraphError)?,
         );
-        if xsrc != xdst && execution_graph.find_edge(*xsrc, *xdst).is_none() {
+        if xsrc != xdst && added_edges.insert((*xsrc, *xdst)) {
             let _ = execution_graph.add_edge(*xsrc, *xdst, ());
         }
     }
