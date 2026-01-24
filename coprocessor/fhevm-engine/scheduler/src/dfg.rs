@@ -513,24 +513,33 @@ impl DFComponentGraph {
         tx_node_index: NodeIndex,
         edges: &Dag<(), ComponentEdge>,
     ) -> Result<()> {
-        let tx_node = self
-            .graph
-            .node_weight_mut(tx_node_index)
-            .ok_or(SchedulerError::DataflowGraphError)?;
-        if tx_node.is_uncomputable {
-            return Ok(());
-        }
-        tx_node.is_uncomputable = true;
-        for (_idx, op) in tx_node.graph.graph.node_references() {
-            self.results.push(DFGTxResult {
-                transaction_id: tx_node.transaction_id.clone(),
-                handle: op.result_handle.to_vec(),
-                compressed_ct: Err(SchedulerError::MissingInputs.into()),
-            });
-        }
-        for edge in edges.edges_directed(tx_node_index, Direction::Outgoing) {
-            let dependent_tx_index = edge.target();
-            self.set_uncomputable(dependent_tx_index, edges)?;
+        let mut stack = vec![tx_node_index];
+
+        while let Some(current_index) = stack.pop() {
+            let tx_node = self
+                .graph
+                .node_weight_mut(current_index)
+                .ok_or(SchedulerError::DataflowGraphError)?;
+
+            // Skip if already marked as uncomputable (handles diamond dependencies)
+            if tx_node.is_uncomputable {
+                continue;
+            }
+            tx_node.is_uncomputable = true;
+
+            // Add error results for all operations in this transaction
+            for (_idx, op) in tx_node.graph.graph.node_references() {
+                self.results.push(DFGTxResult {
+                    transaction_id: tx_node.transaction_id.clone(),
+                    handle: op.result_handle.to_vec(),
+                    compressed_ct: Err(SchedulerError::MissingInputs.into()),
+                });
+            }
+
+            // Push all dependent transactions onto the stack
+            for edge in edges.edges_directed(current_index, Direction::Outgoing) {
+                stack.push(edge.target());
+            }
         }
         Ok(())
     }
