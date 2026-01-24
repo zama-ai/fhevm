@@ -417,7 +417,10 @@ fn execute_partition(
                     }
                 }
                 // Update partition's outputs (allowed handles only)
-                let node = dfg.graph.node_weight_mut(nidx).unwrap();
+                let Some(node) = dfg.graph.node_weight_mut(nidx) else {
+                    error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
+                    continue;
+                };
                 res.insert(
                     node.result_handle.clone(),
                     result.1.map(|v| TaskResult {

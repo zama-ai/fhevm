@@ -489,19 +489,16 @@ impl DFComponentGraph {
                         .graph
                         .node_weight_mut(prod_idx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
-                    if let Ok(ref r) = result {
-                        if r.compressed_ct.is_none() {
-                            error!(target: "scheduler", {handle = ?hex::encode(handle) }, "Missing compressed ciphertext in task result");
-                            return Err(SchedulerError::SchedulerError.into());
-                        }
-                    }
                     self.results.push(DFGTxResult {
                         transaction_id: producer_tx.transaction_id.clone(),
                         handle: handle.to_vec(),
-                        compressed_ct: result.map(|rok| {
-                            // Safe to unwrap as this is checked above
-                            let cct = rok.compressed_ct.unwrap();
-                            (cct.0, cct.1)
+                        compressed_ct: result.and_then(|rok| {
+                            rok.compressed_ct
+                                .map(|cct| (cct.0, cct.1))
+                                .ok_or_else(|| {
+                                    error!(target: "scheduler", {handle = ?hex::encode(handle) }, "Missing compressed ciphertext in task result");
+                                    SchedulerError::SchedulerError.into()
+                                })
                         }),
                     });
                 }
@@ -766,7 +763,13 @@ pub fn partition_components<TNode, TEdge>(
                 }
             }
             // Apply toposort to component nodes
-            df_nodes.sort_by_key(|x| tsmap.get(x).unwrap());
+            // All nodes should be in the toposort map; use MAX as fallback for corrupt state
+            df_nodes.sort_by_key(|x| {
+                tsmap.get(x).copied().unwrap_or_else(|| {
+                    error!(target: "scheduler", {index = ?x.index()}, "Node missing from topological sort");
+                    usize::MAX
+                })
+            });
             execution_graph
                 .add_node(ExecNode {
                     df_nodes,
