@@ -73,26 +73,44 @@ pub struct ComponentNode {
     pub component_id: usize,
 }
 
+/// Check if a node is needed by traversing its outgoing edges iteratively.
+/// Uses an explicit stack to avoid stack overflow on deep computation graphs.
 fn is_needed(graph: &Dag<(bool, usize), OpEdge>, index: usize) -> bool {
-    let node_index = NodeIndex::new(index);
-    let node = match graph.node_weight(node_index) {
-        Some(n) => n,
-        None => {
-            error!(target: "scheduler", "Missing node for index in DFG finalization");
-            return false;
+    let mut stack = vec![index];
+    let mut visited = graph.visit_map();
+
+    while let Some(current_index) = stack.pop() {
+        let node_index = NodeIndex::new(current_index);
+
+        // Skip if already visited to avoid cycles and redundant work
+        if visited.is_visited(&node_index) {
+            continue;
         }
-    };
-    if node.0 {
-        true
-    } else {
+        visited.visit(node_index);
+
+        let node = match graph.node_weight(node_index) {
+            Some(n) => n,
+            None => {
+                error!(target: "scheduler", "Missing node for index in DFG finalization");
+                continue;
+            }
+        };
+
+        // If this node is marked as needed, the original node is needed
+        if node.0 {
+            return true;
+        }
+
+        // Push all outgoing neighbors onto the stack for exploration
         for edge in graph.edges_directed(node_index, Direction::Outgoing) {
-            // If any outgoing dependence is needed, so is this node
-            if is_needed(graph, edge.target().index()) {
-                return true;
+            let target = edge.target();
+            if !visited.is_visited(&target) {
+                stack.push(target.index());
             }
         }
-        false
     }
+
+    false
 }
 
 pub fn finalize(graph: &mut Dag<(bool, usize), OpEdge>) -> Vec<usize> {
