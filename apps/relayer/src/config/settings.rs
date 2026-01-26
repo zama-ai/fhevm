@@ -65,10 +65,11 @@ impl BlockchainRpcConfig {
                 self.http_url
             )));
         }
-        if !self.read_http_url.starts_with("http") && !self.read_http_url.starts_with("https://") {
+        if !self.read_http_url.starts_with("http://") && !self.read_http_url.starts_with("https://")
+        {
             return Err(AppConfigError::InvalidNetworkConfig(format!(
                 "Invalid READ NODE HTTP URL: {}",
-                self.http_url
+                self.read_http_url
             )));
         }
         Ok(())
