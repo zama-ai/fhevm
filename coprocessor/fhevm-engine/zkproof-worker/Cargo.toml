@@ -30,6 +30,8 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 # crates.io dependencies
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
+gpu = ["tfhe/gpu", "fhevm-engine-common/gpu", "test-harness/gpu"]
+
 
 [dev-dependencies]
 serial_test = { workspace = true }
