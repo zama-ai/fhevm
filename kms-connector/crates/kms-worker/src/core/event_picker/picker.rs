@@ -118,7 +118,8 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE public_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, extra_data, otlp_context, already_sent, error_counter
+                RETURNING req.decryption_id, sns_ct_materials, extra_data,
+                tx_hash, already_sent, error_counter, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
@@ -141,7 +142,8 @@ impl DbEventPicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context, already_sent, error_counter
+                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data,
+                tx_hash, already_sent, error_counter, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
@@ -164,7 +166,7 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prep_keygen_requests.prep_keygen_id = req.prep_keygen_id
-                RETURNING req.prep_keygen_id, epoch_id, params_type, otlp_context, already_sent
+                RETURNING req.prep_keygen_id, epoch_id, params_type, otlp_context, tx_hash, already_sent
             ",
         )
         .fetch_all(&self.db_pool)
@@ -186,7 +188,7 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE keygen_requests.key_id = req.key_id
-                RETURNING prep_keygen_id, req.key_id, otlp_context, already_sent
+                RETURNING prep_keygen_id, req.key_id, otlp_context, tx_hash, already_sent
             ",
         )
         .fetch_all(&self.db_pool)
@@ -208,7 +210,7 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE crsgen_requests.crs_id = req.crs_id
-                RETURNING req.crs_id, max_bit_length, params_type, otlp_context, already_sent
+                RETURNING req.crs_id, max_bit_length, params_type, otlp_context, tx_hash, already_sent
             ",
         )
         .fetch_all(&self.db_pool)
@@ -252,7 +254,7 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE key_reshare_same_set.key_id = req.key_id
-                RETURNING prep_keygen_id, req.key_id, key_reshare_id, params_type, otlp_context
+                RETURNING prep_keygen_id, req.key_id, key_reshare_id, params_type, tx_hash, otlp_context
             ",
         )
         .fetch_all(&self.db_pool)

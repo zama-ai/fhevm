@@ -1,17 +1,23 @@
+use std::collections::HashMap;
+
 use crate::core::{
     config::Config,
     event_processor::{ProcessingError, s3::S3Service},
 };
 use alloy::{
+    consensus::Transaction,
     hex,
-    primitives::{Address, Bytes, U256},
+    primitives::{Address, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
     providers::Provider,
+    sol_types::SolCall,
 };
 use anyhow::anyhow;
-use connector_utils::types::KmsGrpcRequest;
+use connector_utils::types::{KmsGrpcRequest, fhe::extract_chain_id_from_handle};
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, SnsCiphertextMaterial,
+    self, DecryptionInstance, SnsCiphertextMaterial, delegatedUserDecryptionRequestCall,
+    userDecryptionRequestCall,
 };
+use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_grpc::kms::v1::{
     Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
@@ -19,35 +25,46 @@ use tracing::info;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
-pub struct DecryptionProcessor<P: Provider> {
+pub struct DecryptionProcessor<GP: Provider, HP: Provider> {
     /// The EIP712 domain of the `Decryption` contract.
     domain: Eip712DomainMsg,
 
     /// The instance of the `Decryption` contract used to check decryption were not already done.
-    decryption_contract: DecryptionInstance<P>,
+    decryption_contract: DecryptionInstance<GP>,
+
+    /// The instances of the host chains `ACL` contracts used to check the decryption ACL.
+    acl_contracts: HashMap<u64, ACLInstance<HP>>,
 
     /// The entity used to collect ciphertexts from S3 buckets.
-    s3_service: S3Service<P>,
+    s3_service: S3Service<GP>,
 }
 
-impl<P> DecryptionProcessor<P>
+impl<GP, HP> DecryptionProcessor<GP, HP>
 where
-    P: Provider,
+    GP: Provider,
+    HP: Provider,
 {
-    pub fn new(config: &Config, provider: P, s3_service: S3Service<P>) -> Self {
+    pub fn new(
+        config: &Config,
+        gateway_provider: GP,
+        acl_contracts: HashMap<u64, ACLInstance<HP>>,
+        s3_service: S3Service<GP>,
+    ) -> Self {
         let domain = Eip712DomainMsg {
             name: config.decryption_contract.domain_name.clone(),
             version: config.decryption_contract.domain_version.clone(),
-            chain_id: U256::from(config.chain_id).to_be_bytes_vec(),
+            chain_id: U256::from(config.gateway_chain_id).to_be_bytes_vec(),
             verifying_contract: config.decryption_contract.address.to_string(),
             salt: None,
         };
-        let decryption_contract = Decryption::new(config.decryption_contract.address, provider);
+        let decryption_contract =
+            Decryption::new(config.decryption_contract.address, gateway_provider);
 
         Self {
-            decryption_contract,
-            s3_service,
             domain,
+            decryption_contract,
+            acl_contracts,
+            s3_service,
         }
     }
 
@@ -65,6 +82,192 @@ where
         if is_decryption_done {
             return Err(ProcessingError::Irrecoverable(anyhow!(
                 "Decryption already done on the Gateway"
+            )));
+        }
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub async fn check_ciphertexts_allowed_for_public_decryption(
+        &self,
+        sns_ciphertexts: &[SnsCiphertextMaterial],
+    ) -> Result<(), ProcessingError> {
+        info!(
+            "Starting ACL check for {} handles...",
+            sns_ciphertexts.len()
+        );
+
+        for ct in sns_ciphertexts {
+            let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
+                .map_err(ProcessingError::Irrecoverable)?;
+            let Some(acl_contract) = self.acl_contracts.get(&ct_chain_id) else {
+                return Err(ProcessingError::Recoverable(anyhow!(
+                    "No ACL contract config found for chain id {ct_chain_id}"
+                )));
+            };
+
+            if !acl_contract
+                .isAllowedForDecryption(ct.ctHandle)
+                .call()
+                .await
+                .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
+            {
+                return Err(ProcessingError::Irrecoverable(anyhow!(
+                    "{} is not allowed for decrypt!",
+                    hex::encode(ct.ctHandle)
+                )));
+            }
+        }
+
+        info!("ACL check passed for {} handles!", sns_ciphertexts.len());
+        Ok(())
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub async fn check_ciphertexts_allowed_for_user_decryption(
+        &self,
+        calldata: Vec<u8>,
+        sns_ciphertexts: &[SnsCiphertextMaterial],
+        user_address: Address,
+    ) -> Result<(), ProcessingError> {
+        info!(
+            "Starting ACL check for {} handles...",
+            sns_ciphertexts.len()
+        );
+
+        let (ct_handle_contract_pairs, delegator_address) =
+            match delegatedUserDecryptionRequestCall::abi_decode(calldata.as_slice()) {
+                Ok(parsed_calldata) => (
+                    parsed_calldata.ctHandleContractPairs,
+                    Some(parsed_calldata.delegationAccounts.delegatorAddress),
+                ),
+                Err(e) => {
+                    let parsed_calldata = userDecryptionRequestCall::abi_decode(
+                        calldata.as_slice(),
+                    )
+                    .map_err(|e2| {
+                        ProcessingError::Irrecoverable(anyhow!(
+                            "Was not able to parse calldata for both userDecryptionRequestCall {e2} \
+                            and delegatedUserDecryptionRequestCall ({e})!"
+                        ))
+                    })?;
+                    (parsed_calldata.ctHandleContractPairs, None)
+                }
+            };
+
+        let contracts_map = HashMap::<FixedBytes<32>, Address, DefaultHashBuilder>::from_iter(
+            ct_handle_contract_pairs
+                .iter()
+                .map(|c| (c.ctHandle, c.contractAddress)),
+        );
+        for ct in sns_ciphertexts {
+            let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
+                .map_err(ProcessingError::Irrecoverable)?;
+            let acl_contract = self.acl_contracts.get(&ct_chain_id).ok_or_else(|| {
+                ProcessingError::Recoverable(anyhow!(
+                    "No ACL contract config found for chain id {ct_chain_id}"
+                ))
+            })?;
+            let contract_address = contracts_map.get(ct.ctHandle.as_slice()).ok_or_else(|| {
+                ProcessingError::Irrecoverable(anyhow!(
+                    "Could not find contract address for handle {}",
+                    hex::encode(ct.ctHandle)
+                ))
+            })?;
+
+            if let Some(delegator_addr) = delegator_address {
+                self.inner_acl_check_for_delegated_user_decryption(
+                    acl_contract,
+                    ct.ctHandle,
+                    user_address,
+                    *contract_address,
+                    delegator_addr,
+                )
+                .await?;
+            } else {
+                self.inner_acl_check_for_user_decryption(
+                    acl_contract,
+                    ct.ctHandle,
+                    user_address,
+                    *contract_address,
+                )
+                .await?;
+            }
+        }
+
+        info!("ACL check passed for {} handles!", sns_ciphertexts.len());
+        Ok(())
+    }
+
+    async fn inner_acl_check_for_delegated_user_decryption(
+        &self,
+        acl_contract: &ACLInstance<HP>,
+        handle: FixedBytes<32>,
+        user_address: Address,
+        contract_address: Address,
+        delegator_address: Address,
+    ) -> Result<(), ProcessingError> {
+        let handle_hex = hex::encode(handle);
+        let is_delegated_call = acl_contract.isHandleDelegatedForUserDecryption(
+            delegator_address,
+            user_address,
+            contract_address,
+            handle,
+        );
+        let delegator_allowed_call = acl_contract.isAllowed(handle, delegator_address);
+        let contract_allowed_call = acl_contract.isAllowed(handle, contract_address);
+
+        let (is_delegated, delegator_allowed, contract_allowed) = tokio::try_join!(
+            is_delegated_call.call(),
+            delegator_allowed_call.call(),
+            contract_allowed_call.call(),
+        )
+        .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+
+        if !is_delegated {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "{user_address} is not a delegate of {delegator_address} for contract \
+                    {contract_address} and handle {handle_hex}!",
+            )));
+        }
+        if !delegator_allowed {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "{delegator_address} is not allowed to decrypt {handle_hex}!",
+            )));
+        }
+        if !contract_allowed {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "{contract_address} is not allowed to decrypt {handle_hex}!",
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn inner_acl_check_for_user_decryption(
+        &self,
+        acl_contract: &ACLInstance<HP>,
+        handle: FixedBytes<32>,
+        user_address: Address,
+        contract_address: Address,
+    ) -> Result<(), ProcessingError> {
+        let handle_hex = hex::encode(handle);
+        let user_allowed_call = acl_contract.isAllowed(handle, user_address);
+        let contract_allowed_call = acl_contract.isAllowed(handle, contract_address);
+
+        let (user_allowed, contract_allowed) =
+            tokio::try_join!(user_allowed_call.call(), contract_allowed_call.call())
+                .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
+
+        if !user_allowed {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "{user_address} is not allowed to decrypt {handle_hex}!",
+            )));
+        }
+        if !contract_allowed {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "{contract_address} is not allowed to decrypt {handle_hex}!",
             )));
         }
 
@@ -153,6 +356,21 @@ where
 
         Ok(sns_ciphertext_materials)
     }
+
+    pub async fn fetch_calldata(
+        &self,
+        tx_hash: FixedBytes<32>,
+    ) -> Result<Vec<u8>, ProcessingError> {
+        self.decryption_contract
+            .provider()
+            .get_transaction_by_hash(tx_hash)
+            .await
+            .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
+            .ok_or_else(|| {
+                ProcessingError::Irrecoverable(anyhow!("No transaction found with hash {tx_hash}!"))
+            })
+            .map(|tx| tx.input().to_vec())
+    }
 }
 
 pub struct UserDecryptionExtraData {
@@ -177,40 +395,166 @@ mod tests {
         sol_types::SolValue,
         transports::http::reqwest,
     };
+    use connector_utils::tests::rand::{rand_address, rand_sns_ct};
+    use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
+    use fhevm_host_bindings::acl::ACL;
+    use rstest::rstest;
 
+    enum ExpectedOutcome {
+        Ok,
+        Recoverable,
+        Irrecoverable,
+    }
+
+    enum MockResponse {
+        Failure(&'static str),
+        Success(bool),
+    }
+
+    #[rstest]
+    #[case::transport_error(MockResponse::Failure("Transport Error"), ExpectedOutcome::Recoverable)]
+    #[case::not_done(MockResponse::Success(false), ExpectedOutcome::Ok)]
+    #[case::already_done(MockResponse::Success(true), ExpectedOutcome::Irrecoverable)]
     #[tokio::test]
-    async fn check_decryption_not_already_done() {
+    async fn check_decryption_not_already_done(
+        #[case] mock_response: MockResponse,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let asserter = Asserter::new();
+        let mock_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+        let acl_contracts_mock = HashMap::from([(
+            u64::default(),
+            ACL::new(Address::default(), mock_provider.clone()),
+        )]);
+
+        let config = Config::default();
+        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
+        let decryption_processor =
+            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
+
+        match mock_response {
+            MockResponse::Failure(msg) => asserter.push_failure_msg(msg),
+            MockResponse::Success(val) => asserter.push_success(&val.abi_encode()),
+        }
+
+        let result = decryption_processor
+            .check_decryption_not_already_done(U256::ZERO)
+            .await;
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::transport_error(MockResponse::Failure("Transport Error"), ExpectedOutcome::Recoverable)]
+    #[case::allowed(MockResponse::Success(true), ExpectedOutcome::Ok)]
+    #[case::not_allowed(MockResponse::Success(false), ExpectedOutcome::Irrecoverable)]
+    #[tokio::test]
+    async fn check_ciphertexts_allowed_for_public_decryption(
+        #[case] mock_response: MockResponse,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let asserter = Asserter::new();
+        let mock_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+        let sns_ct = rand_sns_ct();
+        let acl_contracts_mock = HashMap::from([(
+            extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap(),
+            ACL::new(Address::default(), mock_provider.clone()),
+        )]);
+
+        let sns_ciphertexts = vec![sns_ct];
+        let config = Config::default();
+        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
+        let decryption_processor =
+            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
+
+        match mock_response {
+            MockResponse::Failure(msg) => asserter.push_failure_msg(msg),
+            MockResponse::Success(val) => asserter.push_success(&val.abi_encode()),
+        }
+
+        let result = decryption_processor
+            .check_ciphertexts_allowed_for_public_decryption(&sns_ciphertexts)
+            .await;
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::transport_error(MockResponse::Failure("Transport Error"), ExpectedOutcome::Recoverable)]
+    #[case::allowed(MockResponse::Success(true), ExpectedOutcome::Ok)]
+    #[case::not_allowed(MockResponse::Success(false), ExpectedOutcome::Irrecoverable)]
+    #[tokio::test]
+    async fn check_ciphertexts_allowed_for_user_decryption(
+        #[case] mock_response: MockResponse,
+        #[case] expected: ExpectedOutcome,
+    ) {
         let asserter = Asserter::new();
         let mock_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter.clone());
 
+        let sns_ct = rand_sns_ct();
+        let acl_contracts_mock = HashMap::from([(
+            extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap(),
+            ACL::new(Address::default(), mock_provider.clone()),
+        )]);
+
+        let calldata = delegatedUserDecryptionRequestCall {
+            ctHandleContractPairs: vec![CtHandleContractPair {
+                ctHandle: sns_ct.ctHandle,
+                contractAddress: rand_address(),
+            }],
+            ..Default::default()
+        }
+        .abi_encode();
+        let sns_ciphertexts = vec![sns_ct];
+        let user_address = Address::default();
         let config = Config::default();
         let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
-        let decryption_processor = DecryptionProcessor::new(&config, mock_provider, s3_service);
+        let decryption_processor =
+            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
 
-        asserter.push_failure_msg("Transport Error");
-        assert!(matches!(
-            decryption_processor
-                .check_decryption_not_already_done(U256::ZERO)
-                .await
-                .unwrap_err(),
-            ProcessingError::Recoverable(_)
-        ));
+        match mock_response {
+            MockResponse::Failure(msg) => asserter.push_failure_msg(msg),
+            MockResponse::Success(val) => {
+                for _ in 0..3 {
+                    asserter.push_success(&val.abi_encode())
+                }
+            }
+        }
 
-        asserter.push_success(&false.abi_encode());
-        decryption_processor
-            .check_decryption_not_already_done(U256::ZERO)
-            .await
-            .unwrap();
+        let result = decryption_processor
+            .check_ciphertexts_allowed_for_user_decryption(calldata, &sns_ciphertexts, user_address)
+            .await;
 
-        asserter.push_success(&true.abi_encode());
-        assert!(matches!(
-            decryption_processor
-                .check_decryption_not_already_done(U256::ZERO)
-                .await
-                .unwrap_err(),
-            ProcessingError::Irrecoverable(_)
-        ));
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
     }
 }

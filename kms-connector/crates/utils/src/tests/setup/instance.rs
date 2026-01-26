@@ -1,5 +1,5 @@
 use crate::{
-    conn::WalletGatewayProvider,
+    conn::WalletProvider,
     tests::setup::{CustomTestWriter, DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
 };
 use alloy::transports::http::reqwest::Url;
@@ -75,7 +75,7 @@ impl TestInstance {
             .url
     }
 
-    pub fn provider(&self) -> &WalletGatewayProvider {
+    pub fn provider(&self) -> &WalletProvider {
         &self.gateway().provider
     }
 
@@ -83,15 +83,15 @@ impl TestInstance {
         &self.gateway().anvil
     }
 
-    pub fn decryption_contract(&self) -> &DecryptionInstance<WalletGatewayProvider> {
+    pub fn decryption_contract(&self) -> &DecryptionInstance<WalletProvider> {
         &self.gateway().decryption_contract
     }
 
-    pub fn gateway_config_contract(&self) -> &GatewayConfigInstance<WalletGatewayProvider> {
+    pub fn gateway_config_contract(&self) -> &GatewayConfigInstance<WalletProvider> {
         &self.gateway().gateway_config_contract
     }
 
-    pub fn kms_generation_contract(&self) -> &KMSGenerationInstance<WalletGatewayProvider> {
+    pub fn kms_generation_contract(&self) -> &KMSGenerationInstance<WalletProvider> {
         &self.gateway().kms_generation_contract
     }
 

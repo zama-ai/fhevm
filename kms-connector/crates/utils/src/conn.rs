@@ -18,7 +18,7 @@ use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
 use std::{sync::Once, time::Duration};
 use tracing::{info, warn};
 
-/// The number of connection retry to connect to the database or the Gateway RPC node.
+/// The number of connection retry to connect to the database or to a RPC node.
 pub const CONNECTION_RETRY_NUMBER: usize = 5;
 
 /// The delay between two connection attempts.
@@ -51,34 +51,34 @@ type DefaultFillers = JoinFill<
     JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
 >;
 
-/// The default `alloy::Provider` used to interact with the Gateway.
-pub type GatewayProvider = FillProvider<JoinFill<DefaultFillers, ChainIdFiller>, RootProvider>;
+/// The default `alloy::Provider` used to interact with the Gateway/Host chain.
+pub type DefaultProvider = FillProvider<JoinFill<DefaultFillers, ChainIdFiller>, RootProvider>;
 
-/// The default `alloy::Provider` used to interact with the Gateway using a wallet.
-pub type WalletGatewayProvider = NonceManagedProvider<WalletGatewayProviderFillers, RootProvider>;
-pub type WalletGatewayProviderFillers = JoinFill<
+/// The default `alloy::Provider` used to interact with the Gateway/Host chain using a wallet.
+pub type WalletProvider = NonceManagedProvider<WalletProviderFillers, RootProvider>;
+pub type WalletProviderFillers = JoinFill<
     JoinFill<JoinFill<Identity, ChainIdFiller>, FillersWithoutNonceManagement>,
     WalletFiller<EthereumWallet>,
 >;
 
-/// Tries to establish the connection with a RPC node of the Gateway.
-pub async fn connect_to_gateway(
-    gateway_url: Url,
+/// Tries to establish the connection with a RPC node.
+pub async fn connect_to_rpc_node(
+    rpc_node_url: Url,
     chain_id: u64,
-) -> anyhow::Result<GatewayProvider> {
-    connect_to_gateway_inner(gateway_url, || {
+) -> anyhow::Result<DefaultProvider> {
+    connect_to_rpc_node_inner(rpc_node_url, || {
         ProviderBuilder::new().with_chain_id(chain_id)
     })
     .await
 }
 
-/// Tries to establish the connection with a RPC node of the Gateway, with a `WalletFiller`.
-pub async fn connect_to_gateway_with_wallet(
-    gateway_url: Url,
+/// Tries to establish the connection with a RPC node, with a `WalletFiller`.
+pub async fn connect_to_rpc_node_with_wallet(
+    rpc_node_url: Url,
     chain_id: u64,
     wallet: KmsWallet,
-) -> anyhow::Result<WalletGatewayProvider> {
-    let provider = connect_to_gateway_inner(gateway_url, || {
+) -> anyhow::Result<WalletProvider> {
+    let provider = connect_to_rpc_node_inner(rpc_node_url, || {
         ProviderBuilder::new()
             .disable_recommended_fillers()
             .with_chain_id(chain_id)
@@ -89,9 +89,9 @@ pub async fn connect_to_gateway_with_wallet(
     Ok(NonceManagedProvider::new(provider, wallet.address()))
 }
 
-/// Tries to establish the connection with a RPC node of the Gateway.
-async fn connect_to_gateway_inner<L, F>(
-    gateway_url: Url,
+/// Tries to establish the connection with a RPC node.
+async fn connect_to_rpc_node_inner<L, F>(
+    rpc_node_url: Url,
     provider_builder_new: impl Fn() -> ProviderBuilder<L, F>,
 ) -> anyhow::Result<F::Provider>
 where
@@ -105,8 +105,8 @@ where
             .unwrap()
     });
 
-    let provider = provider_builder_new().connect_http(gateway_url);
-    info!("Connected to Gateway's RPC node successfully");
+    let provider = provider_builder_new().connect_http(rpc_node_url);
+    info!("Connected to RPC node successfully");
     Ok(provider)
 }
 

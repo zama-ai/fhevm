@@ -8,6 +8,7 @@ version.workspace = true
 
 [dependencies]
 fhevm_gateway_bindings.workspace = true
+fhevm_host_bindings.workspace = true
 kms-grpc.workspace = true
 bc2wrap.workspace = true
 tfhe.workspace = true
