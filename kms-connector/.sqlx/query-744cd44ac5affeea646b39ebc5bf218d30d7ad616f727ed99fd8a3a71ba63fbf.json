@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, otlp_context, already_sent, status) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+  "query": "INSERT INTO user_decryption_requests(decryption_id, sns_ct_materials, user_address, public_key, extra_data, tx_hash, otlp_context, already_sent, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
@@ -40,6 +40,9 @@
         },
         "Bytea",
         "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
         "Bool",
         {
           "Custom": {
@@ -58,5 +61,5 @@
     },
     "nullable": []
   },
-  "hash": "10ec81c8443b7a47b3a4ae7017bce31ef25594977eee6a8378bbd8abc7263059"
+  "hash": "744cd44ac5affeea646b39ebc5bf218d30d7ad616f727ed99fd8a3a71ba63fbf"
 }

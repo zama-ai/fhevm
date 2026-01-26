@@ -1,5 +1,8 @@
 use connector_utils::{
-    tests::{db::requests::insert_rand_request, setup::TestInstanceBuilder},
+    tests::{
+        db::requests::{InsertRequestOptions, insert_rand_request},
+        setup::TestInstanceBuilder,
+    },
     types::db::EventType,
 };
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
@@ -61,8 +64,12 @@ async fn test_pick_request_with_polling_backup(event_type: EventType) -> anyhow:
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
     info!("Inserting {event_type} before starting the event picker...");
-    let inserted_request =
-        insert_rand_request(test_instance.db(), event_type, None, false, None).await?;
+    let inserted_request = insert_rand_request(
+        test_instance.db(),
+        event_type,
+        InsertRequestOptions::default(),
+    )
+    .await?;
 
     let mut event_picker = init_event_picker(test_instance.db().clone()).await?;
     info!("Picking {event_type}...");

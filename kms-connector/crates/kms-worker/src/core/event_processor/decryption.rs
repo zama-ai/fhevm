@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::core::{
     config::Config,
     event_processor::{ProcessingError, s3::S3Service},
@@ -21,6 +19,7 @@ use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_grpc::kms::v1::{
     Eip712DomainMsg, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
+use std::collections::HashMap;
 use tracing::info;
 
 #[derive(Clone)]
@@ -406,18 +405,21 @@ mod tests {
         Irrecoverable,
     }
 
-    enum MockResponse {
+    enum DecryptionReadyMock {
         Failure(&'static str),
         Success(bool),
     }
 
     #[rstest]
-    #[case::transport_error(MockResponse::Failure("Transport Error"), ExpectedOutcome::Recoverable)]
-    #[case::not_done(MockResponse::Success(false), ExpectedOutcome::Ok)]
-    #[case::already_done(MockResponse::Success(true), ExpectedOutcome::Irrecoverable)]
+    #[case::transport_error(
+        DecryptionReadyMock::Failure("Transport Error"),
+        ExpectedOutcome::Recoverable
+    )]
+    #[case::not_done(DecryptionReadyMock::Success(false), ExpectedOutcome::Ok)]
+    #[case::already_done(DecryptionReadyMock::Success(true), ExpectedOutcome::Irrecoverable)]
     #[tokio::test]
     async fn check_decryption_not_already_done(
-        #[case] mock_response: MockResponse,
+        #[case] mock_response: DecryptionReadyMock,
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
@@ -435,8 +437,8 @@ mod tests {
             DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
 
         match mock_response {
-            MockResponse::Failure(msg) => asserter.push_failure_msg(msg),
-            MockResponse::Success(val) => asserter.push_success(&val.abi_encode()),
+            DecryptionReadyMock::Failure(msg) => asserter.push_failure_msg(msg),
+            DecryptionReadyMock::Success(val) => asserter.push_success(&val.abi_encode()),
         }
 
         let result = decryption_processor
@@ -454,13 +456,21 @@ mod tests {
         }
     }
 
+    enum PubDecryptACLMock {
+        Failure(&'static str),
+        Success(bool),
+    }
+
     #[rstest]
-    #[case::transport_error(MockResponse::Failure("Transport Error"), ExpectedOutcome::Recoverable)]
-    #[case::allowed(MockResponse::Success(true), ExpectedOutcome::Ok)]
-    #[case::not_allowed(MockResponse::Success(false), ExpectedOutcome::Irrecoverable)]
+    #[case::transport_error(
+        PubDecryptACLMock::Failure("Transport Error"),
+        ExpectedOutcome::Recoverable
+    )]
+    #[case::allowed(PubDecryptACLMock::Success(true), ExpectedOutcome::Ok)]
+    #[case::not_allowed(PubDecryptACLMock::Success(false), ExpectedOutcome::Irrecoverable)]
     #[tokio::test]
     async fn check_ciphertexts_allowed_for_public_decryption(
-        #[case] mock_response: MockResponse,
+        #[case] mock_response: PubDecryptACLMock,
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
@@ -480,8 +490,8 @@ mod tests {
             DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
 
         match mock_response {
-            MockResponse::Failure(msg) => asserter.push_failure_msg(msg),
-            MockResponse::Success(val) => asserter.push_success(&val.abi_encode()),
+            PubDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
+            PubDecryptACLMock::Success(val) => asserter.push_success(&val.abi_encode()),
         }
 
         let result = decryption_processor
@@ -499,14 +509,133 @@ mod tests {
         }
     }
 
+    enum UserDecryptACLMock {
+        Failure(&'static str),
+        Success {
+            user_allowed: bool,
+            contract_allowed: bool,
+        },
+    }
+
     #[rstest]
-    #[case::transport_error(MockResponse::Failure("Transport Error"), ExpectedOutcome::Recoverable)]
-    #[case::allowed(MockResponse::Success(true), ExpectedOutcome::Ok)]
-    #[case::not_allowed(MockResponse::Success(false), ExpectedOutcome::Irrecoverable)]
+    #[case::transport_error(
+        UserDecryptACLMock::Failure("Transport Error"),
+        ExpectedOutcome::Recoverable
+    )]
+    #[case::allowed(
+        UserDecryptACLMock::Success { user_allowed: true, contract_allowed: true },
+        ExpectedOutcome::Ok
+    )]
+    #[case::not_allowed(
+        UserDecryptACLMock::Success { user_allowed: false, contract_allowed: false },
+        ExpectedOutcome::Irrecoverable
+    )]
+    #[case::user_allowed_contract_not_allowed(
+        UserDecryptACLMock::Success { user_allowed: true, contract_allowed: false },
+        ExpectedOutcome::Irrecoverable
+    )]
+    #[case::user_not_allowed_contract_allowed(
+        UserDecryptACLMock::Success { user_allowed: false, contract_allowed: true },
+        ExpectedOutcome::Irrecoverable
+    )]
     #[tokio::test]
     async fn check_ciphertexts_allowed_for_user_decryption(
-        #[case] mock_response: MockResponse,
+        #[case] mock_response: UserDecryptACLMock,
         #[case] expected: ExpectedOutcome,
+    ) {
+        let asserter = Asserter::new();
+        let mock_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+
+        let sns_ct = rand_sns_ct();
+        let acl_contracts_mock = HashMap::from([(
+            extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap(),
+            ACL::new(Address::default(), mock_provider.clone()),
+        )]);
+
+        // Use non-delegated userDecryptionRequestCall (requires only 2 ACL checks)
+        let calldata = userDecryptionRequestCall {
+            ctHandleContractPairs: vec![CtHandleContractPair {
+                ctHandle: sns_ct.ctHandle,
+                contractAddress: rand_address(),
+            }],
+            ..Default::default()
+        }
+        .abi_encode();
+        let sns_ciphertexts = vec![sns_ct];
+        let user_address = Address::default();
+        let config = Config::default();
+        let s3_service = S3Service::new(&config, mock_provider.clone(), reqwest::Client::new());
+        let decryption_processor =
+            DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
+
+        match mock_response {
+            UserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
+            UserDecryptACLMock::Success {
+                user_allowed,
+                contract_allowed,
+            } => {
+                asserter.push_success(&user_allowed.abi_encode());
+                asserter.push_success(&contract_allowed.abi_encode());
+            }
+        }
+
+        let result = decryption_processor
+            .check_ciphertexts_allowed_for_user_decryption(calldata, &sns_ciphertexts, user_address)
+            .await;
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
+    }
+
+    enum DelegatedUserDecryptACLMock {
+        Failure(&'static str),
+        Success {
+            is_delegated: bool,
+            delegator_allowed: bool,
+            contract_allowed: bool,
+        },
+    }
+
+    #[rstest]
+    #[case::transport_error(
+        DelegatedUserDecryptACLMock::Failure("Transport Error"),
+        ExpectedOutcome::Recoverable,
+        None
+    )]
+    #[case::allowed(
+        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: true, contract_allowed: true },
+        ExpectedOutcome::Ok,
+        None
+    )]
+    #[case::delegator_allowed_contract_not_allowed(
+        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: true, contract_allowed: false },
+        ExpectedOutcome::Irrecoverable,
+        Some("is not allowed to decrypt")
+    )]
+    #[case::delegator_not_allowed_contract_allowed(
+        DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: false, contract_allowed: true },
+        ExpectedOutcome::Irrecoverable,
+        Some("is not allowed to decrypt")
+    )]
+    #[case::not_delegated(
+        DelegatedUserDecryptACLMock::Success { is_delegated: false, delegator_allowed: true, contract_allowed: true },
+        ExpectedOutcome::Irrecoverable,
+        Some("is not a delegate of")
+    )]
+    #[tokio::test]
+    async fn check_ciphertexts_allowed_for_delegated_user_decryption(
+        #[case] mock_response: DelegatedUserDecryptACLMock,
+        #[case] expected: ExpectedOutcome,
+        #[case] expected_error_msg: Option<&str>,
     ) {
         let asserter = Asserter::new();
         let mock_provider = ProviderBuilder::new()
@@ -535,11 +664,15 @@ mod tests {
             DecryptionProcessor::new(&config, mock_provider, acl_contracts_mock, s3_service);
 
         match mock_response {
-            MockResponse::Failure(msg) => asserter.push_failure_msg(msg),
-            MockResponse::Success(val) => {
-                for _ in 0..3 {
-                    asserter.push_success(&val.abi_encode())
-                }
+            DelegatedUserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
+            DelegatedUserDecryptACLMock::Success {
+                is_delegated,
+                delegator_allowed,
+                contract_allowed,
+            } => {
+                asserter.push_success(&is_delegated.abi_encode());
+                asserter.push_success(&delegator_allowed.abi_encode());
+                asserter.push_success(&contract_allowed.abi_encode());
             }
         }
 
@@ -552,9 +685,16 @@ mod tests {
             ExpectedOutcome::Recoverable => {
                 assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
             }
-            ExpectedOutcome::Irrecoverable => {
-                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
-            }
+            ExpectedOutcome::Irrecoverable => match result {
+                Err(ProcessingError::Irrecoverable(e)) => {
+                    let expected_msg = expected_error_msg.unwrap();
+                    assert!(
+                        e.to_string().contains(expected_msg),
+                        "Expected error message to contain '{expected_msg}', got: {e}",
+                    );
+                }
+                _ => panic!("Expected Irrecoverable error, got: {:?}", result),
+            },
         }
     }
 }

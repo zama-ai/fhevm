@@ -10,10 +10,12 @@ use tracing::info;
 
 pub fn init_host_chains_acl_contracts_mock(
     ct_handle: &[u8],
+    responses: Vec<bool>,
 ) -> HashMap<u64, ACLInstance<RootProvider>> {
     let asserter = Asserter::new();
-    let is_allowed_for_decryption_call_response = true;
-    asserter.push_success(&is_allowed_for_decryption_call_response.abi_encode());
+    for response in responses {
+        asserter.push_success(&response.abi_encode());
+    }
     let host_mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter.clone());

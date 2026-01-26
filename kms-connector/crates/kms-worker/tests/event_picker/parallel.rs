@@ -1,7 +1,9 @@
 use alloy::primitives::U256;
 use connector_utils::{
     tests::{
-        db::requests::{check_no_uncompleted_request_in_db, insert_rand_request},
+        db::requests::{
+            InsertRequestOptions, check_no_uncompleted_request_in_db, insert_rand_request,
+        },
         setup::TestInstanceBuilder,
     },
     types::db::EventType,
@@ -67,13 +69,15 @@ async fn test_parallel_request_picking(event_type: EventType) -> anyhow::Result<
     let insert_request0 = insert_rand_request(
         test_instance.db(),
         event_type,
-        Some(U256::ZERO),
-        false,
-        None,
+        InsertRequestOptions::new().with_id(U256::ZERO),
     )
     .await?;
-    let insert_request1 =
-        insert_rand_request(test_instance.db(), event_type, Some(U256::ONE), false, None).await?;
+    let insert_request1 = insert_rand_request(
+        test_instance.db(),
+        event_type,
+        InsertRequestOptions::new().with_id(U256::ONE),
+    )
+    .await?;
 
     info!("Picking two {event_type}...");
     let events0 = event_picker.pick_events().await?;
