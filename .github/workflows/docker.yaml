@@ -122,10 +122,10 @@ jobs:
               TO_RUN=$(jq -nc \
                 --argjson service_map "$SERVICE_MAP" \
                 '[
-                  $service_map.relayer,
-                  $service_map.relayer-migrate,
-                  $service_map.back,
-                  $service_map.front,
+                  $service_map["relayer"],
+                  $service_map["relayer-migrate"],
+                  $service_map["back"],
+                  $service_map["front"],
                   $service_map["oracle"]
                 ]')
               ;;
