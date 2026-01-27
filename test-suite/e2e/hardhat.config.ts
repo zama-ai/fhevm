@@ -100,61 +100,37 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 
   switch (chain) {
     case 'staging':
-      const rpcEnv = process.env.RPC_URL;
-      const rpcVar = vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined;
-      jsonRpcUrl = rpcEnv ?? rpcVar ?? defaultRpcUrl;
-      if (shouldWarn && jsonRpcUrl === defaultRpcUrl && !rpcEnv && !vars.has('RPC_URL')) {
-        console.warn(
-          `WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
-        );
+      jsonRpcUrl = process.env.RPC_URL ?? (vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined) ?? defaultRpcUrl;
+      if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
+        console.warn(`WARN: RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
       }
       break;
     case 'zwsDev':
-      const rpcEnv = process.env.RPC_URL;
-      const rpcVar = vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined;
-      jsonRpcUrl = rpcEnv ?? rpcVar ?? defaultRpcUrl;
-      if (shouldWarn && jsonRpcUrl === defaultRpcUrl && !rpcEnv && !vars.has('RPC_URL')) {
-        console.warn(
-          `WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
-        );
+      jsonRpcUrl = process.env.RPC_URL ?? (vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined) ?? defaultRpcUrl;
+      if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
+        console.warn(`WARN: RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
       }
       break;
     case 'sepolia':
-      const sepoliaEnv = process.env.SEPOLIA_ETH_RPC_URL;
-      const sepoliaVar = vars.has('SEPOLIA_ETH_RPC_URL') ? vars.get('SEPOLIA_ETH_RPC_URL') : undefined;
-      const fallbackEnv = process.env.RPC_URL;
-      const fallbackVar = vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined;
-      jsonRpcUrl = sepoliaEnv ?? sepoliaVar ?? fallbackEnv ?? fallbackVar ?? defaultRpcUrl;
-      if (
-        shouldWarn &&
-        jsonRpcUrl === defaultRpcUrl &&
-        !sepoliaEnv &&
-        !vars.has('SEPOLIA_ETH_RPC_URL') &&
-        !fallbackEnv &&
-        !vars.has('RPC_URL')
-      ) {
-        console.warn(
-          `WARN: SEPOLIA_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
-        );
+      jsonRpcUrl =
+        process.env.SEPOLIA_ETH_RPC_URL ??
+        (vars.has('SEPOLIA_ETH_RPC_URL') ? vars.get('SEPOLIA_ETH_RPC_URL') : undefined) ??
+        process.env.RPC_URL ??
+        (vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined) ??
+        defaultRpcUrl;
+      if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
+        console.warn(`WARN: SEPOLIA_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
       }
       break;
     case 'mainnet':
-      const mainnetEnv = process.env.MAINNET_ETH_RPC_URL;
-      const mainnetVar = vars.has('MAINNET_ETH_RPC_URL') ? vars.get('MAINNET_ETH_RPC_URL') : undefined;
-      const fallbackEnvMainnet = process.env.RPC_URL;
-      const fallbackVarMainnet = vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined;
-      jsonRpcUrl = mainnetEnv ?? mainnetVar ?? fallbackEnvMainnet ?? fallbackVarMainnet ?? defaultRpcUrl;
-      if (
-        shouldWarn &&
-        jsonRpcUrl === defaultRpcUrl &&
-        !mainnetEnv &&
-        !vars.has('MAINNET_ETH_RPC_URL') &&
-        !fallbackEnvMainnet &&
-        !vars.has('RPC_URL')
-      ) {
-        console.warn(
-          `WARN: MAINNET_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
-        );
+      jsonRpcUrl =
+        process.env.MAINNET_ETH_RPC_URL ??
+        (vars.has('MAINNET_ETH_RPC_URL') ? vars.get('MAINNET_ETH_RPC_URL') : undefined) ??
+        process.env.RPC_URL ??
+        (vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined) ??
+        defaultRpcUrl;
+      if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
+        console.warn(`WARN: MAINNET_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
       }
       break;
     case 'localCoprocessor':
