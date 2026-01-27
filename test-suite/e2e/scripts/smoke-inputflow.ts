@@ -414,7 +414,6 @@ runSmoke().catch(async (error) => {
 
   const heartbeatUrl = process.env.BETTERSTACK_HEARTBEAT_URL;
   if (heartbeatUrl) {
-    const msg = encodeURIComponent(String(error).slice(0, 100));
-    await fetch(`${heartbeatUrl}?status=1&msg=${msg}`).catch(() => {});
+    await fetch(`${heartbeatUrl}/fail`).catch(() => {});
   }
 });
