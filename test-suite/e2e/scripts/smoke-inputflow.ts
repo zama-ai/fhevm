@@ -34,10 +34,20 @@ const TIME_PER_BLOCK = 12;
 const NUMBER_OF_BLOCKS = 4;
 const DEFAULT_TX_TIMEOUT_SECS = TIME_PER_BLOCK * NUMBER_OF_BLOCKS;
 const DEFAULT_FEE_BUMP = 1.125 ** NUMBER_OF_BLOCKS;
+const DEFAULT_DECRYPT_TIMEOUT_SECS = 120;
 
 const MIN_PRIORITY_FEE = ethers.parseUnits('2', 'gwei');
 const CANCEL_GAS_LIMIT = 21_000n;
 const RECEIPT_POLL_MS = 4_000;
+
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms: ${label}`)), timeoutMs),
+    ),
+  ]);
+};
 
 const parseIndices = (value: string): number[] => {
   const indices = value
@@ -198,6 +208,8 @@ async function runSmoke(): Promise<void> {
   const maxRetries = Math.trunc(Number(process.env.SMOKE_TX_MAX_RETRIES) || DEFAULT_TX_MAX_RETRIES);
   const feeBump = Number(process.env.SMOKE_FEE_BUMP) || DEFAULT_FEE_BUMP;
   const maxBacklog = Math.trunc(Number(process.env.SMOKE_MAX_BACKLOG) || DEFAULT_MAX_BACKLOG);
+  const decryptTimeoutMs =
+    Math.trunc(Number(process.env.SMOKE_DECRYPT_TIMEOUT_SECS) || DEFAULT_DECRYPT_TIMEOUT_SECS) * 1000;
   const cancelRaw = process.env.SMOKE_CANCEL_BACKLOG;
   const allowCancel = cancelRaw === undefined || cancelRaw === '' ? true : cancelRaw.trim().toLowerCase() !== 'false';
   const forceRaw = process.env.SMOKE_FORCE_DEPLOY;
@@ -268,7 +280,12 @@ async function runSmoke(): Promise<void> {
     }
     const deployTx = await contractFactory.getDeployTransaction();
     const deployNonce = await provider.getTransactionCount(signerAddress, 'pending');
-    const gasEstimate = await provider.estimateGas({ ...deployTx, from: signerAddress });
+    let gasEstimate: bigint;
+    try {
+      gasEstimate = await provider.estimateGas({ ...deployTx, from: signerAddress });
+    } catch (err) {
+      throw new Error(`Gas estimation failed for deploy: ${err instanceof Error ? err.message : String(err)}`);
+    }
     const gasLimit = (gasEstimate * 120n) / 100n;
 
     const receipt = await sendWithRetries({
@@ -308,8 +325,16 @@ async function runSmoke(): Promise<void> {
   const encryptedInput = await input.encrypt();
 
   const callNonce = await provider.getTransactionCount(signerAddress, 'pending');
-  const gasEstimate = await contract.add42ToInput64.estimateGas(encryptedInput.handles[0], encryptedInput.inputProof);
-  const gasLimit = (gasEstimate * 120n) / 100n;
+  let callGasEstimate: bigint;
+  try {
+    callGasEstimate = await contract.add42ToInput64.estimateGas(
+      encryptedInput.handles[0],
+      encryptedInput.inputProof,
+    );
+  } catch (err) {
+    throw new Error(`Gas estimation failed for add42ToInput64: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const gasLimit = (callGasEstimate * 120n) / 100n;
 
   const receipt = await sendWithRetries({
     signer,
@@ -329,17 +354,18 @@ async function runSmoke(): Promise<void> {
 
   const handle = await contract.resUint64();
   const { publicKey, privateKey } = instance.generateKeypair();
-  const decryptedValue = await userDecryptSingleHandle(
-    handle,
-    contractAddress,
-    instance,
-    signer,
-    privateKey,
-    publicKey,
+  const decryptedValue = await withTimeout(
+    userDecryptSingleHandle(handle, contractAddress, instance, signer, privateKey, publicKey),
+    decryptTimeoutMs,
+    'userDecryptSingleHandle',
   );
   assert.equal(decryptedValue, 49n);
 
-  const res = await instance.publicDecrypt([handle]);
+  const res = await withTimeout(
+    instance.publicDecrypt([handle]),
+    decryptTimeoutMs,
+    'publicDecrypt',
+  );
   assert.deepEqual(res.clearValues, { [handle]: 49n });
 
   console.log(`SMOKE_SUCCESS signer=${signerAddress} contract=${contractAddress}`);

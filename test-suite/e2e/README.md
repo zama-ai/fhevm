@@ -42,6 +42,7 @@ For devnet, `test-suite/e2e/.env.devnet` provides a ready baseline (use `DOTENV_
 - `SMOKE_MAX_BACKLOG` (`3`)
 - `SMOKE_CANCEL_BACKLOG` (`true`)
 - `SMOKE_FORCE_DEPLOY` (`0`)
+- `SMOKE_DECRYPT_TIMEOUT_SECS` (`120`) - timeout for decryption operations
 - `BETTERSTACK_HEARTBEAT_URL` (optional) - if set, pings BetterStack on success/failure
 
 ### Run
