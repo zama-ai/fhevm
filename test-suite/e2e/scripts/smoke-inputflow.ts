@@ -73,7 +73,7 @@ const getBaseFees = async (provider: Provider): Promise<FeeData> => {
 
   if (maxFeePerGas == null) {
     const pendingBlock = await provider.getBlock('pending');
-    const baseFee = pendingBlock?.baseFeePerGas ?? feeData.gasPrice ?? (await provider.getGasPrice());
+    const baseFee = pendingBlock?.baseFeePerGas ?? feeData.gasPrice ?? MIN_PRIORITY_FEE;
     maxFeePerGas = baseFee * 2n + maxPriorityFeePerGas;
   }
 
