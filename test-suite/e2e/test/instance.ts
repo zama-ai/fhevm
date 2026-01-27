@@ -57,6 +57,10 @@ const relayerUrl = process.env.RELAYER_URL ?? vars.get('RELAYER_URL', defaults?.
 if (!relayerUrl) throw new Error('Missing required env var RELAYER_URL');
 
 const apiKey = process.env.ZAMA_FHEVM_API_KEY ?? vars.get('ZAMA_FHEVM_API_KEY', '');
+const isMainnet = network.name === 'mainnet' || network.config.chainId === 1;
+if (isMainnet && !apiKey) {
+  throw new Error('ZAMA_FHEVM_API_KEY is required for mainnet');
+}
 const auth = apiKey ? { __type: 'ApiKeyHeader' as const, value: apiKey } : undefined;
 
 export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {
