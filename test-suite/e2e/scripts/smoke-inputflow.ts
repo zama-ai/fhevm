@@ -284,6 +284,7 @@ async function runSmoke(): Promise<void> {
     try {
       gasEstimate = await provider.estimateGas({ ...deployTx, from: signerAddress });
     } catch (err) {
+      console.error('SMOKE_GAS_ESTIMATE_FAILED operation=deploy', err);
       throw new Error(`Gas estimation failed for deploy: ${err instanceof Error ? err.message : String(err)}`);
     }
     const gasLimit = (gasEstimate * 120n) / 100n;
@@ -327,11 +328,9 @@ async function runSmoke(): Promise<void> {
   const callNonce = await provider.getTransactionCount(signerAddress, 'pending');
   let callGasEstimate: bigint;
   try {
-    callGasEstimate = await contract.add42ToInput64.estimateGas(
-      encryptedInput.handles[0],
-      encryptedInput.inputProof,
-    );
+    callGasEstimate = await contract.add42ToInput64.estimateGas(encryptedInput.handles[0], encryptedInput.inputProof);
   } catch (err) {
+    console.error('SMOKE_GAS_ESTIMATE_FAILED operation=add42ToInput64', err);
     throw new Error(`Gas estimation failed for add42ToInput64: ${err instanceof Error ? err.message : String(err)}`);
   }
   const gasLimit = (callGasEstimate * 120n) / 100n;
@@ -361,11 +360,7 @@ async function runSmoke(): Promise<void> {
   );
   assert.equal(decryptedValue, 49n);
 
-  const res = await withTimeout(
-    instance.publicDecrypt([handle]),
-    decryptTimeoutMs,
-    'publicDecrypt',
-  );
+  const res = await withTimeout(instance.publicDecrypt([handle]), decryptTimeoutMs, 'publicDecrypt');
   assert.deepEqual(res.clearValues, { [handle]: 49n });
 
   console.log(`SMOKE_SUCCESS signer=${signerAddress} contract=${contractAddress}`);
