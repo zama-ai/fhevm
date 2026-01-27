@@ -8,6 +8,7 @@ To run this example correctly, make sure the files are placed in the following d
 
 This ensures Hardhat can compile and test your contracts as expected.
 {% endhint %}
+
 {% tabs %}
 
 {% tab title="ERC7984ERC20WrapperExample.sol" %}
@@ -16,11 +17,11 @@ This ensures Hardhat can compile and test your contracts as expected.
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.27;
 
-import {EthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {ERC7984ERC20Wrapper, ERC7984} from "@openzeppelin/confidential-contracts/token/ERC7984/extensions/ERC7984ERC20Wrapper.sol";
 
-contract ERC7984ERC20WrapperExample is ERC7984ERC20Wrapper, EthereumConfig {
+contract ERC7984ERC20WrapperExample is ERC7984ERC20Wrapper, ZamaEthereumConfig {
     constructor(
         IERC20 token,
         string memory name,
@@ -29,5 +30,5 @@ contract ERC7984ERC20WrapperExample is ERC7984ERC20Wrapper, EthereumConfig {
     ) ERC7984ERC20Wrapper(token) ERC7984(name, symbol, uri) {}
 }
 ```
-
+{% endtab %}
 {% endtabs %}

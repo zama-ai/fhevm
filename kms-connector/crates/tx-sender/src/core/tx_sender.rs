@@ -1,7 +1,5 @@
 use crate::{
-    core::{
-        Config, DbKmsResponsePicker, DbKmsResponseRemover, KmsResponsePicker, KmsResponseRemover,
-    },
+    core::{Config, DbKmsResponsePicker, KmsResponsePicker},
     monitoring::{
         health::State,
         metrics::{GATEWAY_TX_SENT_COUNTER, GATEWAY_TX_SENT_ERRORS},
@@ -33,6 +31,7 @@ use fhevm_gateway_bindings::{
     gateway_config::GatewayConfig::GatewayConfigErrors,
     kms_generation::KMSGeneration::{self, KMSGenerationErrors, KMSGenerationInstance},
 };
+use sqlx::{Pool, Postgres};
 use std::time::Duration;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -40,7 +39,7 @@ use tracing::{debug, error, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct sending stored KMS Core's responses to the Gateway.
-pub struct TransactionSender<L, F, P, R>
+pub struct TransactionSender<L, F, P>
 where
     F: TxFiller,
     P: Provider,
@@ -51,27 +50,26 @@ where
     /// The entity responsible to send transaction to the Gateway.
     inner: TransactionSenderInner<F, P>,
 
-    /// The entity used to remove stored KMS Core's responses.
-    response_remover: R,
+    /// The database pool for where the KMS Core's responses are stored.
+    db_pool: Pool<Postgres>,
 }
 
-impl<L, F, P, R> TransactionSender<L, F, P, R>
+impl<L, F, P> TransactionSender<L, F, P>
 where
     L: KmsResponsePicker,
     F: TxFiller + 'static,
     P: Provider + Clone + 'static,
-    R: KmsResponseRemover + Clone + 'static,
 {
     /// Creates a new `TransactionSender` instance.
     pub fn new(
         response_picker: L,
         inner: TransactionSenderInner<F, P>,
-        response_remover: R,
+        db_pool: Pool<Postgres>,
     ) -> Self {
         Self {
             response_picker,
             inner,
-            response_remover,
+            db_pool,
         }
     }
 
@@ -106,58 +104,47 @@ where
     ) {
         for response in responses {
             let inner = self.inner.clone();
-            let response_remover = self.response_remover.clone();
+            let db_pool = self.db_pool.clone();
             let cloned_cancel_token = cancel_token.clone();
             spawn_with_limit(async move {
-                Self::forward_response(inner, response_remover, response, cloned_cancel_token).await
+                Self::forward_response(inner, db_pool, response, cloned_cancel_token).await
             })
             .await;
         }
     }
 
     /// Handles a response coming from the  KMS Core.
-    #[tracing::instrument(skip(inner, response_remover, cancel_token), fields(response = %response.kind))]
+    #[tracing::instrument(skip(inner, db_pool, cancel_token), fields(response = %response.kind))]
     async fn forward_response(
         inner: TransactionSenderInner<F, P>,
-        response_remover: R,
+        db_pool: Pool<Postgres>,
         response: KmsResponse,
         cancel_token: CancellationToken,
     ) {
         tracing::Span::current().set_parent(response.otlp_context.extract());
-        let response = response.kind;
 
-        match inner.send_to_gateway(response.clone()).await {
-            Err(Error::Recoverable(_)) => response_remover.mark_response_as_pending(response).await,
-            Err(Error::Irrecoverable(_)) | Ok(()) => {
-                if let Err(e) = response_remover.remove_response(&response).await {
-                    error!("Failed to remove response: {e}");
-                }
-            }
+        match inner.send_to_gateway(response.kind.clone()).await {
+            Err(Error::Recoverable(_)) => response.mark_as_pending(&db_pool).await,
+            Err(Error::Irrecoverable(_)) => response.mark_as_failed(&db_pool).await,
             Err(Error::AlloyBackendGone) => {
-                response_remover.mark_response_as_pending(response).await;
+                response.mark_as_pending(&db_pool).await;
                 cancel_token.cancel();
             }
+            Ok(()) => response.mark_as_completed(&db_pool).await,
         }
     }
 }
 
-impl
-    TransactionSender<
-        DbKmsResponsePicker,
-        WalletGatewayProviderFillers,
-        RootProvider,
-        DbKmsResponseRemover,
-    >
-{
+impl TransactionSender<DbKmsResponsePicker, WalletGatewayProviderFillers, RootProvider> {
     /// Creates a new `TransactionSender` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
+        let wallet = config.build_wallet().await?;
+
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let response_picker = DbKmsResponsePicker::connect(db_pool.clone(), &config).await?;
-        let response_remover = DbKmsResponseRemover::new(db_pool.clone());
 
         let provider =
-            connect_to_gateway_with_wallet(&config.gateway_url, config.chain_id, config.wallet)
-                .await?;
+            connect_to_gateway_with_wallet(config.gateway_url, config.chain_id, wallet).await?;
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
         let kms_generation_contract =
@@ -175,8 +162,8 @@ impl
             },
         );
 
-        let state = State::new(db_pool, provider, config.healthcheck_timeout);
-        let tx_sender = TransactionSender::new(response_picker, inner, response_remover);
+        let state = State::new(db_pool.clone(), provider, config.healthcheck_timeout);
+        let tx_sender = TransactionSender::new(response_picker, inner, db_pool);
         Ok((tx_sender, state))
     }
 }
@@ -223,6 +210,7 @@ where
     #[tracing::instrument(skip_all)]
     async fn send_to_gateway(&self, response: KmsResponseKind) -> Result<(), Error> {
         info!("Sending response to the Gateway: {response:?}");
+        let response_str = response.as_str();
         let tx_result = match response {
             KmsResponseKind::PublicDecryption(response) => {
                 self.send_public_decryption_response(response).await
@@ -236,12 +224,16 @@ where
         };
 
         let receipt = tx_result.inspect_err(|e| {
-            GATEWAY_TX_SENT_ERRORS.inc();
+            GATEWAY_TX_SENT_ERRORS
+                .with_label_values(&[response_str])
+                .inc();
             error!("Failed to send response to the Gateway: {e}");
         })?;
 
         debug!("Transaction receipt: {:?}", receipt);
-        GATEWAY_TX_SENT_COUNTER.inc();
+        GATEWAY_TX_SENT_COUNTER
+            .with_label_values(&[response_str])
+            .inc();
         info!(
             tx_hash = hex::encode(receipt.transaction_hash),
             block_hash = receipt.block_hash.map(hex::encode),

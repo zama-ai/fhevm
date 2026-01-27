@@ -14,3 +14,13 @@ self-hosted-runner:
     - m1mac
     - 4090-desktop
     - aws-mac1-metal
+
+# Path-specific configurations
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      - SC2001 # https://www.shellcheck.net/wiki/SC2129
+      - 'property "result" is not defined in object type.*'
+  .github/workflows/gateway-contracts-upgrade-tests.yml:
+    ignore:
+      - 'constant expression "false" in condition' # https://github.com/zama-ai/fhevm-internal/issues/379

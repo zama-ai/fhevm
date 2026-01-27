@@ -1,0 +1,16 @@
+{{- if .Values.hostListenerPoller.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-host-listener-poller
+    app.kubernetes.io/name: {{ include "hostListenerPollerName" . }}
+  name: {{ include "hostListenerPollerName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-host-listener-poller
+      app.kubernetes.io/name: {{ include "hostListenerPollerName" . }}
+  endpoints:
+  - port: metrics
+{{- end -}}

@@ -52,6 +52,7 @@ Developers can use functions like `allow`, `allowThis`, and `allowTransient` to 
 - **`allow`**: Grants permanent access to an address.
 - **`allowThis`**: Grants the current contract access to manipulate the ciphertext.
 - **`allowTransient`**: Grants temporary access to an address for the current transaction.
+- **`makePubliclyDecryptable`**: Grants permanent, global permission for any entity to decrypt the cleartext value associated with the given ciphertext (handle) off-chain.
 
 ### Verifying access
 
@@ -59,12 +60,15 @@ To check if an entity has permission to access a ciphertext, use functions like 
 
 - **`isAllowed`**: Verifies if a specific address has permission.
 - **`isSenderAllowed`**: Simplifies checks for the current transaction sender.
+- **`isPubliclyDecryptable`**: Verifies whether any entity is permitted to retrieve the ciphertext's cleartext value off-chain.
+- **`checkSignatures`**: Verifies the authenticity of a cleartext value by checking cryptographic signatures. This ensures that the value submitted back to the chain originated from a legitimate public decryption operation on the associated ciphertext handle.
 
 ## Practical uses of the ACL
 
 - **Confidential parameters**: Pass encrypted values securely between contracts, ensuring only authorized entities can access them.
 - **Secure state management**: Store encrypted state variables while controlling who can modify or read them.
 - **Privacy-preserving computations**: Enable computations on encrypted data with confidence that permissions are enforced.
+- **Publicly Verifiable Result Reveal**: Enable the public reveal of a confidential operation's final result. For example, enabling the public to verify the final price in a sealed-bid confidential auction.
 
 ---
 

@@ -1,3 +1,19 @@
+# =============================================================================
+# KMS-CONNECTOR BUILD CACHING STRATEGY
+# =============================================================================
+# The 3 Rust services (gw-listener, kms-worker, tx-sender) share a single
+# Dockerfile.workspace with multi-stage targets. When docker-compose builds
+# them in parallel, each service is a separate BuildKit invocation.
+#
+# To avoid cache write conflicts (multiple processes writing to same directory),
+# we use a SINGLE EXPORTER pattern:
+#   - ALL services: cache_from (read from shared cache) ✓
+#   - ONLY gw-listener: cache_to (write to shared cache) ✓
+#   - Other services: no cache_to (read-only)
+#
+# gw-listener is chosen as the exporter arbitrarily (first alphabetically).
+# =============================================================================
+
 services:
   kms-connector-db-migration:
     container_name: kms-connector-db-migration
@@ -5,6 +21,13 @@ services:
     build:
       context: ../../..
       dockerfile: kms-connector/connector-db/Dockerfile
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        RUST_IMAGE_VERSION: 1.91.0
+      cache_from:
+        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR_DB_MIGRATION:-type=gha}
+      cache_to:
+        - ${FHEVM_CACHE_TO_KMS_CONNECTOR_DB_MIGRATION:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.kms-connector.local
 
@@ -13,11 +36,15 @@ services:
     image: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener:${CONNECTOR_GW_LISTENER_VERSION}
     build:
       context: ../../..
-      dockerfile: kms-connector/crates/gw-listener/Dockerfile
+      dockerfile: kms-connector/Dockerfile.workspace
+      target: gw-listener
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        RUST_IMAGE_VERSION: 1.91.0
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_KMS_CONNECTOR:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.kms-connector.local
     depends_on:
@@ -29,11 +56,13 @@ services:
     image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:${CONNECTOR_KMS_WORKER_VERSION}
     build:
       context: ../../..
-      dockerfile: kms-connector/crates/kms-worker/Dockerfile
+      dockerfile: kms-connector/Dockerfile.workspace
+      target: kms-worker
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        RUST_IMAGE_VERSION: 1.91.0
       cache_from:
-        - type=gha
-      cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
     env_file:
       - ../env/staging/.env.kms-connector.local
     depends_on:
@@ -45,11 +74,13 @@ services:
     image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:${CONNECTOR_TX_SENDER_VERSION}
     build:
       context: ../../..
-      dockerfile: kms-connector/crates/tx-sender/Dockerfile
+      dockerfile: kms-connector/Dockerfile.workspace
+      target: tx-sender
+      args:
+        CARGO_PROFILE: ${FHEVM_CARGO_PROFILE:-release}
+        RUST_IMAGE_VERSION: 1.91.0
       cache_from:
-        - type=gha
-      cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_FROM_KMS_CONNECTOR:-type=gha}
     env_file:
       - ../env/staging/.env.kms-connector.local
     depends_on:

@@ -1,0 +1,164 @@
+name: claude-review
+
+# Triggered by: @claude mention in PR comments (e.g., "@claude review this function")
+#
+# How prompt extraction works:
+# The action's `extractUserRequest` function automatically extracts text AFTER "@claude".
+# Example: "@claude review auth" → "review auth"
+#
+# See: https://github.com/anthropics/claude-code-action/blob/main/src/utils/extract-user-request.ts
+#
+# Security: Only users with write/admin permissions can trigger Claude.
+# External contributors (fork PRs) are automatically blocked by the action.
+# See: https://github.com/anthropics/claude-code-action/blob/main/src/github/validation/permissions.ts
+#
+# Secrets required:
+# - CLAUDE_CODE_OAUTH_TOKEN: OAuth token from `claude setup-token`
+# - CLAUDE_ACCESS_TOKEN: PAT with 'repo' scope for private repos (zama-marketplace, tech-specs)
+#
+# Note: Private marketplaces are cloned in a separate step using a dedicated PAT,
+# then passed as a local path to avoid git auth issues in the action's setup.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request:
+    types: [opened, synchronize]
+
+permissions: {}
+
+jobs:
+  claude-review:
+    name: claude-review/respond
+    if: |
+      contains(github.event.comment.body, '@claude') &&
+      (github.event.issue.pull_request || github.event_name == 'pull_request_review_comment')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Required for checkout
+      pull-requests: write # Required for PR review and comment actions
+      issues: write # Required for issue comment actions
+      id-token: write # Required for OIDC authentication
+      actions: read # Required for reading CI results
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b
+
+      - name: Clone private repositories
+        run: |
+          gh repo clone zama-ai/zama-marketplace /tmp/zama-marketplace
+          gh repo clone zama-ai/tech-spec /tmp/tech-spec
+        env:
+          GH_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
+
+      - name: Build custom system prompt
+        id: custom_prompt
+        run: |
+          # Extract PR metadata from webhook payload
+          if [[ "$EVENT_NAME" == "pull_request" ]] || [[ -n "$ISSUE_PR_URL" ]]; then
+            # For pull_request events
+            if [[ "$EVENT_NAME" == "pull_request" ]]; then
+              PR_TITLE="$PR_TITLE_INPUT"
+              PR_AUTHOR="$PR_AUTHOR_INPUT"
+              PR_HEAD="$PR_HEAD_INPUT"
+              PR_BASE="$PR_BASE_INPUT"
+              PR_STATE="$PR_STATE_INPUT"
+              PR_ADDITIONS="$PR_ADDITIONS_INPUT"
+              PR_DELETIONS="$PR_DELETIONS_INPUT"
+              PR_COMMITS="$PR_COMMITS_INPUT"
+              PR_FILES="$PR_FILES_INPUT"
+            else
+              # For issue_comment on PRs - need to fetch PR data
+              PR_NUMBER="$ISSUE_NUMBER_INPUT"
+              PR_DATA=$(gh pr view "$PR_NUMBER" --json title,author,headRefName,baseRefName,state,additions,deletions,commits)
+              PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+              PR_AUTHOR=$(echo "$PR_DATA" | jq -r '.author.login')
+              PR_HEAD=$(echo "$PR_DATA" | jq -r '.headRefName')
+              PR_BASE=$(echo "$PR_DATA" | jq -r '.baseRefName')
+              PR_STATE=$(echo "$PR_DATA" | jq -r '.state')
+              PR_ADDITIONS=$(echo "$PR_DATA" | jq -r '.additions')
+              PR_DELETIONS=$(echo "$PR_DATA" | jq -r '.deletions')
+              PR_COMMITS=$(echo "$PR_DATA" | jq -r '.commits | length')
+              PR_FILES=$(gh pr view "$PR_NUMBER" --json files | jq '.files | length')
+            fi
+
+            # Build formatted context
+            FORMATTED_CONTEXT="PR Title: ${PR_TITLE}
+          PR Author: ${PR_AUTHOR}
+          PR Branch: ${PR_HEAD} -> ${PR_BASE}
+          PR State: ${PR_STATE^^}
+          PR Additions: ${PR_ADDITIONS}
+          PR Deletions: ${PR_DELETIONS}
+          Total Commits: ${PR_COMMITS}
+          Changed Files: ${PR_FILES} files"
+
+            # Build system prompt
+            SYSTEM_PROMPT="You are Claude, an AI assistant designed to help with GitHub issues and pull requests. Think carefully as you analyze the context and respond appropriately. Here's the context for your current task:
+
+          <formatted_context>
+          ${FORMATTED_CONTEXT}
+          </formatted_context>"
+          else
+            # For issues
+            ISSUE_TITLE="$ISSUE_TITLE_INPUT"
+            ISSUE_AUTHOR="$ISSUE_AUTHOR_INPUT"
+            ISSUE_STATE="$ISSUE_STATE_INPUT"
+
+            FORMATTED_CONTEXT="Issue Title: ${ISSUE_TITLE}
+          Issue Author: ${ISSUE_AUTHOR}
+          Issue State: ${ISSUE_STATE^^}"
+
+            SYSTEM_PROMPT="You are Claude, an AI assistant designed to help with GitHub issues and pull requests. Think carefully as you analyze the context and respond appropriately. Here's the context for your current task:
+
+          <formatted_context>
+          ${FORMATTED_CONTEXT}
+          </formatted_context>"
+          fi
+
+          # Save to environment file for next step (using block redirect)
+          {
+            echo "CUSTOM_SYSTEM_PROMPT<<EOF"
+            echo "$SYSTEM_PROMPT"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ secrets.CLAUDE_ACCESS_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          ISSUE_PR_URL: ${{ github.event.issue.pull_request.url || '' }}
+          # Pull request event variables
+          PR_TITLE_INPUT: ${{ github.event.pull_request.title }}
+          PR_AUTHOR_INPUT: ${{ github.event.pull_request.user.login }}
+          PR_HEAD_INPUT: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_INPUT: ${{ github.event.pull_request.base.ref }}
+          PR_STATE_INPUT: ${{ github.event.pull_request.state }}
+          PR_ADDITIONS_INPUT: ${{ github.event.pull_request.additions }}
+          PR_DELETIONS_INPUT: ${{ github.event.pull_request.deletions }}
+          PR_COMMITS_INPUT: ${{ github.event.pull_request.commits }}
+          PR_FILES_INPUT: ${{ github.event.pull_request.changed_files }}
+          # Issue event variables
+          ISSUE_NUMBER_INPUT: ${{ github.event.issue.number }}
+          ISSUE_TITLE_INPUT: ${{ github.event.issue.title }}
+          ISSUE_AUTHOR_INPUT: ${{ github.event.issue.user.login }}
+          ISSUE_STATE_INPUT: ${{ github.event.issue.state }}
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # 2026-01-16
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: "/tmp/zama-marketplace"
+          plugins: |
+            project-manager@zama-marketplace
+            zama-developer@zama-marketplace
+          # Prompt: empty string for comments (action extracts text after @claude)
+          prompt: ""
+          claude_args: |
+            --model opus
+            --allowedTools "Bash(uv:*),Bash(gh:*),Bash(git:*),Read,Edit,Write,Glob,Grep,Task"
+            --system-prompt "${{ env.CUSTOM_SYSTEM_PROMPT }}"

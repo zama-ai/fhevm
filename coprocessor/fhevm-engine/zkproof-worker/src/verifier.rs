@@ -125,7 +125,8 @@ pub async fn execute_verify_proofs_loop(
     conf: Config,
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
-    info!(conf = %conf, "Starting with config");
+    let gpu_enabled = fhevm_engine_common::utils::log_backend();
+    info!(gpu_enabled, conf = %conf, "Starting with config");
 
     // Tenants key cache is shared amongst all workers
     let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(

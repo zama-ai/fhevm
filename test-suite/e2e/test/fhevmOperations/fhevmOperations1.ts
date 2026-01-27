@@ -2,13 +2,13 @@ import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { assert } from 'chai';
 import { ethers } from 'hardhat';
 
-import type { FHEVMTestSuite1 } from '../../types/contracts/tests/FHEVMTestSuite1';
-import type { FHEVMTestSuite2 } from '../../types/contracts/tests/FHEVMTestSuite2';
-import type { FHEVMTestSuite3 } from '../../types/contracts/tests/FHEVMTestSuite3';
-import type { FHEVMTestSuite4 } from '../../types/contracts/tests/FHEVMTestSuite4';
-import type { FHEVMTestSuite5 } from '../../types/contracts/tests/FHEVMTestSuite5';
-import type { FHEVMTestSuite6 } from '../../types/contracts/tests/FHEVMTestSuite6';
-import type { FHEVMTestSuite7 } from '../../types/contracts/tests/FHEVMTestSuite7';
+import type { FHEVMTestSuite1 } from '../../types/contracts/operations/FHEVMTestSuite1';
+import type { FHEVMTestSuite2 } from '../../types/contracts/operations/FHEVMTestSuite2';
+import type { FHEVMTestSuite3 } from '../../types/contracts/operations/FHEVMTestSuite3';
+import type { FHEVMTestSuite4 } from '../../types/contracts/operations/FHEVMTestSuite4';
+import type { FHEVMTestSuite5 } from '../../types/contracts/operations/FHEVMTestSuite5';
+import type { FHEVMTestSuite6 } from '../../types/contracts/operations/FHEVMTestSuite6';
+import type { FHEVMTestSuite7 } from '../../types/contracts/operations/FHEVMTestSuite7';
 import { createInstance } from '../instance';
 import { getSigner, getSigners, initSigners } from '../signers';
 
@@ -130,7 +130,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 203n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "xor" overload (uint8, euint8) => euint8 test 2 (4, 8)', async function () {
@@ -145,7 +145,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 12n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "xor" overload (uint8, euint8) => euint8 test 3 (8, 8)', async function () {
@@ -160,7 +160,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "xor" overload (uint8, euint8) => euint8 test 4 (8, 4)', async function () {
@@ -175,7 +175,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 12n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "sub" overload (euint32, euint64) => euint64 test 1 (1488611147, 1488611147)', async function () {
@@ -194,7 +194,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "sub" overload (euint32, euint64) => euint64 test 2 (1488611147, 1488611143)', async function () {
@@ -213,7 +213,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 4n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "add" overload (euint16, euint8) => euint16 test 1 (167, 2)', async function () {
@@ -232,7 +232,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 169n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "add" overload (euint16, euint8) => euint16 test 2 (96, 100)', async function () {
@@ -251,7 +251,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 196n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "add" overload (euint16, euint8) => euint16 test 3 (100, 100)', async function () {
@@ -270,7 +270,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 200n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "add" overload (euint16, euint8) => euint16 test 4 (100, 96)', async function () {
@@ -289,7 +289,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 196n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "div" overload (euint16, uint16) => euint16 test 1 (61612, 47173)', async function () {
@@ -304,7 +304,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 1n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "div" overload (euint16, uint16) => euint16 test 2 (61310, 61314)', async function () {
@@ -319,7 +319,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 0n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "div" overload (euint16, uint16) => euint16 test 3 (61314, 61314)', async function () {
@@ -334,7 +334,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 1n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "div" overload (euint16, uint16) => euint16 test 4 (61314, 61310)', async function () {
@@ -349,7 +349,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 1n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "le" overload (euint8, uint8) => ebool test 1 (181, 142)', async function () {
@@ -364,7 +364,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "le" overload (euint8, uint8) => ebool test 2 (5, 9)', async function () {
@@ -379,7 +379,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "le" overload (euint8, uint8) => ebool test 3 (9, 9)', async function () {
@@ -394,7 +394,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "le" overload (euint8, uint8) => ebool test 4 (9, 5)', async function () {
@@ -409,7 +409,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: false,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "add" overload (euint32, euint128) => euint128 test 1 (2, 2147483649)', async function () {
@@ -428,7 +428,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 2147483651n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "add" overload (euint32, euint128) => euint128 test 2 (1607734426, 1607734428)', async function () {
@@ -447,7 +447,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 3215468854n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "add" overload (euint32, euint128) => euint128 test 3 (1607734428, 1607734428)', async function () {
@@ -466,7 +466,7 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 3215468856n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test operator "add" overload (euint32, euint128) => euint128 test 4 (1607734428, 1607734426)', async function () {
@@ -485,6 +485,6 @@ describe('FHEVM operations 1', function () {
     const expectedRes = {
       [handle]: 3215468854n,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 });

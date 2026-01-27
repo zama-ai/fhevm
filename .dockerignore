@@ -1,0 +1,134 @@
+# =============================================================================
+# Root .dockerignore for fhevm repository
+# =============================================================================
+# This file reduces Docker build context size when builds use the repo root as
+# context (e.g., test-suite/fhevm/docker-compose/*.yml files).
+#
+# IMPORTANT: Do not exclude paths that Dockerfiles COPY from:
+#   - coprocessor/fhevm-engine/
+#   - coprocessor/proto/
+#   - gateway-contracts/
+#   - kms-connector/
+#   - host-contracts/
+#   - library-solidity/
+#   - test-suite/
+#   - package.json, package-lock.json
+#   - .git/ (used for build metadata in some Dockerfiles)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Rust build artifacts (CRITICAL - can be GB-scale)
+# -----------------------------------------------------------------------------
+**/target/
+
+# -----------------------------------------------------------------------------
+# FHE keys (CRITICAL - can be GB-scale, mounted at runtime)
+# -----------------------------------------------------------------------------
+**/fhevm-keys/
+**/*.fhekey
+
+# -----------------------------------------------------------------------------
+# Node.js dependencies and build artifacts
+# -----------------------------------------------------------------------------
+**/node_modules/
+**/dist/
+**/.next/
+**/.turbo/
+**/.cache/
+
+# -----------------------------------------------------------------------------
+# IDE and OS files
+# -----------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# -----------------------------------------------------------------------------
+# Test artifacts and coverage
+# -----------------------------------------------------------------------------
+**/coverage/
+**/.nyc_output/
+**/junit.xml
+**/*.lcov
+
+# -----------------------------------------------------------------------------
+# Logs
+# -----------------------------------------------------------------------------
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# -----------------------------------------------------------------------------
+# Documentation (not needed for builds)
+# Large PDF files and markdown docs that aren't required by Dockerfiles
+# -----------------------------------------------------------------------------
+docs/
+charts/
+*.pdf
+**/*.md
+!**/README.md
+
+# Re-include README.md files since some tooling might expect them
+# (though they're generally not needed for Docker builds)
+
+# -----------------------------------------------------------------------------
+# Python artifacts
+# -----------------------------------------------------------------------------
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.venv/
+**/venv/
+**/.pytest_cache/
+
+# -----------------------------------------------------------------------------
+# Environment files with secrets (local overrides are gitignored)
+# Keep base .env.* templates as they're tracked in git
+# -----------------------------------------------------------------------------
+**/.env
+**/.env.local
+**/.env.*.local
+
+# -----------------------------------------------------------------------------
+# Git-related (keep .git/ for build metadata, exclude others)
+# -----------------------------------------------------------------------------
+.gitignore
+.gitattributes
+**/.gitkeep
+
+# -----------------------------------------------------------------------------
+# CI/CD and config files not needed in builds
+# -----------------------------------------------------------------------------
+.github/
+.devcontainer/
+.mergify.yml
+.commitlintrc.json
+.hadolint.yaml
+.linkspector.yml
+.prettierrc.yml
+.prettierignore
+.slither.config.json
+.npmrc
+CODE_OF_CONDUCT.md
+LICENSE
+SECURITY.md
+
+# -----------------------------------------------------------------------------
+# Golden container images (base image definitions, not needed in app builds)
+# -----------------------------------------------------------------------------
+golden-container-images/
+
+# -----------------------------------------------------------------------------
+# SDK (not used by any Dockerfile)
+# -----------------------------------------------------------------------------
+sdk/
+
+# -----------------------------------------------------------------------------
+# CI directory (not used by any Dockerfile)
+# -----------------------------------------------------------------------------
+ci/

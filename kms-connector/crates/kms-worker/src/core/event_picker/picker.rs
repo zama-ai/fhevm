@@ -1,12 +1,9 @@
 use crate::{
-    core::{
-        Config,
-        event_picker::notifier::{DbEventNotifier, EventNotification},
-    },
+    core::{Config, event_picker::notifier::DbEventNotifier},
     monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
 };
 use anyhow::anyhow;
-use connector_utils::types::{GatewayEvent, gw_event};
+use connector_utils::types::{GatewayEvent, db::EventType, gw_event};
 use sqlx::{Pool, Postgres};
 use tokio::sync::mpsc::{self, Receiver};
 use tracing::{debug, info, warn};
@@ -24,7 +21,7 @@ pub struct DbEventPicker {
     db_pool: Pool<Postgres>,
 
     /// The receiver channel used to receive event notification.
-    notif_receiver: Receiver<EventNotification>,
+    notif_receiver: Receiver<EventType>,
 
     /// The limit number of events to fetch from the database.
     events_batch_size: u8,
@@ -33,7 +30,7 @@ pub struct DbEventPicker {
 impl DbEventPicker {
     pub fn new(
         db_pool: Pool<Postgres>,
-        notif_receiver: Receiver<EventNotification>,
+        notif_receiver: Receiver<EventType>,
         events_batch_size: u8,
     ) -> Self {
         Self {
@@ -72,7 +69,9 @@ impl EventPicker for DbEventPicker {
             match self.pick_notified_events(&notification).await {
                 Err(e) => {
                     warn!("Error while picking events: {e}");
-                    EVENT_RECEIVED_ERRORS.inc();
+                    EVENT_RECEIVED_ERRORS
+                        .with_label_values(&[notification.as_str()])
+                        .inc();
                     continue;
                 }
                 Ok(events) if events.is_empty() => {
@@ -80,12 +79,10 @@ impl EventPicker for DbEventPicker {
                     continue;
                 }
                 Ok(events) => {
-                    info!(
-                        "Picked {} {} successfully",
-                        events.len(),
-                        notification.event_str()
-                    );
-                    EVENT_RECEIVED_COUNTER.inc_by(events.len() as u64);
+                    info!("Picked {} {} successfully", events.len(), notification);
+                    EVENT_RECEIVED_COUNTER
+                        .with_label_values(&[notification.as_str()])
+                        .inc_by(events.len() as u64);
                     return Ok(events);
                 }
             }
@@ -96,16 +93,16 @@ impl EventPicker for DbEventPicker {
 impl DbEventPicker {
     async fn pick_notified_events(
         &self,
-        notification: &EventNotification,
+        notification: &EventType,
     ) -> anyhow::Result<Vec<GatewayEvent>> {
         match notification {
-            EventNotification::PublicDecryption => self.pick_public_decryption_requests().await,
-            EventNotification::UserDecryption => self.pick_user_decryption_requests().await,
-            EventNotification::PrepKeygen => self.pick_prep_keygen_requests().await,
-            EventNotification::Keygen => self.pick_keygen_requests().await,
-            EventNotification::Crsgen => self.pick_crsgen_requests().await,
-            EventNotification::PrssInit => self.pick_prss_init().await,
-            EventNotification::KeyReshareSameSet => self.pick_key_reshare_same_set().await,
+            EventType::PublicDecryptionRequest => self.pick_public_decryption_requests().await,
+            EventType::UserDecryptionRequest => self.pick_user_decryption_requests().await,
+            EventType::PrepKeygenRequest => self.pick_prep_keygen_requests().await,
+            EventType::KeygenRequest => self.pick_keygen_requests().await,
+            EventType::CrsgenRequest => self.pick_crsgen_requests().await,
+            EventType::PrssInit => self.pick_prss_init().await,
+            EventType::KeyReshareSameSet => self.pick_key_reshare_same_set().await,
         }
     }
 
@@ -113,15 +110,15 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE public_decryption_requests
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT decryption_id
                     FROM public_decryption_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE public_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, extra_data, otlp_context, already_sent
+                RETURNING req.decryption_id, sns_ct_materials, extra_data, otlp_context, already_sent, error_counter
             ",
         )
         .bind(self.events_batch_size as i16)
@@ -136,15 +133,15 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE user_decryption_requests
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT decryption_id
                     FROM user_decryption_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
-                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context, already_sent
+                RETURNING req.decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context, already_sent, error_counter
             ",
         )
         .bind(self.events_batch_size as i16)
@@ -159,11 +156,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE prep_keygen_requests
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT prep_keygen_id
                     FROM prep_keygen_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prep_keygen_requests.prep_keygen_id = req.prep_keygen_id
@@ -181,11 +178,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE keygen_requests
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT key_id
                     FROM keygen_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE keygen_requests.key_id = req.key_id
@@ -203,11 +200,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE crsgen_requests
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT crs_id
                     FROM crsgen_requests
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE crsgen_requests.crs_id = req.crs_id
@@ -225,11 +222,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE prss_init
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT id
                     FROM prss_init
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prss_init.id = req.id
@@ -247,11 +244,11 @@ impl DbEventPicker {
         sqlx::query(
             "
                 UPDATE key_reshare_same_set
-                SET under_process = TRUE
+                SET status = 'under_process'
                 FROM (
                     SELECT key_id
                     FROM key_reshare_same_set
-                    WHERE under_process = FALSE
+                    WHERE status = 'pending'
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE key_reshare_same_set.key_id = req.key_id

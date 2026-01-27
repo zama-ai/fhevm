@@ -1,4 +1,5 @@
-use crate::monitoring::metrics::EVENT_STORED_COUNTER;
+use std::time::Duration;
+
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::{
@@ -15,10 +16,35 @@ use fhevm_gateway_bindings::{
     },
 };
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
+
+const INSERTION_RETRY_LIMIT: usize = 10;
+const INSERTION_RETRY_INTERVAL: Duration = Duration::from_millis(10);
 
 #[tracing::instrument(skip_all)]
 pub async fn publish_event(
+    db_pool: &Pool<Postgres>,
+    event: GatewayEvent,
+    block_number: Option<u64>,
+) -> anyhow::Result<()> {
+    for i in 1..=INSERTION_RETRY_LIMIT {
+        match publish_event_inner(db_pool, event.clone(), block_number).await {
+            Ok(()) => return Ok(()),
+            Err(e) => error!("Insertion attempt #{i}/{INSERTION_RETRY_LIMIT} failed: {e}"),
+        }
+        if i != INSERTION_RETRY_LIMIT {
+            tokio::time::sleep(INSERTION_RETRY_INTERVAL).await;
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Failed to publish {:?} event after {} attempts",
+        event.kind,
+        INSERTION_RETRY_LIMIT
+    ))
+}
+
+async fn publish_event_inner(
     db_pool: &Pool<Postgres>,
     event: GatewayEvent,
     block_number: Option<u64>,
@@ -44,7 +70,6 @@ pub async fn publish_event(
 
     if query_result.rows_affected() == 1 {
         info!("Event successfully stored in DB!");
-        EVENT_STORED_COUNTER.inc();
     } else {
         warn!("Unexpected query result while publishing event: {query_result:?}");
     }
@@ -90,9 +115,9 @@ async fn publish_user_decryption(
 
     sqlx::query!(
         "INSERT INTO user_decryption_requests(\
-                decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context\
-            ) \
-            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+            decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context\
+        ) \
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
         request.decryptionId.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
         request.userAddress.as_slice(),

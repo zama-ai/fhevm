@@ -2,7 +2,7 @@ pub mod scheduler;
 pub mod types;
 
 use std::{collections::HashMap, sync::atomic::AtomicUsize};
-use tracing::error;
+use tracing::{error, warn};
 
 use crate::dfg::types::*;
 use anyhow::Result;
@@ -67,7 +67,7 @@ pub struct ComponentNode {
     // corresponding FHE op
     pub inputs: HashMap<Handle, Option<DFGTxInput>>,
     pub results: Vec<Handle>,
-    pub unneeded: Vec<Handle>,
+    pub intermediate_handles: Vec<Handle>,
     pub transaction_id: Handle,
     pub is_uncomputable: bool,
     pub component_id: usize,
@@ -236,6 +236,9 @@ impl ComponentNode {
                 }
             }
             self.results.push(op.output_handle.clone());
+            if !op.is_allowed {
+                self.intermediate_handles.push(op.output_handle.clone());
+            }
             let node_idx = self
                 .graph
                 .add_node(
@@ -286,7 +289,7 @@ impl std::fmt::Debug for ComponentNode {
 pub struct DFComponentGraph {
     pub graph: Dag<ComponentNode, ComponentEdge>,
     pub needed_map: HashMap<Handle, Vec<NodeIndex>>,
-    pub allowed_map: HashMap<Handle, NodeIndex>,
+    pub produced: HashMap<Handle, Vec<(NodeIndex, Handle)>>,
     pub results: Vec<DFGTxResult>,
 }
 impl DFComponentGraph {
@@ -297,15 +300,37 @@ impl DFComponentGraph {
         // Gather handles produced within the graph
         for (producer, tx) in self.graph.node_references() {
             for r in tx.results.iter() {
-                self.allowed_map.insert(r.clone(), producer);
+                self.produced
+                    .entry(r.clone())
+                    .and_modify(|p| p.push((producer, tx.transaction_id.clone())))
+                    .or_insert(vec![(producer, tx.transaction_id.clone())]);
             }
         }
         // Identify all dependence pairs (producer, consumer)
         let mut dependence_pairs = vec![];
         for (consumer, tx) in self.graph.node_references() {
             for i in tx.inputs.keys() {
-                if let Some(producer) = self.allowed_map.get(i) {
-                    dependence_pairs.push((producer, consumer));
+                if let Some(producer) = self.produced.get(i) {
+                    // If this handle is produced within this same transaction
+                    if let Some((prod_idx, _)) =
+                        producer.iter().find(|(_, tid)| *tid == tx.transaction_id)
+                    {
+                        if *prod_idx == consumer {
+                            warn!(target: "scheduler", { },
+			       "Self-dependence on node");
+                        } else {
+                            dependence_pairs.push((*prod_idx, consumer));
+                        }
+                    } else if producer.len() > 1 {
+                        error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()),
+							  count =  ?producer.len() },
+				   "Handle collision for computation output");
+                    } else if producer.is_empty() {
+                        error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()) },
+				   "Missing producer for handle");
+                    } else {
+                        dependence_pairs.push((producer[0].0, consumer));
+                    }
                 } else {
                     self.needed_map
                         .entry(i.clone())
@@ -314,14 +339,72 @@ impl DFComponentGraph {
                 }
             }
         }
+
+        // We build a replica of the graph and map it to the
+        // underlying DiGraph so we can identify cycles.
+        let mut digraph = self.graph.map(|idx, _| idx, |_, _| ()).graph().clone();
         // Add transaction dependence edges
-        for (producer, consumer) in dependence_pairs {
-            // Error only occurs in case of cyclic dependence which
-            // shoud not be possible between transactions. In that
-            // case, the whole cycle should be put in an error state.
-            self.graph
-                .add_edge(*producer, consumer, ())
-                .map_err(|_| SchedulerError::CyclicDependence)?;
+        for (producer, consumer) in dependence_pairs.iter() {
+            digraph.add_edge(*producer, *consumer, ());
+        }
+        let mut tarjan = daggy::petgraph::algo::TarjanScc::new();
+        let mut sccs = Vec::new();
+        tarjan.run(&digraph, |scc| {
+            if scc.len() > 1 {
+                // All non-singleton SCCs in a directed graph are
+                // dependence cycles
+                sccs.push(scc.to_vec());
+            }
+        });
+        if !sccs.is_empty() {
+            for scc in sccs {
+                error!(target: "scheduler", { cycle_size = ?scc.len() },
+		       "Dependence cycle detected");
+                for idx in scc {
+                    let idx = digraph
+                        .node_weight(idx)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
+                    let tx = self
+                        .graph
+                        .node_weight_mut(*idx)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
+                    // Mark the node as uncomputable so we don't go
+                    // and mark as completed operations that are in
+                    // error.
+                    tx.is_uncomputable = true;
+                    error!(target: "scheduler", { transaction_id = ?hex::encode(tx.transaction_id.clone()) },
+		       "Transaction is part of a dependence cycle");
+                    for (_, op) in tx.graph.graph.node_references() {
+                        self.results.push(DFGTxResult {
+                            transaction_id: tx.transaction_id.clone(),
+                            handle: op.result_handle.to_vec(),
+                            compressed_ct: Err(SchedulerError::CyclicDependence.into()),
+                        });
+                    }
+                }
+            }
+            return Err(SchedulerError::CyclicDependence.into());
+        } else {
+            // If no dependence cycles were found, then we can
+            // complete the graph and proceed to execution
+            for (producer, consumer) in dependence_pairs.iter() {
+                // The error case here should not happen as we've
+                // already covered it by testing for SCCs in the graph
+                // first
+                if self.graph.add_edge(*producer, *consumer, ()).is_err() {
+                    let prod = self
+                        .graph
+                        .node_weight(*producer)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
+                    let cons = self
+                        .graph
+                        .node_weight(*consumer)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
+                    error!(target: "scheduler", { producer_id = ?hex::encode(prod.transaction_id.clone()), consumer_id = ?hex::encode(cons.transaction_id.clone()) },
+		       "Dependence cycle when adding dependence - initial cycle detection failed");
+                    return Err(SchedulerError::CyclicDependence.into());
+                }
+            }
         }
         Ok(())
     }
@@ -344,49 +427,63 @@ impl DFComponentGraph {
         result: Result<TaskResult>,
         edges: &Dag<(), ComponentEdge>,
     ) -> Result<()> {
-        if let Some(producer) = self.allowed_map.get(handle).cloned() {
-            let mut save_result = true;
-            if let Ok(ref result) = result {
-                save_result = result.is_allowed;
-                // Traverse immediate dependents and add this result as an input
-                for edge in edges.edges_directed(producer, Direction::Outgoing) {
-                    let dependent_tx_index = edge.target();
-                    let dependent_tx = self
-                        .graph
-                        .node_weight_mut(dependent_tx_index)
-                        .ok_or(SchedulerError::DataflowGraphError)?;
-                    dependent_tx.inputs.entry(handle.to_vec()).and_modify(|v| {
-                        *v = Some(DFGTxInput::Value((result.ct.clone(), result.is_allowed)))
-                    });
-                }
+        if let Some(producer) = self.produced.get(handle).cloned() {
+            if producer.is_empty() {
+                error!(target: "scheduler", { output_handle = ?hex::encode(handle) },
+		       "Missing producer for handle");
             } else {
-                // If this result was an error, mark this transaction
-                // and all its dependents as uncomputable, we will
-                // skip them during scheduling
-                self.set_uncomputable(producer, edges)?;
-            }
-            // Finally add the output (either error or compressed
-            // ciphertext) to the graph's outputs
-            if save_result {
-                let producer_tx = self
-                    .graph
-                    .node_weight_mut(producer)
-                    .ok_or(SchedulerError::DataflowGraphError)?;
-                if let Ok(ref r) = result {
-                    if r.compressed_ct.is_none() {
-                        error!(target: "scheduler", {handle = ?hex::encode(handle) }, "Missing compressed ciphertext in task result");
-                        return Err(SchedulerError::SchedulerError.into());
+                let mut prod_idx = producer[0].0;
+                if let Ok(ref result) = result {
+                    if let Some((pid, _)) = producer
+                        .iter()
+                        .find(|(_, tid)| *tid == result.transaction_id)
+                    {
+                        prod_idx = *pid;
                     }
                 }
-                self.results.push(DFGTxResult {
-                    transaction_id: producer_tx.transaction_id.clone(),
-                    handle: handle.to_vec(),
-                    compressed_ct: result.map(|rok| {
-                        // Safe to unwrap as this is checked above
-                        let cct = rok.compressed_ct.unwrap();
-                        (cct.0, cct.1)
-                    }),
-                });
+                let mut save_result = true;
+                if let Ok(ref result) = result {
+                    save_result = result.is_allowed;
+                    // Traverse immediate dependents and add this result as an input
+                    for edge in edges.edges_directed(prod_idx, Direction::Outgoing) {
+                        let dependent_tx_index = edge.target();
+                        let dependent_tx = self
+                            .graph
+                            .node_weight_mut(dependent_tx_index)
+                            .ok_or(SchedulerError::DataflowGraphError)?;
+                        dependent_tx.inputs.entry(handle.to_vec()).and_modify(|v| {
+                            *v = Some(DFGTxInput::Value((result.ct.clone(), result.is_allowed)))
+                        });
+                    }
+                } else {
+                    // If this result was an error, mark this transaction
+                    // and all its dependents as uncomputable, we will
+                    // skip them during scheduling
+                    self.set_uncomputable(prod_idx, edges)?;
+                }
+                // Finally add the output (either error or compressed
+                // ciphertext) to the graph's outputs
+                if save_result {
+                    let producer_tx = self
+                        .graph
+                        .node_weight_mut(prod_idx)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
+                    if let Ok(ref r) = result {
+                        if r.compressed_ct.is_none() {
+                            error!(target: "scheduler", {handle = ?hex::encode(handle) }, "Missing compressed ciphertext in task result");
+                            return Err(SchedulerError::SchedulerError.into());
+                        }
+                    }
+                    self.results.push(DFGTxResult {
+                        transaction_id: producer_tx.transaction_id.clone(),
+                        handle: handle.to_vec(),
+                        compressed_ct: result.map(|rok| {
+                            // Safe to unwrap as this is checked above
+                            let cct = rok.compressed_ct.unwrap();
+                            (cct.0, cct.1)
+                        }),
+                    });
+                }
             }
         }
         Ok(())
@@ -402,7 +499,17 @@ impl DFComponentGraph {
             .graph
             .node_weight_mut(tx_node_index)
             .ok_or(SchedulerError::DataflowGraphError)?;
+        if tx_node.is_uncomputable {
+            return Ok(());
+        }
         tx_node.is_uncomputable = true;
+        for (_idx, op) in tx_node.graph.graph.node_references() {
+            self.results.push(DFGTxResult {
+                transaction_id: tx_node.transaction_id.clone(),
+                handle: op.result_handle.to_vec(),
+                compressed_ct: Err(SchedulerError::MissingInputs.into()),
+            });
+        }
         for edge in edges.edges_directed(tx_node_index, Direction::Outgoing) {
             let dependent_tx_index = edge.target();
             self.set_uncomputable(dependent_tx_index, edges)?;
@@ -412,12 +519,12 @@ impl DFComponentGraph {
     pub fn get_results(&mut self) -> Vec<DFGTxResult> {
         std::mem::take(&mut self.results)
     }
-    pub fn get_handles(&mut self) -> Vec<(Handle, Handle)> {
+    pub fn get_intermediate_handles(&mut self) -> Vec<(Handle, Handle)> {
         let mut res = vec![];
         for tx in self.graph.node_weights_mut() {
             if !tx.is_uncomputable {
                 res.append(
-                    &mut (std::mem::take(&mut tx.results))
+                    &mut (std::mem::take(&mut tx.intermediate_handles))
                         .into_iter()
                         .map(|h| (h, tx.transaction_id.clone()))
                         .collect::<Vec<_>>(),

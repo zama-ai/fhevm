@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ciphertexts128 WHERE  handle = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6e79a42707d3e5a6351638b5a3fc366cb4196394860bfd84e7e982cb8d6c5b18"
+}

@@ -1,6 +1,6 @@
 use crate::{
     monitoring::otlp::PropagationContext,
-    types::db::{ParamsTypeDb, SnsCiphertextMaterialDbItem},
+    types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
 };
 use alloy::primitives::U256;
 use fhevm_gateway_bindings::{
@@ -17,13 +17,14 @@ use sqlx::{
     query::Query,
 };
 use std::fmt::Display;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 /// The events emitted by the Gateway which are monitored by the KMS Connector.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GatewayEvent {
     pub kind: GatewayEventKind,
     pub already_sent: bool,
+    pub error_counter: i16,
     pub otlp_context: PropagationContext,
 }
 
@@ -31,47 +32,54 @@ impl GatewayEvent {
     pub fn new(kind: GatewayEventKind, otlp_context: PropagationContext) -> Self {
         GatewayEvent {
             kind,
+            error_counter: 0,
             already_sent: false,
             otlp_context,
         }
     }
 
-    /// Sets the `under_process` field of the event as `FALSE` in the database.
+    /// Sets the event's `status` field to `pending` in the database.
     pub async fn mark_as_pending(&self, db: &Pool<Postgres>) {
-        let already_sent = self.already_sent;
-        match &self.kind {
-            GatewayEventKind::PublicDecryption(e) => {
-                mark_public_decryption_as_pending(db, e.decryptionId, already_sent).await
-            }
-            GatewayEventKind::UserDecryption(e) => {
-                mark_user_decryption_as_pending(db, e.decryptionId, already_sent).await
-            }
-            GatewayEventKind::PrepKeygen(e) => {
-                mark_prep_keygen_as_pending(db, e.prepKeygenId, already_sent).await
-            }
-            GatewayEventKind::Keygen(e) => mark_keygen_as_pending(db, e.keyId, already_sent).await,
-            GatewayEventKind::Crsgen(e) => mark_crsgen_as_pending(db, e.crsId, already_sent).await,
-            GatewayEventKind::PrssInit(_) => mark_prss_init_as_pending(db, PRSS_INIT_ID).await,
-            GatewayEventKind::KeyReshareSameSet(e) => {
-                mark_key_reshare_same_set_as_pending(db, e.keyId).await
-            }
-        }
+        warn!("Failed to process event. Restoring `status` field to `pending` in DB...");
+        self.update_status(db, OperationStatus::Pending).await
     }
 
-    pub async fn delete_from_db(&self, db: &Pool<Postgres>) {
+    /// Sets the event's `status` field to `completed` in the database.
+    pub async fn mark_as_completed(&self, db: &Pool<Postgres>) {
+        info!("Event successfully processed. Setting its `status` field to `completed` in DB...");
+        self.update_status(db, OperationStatus::Completed).await
+    }
+
+    /// Sets the event's `status` field to `failed` in the database.
+    pub async fn mark_as_failed(&self, db: &Pool<Postgres>) {
+        warn!("Failed to process event. Restoring `status` field to `failed` in DB...");
+        self.update_status(db, OperationStatus::Failed).await
+    }
+
+    async fn update_status(&self, db: &Pool<Postgres>, status: OperationStatus) {
+        let already_sent = self.already_sent;
+        let err_count = self.error_counter;
         match &self.kind {
             GatewayEventKind::PublicDecryption(e) => {
-                delete_public_decryption_from_db(db, e.decryptionId).await
+                update_public_decryption_status(db, e.decryptionId, status, already_sent, err_count)
+                    .await
             }
             GatewayEventKind::UserDecryption(e) => {
-                delete_user_decryption_from_db(db, e.decryptionId).await
+                update_user_decryption_status(db, e.decryptionId, status, already_sent, err_count)
+                    .await
             }
-            GatewayEventKind::PrepKeygen(e) => delete_prep_keygen_from_db(db, e.prepKeygenId).await,
-            GatewayEventKind::Keygen(e) => delete_keygen_from_db(db, e.keyId).await,
-            GatewayEventKind::Crsgen(e) => delete_crsgen_from_db(db, e.crsId).await,
-            GatewayEventKind::PrssInit(id) => delete_prss_init_from_db(db, *id).await,
+            GatewayEventKind::PrepKeygen(e) => {
+                update_prep_keygen_status(db, e.prepKeygenId, status, already_sent).await
+            }
+            GatewayEventKind::Keygen(e) => {
+                update_keygen_status(db, e.keyId, status, already_sent).await
+            }
+            GatewayEventKind::Crsgen(e) => {
+                update_crsgen_status(db, e.crsId, status, already_sent).await
+            }
+            GatewayEventKind::PrssInit(id) => update_prss_init_status(db, *id, status).await,
             GatewayEventKind::KeyReshareSameSet(e) => {
-                delete_key_reshare_same_set_from_db(db, e.keyId).await
+                update_key_reshare_same_set_status(db, e.keyId, status).await
             }
         }
     }
@@ -102,8 +110,9 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: row.try_get::<i16, _>("error_counter")?,
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -123,8 +132,9 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: row.try_get::<i16, _>("error_counter")?,
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -136,8 +146,9 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: 0,
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -148,8 +159,9 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: 0,
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -161,8 +173,9 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: 0,
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -170,8 +183,9 @@ pub fn from_prss_init_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     let kind = GatewayEventKind::PrssInit(U256::from_le_bytes(row.try_get::<[u8; 32], _>("id")?));
     Ok(GatewayEvent {
         kind,
+        error_counter: 0,
         already_sent: false,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -184,167 +198,129 @@ pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<GatewayEvent
     });
     Ok(GatewayEvent {
         kind,
+        error_counter: 0,
         already_sent: false,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
-/// Sets the `under_process` field of the `PublicDecryptionRequest` as `FALSE` in the database.
-pub async fn mark_public_decryption_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
+async fn update_public_decryption_status(
+    db: &Pool<Postgres>,
+    id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+    error_counter: i16,
+) {
     let query = sqlx::query!(
-        "UPDATE public_decryption_requests SET under_process = FALSE, already_sent = $1 \
-        WHERE decryption_id = $2",
+        "UPDATE public_decryption_requests SET status = $1, already_sent = $2, error_counter = $3 \
+        WHERE decryption_id = $4",
+        status as OperationStatus,
+        already_sent,
+        error_counter,
+        id.as_le_slice()
+    );
+    execute_update_event_query(db, query).await;
+}
+
+async fn update_user_decryption_status(
+    db: &Pool<Postgres>,
+    id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+    error_counter: i16,
+) {
+    let query = sqlx::query!(
+        "UPDATE user_decryption_requests SET status = $1, already_sent = $2, error_counter = $3 \
+        WHERE decryption_id = $4",
+        status as OperationStatus,
+        already_sent,
+        error_counter,
+        id.as_le_slice()
+    );
+    execute_update_event_query(db, query).await;
+}
+
+async fn update_prep_keygen_status(
+    db: &Pool<Postgres>,
+    id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) {
+    let query = sqlx::query!(
+        "UPDATE prep_keygen_requests SET status = $1, already_sent = $2 \
+        WHERE prep_keygen_id = $3",
+        status as OperationStatus,
         already_sent,
         id.as_le_slice()
     );
-    execute_free_event_query(db, query).await;
+    execute_update_event_query(db, query).await;
 }
 
-/// Sets the `under_process` field of the `UserDecryptionRequest` as `FALSE` in the database.
-pub async fn mark_user_decryption_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
+async fn update_keygen_status(
+    db: &Pool<Postgres>,
+    id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) {
     let query = sqlx::query!(
-        "UPDATE user_decryption_requests SET under_process = FALSE, already_sent = $1 \
-        WHERE decryption_id = $2",
+        "UPDATE keygen_requests SET status = $1, already_sent = $2 \
+        WHERE key_id = $3",
+        status as OperationStatus,
         already_sent,
         id.as_le_slice()
     );
-    execute_free_event_query(db, query).await;
+    execute_update_event_query(db, query).await;
 }
 
-/// Sets the `under_process` field of the `PrepKeygenRequest` as `FALSE` in the database.
-pub async fn mark_prep_keygen_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
+async fn update_crsgen_status(
+    db: &Pool<Postgres>,
+    id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) {
     let query = sqlx::query!(
-        "UPDATE prep_keygen_requests SET under_process = FALSE, already_sent = $1 \
-        WHERE prep_keygen_id = $2",
+        "UPDATE crsgen_requests SET status = $1, already_sent = $2 \
+        WHERE crs_id = $3",
+        status as OperationStatus,
         already_sent,
         id.as_le_slice()
     );
-    execute_free_event_query(db, query).await;
+    execute_update_event_query(db, query).await;
 }
 
-/// Sets the `under_process` field of the `KeygenRequest` as `FALSE` in the database.
-pub async fn mark_keygen_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
+async fn update_prss_init_status(db: &Pool<Postgres>, id: U256, status: OperationStatus) {
     let query = sqlx::query!(
-        "UPDATE keygen_requests SET under_process = FALSE, already_sent = $1 \
-        WHERE key_id = $2",
-        already_sent,
+        "UPDATE prss_init SET status = $1 WHERE id = $2",
+        status as OperationStatus,
         id.as_le_slice()
     );
-    execute_free_event_query(db, query).await;
+    execute_update_event_query(db, query).await;
 }
 
-/// Sets the `under_process` field of the `CrsgenRequest` as `FALSE` in the database.
-pub async fn mark_crsgen_as_pending(db: &Pool<Postgres>, id: U256, already_sent: bool) {
+async fn update_key_reshare_same_set_status(
+    db: &Pool<Postgres>,
+    id: U256,
+    status: OperationStatus,
+) {
     let query = sqlx::query!(
-        "UPDATE crsgen_requests SET under_process = FALSE, already_sent = $1 \
-        WHERE crs_id = $2",
-        already_sent,
+        "UPDATE key_reshare_same_set SET status = $1 WHERE key_id = $2",
+        status as OperationStatus,
         id.as_le_slice()
     );
-    execute_free_event_query(db, query).await;
+    execute_update_event_query(db, query).await;
 }
 
-/// Sets the `under_process` field of the `PrssInit` as `FALSE` in the database.
-pub async fn mark_prss_init_as_pending(db: &Pool<Postgres>, id: U256) {
-    let query = sqlx::query!(
-        "UPDATE prss_init SET under_process = FALSE WHERE id = $1",
-        id.as_le_slice()
-    );
-    execute_free_event_query(db, query).await;
-}
-
-/// Sets the `under_process` field of the `KeyReshareSameSet` as `FALSE` in the database.
-pub async fn mark_key_reshare_same_set_as_pending(db: &Pool<Postgres>, id: U256) {
-    let query = sqlx::query!(
-        "UPDATE key_reshare_same_set SET under_process = FALSE WHERE key_id = $1",
-        id.as_le_slice()
-    );
-    execute_free_event_query(db, query).await;
-}
-
-/// Executes the free event query and checks its result.
-async fn execute_free_event_query(db: &Pool<Postgres>, query: Query<'_, Postgres, PgArguments>) {
-    warn!("Failed to process event. Restoring `under_process` field to `FALSE` in DB...");
+async fn execute_update_event_query(db: &Pool<Postgres>, query: Query<'_, Postgres, PgArguments>) {
     let query_result = match query.execute(db).await {
         Ok(result) => result,
-        Err(e) => return warn!("Failed to restore `under_process` field to `FALSE`: {e}"),
+        Err(e) => return warn!("Failed to update event: {e}"),
     };
 
     if query_result.rows_affected() == 1 {
-        info!("Successfully restore `under_process` field to `FALSE` in DB!");
+        info!("Successfully updated event in DB!");
     } else {
         warn!(
-            "Unexpected query result while restoring `under_process` field to `FALSE`: {:?}",
-            query_result
-        )
-    }
-}
-
-pub async fn delete_public_decryption_from_db(db: &Pool<Postgres>, id: U256) {
-    let query = sqlx::query!(
-        "DELETE FROM public_decryption_requests WHERE decryption_id = $1",
-        id.as_le_slice()
-    );
-    execute_delete_event_query(db, query).await;
-}
-
-pub async fn delete_user_decryption_from_db(db: &Pool<Postgres>, id: U256) {
-    let query = sqlx::query!(
-        "DELETE FROM user_decryption_requests WHERE decryption_id = $1",
-        id.as_le_slice()
-    );
-    execute_delete_event_query(db, query).await;
-}
-
-pub async fn delete_prep_keygen_from_db(db: &Pool<Postgres>, id: U256) {
-    let query = sqlx::query!(
-        "DELETE FROM prep_keygen_requests WHERE prep_keygen_id = $1",
-        id.as_le_slice()
-    );
-    execute_delete_event_query(db, query).await;
-}
-
-pub async fn delete_keygen_from_db(db: &Pool<Postgres>, id: U256) {
-    let query = sqlx::query!(
-        "DELETE FROM keygen_requests WHERE key_id = $1",
-        id.as_le_slice()
-    );
-    execute_delete_event_query(db, query).await;
-}
-
-pub async fn delete_crsgen_from_db(db: &Pool<Postgres>, id: U256) {
-    let query = sqlx::query!(
-        "DELETE FROM crsgen_requests WHERE crs_id = $1",
-        id.as_le_slice()
-    );
-    execute_delete_event_query(db, query).await;
-}
-
-pub async fn delete_prss_init_from_db(db: &Pool<Postgres>, id: U256) {
-    let query = sqlx::query!("DELETE FROM prss_init WHERE id = $1", id.as_le_slice());
-    execute_delete_event_query(db, query).await;
-}
-
-pub async fn delete_key_reshare_same_set_from_db(db: &Pool<Postgres>, id: U256) {
-    let query = sqlx::query!(
-        "DELETE FROM key_reshare_same_set WHERE key_id = $1",
-        id.as_le_slice()
-    );
-    execute_delete_event_query(db, query).await;
-}
-
-async fn execute_delete_event_query(db: &Pool<Postgres>, query: Query<'_, Postgres, PgArguments>) {
-    warn!("Removing event from DB...");
-    let query_result = match query.execute(db).await {
-        Ok(result) => result,
-        Err(e) => return error!("Failed to remove event from DB: {e}"),
-    };
-
-    if query_result.rows_affected() == 1 {
-        info!("Successfully deleted event from DB!");
-    } else {
-        warn!(
-            "Unexpected query result while deleting event from DB: {:?}",
+            "Unexpected query result while updating event: {:?}",
             query_result
         )
     }

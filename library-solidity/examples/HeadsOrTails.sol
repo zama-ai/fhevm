@@ -2,11 +2,11 @@
 pragma solidity ^0.8.24;
 
 import {FHE, ebool} from "../lib/FHE.sol";
-import {EthereumConfig} from "../config/ZamaConfig.sol";
+import {ZamaEthereumConfig} from "../config/ZamaConfig.sol";
 
 // This contract implements a simple example for public decryption using a HeadsOrTails game,
 // instead of using an oracle workflow to reveal the result.
-contract HeadsOrTails is EthereumConfig {
+contract HeadsOrTails is ZamaEthereumConfig {
     constructor() {}
 
     uint256 private counter = 0;
@@ -86,7 +86,7 @@ contract HeadsOrTails is EthereumConfig {
         bytes32[] memory cts = new bytes32[](1);
         cts[0] = FHE.toBytes32(games[gameId].encryptedHasHeadWon);
 
-        FHE.verifySignatures(cts, clearGameResult, decryptionProof);
+        FHE.checkSignatures(cts, clearGameResult, decryptionProof);
 
         return winner;
     }

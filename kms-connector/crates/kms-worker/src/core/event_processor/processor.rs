@@ -35,7 +35,10 @@ pub struct DbEventProcessor<P: Provider> {
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor,
 
-    /// The DB connection pool used to reset events `under_process` field on error.
+    /// The maximum number of decryption attempts.
+    max_decryption_attempts: u16,
+
+    /// The DB connection pool used to update the events `status` field on error.
     db_pool: Pool<Postgres>,
 }
 
@@ -53,10 +56,29 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
             (Err(ProcessingError::Irrecoverable(e)), _)
             | (
                 Err(ProcessingError::Recoverable(e)),
+                // Consider all errors as irrecoverable for PrssInit and KeyReshareSameSet, as KMS does
+                // not provide any response for these operations
                 GatewayEventKind::PrssInit(_) | GatewayEventKind::KeyReshareSameSet(_),
             ) => {
                 error!("{}", ProcessingError::Irrecoverable(e));
-                event.delete_from_db(&self.db_pool).await;
+                event.mark_as_failed(&self.db_pool).await;
+                None
+            }
+            // For now, we only check the error counter for public and user decryptions as they are
+            // the most frequent operations, and we want to avoid infinite retry loop for them.
+            // For key management operations, as they are not frequent at all, we currently rely on
+            // a manual cleanup of the DB in such case. We want to avoid to "accidentally" remove a
+            // key management operation at all cost.
+            (
+                Err(ProcessingError::Recoverable(e)),
+                GatewayEventKind::PublicDecryption(_) | GatewayEventKind::UserDecryption(_),
+            ) if event.error_counter as u16 >= self.max_decryption_attempts => {
+                error!(
+                    "{}. Maximum number of decryption attempts reached: {}",
+                    ProcessingError::Irrecoverable(e),
+                    event.error_counter
+                );
+                event.mark_as_failed(&self.db_pool).await;
                 None
             }
             (Err(ProcessingError::Recoverable(e)), _) => {
@@ -81,12 +103,14 @@ impl<P: Provider> DbEventProcessor<P> {
         kms_client: KmsClient,
         decryption_processor: DecryptionProcessor<P>,
         kms_generation_processor: KMSGenerationProcessor,
+        max_decryption_attempts: u16,
         db_pool: Pool<Postgres>,
     ) -> Self {
         Self {
             kms_client,
             decryption_processor,
             kms_generation_processor,
+            max_decryption_attempts,
             db_pool,
         }
     }
@@ -100,6 +124,9 @@ impl<P: Provider> DbEventProcessor<P> {
         match &event.kind {
             GatewayEventKind::PublicDecryption(req) => {
                 self.decryption_processor
+                    .check_decryption_not_already_done(req.decryptionId)
+                    .await?;
+                self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
                         &req.snsCtMaterials,
@@ -109,6 +136,8 @@ impl<P: Provider> DbEventProcessor<P> {
                     .await
             }
             GatewayEventKind::UserDecryption(req) => {
+                // No need to check decryption is done for user decrypt, as MPC parties don't
+                // communicate between each other for user decrypt
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -148,13 +177,18 @@ impl<P: Provider> DbEventProcessor<P> {
         let request = self.prepare_request(event).await?;
 
         if !event.already_sent {
-            self.kms_client.send_request(&request).await?;
+            let (error_count, result) = self.kms_client.send_request(&request).await;
+            event.error_counter += error_count;
+            result?;
             event.already_sent = true;
         }
-        let grpc_response = self.kms_client.poll_result(request).await?;
+
+        let (error_count, grpc_result) = self.kms_client.poll_result(request).await;
+        event.error_counter += error_count;
+        let grpc_response = grpc_result?;
 
         if let KmsGrpcResponse::NoResponseExpected = &grpc_response {
-            event.delete_from_db(&self.db_pool).await;
+            event.mark_as_completed(&self.db_pool).await;
             return Ok(None);
         }
 

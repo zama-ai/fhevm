@@ -3,13 +3,15 @@ use crate::{
     core::{publish::update_last_block_polled, publish_event},
     monitoring::{
         health::State,
-        metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS, EVENT_STORAGE_ERRORS},
+        metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
     },
 };
 use alloy::{
     contract::{Event, EventPoller},
     network::Ethereum,
+    primitives::LogData,
     providers::Provider,
+    rpc::types::{Filter, Log},
     sol_types::SolEvent,
 };
 use anyhow::anyhow;
@@ -28,7 +30,7 @@ use std::time::Duration;
 use tokio::{select, task::JoinSet, time::timeout};
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct monitoring and storing Gateway's events.
@@ -151,22 +153,24 @@ where
     async fn subscribe_inner<E>(
         &self,
         event_type: EventType,
-        mut event_filter: Event<&'_ P, E>,
+        event_filter: Event<&'_ P, E>,
         poll_interval: Duration,
     ) -> anyhow::Result<()>
     where
         E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
     {
         let mut last_block_polled = self.get_last_block_polled(event_type).await?;
-        if let Some(from_block) = last_block_polled {
-            event_filter = event_filter.from_block(from_block);
-        }
         let mut event_poller = event_filter
             .watch()
             .await
             .map_err(|e| anyhow!("Failed to subscribe to {event_type} events: {e}"))?;
         event_poller.poller = event_poller.poller.with_poll_interval(poll_interval);
         info!("✓ Subscribed to {event_type} events");
+
+        let _ = self
+            .catchup_past_events::<E>(&mut last_block_polled, event_type)
+            .await
+            .inspect_err(|e| warn!("Failed to catch up past {event_type} events: {e}"));
 
         select! {
             _ = self.process_events(event_type, event_poller, &mut last_block_polled) => (),
@@ -183,12 +187,72 @@ where
         Ok(())
     }
 
+    /// Catches events created before the event filter using `eth_getFilterLogs`.
+    async fn catchup_past_events<E>(
+        &self,
+        last_block_polled: &mut Option<u64>,
+        event_type: EventType,
+    ) -> anyhow::Result<()>
+    where
+        E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
+    {
+        let catchup_from_block = match last_block_polled {
+            None => {
+                info!(
+                    "No previously polled block for {event_type}; skipping catchup of past events."
+                );
+                return Ok(());
+            }
+            Some(block) => *block,
+        };
+
+        let contract_address = match event_type {
+            EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
+                self.decryption_contract.address()
+            }
+            _ => self.kms_generation_contract.address(),
+        };
+
+        let filter = Filter::new()
+            .address(*contract_address)
+            .event_signature(E::SIGNATURE_HASH)
+            .from_block(catchup_from_block);
+        let provider = self.decryption_contract.provider();
+
+        info!("Catching up {event_type} from {catchup_from_block}...");
+        let mut event_count = 0;
+        let event_filter_id = provider.new_filter(&filter).await?;
+        let past_events = provider
+            .get_filter_logs(event_filter_id)
+            .await?
+            .into_iter()
+            .map(|log| {
+                decode_log::<E>(&log).map(|event| {
+                    event_count += 1;
+                    (event, log)
+                })
+            });
+
+        for event in past_events {
+            self.spawn_event_handling(event_type, event, last_block_polled)
+                .await;
+        }
+
+        info!(
+            "Successfully caught {event_count} {event_type} events from block {catchup_from_block}!"
+        );
+        if let Err(e) = provider.uninstall_filter(event_filter_id).await {
+            warn!("Failed to uninstall {event_type} event catchup filter: {e}");
+        }
+        Ok(())
+    }
+
     /// Event processing loop.
     async fn process_events<E>(
         &self,
         event_type: EventType,
         event_poller: EventPoller<E>,
-        last_block: &mut Option<u64>,
+        last_block_polled: &mut Option<u64>,
     ) where
         E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
     {
@@ -196,27 +260,53 @@ where
         loop {
             info!("Waiting for next {event_type}...");
             match events.next().await {
-                Some(Ok((event, log))) => {
-                    *last_block = log.block_number;
-                    EVENT_RECEIVED_COUNTER.inc();
-                    let db = self.db_pool.clone();
-                    spawn_with_limit(handle_gateway_event(db, event.into(), log.block_number))
-                        .await;
-                }
-                Some(Err(err)) => {
-                    error!("Error while listening for {event_type} events: {err}");
-                    EVENT_RECEIVED_ERRORS.inc();
-                    continue;
+                Some(event) => {
+                    self.spawn_event_handling(event_type, event, last_block_polled)
+                        .await
                 }
                 None => break error!("Alloy Provider was dropped for {event_type}"),
             }
         }
     }
 
+    async fn spawn_event_handling<E>(
+        &self,
+        event_type: EventType,
+        event: alloy::sol_types::Result<(E, Log)>,
+        last_block: &mut Option<u64>,
+    ) where
+        E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
+    {
+        match event {
+            Ok((event, log)) => {
+                *last_block = log.block_number;
+                EVENT_RECEIVED_COUNTER
+                    .with_label_values(&[event_type.as_str()])
+                    .inc();
+
+                let db = self.db_pool.clone();
+                spawn_with_limit(handle_gateway_event(db, event.into(), log.block_number)).await;
+            }
+            Err(err) => {
+                error!("Error while listening for {event_type} events: {err}");
+                EVENT_RECEIVED_ERRORS
+                    .with_label_values(&[event_type.as_str()])
+                    .inc();
+            }
+        }
+    }
+
     /// Get the last block polled from config or DB.
     async fn get_last_block_polled(&self, event_type: EventType) -> anyhow::Result<Option<u64>> {
-        let last_block_polled = match self.config.from_block_number {
-            // Start polling event from `from_block_number` if configured
+        let from_block_number = match event_type {
+            EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
+                self.config.decryption_from_block_number
+            }
+            _ => self.config.kms_operation_from_block_number,
+        };
+
+        let last_block_polled = match from_block_number {
+            // Start polling event from the configured `from_block_number` if set
             Some(from_block) => {
                 info!(
                     "Found configured `from_block_number` ({from_block}) for {event_type} subscriptions!"
@@ -274,8 +364,12 @@ async fn handle_gateway_event(
     );
     if let Err(err) = publish_event(&db_pool, event, block_number).await {
         error!("Failed to publish event: {err}");
-        EVENT_STORAGE_ERRORS.inc();
     }
+}
+
+fn decode_log<E: SolEvent>(log: &Log) -> alloy::sol_types::Result<E> {
+    let log_data: &LogData = log.as_ref();
+    E::decode_raw_log(log_data.topics().iter().copied(), &log_data.data)
 }
 
 impl GatewayListener<GatewayProvider> {
@@ -285,7 +379,7 @@ impl GatewayListener<GatewayProvider> {
         cancel_token: CancellationToken,
     ) -> anyhow::Result<(Self, State<GatewayProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
+        let provider = connect_to_gateway(config.gateway_url.clone(), config.chain_id).await?;
 
         let state = State::new(
             db_pool.clone(),
@@ -321,7 +415,7 @@ mod tests {
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
     async fn test_reset_filter_stops_listener() {
-        let (_test_instance, asserter, gw_listener) = test_setup().await;
+        let (_test_instance, asserter, gw_listener) = test_setup(None).await;
 
         asserter.push_failure(ErrorPayload {
             code: -32000,
@@ -335,8 +429,28 @@ mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
+    async fn test_failed_catchup_does_not_stop_listener() {
+        let (mut test_instance, asserter, gw_listener) = test_setup(Some(0)).await;
+
+        asserter.push_failure(ErrorPayload {
+            code: -32002,
+            message: "request timed out".into(),
+            data: None,
+        });
+
+        let event_type = EventType::KeygenRequest;
+        tokio::spawn(gw_listener.subscribe(event_type));
+        test_instance.wait_for_log("Failed to catch up").await;
+        test_instance
+            .wait_for_log(&format!("Waiting for next {event_type}"))
+            .await;
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(90))]
+    #[tokio::test]
     async fn test_listener_ended_by_end_of_any_task() {
-        let (mut test_instance, _asserter, gw_listener) = test_setup().await;
+        let (mut test_instance, _asserter, gw_listener) = test_setup(None).await;
 
         // Will stop because some subcription tasks will not be able to init their event filter
         gw_listener.start().await;
@@ -352,7 +466,9 @@ mod tests {
         RootProvider,
     >;
 
-    async fn test_setup() -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
+    async fn test_setup(
+        kms_operation_from_block_number: Option<u64>,
+    ) -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
         let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
 
         // Create a mocked `alloy::Provider`
@@ -366,6 +482,7 @@ mod tests {
         let config = Config {
             decryption_polling: Duration::from_millis(500),
             key_management_polling: Duration::from_millis(500),
+            kms_operation_from_block_number,
             ..Default::default()
         };
         let listener = GatewayListener::new(

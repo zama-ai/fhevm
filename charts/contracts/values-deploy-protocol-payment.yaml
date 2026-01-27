@@ -49,7 +49,7 @@ deployProtocolPayment:
     # Public decryption price
     # The price is in $ZAMA base units (using 18 decimals)
     - name: PUBLIC_DECRYPTION_PRICE
-      value: 10000000000000000000
+      value: 1000000000000000000
 
     # User decryption price
     # The price is in $ZAMA base units (using 18 decimals)

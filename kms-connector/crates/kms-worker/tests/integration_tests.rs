@@ -1,6 +1,3 @@
-mod common;
-
-use crate::common::{check_no_request_in_db, insert_rand_request};
 use alloy::{
     hex,
     primitives::U256,
@@ -9,8 +6,14 @@ use alloy::{
     transports::http::reqwest,
 };
 use connector_utils::{
-    tests::setup::{DbInstance, S3Instance, TestInstanceBuilder},
-    types::{GatewayEventKind, KmsGrpcResponse, KmsResponse, KmsResponseKind, kms_response},
+    tests::{
+        db::requests::{check_no_uncompleted_request_in_db, insert_rand_request},
+        setup::{DbInstance, S3Instance, TestInstanceBuilder},
+    },
+    types::{
+        GatewayEventKind, KmsGrpcResponse, KmsResponse, KmsResponseKind, db::EventType,
+        kms_response,
+    },
 };
 use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
 use kms_grpc::kms::v1::{
@@ -35,85 +38,85 @@ use tracing::{info, warn};
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_public_decryption_processing() -> anyhow::Result<()> {
-    test_processing_request("PublicDecryptionRequest", false).await
+    test_processing_request(EventType::PublicDecryptionRequest, false).await
 }
 
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_user_decryption_processing() -> anyhow::Result<()> {
-    test_processing_request("UserDecryptionRequest", false).await
+    test_processing_request(EventType::UserDecryptionRequest, false).await
 }
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_prep_keygen_processing() -> anyhow::Result<()> {
-    test_processing_request("PrepKeygenRequest", false).await
+    test_processing_request(EventType::PrepKeygenRequest, false).await
 }
 
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_keygen_processing() -> anyhow::Result<()> {
-    test_processing_request("KeygenRequest", false).await
+    test_processing_request(EventType::KeygenRequest, false).await
 }
 
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_crsgen_processing() -> anyhow::Result<()> {
-    test_processing_request("CrsgenRequest", false).await
+    test_processing_request(EventType::CrsgenRequest, false).await
 }
 
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_public_decryption_processing_already_sent() -> anyhow::Result<()> {
-    test_processing_request("PublicDecryptionRequest", true).await
+    test_processing_request(EventType::PublicDecryptionRequest, true).await
 }
 
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_user_decryption_processing_already_sent() -> anyhow::Result<()> {
-    test_processing_request("UserDecryptionRequest", true).await
+    test_processing_request(EventType::UserDecryptionRequest, true).await
 }
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_prep_keygen_processing_already_sent() -> anyhow::Result<()> {
-    test_processing_request("PrepKeygenRequest", true).await
+    test_processing_request(EventType::PrepKeygenRequest, true).await
 }
 
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_keygen_processing_already_sent() -> anyhow::Result<()> {
-    test_processing_request("KeygenRequest", true).await
+    test_processing_request(EventType::KeygenRequest, true).await
 }
 
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_crsgen_processing_already_sent() -> anyhow::Result<()> {
-    test_processing_request("CrsgenRequest", true).await
+    test_processing_request(EventType::CrsgenRequest, true).await
 }
 
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_prss_init_processing() -> anyhow::Result<()> {
-    test_processing_request("PrssInit", false).await
+    test_processing_request(EventType::PrssInit, false).await
 }
 
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_key_reshare_same_set_processing() -> anyhow::Result<()> {
-    test_processing_request("KeyReshareSameSet", false).await
+    test_processing_request(EventType::KeyReshareSameSet, false).await
 }
 
-async fn test_processing_request(request_str: &str, already_sent: bool) -> anyhow::Result<()> {
+async fn test_processing_request(event_type: EventType, already_sent: bool) -> anyhow::Result<()> {
     // Setup real DB and S3 instance
     let test_instance = TestInstanceBuilder::default()
         .with_db(DbInstance::setup().await?)
@@ -122,6 +125,12 @@ async fn test_processing_request(request_str: &str, already_sent: bool) -> anyho
 
     // Mocking Gateway
     let asserter = Asserter::new();
+
+    if matches!(event_type, EventType::PublicDecryptionRequest) {
+        let is_decryption_done_call_response = false;
+        asserter.push_success(&is_decryption_done_call_response.abi_encode());
+    }
+
     let get_copro_call_response = Coprocessor {
         s3BucketUrl: format!("{}/ct128", test_instance.s3_url()),
         ..Default::default()
@@ -133,7 +142,8 @@ async fn test_processing_request(request_str: &str, already_sent: bool) -> anyho
     info!("Gateway mock started!");
 
     // Insert request in DB to trigger kms_worker job
-    let request = insert_rand_request(test_instance.db(), request_str, None, already_sent).await?;
+    let request =
+        insert_rand_request(test_instance.db(), event_type, None, already_sent, None).await?;
 
     // Mocking KMS responses
     let kms_mocks = prepare_mocks(&request, already_sent);
@@ -155,18 +165,17 @@ async fn test_processing_request(request_str: &str, already_sent: bool) -> anyho
     // Waiting for kms_worker to process the request
     match &request {
         GatewayEventKind::PrssInit(_) | GatewayEventKind::KeyReshareSameSet(_) => {
-            while check_no_request_in_db(test_instance.db(), request_str)
-                .await
-                .is_err()
+            while let Err(e) =
+                check_no_uncompleted_request_in_db(test_instance.db(), event_type).await
             {
-                warn!("Still requests in DB!");
+                warn!("Still requests in DB: {e}");
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
         }
         _ => {
             let response = wait_for_response_in_db(test_instance.db(), &request).await?;
             check_response_data(&request, response)?;
-            check_no_request_in_db(test_instance.db(), request_str).await?;
+            check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
         }
     }
 
@@ -337,18 +346,19 @@ async fn init_kms_worker<P: Provider + Clone + 'static>(
     config: Config,
     provider: P,
     db: &Pool<Postgres>,
-) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P>, DbKmsResponsePublisher>> {
+) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P>>> {
     let kms_client = KmsClient::connect(&config).await?;
     let s3_client = reqwest::Client::new();
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
     let s3_service = S3Service::new(&config, provider.clone(), s3_client);
-    let decryption_processor = DecryptionProcessor::new(&config, s3_service);
+    let decryption_processor = DecryptionProcessor::new(&config, provider.clone(), s3_service);
     let kms_generation_processor = KMSGenerationProcessor::new(&config);
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),
         decryption_processor,
         kms_generation_processor,
+        config.max_decryption_attempts,
         db.clone(),
     );
     let response_publisher = DbKmsResponsePublisher::new(db.clone());

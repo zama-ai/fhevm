@@ -9,4 +9,21 @@ contract ACLTest is ACLEvents {
         emit Allowed(msg.sender, account, handle);
     }
 
+
+    function delegateForUserDecryption(
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 oldExpiryDate,
+        uint64 newExpiryDate
+    ) public virtual {
+        emit DelegatedForUserDecryption(
+            msg.sender,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            oldExpiryDate,
+            newExpiryDate
+        );
+    }
 }

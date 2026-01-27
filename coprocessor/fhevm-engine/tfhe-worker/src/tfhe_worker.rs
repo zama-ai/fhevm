@@ -1,3 +1,4 @@
+use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
@@ -7,16 +8,19 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
-use prometheus::{register_int_counter, IntCounter};
+use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use scheduler::dfg::types::{DFGTxInput, SchedulerError};
 use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFGOp};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
+use sqlx::types::Uuid;
 use sqlx::Postgres;
 use sqlx::{postgres::PgListener, query, Acquire};
+use std::time::SystemTime;
 use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
 };
+use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -53,15 +57,25 @@ lazy_static! {
         "work items successfully processed and stored in the database"
     )
     .unwrap();
+    static ref WORK_ITEMS_QUERY_HISTOGRAM: Histogram = register_histogram!(
+        "coprocessor_tfhe_worker_query_work_items_seconds",
+        "Histogram of time spent querying work items in tfhe-worker",
+        vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 2.0, 5.0, 10.0]
+    )
+    .unwrap();
 }
 
 pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Determine worker ID to use for the lifetime of this process
+    // In case of a failure in tfhe_worker_cycle, the same id must be reused to quickly unlock any held locks
+    let worker_id = args.worker_id.unwrap_or(Uuid::new_v4());
+    info!(target: "tfhe_worker", worker_id = %worker_id, "Starting tfhe-worker service");
     loop {
         // here we log the errors and make sure we retry
-        if let Err(cycle_error) = tfhe_worker_cycle(&args, health_check.clone()).await {
+        if let Err(cycle_error) = tfhe_worker_cycle(&args, worker_id, health_check.clone()).await {
             WORKER_ERRORS_COUNTER.inc();
             error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
         }
@@ -71,6 +85,7 @@ pub async fn run_tfhe_worker(
 
 async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
+    worker_id: Uuid,
     health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tracer = opentelemetry::global::tracer("tfhe_worker");
@@ -87,9 +102,24 @@ async fn tfhe_worker_cycle(
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen("work_available").await?;
 
+    let mut dcid_mngr = dependence_chain::LockMngr::new_with_conf(
+        worker_id,
+        pool.clone(),
+        args.dcid_ttl_sec,
+        args.disable_dcid_locking,
+        Some(args.dcid_timeslice_sec),
+        Some(args.dcid_cleanup_interval_sec),
+        Some(args.processed_dcid_ttl_sec),
+    );
+
+    // Release all owned locks on startup to avoid stale locks
+    dcid_mngr.release_all_owned_locks().await?;
+    dcid_mngr.do_cleanup().await?;
+
     #[cfg(feature = "bench")]
     populate_cache_with_tenant_keys(vec![1i32], &pool, &tenant_key_cache).await?;
     let mut immedially_poll_more_work = false;
+    let mut no_progress_cycles = 0;
     loop {
         // only if previous iteration had no work done do the wait
         if !immedially_poll_more_work {
@@ -104,7 +134,7 @@ async fn tfhe_worker_cycle(
                 },
             };
         }
-        immedially_poll_more_work = false;
+
         #[cfg(feature = "bench")]
         let now = std::time::SystemTime::now();
         let loop_span = tracer.start("worker_iteration");
@@ -117,14 +147,38 @@ async fn tfhe_worker_cycle(
         s.end();
 
         // Query for transactions to execute, and if relevant the associated keys
-        let (mut transactions, mut unneeded_handles) =
-            query_for_work(args, &health_check, &mut trx, &tracer, &loop_ctx).await?;
-        if transactions.is_empty() {
-            continue;
-        } else {
+        let (mut transactions, earliest_computation, has_more_work) = query_for_work(
+            args,
+            &health_check,
+            &mut trx,
+            &mut dcid_mngr,
+            &tracer,
+            &loop_ctx,
+        )
+        .await?;
+        if has_more_work {
             // We've fetched work, so we'll poll again without waiting
             // for a notification after this cycle.
             immedially_poll_more_work = true;
+        } else {
+            dcid_mngr.release_current_lock(true, None).await?;
+            dcid_mngr.do_cleanup().await?;
+            no_progress_cycles = 0;
+
+            // Lock another dependence chain if available and
+            // continue processing without waiting for notification
+            let mut s = tracer.start_with_context("query_dependence_chain", &loop_ctx);
+
+            let (dependence_chain_id, _) = dcid_mngr.acquire_next_lock().await?;
+            immedially_poll_more_work = dependence_chain_id.is_some();
+
+            s.set_attribute(KeyValue::new(
+                "dependence_chain_id",
+                format!("{:?}", dependence_chain_id.as_ref().map(hex::encode)),
+            ));
+            s.end();
+
+            continue;
         }
         query_tenants_and_keys(
             &transactions,
@@ -137,25 +191,54 @@ async fn tfhe_worker_cycle(
 
         // Execute transactions segregated by tenant
         for (tenant_id, ref mut tenant_txs) in transactions.iter_mut() {
+            if dcid_mngr
+                .extend_or_release_current_lock(false)
+                .await?
+                .is_none()
+            {
+                // best-effort attempt to extend the lock and prevent other replicas from trying to lock the same DCID.
+                // Worst-case scenario, it returns None if the lock has expired.
+                // However, the worker has already secured exclusive access to the txn computations in the Computations table.
+                if dcid_mngr.enabled() {
+                    warn!(target: "tfhe_worker", tenant_id = %tenant_id, "Lost dcid lock while processing transactions, but continuing since computations are locked");
+                }
+            }
+
             let mut tx_graph = build_transaction_graph_and_execute(
                 tenant_id,
                 tenant_txs,
                 &tenant_key_cache,
                 &health_check,
                 &mut trx,
+                &dcid_mngr,
                 &tracer,
                 &loop_ctx,
             )
             .await?;
-            upload_transaction_graph_results(
+            let has_progressed = upload_transaction_graph_results(
                 tenant_id,
                 &mut tx_graph,
-                &mut unneeded_handles,
                 &mut trx,
+                &mut dcid_mngr,
                 &tracer,
                 &loop_ctx,
             )
             .await?;
+            if has_progressed {
+                no_progress_cycles = 0;
+            } else {
+                no_progress_cycles += 1;
+                if no_progress_cycles >= args.dcid_max_no_progress_cycles {
+                    // If we're not making progress on this dependence
+                    // chain, update the last_updated_at field and
+                    // release the lock so we can try to execute
+                    // another chain.
+                    info!(target: "tfhe_worker", "no progress on dependence chain, releasing");
+                    dcid_mngr
+                        .release_current_lock(false, Some(earliest_computation))
+                        .await?;
+                }
+            }
         }
         s.end();
         trx.commit().await?;
@@ -227,7 +310,6 @@ async fn query_ciphertexts<'a>(
         error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
         err
     })?;
-
     s.end();
     // index ciphertexts in hashmap
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
@@ -241,81 +323,44 @@ async fn query_ciphertexts<'a>(
     Ok(ciphertext_map)
 }
 
-// Update uncomputable ops schedule orders
-async fn update_uncomputable_handles<'a>(
-    uncomputable: Vec<(Handle, Handle)>,
-    tenant_id: i32,
-    trx: &mut sqlx::Transaction<'a, Postgres>,
-    tracer: &opentelemetry::global::BoxedTracer,
-    loop_ctx: &opentelemetry::Context,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut s = tracer.start_with_context("update_unschedulable_computations", loop_ctx);
-    let (handles, transactions): (Vec<_>, Vec<_>) = uncomputable.into_iter().unzip();
-
-    s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
-    s.set_attributes(
-        handles
-            .iter()
-            .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
-    );
-    s.set_attributes(
-        transactions
-            .iter()
-            .map(|tid| KeyValue::new("transaction_id", format!("0x{}", hex::encode(tid)))),
-    );
-    let _ = query!(
-        "
-        UPDATE computations
-           SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
-               uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT
-         WHERE tenant_id = $1
-           AND (output_handle, transaction_id) IN (
-              SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
-           )
-        ",
-        tenant_id,
-        &handles,
-	&transactions
-    )
-        .execute(trx.as_mut())
-        .await.map_err(|err| {
-            error!(target: "tfhe_worker", { tenant_id = tenant_id, error = %err }, "error while marking computations as unschedulable");
-            err
-        })?;
-    s.end();
-    Ok(())
-}
-
 async fn query_for_work<'a>(
     args: &crate::daemon_cli::Args,
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
+    deps_chain_mngr: &mut dependence_chain::LockMngr,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<
-    (Vec<(i32, Vec<ComponentNode>)>, Vec<(Handle, Handle)>),
+    (Vec<(i32, Vec<ComponentNode>)>, PrimitiveDateTime, bool),
     Box<dyn std::error::Error + Send + Sync>,
 > {
-    // This query locks our work items so other worker doesn't select them.
+    let mut s = tracer.start_with_context("query_dependence_chain", loop_ctx);
+    // Lock dependence chain
+    let (dependence_chain_id, locking_reason) =
+        match deps_chain_mngr.extend_or_release_current_lock(true).await? {
+            // If there is a current lock, we extend it and use its dependence_chain_id
+            Some((id, reason)) => (Some(id), reason),
+            None => deps_chain_mngr.acquire_next_lock().await?,
+        };
+    if deps_chain_mngr.enabled() && dependence_chain_id.is_none() {
+        // No dependence chain to lock, so no work to do
+        health_check.update_db_access();
+        health_check.update_activity();
+        info!(target: "tfhe_worker", "No dcid found to process");
+        return Ok((vec![], PrimitiveDateTime::MAX, false));
+    }
+    s.set_attribute(KeyValue::new(
+        "dependence_chain_id",
+        format!("{:?}", dependence_chain_id.as_ref().map(hex::encode)),
+    ));
+    s.end();
+
     let mut s = tracer.start_with_context("query_work_items", loop_ctx);
+    let transaction_batch_size = args.work_items_batch_size;
+    let started_at = SystemTime::now();
     let the_work = query!(
         "
-WITH selected_computations AS (
-  (
-    SELECT DISTINCT
-      c.transaction_id
-    FROM (
-      SELECT transaction_id
-      FROM computations 
-      WHERE is_completed = FALSE
-        AND is_error = FALSE
-        AND is_allowed = TRUE
-      ORDER BY schedule_order
-      LIMIT $1
-    ) as c
-  )
-)
--- Acquire all computations from this transaction set
+-- Acquire all computations from a transaction set
 SELECT
   c.tenant_id, 
   c.output_handle, 
@@ -324,12 +369,26 @@ SELECT
   c.is_scalar,
   c.is_allowed, 
   c.dependence_chain_id,
-  c.transaction_id
+  c.transaction_id,
+  c.schedule_order
 FROM computations c
-JOIN selected_computations sc
-  ON  c.transaction_id = sc.transaction_id
-FOR UPDATE SKIP LOCKED            ",
-        args.work_items_batch_size as i32,
+WHERE c.transaction_id IN (
+    SELECT DISTINCT
+      c_schedule_order.transaction_id
+    FROM (
+      SELECT transaction_id
+      FROM computations 
+      WHERE is_completed = FALSE
+        AND is_error = FALSE
+        AND is_allowed = TRUE
+        AND ($1::bytea IS NULL OR dependence_chain_id = $1)
+      ORDER BY schedule_order ASC
+      LIMIT $2
+    ) as c_schedule_order
+  )
+        ",
+        dependence_chain_id,
+        transaction_batch_size as i32,
     )
     .fetch_all(trx.as_mut())
     .await
@@ -337,19 +396,27 @@ FOR UPDATE SKIP LOCKED            ",
         error!(target: "tfhe_worker", { error = %err }, "error while querying work items");
         err
     })?;
+
+    WORK_ITEMS_QUERY_HISTOGRAM.observe(started_at.elapsed().unwrap_or_default().as_secs_f64());
     s.set_attribute(KeyValue::new("count", the_work.len() as i64));
     s.end();
     health_check.update_db_access();
     if the_work.is_empty() {
+        if let Some(dependence_chain_id) = &dependence_chain_id {
+            info!(target: "tfhe_worker", dcid = %hex::encode(dependence_chain_id), locking = ?locking_reason, "No work items found to process");
+        }
         health_check.update_activity();
-        return Ok((vec![], vec![]));
+        return Ok((vec![], PrimitiveDateTime::MAX, false));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
-    info!(target: "tfhe_worker", { count = the_work.len() }, "Processing work items");
+    info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
+				    locking = ?locking_reason }, "Processing work items");
+    let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
     // Make sure we process each tenant independently to avoid
     // setting different keys from different tenants in the worker
     // threads
-    let mut s_prep = tracer.start_with_context("prepare_dataflow_graphs", loop_ctx);
+    let mut s_prep: opentelemetry::global::BoxedSpan =
+        tracer.start_with_context("prepare_dataflow_graphs", loop_ctx);
     s_prep.set_attribute(KeyValue::new("work_items", the_work.len() as i64));
     // Partition work by tenant
     let work_by_tenant = the_work.into_iter().into_group_map_by(|k| k.tenant_id);
@@ -364,7 +431,6 @@ FOR UPDATE SKIP LOCKED            ",
     }
     // Traverse transactions and build transaction nodes
     let mut transactions: Vec<(i32, Vec<ComponentNode>)> = vec![];
-    let mut unneeded_handles: Vec<(Handle, Handle)> = vec![];
     for (tenant_id, work_by_transaction) in work_by_tenant_by_transaction.iter() {
         let mut tenant_transactions: Vec<ComponentNode> = vec![];
         for (transaction_id, txwork) in work_by_transaction.iter() {
@@ -380,6 +446,7 @@ FOR UPDATE SKIP LOCKED            ",
                             tenant_id,
                             &e,
                             trx,
+                            deps_chain_mngr,
                             tracer,
                             loop_ctx,
                         )
@@ -415,31 +482,52 @@ FOR UPDATE SKIP LOCKED            ",
                     inputs,
                     is_allowed: w.is_allowed,
                 });
+                if w.schedule_order < earliest_schedule_order {
+                    earliest_schedule_order = w.schedule_order;
+                }
             }
-            let (mut components, mut unneeded) = build_component_nodes(ops, transaction_id)?;
+            let (mut components, _) = build_component_nodes(ops, transaction_id)?;
             tenant_transactions.append(&mut components);
-            unneeded_handles.append(&mut unneeded);
         }
         transactions.push((*tenant_id, tenant_transactions));
     }
     s_prep.end();
-    Ok((transactions, unneeded_handles))
+    Ok((transactions, earliest_schedule_order, true))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_transaction_graph_and_execute<'a>(
     tenant_id: &i32,
     tenant_txs: &mut Vec<ComponentNode>,
     tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
+    dcid_mngr: &dependence_chain::LockMngr,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<DFComponentGraph, Box<dyn std::error::Error + Send + Sync>> {
     let mut tx_graph = DFComponentGraph::default();
-    tx_graph.build(tenant_txs)?;
+    if let Err(e) = tx_graph.build(tenant_txs) {
+        // If we had an error while building the graph, we don't
+        // execute anything and return to allow any set results
+        // (essentially errors) to be set in DB.
+        warn!(target: "tfhe_worker", { error = %e }, "error while building transaction graph");
+        return Ok(tx_graph);
+    }
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
     let ciphertext_map =
         query_ciphertexts(&cts_to_query, *tenant_id, trx, tracer, loop_ctx).await?;
+    // Check if we retrieved all needed CTs - if not, we may not want to proceed to execution
+    if cts_to_query.len() != ciphertext_map.len() {
+        if let Some(dcid_lock) = dcid_mngr.get_current_lock() {
+            warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - ciphertext_map.len()), dcid = %hex::encode(dcid_lock.dependence_chain_id) },
+	      "some inputs are missing to execute the dependence chain");
+        }
+        // Do not stop execution, we will allow the scheduler to run
+        // and complete as many operations as can be computed given
+        // the inputs fetched
+    }
+
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
         tx_graph.add_input(
             &handle,
@@ -486,20 +574,19 @@ async fn build_transaction_graph_and_execute<'a>(
 async fn upload_transaction_graph_results<'a>(
     tenant_id: &i32,
     tx_graph: &mut DFComponentGraph,
-    unneeded_handles: &mut Vec<(Handle, Handle)>,
     trx: &mut sqlx::Transaction<'a, Postgres>,
+    deps_mngr: &mut dependence_chain::LockMngr,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     // Get computation results
     let graph_results = tx_graph.get_results();
-    let mut handles_to_update = tx_graph.get_handles();
-    handles_to_update.append(unneeded_handles);
+    let mut handles_to_update = vec![];
+    let mut res = false;
 
     // Traverse computations that have been scheduled and
-    // upload their results/errors
+    // upload their results/errors.
     let mut cts_to_insert = vec![];
-    let mut uncomputable = vec![];
     for result in graph_results.into_iter() {
         match result.compressed_ct {
             Ok((db_type, db_bytes)) => {
@@ -510,6 +597,7 @@ async fn upload_transaction_graph_results<'a>(
                         (db_bytes, (current_ciphertext_version(), db_type)),
                     ),
                 ));
+                handles_to_update.push((result.handle.clone(), result.transaction_id.clone()));
                 WORK_ITEMS_PROCESSED_COUNTER.inc();
             }
             Err(mut err) => {
@@ -547,7 +635,9 @@ async fn upload_transaction_graph_results<'a>(
                         err,
                         CoprocessorError::SchedulerError(SchedulerError::MissingInputs)
                     ) {
-                        uncomputable.push((result.handle.clone(), result.transaction_id.clone()));
+                        // Make sure we don't mark this as an error since this simply means that the
+                        // inputs weren't available when we tried scheduling these operations.
+                        continue;
                     }
                 }
                 set_computation_error(
@@ -556,6 +646,7 @@ async fn upload_transaction_graph_results<'a>(
                     tenant_id,
                     &*cerr,
                     trx,
+                    deps_mngr,
                     tracer,
                     loop_ctx,
                 )
@@ -563,24 +654,25 @@ async fn upload_transaction_graph_results<'a>(
             }
         }
     }
-    let mut s = tracer.start_with_context("insert_ct_into_db", loop_ctx);
-    s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
-    s.set_attributes(
-        cts_to_insert
-            .iter()
-            .map(|(_, (h, (_, (_, _))))| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
-    );
-    s.set_attributes(
-        cts_to_insert
-            .iter()
-            .map(|(_, (_, (_, (_, db_type))))| KeyValue::new("ciphertext_type", *db_type as i64)),
-    );
-    #[allow(clippy::type_complexity)]
-    let (tenant_ids, (handles, (ciphertexts, (ciphertext_versions, ciphertext_types)))): (
-        Vec<_>,
-        (Vec<_>, (Vec<_>, (Vec<_>, Vec<_>))),
-    ) = cts_to_insert.into_iter().unzip();
-    let _ = query!(
+    if !cts_to_insert.is_empty() {
+        let mut s = tracer.start_with_context("insert_ct_into_db", loop_ctx);
+        s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+        s.set_attributes(
+            cts_to_insert.iter().map(|(_, (h, (_, (_, _))))| {
+                KeyValue::new("handle", format!("0x{}", hex::encode(h)))
+            }),
+        );
+        s.set_attributes(
+            cts_to_insert.iter().map(|(_, (_, (_, (_, db_type))))| {
+                KeyValue::new("ciphertext_type", *db_type as i64)
+            }),
+        );
+        #[allow(clippy::type_complexity)]
+        let (tenant_ids, (handles, (ciphertexts, (ciphertext_versions, ciphertext_types)))): (
+                Vec<_>,
+                (Vec<_>, (Vec<_>, (Vec<_>, Vec<_>))),
+        ) = cts_to_insert.into_iter().unzip();
+        let cts_inserted = query!(
 			"
                     INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
                     SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::BYTEA[], $4::SMALLINT[], $5::SMALLINT[])
@@ -591,29 +683,31 @@ async fn upload_transaction_graph_results<'a>(
 			.await.map_err(|err| {
                     error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while inserting new ciphertexts");
                     err
-                })?;
-    // Notify all workers that new ciphertext is inserted
-    // For now, it's only the SnS workers that are listening for these events
-    let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
-        .execute(trx.as_mut())
-        .await?;
-    s.end();
+                })?.rows_affected();
+        // Notify all workers that new ciphertext is inserted
+        // For now, it's only the SnS workers that are listening for these events
+        let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
+            .execute(trx.as_mut())
+            .await?;
+        s.end();
+        res |= cts_inserted > 0;
+    }
 
-    let mut s = tracer.start_with_context("update_computation", loop_ctx);
-    s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
-    s.set_attributes(
-        handles_to_update
-            .iter()
-            .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
-    );
-
-    let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
-
-    let _ = query!(
+    if !handles_to_update.is_empty() {
+        let mut s = tracer.start_with_context("update_computation", loop_ctx);
+        s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+        s.set_attributes(
+            handles_to_update
+                .iter()
+                .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+        );
+        let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
+        let comp_updated = query!(
                 "
                 UPDATE computations
                 SET is_completed = true, completed_at = CURRENT_TIMESTAMP
                 WHERE tenant_id = $1
+                AND is_completed = false
                 AND (output_handle, transaction_id) IN (
                     SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
                 )
@@ -626,20 +720,21 @@ async fn upload_transaction_graph_results<'a>(
             .await.map_err(|err| {
                     error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while updating computations as completed");
                     err
-                })?;
-
-    s.end();
-
-    update_uncomputable_handles(uncomputable, *tenant_id, trx, tracer, loop_ctx).await?;
-    Ok(())
+                })?.rows_affected();
+        s.end();
+        res |= comp_updated > 0;
+    }
+    Ok(res)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn set_computation_error<'a>(
     output_handle: &[u8],
     transaction_id: &[u8],
     tenant_id: &i32,
     cerr: &(dyn std::error::Error + Send + Sync),
     trx: &mut sqlx::Transaction<'a, Postgres>,
+    deps_mngr: &mut dependence_chain::LockMngr,
     tracer: &opentelemetry::global::BoxedTracer,
     loop_ctx: &opentelemetry::Context,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -671,6 +766,8 @@ async fn set_computation_error<'a>(
     )
     .execute(trx.as_mut())
     .await?;
+
+    deps_mngr.set_processing_error(Some(err_string)).await?;
     s.end();
     Ok(())
 }

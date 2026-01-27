@@ -2,7 +2,8 @@ use crate::{
     blockchain::manager::AppProvider,
     config::Config,
     decryption::{
-        BurstResult, EVENT_LISTENER_POLLING, extract_id_from_receipt, send_tx_with_retries,
+        BURST_WAIT_TIMEOUT, BurstResult, EVENT_LISTENER_POLLING, extract_id_from_receipt,
+        send_tx_with_retries,
     },
 };
 use alloy::{
@@ -33,7 +34,7 @@ use tokio::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
     },
     task::JoinSet,
-    time::Instant,
+    time::{Instant, timeout},
 };
 use tracing::{Instrument, debug, error, trace};
 
@@ -67,12 +68,15 @@ where
     debug!("Start of the burst...");
     let (id_sender, id_receiver) = mpsc::unbounded_channel();
     let wait_response_task = tokio::spawn(
-        wait_for_burst_responses(
-            burst_index,
-            response_listener,
-            id_receiver,
-            config.clone(),
-            responses_pb,
+        timeout(
+            BURST_WAIT_TIMEOUT,
+            wait_for_burst_responses(
+                burst_index,
+                response_listener,
+                id_receiver,
+                config.clone(),
+                responses_pb,
+            ),
         )
         .in_current_span(),
     );
@@ -102,8 +106,9 @@ where
     drop(id_sender); // Dropping last sender so `wait_for_responses` can exit properly
     let res = wait_response_task
         .await
-        .inspect_err(|e| error!("{e}"))?
-        .inspect_err(|e| error!("{e}"))?;
+        .inspect_err(|e| error!("Burst wait task panic: {e}"))?
+        .inspect_err(|_| error!("Bust wait timed out"))?
+        .inspect_err(|e| error!("Burst wait error: {e}"))?;
     debug!("Successfully received all responses of the burst!");
     Ok(res)
 }
@@ -295,7 +300,7 @@ where
     let latency = burst_start.elapsed().as_secs_f64();
     let result = BurstResult {
         latency,
-        throughput: config.parallel_requests as f64 / latency,
+        throughput: (config.parallel_requests * config.user_ct.len() as u32) as f64 / latency,
     };
     progress_bar.finish_with_message(format!(
         "Handled burst #{} of {} in {:.2}s. Throughput: {:.2} tps",

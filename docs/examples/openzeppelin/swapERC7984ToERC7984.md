@@ -9,6 +9,7 @@ To run this example correctly, make sure the files are placed in the following d
 
 This ensures Hardhat can compile and test your contracts as expected.
 {% endhint %}
+
 {% tabs %}
 
 {% tab title="SwapERC7984ToERC20.sol" %}
@@ -40,5 +41,5 @@ contract SwapERC7984ToERC7984 {
 }
 
 ```
-
+{% endtab %}
 {% endtabs %}
