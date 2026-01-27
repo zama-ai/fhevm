@@ -344,6 +344,14 @@ async function runSmoke(): Promise<void> {
 
   console.log(`SMOKE_SUCCESS signer=${signerAddress} contract=${contractAddress}`);
 
+  // Heartbeat ping on success
+  const heartbeatUrl = process.env.BETTERSTACK_HEARTBEAT_URL;
+  if (heartbeatUrl) {
+    await fetch(heartbeatUrl)
+      .then(() => console.log('SMOKE_HEARTBEAT_SENT'))
+      .catch((err) => console.warn(`SMOKE_HEARTBEAT_FAILED ${err.message}`));
+  }
+
   // Post-success cleanup: clear backlogs on any unclean signers
   if (allowCancel) {
     const minBalanceForCancel = CANCEL_GAS_LIMIT * MIN_PRIORITY_FEE * 2n;
@@ -379,7 +387,13 @@ async function runSmoke(): Promise<void> {
   }
 }
 
-runSmoke().catch((error) => {
+runSmoke().catch(async (error) => {
   console.error(`SMOKE_FAILED ${String(error)}`);
   process.exitCode = 1;
+
+  const heartbeatUrl = process.env.BETTERSTACK_HEARTBEAT_URL;
+  if (heartbeatUrl) {
+    const msg = encodeURIComponent(String(error).slice(0, 100));
+    await fetch(`${heartbeatUrl}?status=1&msg=${msg}`).catch(() => {});
+  }
 });

@@ -18,7 +18,9 @@ Runs a single on-chain smoke flow (input + add42 + decrypt) using Hardhat as a r
 and hardened transaction handling.
 
 ### Prereqs
+
 The smoke runner uses the same environment variables as the e2e tests:
+
 - `RPC_URL` (or `SEPOLIA_ETH_RPC_URL` / `MAINNET_ETH_RPC_URL`), `MNEMONIC`
 - `RELAYER_URL`
 - `KMS_VERIFIER_CONTRACT_ADDRESS`, `ACL_CONTRACT_ADDRESS`, `INPUT_VERIFIER_CONTRACT_ADDRESS`
@@ -32,6 +34,7 @@ You can also store secrets with Hardhat vars, e.g. `npx hardhat vars set SEPOLIA
 For devnet, `test-suite/e2e/.env.devnet` provides a ready baseline (use `DOTENV_CONFIG_PATH=./.env.devnet`).
 
 ### Smoke-specific knobs (defaults in parentheses)
+
 - `SMOKE_SIGNER_INDICES` (`0`)
 - `SMOKE_TX_TIMEOUT_SECS` (`48`)
 - `SMOKE_TX_MAX_RETRIES` (`2`)
@@ -39,8 +42,10 @@ For devnet, `test-suite/e2e/.env.devnet` provides a ready baseline (use `DOTENV_
 - `SMOKE_MAX_BACKLOG` (`3`)
 - `SMOKE_CANCEL_BACKLOG` (`1`)
 - `SMOKE_FORCE_DEPLOY` (`0`)
+- `BETTERSTACK_HEARTBEAT_URL` (optional) - if set, pings BetterStack on success/failure
 
 ### Run
+
 ```shell
 cd test-suite/e2e
 npx hardhat run --network zwsDev scripts/smoke-inputflow.ts
