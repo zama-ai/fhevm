@@ -11,6 +11,7 @@ anyhow = { workspace = true }
 alloy = { workspace = true, features = ["providers", "provider-ws"] }
 alloy-provider = { workspace = true }
 bigdecimal = { workspace = true }
+clap = { workspace = true }
 hex = { workspace = true }
 lru = { workspace = true }
 prost = { workspace = true }

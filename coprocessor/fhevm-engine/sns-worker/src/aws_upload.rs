@@ -1,3 +1,4 @@
+use crate::json_sidecar::CiphertextSideCar;
 use crate::metrics::{AWS_UPLOAD_FAILURE_COUNTER, AWS_UPLOAD_SUCCESS_COUNTER};
 use crate::{
     BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, UploadJob,
@@ -10,7 +11,9 @@ use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::{telemetry, utils::to_hex};
+use fhevm_engine_common::telemetry;
+use fhevm_engine_common::types::CoproSigner;
+use fhevm_engine_common::utils::to_hex;
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
 use sha3::{Digest, Keccak256};
@@ -22,7 +25,7 @@ use tokio::sync::{mpsc, RwLock, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, error_span, info, warn, Instrument};
+use tracing::{debug, error, error_span, info, warn, Instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 // TODO: Use a config TOML to set these values
@@ -63,15 +66,17 @@ pub(crate) async fn spawn_uploader(
     rx: Arc<RwLock<mpsc::Receiver<UploadJob>>>,
     client: Arc<aws_sdk_s3::Client>,
     is_ready: Arc<AtomicBool>,
+    signer: CoproSigner,
 ) -> Result<JoinHandle<()>, ExecutionError> {
     let op = move |pool, token| {
         let client = client.clone();
         let is_ready = is_ready.clone();
         let conf = conf.s3.clone();
         let rx = rx.clone();
+        let signer = signer.clone();
 
         async move {
-            run_uploader_loop(rx, token, client, is_ready, pool, conf)
+            run_uploader_loop(rx, token, client, is_ready, pool, conf, signer)
                 .await
                 .map_err(ServiceError::from)
         }
@@ -88,6 +93,7 @@ async fn run_uploader_loop(
     is_ready: Arc<AtomicBool>,
     pool: Pool<Postgres>,
     conf: S3Config,
+    signer: CoproSigner,
 ) -> Result<(), ExecutionError> {
     let mut ongoing_upload_tasks: Vec<JoinHandle<()>> = Vec::new();
     let max_concurrent_uploads = conf.max_concurrent_uploads as usize;
@@ -161,6 +167,7 @@ async fn run_uploader_loop(
                 let client = client.clone();
                 let conf = conf.clone();
                 let ready_flag = is_ready.clone();
+                let signer = signer.clone();
 
                 // Spawn a new task to upload the ciphertexts
                 let h = tokio::spawn(async move {
@@ -168,7 +175,7 @@ async fn run_uploader_loop(
                     // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3");
                     upload_span.set_parent(item.span.context());
-                    match upload_ciphertexts(trx, item, &client, &conf)
+                    match upload_ciphertexts(trx, item, &client, &conf, signer)
                         .instrument(upload_span.clone())
                         .await
                     {
@@ -176,9 +183,13 @@ async fn run_uploader_loop(
                             AWS_UPLOAD_SUCCESS_COUNTER.inc();
                         }
                         Err(err) => {
-                            if let ExecutionError::S3TransientError(_) = err {
-                                ready_flag.store(false, Ordering::Release);
-                                info!(error = %err, "S3 setup is not ready, due to transient error");
+                            if let Some(exec_err) = err.downcast_ref::<ExecutionError>() {
+                                if let ExecutionError::S3TransientError(_) = exec_err {
+                                    ready_flag.store(false, Ordering::Release);
+                                    info!(error = %err, "S3 setup is not ready, due to transient error");
+                                } else {
+                                    error!(error = %err, "Failed to upload ciphertexts");
+                                }
                             } else {
                                 error!(error = %err, "Failed to upload ciphertexts");
                             }
@@ -213,8 +224,87 @@ async fn run_uploader_loop(
 }
 
 enum UploadResult {
-    CtType128((Vec<u8>, tracing::Span)),
-    CtType64((Vec<u8>, tracing::Span)),
+    CtType128(Vec<u8>),
+    CtType64(Vec<u8>),
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn upload_ct(
+    span: Span,
+    client: Client,
+    bucket: String,
+    sidecar: CiphertextSideCar,
+    ct_bytes: Vec<u8>,
+    extra_digest_as_key: bool,
+    result: UploadResult,
+) -> anyhow::Result<UploadResult> {
+    let key = sidecar.handle.clone();
+    let upload = client
+        .put_object()
+        .bucket(bucket.clone())
+        .metadata("Ct-Format", &sidecar.format)
+        .metadata("Uploaded-By", "sns-worker")
+        .metadata("Created-At", &sidecar.created_at)
+        .metadata("Key-Id", &sidecar.key_id)
+        .metadata("Transaction-Id", &sidecar.tx_hash)
+        .metadata("Handle", &sidecar.handle)
+        .metadata("Digest", &sidecar.digest)
+        .metadata("Signed", &sidecar.signed_tuple)
+        .metadata("Signer", &sidecar.signer)
+        .key(&key)
+        .body(ByteStream::from(ct_bytes))
+        .send()
+        .await;
+    if let Err(err) = upload {
+        error!(error = %err, bucket, ?sidecar, "Failed to upload ct");
+        span.set_status(Status::error(err.to_string()));
+        return Err(ExecutionError::S3TransientError(err.to_string()).into());
+    }
+    if extra_digest_as_key {
+        let copy_source = format!("{}/{}", bucket, key);
+        let upload_backward_compatible = client
+            .copy_object()
+            .copy_source(copy_source)
+            .bucket(bucket.clone())
+            .key(sidecar.digest.clone())
+            .send()
+            .await;
+        if let Err(err) = upload_backward_compatible {
+            error!(error = %err, bucket, ?sidecar, "Failed to upload ct for backcompatibility");
+            span.set_status(Status::error(err.to_string()));
+            return Err(ExecutionError::S3TransientError(err.to_string()).into());
+        }
+    }
+    Ok(result)
+}
+
+fn s3_sidecar_key(sidecar: &CiphertextSideCar) -> String {
+    format!("{}.json", &sidecar.handle)
+}
+
+async fn upload_sidecar(
+    span: Span,
+    client: Client,
+    bucket: String,
+    sidecar: CiphertextSideCar,
+) -> anyhow::Result<()> {
+    let result = client
+        .put_object()
+        .bucket(bucket.clone())
+        .metadata("Uploaded-By", "sns-worker")
+        .metadata("Transaction-Id", &sidecar.tx_hash) // for search
+        .metadata("Handle", &sidecar.handle) // for search
+        .metadata("Digest", &sidecar.digest) // for search
+        .key(s3_sidecar_key(&sidecar))
+        .body(ByteStream::from(sidecar.to_json_bytes()?))
+        .send()
+        .await;
+    if let Err(err) = result {
+        error!(error = %err, bucket, ?sidecar, "Failed to upload ciphertext sidecar");
+        span.set_status(Status::error(err.to_string()));
+        return Err(ExecutionError::S3TransientError(err.to_string()).into());
+    }
+    Ok(())
 }
 
 /// Uploads both 128-bit bootstrapped ciphertext and regular ciphertext to S3
@@ -230,14 +320,18 @@ async fn upload_ciphertexts(
     task: HandleItem,
     client: &Client,
     conf: &S3Config,
-) -> Result<(), ExecutionError> {
+    signer: CoproSigner,
+) -> anyhow::Result<()> {
     let handle_as_hex: String = to_hex(&task.handle);
     info!(handle = handle_as_hex, "Received task");
 
     let mut jobs = vec![];
 
+    let key_id = task.key_id_gw.clone();
+    let tx_hash = task.transaction_id.clone().unwrap_or_default();
     if !task.ct128.is_empty() && task.ct128.format() != Ciphertext128Format::Unknown {
         let ct128_bytes = task.ct128.bytes();
+        // TODO check if sign_message is more appropriate (EIP-191 format)
         let ct128_digest = compute_digest(ct128_bytes);
         info!(
             handle = handle_as_hex,
@@ -247,20 +341,22 @@ async fn upload_ciphertexts(
 
         let format_as_str = task.ct128.format().to_string();
 
-        let key = if cfg!(feature = "test_s3_use_handle_as_key") {
-            hex::encode(&task.handle)
-        } else {
-            // Use the digest as the key for the ct128 object
-            // This is the production behavior
-            hex::encode(&ct128_digest)
-        };
+        let sidecar = CiphertextSideCar::new(
+            &key_id,
+            &tx_hash,
+            &task.handle,
+            &ct128_digest,
+            &format_as_str,
+            &signer,
+        )
+        .await?;
 
         let ct128_check_span = tracing::info_span!(
             "ct128_check_s3",
             ct_type = "ct128",
             exists = tracing::field::Empty,
         );
-        let exists = match check_object_exists(client, &conf.bucket_ct128, &key)
+        let exists = match check_sidecar_exists(client, &conf.bucket_ct128, &sidecar)
             .instrument(ct128_check_span.clone())
             .await
         {
@@ -270,31 +366,49 @@ async fn upload_ciphertexts(
                     .context()
                     .span()
                     .set_status(Status::error(err.to_string()));
-                return Err(err);
+                return Err(err.into());
             }
         };
         ct128_check_span.record("exists", tracing::field::display(exists));
         drop(ct128_check_span);
 
         if !exists {
+            // TODO: check if sign_message is more appropriate (EIP-191 format)
+            // TODO: check if the chain_id is needed (in sidecar + metadata + signing)
+            let bucket = &conf.bucket_ct128;
             let ct128_upload_span = tracing::info_span!(
                 "ct128_upload_s3",
                 ct_type = "ct128",
                 format = %format_as_str,
                 len = ct128_bytes.len(),
             );
-
-            jobs.push((
-                client
-                    .put_object()
-                    .bucket(conf.bucket_ct128.clone())
-                    .metadata("Ct-Format", format_as_str)
-                    .key(key)
-                    .body(ByteStream::from(ct128_bytes.to_vec()))
-                    .send()
-                    .instrument(ct128_upload_span.clone()),
-                UploadResult::CtType128((ct128_digest.clone(), ct128_upload_span)),
-            ));
+            let result = UploadResult::CtType128(ct128_digest);
+            let upload_ct = upload_ct(
+                ct128_upload_span.clone(),
+                client.clone(),
+                bucket.clone(),
+                sidecar.clone(),
+                ct128_bytes.to_vec(),
+                true, // use digest as key for back-compatibility
+                result,
+            );
+            let upload_sidecar = upload_sidecar(
+                ct128_upload_span.clone(),
+                client.clone(),
+                bucket.clone(),
+                sidecar.clone(),
+            );
+            let grouped_upload = tokio::spawn(
+                async move {
+                    let result = upload_ct.await?;
+                    upload_sidecar.await?;
+                    // sidecar validate the full write success
+                    // in case of failure everything will be overwritten on the next upload attempt
+                    anyhow::Ok(result)
+                }
+                .instrument(ct128_upload_span),
+            );
+            jobs.push(grouped_upload);
         } else {
             info!(
                 handle = handle_as_hex,
@@ -318,20 +432,24 @@ async fn upload_ciphertexts(
 
         let ct64_digest = compute_digest(ct64_compressed);
 
-        let key = if cfg!(feature = "test_s3_use_handle_as_key") {
-            hex::encode(&task.handle)
-        } else {
-            // Use the digest as the key for the ct64 object
-            // This is the production behavior
-            hex::encode(&ct64_digest)
-        };
+        let format_as_str = "ct64_compressed".to_string();
+
+        let sidecar = CiphertextSideCar::new(
+            &key_id,
+            &tx_hash,
+            &task.handle,
+            &ct64_digest,
+            &format_as_str,
+            &signer,
+        )
+        .await?;
 
         let ct64_check_span = tracing::info_span!(
             "ct64_check_s3",
             ct_type = "ct64",
             exists = tracing::field::Empty,
         );
-        let exists = match check_object_exists(client, &conf.bucket_ct64, &key)
+        let exists = match check_sidecar_exists(client, &conf.bucket_ct64, &sidecar)
             .instrument(ct64_check_span.clone())
             .await
         {
@@ -341,29 +459,46 @@ async fn upload_ciphertexts(
                     .context()
                     .span()
                     .set_status(Status::error(err.to_string()));
-                return Err(err);
+                return Err(err.into());
             }
         };
         ct64_check_span.record("exists", tracing::field::display(exists));
         drop(ct64_check_span);
 
         if !exists {
+            let bucket = &conf.bucket_ct64;
             let ct64_upload_span = tracing::info_span!(
                 "ct64_upload_s3",
                 ct_type = "ct64",
                 len = ct64_compressed.len(),
             );
-
-            jobs.push((
-                client
-                    .put_object()
-                    .bucket(conf.bucket_ct64.clone())
-                    .key(key)
-                    .body(ByteStream::from(ct64_compressed.clone()))
-                    .send()
-                    .instrument(ct64_upload_span.clone()),
-                UploadResult::CtType64((ct64_digest.clone(), ct64_upload_span)),
-            ));
+            let result = UploadResult::CtType64(ct64_digest);
+            let upload_ct = upload_ct(
+                ct64_upload_span.clone(),
+                client.clone(),
+                bucket.clone(),
+                sidecar.clone(),
+                ct64_compressed.clone(),
+                false, // no need to use digest as key for ct64
+                result,
+            );
+            let upload_sidecar = upload_sidecar(
+                ct64_upload_span.clone(),
+                client.clone(),
+                bucket.clone(),
+                sidecar.clone(),
+            );
+            let grouped_upload = tokio::spawn(
+                async move {
+                    let result = upload_ct.await?;
+                    upload_sidecar.await?;
+                    // if ct upload failed, having only the side car is ok
+                    // everything will be overwritten on the next upload attempt
+                    Ok(result)
+                }
+                .instrument(ct64_upload_span),
+            );
+            jobs.push(grouped_upload);
         } else {
             info!(
                 handle = handle_as_hex,
@@ -377,64 +512,43 @@ async fn upload_ciphertexts(
         }
     }
 
-    // Execute all uploads and collect results with their IDs
-    let results: Vec<(Result<_, _>, UploadResult)> = join_all(
-        jobs.into_iter()
-            .map(|(fut, upload)| async move { (fut.await, upload) }),
-    )
-    .await;
+    let mut transient_error = anyhow::Ok(());
+    let mut successful_uploads = 0;
+    let jobs_is_empty = jobs.is_empty();
 
-    let mut transient_error: Option<ExecutionError> = None;
-
-    for (ct_variant, result) in results {
+    // Wait all uploads results
+    for result in join_all(jobs).await {
         match result {
-            UploadResult::CtType128((digest, span)) => {
-                if let Err(err) = ct_variant {
-                    error!(
-                        error = %err,
-                        handle = handle_as_hex,
-                        "Failed to upload ct128",
-                    );
-
-                    span.context()
-                        .span()
-                        .set_status(Status::error(err.to_string()));
-                    drop(span);
-                    transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
-                } else {
-                    drop(span);
-                    task.update_ct128_uploaded(&mut trx, digest).await?;
-                }
+            Ok(Ok(UploadResult::CtType128(digest))) => {
+                successful_uploads += 1;
+                task.update_ct128_uploaded(&mut trx, digest).await?
             }
-            UploadResult::CtType64((digest, span)) => {
-                if let Err(err) = ct_variant {
-                    error!(
-                        error = %err,
-                        handle = handle_as_hex,
-                        "Failed to upload ct64"
-                    );
-
-                    span.context()
-                        .span()
-                        .set_status(Status::error(err.to_string()));
-                    drop(span);
-                    transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
-                } else {
-                    drop(span);
-                    task.update_ct64_uploaded(&mut trx, digest).await?;
-                }
+            Ok(Ok(UploadResult::CtType64(digest))) => {
+                successful_uploads += 1;
+                task.update_ct64_uploaded(&mut trx, digest).await?
+            }
+            Ok(Err(err)) => {
+                // already logged
+                transient_error = Err(ExecutionError::S3TransientError(err.to_string()).into());
+            }
+            Err(err) => {
+                transient_error = Err(ExecutionError::InternalError(err.to_string()).into());
+                error!(error = %err, handle = handle_as_hex, "Upload task fail");
             }
         }
     }
 
-    sqlx::query("SELECT pg_notify($1, '')")
-        .bind(EVENT_CIPHERTEXTS_UPLOADED)
-        .execute(trx.as_mut())
-        .await?;
+    if successful_uploads > 0 || jobs_is_empty {
+        sqlx::query("SELECT pg_notify($1, '')")
+            .bind(EVENT_CIPHERTEXTS_UPLOADED)
+            .execute(trx.as_mut())
+            .await?;
+    }
 
+    // db is updated only on successful cases
     trx.commit().await?;
 
-    transient_error.map_or(Ok(()), Err)
+    transient_error
 }
 
 pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
@@ -557,6 +671,12 @@ async fn fetch_pending_uploads(
 
             // Instruct the uploader to acquire DB lock when processing the item
             jobs.push(UploadJob::DatabaseLock(item));
+        } else {
+            // This should not happen as we are fetching rows with NULL ct64 or ct128
+            error!(
+                handle = hex::encode(&handle),
+                "Both ciphertext and ciphertext128 are empty, skipping"
+            );
         }
     }
 
@@ -689,12 +809,19 @@ pub(crate) async fn check_is_ready(client: &Client, conf: &Config) -> (bool, boo
     ((ct64_exists && ct128_exists), conn)
 }
 
-async fn check_object_exists(
+async fn check_sidecar_exists(
     client: &Client,
     bucket: &str,
-    key: &str,
+    sidecar: &CiphertextSideCar,
 ) -> Result<bool, ExecutionError> {
-    match client.head_object().bucket(bucket).key(key).send().await {
+    let sidecar_key = s3_sidecar_key(sidecar);
+    match client
+        .head_object()
+        .bucket(bucket)
+        .key(sidecar_key)
+        .send()
+        .await
+    {
         Ok(_) => Ok(true),
         Err(SdkError::ServiceError(err)) if matches!(err.err(), HeadObjectError::NotFound(_)) => {
             Ok(false)
