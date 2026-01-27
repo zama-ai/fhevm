@@ -6,7 +6,7 @@ import {CoprocessorConfig, FHE} from "@fhevm/solidity/lib/FHE.sol";
 
 library DefaultCoprocessorConfig {
     function getConfig() internal view returns (CoprocessorConfig memory) {
-        if (block.chainid == 1 || block.chainid == 11155111 || block.chainid == 31337) {
+        if (block.chainid == 1 || block.chainid == 11155111) {
             return ZamaConfig.getEthereumCoprocessorConfig();
         }
 
