@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO crsgen_requests(crs_id, max_bit_length, params_type, otlp_context) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+  "query": "INSERT INTO prep_keygen_requests(prep_keygen_id, epoch_id, params_type, tx_hash, otlp_context) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
@@ -18,10 +18,11 @@
             }
           }
         },
+        "Bytea",
         "Bytea"
       ]
     },
     "nullable": []
   },
-  "hash": "2006d0c6aa7ad4945af0ae9d6fa99d64f62543158c13f34b0096e56357539ba1"
+  "hash": "1888cb93938ce9a18f9377d2fddfc401c88fd6faa03a32f5bbdefe98a43d0313"
 }

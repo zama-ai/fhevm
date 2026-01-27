@@ -27,7 +27,7 @@ pub struct Config {
     /// The Gateway RPC endpoint.
     pub gateway_url: Url,
     /// The Chain ID of the Gateway.
-    pub chain_id: u64,
+    pub gateway_chain_id: u64,
     /// The `Decryption` contract configuration.
     #[serde(deserialize_with = "deserialize_decryption_contract_config")]
     pub decryption_contract: ContractConfig,
@@ -82,7 +82,7 @@ impl Default for Config {
             database_url: "postgres://postgres:postgres@localhost/kms-connector".to_string(),
             database_pool_size: default_database_pool_size(),
             gateway_url: Url::from_str("http://localhost:8545").unwrap(),
-            chain_id: 54321,
+            gateway_chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
             kms_generation_contract: default_kms_generation_contract_config(),
             service_name: default_service_name(),
@@ -108,7 +108,7 @@ mod tests {
         unsafe {
             env::remove_var("KMS_CONNECTOR_DATABASE_URL");
             env::remove_var("KMS_CONNECTOR_GATEWAY_URL");
-            env::remove_var("KMS_CONNECTOR_CHAIN_ID");
+            env::remove_var("KMS_CONNECTOR_GATEWAY_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
@@ -136,7 +136,7 @@ mod tests {
                 "postgres://postgres:postgres@localhost",
             );
             env::set_var("KMS_CONNECTOR_GATEWAY_URL", "http://localhost:9545");
-            env::set_var("KMS_CONNECTOR_CHAIN_ID", "31888");
+            env::set_var("KMS_CONNECTOR_GATEWAY_CHAIN_ID", "31888");
             env::set_var(
                 "KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS",
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
@@ -156,7 +156,7 @@ mod tests {
             config.gateway_url,
             Url::from_str("http://localhost:9545").unwrap()
         );
-        assert_eq!(config.chain_id, 31888);
+        assert_eq!(config.gateway_chain_id, 31888);
         assert_eq!(
             config.decryption_contract.address,
             address!("0x5fbdb2315678afecb367f032d93f642f64180aa3")
@@ -177,13 +177,16 @@ mod tests {
         let example_config = Config::from_env_and_file(Some(example_config_path())).unwrap();
 
         // Set an environment variable to override the file
-        let chain_id = 77737;
+        let gateway_chain_id = 77737;
         let service_name = "kms-connector-override";
         let mut expected_config = example_config.clone();
-        expected_config.chain_id = chain_id;
+        expected_config.gateway_chain_id = gateway_chain_id;
         expected_config.service_name = service_name.to_string();
         unsafe {
-            env::set_var("KMS_CONNECTOR_CHAIN_ID", chain_id.to_string());
+            env::set_var(
+                "KMS_CONNECTOR_GATEWAY_CHAIN_ID",
+                gateway_chain_id.to_string(),
+            );
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", service_name);
         }
 
@@ -191,7 +194,7 @@ mod tests {
         let config = Config::from_env_and_file(Some(example_config_path())).unwrap();
 
         // Verify that environment variables take precedence
-        assert_ne!(config.chain_id, example_config.chain_id);
+        assert_ne!(config.gateway_chain_id, example_config.gateway_chain_id);
         assert_ne!(config.service_name, example_config.service_name);
         assert_eq!(config, expected_config);
 

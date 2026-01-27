@@ -4,13 +4,13 @@
 # ENV: KMS_CONNECTOR_SERVICE_NAME
 # service_name = "kms-connector-tx-sender"
 
-# Chain ID for the Gateway network (required)
-# ENV: KMS_CONNECTOR_CHAIN_ID
-chain_id = 54321
-
-# Gateway WebSocket RPC URL endpoint (required)
+# Gateway HTTP RPC URL endpoint (required)
 # ENV: KMS_CONNECTOR_GATEWAY_URL
 gateway_url = "http://localhost:8545"
+
+# Chain ID for the Gateway network (required)
+# ENV: KMS_CONNECTOR_GATEWAY_CHAIN_ID
+gateway_chain_id = 54321
 
 # URL of the KMS Connector internal database (required)
 # Format: see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
