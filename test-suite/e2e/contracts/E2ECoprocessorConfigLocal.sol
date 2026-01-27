@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
+import {ZamaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {CoprocessorConfig, FHE} from "@fhevm/solidity/lib/FHE.sol";
 
 library DefaultCoprocessorConfig {
-    function getConfig() internal pure returns (CoprocessorConfig memory) {
+    function getConfig() internal view returns (CoprocessorConfig memory) {
+        if (block.chainid == 1 || block.chainid == 11155111 || block.chainid == 31337) {
+            return ZamaConfig.getEthereumCoprocessorConfig();
+        }
+
         return
             CoprocessorConfig({
                 ACLAddress: 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c,

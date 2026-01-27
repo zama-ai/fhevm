@@ -1,11 +1,12 @@
 import '@nomicfoundation/hardhat-toolbox';
 import dotenv from 'dotenv';
 import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
-import { task } from 'hardhat/config';
+import { task, vars } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 
 const NUM_ACCOUNTS = 120;
+const DEFAULT_NETWORK = 'staging';
 
 task('compile:specific', 'Compiles only the specified contract')
   .addParam('contract', "The contract's path")
@@ -19,11 +20,9 @@ task('compile:specific', 'Compiles only the specified contract')
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || './.env';
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
-// Ensure that we have all the environment variables we need.
-let mnemonic: string | undefined = process.env.MNEMONIC;
-if (!mnemonic) {
-  mnemonic = 'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer'; // default mnemonic in case it is undefined (needed to avoid panicking when deploying on real network)
-}
+const defaultMnemonic =
+  'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
+const mnemonic: string = process.env.MNEMONIC ?? vars.get('MNEMONIC', defaultMnemonic);
 
 task('coverage').setAction(async (taskArgs, hre, runSuper) => {
   hre.config.networks.hardhat.allowUnlimitedContractSize = true;
@@ -90,37 +89,71 @@ const chainIds = {
 function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
   let jsonRpcUrl: string;
   const defaultRpcUrl = 'http://localhost:8545';
+  const requestedNetwork = (() => {
+    const idx = process.argv.indexOf('--network');
+    if (idx !== -1 && process.argv[idx + 1] && !process.argv[idx + 1].startsWith('-')) {
+      return process.argv[idx + 1];
+    }
+    return process.env.HARDHAT_NETWORK;
+  })();
+  const shouldWarn = requestedNetwork ? requestedNetwork === chain : chain === DEFAULT_NETWORK;
 
   switch (chain) {
     case 'staging':
-      jsonRpcUrl = process.env.RPC_URL || defaultRpcUrl;
-      if (jsonRpcUrl === defaultRpcUrl && !process.env.RPC_URL) {
+      const rpcEnv = process.env.RPC_URL;
+      const rpcVar = vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined;
+      jsonRpcUrl = rpcEnv ?? rpcVar ?? defaultRpcUrl;
+      if (shouldWarn && jsonRpcUrl === defaultRpcUrl && !rpcEnv && !vars.has('RPC_URL')) {
         console.warn(
           `WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
         );
       }
       break;
     case 'zwsDev':
-      jsonRpcUrl = process.env.RPC_URL || defaultRpcUrl;
-      if (jsonRpcUrl === defaultRpcUrl && !process.env.RPC_URL) {
+      const rpcEnv = process.env.RPC_URL;
+      const rpcVar = vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined;
+      jsonRpcUrl = rpcEnv ?? rpcVar ?? defaultRpcUrl;
+      if (shouldWarn && jsonRpcUrl === defaultRpcUrl && !rpcEnv && !vars.has('RPC_URL')) {
         console.warn(
           `WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
         );
       }
       break;
     case 'sepolia':
-      jsonRpcUrl = process.env.RPC_URL || defaultRpcUrl;
-      if (jsonRpcUrl === defaultRpcUrl && !process.env.RPC_URL) {
+      const sepoliaEnv = process.env.SEPOLIA_ETH_RPC_URL;
+      const sepoliaVar = vars.has('SEPOLIA_ETH_RPC_URL') ? vars.get('SEPOLIA_ETH_RPC_URL') : undefined;
+      const fallbackEnv = process.env.RPC_URL;
+      const fallbackVar = vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined;
+      jsonRpcUrl = sepoliaEnv ?? sepoliaVar ?? fallbackEnv ?? fallbackVar ?? defaultRpcUrl;
+      if (
+        shouldWarn &&
+        jsonRpcUrl === defaultRpcUrl &&
+        !sepoliaEnv &&
+        !vars.has('SEPOLIA_ETH_RPC_URL') &&
+        !fallbackEnv &&
+        !vars.has('RPC_URL')
+      ) {
         console.warn(
-          `WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
+          `WARN: SEPOLIA_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
         );
       }
       break;
     case 'mainnet':
-      jsonRpcUrl = process.env.RPC_URL || defaultRpcUrl;
-      if (jsonRpcUrl === defaultRpcUrl && !process.env.RPC_URL) {
+      const mainnetEnv = process.env.MAINNET_ETH_RPC_URL;
+      const mainnetVar = vars.has('MAINNET_ETH_RPC_URL') ? vars.get('MAINNET_ETH_RPC_URL') : undefined;
+      const fallbackEnvMainnet = process.env.RPC_URL;
+      const fallbackVarMainnet = vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined;
+      jsonRpcUrl = mainnetEnv ?? mainnetVar ?? fallbackEnvMainnet ?? fallbackVarMainnet ?? defaultRpcUrl;
+      if (
+        shouldWarn &&
+        jsonRpcUrl === defaultRpcUrl &&
+        !mainnetEnv &&
+        !vars.has('MAINNET_ETH_RPC_URL') &&
+        !fallbackEnvMainnet &&
+        !vars.has('RPC_URL')
+      ) {
         console.warn(
-          `WARN: RPC_URL environment variable not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
+          `WARN: MAINNET_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
         );
       }
       break;
@@ -162,7 +195,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 const config: HardhatUserConfig = {
   // workaround a hardhat bug with --parallel --network
   // https://github.com/NomicFoundation/hardhat/issues/2756
-  defaultNetwork: 'staging',
+  defaultNetwork: DEFAULT_NETWORK,
   mocha: {
     timeout: 300000,
   },
