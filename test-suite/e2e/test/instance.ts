@@ -78,8 +78,8 @@ export const createInstance = async () => {
     aclContractAddress: aclAdd,
     network: network.config.url,
     relayerUrl,
-    gatewayChainId: Number(gatewayChainID),
-    chainId: Number(hostChainID),
+    gatewayChainId: gatewayChainID,
+    chainId: hostChainID,
     ...(auth ? { auth } : {}),
   });
 };
