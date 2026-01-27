@@ -763,6 +763,13 @@ snsWorker:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
+    - name: TX_SENDER_PRIVATE_KEY
+      valueFrom:
+        secretKeyRef:
+          name: tx-sender-private-key
+          key: tx-sender-private-key
+      # Local/demo only (fake secp256k1 private key in valid format). Do not use in shared/prod environments.
+      # value: "0x1c3a9d7f42e8b6c195f0a4d37be26f91854c0d3ef7a2b6c9d14e8f3a5c7b9d21"
 
   # Command line arguments for SNS worker
   args:
@@ -796,6 +803,10 @@ snsWorker:
     # --gauge-update-interval-secs=10
     # - --pg-auto-explain-with-min-duration="30s"
     # - --keys-file-path
+
+    # New in v0.11
+    - --signer-type=private-key
+    - --private-key=$(TX_SENDER_PRIVATE_KEY)
 
   # Service ports configuration
   ports:
