@@ -168,33 +168,27 @@ const cancelBacklog = async (params: {
   latest: number;
   pending: number;
   timeoutMs: number;
+  maxRetries: number;
   feeBump: number;
 }): Promise<void> => {
-  const { signer, latest, pending, timeoutMs, feeBump } = params;
-  const provider = signer.provider;
-  if (!provider) throw new Error('Signer has no provider');
+  const { signer, latest, pending, timeoutMs, maxRetries, feeBump } = params;
 
-  const baseFees = await getBaseFees(provider);
-  const fees = bumpFees(baseFees, feeBump * feeBump);
-
-  let lastHash: string | null = null;
   for (let nonce = latest; nonce < pending; nonce += 1) {
-    const tx = await signer.sendTransaction({
-      to: signer.address,
-      value: 0n,
-      gasLimit: CANCEL_GAS_LIMIT,
+    await sendWithRetries({
+      signer,
+      label: `cancel-nonce-${nonce}`,
       nonce,
-      maxFeePerGas: fees.maxFeePerGas,
-      maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      timeoutMs,
+      maxRetries,
+      feeBump,
+      send: (overrides) =>
+        signer.sendTransaction({
+          to: signer.address,
+          value: 0n,
+          gasLimit: CANCEL_GAS_LIMIT,
+          ...overrides,
+        }),
     });
-    lastHash = tx.hash;
-  }
-
-  if (lastHash) {
-    const receipt = await waitForReceipt(provider, lastHash, timeoutMs);
-    if (!receipt) {
-      throw new Error(`Timeout waiting for cancel tx ${lastHash}`);
-    }
   }
 };
 
@@ -255,6 +249,7 @@ async function runSmoke(): Promise<void> {
       latest: primary.latest,
       pending: primary.pending,
       timeoutMs,
+      maxRetries,
       feeBump,
     });
 
@@ -361,6 +356,36 @@ async function runSmoke(): Promise<void> {
   assert.deepEqual(res.clearValues, { [handle]: 49n });
 
   console.log(`SMOKE_SUCCESS signer=${signerAddress} contract=${contractAddress}`);
+
+  // Post-success cleanup: clear backlogs on any unclean signers
+  if (allowCancel) {
+    const minBalanceForCancel = CANCEL_GAS_LIMIT * MIN_PRIORITY_FEE * 2n;
+
+    for (const state of states) {
+      const backlog = state.pending - state.latest;
+      if (backlog <= 0) continue;
+
+      if (state.balance < minBalanceForCancel) {
+        console.warn(`SMOKE_CLEANUP_SKIPPED signer=${state.address} reason=low_balance balance=${ethers.formatEther(state.balance)}`);
+        continue;
+      }
+
+      if (backlog > maxBacklog) {
+        console.warn(`SMOKE_CLEANUP_SKIPPED signer=${state.address} reason=backlog_too_large backlog=${backlog} max=${maxBacklog}`);
+        continue;
+      }
+
+      console.log(`SMOKE_CLEANUP signer=${state.address} backlog=${backlog}`);
+      await cancelBacklog({
+        signer: state.signer,
+        latest: state.latest,
+        pending: state.pending,
+        timeoutMs,
+        maxRetries,
+        feeBump,
+      });
+    }
+  }
 }
 
 runSmoke().catch((error) => {
