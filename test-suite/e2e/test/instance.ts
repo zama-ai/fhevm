@@ -1,4 +1,4 @@
-import { createInstance as createFhevmInstance, MainnetConfig, SepoliaConfig } from '@zama-fhe/relayer-sdk/node';
+import { MainnetConfig, SepoliaConfig, createInstance as createFhevmInstance } from '@zama-fhe/relayer-sdk/node';
 import { network } from 'hardhat';
 import { vars } from 'hardhat/config';
 
@@ -12,50 +12,33 @@ const defaults = (() => {
   return undefined;
 })();
 
-const kmsAdd =
-  process.env.KMS_VERIFIER_CONTRACT_ADDRESS ??
-  vars.get('KMS_VERIFIER_CONTRACT_ADDRESS', defaults?.kmsContractAddress ?? '');
-if (!kmsAdd) throw new Error('Missing required env var KMS_VERIFIER_CONTRACT_ADDRESS');
+const kmsAdd = process.env.KMS_VERIFIER_CONTRACT_ADDRESS || defaults?.kmsContractAddress;
+if (!kmsAdd) throw new Error('KMS_VERIFIER_CONTRACT_ADDRESS is required');
 
-const aclAdd =
-  process.env.ACL_CONTRACT_ADDRESS ?? vars.get('ACL_CONTRACT_ADDRESS', defaults?.aclContractAddress ?? '');
-if (!aclAdd) throw new Error('Missing required env var ACL_CONTRACT_ADDRESS');
+const aclAdd = process.env.ACL_CONTRACT_ADDRESS || defaults?.aclContractAddress;
+if (!aclAdd) throw new Error('ACL_CONTRACT_ADDRESS is required');
 
-const inputAdd =
-  process.env.INPUT_VERIFIER_CONTRACT_ADDRESS ??
-  vars.get('INPUT_VERIFIER_CONTRACT_ADDRESS', defaults?.inputVerifierContractAddress ?? '');
-if (!inputAdd) throw new Error('Missing required env var INPUT_VERIFIER_CONTRACT_ADDRESS');
+const inputAdd = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS || defaults?.inputVerifierContractAddress;
+if (!inputAdd) throw new Error('INPUT_VERIFIER_CONTRACT_ADDRESS is required');
 
-const gatewayChainRaw =
-  process.env.CHAIN_ID_GATEWAY ?? vars.get('CHAIN_ID_GATEWAY', defaults?.gatewayChainId?.toString() ?? '');
-const gatewayChainID = gatewayChainRaw ? Number(gatewayChainRaw) : undefined;
-if (!Number.isFinite(gatewayChainID)) throw new Error('Missing required env var CHAIN_ID_GATEWAY');
+const gatewayChainID = Number(process.env.CHAIN_ID_GATEWAY) || defaults?.gatewayChainId;
+if (!gatewayChainID) throw new Error('CHAIN_ID_GATEWAY is required');
 
-const hostChainRaw =
-  process.env.CHAIN_ID_HOST ?? vars.get('CHAIN_ID_HOST', defaults?.chainId?.toString() ?? '');
-const hostChainID = hostChainRaw ? Number(hostChainRaw) : undefined;
-if (!Number.isFinite(hostChainID)) throw new Error('Missing required env var CHAIN_ID_HOST');
+const hostChainID = Number(process.env.CHAIN_ID_HOST) || defaults?.chainId;
+if (!hostChainID) throw new Error('CHAIN_ID_HOST is required');
 
 const verifyingContractAddressDecryption =
-  process.env.DECRYPTION_ADDRESS ??
-  vars.get('DECRYPTION_ADDRESS', defaults?.verifyingContractAddressDecryption ?? '');
-if (!verifyingContractAddressDecryption) {
-  throw new Error('Missing required env var DECRYPTION_ADDRESS');
-}
+  process.env.DECRYPTION_ADDRESS || defaults?.verifyingContractAddressDecryption;
+if (!verifyingContractAddressDecryption) throw new Error('DECRYPTION_ADDRESS is required');
 
 const verifyingContractAddressInputVerification =
-  process.env.INPUT_VERIFICATION_ADDRESS ??
-  vars.get(
-    'INPUT_VERIFICATION_ADDRESS',
-    defaults?.verifyingContractAddressInputVerification ?? '',
-  );
-if (!verifyingContractAddressInputVerification) {
-  throw new Error('Missing required env var INPUT_VERIFICATION_ADDRESS');
-}
+  process.env.INPUT_VERIFICATION_ADDRESS || defaults?.verifyingContractAddressInputVerification;
+if (!verifyingContractAddressInputVerification) throw new Error('INPUT_VERIFICATION_ADDRESS is required');
 
-const relayerUrl = process.env.RELAYER_URL ?? vars.get('RELAYER_URL', defaults?.relayerUrl ?? '');
-if (!relayerUrl) throw new Error('Missing required env var RELAYER_URL');
+const relayerUrl = process.env.RELAYER_URL || defaults?.relayerUrl;
+if (!relayerUrl) throw new Error('RELAYER_URL is required');
 
+// API key is a secret - support hardhat vars for secure storage
 const apiKey = process.env.ZAMA_FHEVM_API_KEY ?? vars.get('ZAMA_FHEVM_API_KEY', '');
 const isMainnet = network.name === 'mainnet' || network.config.chainId === 1;
 if (isMainnet && !apiKey) {
