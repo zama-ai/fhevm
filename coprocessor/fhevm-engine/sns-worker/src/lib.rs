@@ -1,5 +1,6 @@
 mod aws_upload;
 mod executor;
+pub(crate) mod json_sidecar;
 mod keyset;
 mod squash_noise;
 
@@ -9,6 +10,7 @@ pub mod metrics;
 mod tests;
 
 use std::{
+    str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -16,6 +18,11 @@ use std::{
     time::Duration,
 };
 
+use alloy::signers::{
+    aws::{aws_sdk_kms, AwsSigner},
+    local::PrivateKeySigner,
+};
+use anyhow::Context;
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
@@ -25,9 +32,10 @@ use fhevm_engine_common::{
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
-    types::FhevmError,
+    types::{CoproSigner, FhevmError, SignerType},
     utils::{to_hex, DatabaseURL},
 };
+use futures::join;
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
@@ -121,6 +129,8 @@ pub struct Config {
     pub enable_compression: bool,
     pub schedule_policy: SchedulePolicy,
     pub pg_auto_explain_with_min_duration: Option<Duration>,
+    pub signer_type: SignerType,
+    pub private_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -401,6 +411,9 @@ pub enum ExecutionError {
 
     #[error("Internal send error: {0}")]
     InternalSendError(String),
+
+    #[error("Internal error: {0}")]
+    InternalError(String),
 }
 
 #[derive(Clone)]
@@ -431,6 +444,7 @@ pub async fn run_uploader_loop(
     tx: Sender<UploadJob>,
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
+    signer: CoproSigner,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (is_ready_res, _) = check_is_ready(&client, conf).await;
     is_ready.store(is_ready_res, Ordering::Release);
@@ -444,7 +458,7 @@ pub async fn run_uploader_loop(
     )
     .await?;
 
-    let mut handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready).await?;
+    let mut handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready, signer).await?;
 
     // Return when either task ends; abort the other and propagate its result.
     let res = tokio::select! {
@@ -543,6 +557,23 @@ pub async fn run_all(
         );
         spawn_gauge_update_routine(Duration::from_secs(interval_secs.into()), pg_mngr.pool());
     }
+    let signer: CoproSigner = match conf.signer_type {
+        SignerType::PrivateKey => {
+            let Some(private_key) = conf.private_key.clone() else {
+                error!("Private key is required for PrivateKey signer");
+                anyhow::bail!("Private key is required for PrivateKey signer");
+            };
+            let signer = PrivateKeySigner::from_str(private_key.trim())?;
+            Arc::new(signer)
+        }
+        SignerType::AwsKms => {
+            let key_id = std::env::var("AWS_KEY_ID")
+                .context("AWS_KEY_ID environment variable is required for AwsKms signer")?;
+            let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
+            let aws_kms_client = aws_sdk_kms::Client::new(&aws_conf);
+            Arc::new(AwsSigner::new(aws_kms_client, key_id, None).await?)
+        }
+    };
 
     // Build the service.
     // create() is a pure struct constructor — no DB or
@@ -588,7 +619,7 @@ pub async fn run_all(
 
     // Keep the uploader's handle so its failure exits the process too.
     let uploader =
-        spawn(async move { run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await });
+        spawn(async move { run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready, signer).await });
 
     // Exit if either the service loop or the uploader fails.
     let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = tokio::select! {
