@@ -40,7 +40,7 @@ For devnet, `test-suite/e2e/.env.devnet` provides a ready baseline (use `DOTENV_
 - `SMOKE_TX_MAX_RETRIES` (`2`)
 - `SMOKE_FEE_BUMP` (`1.125^4`)
 - `SMOKE_MAX_BACKLOG` (`3`)
-- `SMOKE_CANCEL_BACKLOG` (`1`)
+- `SMOKE_CANCEL_BACKLOG` (`true`)
 - `SMOKE_FORCE_DEPLOY` (`0`)
 - `BETTERSTACK_HEARTBEAT_URL` (optional) - if set, pings BetterStack on success/failure
 
