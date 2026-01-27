@@ -21,11 +21,17 @@ and hardened transaction handling.
 
 The smoke runner uses the same environment variables as the e2e tests:
 
-- `RPC_URL` (or `SEPOLIA_ETH_RPC_URL` / `MAINNET_ETH_RPC_URL`), `MNEMONIC`
+- `MNEMONIC`
 - `RELAYER_URL`
 - `KMS_VERIFIER_CONTRACT_ADDRESS`, `ACL_CONTRACT_ADDRESS`, `INPUT_VERIFIER_CONTRACT_ADDRESS`
 - `CHAIN_ID_GATEWAY`, `CHAIN_ID_HOST`
 - `DECRYPTION_ADDRESS`, `INPUT_VERIFICATION_ADDRESS`
+
+Network-specific RPC URLs:
+
+- staging/zwsDev: `RPC_URL` (defaults to localhost:8545)
+- sepolia: `SEPOLIA_ETH_RPC_URL` (required)
+- mainnet: `MAINNET_ETH_RPC_URL` (required)
 
 Mainnet additionally requires `ZAMA_FHEVM_API_KEY` and `TEST_INPUT_CONTRACT_ADDRESS` unless `SMOKE_FORCE_DEPLOY=1`.
 

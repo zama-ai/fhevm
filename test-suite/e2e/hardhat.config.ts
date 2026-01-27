@@ -100,41 +100,22 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 
   switch (chain) {
     case 'staging':
-      jsonRpcUrl = process.env.RPC_URL ?? (vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined) ?? defaultRpcUrl;
-      if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
-        console.warn(`WARN: RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
-      }
-      break;
     case 'zwsDev':
-      jsonRpcUrl = process.env.RPC_URL ?? (vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined) ?? defaultRpcUrl;
+      jsonRpcUrl = process.env.RPC_URL ?? vars.get('RPC_URL', defaultRpcUrl);
       if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
         console.warn(`WARN: RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
       }
       break;
     case 'sepolia':
-      jsonRpcUrl =
-        process.env.SEPOLIA_ETH_RPC_URL ??
-        (vars.has('SEPOLIA_ETH_RPC_URL') ? vars.get('SEPOLIA_ETH_RPC_URL') : undefined) ??
-        process.env.RPC_URL ??
-        (vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined) ??
-        defaultRpcUrl;
-      if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
-        console.warn(
-          `WARN: SEPOLIA_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
-        );
+      jsonRpcUrl = process.env.SEPOLIA_ETH_RPC_URL ?? vars.get('SEPOLIA_ETH_RPC_URL', '');
+      if (!jsonRpcUrl) {
+        throw new Error('SEPOLIA_ETH_RPC_URL is required for sepolia network');
       }
       break;
     case 'mainnet':
-      jsonRpcUrl =
-        process.env.MAINNET_ETH_RPC_URL ??
-        (vars.has('MAINNET_ETH_RPC_URL') ? vars.get('MAINNET_ETH_RPC_URL') : undefined) ??
-        process.env.RPC_URL ??
-        (vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined) ??
-        defaultRpcUrl;
-      if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
-        console.warn(
-          `WARN: MAINNET_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
-        );
+      jsonRpcUrl = process.env.MAINNET_ETH_RPC_URL ?? vars.get('MAINNET_ETH_RPC_URL', '');
+      if (!jsonRpcUrl) {
+        throw new Error('MAINNET_ETH_RPC_URL is required for mainnet network');
       }
       break;
     case 'localCoprocessor':
