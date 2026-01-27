@@ -203,6 +203,9 @@ services:
       - --s3-recheck-duration=2s
       - --s3-regular-recheck-duration=120s
       - --enable-compression
+      - --signer-type=private-key
+      - --private-key=${TX_SENDER_PRIVATE_KEY}
+
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
