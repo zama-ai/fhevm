@@ -1,8 +1,7 @@
-import assert from 'node:assert/strict';
-
 import type { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import type { Provider, TransactionReceipt, TransactionResponse } from 'ethers';
 import { ethers, network } from 'hardhat';
+import assert from 'node:assert/strict';
 
 import { createInstance } from '../test/instance';
 import { userDecryptSingleHandle } from '../test/utils';
@@ -195,29 +194,20 @@ const cancelBacklog = async (params: {
 async function runSmoke(): Promise<void> {
   const provider = ethers.provider;
   const signerIndices = parseIndices(process.env.SMOKE_SIGNER_INDICES ?? DEFAULT_SIGNER_INDICES);
-  const timeoutMs =
-    Math.trunc(Number(process.env.SMOKE_TX_TIMEOUT_SECS) || DEFAULT_TX_TIMEOUT_SECS) * 1000;
-  const maxRetries = Math.trunc(
-    Number(process.env.SMOKE_TX_MAX_RETRIES) || DEFAULT_TX_MAX_RETRIES,
-  );
+  const timeoutMs = Math.trunc(Number(process.env.SMOKE_TX_TIMEOUT_SECS) || DEFAULT_TX_TIMEOUT_SECS) * 1000;
+  const maxRetries = Math.trunc(Number(process.env.SMOKE_TX_MAX_RETRIES) || DEFAULT_TX_MAX_RETRIES);
   const feeBump = Number(process.env.SMOKE_FEE_BUMP) || DEFAULT_FEE_BUMP;
-  const maxBacklog = Math.trunc(
-    Number(process.env.SMOKE_MAX_BACKLOG) || DEFAULT_MAX_BACKLOG,
-  );
+  const maxBacklog = Math.trunc(Number(process.env.SMOKE_MAX_BACKLOG) || DEFAULT_MAX_BACKLOG);
   const cancelRaw = process.env.SMOKE_CANCEL_BACKLOG;
-  const allowCancel =
-    cancelRaw === undefined || cancelRaw === '' ? true : cancelRaw.trim().toLowerCase() !== 'false';
+  const allowCancel = cancelRaw === undefined || cancelRaw === '' ? true : cancelRaw.trim().toLowerCase() !== 'false';
   const forceRaw = process.env.SMOKE_FORCE_DEPLOY;
-  const forceDeploy =
-    forceRaw !== undefined && forceRaw !== '' && forceRaw.trim().toLowerCase() !== 'false';
+  const forceDeploy = forceRaw !== undefined && forceRaw !== '' && forceRaw.trim().toLowerCase() !== 'false';
   const existingContractAddress = process.env.TEST_INPUT_CONTRACT_ADDRESS;
 
   const allSigners = await ethers.getSigners();
   const states = await getSignerStates(provider, allSigners, signerIndices);
 
-  console.log(
-    `SMOKE_START network=${network.name} chainId=${(await provider.getNetwork()).chainId}`,
-  );
+  console.log(`SMOKE_START network=${network.name} chainId=${(await provider.getNetwork()).chainId}`);
   states.forEach((state) => {
     console.log(`SMOKE_SIGNER_STATE ${formatSignerState(state)}`);
   });
@@ -318,10 +308,7 @@ async function runSmoke(): Promise<void> {
   const encryptedInput = await input.encrypt();
 
   const callNonce = await provider.getTransactionCount(signerAddress, 'pending');
-  const gasEstimate = await contract.add42ToInput64.estimateGas(
-    encryptedInput.handles[0],
-    encryptedInput.inputProof,
-  );
+  const gasEstimate = await contract.add42ToInput64.estimateGas(encryptedInput.handles[0], encryptedInput.inputProof);
   const gasLimit = (gasEstimate * 120n) / 100n;
 
   const receipt = await sendWithRetries({
@@ -366,12 +353,16 @@ async function runSmoke(): Promise<void> {
       if (backlog <= 0) continue;
 
       if (state.balance < minBalanceForCancel) {
-        console.warn(`SMOKE_CLEANUP_SKIPPED signer=${state.address} reason=low_balance balance=${ethers.formatEther(state.balance)}`);
+        console.warn(
+          `SMOKE_CLEANUP_SKIPPED signer=${state.address} reason=low_balance balance=${ethers.formatEther(state.balance)}`,
+        );
         continue;
       }
 
       if (backlog > maxBacklog) {
-        console.warn(`SMOKE_CLEANUP_SKIPPED signer=${state.address} reason=backlog_too_large backlog=${backlog} max=${maxBacklog}`);
+        console.warn(
+          `SMOKE_CLEANUP_SKIPPED signer=${state.address} reason=backlog_too_large backlog=${backlog} max=${maxBacklog}`,
+        );
         continue;
       }
 
