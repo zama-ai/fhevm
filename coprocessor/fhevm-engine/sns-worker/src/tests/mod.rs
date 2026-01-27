@@ -757,5 +757,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         schedule_policy,
         pg_auto_explain_with_min_duration: Some(Duration::from_secs(1)),
         metrics: Default::default(),
+        private_key: None,
+        signer_type: fhevm_engine_common::types::SignerType::PrivateKey,
     }
 }
