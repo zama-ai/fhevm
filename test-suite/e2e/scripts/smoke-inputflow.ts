@@ -204,16 +204,13 @@ const cancelBacklog = async (params: {
 async function runSmoke(): Promise<void> {
   const provider = ethers.provider;
   const signerIndices = parseIndices(process.env.SMOKE_SIGNER_INDICES ?? DEFAULT_SIGNER_INDICES);
-  const timeoutMs = Math.trunc(Number(process.env.SMOKE_TX_TIMEOUT_SECS) || DEFAULT_TX_TIMEOUT_SECS) * 1000;
-  const maxRetries = Math.trunc(Number(process.env.SMOKE_TX_MAX_RETRIES) || DEFAULT_TX_MAX_RETRIES);
+  const timeoutMs = (Number(process.env.SMOKE_TX_TIMEOUT_SECS) || DEFAULT_TX_TIMEOUT_SECS) * 1000;
+  const maxRetries = Number(process.env.SMOKE_TX_MAX_RETRIES) || DEFAULT_TX_MAX_RETRIES;
   const feeBump = Number(process.env.SMOKE_FEE_BUMP) || DEFAULT_FEE_BUMP;
-  const maxBacklog = Math.trunc(Number(process.env.SMOKE_MAX_BACKLOG) || DEFAULT_MAX_BACKLOG);
-  const decryptTimeoutMs =
-    Math.trunc(Number(process.env.SMOKE_DECRYPT_TIMEOUT_SECS) || DEFAULT_DECRYPT_TIMEOUT_SECS) * 1000;
-  const cancelRaw = process.env.SMOKE_CANCEL_BACKLOG;
-  const allowCancel = cancelRaw === undefined || cancelRaw === '' ? true : cancelRaw.trim().toLowerCase() !== 'false';
-  const forceRaw = process.env.SMOKE_FORCE_DEPLOY;
-  const forceDeploy = forceRaw !== undefined && forceRaw !== '' && forceRaw.trim().toLowerCase() !== 'false';
+  const maxBacklog = Number(process.env.SMOKE_MAX_BACKLOG) || DEFAULT_MAX_BACKLOG;
+  const decryptTimeoutMs = (Number(process.env.SMOKE_DECRYPT_TIMEOUT_SECS) || DEFAULT_DECRYPT_TIMEOUT_SECS) * 1000;
+  const allowCancel = process.env.SMOKE_CANCEL_BACKLOG !== 'false';
+  const forceDeploy = Boolean(process.env.SMOKE_FORCE_DEPLOY);
   const existingContractAddress = process.env.TEST_INPUT_CONTRACT_ADDRESS;
 
   const allSigners = await ethers.getSigners();
