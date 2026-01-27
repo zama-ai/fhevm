@@ -1,109 +1,108 @@
+mod common;
+
+use crate::common::{create_mock_user_decryption_request_tx, init_kms_worker};
 use alloy::{
-    providers::{Provider, ProviderBuilder, mock::Asserter},
+    hex::FromHex,
+    primitives::FixedBytes,
+    providers::{ProviderBuilder, mock::Asserter},
     sol_types::SolValue,
-    transports::http::reqwest,
 };
 use connector_utils::{
     tests::{
-        db::requests::{check_no_uncompleted_request_in_db, insert_rand_request},
-        setup::{DbInstance, S3Instance, TestInstanceBuilder},
+        db::requests::{
+            InsertRequestOptions, check_no_uncompleted_request_in_db, insert_rand_request,
+        },
+        rand::{rand_digest, rand_sns_ct},
+        setup::{
+            DbInstance, S3_CT_DIGEST, S3_CT_HANDLE, S3Instance, TestInstanceBuilder,
+            init_host_chains_acl_contracts_mock,
+        },
     },
     types::{GatewayEventKind, db::EventType},
 };
 use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
 use kms_grpc::kms::v1::{Empty, InitiateResharingResponse};
-use kms_worker::core::{
-    Config, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
-    event_processor::{
-        DbEventProcessor, DecryptionProcessor, KMSGenerationProcessor, KmsClient, s3::S3Service,
-    },
-};
+use kms_worker::core::Config;
 use mocktail::{MockSet, StatusCode, server::MockServer};
 use rstest::rstest;
-use sqlx::{Pool, Postgres};
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 #[rstest]
+#[case::public_decryption_removal_after_max_attempt_reached(EventType::PublicDecryptionRequest)]
+#[case::user_decryption_removal_after_max_attempt_reached(EventType::UserDecryptionRequest)]
+#[case::prep_keygen_processing_not_removed_on_error(EventType::PrepKeygenRequest)]
+#[case::keygen_processing_not_removed_on_error(EventType::KeygenRequest)]
+#[case::crsgen_processing_not_removed_on_error(EventType::CrsgenRequest)]
+#[case::prss_init_processing_removal_on_error(EventType::PrssInit)]
+#[case::key_reshare_same_set_processing_removal_on_error(EventType::KeyReshareSameSet)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_public_decryption_removal_after_max_attempt_reached() -> anyhow::Result<()> {
-    test_processing_request(EventType::PublicDecryptionRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_user_decryption_removal_after_max_attempt_reached() -> anyhow::Result<()> {
-    test_processing_request(EventType::UserDecryptionRequest).await
-}
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_prep_keygen_processing_not_removed_on_error() -> anyhow::Result<()> {
-    test_processing_request(EventType::PrepKeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_keygen_processing_not_removed_on_error() -> anyhow::Result<()> {
-    test_processing_request(EventType::KeygenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_crsgen_processing_not_removed_on_error() -> anyhow::Result<()> {
-    test_processing_request(EventType::CrsgenRequest).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_prss_init_processing_removal_on_error() -> anyhow::Result<()> {
-    test_processing_request(EventType::PrssInit).await
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_key_reshare_same_set_processing_removal_on_error() -> anyhow::Result<()> {
-    test_processing_request(EventType::KeyReshareSameSet).await
-}
-
-async fn test_processing_request(event_type: EventType) -> anyhow::Result<()> {
+async fn test_request_processing(#[case] event_type: EventType) -> anyhow::Result<()> {
     // Setup real DB and S3 instance
     let test_instance = TestInstanceBuilder::default()
         .with_db(DbInstance::setup().await?)
         .with_s3(S3Instance::setup().await?)
         .build();
 
+    // Test constants
+    const MAX_DECRYPTION_ATTEMPTS: u16 = 3;
+    const GRPC_REQUEST_RETRIES: u8 = 2;
+
     // Mocking Gateway
     let asserter = Asserter::new();
+    let mut sns_ct = rand_sns_ct();
+    sns_ct.ctHandle = FixedBytes::<32>::from_hex(S3_CT_HANDLE)?;
+    sns_ct.snsCiphertextDigest = FixedBytes::<32>::from_hex(S3_CT_DIGEST)?;
+    let tx_hash = rand_digest();
+    let insert_options = InsertRequestOptions::new()
+        .with_sns_ct_materials(vec![sns_ct.clone()])
+        .with_tx_hash(tx_hash);
+    for attempt in 0..MAX_DECRYPTION_ATTEMPTS {
+        match event_type {
+            EventType::PublicDecryptionRequest => {
+                // Mocking isDecryptionDone returns false
+                asserter.push_success(&false.abi_encode());
+            }
+            EventType::UserDecryptionRequest => {
+                // Mocking `get_transaction_by_hash` call result
+                let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+                asserter.push_success(&mock_tx);
+            }
+            _ => (),
+        };
 
-    if matches!(event_type, EventType::PublicDecryptionRequest) {
-        let is_decryption_done_call_response = false;
-        asserter.push_success(&is_decryption_done_call_response.abi_encode());
-    }
-    let get_copro_call_response = Coprocessor {
-        s3BucketUrl: format!("{}/ct128", test_instance.s3_url()),
-        ..Default::default()
-    };
-    asserter.push_success(&get_copro_call_response.abi_encode());
-    if matches!(event_type, EventType::PublicDecryptionRequest) {
-        let is_decryption_done_call_response = false;
-        asserter.push_success(&is_decryption_done_call_response.abi_encode());
+        // First attempt, the copro URL is not cached yet
+        if attempt == 0 {
+            let get_copro_call_response = Coprocessor {
+                s3BucketUrl: format!("{}/ct128", test_instance.s3_url()),
+                ..Default::default()
+            };
+            asserter.push_success(&get_copro_call_response.abi_encode());
+        }
     }
 
-    let mock_provider = ProviderBuilder::new()
+    let gateway_mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()
         .connect_mocked_client(asserter.clone());
     info!("Gateway mock started!");
 
+    // Mocking Host chain
+    let acl_contracts_mock = match &event_type {
+        EventType::PublicDecryptionRequest => init_host_chains_acl_contracts_mock(
+            sns_ct.ctHandle.as_slice(),
+            vec![true; MAX_DECRYPTION_ATTEMPTS as usize],
+        ),
+        EventType::UserDecryptionRequest => init_host_chains_acl_contracts_mock(
+            sns_ct.ctHandle.as_slice(),
+            vec![true; 2 * MAX_DECRYPTION_ATTEMPTS as usize],
+        ),
+        _ => HashMap::new(),
+    };
+
     // Insert request in DB to trigger kms_worker job
-    let request = insert_rand_request(test_instance.db(), event_type, None, false, None).await?;
+    let request = insert_rand_request(test_instance.db(), event_type, insert_options).await?;
 
     // Mocking KMS responses
     let kms_mocks = prepare_mocks(&request);
@@ -115,13 +114,19 @@ async fn test_processing_request(event_type: EventType) -> anyhow::Result<()> {
     // Starting kms_worker
     let config = Config {
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
-        max_decryption_attempts: 3,
-        grpc_request_retries: 2,
+        max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
+        grpc_request_retries: GRPC_REQUEST_RETRIES,
         db_fast_event_polling: Duration::from_millis(500),
         db_long_event_polling: Duration::from_millis(500),
         ..Default::default()
     };
-    let kms_worker = init_kms_worker(config, mock_provider, test_instance.db()).await?;
+    let kms_worker = init_kms_worker(
+        config,
+        gateway_mock_provider,
+        acl_contracts_mock,
+        test_instance.db(),
+    )
+    .await?;
     let cancel_token = CancellationToken::new();
     let kms_worker_task = tokio::spawn(kms_worker.start(cancel_token.clone()));
     info!("KmsWorker started!");
@@ -194,28 +199,4 @@ fn prepare_mocks(req: &GatewayEventKind) -> MockSet {
     });
 
     kms_mocks
-}
-
-async fn init_kms_worker<P: Provider + Clone + 'static>(
-    config: Config,
-    provider: P,
-    db: &Pool<Postgres>,
-) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P>>> {
-    let kms_client = KmsClient::connect(&config).await?;
-    let s3_client = reqwest::Client::new();
-    let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
-
-    let s3_service = S3Service::new(&config, provider.clone(), s3_client);
-    let decryption_processor = DecryptionProcessor::new(&config, provider.clone(), s3_service);
-    let kms_generation_processor = KMSGenerationProcessor::new(&config);
-    let event_processor = DbEventProcessor::new(
-        kms_client.clone(),
-        decryption_processor,
-        kms_generation_processor,
-        config.max_decryption_attempts,
-        db.clone(),
-    );
-    let response_publisher = DbKmsResponsePublisher::new(db.clone());
-    let kms_worker = KmsWorker::new(event_picker, event_processor, response_publisher);
-    Ok(kms_worker)
 }

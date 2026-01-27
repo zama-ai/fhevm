@@ -18,7 +18,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::{
-    conn::{WalletGatewayProviderFillers, connect_to_db, connect_to_gateway_with_wallet},
+    conn::{WalletProviderFillers, connect_to_db, connect_to_rpc_node_with_wallet},
     provider::NonceManagedProvider,
     tasks::spawn_with_limit,
     types::{
@@ -135,7 +135,7 @@ where
     }
 }
 
-impl TransactionSender<DbKmsResponsePicker, WalletGatewayProviderFillers, RootProvider> {
+impl TransactionSender<DbKmsResponsePicker, WalletProviderFillers, RootProvider> {
     /// Creates a new `TransactionSender` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
         let wallet = config.build_wallet().await?;
@@ -144,7 +144,8 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProviderFillers, RootPr
         let response_picker = DbKmsResponsePicker::connect(db_pool.clone(), &config).await?;
 
         let provider =
-            connect_to_gateway_with_wallet(config.gateway_url, config.chain_id, wallet).await?;
+            connect_to_rpc_node_with_wallet(config.gateway_url, config.gateway_chain_id, wallet)
+                .await?;
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
         let kms_generation_contract =

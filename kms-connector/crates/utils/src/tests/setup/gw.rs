@@ -1,6 +1,6 @@
 use crate::{
     config::KmsWallet,
-    conn::WalletGatewayProvider,
+    conn::WalletProvider,
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
     tests::setup::ROOT_CARGO_TOML,
 };
@@ -43,10 +43,10 @@ pub const DEPLOYER_PRIVATE_KEY: &str =
 const ANVIL_PORT: u16 = 8545;
 
 pub struct GatewayInstance {
-    pub provider: WalletGatewayProvider,
-    pub decryption_contract: DecryptionInstance<WalletGatewayProvider>,
-    pub gateway_config_contract: GatewayConfigInstance<WalletGatewayProvider>,
-    pub kms_generation_contract: KMSGenerationInstance<WalletGatewayProvider>,
+    pub provider: WalletProvider,
+    pub decryption_contract: DecryptionInstance<WalletProvider>,
+    pub gateway_config_contract: GatewayConfigInstance<WalletProvider>,
+    pub kms_generation_contract: KMSGenerationInstance<WalletProvider>,
     pub anvil: ContainerAsync<GenericImage>,
     pub anvil_host_port: u16,
     pub block_time: u64,
@@ -56,7 +56,7 @@ impl GatewayInstance {
     pub fn new(
         anvil: ContainerAsync<GenericImage>,
         anvil_host_port: u16,
-        provider: WalletGatewayProvider,
+        provider: WalletProvider,
         block_time: u64,
     ) -> Self {
         let decryption_contract = Decryption::new(DECRYPTION_MOCK_ADDRESS, provider.clone());
