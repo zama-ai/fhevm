@@ -285,11 +285,11 @@ async function runSmoke(): Promise<void> {
           gasLimit,
         }),
     });
-    if (receipt.status !== 1) {
-      throw new Error('Deployment failed');
+    if (receipt.status !== 1 || !receipt.contractAddress) {
+      throw new Error('Deployment failed or no contract address in receipt');
     }
 
-    contractAddress = ethers.getCreateAddress({ from: signerAddress, nonce: deployNonce });
+    contractAddress = receipt.contractAddress;
     contract = contractFactory.attach(contractAddress);
     console.log(`SMOKE_DEPLOYED contractAddress=${contractAddress}`);
   } else if (existingContractAddress) {
