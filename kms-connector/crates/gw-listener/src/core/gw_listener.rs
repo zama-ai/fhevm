@@ -16,7 +16,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::{
-    conn::{GatewayProvider, connect_to_db, connect_to_gateway},
+    conn::{DefaultProvider, connect_to_db, connect_to_rpc_node},
     monitoring::otlp::PropagationContext,
     tasks::spawn_with_limit,
     types::{GatewayEvent, GatewayEventKind, db::EventType},
@@ -285,7 +285,7 @@ where
                     .inc();
 
                 let db = self.db_pool.clone();
-                spawn_with_limit(handle_gateway_event(db, event.into(), log.block_number)).await;
+                spawn_with_limit(handle_gateway_event(db, event.into(), log)).await;
             }
             Err(err) => {
                 error!("Error while listening for {event_type} events: {err}");
@@ -353,16 +353,13 @@ where
 
 /// Main function used to trace a single event handling across all Connector's services.
 #[tracing::instrument(skip_all, fields(event = %event_kind))]
-async fn handle_gateway_event(
-    db_pool: Pool<Postgres>,
-    event_kind: GatewayEventKind,
-    block_number: Option<u64>,
-) {
+async fn handle_gateway_event(db_pool: Pool<Postgres>, event_kind: GatewayEventKind, log: Log) {
     let event = GatewayEvent::new(
         event_kind,
+        log.transaction_hash,
         PropagationContext::inject(&tracing::Span::current().context()),
     );
-    if let Err(err) = publish_event(&db_pool, event, block_number).await {
+    if let Err(err) = publish_event(&db_pool, event, log.block_number).await {
         error!("Failed to publish event: {err}");
     }
 }
@@ -372,14 +369,15 @@ fn decode_log<E: SolEvent>(log: &Log) -> alloy::sol_types::Result<E> {
     E::decode_raw_log(log_data.topics().iter().copied(), &log_data.data)
 }
 
-impl GatewayListener<GatewayProvider> {
+impl GatewayListener<DefaultProvider> {
     /// Creates a new `GatewayListener` instance from a valid `Config`.
     pub async fn from_config(
         config: Config,
         cancel_token: CancellationToken,
-    ) -> anyhow::Result<(Self, State<GatewayProvider>)> {
+    ) -> anyhow::Result<(Self, State<DefaultProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let provider = connect_to_gateway(config.gateway_url.clone(), config.chain_id).await?;
+        let provider =
+            connect_to_rpc_node(config.gateway_url.clone(), config.gateway_chain_id).await?;
 
         let state = State::new(
             db_pool.clone(),

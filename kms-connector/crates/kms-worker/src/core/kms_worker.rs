@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     core::{
         KmsResponsePublisher,
@@ -14,10 +16,11 @@ use crate::{
 use alloy::transports::http::reqwest;
 use anyhow::anyhow;
 use connector_utils::{
-    conn::{GatewayProvider, connect_to_db, connect_to_gateway},
+    conn::{DefaultProvider, connect_to_db, connect_to_rpc_node},
     tasks::spawn_with_limit,
     types::{GatewayEvent, KmsResponse},
 };
+use fhevm_host_bindings::acl::ACL;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -106,11 +109,26 @@ where
     }
 }
 
-impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>> {
+impl KmsWorker<DbEventPicker, DbEventProcessor<DefaultProvider, DefaultProvider>> {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<DefaultProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let provider = connect_to_gateway(config.gateway_url.clone(), config.chain_id).await?;
+
+        let gateway_provider =
+            connect_to_rpc_node(config.gateway_url.clone(), config.gateway_chain_id).await?;
+
+        let mut acl_contracts = HashMap::new();
+        for host_chain in &config.host_chains {
+            let provider = connect_to_rpc_node(host_chain.url.clone(), host_chain.chain_id).await?;
+            let acl_contract = ACL::new(host_chain.acl_address, provider);
+            let host_chain_id = host_chain.chain_id;
+            if acl_contracts.insert(host_chain_id, acl_contract).is_some() {
+                return Err(anyhow!(
+                    "Duplicate host chain in config for chain ID {host_chain_id}"
+                ));
+            };
+        }
+
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
         let s3_client = reqwest::Client::builder()
@@ -120,8 +138,9 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>> {
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
-        let s3_service = S3Service::new(&config, provider.clone(), s3_client);
-        let decryption_processor = DecryptionProcessor::new(&config, provider.clone(), s3_service);
+        let s3_service = S3Service::new(&config, gateway_provider.clone(), s3_client);
+        let decryption_processor =
+            DecryptionProcessor::new(&config, gateway_provider.clone(), acl_contracts, s3_service);
         let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let event_processor = DbEventProcessor::new(
             kms_client.clone(),
@@ -134,7 +153,7 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>> {
 
         let state = State::new(
             db_pool,
-            provider,
+            gateway_provider,
             kms_health_client,
             config.healthcheck_timeout,
         );
