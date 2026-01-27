@@ -1,7 +1,10 @@
+use crate::executor::fetch_decrypt_key_id_from_pool;
+use crate::json_sidecar::CiphertextSideCar;
 use crate::metrics::{AWS_UPLOAD_FAILURE_COUNTER, AWS_UPLOAD_SUCCESS_COUNTER};
 use crate::{
     BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, UploadJob,
 };
+
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::head_bucket::HeadBucketError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
@@ -9,7 +12,8 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::telemetry::{self};
+use fhevm_engine_common::telemetry;
+use fhevm_engine_common::types::CoproSigner;
 use fhevm_engine_common::utils::to_hex;
 use futures::future::join_all;
 use opentelemetry::global::BoxedSpan;
@@ -63,15 +67,17 @@ pub(crate) async fn spawn_uploader(
     rx: Arc<RwLock<mpsc::Receiver<UploadJob>>>,
     client: Arc<aws_sdk_s3::Client>,
     is_ready: Arc<AtomicBool>,
+    signer: CoproSigner,
 ) -> Result<JoinHandle<()>, ExecutionError> {
     let op = move |pool, token| {
         let client = client.clone();
         let is_ready = is_ready.clone();
         let conf = conf.s3.clone();
         let rx = rx.clone();
+        let signer = signer.clone();
 
         async move {
-            run_uploader_loop(rx, token, client, is_ready, pool, conf)
+            run_uploader_loop(rx, token, client, is_ready, pool, conf, signer)
                 .await
                 .map_err(ServiceError::from)
         }
@@ -88,6 +94,7 @@ async fn run_uploader_loop(
     is_ready: Arc<AtomicBool>,
     pool: Pool<Postgres>,
     conf: S3Config,
+    signer: CoproSigner,
 ) -> Result<(), ExecutionError> {
     let mut ongoing_upload_tasks: Vec<JoinHandle<()>> = Vec::new();
     let max_concurrent_uploads = conf.max_concurrent_uploads as usize;
@@ -162,19 +169,24 @@ async fn run_uploader_loop(
                 let client = client.clone();
                 let conf = conf.clone();
                 let ready_flag = is_ready.clone();
+                let signer = signer.clone();
 
                 // Spawn a new task to upload the ciphertexts
                 let h = tokio::spawn(async move {
                     let s = item.otel.child_span("upload_s3");
-                    match upload_ciphertexts(trx, item, &client, &conf).instrument(error_span!("upload_s3")).await {
+                    match upload_ciphertexts(trx, item, &client, &conf, signer).instrument(error_span!("upload_s3")).await {
                         Ok(()) => {
                             telemetry::end_span(s);
                             AWS_UPLOAD_SUCCESS_COUNTER.inc();
                         }
                         Err(err) => {
-                            if let ExecutionError::S3TransientError(_) = err {
-                                ready_flag.store(false, Ordering::Release);
-                                info!(error = %err, "S3 setup is not ready, due to transient error");
+                            if let Some(exec_err) = err.downcast_ref::<ExecutionError>() {
+                                if let ExecutionError::S3TransientError(_) = exec_err {
+                                    ready_flag.store(false, Ordering::Release);
+                                    info!(error = %err, "S3 setup is not ready, due to transient error");
+                                } else {
+                                    error!(error = %err, "Failed to upload ciphertexts");
+                                }
                             } else {
                                 error!(error = %err, "Failed to upload ciphertexts");
                             }
@@ -205,8 +217,76 @@ async fn run_uploader_loop(
 }
 
 enum UploadResult {
-    CtType128((Vec<u8>, BoxedSpan)),
-    CtType64((Vec<u8>, BoxedSpan)),
+    CtType128(Vec<u8>),
+    CtType64(Vec<u8>),
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn upload_ct(
+    mut span: BoxedSpan,
+    client: Client,
+    bucket: String,
+    key: String,
+    sidecar: CiphertextSideCar,
+    format_as_str: String,
+    ct_bytes: Vec<u8>,
+    result: UploadResult,
+) -> anyhow::Result<UploadResult> {
+    // TODO: publish on both handle and digest (redirect)
+    telemetry::attribute(&mut span, "len", ct_bytes.len().to_string());
+    telemetry::attribute(&mut span, "format", format_as_str.to_owned());
+    let upload = client
+        .put_object()
+        .bucket(bucket.clone())
+        .metadata("Ct-Format", format_as_str)
+        .metadata("Uploaded-By", "sns-worker")
+        .metadata("Created-At", &sidecar.created_at)
+        .metadata("Key-Id", &sidecar.key_id)
+        .metadata("Transaction-Id", &sidecar.tx_hash)
+        .metadata("Handle", &sidecar.handle)
+        .metadata("Digest", &sidecar.digest)
+        .metadata("Signed", &sidecar.signed)
+        .metadata("Signer", &sidecar.signer)
+        .key(key)
+        .body(ByteStream::from(ct_bytes))
+        .send()
+        .await;
+    if let Err(err) = upload {
+        error!(error = %err, bucket, ?sidecar, "Failed to upload ct");
+        telemetry::end_span_with_err(span, err.to_string());
+        return Err(ExecutionError::S3TransientError(err.to_string()).into());
+    }
+    telemetry::end_span_with_timestamp(span, SystemTime::now());
+    Ok(result)
+}
+
+async fn upload_sidecar(
+    mut span: BoxedSpan,
+    client: Client,
+    bucket: String,
+    key: String,
+    sidecar: CiphertextSideCar,
+) -> anyhow::Result<()> {
+    telemetry::attribute(&mut span, "format", "sidecar/json".to_owned());
+    let result = client
+        .put_object()
+        .bucket(bucket.clone())
+        .metadata("Uploaded-By", "sns-worker")
+        .metadata("Transaction-Id", &sidecar.tx_hash) // for search
+        .metadata("Handle", &sidecar.handle) // for search
+        .metadata("Digest", &sidecar.digest) // for search
+        .key(format!("{key}.json"))
+        .body(ByteStream::from(sidecar.to_json_bytes()?))
+        .send()
+        .await;
+    // TODO: publish on both handle and digest
+    if let Err(err) = result {
+        error!(error = %err, bucket, ?sidecar, "Failed to upload ciphertext sidecar");
+        telemetry::end_span_with_err(span, err.to_string());
+        return Err(ExecutionError::S3TransientError(err.to_string()).into());
+    }
+    telemetry::end_span_with_timestamp(span, SystemTime::now());
+    Ok(())
 }
 
 /// Uploads both 128-bit bootstrapped ciphertext and regular ciphertext to S3
@@ -222,14 +302,18 @@ async fn upload_ciphertexts(
     task: HandleItem,
     client: &Client,
     conf: &S3Config,
-) -> Result<(), ExecutionError> {
+    signer: CoproSigner,
+) -> anyhow::Result<()> {
     let handle_as_hex: String = to_hex(&task.handle);
     info!(handle = handle_as_hex, "Received task");
 
     let mut jobs = vec![];
 
+    let key_id = task.key_id.clone();
+    let tx_hash = task.transaction_id.clone().unwrap_or_default();
     if !task.ct128.is_empty() && task.ct128.format() != Ciphertext128Format::Unknown {
         let ct128_bytes = task.ct128.bytes();
+        // TODO check if sign_message is more appropriate (EIP-191 format)
         let ct128_digest = compute_digest(ct128_bytes);
         info!(
             handle = handle_as_hex,
@@ -254,20 +338,45 @@ async fn upload_ciphertexts(
         telemetry::end_span(s);
 
         if !exists {
-            let mut span: BoxedSpan = task.otel.child_span("ct128_upload_s3");
-            telemetry::attribute(&mut span, "len", ct128_bytes.len().to_string());
-            telemetry::attribute(&mut span, "format", format_as_str.to_owned());
-
-            jobs.push((
-                client
-                    .put_object()
-                    .bucket(conf.bucket_ct128.clone())
-                    .metadata("Ct-Format", format_as_str)
-                    .key(key)
-                    .body(ByteStream::from(ct128_bytes.to_vec()))
-                    .send(),
-                UploadResult::CtType128((ct128_digest.clone(), span)),
-            ));
+            // TODO: check if sign_message is more appropriate (EIP-191 format)
+            // TODO: check if the chain_id is needed (in sidecar + metadata + signing)
+            let sidecar = CiphertextSideCar::new(
+                &key_id,
+                &tx_hash,
+                &task.handle,
+                &ct128_digest,
+                &format_as_str,
+                &signer,
+            )
+            .await?;
+            let bucket = &conf.bucket_ct128;
+            let span: BoxedSpan = task.otel.child_span("ct128_upload_s3");
+            let result = UploadResult::CtType128(ct128_digest);
+            let upload_ct = upload_ct(
+                span,
+                client.clone(),
+                bucket.clone(),
+                key.clone(),
+                sidecar.clone(),
+                format_as_str.clone(),
+                ct128_bytes.to_vec(),
+                result,
+            );
+            let span: BoxedSpan = task.otel.child_span("ct128_sidecar_upload_s3");
+            let upload_sidecar = upload_sidecar(
+                span,
+                client.clone(),
+                bucket.clone(),
+                key.clone(),
+                sidecar.clone(),
+            );
+            let grouped_upload = tokio::spawn(async move {
+                upload_sidecar.await?;
+                // if ct upload failed, having only the side car is ok
+                // everything will be overritten on the next upload attempt
+                upload_ct.await
+            });
+            jobs.push(grouped_upload);
         } else {
             info!(
                 handle = handle_as_hex,
@@ -292,6 +401,8 @@ async fn upload_ciphertexts(
 
         let ct64_digest = compute_digest(ct64_compressed);
 
+        let format_as_str = "ct64_compressed".to_string();
+
         let key = if cfg!(feature = "test_s3_use_handle_as_key") {
             hex::encode(&task.handle)
         } else {
@@ -306,18 +417,43 @@ async fn upload_ciphertexts(
         telemetry::end_span(s);
 
         if !exists {
-            let mut span = task.otel.child_span("ct64_upload_s3");
-            telemetry::attribute(&mut span, "len", ct64_compressed.len().to_string());
-
-            jobs.push((
-                client
-                    .put_object()
-                    .bucket(conf.bucket_ct64.clone())
-                    .key(key)
-                    .body(ByteStream::from(ct64_compressed.clone()))
-                    .send(),
-                UploadResult::CtType64((ct64_digest.clone(), span)),
-            ));
+            let sidecar = CiphertextSideCar::new(
+                &key_id,
+                &tx_hash,
+                &task.handle,
+                &ct64_digest,
+                &format_as_str,
+                &signer,
+            )
+            .await?;
+            let bucket = &conf.bucket_ct64;
+            let span: BoxedSpan = task.otel.child_span("ct64_upload_s3");
+            let result = UploadResult::CtType64(ct64_digest);
+            let upload_ct = upload_ct(
+                span,
+                client.clone(),
+                bucket.clone(),
+                key.clone(),
+                sidecar.clone(),
+                format_as_str.clone(),
+                ct64_compressed.clone(),
+                result,
+            );
+            let span: BoxedSpan = task.otel.child_span("ct64_sidecar_upload_s3");
+            let upload_sidecar = upload_sidecar(
+                span,
+                client.clone(),
+                bucket.clone(),
+                key.clone(),
+                sidecar.clone(),
+            );
+            let grouped_upload = tokio::spawn(async move {
+                upload_sidecar.await?;
+                // if ct upload failed, having only the side car is ok
+                // everything will be overritten on the next upload attempt
+                upload_ct.await
+            });
+            jobs.push(grouped_upload);
         } else {
             info!(
                 handle = handle_as_hex,
@@ -331,48 +467,38 @@ async fn upload_ciphertexts(
         }
     }
 
-    // Execute all uploads and collect results with their IDs
-    let results: Vec<(Result<_, _>, UploadResult, SystemTime)> = join_all(
-        jobs.into_iter()
-            .map(|(fut, upload)| async move { (fut.await, upload, SystemTime::now()) }),
-    )
-    .await;
+    if jobs.is_empty() {
+        trx.commit().await?; // Nothing to upload, but db updates to commit
+        return Ok(());
+    }
 
-    let mut transient_error: Option<ExecutionError> = None;
+    let mut transient_error = anyhow::Ok(());
+    let mut successful_uploads = 0;
 
-    for (ct_variant, result, finish_time) in results {
+    // Wait all uploads results
+    for result in join_all(jobs).await {
         match result {
-            UploadResult::CtType128((digest, span)) => {
-                if let Err(err) = ct_variant {
-                    error!(
-                        error = %err,
-                        handle = handle_as_hex,
-                        "Failed to upload ct128",
-                    );
-
-                    telemetry::end_span_with_err(span, err.to_string());
-                    transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
-                } else {
-                    task.update_ct128_uploaded(&mut trx, digest).await?;
-                    telemetry::end_span_with_timestamp(span, finish_time);
-                }
+            Ok(Ok(UploadResult::CtType128(digest))) => {
+                successful_uploads += 1;
+                task.update_ct128_uploaded(&mut trx, digest).await?
             }
-            UploadResult::CtType64((digest, span)) => {
-                if let Err(err) = ct_variant {
-                    error!(
-                        error = %err,
-                        handle = handle_as_hex,
-                        "Failed to upload ct64"
-                    );
-
-                    telemetry::end_span_with_err(span, err.to_string());
-                    transient_error = Some(ExecutionError::S3TransientError(err.to_string()));
-                } else {
-                    task.update_ct64_uploaded(&mut trx, digest).await?;
-                    telemetry::end_span_with_timestamp(span, finish_time);
-                }
+            Ok(Ok(UploadResult::CtType64(digest))) => {
+                successful_uploads += 1;
+                task.update_ct64_uploaded(&mut trx, digest).await?
+            }
+            Ok(Err(err)) => {
+                // already logged
+                transient_error = Err(ExecutionError::S3TransientError(err.to_string()).into());
+            }
+            Err(err) => {
+                transient_error = Err(ExecutionError::InternalError(err.to_string()).into());
+                error!(error = %err, handle = handle_as_hex, "Upload task fail");
             }
         }
+    }
+
+    if successful_uploads == 0 {
+        anyhow::bail!("No successful uploads for handle {}", handle_as_hex);
     }
 
     sqlx::query("SELECT pg_notify($1, '')")
@@ -380,9 +506,10 @@ async fn upload_ciphertexts(
         .execute(trx.as_mut())
         .await?;
 
+    // db is updated only on successful cases
     trx.commit().await?;
 
-    transient_error.map_or(Ok(()), Err)
+    transient_error
 }
 
 pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
@@ -483,7 +610,9 @@ async fn fetch_pending_uploads(
         };
 
         if !ct64_compressed.is_empty() || !is_ct128_empty {
+            let key_id = fetch_decrypt_key_id_from_pool(row.tenant_id, db_pool).await?;
             let item = HandleItem {
+                key_id,
                 tenant_id: row.tenant_id,
                 handle: handle.clone(),
                 ct64_compressed,
@@ -494,6 +623,12 @@ async fn fetch_pending_uploads(
 
             // Instruct the uploader to acquire DB lock when processing the item
             jobs.push(UploadJob::DatabaseLock(item));
+        } else {
+            // This should not happen as we are fetching rows with NULL ct64 or ct128
+            error!(
+                handle = hex::encode(&handle),
+                "Both ciphertext and ciphertext128 are empty, skipping"
+            );
         }
     }
 

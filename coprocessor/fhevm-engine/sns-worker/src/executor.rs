@@ -23,6 +23,8 @@ use rayon::prelude::*;
 use sqlx::postgres::PgListener;
 use sqlx::Pool;
 use sqlx::{PgPool, Postgres, Row, Transaction};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -419,6 +421,41 @@ async fn fetch_and_execute_sns_tasks(
     Ok((maybe_remaining, tasks_processed))
 }
 
+pub async fn fetch_decrypt_key_id(
+    tenant_id: i32,
+    tx: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<Vec<u8>> {
+    let record = sqlx::query!(
+        "
+        SELECT key_id
+        FROM tenants
+        WHERE tenant_id = $1;
+        ",
+        tenant_id
+    )
+    .fetch_optional(tx.as_mut())
+    .await?;
+
+    if let Some(rec) = record {
+        if let Some(key_id) = rec.key_id {
+            return Ok(key_id);
+        }
+        anyhow::bail!("Empty Key ID for Tenant ID {}", tenant_id);
+    } else {
+        anyhow::bail!("Tenant ID {} not found", tenant_id);
+    }
+}
+
+pub async fn fetch_decrypt_key_id_from_pool(
+    tenant_id: i32,
+    pool: &PgPool,
+) -> anyhow::Result<Vec<u8>> {
+    let mut tx = pool.begin().await?;
+    let key_id = fetch_decrypt_key_id(tenant_id, &mut tx).await?;
+    tx.commit().await?;
+    Ok(key_id)
+}
+
 /// Queries the database for a fixed number of tasks.
 pub async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
@@ -453,6 +490,15 @@ pub async fn query_sns_tasks(
         return Ok(None);
     }
 
+    let mut keys_by_tenant_id = HashMap::new();
+    for record in records.iter() {
+        let tenant_id: i32 = record.try_get("tenant_id")?;
+        if let Entry::Vacant(e) = keys_by_tenant_id.entry(tenant_id) {
+            let key_id = fetch_decrypt_key_id(tenant_id, db_txn).await?;
+            e.insert(key_id);
+        }
+    }
+
     let t = telemetry::tracer_with_start_time("db_fetch_tasks", start_time);
     t.set_attribute("count", records.len().to_string());
     t.end();
@@ -465,9 +511,16 @@ pub async fn query_sns_tasks(
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
+            let key_id = keys_by_tenant_id.get(&tenant_id).cloned().ok_or_else(|| {
+                ExecutionError::InternalError(format!(
+                    "Key ID not found in map for tenant {}",
+                    tenant_id
+                ))
+            })?;
 
             Ok(HandleItem {
                 tenant_id,
+                key_id,
                 handle: handle.clone(),
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed

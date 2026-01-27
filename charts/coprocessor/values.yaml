@@ -834,6 +834,10 @@ snsWorker:
     # - --pg-auto-explain-with-min-duration="30s"
     # - --keys-file-path
 
+    # New in v0.11
+    - --signer-type=private-key
+    - --private-key=$(TX_SENDER_PRIVATE_KEY)
+
   # Service ports configuration
   ports:
     metrics: 9100

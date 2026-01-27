@@ -4,6 +4,8 @@ use crate::{
     squash_noise::safe_deserialize,
     Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
 };
+use alloy::node_bindings::Anvil;
+use alloy::signers::local::PrivateKeySigner;
 use anyhow::{anyhow, Ok};
 use aws_config::BehaviorVersion;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
@@ -235,7 +237,7 @@ async fn run_batch_computations(
 async fn test_lifo_mode() {
     init_tracing();
 
-    let test_instance = setup_test_db(ImportMode::None)
+    let test_instance = setup_test_db(ImportMode::WithAllKeys)
         .await
         .expect("valid db instance");
 
@@ -265,26 +267,32 @@ async fn test_lifo_mode() {
     }
 
     let mut trx = pool.begin().await.unwrap();
-    if let Result::Ok(Some(tasks)) = query_sns_tasks(&mut trx, BATCH_SIZE as u32, Order::Desc).await
-    {
+
+    let tasks = query_sns_tasks(&mut trx, BATCH_SIZE as u32, Order::Desc).await;
+    let tasks = match tasks {
+        Result::Ok(Some(tasks)) => tasks,
+        Result::Ok(None) => {
+            panic!("No tasks found in Desc order");
+        }
+        Result::Err(err) => {
+            panic!("Error querying SnS tasks: {:?}", err);
+        }
+    };
+    assert!(
+        tasks.len() == BATCH_SIZE,
+        "Expected {} tasks, got {}",
+        BATCH_SIZE,
+        tasks.len()
+    );
+
+    // print handles of tasks
+    for (i, task) in tasks.iter().enumerate() {
         assert!(
-            tasks.len() == BATCH_SIZE,
-            "Expected {} tasks, got {}",
-            BATCH_SIZE,
-            tasks.len()
+            task.handle == [(HANDLES_COUNT - (i + 1)) as u8; 32],
+            "Task (desc) handle does not match expected value"
         );
 
-        // print handles of tasks
-        for (i, task) in tasks.iter().enumerate() {
-            assert!(
-                task.handle == [(HANDLES_COUNT - (i + 1)) as u8; 32],
-                "Task (desc) handle does not match expected value"
-            );
-
-            info!("Desc Task handle: {}", hex::encode(&task.handle));
-        }
-    } else {
-        panic!("No tasks found in Desc order");
+        info!("Desc Task handle: {}", hex::encode(&task.handle));
     }
 
     let mut trx = pool.begin().await.unwrap();
@@ -416,6 +424,7 @@ struct TestEnvironment {
     pub s3_instance: Option<Arc<LocalstackContainer>>, // If None, the global LocalStack is used
     pub s3_client: aws_sdk_s3::Client,
     pub conf: Config,
+    pub private_key: Vec<u8>,
 }
 
 async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
@@ -446,7 +455,11 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
     };
 
     let token = db_instance.parent_token.child_token();
-    let config: Config = conf.clone();
+    let mut config: Config = conf.clone();
+    let anvil = Anvil::new().block_time(1).try_spawn()?;
+    let signer = PrivateKeySigner::from_signing_key(anvil.keys()[0].clone().into());
+    let private_key = signer.to_bytes().to_vec();
+    config.private_key = Some(hex::encode(&private_key));
 
     let client_key: Option<ClientKey> = fetch_client_key(&pool, &TENANT_API_KEY.to_owned()).await?;
 
@@ -472,6 +485,7 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
         s3_instance,
         s3_client,
         conf,
+        private_key,
     })
 }
 
@@ -788,5 +802,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         schedule_policy,
         pg_auto_explain_with_min_duration: Some(Duration::from_secs(1)),
         metrics: Default::default(),
+        private_key: None,
+        signer_type: fhevm_engine_common::types::SignerType::PrivateKey,
     }
 }
