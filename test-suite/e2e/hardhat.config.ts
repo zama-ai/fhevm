@@ -119,7 +119,9 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
         (vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined) ??
         defaultRpcUrl;
       if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
-        console.warn(`WARN: SEPOLIA_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
+        console.warn(
+          `WARN: SEPOLIA_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
+        );
       }
       break;
     case 'mainnet':
@@ -130,7 +132,9 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
         (vars.has('RPC_URL') ? vars.get('RPC_URL') : undefined) ??
         defaultRpcUrl;
       if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
-        console.warn(`WARN: MAINNET_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
+        console.warn(
+          `WARN: MAINNET_ETH_RPC_URL or RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`,
+        );
       }
       break;
     case 'localCoprocessor':
