@@ -144,79 +144,57 @@ export const userDecryptSingleHandle = async (
   return decryptedValue;
 };
 
-export const delegatedUserDecryptSingleHandle = async (params: {
-  instance: any;
-  handle: string;
-  contractAddress: string;
-  delegate: Signer;
-  delegatorAddress: string;
-  delegateKmsPrivateKey: string;
-  delegateKmsPublicKey: string;
-}): Promise<bigint | boolean | string> => {
-  const HandleContractPairs = [
+export const delegatedUserDecryptSingleHandle = async (
+  instance: any,
+  handle: string,
+  contractAddress: string,
+  delegatorAddress: string,
+  delegateAddress: string,
+  signer: Signer,
+  delegatePrivateKey: string,
+  delegatePublicKey: string,
+): Promise<bigint | boolean | string> => {
+  const handleContractPairs = [
     {
-      handle: params.handle,
-      contractAddress: params.contractAddress,
+      handle,
+      contractAddress,
     },
   ];
-  const startTimeStamp = Math.floor(Date.now() / 1000).toString();
-  const durationDays = '10'; // String for consistency
-  const contractAddresses = [params.contractAddress];
-  const instance = params.instance;
-  const delegate = params.delegate;
-  const delegateAddress = await delegate.getAddress();
+  const startTimeStamp = Math.floor(Date.now() / 1000);
+  const durationDays = 10;
+  const contractAddresses = [contractAddress];
 
   // The `delegate` creates a EIP712 with the `delegator` address
-  const eip712 = instance.createEIP712(
-    params.delegateKmsPublicKey,
+  const eip712 = instance.createDelegatedUserDecryptEIP712(
+    delegatePublicKey,
     contractAddresses,
+    delegatorAddress,
     startTimeStamp,
     durationDays,
-    // ============================================
-    // Todo: uncomment this line when ready!
-    //
-    // params.delegatorAddress,
-    //
-    // ============================================
   );
 
   // Update the signing to match the new primaryType
-  const delegateSignature = await delegate.signTypedData(
+  const delegateSignature = await signer.signTypedData(
     eip712.domain,
     {
-      // ============================================
-      // Todo: uncomment this line when ready!
-      //
-      // DelegatedUserDecryptRequestVerification: eip712.types.DelegatedUserDecryptRequestVerification,
-      //
-      // ============================================
-      //
-      // Remove This line when ready!
-      UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification,
-      //
-      // ============================================
+      DelegatedUserDecryptRequestVerification: eip712.types.DelegatedUserDecryptRequestVerification,
     },
     eip712.message,
   );
 
-  // ========================================================
-  //
-  // Todo: Call the delegate user decrypt function instead!
-  //
-  // ========================================================
-  const result = await instance.userDecrypt(
-    HandleContractPairs,
-    params.delegateKmsPrivateKey,
-    params.delegateKmsPublicKey,
+  const result = await instance.delegatedUserDecrypt(
+    handleContractPairs,
+    delegatePrivateKey,
+    delegatePublicKey,
     delegateSignature.replace('0x', ''),
     contractAddresses,
+    delegatorAddress,
     delegateAddress,
     startTimeStamp,
     durationDays,
   );
 
-  const decryptedValue = result[params.handle];
-  return decryptedValue;
+  return result[handle];
 };
 
 const abi = [

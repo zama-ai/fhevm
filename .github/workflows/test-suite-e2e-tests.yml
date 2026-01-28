@@ -190,6 +190,11 @@ jobs:
         run: |
           ./fhevm-cli test user-decryption
 
+      - name: Delegated User Decryption test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test delegated-user-decryption
+
       - name: ERC20 test
         working-directory: test-suite/fhevm
         run: |
@@ -204,11 +209,6 @@ jobs:
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test public-decrypt-http-mixed
-
-      - name: Delegate User Decryption (partial test)
-        working-directory: test-suite/fhevm
-        run: |
-          ./fhevm-cli test delegate-user-decryption
 
       - name: Random operators test (subset)
         working-directory: test-suite/fhevm
