@@ -15,7 +15,6 @@ pub(crate) mod sks_key;
 
 pub(crate) type ChainId = u64;
 pub(crate) type KeyId = Uint<256, 4>;
-pub(crate) type TenantId = u64;
 
 #[derive(Clone, Copy, Debug)]
 pub enum KeyType {
