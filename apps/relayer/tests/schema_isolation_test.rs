@@ -39,14 +39,14 @@ async fn test_concurrent_schema_isolation_1() {
         .expect("Failed to connect");
 
     // Insert test data - this should not affect other tests
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO input_proof_req (ext_job_id, int_job_id, req, req_status)
         VALUES ($1, $2, '{}', 'processing')
         "#,
-        uuid::Uuid::new_v4(),
-        vec![0u8; 32] as Vec<u8>
     )
+    .bind(uuid::Uuid::new_v4())
+    .bind(vec![0u8; 32])
     .execute(&pool)
     .await
     .expect("Insert should succeed");

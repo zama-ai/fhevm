@@ -1,11 +1,18 @@
-use crate::core::errors::EventProcessingError;
-use crate::core::event::UserDecryptRequest;
-use crate::gateway::arbitrum::bindings::Decryption::CtHandleContractPair;
-use crate::gateway::arbitrum::bindings::IDecryption::{ContractsInfo, RequestValidity};
-use crate::gateway::arbitrum::bindings::{Decryption, InputVerification};
-use alloy::hex;
-use alloy::primitives::{Address, Bytes, FixedBytes, U256};
-use alloy::sol_types::SolCall;
+use crate::core::{
+    errors::EventProcessingError,
+    event::{DelegatedUserDecryptRequest, UserDecryptRequest},
+};
+use crate::gateway::arbitrum::bindings::{
+    Decryption,
+    Decryption::CtHandleContractPair,
+    IDecryption::{ContractsInfo, DelegationAccounts, RequestValidity},
+    InputVerification,
+};
+use alloy::{
+    hex,
+    primitives::{Address, Bytes, FixedBytes, U256},
+    sol_types::SolCall,
+};
 use tracing::info;
 
 pub struct ComputeCalldata;
@@ -70,6 +77,56 @@ impl ComputeCalldata {
 
         info!(
             "UserDecryptionRequest calldata: 0x{}",
+            hex::encode(&calldata)
+        );
+
+        Ok(Bytes::from(calldata))
+    }
+
+    /// Computes calldata for the delegated user decryption request
+    pub fn delegated_user_decryption_req(
+        delegated_user_decrypt_request: DelegatedUserDecryptRequest,
+    ) -> Result<Bytes, EventProcessingError> {
+        let ct_handle_contract_pairs = delegated_user_decrypt_request
+            .ct_handle_contract_pairs
+            .iter()
+            .map(|d| CtHandleContractPair {
+                ctHandle: d.ct_handle.into(),
+                contractAddress: d.contract_address,
+            })
+            .collect::<Vec<_>>();
+
+        let contracts_info = ContractsInfo {
+            addresses: delegated_user_decrypt_request.contract_addresses,
+            chainId: U256::from(delegated_user_decrypt_request.contracts_chain_id),
+        };
+
+        let validity = RequestValidity {
+            startTimestamp: delegated_user_decrypt_request.start_timestamp,
+            durationDays: delegated_user_decrypt_request.duration_days,
+        };
+
+        let delegation_accounts = DelegationAccounts {
+            delegatorAddress: delegated_user_decrypt_request.delegator_address,
+            delegateAddress: delegated_user_decrypt_request.delegate_address,
+        };
+
+        // Create the delegatedUserDecryptionRequest call
+        let call = Decryption::delegatedUserDecryptionRequestCall::new((
+            ct_handle_contract_pairs,
+            validity,
+            delegation_accounts,
+            contracts_info,
+            delegated_user_decrypt_request.public_key,
+            delegated_user_decrypt_request.signature,
+            delegated_user_decrypt_request.extra_data,
+        ));
+
+        // Encode the call to get the calldata
+        let calldata = Decryption::delegatedUserDecryptionRequestCall::abi_encode(&call);
+
+        info!(
+            "DelegatedUserDecryptionRequest calldata: 0x{}",
             hex::encode(&calldata)
         );
 

@@ -2391,7 +2391,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "dashmap",
- "fhevm_gateway_bindings",
+ "fhevm_gateway_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?rev=9c615a75a5467b70b405b72de2cab701df8a0116)",
  "futures",
  "futures-util",
  "hex",
@@ -2499,7 +2499,7 @@ dependencies = [
  "derivative",
  "ethereum_rpc_mock",
  "eyre",
- "fhevm_gateway_bindings",
+ "fhevm_gateway_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.10.3)",
  "futures",
  "governor",
  "hex",
@@ -2535,6 +2535,15 @@ dependencies = [
  "utoipa-scalar",
  "uuid",
  "validator",
+]
+
+[[package]]
+name = "fhevm_gateway_bindings"
+version = "0.1.0-rc14"
+source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.10.3#edb4c81c4d45f557faab569055957dd21991223d"
+dependencies = [
+ "alloy",
+ "serde",
 ]
 
 [[package]]

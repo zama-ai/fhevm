@@ -7,23 +7,27 @@ use super::super::types::user_decrypt::{
 };
 use crate::core::errors::TIMEOUT_REASON_MISSING_MSG;
 use crate::core::event::{
-    ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
+    ApiVersion, DelegatedUserDecryptEventData, DelegatedUserDecryptRequest, RelayerEvent,
+    RelayerEventData, UserDecryptEventData, UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
 use crate::gateway::arbitrum::transaction::tx_throttler::{GatewayTxTask, TxThrottlingSender};
 use crate::gateway::readiness_check::readiness_throttler::{
-    ReadinessSender, UserDecryptReadinessTask,
+    DelegatedUserDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
 };
 use crate::http::endpoints::v1::types::user_decrypt::UserDecryptRequestJson;
+use crate::http::endpoints::v2::types::DelegatedUserDecryptRequestJson;
 use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
-use crate::http::utils::user_decrypt_bounce_check;
+use crate::http::utils::{delegated_user_decrypt_bounce_check, user_decrypt_bounce_check};
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::{ContentHasher, Orchestrator};
-use crate::store::sql::models::req_status_enum_model::ReqStatus;
+use crate::store::sql::models::{
+    req_status_enum_model::ReqStatus, user_decrypt_req_model::UserDecryptReqData,
+};
 use crate::store::sql::repositories::user_decrypt_repo::{
     UserDecryptInsertResult, UserDecryptRepository,
 };
@@ -93,6 +97,7 @@ where
     retry_after_seconds: u32,
     tx_throttler: TxThrottlingSender<GatewayTxTask>,
     user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+    delegated_user_decrypt_readiness_throttler: ReadinessSender<DelegatedUserDecryptReadinessTask>,
     retry_after_state: Arc<RetryAfterState>,
 }
 
@@ -108,6 +113,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         retry_after_seconds: u32,
         tx_throttler: TxThrottlingSender<GatewayTxTask>,
         user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+        delegated_user_decrypt_readiness_throttler: ReadinessSender<
+            DelegatedUserDecryptReadinessTask,
+        >,
         retry_after_state: Arc<RetryAfterState>,
     ) -> Self {
         Self {
@@ -118,6 +126,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             retry_after_seconds,
             tx_throttler,
             user_decrypt_readiness_throttler,
+            delegated_user_decrypt_readiness_throttler,
             retry_after_state,
         }
     }
@@ -133,7 +142,21 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 }),
             )
             .route(
+                "/v2/delegated-user-decrypt",
+                axum::routing::post({
+                    let handler = self.clone();
+                    move |req| async move { handler.delegated_user_decrypt_post_v2(req).await }
+                }),
+            )
+            .route(
                 "/v2/user-decrypt/{job_id}",
+                axum::routing::get({
+                    let handler = self.clone();
+                    move |path| async move { handler.user_decrypt_get_v2(path).await }
+                }),
+            )
+            .route(
+                "/v2/delegated-user-decrypt/{job_id}",
                 axum::routing::get({
                     let handler = self;
                     move |path| async move { handler.user_decrypt_get_v2(path).await }
@@ -148,6 +171,21 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             HttpMethod::Post,
             HttpApiVersion::V2,
             async move { self.handle_post(req, &()).await },
+        )
+        .await
+        .into_response()
+    }
+
+    /// POST /v2/delegated-user-decrypt - Submit request and get reference ID
+    pub async fn delegated_user_decrypt_post_v2(
+        &self,
+        req: Request<axum::body::Body>,
+    ) -> impl IntoResponse {
+        http_metrics::with_http_metrics(
+            HttpEndpoint::DelegatedUserDecrypt,
+            HttpMethod::Post,
+            HttpApiVersion::V2,
+            async move { self.handle_delegated_user_decrypt_post(req, &()).await },
         )
         .await
         .into_response()
@@ -250,12 +288,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
         let proposed_ext_job_id = self.orchestrator.new_ext_job_id();
 
+        let user_decrypt_request_data =
+            UserDecryptReqData::UserDecrypt(user_decrypt_request.clone());
+
         let insert_result = match self
             .user_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 proposed_ext_job_id,
                 int_job_id.as_ref(),
-                user_decrypt_request.clone(),
+                user_decrypt_request_data,
             )
             .await
         {
@@ -345,6 +386,217 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             ext_job_id = %assigned_ext_job_id,
             retry_after_secs = retry_after,
             "Computed retry-after for user decrypt POST"
+        );
+
+        let response = UserDecryptPostResponseJson {
+            status: "queued".to_string(),
+            request_id: request_id_for_response.to_string(),
+            result: UserDecryptQueuedResult {
+                job_id: assigned_ext_job_id.to_string(),
+            },
+        };
+
+        // Add Retry-After header with the dynamically computed retry value
+        (
+            StatusCode::ACCEPTED,
+            [(header::RETRY_AFTER, retry_after.to_string())],
+            Json(response),
+        )
+            .into_response()
+    }
+
+    #[instrument(
+        name = "handle-delegated-user-decrypt-post",
+        skip_all,
+        fields(request_id)
+    )]
+    pub async fn handle_delegated_user_decrypt_post<S>(
+        &self,
+        req: Request<axum::body::Body>,
+        _state: &S,
+    ) -> impl IntoResponse
+    where
+        S: Send + Sync,
+    {
+        let request_id = self.orchestrator.new_internal_request_id();
+        let _span =
+            span!(Level::INFO, "handle-delegated-user-decrypt-post-req", request_id = %request_id);
+
+        info!(
+            "Handling delegated user decryption POST request, generated request id: {}",
+            request_id
+        );
+
+        let body = match AxumBytes::from_request(req, _state).await {
+            Ok(body) => body,
+            Err(_) => {
+                let mut response = AppResponse::<()>::request_error("Failed to read request body");
+                response.set_request_id(&request_id.to_string());
+                return response.into_response();
+            }
+        };
+
+        let delegated_user_decrypt_request: DelegatedUserDecryptRequest = match parse_and_validate::<
+            DelegatedUserDecryptRequestJson,
+            DelegatedUserDecryptRequest,
+        >(&body)
+        {
+            Ok(request) => request,
+            Err(parse_error) => {
+                let error_response: AppResponse<()> =
+                    parse_error.to_app_response(&request_id.to_string());
+                return error_response.into_response();
+            }
+        };
+
+        info!("Successfully parsed and validated delegated user decryption request.");
+
+        let int_job_id: JobId = delegated_user_decrypt_request.content_hash().into();
+
+        // Queue full Bouncing logic.
+        let active_external_job_id = self
+            .user_decrypt_repo
+            .find_active_ext_ref_by_int_job_id(int_job_id.as_ref())
+            .await;
+
+        match active_external_job_id {
+            Ok(res) => {
+                if res.is_none() {
+                    // In this case, we check queue full and bounce the request with 429
+                    let full = delegated_user_decrypt_bounce_check(
+                        self.tx_throttler.clone(),
+                        self.delegated_user_decrypt_readiness_throttler.clone(),
+                    )
+                    .await;
+                    if full {
+                        info!("Delegated user decryption v2 is bounced by full queue.");
+                        return AppResponse::<()>::protocol_overloaded(
+                            "Relayer is currently processing too many requests.",
+                            &self.retry_after_seconds.to_string(),
+                            &request_id.to_string(),
+                        )
+                        .into_response();
+                    }
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Failed to insert/get delegated user decryption into/from database: {}",
+                    e
+                );
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
+        }
+
+        let proposed_ext_job_id = self.orchestrator.new_ext_job_id();
+
+        let delegated_user_decrypt_request_data =
+            UserDecryptReqData::DelegatedUserDecrypt(delegated_user_decrypt_request.clone());
+
+        let insert_result = match self
+            .user_decrypt_repo
+            .insert_data_on_conflict_and_get_ext_job_id(
+                proposed_ext_job_id,
+                &int_job_id[..],
+                delegated_user_decrypt_request_data,
+            )
+            .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                error!(
+                    "Failed to insert/get delegated user decryption into/from database: {}",
+                    e
+                );
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
+        };
+
+        // Extract ext_job_id from any variant
+        let assigned_ext_job_id = match &insert_result {
+            UserDecryptInsertResult::Inserted { ext_job_id } => *ext_job_id,
+            UserDecryptInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
+            UserDecryptInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
+        };
+
+        // Only dispatch event for new requests (deduplication)
+        if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
+            let request_data = DelegatedUserDecryptEventData::ReqRcvdFromUser {
+                decrypt_request: delegated_user_decrypt_request,
+            };
+            let event = RelayerEvent::new(
+                int_job_id,
+                self.api_version,
+                RelayerEventData::DelegatedUserDecrypt(request_data),
+            );
+
+            if let Err(e) = self.orchestrator.dispatch_event(event).await {
+                error!(
+                    "Failed to dispatch DelegatedUserDecrypt event to orchestrator: {:?}",
+                    e
+                );
+                return AppResponse::<()>::internal_server_error_with_request_id(
+                    request_id.to_string(),
+                )
+                .into_response();
+            }
+            info!(
+                step = %UserDecryptStep::Queued,
+                req_id = %request_id,
+                ext_job_id = %assigned_ext_job_id,
+                int_job_id = ?int_job_id,
+                "Dispatched DelegatedUserDecrypt event to orchestrator"
+            );
+        } else {
+            info!(
+                step = %UserDecryptStep::DedupHit,
+                req_id = %request_id,
+                ext_job_id = %assigned_ext_job_id,
+                int_job_id = ?int_job_id,
+                "Duplicate delegated user decryption request detected"
+            );
+        }
+
+        // Generate a new request_id for this HTTP request (not stored)
+        let request_id_for_response = uuid::Uuid::new_v4();
+
+        // Compute dynamic retry-after based on dual queue state
+        let readiness_queue_info = self
+            .delegated_user_decrypt_readiness_throttler
+            .get_queue_info()
+            .await;
+        let tx_queue_info = self.tx_throttler.get_queue_info().await;
+        let decrypt_queue_info = DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
+        let retry_after = self
+            .retry_after_state
+            .compute_for_decrypt_post(
+                &decrypt_queue_info,
+                true, // is_user_decrypt
+            )
+            .await;
+
+        // Record raw ETA for POST histogram metrics
+        let raw_eta_ms = self
+            .retry_after_state
+            .compute_raw_eta_ms_for_decrypt(&decrypt_queue_info, true)
+            .await;
+        observe_raw_eta_seconds(
+            RetryAfterRequestType::UserDecrypt,
+            raw_eta_ms as f64 / 1000.0,
+        );
+
+        info!(
+            req_id = %request_id_for_response,
+            int_job_id = ?int_job_id,
+            ext_job_id = %assigned_ext_job_id,
+            retry_after_secs = retry_after,
+            "Computed retry-after for delegated user decrypt POST"
         );
 
         let response = UserDecryptPostResponseJson {

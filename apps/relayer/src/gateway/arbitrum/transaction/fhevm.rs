@@ -5,7 +5,10 @@ use crate::gateway::arbitrum::bindings::{
     MultichainACL::{self, MultichainACLErrors},
 };
 use alloy::contract::Error;
-use fhevm_gateway_bindings::gateway_config::GatewayConfig::{self, GatewayConfigErrors};
+use fhevm_gateway_bindings::{
+    gateway_config::GatewayConfig::{self, GatewayConfigErrors},
+    multichain_acl_checks::MultichainACLChecks::{self, MultichainACLChecksErrors},
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -14,6 +17,7 @@ pub enum FhevmError {
     DecryptionError(DecryptionErrors),
     InputError(InputVerificationErrors),
     AclError(MultichainACLErrors),
+    AclChecksError(MultichainACLChecksErrors),
     CiphertextError(CiphertextCommitsErrors),
     GenericError,
 }
@@ -154,11 +158,6 @@ pub fn parse_fhevm_error(err: &Error) -> FhevmError {
     if let Some(value) = err.as_decoded_error::<Decryption::UnsupportedFHEType>() {
         return FhevmError::DecryptionError(DecryptionErrors::UnsupportedFHEType(value));
     }
-    if let Some(value) = err.as_decoded_error::<Decryption::AccountNotDelegatedForContracts>() {
-        return FhevmError::DecryptionError(DecryptionErrors::AccountNotDelegatedForContracts(
-            value,
-        ));
-    }
     if let Some(value) = err.as_decoded_error::<Decryption::UserAddressInContractAddresses>() {
         return FhevmError::DecryptionError(DecryptionErrors::UserAddressInContractAddresses(
             value,
@@ -270,8 +269,12 @@ pub fn parse_fhevm_error(err: &Error) -> FhevmError {
             value,
         ));
     }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::CoprocessorAlreadyDelegated>() {
-        return FhevmError::AclError(MultichainACLErrors::CoprocessorAlreadyDelegated(value));
+    if let Some(value) =
+        err.as_decoded_error::<MultichainACL::CoprocessorAlreadyDelegatedUserDecryption>()
+    {
+        return FhevmError::AclError(
+            MultichainACLErrors::CoprocessorAlreadyDelegatedUserDecryption(value),
+        );
     }
     if let Some(value) = err.as_decoded_error::<MultichainACL::ERC1967InvalidImplementation>() {
         return FhevmError::AclError(MultichainACLErrors::ERC1967InvalidImplementation(value));
@@ -328,6 +331,11 @@ pub fn parse_fhevm_error(err: &Error) -> FhevmError {
     }
     if let Some(value) = err.as_decoded_error::<MultichainACL::UUPSUnsupportedProxiableUUID>() {
         return FhevmError::AclError(MultichainACLErrors::UUPSUnsupportedProxiableUUID(value));
+    }
+    if let Some(value) = err.as_decoded_error::<MultichainACLChecks::UserDecryptionNotDelegated>() {
+        return FhevmError::AclChecksError(MultichainACLChecksErrors::UserDecryptionNotDelegated(
+            value,
+        ));
     }
 
     // CiphertextCommits Errors
@@ -416,6 +424,7 @@ impl Clone for FhevmError {
             }
             FhevmError::InputError(_) => FhevmError::GenericError,
             FhevmError::AclError(_) => FhevmError::GenericError,
+            FhevmError::AclChecksError(_) => FhevmError::GenericError,
             FhevmError::CiphertextError(_) => FhevmError::GenericError,
             FhevmError::GenericError => FhevmError::GenericError,
         }

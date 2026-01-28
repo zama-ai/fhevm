@@ -102,6 +102,7 @@ pub enum HttpEndpoint {
     InputProof,
     PublicDecrypt,
     UserDecrypt,
+    DelegatedUserDecrypt,
     KeyUrl,
     Unknown,
 }
@@ -113,6 +114,7 @@ impl HttpEndpoint {
             HttpEndpoint::InputProof => "/input-proof",
             HttpEndpoint::PublicDecrypt => "/public-decrypt",
             HttpEndpoint::UserDecrypt => "/user-decrypt",
+            HttpEndpoint::DelegatedUserDecrypt => "/delegated-user-decrypt",
             HttpEndpoint::KeyUrl => "/keyurl",
             HttpEndpoint::Unknown => "unknown",
         }

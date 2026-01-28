@@ -2,9 +2,9 @@ use crate::{
     core::{
         errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG},
         event::{
-            GatewayChainEventData, GatewayChainEventId, HandleContractPair, RelayerEvent,
-            RelayerEventData, UserDecryptEventData, UserDecryptEventId, UserDecryptRequest,
-            UserDecryptResponse,
+            DelegatedUserDecryptEventData, DelegatedUserDecryptRequest, GatewayChainEventData,
+            GatewayChainEventId, HandleContractPair, RelayerEvent, RelayerEventData,
+            UserDecryptEventData, UserDecryptEventId, UserDecryptRequest, UserDecryptResponse,
         },
         job_id::JobId,
     },
@@ -18,7 +18,9 @@ use crate::{
             },
             ComputeCalldata,
         },
-        readiness_check::readiness_throttler::{ReadinessSender, UserDecryptReadinessTask},
+        readiness_check::readiness_throttler::{
+            DelegatedUserDecryptReadinessTask, ReadinessSender, UserDecryptReadinessTask,
+        },
         utils::{classify_revert_selector, extract_revert_selector},
     },
     logging::UserDecryptStep,
@@ -55,6 +57,7 @@ pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     tx_throttler: TxThrottlingSender<GatewayTxTask>,
     user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+    delegated_user_decrypt_readiness_throttler: ReadinessSender<DelegatedUserDecryptReadinessTask>,
     decryption_address: Address,
     user_decrypt_repo: Arc<UserDecryptRepository>,
     user_decrypt_shares_threshold: i64,
@@ -65,6 +68,9 @@ impl GatewayHandler {
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         tx_throttler: TxThrottlingSender<GatewayTxTask>,
         user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
+        delegated_user_decrypt_readiness_throttler: ReadinessSender<
+            DelegatedUserDecryptReadinessTask,
+        >,
         decryption_address: Address,
         user_decrypt_shares_threshold: usize,
         user_decrypt_repo: Arc<UserDecryptRepository>,
@@ -73,6 +79,7 @@ impl GatewayHandler {
             dispatcher: Arc::clone(&dispatcher),
             tx_throttler,
             user_decrypt_readiness_throttler,
+            delegated_user_decrypt_readiness_throttler,
             decryption_address,
             user_decrypt_repo,
             user_decrypt_shares_threshold: user_decrypt_shares_threshold as i64,
@@ -144,6 +151,52 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     return;
                 }
             },
+
+            RelayerEventData::DelegatedUserDecrypt(delegated_user_decrypt_event) => {
+                match delegated_user_decrypt_event {
+                    DelegatedUserDecryptEventData::ReqRcvdFromUser {
+                        ref decrypt_request,
+                        ..
+                    } => {
+                        info!("Processing delegated user decrypt request {}", event.job_id);
+                        async {
+                            let job_id_hash = decrypt_request.content_hash();
+                            self.delegated_user_decrypt_readiness_check_enqueue(job_id_hash, decrypt_request)
+                                .await
+                        }
+                        .await
+                    }
+                    DelegatedUserDecryptEventData::ReadinessCheckPassed {
+                        ref decrypt_request,
+                        ..
+                    } => {
+                        async {
+                            info!(
+                        "Readiness check passed. Throttling delegated user decrypt request to gateway {}",
+                        event.job_id
+                    );
+
+                            let job_id_hash = decrypt_request.content_hash();
+                            self.mark_processing(job_id_hash).await?;
+
+                            self.send_delegated_user_decrypt_request(event.clone(), decrypt_request.clone())
+                                .await
+                        }
+                        .await
+                    }
+                    DelegatedUserDecryptEventData::ReadinessCheckTimedOut { ref error, .. } => {
+                        Err(error.clone())
+                    }
+                    DelegatedUserDecryptEventData::ReadinessCheckFailed { ref error, .. } => {
+                        Err(error.clone())
+                    }
+                    DelegatedUserDecryptEventData::InternalFailure { error } => Err(error.clone()),
+                    _ => {
+                        warn!("Unexpected event received in delegated user decrypt handler");
+                        return;
+                    }
+                }
+            }
 
             RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
                 ref log,
@@ -242,6 +295,49 @@ impl GatewayHandler {
         Ok(())
     }
 
+    /// Validates that all ciphertext handles are ready and user is authorized for delegated decryption.
+    ///
+    /// Checks if handles exist on fhevm and user has permission to decrypt them.
+    /// Enqueue the readiness check event with a semaphore for throttling requests.
+    async fn delegated_user_decrypt_readiness_check_enqueue(
+        &self,
+        job_id_hash: [u8; 32],
+        decrypt_request: &DelegatedUserDecryptRequest,
+    ) -> Result<(), EventProcessingError> {
+        let task: DelegatedUserDecryptReadinessTask = DelegatedUserDecryptReadinessTask {
+            id: hex::encode(job_id_hash),
+            job_id: JobId::from(job_id_hash),
+            request: decrypt_request.clone(),
+        };
+
+        match self
+            .delegated_user_decrypt_readiness_throttler
+            .push(task)
+            .await
+        {
+            Ok(()) => {}
+            // The following are termination errors, which means a failure on readiness.
+            // These should NEVER happen with the bouncer.
+            Err(e) => match e {
+                EventProcessingError::QueueFull => {
+                    return Err(EventProcessingError::ProtocolOverload(
+                        "Relayer is full for delegated user readiness check, retry later."
+                            .to_string(),
+                    ));
+                }
+                EventProcessingError::ChannelClosed => {
+                    error!("FATAL: Cannot accept request for delegated user readiness check, internal worker is dead.");
+                    return Err(e);
+                }
+                _ => {
+                    return Err(e);
+                }
+            },
+        };
+
+        Ok(())
+    }
+
     /// Processes user decrypt request by sending it to the Gateway blockchain.
     ///
     /// Steps:
@@ -259,8 +355,10 @@ impl GatewayHandler {
         );
 
         let job_id_hash = decrypt_request.content_hash();
-        self.send_to_gateway(decrypt_request.clone(), job_id_hash)
-            .await?;
+
+        let calldata_bytes = ComputeCalldata::user_decryption_req(decrypt_request.clone())?;
+
+        self.send_to_gateway(calldata_bytes, job_id_hash).await?;
         info!(
             "User decrypt request sent to gateway for {:?}",
             event.job_id
@@ -268,17 +366,44 @@ impl GatewayHandler {
         Ok(())
     }
 
-    /// Sends user decryption transaction to Gateway Decryption contract.
+    /// Processes delegated user decrypt request by sending it to the Gateway blockchain.
+    ///
+    /// Steps:
+    /// 1. Send transaction to Gateway Decryption contract
+    /// 2. Extract user_decryption_id from receipt
+    /// 3. Store receipt in database
+    async fn send_delegated_user_decrypt_request(
+        &self,
+        event: RelayerEvent,
+        decrypt_request: DelegatedUserDecryptRequest,
+    ) -> Result<(), EventProcessingError> {
+        info!(
+            "Sending delegated user decrypt request to gateway for {}",
+            event.job_id
+        );
+
+        let job_id_hash = decrypt_request.content_hash();
+
+        let calldata_bytes =
+            ComputeCalldata::delegated_user_decryption_req(decrypt_request.clone())?;
+
+        self.send_to_gateway(calldata_bytes, job_id_hash).await?;
+        info!(
+            "Delegated user decryption request sent to the gateway for {}",
+            event.job_id
+        );
+        Ok(())
+    }
+
+    /// Sends transactions to the Gateway Decryption contract.
     ///
     /// Returns the gateway reference ID (decryptionId) and transaction hash.
     async fn send_to_gateway(
         &self,
-        user_decrypt_request: UserDecryptRequest,
+        calldata_bytes: Bytes,
         job_id_hash: [u8; 32],
     ) -> Result<(), EventProcessingError> {
         let decryption_address = self.decryption_address;
-
-        let calldata_bytes = ComputeCalldata::user_decryption_req(user_decrypt_request.clone())?;
 
         let job_id = JobId::from(job_id_hash);
 

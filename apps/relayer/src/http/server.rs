@@ -144,6 +144,10 @@ where
             .readiness_throttling_senders
             .user_decrypt_readiness_throttler
             .clone(),
+        bouncer_throttlers
+            .readiness_throttling_senders
+            .delegated_user_decrypt_readiness_throttler
+            .clone(),
         retry_after_state.clone(),
     ));
 

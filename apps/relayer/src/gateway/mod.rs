@@ -15,10 +15,14 @@ pub use user_decrypt_handler::GatewayHandler as UserDecryptGatewayHandler;
 use crate::config::settings::{ListenerType, Settings};
 use crate::core::event::RelayerEvent;
 use crate::gateway::arbitrum::transaction::tx_processor::GatewayTxProcessor;
-use crate::gateway::readiness_check::public_decrypt_processor::PublicDecryptReadinessProcessor;
-use crate::gateway::readiness_check::readiness_checker::ReadinessChecker;
-use crate::gateway::readiness_check::user_decrypt_processor::UserDecryptReadinessProcessor;
-use crate::gateway::throttlers::GatewayThrottlers;
+use crate::gateway::{
+    readiness_check::{
+        delegated_user_decrypt_processor::DelegatedUserDecryptReadinessProcessor,
+        public_decrypt_processor::PublicDecryptReadinessProcessor,
+        readiness_checker::ReadinessChecker, user_decrypt_processor::UserDecryptReadinessProcessor,
+    },
+    throttlers::GatewayThrottlers,
+};
 use crate::orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher};
 use crate::store::sql::repositories::Repositories;
 use alloy::primitives::Address;
@@ -97,6 +101,15 @@ pub async fn initialize_gateway(
     )
     .await?;
 
+    DelegatedUserDecryptReadinessProcessor::orchestrator_spawn_task(
+        gateway_throttlers
+            .readiness_throttlers
+            .delegated_user_decrypt_readiness_worker,
+        readiness_checker.clone(),
+        orchestrator.clone(),
+    )
+    .await?;
+
     // Parse addresses for handlers (listener parses its own from config)
     let decryption_address = Address::from_str(&settings.gateway.contracts.decryption_address)
         .map_err(|_| anyhow::anyhow!("Invalid decryption address"))?;
@@ -135,6 +148,10 @@ pub async fn initialize_gateway(
         gateway_throttlers
             .readiness_throttlers
             .user_decrypt_readiness_throttler
+            .clone(),
+        gateway_throttlers
+            .readiness_throttlers
+            .delegated_user_decrypt_readiness_throttler
             .clone(),
         decryption_address,
         settings.gateway.contracts.user_decrypt_shares_threshold as usize,

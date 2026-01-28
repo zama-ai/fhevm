@@ -43,6 +43,43 @@ pub struct UserDecryptRequestJson {
     pub extra_data: String,
 }
 
+// Request type for delegated user decryption
+#[derive(Debug, Deserialize, Clone, ToSchema, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct DelegatedUserDecryptRequestJson {
+    #[validate(
+        length(min = 1, message = "Must not be empty"),
+        custom(function = "crate::http::validate_handle_contract_pairs")
+    )]
+    pub handle_contract_pairs: Vec<HandleContractPairJson>,
+    #[serde(deserialize_with = "de_string_or_number")]
+    #[schema(value_type = ChainId)]
+    #[validate(custom(function = "crate::http::validate_chain_id_string"))]
+    pub contracts_chain_id: String,
+    #[validate(length(min = 1, message = "Must not be empty"))]
+    #[validate(custom(function = "crate::http::validate_blockchain_addresses"))]
+    pub contract_addresses: Vec<String>,
+    #[validate(custom(function = "crate::http::validate_blockchain_address"))]
+    pub delegator_address: String,
+    #[validate(custom(function = "crate::http::validate_blockchain_address"))]
+    pub delegate_address: String,
+    #[validate(custom(function = "crate::http::validate_timestamp"))]
+    pub start_timestamp: String,
+    #[validate(custom(function = "crate::http::validate_u32_string"))]
+    pub duration_days: String,
+    #[validate(
+        length(equal = 130, message = "Must be 130 characters long"),
+        custom(function = "crate::http::validate_no_0x_hex")
+    )]
+    pub signature: String,
+    #[validate(length(min = 2, message = "Must not be empty"))]
+    #[validate(custom(function = "crate::http::validate_no_0x_hex"))]
+    pub public_key: String,
+    #[validate(custom(function = "crate::http::validate_extra_data_field"))]
+    #[schema(example = "0x00")]
+    pub extra_data: String,
+}
+
 // POST response with job ID and request tracking
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]

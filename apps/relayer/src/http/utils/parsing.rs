@@ -111,9 +111,14 @@ where
 
                     // Map field name to static str to satisfy lifetime requirements
                     let field_key: &'static str = match field_name.as_str() {
+                        "handleContractPairs" => "handle_contract_pairs",
                         "contractChainId" => "contract_chain_id",
                         "contractAddress" => "contract_address",
                         "userAddress" => "user_address",
+                        "delegatorAddress" => "delegator_address",
+                        "delegateAddress" => "delegate_address",
+                        "startTimestamp" => "start_timestamp",
+                        "durationDays" => "duration_days",
                         "ciphertextWithInputVerification" => "ciphertext_with_input_verification",
                         "extraData" => "extra_data",
                         "ciphertextHandles" => "ciphertext_handles",

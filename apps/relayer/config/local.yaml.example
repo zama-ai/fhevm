@@ -91,6 +91,10 @@ gateway:
       max_concurrency: 250
       capacity: 11000
       safety_margin: 1000
+    delegated_user_decrypt:
+      max_concurrency: 250
+      capacity: 11000
+      safety_margin: 1000
   contracts:
     decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
     input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
@@ -206,7 +210,7 @@ storage:
 
     # 5 min interval for cleanup check
     expiry_cron_interval: "5m"
-    
+
     # Retention Policies
     public_decrypt_expiry: "365d"
     user_decrypt_expiry: "7d"

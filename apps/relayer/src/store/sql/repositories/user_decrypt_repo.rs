@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
-use crate::core::event::{UserDecryptRequest, UserDecryptResponse};
+use crate::core::event::UserDecryptResponse;
 use crate::metrics;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
-use crate::store::sql::models::user_decrypt_req_model::ConsensusReqState;
+use crate::store::sql::models::user_decrypt_req_model::{ConsensusReqState, UserDecryptReqData};
 use crate::store::sql::{
     client::PgClient,
     error::{SqlError, SqlResult},
@@ -117,20 +117,22 @@ impl UserDecryptRepository {
         &self,
         ext_job_id: Uuid,
         int_job_id_bytes: &[u8],
-        request: UserDecryptRequest,
+        request_data: UserDecryptReqData,
     ) -> SqlResult<UserDecryptInsertResult> {
-        let req = serde_json::to_value(&request).map_err(|e| {
-            SqlError::conversion_error(
-                "request",
-                "UserDecryptRequest",
-                format!("Failed to serialize: {}", e),
-            )
-        })?;
-
         // Use a transaction to ensure atomic read of status + shares for completed duplicates.
         // This prevents race conditions where shares could be deleted between the INSERT
         // and the subsequent SELECT query.
         let mut tx = self.pool.get_app_pool().begin().await?;
+
+        // Convert typed data to JSON Value and extract type
+        let req_type = request_data.req_type();
+        let request = request_data.to_value().map_err(|e| {
+            SqlError::conversion_error(
+                "UserDecryptReqData",
+                "Value",
+                format!("Failed to serialize request data: {}", e),
+            )
+        })?;
 
         let query_start = Instant::now();
         // Logic: Use (xmax=0) to detect if this was a true INSERT or an ON CONFLICT update.
@@ -139,9 +141,10 @@ impl UserDecryptRepository {
             INSERT INTO user_decrypt_req (
                 ext_job_id,
                 int_job_id,
-                req
+                req,
+                req_type
             )
-            VALUES ($1, $2, $3)
+            VALUES ($1, $2, $3, $4::user_decrypt_req_type)
             ON CONFLICT (int_job_id)
             WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
             DO UPDATE SET updated_at = user_decrypt_req.updated_at
@@ -149,7 +152,8 @@ impl UserDecryptRepository {
             "#,
             ext_job_id,
             int_job_id_bytes,
-            req,
+            request,
+            req_type as _,
         )
         .fetch_one(&mut *tx)
         .await;

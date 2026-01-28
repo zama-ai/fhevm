@@ -18,8 +18,9 @@ use crate::metrics::http::{self as http_metrics, HttpApiVersion, HttpEndpoint, H
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::OnceHandler;
 use crate::orchestrator::{ContentHasher, Orchestrator};
-use crate::store::sql::repositories::user_decrypt_repo::{
-    UserDecryptInsertResult, UserDecryptRepository,
+use crate::store::sql::{
+    models::user_decrypt_req_model::UserDecryptReqData,
+    repositories::user_decrypt_repo::{UserDecryptInsertResult, UserDecryptRepository},
 };
 use axum::{body::Bytes as AxumBytes, extract::FromRequest, http::Request, response::IntoResponse};
 use axum::{http::StatusCode, Json};
@@ -224,12 +225,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         info!("Registered once handler for user decrypt failure");
 
         let proposed_ext_job_id = self.orchestrator.new_ext_job_id();
+
+        let user_decrypt_request_data =
+            UserDecryptReqData::UserDecrypt(user_decrypt_request.clone());
+
         let insert_result = match self
             .user_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 proposed_ext_job_id,
                 int_job_id.as_ref(),
-                user_decrypt_request.clone(),
+                user_decrypt_request_data,
             )
             .await
         {
