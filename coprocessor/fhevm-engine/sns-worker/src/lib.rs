@@ -22,7 +22,7 @@ use fhevm_engine_common::{
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
-    telemetry::{self, OtelTracer},
+    telemetry::OtelTracer,
     types::FhevmError,
     utils::{to_hex, DatabaseURL},
 };
@@ -508,12 +508,6 @@ pub async fn run_all(
     let rayon_threads = rayon::current_num_threads();
     let gpu_enabled = fhevm_engine_common::utils::log_backend();
     info!(gpu_enabled, rayon_threads, config = %config, "Starting SNS worker");
-
-    if !config.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&config.service_name) {
-            error!(error = %err, "Failed to setup OTLP");
-        }
-    }
 
     let conf = config.clone();
     let token = parent_token.child_token();
