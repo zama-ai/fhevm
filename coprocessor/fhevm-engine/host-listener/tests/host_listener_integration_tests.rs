@@ -234,6 +234,7 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         catchup_finalization_in_blocks: 2,
         dependence_by_connexity: false,
         dependence_cross_block: true,
+        timeout_request_websocket: 30,
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
@@ -288,6 +289,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         catchup_loop_sleep_secs: 60,
         dependence_by_connexity: false,
         dependence_cross_block: true,
+        timeout_request_websocket: 30,
     };
 
     let result = main(args).await;
