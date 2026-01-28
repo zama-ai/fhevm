@@ -37,12 +37,12 @@ jobs:
         # Changes to conf-trace affect multiple components
         filters: |
           connector:
-            - '.github/workflows/kms-connector-tests.yml'
-            - 'kms-connector/config/**'
-            - 'kms-connector/connector-db/**'
-            - 'kms-connector/crates/**'
-            - 'kms-connector/simple-connector/**'
-            - 'kms-connector/Cargo.toml'
+            - .github/workflows/kms-connector-tests.yml
+            - kms-connector/connector-db/**
+            - kms-connector/crates/**
+            - kms-connector/Cargo.*
+            - gateway-contracts/rust-bindings/**
+            - host-contracts/rust-bindings/**
 
   start-runner:
     name: kms-connector-tests/start-runner
