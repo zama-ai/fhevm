@@ -1,7 +1,10 @@
 pub mod scheduler;
 pub mod types;
 
-use std::{collections::HashMap, sync::atomic::AtomicUsize};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::atomic::AtomicUsize,
+};
 use tracing::{error, warn};
 
 use crate::dfg::types::*;
@@ -73,26 +76,44 @@ pub struct ComponentNode {
     pub component_id: usize,
 }
 
+/// Check if a node is needed by traversing its outgoing edges iteratively.
+/// Uses an explicit stack to avoid stack overflow on deep computation graphs.
 fn is_needed(graph: &Dag<(bool, usize), OpEdge>, index: usize) -> bool {
-    let node_index = NodeIndex::new(index);
-    let node = match graph.node_weight(node_index) {
-        Some(n) => n,
-        None => {
-            error!(target: "scheduler", "Missing node for index in DFG finalization");
-            return false;
+    let mut stack = vec![index];
+    let mut visited = graph.visit_map();
+
+    while let Some(current_index) = stack.pop() {
+        let node_index = NodeIndex::new(current_index);
+
+        // Skip if already visited to avoid cycles and redundant work
+        if visited.is_visited(&node_index) {
+            continue;
         }
-    };
-    if node.0 {
-        true
-    } else {
+        visited.visit(node_index);
+
+        let node = match graph.node_weight(node_index) {
+            Some(n) => n,
+            None => {
+                error!(target: "scheduler", "Missing node for index in DFG finalization");
+                continue;
+            }
+        };
+
+        // If this node is marked as needed, the original node is needed
+        if node.0 {
+            return true;
+        }
+
+        // Push all outgoing neighbors onto the stack for exploration
         for edge in graph.edges_directed(node_index, Direction::Outgoing) {
-            // If any outgoing dependence is needed, so is this node
-            if is_needed(graph, edge.target().index()) {
-                return true;
+            let target = edge.target();
+            if !visited.is_visited(&target) {
+                stack.push(target.index());
             }
         }
-        false
     }
+
+    false
 }
 
 pub fn finalize(graph: &mut Dag<(bool, usize), OpEdge>) -> Vec<usize> {
@@ -468,19 +489,16 @@ impl DFComponentGraph {
                         .graph
                         .node_weight_mut(prod_idx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
-                    if let Ok(ref r) = result {
-                        if r.compressed_ct.is_none() {
-                            error!(target: "scheduler", {handle = ?hex::encode(handle) }, "Missing compressed ciphertext in task result");
-                            return Err(SchedulerError::SchedulerError.into());
-                        }
-                    }
                     self.results.push(DFGTxResult {
                         transaction_id: producer_tx.transaction_id.clone(),
                         handle: handle.to_vec(),
-                        compressed_ct: result.map(|rok| {
-                            // Safe to unwrap as this is checked above
-                            let cct = rok.compressed_ct.unwrap();
-                            (cct.0, cct.1)
+                        compressed_ct: result.and_then(|rok| {
+                            rok.compressed_ct
+                                .map(|cct| (cct.0, cct.1))
+                                .ok_or_else(|| {
+                                    error!(target: "scheduler", {handle = ?hex::encode(handle) }, "Missing compressed ciphertext in task result");
+                                    SchedulerError::SchedulerError.into()
+                                })
                         }),
                     });
                 }
@@ -495,24 +513,33 @@ impl DFComponentGraph {
         tx_node_index: NodeIndex,
         edges: &Dag<(), ComponentEdge>,
     ) -> Result<()> {
-        let tx_node = self
-            .graph
-            .node_weight_mut(tx_node_index)
-            .ok_or(SchedulerError::DataflowGraphError)?;
-        if tx_node.is_uncomputable {
-            return Ok(());
-        }
-        tx_node.is_uncomputable = true;
-        for (_idx, op) in tx_node.graph.graph.node_references() {
-            self.results.push(DFGTxResult {
-                transaction_id: tx_node.transaction_id.clone(),
-                handle: op.result_handle.to_vec(),
-                compressed_ct: Err(SchedulerError::MissingInputs.into()),
-            });
-        }
-        for edge in edges.edges_directed(tx_node_index, Direction::Outgoing) {
-            let dependent_tx_index = edge.target();
-            self.set_uncomputable(dependent_tx_index, edges)?;
+        let mut stack = vec![tx_node_index];
+
+        while let Some(current_index) = stack.pop() {
+            let tx_node = self
+                .graph
+                .node_weight_mut(current_index)
+                .ok_or(SchedulerError::DataflowGraphError)?;
+
+            // Skip if already marked as uncomputable (handles diamond dependencies)
+            if tx_node.is_uncomputable {
+                continue;
+            }
+            tx_node.is_uncomputable = true;
+
+            // Add error results for all operations in this transaction
+            for (_idx, op) in tx_node.graph.graph.node_references() {
+                self.results.push(DFGTxResult {
+                    transaction_id: tx_node.transaction_id.clone(),
+                    handle: op.result_handle.to_vec(),
+                    compressed_ct: Err(SchedulerError::MissingInputs.into()),
+                });
+            }
+
+            // Push all dependent transactions onto the stack
+            for edge in edges.edges_directed(current_index, Direction::Outgoing) {
+                stack.push(edge.target());
+            }
         }
         Ok(())
     }
@@ -638,7 +665,9 @@ pub fn add_execution_depedences<TNode, TEdge>(
     node_map: HashMap<NodeIndex, NodeIndex>,
 ) -> Result<()> {
     // Once the DFG is partitioned, we need to add dependences as
-    // edges in the execution graph
+    // edges in the execution graph. We use a HashSet to track added
+    // edges for O(1) deduplication.
+    let mut added_edges: HashSet<(NodeIndex, NodeIndex)> = HashSet::new();
     for edge in graph.edge_references() {
         let (xsrc, xdst) = (
             node_map
@@ -648,7 +677,7 @@ pub fn add_execution_depedences<TNode, TEdge>(
                 .get(&edge.target())
                 .ok_or(SchedulerError::DataflowGraphError)?,
         );
-        if xsrc != xdst && execution_graph.find_edge(*xsrc, *xdst).is_none() {
+        if xsrc != xdst && added_edges.insert((*xsrc, *xdst)) {
             let _ = execution_graph.add_edge(*xsrc, *xdst, ());
         }
     }
@@ -734,7 +763,13 @@ pub fn partition_components<TNode, TEdge>(
                 }
             }
             // Apply toposort to component nodes
-            df_nodes.sort_by_key(|x| tsmap.get(x).unwrap());
+            // All nodes should be in the toposort map; use MAX as fallback for corrupt state
+            df_nodes.sort_by_key(|x| {
+                tsmap.get(x).copied().unwrap_or_else(|| {
+                    error!(target: "scheduler", {index = ?x.index()}, "Node missing from topological sort");
+                    usize::MAX
+                })
+            });
             execution_graph
                 .add_node(ExecNode {
                     df_nodes,
