@@ -353,16 +353,32 @@ pub(crate) fn verify_proof(
 ) -> Result<(Vec<Ciphertext>, Vec<u8>), ExecutionError> {
     set_server_key(keys.server_key.clone());
 
-    let mut s = span.child_span("verify_and_expand");
-    let mut cts = match try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data) {
+    // Step 1: Deserialize and verify the proof
+    let mut s_verify = span.child_span("verify_proof");
+    let verified_list = match verify_proof_only(request_id, raw_ct, keys, aux_data) {
+        Ok(list) => {
+            telemetry::attribute(&mut s_verify, "list_len", list.len().to_string());
+            telemetry::end_span(s_verify);
+            info!(message = "Proof verified successfully", request_id);
+            list
+        }
+        Err(err) => {
+            telemetry::end_span_with_err(s_verify, err.to_string());
+            return Err(err);
+        }
+    };
+
+    // Step 2: Expand the verified ciphertext list
+    let mut s_expand = span.child_span("expand_ciphertext_list");
+    let mut cts = match expand_verified_list(request_id, &verified_list) {
         Ok(cts) => {
-            telemetry::attribute(&mut s, "count", cts.len().to_string());
-            telemetry::end_span(s);
+            telemetry::attribute(&mut s_expand, "count", cts.len().to_string());
+            telemetry::end_span(s_expand);
             info!(message = "Ciphertext list expanded", request_id);
             cts
         }
         Err(err) => {
-            telemetry::end_span_with_err(s, err.to_string());
+            telemetry::end_span_with_err(s_expand, err.to_string());
             return Err(err);
         }
     };
@@ -383,20 +399,23 @@ pub(crate) fn verify_proof(
     Ok((cts, blob_hash))
 }
 
-fn try_verify_and_expand_ciphertext_list(
+fn verify_proof_only(
     request_id: i64,
     raw_ct: &[u8],
     keys: &FetchTenantKeyResult,
     aux_data: &auxiliary::ZkData,
-) -> Result<Vec<SupportedFheCiphertexts>, ExecutionError> {
+) -> Result<tfhe::ProvenCompactCiphertextList, ExecutionError> {
     let aux_data_bytes = aux_data
         .assemble()
         .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))?;
 
-    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(raw_ct,
+    let the_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
+        raw_ct,
         &IntegerProvenCompactCiphertextListConformanceParams::from_public_key_encryption_parameters_and_crs_parameters(
-            keys.pks.parameters(), &keys.public_params,
-        ))?;
+            keys.pks.parameters(),
+            &keys.public_params,
+        ),
+    )?;
 
     info!(
         message = "Input list deserialized",
@@ -407,15 +426,36 @@ fn try_verify_and_expand_ciphertext_list(
     // TODO: Make sure we don't try to verify and expand an empty list as it would panic with the current version of tfhe-rs.
     // Could be removed in the future if tfhe-rs is updated to handle empty lists gracefully.
     if the_list.is_empty() {
-        return Ok(vec![]);
+        return Ok(the_list);
     }
 
     if the_list.len() > (MAX_INPUT_INDEX + 1) as usize {
         return Err(ExecutionError::TooManyInputs(the_list.len()));
     }
 
+    // Verify the ZK proof
+    let verification_result = the_list.verify(&keys.public_params, &keys.pks, &aux_data_bytes);
+
+    if verification_result.is_invalid() {
+        return Err(ExecutionError::InvalidProof(
+            request_id,
+            "ZK proof verification failed".to_string(),
+        ));
+    }
+
+    Ok(the_list)
+}
+
+fn expand_verified_list(
+    request_id: i64,
+    the_list: &tfhe::ProvenCompactCiphertextList,
+) -> Result<Vec<SupportedFheCiphertexts>, ExecutionError> {
+    if the_list.is_empty() {
+        return Ok(vec![]);
+    }
+
     let expanded: tfhe::CompactCiphertextListExpander = the_list
-        .verify_and_expand(&keys.public_params, &keys.pks, &aux_data_bytes)
+        .expand_without_verification()
         .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))?;
 
     Ok(extract_ct_list(&expanded)?)
