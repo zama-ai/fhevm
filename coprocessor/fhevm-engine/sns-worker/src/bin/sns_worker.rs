@@ -67,13 +67,15 @@ async fn main() {
     let config: Config = construct_config();
     let parent = CancellationToken::new();
 
+    let mut otlp_setup_error: Option<String> = None;
+
     let otel_tracer = if config.service_name.is_empty() {
         None
     } else {
         match telemetry::setup_otlp_tracer(&config.service_name, "otlp-layer") {
             Ok(tracer) => Some(tracer),
             Err(err) => {
-                eprintln!("Failed to setup OTLP: {err}");
+                otlp_setup_error = Some(err.to_string());
                 None
             }
         }
@@ -100,6 +102,10 @@ async fn main() {
         base.with(otel_layer).init();
     } else {
         base.init();
+    }
+
+    if let Some(err) = otlp_setup_error {
+        error!(error = %err, "Failed to setup OTLP");
     }
 
     // Handle SIGINIT signals
