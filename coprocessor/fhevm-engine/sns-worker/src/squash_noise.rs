@@ -1,6 +1,8 @@
 use crate::ExecutionError;
 use crate::SAFE_SER_LIMIT;
+use opentelemetry::trace::Status;
 use serde::Serialize;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use tfhe::named::Named;
 use tfhe::prelude::SquashNoise;
@@ -20,10 +22,24 @@ macro_rules! squash_and_serialize_with_error {
                 ct_type = %ct_type,
                 operation = "squash_noise_fhe"
             );
-            let _enter = span.enter();
-            $value
-                .squash_noise()
-                .map_err(ExecutionError::SquashedNoiseError)?
+
+            let res = {
+                let _enter = span.enter();
+                $value
+                    .squash_noise()
+                    .map_err(ExecutionError::SquashedNoiseError)
+            };
+
+            match res {
+                Ok(v) => v,
+                Err(err) => {
+                    span.set_status(Status::Error {
+                        description: "squash_noise_fhe failed".into(),
+                    });
+                    tracing::error!(parent: &span, error = %err, "squash_noise_fhe failed");
+                    return Err(err);
+                }
+            }
         };
 
         if !$enable_compression {
@@ -32,8 +48,22 @@ macro_rules! squash_and_serialize_with_error {
                 ct_type = %ct_type,
                 operation = "serialize"
             );
-            let _enter = span.enter();
-            return safe_serialize(&squashed);
+
+            let res = {
+                let _enter = span.enter();
+                safe_serialize(&squashed)
+            };
+
+            return match res {
+                Ok(v) => Ok(v),
+                Err(err) => {
+                    span.set_status(Status::Error {
+                        description: "serialize failed".into(),
+                    });
+                    tracing::error!(parent: &span, error = %err, "serialize failed");
+                    Err(err)
+                }
+            };
         }
 
         let list = {
@@ -42,10 +72,24 @@ macro_rules! squash_and_serialize_with_error {
                 ct_type = %ct_type,
                 operation = "compress"
             );
-            let _enter = span.enter();
-            let mut builder = CompressedSquashedNoiseCiphertextListBuilder::new();
-            builder.push(squashed);
-            builder.build()?
+
+            let res = {
+                let _enter = span.enter();
+                let mut builder = CompressedSquashedNoiseCiphertextListBuilder::new();
+                builder.push(squashed);
+                builder.build()
+            };
+
+            match res {
+                Ok(v) => v,
+                Err(err) => {
+                    span.set_status(Status::Error {
+                        description: "compress failed".into(),
+                    });
+                    tracing::error!(parent: &span, error = %err, "compress failed");
+                    return Err(err.into());
+                }
+            }
         };
 
         let span = tracing::info_span!(
@@ -53,8 +97,22 @@ macro_rules! squash_and_serialize_with_error {
             ct_type = %ct_type,
             operation = "serialize"
         );
-        let _enter = span.enter();
-        Ok(safe_serialize(&list)?)
+
+        let res = {
+            let _enter = span.enter();
+            safe_serialize(&list)
+        };
+
+        match res {
+            Ok(v) => Ok(v),
+            Err(err) => {
+                span.set_status(Status::Error {
+                    description: "serialize failed".into(),
+                });
+                tracing::error!(parent: &span, error = %err, "serialize failed");
+                Err(err)
+            }
+        }
     }};
 }
 
