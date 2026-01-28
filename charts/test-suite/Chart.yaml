@@ -1,0 +1,13 @@
+apiVersion: v2
+name: test-suite
+description: E2E test suite for FHEVM - runs integration tests against the deployed stack
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - fhevm
+  - test-suite
+  - e2e
+maintainers:
+  - name: Zama
+    url: https://github.com/zama-ai

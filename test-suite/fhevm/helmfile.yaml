@@ -1,0 +1,163 @@
+# helmfile.yaml
+# Orchestrates deployment of the full FHEVM stack to Kind
+#
+# This is the simplified version without Go templating, using hardcoded
+# namespace 'fhevm-local'. For environment-specific deployments, modify
+# the namespace values directly or use helmfile's environment feature.
+#
+# Usage:
+#   helmfile lint          # Validate configuration
+#   helmfile template      # Render templates (dry-run)
+#   helmfile diff          # Show changes against cluster
+#   helmfile apply         # Deploy to cluster
+#   helmfile destroy       # Remove all releases
+#
+# Deploy specific releases:
+#   helmfile -l name=minio apply
+#   helmfile -l name=postgresql apply
+
+# Helm repositories (local charts used for minio/postgresql to avoid image availability issues)
+# repositories:
+#   - name: bitnami
+#     url: https://charts.bitnami.com/bitnami
+
+# Global Helm settings
+helmDefaults:
+  wait: true
+  waitForJobs: true
+  timeout: 600
+  createNamespace: true
+  atomic: false  # Don't rollback on failure (easier debugging)
+
+---
+
+releases:
+  # ============================================
+  # PHASE 1: Infrastructure
+  # ============================================
+
+  - name: minio
+    namespace: fhevm-local
+    chart: ../../charts/minio-local
+    values:
+      - env/kind/minio-values.yaml
+
+  - name: postgresql
+    namespace: fhevm-local
+    chart: ../../charts/postgresql-local
+    values:
+      - env/kind/postgresql-values.yaml
+
+  # ============================================
+  # PHASE 2: KMS Core
+  # ============================================
+
+  - name: kms-core
+    namespace: fhevm-local
+    # KMS Core chart from sibling kms repository
+    # Path relative to this helmfile: test-suite/fhevm/ -> ../../../kms/
+    chart: ../../../kms/charts/kms-core
+    needs:
+      - fhevm-local/minio
+    values:
+      - env/kind/kms-core-values.yaml
+
+  # ============================================
+  # PHASE 3: Blockchain Nodes
+  # ============================================
+
+  - name: host-anvil-node
+    namespace: fhevm-local
+    chart: ../../charts/anvil-node
+    needs:
+      - fhevm-local/kms-core
+    values:
+      - env/kind/host-node-values.yaml
+
+  - name: gateway-anvil-node
+    namespace: fhevm-local
+    chart: ../../charts/anvil-node
+    needs:
+      - fhevm-local/kms-core
+    values:
+      - env/kind/gateway-node-values.yaml
+
+  # ============================================
+  # PHASE 4: Coprocessor
+  # ============================================
+
+  - name: coprocessor
+    namespace: fhevm-local
+    chart: ../../charts/coprocessor
+    needs:
+      - fhevm-local/postgresql
+      - fhevm-local/host-anvil-node
+      - fhevm-local/gateway-anvil-node
+      - fhevm-local/minio
+    values:
+      - env/kind/coprocessor-values.yaml
+
+  # ============================================
+  # PHASE 5: KMS Connector
+  # ============================================
+
+  - name: kms-connector
+    namespace: fhevm-local
+    chart: ../../charts/kms-connector
+    needs:
+      - fhevm-local/coprocessor
+      - fhevm-local/kms-core
+    values:
+      - env/kind/kms-connector-values.yaml
+
+  # ============================================
+  # PHASE 6: Gateway Contracts
+  # ============================================
+
+  - name: gateway-contracts
+    namespace: fhevm-local
+    chart: ../../charts/contracts
+    needs:
+      - fhevm-local/gateway-anvil-node
+      - fhevm-local/kms-connector
+    values:
+      - env/kind/gateway-contracts-values.yaml
+
+  # ============================================
+  # PHASE 7: Host Contracts
+  # ============================================
+
+  - name: host-contracts
+    namespace: fhevm-local
+    chart: ../../charts/contracts
+    needs:
+      - fhevm-local/host-anvil-node
+      - fhevm-local/gateway-contracts
+    values:
+      - env/kind/host-contracts-values.yaml
+
+  # ============================================
+  # PHASE 8: Relayer
+  # ============================================
+
+  - name: relayer
+    namespace: fhevm-local
+    chart: ../../charts/relayer
+    needs:
+      - fhevm-local/postgresql
+      - fhevm-local/host-contracts
+      - fhevm-local/gateway-contracts
+    values:
+      - env/kind/relayer-values.yaml
+
+  # ============================================
+  # PHASE 9: Test Suite
+  # ============================================
+
+  - name: test-suite
+    namespace: fhevm-local
+    chart: ../../charts/test-suite
+    needs:
+      - fhevm-local/relayer
+    values:
+      - env/kind/test-suite-values.yaml

@@ -1,0 +1,112 @@
+# =============================================================================
+# CI-Specific Overrides for Kind Deployment
+# =============================================================================
+# Higher resource limits for CI runners with more capacity
+# Apply with: helm upgrade ... -f coprocessor-values.yaml -f values-ci.yaml
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Coprocessor Overrides
+# -----------------------------------------------------------------------------
+# Higher resources for faster FHE computations in CI
+coprocessor:
+  tfheWorker:
+    replicas: 2
+    resources:
+      requests:
+        cpu: 2000m
+        memory: 4Gi
+      limits:
+        cpu: 4000m
+        memory: 8Gi
+
+  zkProofWorker:
+    replicas: 2
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+
+  snsWorker:
+    replicas: 2
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+  txSender:
+    replicas: 2
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+# -----------------------------------------------------------------------------
+# KMS Connector Overrides
+# -----------------------------------------------------------------------------
+kmsConnector:
+  kmsConnectorKmsWorker:
+    replicas: 2
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+  kmsConnectorTxSender:
+    replicas: 2
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+# -----------------------------------------------------------------------------
+# PostgreSQL Overrides
+# -----------------------------------------------------------------------------
+postgresql:
+  primary:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+# -----------------------------------------------------------------------------
+# MinIO Overrides
+# -----------------------------------------------------------------------------
+minio:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# -----------------------------------------------------------------------------
+# Test Suite Overrides
+# -----------------------------------------------------------------------------
+testSuite:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi

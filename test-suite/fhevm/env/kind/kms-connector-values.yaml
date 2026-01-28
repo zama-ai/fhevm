@@ -1,0 +1,113 @@
+# =============================================================================
+# KMS Connector Configuration for Kind Deployment
+# =============================================================================
+# KMS connector services that bridge gateway chain and KMS cores:
+# - Database migration
+# - Gateway listener (processes gateway events)
+# - KMS worker (communicates with KMS cores)
+# - Transaction sender (submits transactions to gateway)
+# Uses: charts/kms-connector
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Common Configuration
+# -----------------------------------------------------------------------------
+commonConfig:
+  # Database connection string
+  databaseUrl: "postgresql://postgres:postgres@postgresql:5432/connector"
+
+  # Gateway WebSocket endpoint
+  gatewayUrl: "ws://gateway-anvil-node:8546"
+
+  # Gateway chain identifier
+  chainId: "54321"
+
+  # Gateway smart contract addresses (deterministic for testing)
+  gatewayContractAddresses:
+    decryption: "0x35760912360E875DA50D40a74305575c23D55783"
+    gatewayConfig: "0x576Ea67208b146E63C5255d0f90104E25e3e04c7"
+    kmsGeneration: "0x3b12Fc766Eb598b285998877e8E90F3e43a1F8d2"
+
+  # Distributed tracing configuration (disabled for local testing)
+  tracing:
+    enabled: false
+
+# -----------------------------------------------------------------------------
+# Database Migration
+# -----------------------------------------------------------------------------
+kmsConnectorDbMigration:
+  enabled: true
+  env:
+    - name: DATABASE_URL
+      value: "postgresql://postgres:postgres@postgresql:5432/connector"
+    - name: PGUSER
+      value: "postgres"
+    - name: PGPASSWORD
+      value: "postgres"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -----------------------------------------------------------------------------
+# Gateway Listener
+# -----------------------------------------------------------------------------
+# Listens to gateway events and processes them
+kmsConnectorGwListener:
+  enabled: true
+  replicas: 1
+  config:
+    gatewayUrl: "ws://gateway-anvil-node:8546"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -----------------------------------------------------------------------------
+# KMS Worker
+# -----------------------------------------------------------------------------
+# Communicates with KMS cores to perform cryptographic operations
+kmsConnectorKmsWorker:
+  enabled: true
+  replicas: 1
+  config:
+    # KMS core endpoint
+    kmsCoreEndpoints: "http://kms-core:50051"
+    gatewayUrl: "ws://gateway-anvil-node:8546"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -----------------------------------------------------------------------------
+# Transaction Sender
+# -----------------------------------------------------------------------------
+# Submits transactions to the gateway chain
+kmsConnectorTxSender:
+  enabled: true
+  replicas: 1
+  config:
+    gatewayUrl: "http://gateway-anvil-node:8546"
+  # Wallet configuration for transaction signing
+  wallet:
+    awsKms:
+      enabled: false
+    secret:
+      name: kms-connector-tx-sender
+      key: kms-wallet
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

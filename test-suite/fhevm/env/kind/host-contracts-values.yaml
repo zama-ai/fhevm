@@ -1,0 +1,93 @@
+# =============================================================================
+# Host Contracts Configuration for Kind Deployment
+# =============================================================================
+# Smart contracts deployment for the host chain (chainId: 12345)
+# Uses: charts/contracts
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Smart Contract Deployment
+# -----------------------------------------------------------------------------
+scDeploy:
+  enabled: true
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/host-contracts
+    tag: v0.9.0
+
+  # ConfigMap to store deployed contract addresses
+  configmap:
+    name: "host-sc-addresses"
+
+  # Environment variables for contract deployment
+  env:
+    # Network configuration
+    - name: HARDHAT_NETWORK
+      value: "staging"
+    - name: RPC_URL
+      value: "http://host-anvil-node:8545"
+    - name: CHAIN_ID_GATEWAY
+      value: "54321"
+
+    # Wallet configuration (accounts[9] from host mnemonic)
+    - name: MNEMONIC
+      value: "test test test test test test test test test test test junk"
+    - name: DEPLOYER_PRIVATE_KEY
+      value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
+
+    # Gateway contract addresses (deployed on gateway chain)
+    - name: DECRYPTION_ADDRESS
+      value: "0x35760912360E875DA50D40a74305575c23D55783"
+    - name: INPUT_VERIFICATION_ADDRESS
+      value: "0x1ceFA8E3F3271358218B52c33929Cf76078004c1"
+
+    # KMS configuration
+    - name: PUBLIC_DECRYPTION_THRESHOLD
+      value: "1"
+    - name: COPROCESSOR_THRESHOLD
+      value: "1"
+    - name: NUM_KMS_NODES
+      value: "1"
+    - name: KMS_SIGNER_ADDRESS_0
+      value: "0xb575E4834b183ad6bBD5Ff57d54D1dbc678fc870"
+
+    # Coprocessor configuration
+    - name: NUM_COPROCESSORS
+      value: "1"
+    - name: COPROCESSOR_SIGNER_ADDRESS_0
+      value: "0x6254A198F67ad40290a2E7B48aDB2d19B71f67BD"
+
+    # Pausers
+    - name: NUM_PAUSERS
+      value: "1"
+    - name: PAUSER_ADDRESS_0
+      value: "0xa44366bAA26296c1409AD1e284264212029F02f1"
+
+  # Deployment commands for host contracts
+  deployCommands:
+    - npx hardhat task:deployAllHostContracts
+    - npx hardhat task:addHostPausers
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -----------------------------------------------------------------------------
+# Contract Upgrade (disabled for initial deployment)
+# -----------------------------------------------------------------------------
+scUpgrade:
+  enabled: false
+
+# -----------------------------------------------------------------------------
+# Persistence
+# -----------------------------------------------------------------------------
+persistence:
+  enabled: true
+  mountPath: /app/addresses
+  volumeClaim:
+    create: true
+    storageCapacity: 1Gi

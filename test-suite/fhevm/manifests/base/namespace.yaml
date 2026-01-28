@@ -1,0 +1,84 @@
+# namespace.yaml
+# Kubernetes namespace and RBAC configuration for FHEVM test environment
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fhevm-local
+  labels:
+    app.kubernetes.io/name: fhevm
+    app.kubernetes.io/part-of: fhevm-test-suite
+    app.kubernetes.io/managed-by: helm
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fhevm-deployer
+  namespace: fhevm-local
+  labels:
+    app.kubernetes.io/name: fhevm
+    app.kubernetes.io/part-of: fhevm-test-suite
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fhevm-deployer
+  namespace: fhevm-local
+  labels:
+    app.kubernetes.io/name: fhevm
+    app.kubernetes.io/part-of: fhevm-test-suite
+rules:
+  # Core resources
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/exec
+      - services
+      - endpoints
+      - persistentvolumeclaims
+      - configmaps
+      - secrets
+      - serviceaccounts
+    verbs: ["*"]
+  # Apps resources
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - replicasets
+      - daemonsets
+    verbs: ["*"]
+  # Batch resources (for Jobs)
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["*"]
+  # Networking
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["*"]
+  # Events (for debugging)
+  - apiGroups: [""]
+    resources:
+      - events
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fhevm-deployer
+  namespace: fhevm-local
+  labels:
+    app.kubernetes.io/name: fhevm
+    app.kubernetes.io/part-of: fhevm-test-suite
+subjects:
+  - kind: ServiceAccount
+    name: fhevm-deployer
+    namespace: fhevm-local
+roleRef:
+  kind: Role
+  name: fhevm-deployer
+  apiGroup: rbac.authorization.k8s.io

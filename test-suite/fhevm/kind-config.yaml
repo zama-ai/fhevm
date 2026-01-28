@@ -1,0 +1,28 @@
+# kind-config.yaml
+# Kind cluster configuration for FHEVM local testing
+# Services are accessed via kubectl port-forward (no NodePort mappings)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: fhevm-local
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            system-reserved: memory=2Gi,cpu=2
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            system-reserved: memory=2Gi,cpu=2
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            system-reserved: memory=2Gi,cpu=2

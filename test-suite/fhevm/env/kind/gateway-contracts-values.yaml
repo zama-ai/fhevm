@@ -1,0 +1,124 @@
+# =============================================================================
+# Gateway Contracts Configuration for Kind Deployment
+# =============================================================================
+# Smart contracts deployment for the gateway chain (chainId: 54321)
+# Uses: charts/contracts
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Smart Contract Deployment
+# -----------------------------------------------------------------------------
+scDeploy:
+  enabled: true
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/gateway-contracts
+    tag: v0.9.0
+
+  # ConfigMap to store deployed contract addresses
+  configmap:
+    name: "gateway-sc-addresses"
+
+  # Environment variables for contract deployment
+  env:
+    # Network configuration
+    - name: HARDHAT_NETWORK
+      value: "staging"
+    - name: RPC_URL
+      value: "http://gateway-anvil-node:8546"
+    - name: CHAIN_ID_GATEWAY
+      value: "54321"
+
+    # Wallet configuration (accounts[1] from gateway mnemonic)
+    - name: MNEMONIC
+      value: "test test test test test test test test test test test junk"
+    - name: DEPLOYER_PRIVATE_KEY
+      value: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+
+    # KMS configuration
+    - name: KMS_GENERATION_THRESHOLD
+      value: "1"
+    - name: PUBLIC_DECRYPTION_THRESHOLD
+      value: "1"
+    - name: USER_DECRYPTION_THRESHOLD
+      value: "1"
+    - name: MPC_THRESHOLD
+      value: "0"
+    - name: COPROCESSOR_THRESHOLD
+      value: "1"
+    - name: NUM_KMS_NODES
+      value: "1"
+
+    # KMS Node 0 configuration
+    - name: KMS_TX_SENDER_ADDRESS_0
+      value: "0x31de9c8ac5ecd5eaceddddee531e9bad8ac9c2a5"
+    - name: KMS_SIGNER_ADDRESS_0
+      value: "0xb575E4834b183ad6bBD5Ff57d54D1dbc678fc870"
+    - name: KMS_NODE_STORAGE_URL_0
+      value: "http://minio:9000/kms-public"
+
+    # Coprocessor configuration
+    - name: NUM_COPROCESSORS
+      value: "1"
+    - name: COPROCESSOR_TX_SENDER_ADDRESS_0
+      value: "0x6254A198F67ad40290a2E7B48aDB2d19B71f67BD"
+    - name: COPROCESSOR_SIGNER_ADDRESS_0
+      value: "0x6254A198F67ad40290a2E7B48aDB2d19B71f67BD"
+    - name: COPROCESSOR_S3_BUCKET_URL_0
+      value: "http://minio:9000/ct128"
+
+    # Custodian configuration
+    - name: NUM_CUSTODIANS
+      value: "1"
+    - name: CUSTODIAN_TX_SENDER_ADDRESS_0
+      value: "0x6764Bf471F841dDdc804A03e97Cb76b135faA54c"
+    - name: CUSTODIAN_SIGNER_ADDRESS_0
+      value: "0x6764Bf471F841dDdc804A03e97Cb76b135faA54c"
+    - name: CUSTODIAN_ENCRYPTION_KEY_0
+      value: "0xea8b8b710d770493a41b588808ea8e09d986561f73d523227718233f3b4742de793f18a9885136a9e7054b00ba0050a17f0c7d1bf180aaff5ece0fa3343afb1b"
+
+    # Host chain registration
+    - name: NUM_HOST_CHAINS
+      value: "1"
+    - name: HOST_CHAIN_CHAIN_ID_0
+      value: "12345"
+    - name: HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0
+      value: "0xcCAe95fF1d11656358E782570dF0418F59fA40e1"
+    - name: HOST_CHAIN_ACL_ADDRESS_0
+      value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+
+    # Pausers
+    - name: NUM_PAUSERS
+      value: "1"
+    - name: PAUSER_ADDRESS_0
+      value: "0x34B344B40eA9Ef21Da5653468a072780d19B1fa4"
+
+  # Deployment commands for gateway contracts
+  deployCommands:
+    - npx hardhat task:deployAllGatewayContracts
+    - npx hardhat task:addHostChainsToGatewayConfig
+    - npx hardhat task:addGatewayPausers
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -----------------------------------------------------------------------------
+# Contract Upgrade (disabled for initial deployment)
+# -----------------------------------------------------------------------------
+scUpgrade:
+  enabled: false
+
+# -----------------------------------------------------------------------------
+# Persistence
+# -----------------------------------------------------------------------------
+persistence:
+  enabled: true
+  mountPath: /app/addresses
+  volumeClaim:
+    create: true
+    storageCapacity: 1Gi

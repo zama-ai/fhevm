@@ -1,0 +1,152 @@
+# Kind-specific values for KMS Core Helm Chart
+# This file configures KMS Core for local Kind cluster deployment in centralized mode.
+#
+# Usage:
+#   helm upgrade --install kms-core ../kms/charts/kms-core \
+#     --namespace fhevm-local \
+#     -f test-suite/fhevm/env/kind/kms-core-values.yaml
+
+# Number of KMS peers (1 for centralized mode)
+# Note: id must be set explicitly to match StatefulSet ordinal
+kmsPeers:
+  id: 1
+  count: 1
+
+# KMS Core service configuration
+kmsCore:
+  enabled: true
+  nameOverride: kms-core
+
+  # Image configuration
+  # Using the same image as docker-compose: ghcr.io/zama-ai/kms/core-service
+  image:
+    name: ghcr.io/zama-ai/kms/core-service
+    tag: v0.13.0
+    pullPolicy: IfNotPresent
+
+  # Centralized mode (threshold disabled)
+  thresholdMode:
+    enabled: false
+
+  # AWS/S3 configuration for MinIO
+  aws:
+    region: eu-west-1
+
+  # Public vault uses S3 (MinIO)
+  publicVault:
+    s3:
+      enabled: true
+      bucket: kms-public
+      prefix: "PUB"
+
+  # Private vault uses file storage for centralized mode
+  privateVault:
+    s3:
+      enabled: false
+
+  # Port configuration - using 50051 to match docker-compose
+  ports:
+    client: 50051
+    metrics: 9646
+
+  # Resource limits appropriate for Kind/local development
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 200m
+    limits:
+      memory: 2Gi
+      ephemeralStorage: 1Gi
+      grpcTimeout: 360
+      grpcMaxMessageSize: 104857600  # 100 MiB
+
+  # Probe configuration
+  readinessProbe:
+    failureThreshold: 30
+    initialDelaySeconds: 10
+    periodSeconds: 5
+
+  startupProbe:
+    failureThreshold: 30
+    initialDelaySeconds: 30
+    periodSeconds: 10
+
+  livenessProbe:
+    failureThreshold: 10
+    initialDelaySeconds: 10
+    timeoutSeconds: 5
+
+  # Storage for keys (used when privateVault.s3 is disabled)
+  storage:
+    capacity: 1Gi
+
+  # Service monitor disabled for local development
+  serviceMonitor:
+    enabled: false
+
+  # Rate limiter configuration
+  rateLimiter:
+    bucketSize: 50000
+
+# KMS Core Client (disabled for basic deployment)
+kmsCoreClient:
+  enabled: false
+
+# Threshold initialization (disabled for centralized mode)
+kmsInit:
+  enabled: false
+
+# Key generation job (disabled - handled by init container)
+kmsGenKeys:
+  enabled: false
+
+# Certificate generation (disabled for centralized mode)
+kmsGenCertAndKeys:
+  enabled: false
+
+# MinIO configuration
+# Set to true to deploy MinIO with the chart, or configure external MinIO
+minio:
+  enabled: true
+  endpoint: "http://minio:9000"
+  username: "minioadmin"
+  password: "minioadmin"
+
+# Run mode for development
+runMode: dev
+
+# Logging level
+rustLog: info
+
+# Tracing disabled for local development
+tracing:
+  enabled: false
+
+# Redis disabled for centralized mode
+redis:
+  enabled: false
+
+# Kyverno policies disabled
+kyverno:
+  enabled: false
+
+# Pod security context
+podSecurityContext:
+  runAsUser: 10002
+  runAsGroup: 10003
+  fsGroup: 10003
+  runAsNonRoot: true
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  privileged: false
+
+# Kube utils image for init containers
+kubeUtils:
+  image:
+    name: ghcr.io/zama-ai/security-hub/infra/kube-utils
+    tag: 0.4.0-safe
+    pullPolicy: IfNotPresent

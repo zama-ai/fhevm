@@ -1,0 +1,78 @@
+# =============================================================================
+# Test Suite Configuration for Kind Deployment
+# =============================================================================
+# E2E test suite pod for FHEVM integration testing
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Image Configuration
+# -----------------------------------------------------------------------------
+image:
+  repository: ghcr.io/zama-ai/fhevm-test-suite
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# -----------------------------------------------------------------------------
+# Pod Command
+# -----------------------------------------------------------------------------
+# Run as a long-running pod for interactive testing
+command: ["tail", "-f", "/dev/null"]
+
+# -----------------------------------------------------------------------------
+# Environment Variables
+# -----------------------------------------------------------------------------
+env:
+  # Network selection
+  - name: NETWORK
+    value: "staging"
+
+  # Chain configuration
+  - name: CHAIN_ID_HOST
+    value: "12345"
+  - name: CHAIN_ID_GATEWAY
+    value: "54321"
+
+  # RPC endpoints
+  - name: HOST_RPC_URL
+    value: "http://host-anvil-node:8545"
+  - name: GATEWAY_RPC_URL
+    value: "http://gateway-anvil-node:8546"
+  - name: RPC_URL
+    value: "http://host-anvil-node:8545"
+
+  # Service endpoints
+  - name: RELAYER_URL
+    value: "http://relayer:3000/v2"
+
+  # Wallet configuration
+  - name: MNEMONIC
+    value: "test test test test test test test test test test test junk"
+
+  # Gateway contract addresses
+  - name: DECRYPTION_ADDRESS
+    value: "0x35760912360E875DA50D40a74305575c23D55783"
+  - name: INPUT_VERIFICATION_ADDRESS
+    value: "0x1ceFA8E3F3271358218B52c33929Cf76078004c1"
+  - name: DECRYPTION_ORACLE_ADDRESS
+    value: "0xD0fA6194Db6cfCDF733c64F1F272AeA66e968D3C"
+
+  # Host contract addresses
+  - name: KMS_VERIFIER_CONTRACT_ADDRESS
+    value: "0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11"
+  - name: ACL_CONTRACT_ADDRESS
+    value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
+  - name: INPUT_VERIFIER_CONTRACT_ADDRESS
+    value: "0x857Ca72A957920Fa0FB138602995839866Bd4005"
+  - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+    value: "0xcCAe95fF1d11656358E782570dF0418F59fA40e1"
+
+# -----------------------------------------------------------------------------
+# Resource Limits
+# -----------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi

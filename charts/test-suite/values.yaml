@@ -1,0 +1,87 @@
+# Default values for test-suite
+# This is a YAML-formatted file.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/zama-ai/fhevm/test-suite/e2e
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Command to keep pod running (for exec-based test execution)
+# This allows interactive test runs via kubectl exec
+command: ["tail", "-f", "/dev/null"]
+
+# Test suite configuration
+env:
+  # Network identifier for test configuration
+  NETWORK: "staging"
+  # Host chain RPC endpoint
+  HOST_RPC_URL: "http://host-anvil-node:8545"
+  # Gateway chain RPC endpoint
+  GATEWAY_RPC_URL: "http://gateway-anvil-node:8546"
+  # Relayer service endpoint
+  RELAYER_URL: "http://relayer:3000"
+  # Test wallet mnemonic (use only for testing, never in production)
+  MNEMONIC: "test test test test test test test test test test test junk"
+
+# Extra environment variables (as a list)
+# Use this for additional configuration not covered above
+extraEnv: []
+# - name: DEBUG
+#   value: "true"
+# - name: CHAIN_ID_HOST
+#   value: "12345"
+
+# Resource limits appropriate for test execution
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+# Pod scheduling configuration
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Volume mounts for test artifacts
+persistence:
+  enabled: false
+  # Mount path for test results
+  mountPath: /app/test-results
+  # Use emptyDir or PVC
+  type: emptyDir  # or "pvc"
+  # PVC settings (if type is "pvc")
+  pvc:
+    size: 1Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+
+# Init containers to wait for dependent services before starting
+initContainers:
+  # Wait for relayer to be ready
+  waitForRelayer:
+    enabled: true
+    image: busybox:1.36
+    host: "relayer"
+    port: 3000
+  # Wait for host blockchain node to be ready
+  waitForHostNode:
+    enabled: true
+    image: busybox:1.36
+    host: "host-anvil-node"
+    port: 8545
+  # Wait for gateway blockchain node to be ready
+  waitForGatewayNode:
+    enabled: true
+    image: busybox:1.36
+    host: "gateway-anvil-node"
+    port: 8546

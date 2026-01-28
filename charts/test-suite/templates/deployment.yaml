@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "test-suite.fullname" . }}
+  labels:
+    {{- include "test-suite.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "test-suite.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "test-suite.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.initContainers.waitForRelayer.enabled .Values.initContainers.waitForHostNode.enabled .Values.initContainers.waitForGatewayNode.enabled }}
+      initContainers:
+        {{- if .Values.initContainers.waitForRelayer.enabled }}
+        - name: wait-for-relayer
+          image: {{ .Values.initContainers.waitForRelayer.image }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for relayer at {{ .Values.initContainers.waitForRelayer.host }}:{{ .Values.initContainers.waitForRelayer.port }}..."
+              until nc -z {{ .Values.initContainers.waitForRelayer.host }} {{ .Values.initContainers.waitForRelayer.port }}; do
+                echo "Relayer not ready, waiting..."
+                sleep 5
+              done
+              echo "Relayer is ready!"
+        {{- end }}
+        {{- if .Values.initContainers.waitForHostNode.enabled }}
+        - name: wait-for-host-node
+          image: {{ .Values.initContainers.waitForHostNode.image }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for host node at {{ .Values.initContainers.waitForHostNode.host }}:{{ .Values.initContainers.waitForHostNode.port }}..."
+              until nc -z {{ .Values.initContainers.waitForHostNode.host }} {{ .Values.initContainers.waitForHostNode.port }}; do
+                echo "Host node not ready, waiting..."
+                sleep 2
+              done
+              echo "Host node is ready!"
+        {{- end }}
+        {{- if .Values.initContainers.waitForGatewayNode.enabled }}
+        - name: wait-for-gateway-node
+          image: {{ .Values.initContainers.waitForGatewayNode.image }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for gateway node at {{ .Values.initContainers.waitForGatewayNode.host }}:{{ .Values.initContainers.waitForGatewayNode.port }}..."
+              until nc -z {{ .Values.initContainers.waitForGatewayNode.host }} {{ .Values.initContainers.waitForGatewayNode.port }}; do
+                echo "Gateway node not ready, waiting..."
+                sleep 2
+              done
+              echo "Gateway node is ready!"
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.command }}
+          command:
+            {{- toYaml .Values.command | nindent 12 }}
+          {{- end }}
+          env:
+            - name: NETWORK
+              value: {{ .Values.env.NETWORK | quote }}
+            - name: HOST_RPC_URL
+              value: {{ .Values.env.HOST_RPC_URL | quote }}
+            - name: GATEWAY_RPC_URL
+              value: {{ .Values.env.GATEWAY_RPC_URL | quote }}
+            - name: RELAYER_URL
+              value: {{ .Values.env.RELAYER_URL | quote }}
+            - name: MNEMONIC
+              value: {{ .Values.env.MNEMONIC | quote }}
+            {{- range .Values.extraEnv }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          {{- if .Values.persistence.enabled }}
+          volumeMounts:
+            - name: test-results
+              mountPath: {{ .Values.persistence.mountPath }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.persistence.enabled }}
+      volumes:
+        - name: test-results
+          {{- if eq .Values.persistence.type "emptyDir" }}
+          emptyDir: {}
+          {{- else }}
+          persistentVolumeClaim:
+            claimName: {{ include "test-suite.fullname" . }}-results
+          {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

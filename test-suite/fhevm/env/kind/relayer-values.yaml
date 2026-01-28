@@ -1,0 +1,91 @@
+# =============================================================================
+# Relayer Configuration for Kind Deployment
+# =============================================================================
+# Transaction relayer service for FHEVM
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Image Configuration
+# -----------------------------------------------------------------------------
+image:
+  repository: ghcr.io/zama-ai/fhevm-relayer
+  tag: v0.8.4
+  pullPolicy: IfNotPresent
+
+# -----------------------------------------------------------------------------
+# Application Configuration
+# -----------------------------------------------------------------------------
+config:
+  # Network endpoints
+  hostRpcUrl: "http://host-anvil-node:8545"
+  gatewayRpcUrl: "http://gateway-anvil-node:8546"
+  gatewayWsUrl: "ws://gateway-anvil-node:8546"
+  gatewayChainId: "54321"
+
+  # Contract addresses (gateway chain)
+  decryptionAddress: "0x35760912360E875DA50D40a74305575c23D55783"
+  inputVerificationAddress: "0x1ceFA8E3F3271358218B52c33929Cf76078004c1"
+  userDecryptSharesThreshold: "1"
+
+  # Key URLs
+  fhePublicKeyUrl: "http://minio:9000/kms-public/PUB/PublicKey"
+  crsUrl: "http://minio:9000/kms-public/PUB/CRS"
+
+# -----------------------------------------------------------------------------
+# Database Configuration
+# -----------------------------------------------------------------------------
+database:
+  url: "postgresql://postgres:postgres@postgresql:5432/relayer"
+
+# -----------------------------------------------------------------------------
+# Environment Variables
+# -----------------------------------------------------------------------------
+env:
+  - name: DATABASE_URL
+    value: "postgres://postgres:postgres@postgresql:5432/relayer"
+  - name: MAX_ATTEMPTS
+    value: "20"
+  - name: APP_GATEWAY__TX_ENGINE__PRIVATE_KEY
+    value: "0xcb97ef45d352446a6adf810cf8f63c73ada027160c271da9bb8cfcb3d944d257"
+  - name: APP_KEYURL__FHE_PUBLIC_KEY__DATA_ID
+    value: "fhe-public-key-data-id"
+  - name: APP_KEYURL__FHE_PUBLIC_KEY__URL
+    value: "http://minio:9000/kms-public/PUB/PublicKey"
+  - name: APP_KEYURL__CRS__DATA_ID
+    value: "crs-data-id"
+  - name: APP_KEYURL__CRS__URL
+    value: "http://minio:9000/kms-public/PUB/CRS"
+  - name: APP_GATEWAY__BLOCKCHAIN_RPC__WS_URL
+    value: "ws://gateway-anvil-node:8546"
+  - name: APP_GATEWAY__BLOCKCHAIN_RPC__HTTP_URL
+    value: "http://gateway-anvil-node:8546"
+  - name: APP_GATEWAY__BLOCKCHAIN_RPC__CHAIN_ID
+    value: "54321"
+  - name: APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS
+    value: "0x35760912360E875DA50D40a74305575c23D55783"
+  - name: APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS
+    value: "0x1ceFA8E3F3271358218B52c33929Cf76078004c1"
+  - name: APP_GATEWAY__CONTRACTS__USER_DECRYPT_SHARES_THRESHOLD
+    value: "1"
+  - name: APP_STORAGE__SQL_DATABASE_URL
+    value: "postgres://postgres:postgres@postgresql:5432/relayer"
+  - name: RUST_LOG
+    value: "info"
+
+# -----------------------------------------------------------------------------
+# Service Configuration
+# -----------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  port: 3000
+
+# -----------------------------------------------------------------------------
+# Resource Limits
+# -----------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
