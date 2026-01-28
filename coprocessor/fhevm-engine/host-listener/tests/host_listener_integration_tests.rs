@@ -15,6 +15,7 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use futures_util::future::try_join_all;
+use host_listener::database::tfhe_event_propagate::ChainId;
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use std::collections::HashSet;
@@ -172,6 +173,7 @@ struct Setup {
     db_pool: sqlx::Pool<sqlx::Postgres>,
     _test_instance: test_harness::instance::DBInstance, // maintain db alive
     health_check_url: String,
+    chain_id: ChainId,
 }
 
 async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
@@ -190,12 +192,6 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         .max_connections(1)
         .connect(test_instance.db_url())
         .await?;
-
-    let coprocessor_api_key =
-        sqlx::query!("SELECT tenant_api_key FROM tenants LIMIT 1")
-            .fetch_one(&db_pool)
-            .await?
-            .tenant_api_key;
 
     let anvil = Anvil::new()
         .block_time_f64(1.0)
@@ -219,7 +215,6 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
         database_url: test_instance.db_url.clone(),
-        coprocessor_api_key: Some(coprocessor_api_key),
         start_at_block: None,
         end_at_block: None,
         only_catchup_loop: false,
@@ -237,6 +232,12 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
+    let chain_id = if let Some(chain_id) = node_chain_id {
+        chain_id
+    } else {
+        provider.get_chain_id().await?
+    };
+
     Ok(Setup {
         args,
         anvil,
@@ -246,22 +247,8 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         db_pool,
         _test_instance: test_instance,
         health_check_url,
+        chain_id,
     })
-}
-
-#[tokio::test]
-#[serial(db)]
-async fn test_bad_chain_id() {
-    let setup = setup(Some(54321)).await.expect("setup failed");
-    let listener_handle = tokio::spawn(main(setup.args.clone()));
-    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-    assert!(listener_handle.is_finished(), "Listener should have failed");
-    let result = listener_handle.await;
-    if let Ok(Err(e)) = result {
-        assert!(e.to_string().contains("Chain ID mismatch"));
-    } else {
-        panic!("Listener should have failed due to chain ID mismatch");
-    }
 }
 
 #[tokio::test]
@@ -274,7 +261,6 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         database_url: fhevm_engine_common::utils::DatabaseURL::default(),
         start_at_block: Some(0),
         end_at_block: None,
-        coprocessor_api_key: None,
         catchup_margin: 5,
         catchup_paging: 10,
         initial_block_time: 12,
@@ -344,7 +330,7 @@ async fn test_listener_no_event_loss(
     listener_handle.abort();
     let database = Database::new(
         &args.database_url,
-        &args.coprocessor_api_key.unwrap(),
+        setup.chain_id,
         args.dependence_cache_size,
     )
     .await

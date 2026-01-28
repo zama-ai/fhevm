@@ -9,7 +9,6 @@ use alloy::providers::ProviderBuilder;
 use alloy::rpc::types::Log;
 use alloy::transports::http::reqwest::Url;
 use anyhow::{anyhow, Context, Result};
-use sqlx::types::Uuid;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -71,7 +70,6 @@ pub struct PollerConfig {
     pub acl_address: Address,
     pub tfhe_address: Address,
     pub database_url: DatabaseURL,
-    pub coprocessor_api_key: Uuid,
     pub finality_lag: u64,
     pub batch_size: u64,
     pub poll_interval: Duration,
@@ -135,27 +133,10 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
 
     let mut db = Database::new(
         &config.database_url,
-        &config.coprocessor_api_key,
+        chain_id,
         config.dependence_cache_size,
     )
     .await?;
-
-    if chain_id != db.chain_id {
-        error!(
-            chain_id_blockchain = ?chain_id,
-            chain_id_db = ?db.chain_id,
-            tenant_id = ?db.tenant_id,
-            coprocessor_api_key = ?config.coprocessor_api_key,
-            "Chain ID mismatch with database",
-        );
-        return Err(anyhow!(
-            "Chain ID mismatch with database, blockchain: {} vs db: {}, tenant_id: {}, coprocessor_api_key: {}",
-            chain_id,
-            db.chain_id,
-            db.tenant_id,
-            config.coprocessor_api_key
-        ));
-    }
 
     let initial_anchor =
         db.poller_get_last_caught_up_block(chain_id as i64).await?;

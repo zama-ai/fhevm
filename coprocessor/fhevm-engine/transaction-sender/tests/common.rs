@@ -92,6 +92,9 @@ impl TestEnvironment {
                 "ciphertext_digest",
                 "allowed_handles",
                 "delegate_user_decrypt",
+                "keys",
+                "crs",
+                "host_chains",
             ],
         )
         .await?;

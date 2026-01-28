@@ -53,6 +53,9 @@ pub enum ExecutionError {
     #[error("Server keys not found {0}")]
     ServerKeysNotFound(String),
 
+    #[error("CCRS not found")]
+    CrsNotFound,
+
     #[error("Invalid auxiliary data {0}")]
     InvalidAuxData(String),
 
@@ -61,6 +64,9 @@ pub enum ExecutionError {
 
     #[error("Too many inputs: {0}")]
     TooManyInputs(usize),
+
+    #[error("Unknown chain ID: {0})")]
+    UnknownChainId(i64),
 }
 
 impl From<ExecutionError> for ServiceError {

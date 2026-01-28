@@ -4,14 +4,15 @@ use sqlx::{
     postgres::{types::Oid, PgRow},
     PgPool, Row,
 };
-use std::{ops::DerefMut, sync::Arc};
+use std::ops::DerefMut;
 use tracing::info;
 
-pub struct TfheTenantKeys {
-    pub tenant_id: i32,
-    pub chain_id: i64,
-    pub verifying_contract_address: String,
-    pub acl_contract_address: String,
+pub type DbKeyId = Vec<u8>;
+
+#[derive(Clone)]
+pub struct DbKey {
+    pub key_id: DbKeyId,
+    pub sequence_number: i64,
 
     #[cfg(not(feature = "gpu"))]
     pub sks: tfhe::ServerKey,
@@ -20,92 +21,126 @@ pub struct TfheTenantKeys {
     pub sks: tfhe::CudaServerKey,
 
     pub pks: tfhe::CompactPublicKey,
-    pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
 }
 
-pub struct FetchTenantKeyResult {
-    pub tenant_id: i32,
-    pub chain_id: i64,
-    pub verifying_contract_address: String,
-    pub acl_contract_address: String,
-
-    #[cfg(not(feature = "gpu"))]
-    pub server_key: tfhe::ServerKey,
-    #[cfg(feature = "gpu")]
-    pub server_key: tfhe::CudaServerKey,
-
-    pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
-    pub pks: tfhe::CompactPublicKey,
-}
-
-/// Returns chain id and verifying contract address for EIP712 signature and tfhe server key
-pub async fn fetch_tenant_server_key<'a, T>(
-    id: i64,
+pub async fn fetch_db_key<'a, T>(
+    db_key_id: &DbKeyId,
     pool: T,
-    tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i64, TfheTenantKeys>>>,
-    is_tenant_id: bool,
-) -> Result<FetchTenantKeyResult, Box<dyn std::error::Error + Send + Sync>>
+    db_keys_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<DbKeyId, DbKey>>>,
+) -> Result<DbKey, Box<dyn std::error::Error + Send + Sync>>
 where
     T: sqlx::PgExecutor<'a> + Copy,
 {
     // try getting from cache until it succeeds with populating cache
     loop {
         {
-            let mut w = tenant_key_cache.write().await;
-            if let Some(key) = w.get(&id) {
-                return Ok(FetchTenantKeyResult {
-                    tenant_id: key.tenant_id,
-                    chain_id: key.chain_id,
-                    verifying_contract_address: key.verifying_contract_address.clone(),
-                    acl_contract_address: key.acl_contract_address.clone(),
-                    server_key: key.sks.clone(),
-                    public_params: key.public_params.clone(),
-                    pks: key.pks.clone(),
-                });
+            let mut w = db_keys_cache.write().await;
+            if let Some(key) = w.get(db_key_id) {
+                return Ok(key.clone());
             }
         }
-
-        populate_cache_with_tenant_keys(vec![id], pool, tenant_key_cache, is_tenant_id).await?;
+        populate_cache_with_db_keys(vec![db_key_id.clone()], pool, db_keys_cache).await?;
     }
 }
-pub async fn query_tenant_keys<'a, T>(
-    ids_to_query: Vec<i64>,
-    conn: T,
-    is_tenant_id: bool,
-) -> Result<Vec<TfheTenantKeys>, Box<dyn std::error::Error + Send + Sync>>
+
+/// Fetches the latest key by sequence_number and ensures it's in the cache.
+/// Returns the key result.
+pub async fn fetch_latest_db_key<'a, T>(
+    pool: T,
+    db_keys_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<DbKeyId, DbKey>>>,
+) -> Result<DbKey, Box<dyn std::error::Error + Send + Sync>>
 where
     T: sqlx::PgExecutor<'a>,
 {
-    let column = if is_tenant_id {
-        "tenant_id"
-    } else {
-        "chain_id"
+    let row = sqlx::query(
+        "SELECT key_id, sequence_number, pks_key, sks_key FROM keys ORDER BY sequence_number DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or("No keys found in database")?;
+
+    let key_id: DbKeyId = row.try_get("key_id")?;
+    let sequence_number: i64 = row.try_get("sequence_number")?;
+
+    // Check if already in cache
+    {
+        let mut cache = db_keys_cache.write().await;
+        if let Some(key) = cache.get(&key_id) {
+            return Ok(key.clone());
+        }
+    }
+
+    // Not in cache, deserialize and cache it
+    let pks_key: Vec<u8> = row.try_get("pks_key")?;
+    let sks_key: Vec<u8> = row.try_get("sks_key")?;
+
+    #[cfg(not(feature = "gpu"))]
+    let sks: tfhe::ServerKey = safe_deserialize_key(&sks_key)?;
+    #[cfg(feature = "gpu")]
+    let sks = {
+        let csks: tfhe::CompressedServerKey = safe_deserialize_key(&sks_key)?;
+        csks.decompress_to_gpu()
+    };
+    let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
+
+    let result = DbKey {
+        key_id: key_id.clone(),
+        sequence_number,
+        sks: sks.clone(),
+        pks: pks.clone(),
     };
 
-    let query_str = format!(
-        "
-            SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params
-            FROM tenants
-            WHERE {} = ANY($1::INT[])
-        ",
-        column
-    );
+    // Insert into cache
+    {
+        let mut cache = db_keys_cache.write().await;
+        cache.put(
+            key_id.clone(),
+            DbKey {
+                key_id: key_id.clone(),
+                sequence_number,
+                sks,
+                pks,
+            },
+        );
+    }
 
-    let rows = sqlx::query(&query_str)
-        .bind(&ids_to_query)
+    info!(
+        "Latest key cached: key_id={:?}, seq={}",
+        hex::encode(&key_id),
+        sequence_number
+    );
+    Ok(result)
+}
+
+/// If `db_key_ids_to_query` is `None`, fetch all keys from the database.
+/// Else, fetch only the keys with the specified IDs.
+pub async fn query_db_keys<'a, T>(
+    db_key_ids_to_query: Option<Vec<DbKeyId>>,
+    conn: T,
+) -> Result<Vec<DbKey>, Box<dyn std::error::Error + Send + Sync>>
+where
+    T: sqlx::PgExecutor<'a>,
+{
+    let rows = if let Some(ref ids) = db_key_ids_to_query {
+        sqlx::query(
+            "SELECT key_id, sequence_number, pks_key, sks_key FROM keys WHERE key_id = ANY($1)",
+        )
+        .bind(ids)
         .fetch_all(conn)
-        .await?;
+        .await?
+    } else {
+        sqlx::query("SELECT key_id, sequence_number, pks_key, sks_key FROM keys")
+            .fetch_all(conn)
+            .await?
+    };
 
     let mut res = Vec::with_capacity(rows.len());
 
     for row in rows {
-        let tenant_id: i32 = row.try_get("tenant_id")?;
-        let chain_id: i64 = row.try_get("chain_id")?;
-        let acl_contract_address: String = row.try_get("acl_contract_address")?;
-        let verifying_contract_address: String = row.try_get("verifying_contract_address")?;
+        let key_id = row.try_get("key_id")?;
+        let sequence_number: i64 = row.try_get("sequence_number")?;
         let pks_key: Vec<u8> = row.try_get("pks_key")?;
         let sks_key: Vec<u8> = row.try_get("sks_key")?;
-        let public_params_key: Vec<u8> = row.try_get("public_params")?;
 
         // Deserialize binary keys properly
         #[cfg(not(feature = "gpu"))]
@@ -116,48 +151,41 @@ where
             csks.decompress_to_gpu()
         };
         let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
-        let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&public_params_key)?;
 
-        res.push(TfheTenantKeys {
-            tenant_id,
-            chain_id,
-            acl_contract_address,
-            verifying_contract_address,
+        res.push(DbKey {
+            key_id,
+            sequence_number,
             sks,
             pks,
-            public_params: Arc::new(public_params),
         });
     }
 
     Ok(res)
 }
 
-pub async fn populate_cache_with_tenant_keys<'a, T>(
-    tenants_to_query: Vec<i64>,
+async fn populate_cache_with_db_keys<'a, T>(
+    db_key_ids_to_query: Vec<DbKeyId>,
     conn: T,
-    tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i64, TfheTenantKeys>>>,
-    is_tenant_id: bool,
+    db_keys_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<DbKeyId, DbKey>>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
     T: sqlx::PgExecutor<'a>,
 {
-    if !tenants_to_query.is_empty() {
-        let mut key_cache = tenant_key_cache.write().await;
-        if tenants_to_query
+    if !db_key_ids_to_query.is_empty() {
+        let mut key_cache = db_keys_cache.write().await;
+        if db_key_ids_to_query
             .iter()
             .all(|id| key_cache.get(id).is_some())
         {
-            // All IDs are already in the key cache, no need to re-query the keys
             return Ok(());
         }
 
         tracing::info!(
-            message = "query tenants",
-            tenants = format!("{:?}", tenants_to_query),
-            is_tenant_id
+            message = "query keys",
+            db_key_ids_to_query = format!("{:?}", db_key_ids_to_query),
         );
 
-        let keys = query_tenant_keys(tenants_to_query, conn, is_tenant_id).await?;
+        let keys = query_db_keys(Some(db_key_ids_to_query), conn).await?;
 
         assert!(
             !keys.is_empty(),
@@ -165,73 +193,24 @@ where
         );
 
         for key in keys {
-            let id = if is_tenant_id {
-                key.tenant_id as i64
-            } else {
-                key.chain_id
-            };
-
-            key_cache.put(id, key);
+            key_cache.put(key.key_id.clone(), key);
         }
     }
 
     Ok(())
 }
 
-pub struct TenantInfo {
-    /// The key_id of the tenant
-    pub key_id: [u8; 32],
-    /// The chain id of the tenant
-    pub chain_id: i64,
-}
-
-/// Returns the key_id, chain_id for a given tenant_id
-pub async fn query_tenant_info<'a, T>(
-    conn: T,
-    tenant_id: i32,
-) -> Result<TenantInfo, Box<dyn std::error::Error + Send + Sync>>
-where
-    T: sqlx::PgExecutor<'a>,
-{
-    let row = sqlx::query(
-        "SELECT key_id, chain_id FROM tenants
-            WHERE tenant_id = $1::INT",
-    )
-    .bind(tenant_id)
-    .fetch_one(conn)
-    .await?;
-
-    let key_id_vec: Vec<u8> = row.try_get("key_id")?;
-
-    let key_id: [u8; 32] = key_id_vec
-        .try_into()
-        .map_err(|_| "Failed to convert key_id to [u8; 32]")?;
-
-    let res: TenantInfo = TenantInfo {
-        key_id,
-        chain_id: row.try_get("chain_id")?,
-    };
-
-    Ok(res)
-}
-
 const CHUNK_SIZE: i32 = 64 * 1024; // 64KiB
 pub async fn read_keys_from_large_object(
     pool: &PgPool,
-    tenant_api_key: &String,
+    db_key_id: DbKeyId,
     keys_column_name: &str,
     capacity: usize,
 ) -> anyhow::Result<Vec<u8>> {
-    let query = format!(
-        "SELECT {} FROM tenants WHERE tenant_api_key = $1::uuid",
-        keys_column_name
-    );
+    let query = format!("SELECT {} FROM keys WHERE key_id = $1", keys_column_name);
 
     // Read the Oid of the large object
-    let row: PgRow = sqlx::query(&query)
-        .bind(tenant_api_key)
-        .fetch_one(pool)
-        .await?;
+    let row: PgRow = sqlx::query(&query).bind(db_key_id).fetch_one(pool).await?;
 
     let oid: Oid = row.try_get(0)?;
     info!("Retrieved oid: {:?}, column: {}", oid, keys_column_name);
@@ -239,8 +218,8 @@ pub async fn read_keys_from_large_object(
     read_large_object_in_chunks(pool, oid, CHUNK_SIZE, capacity).await
 }
 
-/// Read a large object by Oid from the database in chunks
-pub async fn read_large_object_in_chunks(
+// Read a large object by Oid from the database in chunks
+async fn read_large_object_in_chunks(
     pool: &PgPool,
     large_object_oid: Oid,
     chunk_size: i32,

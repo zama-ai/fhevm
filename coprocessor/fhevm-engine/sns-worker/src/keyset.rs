@@ -1,6 +1,4 @@
-use fhevm_engine_common::{
-    tenant_keys::read_keys_from_large_object, utils::safe_deserialize_sns_key,
-};
+use fhevm_engine_common::{db_keys::read_keys_from_large_object, utils::safe_deserialize_sns_key};
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use tokio::sync::RwLock;

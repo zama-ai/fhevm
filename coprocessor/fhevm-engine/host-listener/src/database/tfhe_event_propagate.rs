@@ -11,7 +11,6 @@ use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
-use sqlx::types::Uuid;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
 use std::ops::DerefMut;
@@ -28,7 +27,6 @@ use crate::contracts::AclContract::AclContractEvents;
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 
-type CoprocessorApiKey = Uuid;
 type FheOperation = i32;
 pub type Handle = FixedBytes<32>;
 pub type TransactionHash = FixedBytes<32>;
@@ -90,7 +88,6 @@ pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
 pub struct Database {
     url: DatabaseURL,
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
-    pub tenant_id: TenantId,
     pub chain_id: ChainId,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
@@ -112,12 +109,10 @@ pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
 impl Database {
     pub async fn new(
         url: &DatabaseURL,
-        coprocessor_api_key: &CoprocessorApiKey,
+        chain_id: ChainId,
         dependence_cache_size: u16,
     ) -> Result<Self> {
         let pool = Self::new_pool(url).await;
-        let (tenant_id, chain_id) =
-            Self::find_tenant_id(&pool, coprocessor_api_key).await?;
         let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
             std::num::NonZeroU16::new(
                 dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
@@ -127,7 +122,6 @@ impl Database {
         ));
         Ok(Database {
             url: url.clone(),
-            tenant_id,
             chain_id,
             pool: Arc::new(RwLock::new(pool)),
             dependence_chain: bucket_cache,
@@ -179,44 +173,10 @@ impl Database {
         old_pool.close().await;
     }
 
-    async fn find_tenant_id(
-        pool: &sqlx::Pool<Postgres>,
-        tenant_api_key: &CoprocessorApiKey,
-    ) -> Result<(TenantId, ChainId)> {
-        let query = || {
-            sqlx::query!(
-                r#"SELECT tenant_id, chain_id FROM tenants WHERE tenant_api_key = $1"#,
-                tenant_api_key.into()
-            )
-            .fetch_one(pool)
-        };
-        // retry mecanism
-        let mut retry_count = 0;
-        loop {
-            match query().await {
-                Ok(record) => {
-                    return Ok((record.tenant_id, record.chain_id as u64))
-                }
-                Err(SqlxError::RowNotFound) => {
-                    anyhow::bail!("No tenant found for the provided API key");
-                }
-                Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
-                    error!(error = %err, "Error requesting tenant id, retrying");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    continue;
-                }
-                Err(err) => {
-                    return Err(err.into());
-                }
-            }
-        }
-    }
-
     #[allow(clippy::too_many_arguments)]
     async fn insert_computation_bytes(
         &self,
         tx: &mut Transaction<'_>,
-        tenant_id: TenantId,
         result: &Handle,
         dependencies_handles: &[&Handle],
         dependencies_bytes: &[Vec<u8>], /* always added after
@@ -232,7 +192,6 @@ impl Database {
         let dependencies = [&dependencies_handles, dependencies_bytes].concat();
         self.insert_computation_inner(
             tx,
-            tenant_id,
             result,
             dependencies,
             fhe_operation,
@@ -246,7 +205,6 @@ impl Database {
     async fn insert_computation(
         &self,
         tx: &mut Transaction<'_>,
-        tenant_id: TenantId,
         result: &Handle,
         dependencies: &[&Handle],
         fhe_operation: FheOperation,
@@ -257,7 +215,6 @@ impl Database {
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
         self.insert_computation_inner(
             tx,
-            tenant_id,
             result,
             dependencies,
             fhe_operation,
@@ -271,7 +228,6 @@ impl Database {
     async fn insert_computation_inner(
         &self,
         tx: &mut Transaction<'_>,
-        tenant_id: TenantId,
         result: &Handle,
         dependencies: Vec<Vec<u8>>,
         fhe_operation: FheOperation,
@@ -283,7 +239,6 @@ impl Database {
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
-                tenant_id,
                 output_handle,
                 dependencies,
                 fhe_operation,
@@ -295,10 +250,9 @@ impl Database {
                 schedule_order,
                 is_completed
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9::timestamp, $10)
-            ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9)
+            ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
-            tenant_id as i32,
             output_handle,
             &dependencies,
             fhe_operation as i16,
@@ -332,13 +286,12 @@ impl Database {
         let event = &log.event;
         let ty = |to_type: &ToType| vec![*to_type];
         let as_bytes = |x: &ClearConst| x.to_be_bytes_vec();
-        let tenant_id = self.tenant_id;
         let fhe_operation = event_to_op_int(event);
         let insert_computation = |tx, result, dependencies, scalar_byte| {
-            self.insert_computation(tx, tenant_id, result, dependencies, fhe_operation, scalar_byte, log)
+            self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log)
         };
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
-            self.insert_computation_bytes(tx, tenant_id, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
+            self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
 
         let _t = telemetry::tracer(
@@ -663,13 +616,11 @@ impl Database {
         handles: &Vec<Vec<u8>>,
         transaction_id: Option<Vec<u8>>,
     ) -> Result<bool, SqlxError> {
-        let tenant_id = self.tenant_id;
         let mut inserted = false;
         for handle in handles {
             let query = sqlx::query!(
-                "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3)
+                "INSERT INTO pbs_computations(handle, transaction_id) VALUES($1, $2)
                  ON CONFLICT DO NOTHING;",
-                tenant_id,
                 handle,
                 transaction_id
             );
@@ -688,11 +639,9 @@ impl Database {
         event_type: AllowEvents,
         transaction_id: Option<Vec<u8>>,
     ) -> Result<bool, SqlxError> {
-        let tenant_id = self.tenant_id;
         let query = sqlx::query!(
-            "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4, $5)
+            "INSERT INTO allowed_handles(handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4)
                     ON CONFLICT DO NOTHING;",
-            tenant_id,
             handle,
             account_address,
             event_type as i16,

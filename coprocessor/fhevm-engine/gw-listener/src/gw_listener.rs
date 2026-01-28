@@ -10,8 +10,9 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
+use crate::database::{insert_crs, insert_key, KeyRecord};
+
 use crate::aws_s3::{download_key_from_s3, AwsS3Interface};
-use crate::database::{tenant_id, update_tenant_crs, update_tenant_key};
 use crate::digest::{digest_crs, digest_key};
 use crate::metrics::{
     ACTIVATE_CRS_FAIL_COUNTER, ACTIVATE_CRS_SUCCESS_COUNTER, ACTIVATE_KEY_FAIL_COUNTER,
@@ -20,7 +21,7 @@ use crate::metrics::{
     KEY_DIGEST_MISMATCH_COUNTER, VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER,
 };
 use crate::sks_key::extract_server_key_without_ns;
-use crate::{ChainId, ConfigSettings, HealthStatus, KeyId, KeyType};
+use crate::{ConfigSettings, HealthStatus, KeyId, KeyType};
 
 use fhevm_gateway_bindings::input_verification::InputVerification;
 use fhevm_gateway_bindings::kms_generation::KMSGeneration;
@@ -215,7 +216,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                     KMSGeneration::KMSGenerationEvents::ActivateCrs(a) => {
                                         // IMPORTANT: If we ignore the event due to digest mismatch, this might lead to inconsistency between coprocessors.
                                         // We choose to ignore the event and then manually fix if it happens.
-                                        match self.activate_crs(db_pool, a, &self.aws_s3_client, self.conf.host_chain_id).await {
+                                        match self.activate_crs(db_pool, a, &self.aws_s3_client).await {
                                             Ok(_) => {
                                                 activate_crs_success += 1;
                                                 info!("ActivateCrs event successful");
@@ -232,7 +233,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                     },
                                     // IMPORTANT: See comment above.
                                     KMSGeneration::KMSGenerationEvents::ActivateKey(a) => {
-                                        match self.activate_key(db_pool, a, &self.aws_s3_client, self.conf.host_chain_id).await {
+                                        match self.activate_key(db_pool, a, &self.aws_s3_client).await {
                                             Ok(_) => {
                                                 activate_key_success += 1;
                                                 info!("ActivateKey event successful");
@@ -345,7 +346,6 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         db_pool: &Pool<Postgres>,
         request: KMSGeneration::ActivateKey,
         s3_client: &A,
-        host_chain_id: ChainId,
     ) -> anyhow::Result<()> {
         let key_id: KeyId = request.keyId;
         let s3_bucket_urls = request.kmsNodeStorageUrls;
@@ -385,28 +385,28 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             }
             keys_bytes.push(bytes);
         }
-        let Some(tenant_id) = tenant_id(db_pool, host_chain_id).await? else {
-            error!(host_chain_id, "No tenant found for chain id, stopping");
-            anyhow::bail!("No tenant found for chain id {}", host_chain_id);
-        };
-        let key_id = key_id_to_database_bytes(key_id);
+        let key_id_bytes = key_id_to_database_bytes(key_id);
         let mut tx = db_pool.begin().await?;
+        let mut key_record = KeyRecord {
+            key_id_gw: key_id_bytes.into(),
+            ..Default::default()
+        };
         for (i_key, key_bytes) in keys_bytes.drain(..).enumerate() {
-            let reduced_key_bytes = match key_types[i_key] {
-                KeyType::ServerKey => Some(extract_server_key_without_ns(&key_bytes)?),
-                KeyType::PublicKey => None,
-            };
-            update_tenant_key(
-                &mut tx,
-                &key_id,
-                key_types[i_key],
-                &key_bytes,
-                reduced_key_bytes,
-                tenant_id,
-                host_chain_id,
-            )
-            .await?;
+            match key_types[i_key] {
+                KeyType::ServerKey => {
+                    key_record.sks_key = extract_server_key_without_ns(&key_bytes)?.into();
+                    key_record.sns_pk = key_bytes;
+                }
+                KeyType::PublicKey => {
+                    key_record.pks_key = key_bytes;
+                    println!("pks_key {:?}", key_record.pks_key);
+                }
+            }
         }
+        if !key_record.is_valid() {
+            anyhow::bail!("Incomplete key record for key id:{key_id}");
+        }
+        insert_key(&mut tx, &key_record).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -416,7 +416,6 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         db_pool: &Pool<Postgres>,
         request: KMSGeneration::ActivateCrs,
         s3_client: &A,
-        host_chain_id: ChainId,
     ) -> anyhow::Result<()> {
         let crs_id: KeyId = request.crsId;
         let s3_bucket_urls = request.kmsNodeStorageUrls;
@@ -443,12 +442,8 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             }
             .into());
         }
-        let Some(tenant_id) = tenant_id(db_pool, host_chain_id).await? else {
-            error!(host_chain_id, "No tenant found for chain id, stopping");
-            anyhow::bail!("No tenant found for chain id {}", host_chain_id);
-        };
         let mut tx = db_pool.begin().await?;
-        update_tenant_crs(&mut tx, &bytes, tenant_id, host_chain_id).await?;
+        insert_crs(&mut tx, &key_id_to_database_bytes(crs_id), &bytes).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -583,7 +578,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
     }
 }
 
-fn key_id_to_database_bytes(key_id: KeyId) -> [u8; 32] {
+pub fn key_id_to_database_bytes(key_id: KeyId) -> [u8; 32] {
     key_id.to_be_bytes()
 }
 

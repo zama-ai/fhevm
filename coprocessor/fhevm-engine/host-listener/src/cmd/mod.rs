@@ -8,7 +8,6 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use futures_util::stream::StreamExt;
 use rustls;
-use sqlx::types::Uuid;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn, Level};
@@ -68,9 +67,6 @@ pub struct Args {
         allow_hyphen_values = true
     )]
     pub end_at_block: Option<i64>,
-
-    #[arg(long, help = "A Coprocessor API key is needed for database access")]
-    pub coprocessor_api_key: Option<Uuid>,
 
     #[arg(
         long,
@@ -1009,33 +1005,9 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         error!("Database URL is required");
         panic!("Database URL is required");
     };
-    let Some(coprocessor_api_key) = args.coprocessor_api_key else {
-        error!("A Coprocessor API key is required to access the database");
-        panic!("A Coprocessor API key is required to access the database");
-    };
-    let mut db = Database::new(
-        &args.database_url,
-        &coprocessor_api_key,
-        args.dependence_cache_size,
-    )
-    .await?;
-
-    if chain_id != db.chain_id {
-        error!(
-            chain_id_blockchain = ?chain_id,
-            chain_id_db = ?db.chain_id,
-            tenant_id = ?db.tenant_id,
-            coprocessor_api_key = ?coprocessor_api_key,
-            "Chain ID mismatch with database",
-        );
-        return Err(anyhow!(
-            "Chain ID mismatch with database, blockchain: {} vs db: {}, tenant_id: {}, coprocessor_api_key: {}",
-            chain_id,
-            db.chain_id,
-            db.tenant_id,
-            coprocessor_api_key
-        ));
-    }
+    let mut db =
+        Database::new(&args.database_url, chain_id, args.dependence_cache_size)
+            .await?;
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: log_iter.tick_timeout.clone(),

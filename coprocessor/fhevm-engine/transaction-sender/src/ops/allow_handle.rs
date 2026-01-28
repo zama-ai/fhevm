@@ -21,9 +21,7 @@ use alloy::{
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{
-    telemetry, tenant_keys::query_tenant_info, types::AllowEvents, utils::to_hex,
-};
+use fhevm_engine_common::{telemetry, types::AllowEvents, utils::to_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
@@ -34,7 +32,6 @@ use fhevm_gateway_bindings::multichain_acl::MultichainACL::MultichainACLErrors;
 struct Key {
     handle: Vec<u8>,
     account_addr: String,
-    tenant_id: i32,
     event_type: AllowEvents,
 }
 
@@ -42,10 +39,9 @@ impl Display for Key {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Key {{ handle: {}, account: {}, tenant_id: {}, event_type: {:?} }}",
+            "Key {{ handle: {}, account: {}, event_type: {:?} }}",
             to_hex(&self.handle),
             self.account_addr,
-            self.tenant_id,
             self.event_type
         )
     }
@@ -206,13 +202,11 @@ where
                     txn_hash = $1,
                     txn_block_number = $2
                  WHERE handle = $3
-                 AND account_address = $4
-                 AND tenant_id = $5",
+                 AND account_address = $4",
             txn_hash,
             txn_block_number,
             key.handle,
-            key.account_addr,
-            key.tenant_id
+            key.account_addr
         )
         .execute(&self.db_pool)
         .await?;
@@ -280,12 +274,10 @@ where
             txn_last_error = $1,
             txn_last_error_at = NOW()
             WHERE handle = $2
-            AND account_address = $3
-            AND tenant_id = $4",
+            AND account_address = $3",
             err,
             key.handle,
             key.account_addr,
-            key.tenant_id
         )
         .execute(&self.db_pool)
         .await?;
@@ -323,12 +315,10 @@ where
             txn_last_error = $1,
             txn_last_error_at = NOW()
             WHERE handle = $2
-            AND account_address = $3
-            AND tenant_id = $4",
+            AND account_address = $3",
             err,
             key.handle,
             key.account_addr,
-            key.tenant_id
         )
         .execute(&self.db_pool)
         .await?;
@@ -348,7 +338,7 @@ where
     async fn execute(&self) -> anyhow::Result<bool> {
         let rows = sqlx::query!(
             "
-            SELECT handle, tenant_id, account_address, event_type, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
+            SELECT handle, account_address, event_type, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
             FROM allowed_handles 
             WHERE txn_is_sent = false 
             AND txn_limited_retries_count < $1
@@ -371,28 +361,13 @@ where
             let src_transaction_id = row.transaction_id.clone();
             let t = telemetry::tracer("prepare_allow_account", &src_transaction_id);
 
-            let tenant = match query_tenant_info(&self.db_pool, row.tenant_id).await {
-                Ok(res) => res,
-                Err(_) => {
-                    error!(
-                        tenant_id = row.tenant_id,
-                        "Failed to get chain_id for tenant"
-                    );
-                    continue;
-                }
-            };
-
-            let chain_id = tenant.chain_id;
             let handle = row.handle.clone();
+            let chain_id = u64::from_be_bytes(handle[22..30].try_into()?);
             let h_as_hex = to_hex(&handle);
             let event_type = match AllowEvents::try_from(row.event_type) {
                 Ok(event_type) => event_type,
                 Err(_) => {
-                    error!(
-                        event_type = row.event_type,
-                        tenant_id = row.tenant_id,
-                        "Invalid event_type"
-                    );
+                    error!(event_type = row.event_type, "Invalid event_type");
                     continue;
                 }
             };
@@ -428,7 +403,7 @@ where
                     } else {
                         error!(
                             account_address = ?account_addr,
-                            tenant_id = row.tenant_id,
+                            handle = h_as_hex,
                             "Invalid account address"
                         );
                         continue;
@@ -450,7 +425,6 @@ where
             let key = Key {
                 handle,
                 account_addr: account_addr.to_string(),
-                tenant_id: row.tenant_id,
                 event_type,
             };
 

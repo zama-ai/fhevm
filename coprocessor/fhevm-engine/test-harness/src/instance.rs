@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::db_utils::setup_test_user;
+use crate::db_utils::setup_test_key;
 use fhevm_engine_common::utils::DatabaseURL;
 use sqlx::postgres::types::Oid;
 use sqlx::Row;
@@ -146,12 +146,12 @@ async fn create_database(
             info!("No keys imported");
         }
         ImportMode::WithKeysNoSns => {
-            info!("Creating test user with keys, without SnS key...");
-            setup_test_user(&pool, false).await?;
+            info!("Creating test keys, without SnS key...");
+            setup_test_key(&pool, false).await?;
         }
         ImportMode::WithAllKeys => {
-            info!("Creating test user with all keys...");
-            setup_test_user(&pool, true).await?;
+            info!("Creating test keys with all keys...");
+            setup_test_key(&pool, true).await?;
         }
     }
 

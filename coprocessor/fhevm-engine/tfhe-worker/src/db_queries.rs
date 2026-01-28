@@ -13,53 +13,6 @@ use sqlx::{query, Postgres};
 use tfhe::core_crypto::gpu::get_number_of_gpus;
 use tracing::warn;
 
-/// Returns tenant id upon valid authorization request
-pub async fn check_if_api_key_is_valid<T>(
-    req: &tonic::Request<T>,
-    pool: &sqlx::Pool<Postgres>,
-    ctx: &GrpcTracer,
-) -> Result<i32, CoprocessorError> {
-    let mut outer_span = ctx.child_span("check_api_key_validity");
-    match req.metadata().get("authorization") {
-        Some(auth) => {
-            let auth_header = String::from_utf8(auth.as_bytes().to_owned())
-                .map_err(|_| CoprocessorError::Unauthorized)?
-                .to_lowercase();
-
-            let prefix = "bearer ";
-            if !auth_header.starts_with(prefix) {
-                return Err(CoprocessorError::Unauthorized);
-            }
-
-            let tail = &auth_header[prefix.len()..];
-            let api_key = tail.trim();
-            let api_key = match sqlx::types::Uuid::from_str(api_key) {
-                Ok(uuid) => uuid,
-                Err(_) => return Err(CoprocessorError::Unauthorized),
-            };
-
-            let mut span = ctx.child_span("db_query_api_key");
-            let tenant = query!(
-                "SELECT tenant_id FROM tenants WHERE tenant_api_key = $1",
-                api_key
-            )
-            .fetch_all(pool)
-            .await
-            .map_err(Into::<CoprocessorError>::into)?;
-            span.end();
-
-            if tenant.is_empty() {
-                return Err(CoprocessorError::Unauthorized);
-            }
-
-            let tenant_id = tenant[0].tenant_id;
-            outer_span.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
-            Ok(tenant_id)
-        }
-        None => Err(CoprocessorError::Unauthorized),
-    }
-}
-
 pub struct FetchTenantKeyResult {
     pub chain_id: i64,
     pub verifying_contract_address: String,
@@ -68,36 +21,6 @@ pub struct FetchTenantKeyResult {
     #[cfg(feature = "gpu")]
     pub gpu_server_key: Vec<tfhe::CudaServerKey>,
     pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
-}
-
-/// Returns chain id and verifying contract address for EIP712 signature and tfhe server key
-pub async fn fetch_tenant_server_key<'a, T>(
-    tenant_id: i32,
-    pool: T,
-    tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
-) -> Result<FetchTenantKeyResult, Box<dyn std::error::Error + Send + Sync>>
-where
-    T: sqlx::PgExecutor<'a> + Copy,
-{
-    // try getting from cache until it succeeds with populating cache
-    loop {
-        {
-            let mut w = tenant_key_cache.write().await;
-            if let Some(key) = w.get(&tenant_id) {
-                return Ok(FetchTenantKeyResult {
-                    chain_id: key.chain_id,
-                    verifying_contract_address: key.verifying_contract_address.clone(),
-                    acl_contract_address: key.acl_contract_address.clone(),
-                    server_key: key.sks.clone(),
-                    #[cfg(feature = "gpu")]
-                    gpu_server_key: key.gpu_sks.clone(),
-                    public_params: key.public_params.clone(),
-                });
-            }
-        }
-
-        populate_cache_with_tenant_keys(vec![tenant_id], pool, tenant_key_cache).await?;
-    }
 }
 
 pub async fn query_tenant_keys<'a, T>(
