@@ -131,7 +131,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
     #[cfg(not(feature = "gpu"))]
     let expected: Vec<DecryptionResult> = vec![
         DecryptionResult { value: "true".to_string(), output_type: 0 },
@@ -192,13 +192,13 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
 
     assert_eq!(expected, resp);
 
-    let resp_repeated = decrypt_ciphertexts(&pool, 1, repeated_output_handles).await?;
+    let resp_repeated = decrypt_ciphertexts(&pool, repeated_output_handles).await?;
     assert_eq!(
         resp, resp_repeated,
         "randomness generation is not deterministic"
     );
 
-    let resp_repeated = decrypt_ciphertexts(&pool, 1, other_seed_output_handles).await?;
+    let resp_repeated = decrypt_ciphertexts(&pool, other_seed_output_handles).await?;
     assert_ne!(resp, resp_repeated, "seed has changed, so must the values");
 
     Ok(())
@@ -312,7 +312,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
-    let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+    let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
     assert_eq!(resp.len(), results.len());
 
     println!("response: {:#?}", resp);

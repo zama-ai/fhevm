@@ -30,12 +30,6 @@ config:
       name: coprocessor-key
       key: coprocessor.hex
 
-  # API key for tenant authentication
-  apiKey:
-    secret:
-      name: coprocessor-api-key
-      key: coprocessor-api-key
-
   # Database connection configuration
   database:
     secret:
@@ -82,11 +76,6 @@ dbMigration:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
 
   serviceAccountName:
 
@@ -130,16 +119,10 @@ hostListener:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
 
   # Command line arguments for the host listener
   args:
     - --database-url=$(DATABASE_URL)
-    - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=$(ETHEREUM_RPC_URL)
     - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
     - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
@@ -235,17 +218,11 @@ hostListenerPoller:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
 
   # Command line arguments for the host listener poller
   args:
     ### Required parameters
     - --database-url=$(DATABASE_URL)
-    - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=$(ETHEREUM_RPC_HTTP_URL)
     - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
     - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
@@ -340,17 +317,11 @@ hostListenerCatchupOnly:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
 
   # Command line arguments for the host listener catchup only mode
   # NOTE: --only-catchup-loop requires --end-at-block to be set
   args:
     - --database-url=$(DATABASE_URL)
-    - --coprocessor-api-key=$(TENANT_API_KEY)
     - --url=$(ETHEREUM_RPC_URL)
     - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
     - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
@@ -535,15 +506,8 @@ tfheWorker:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
     - name: ACL_CONTRACT_ADDRESS
       value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
-    - name: INPUT_VERIFIER_ADDRESS
-      value: "0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11"
 
   # Command line arguments for TFHE worker
   args:
@@ -552,7 +516,7 @@ tfheWorker:
     - --worker-polling-interval-ms=10000
     - --work-items-batch-size=100  # scheduling changed
     - --dependence-chains-per-batch=100  # Deprecated. To be removed in a future release.
-    - --tenant-key-cache-size=32
+    - --key-cache-size=32
     - --coprocessor-fhe-threads=64  # scheduling changed
     - --tokio-threads=16  # scheduling changed
     - --pg-pool-max-connections=10
@@ -794,16 +758,10 @@ snsWorker:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-    - name: TENANT_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: coprocessor-api-key
-          key: coprocessor-api-key
 
   # Command line arguments for SNS worker
   args:
     - --database-url=$(DATABASE_URL)
-    - --tenant-api-key=$(TENANT_API_KEY)
     - --pg-listen-channels
     - event_pbs_computations
     - event_ciphertext_computed

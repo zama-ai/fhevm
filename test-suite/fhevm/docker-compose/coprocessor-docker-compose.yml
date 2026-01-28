@@ -53,7 +53,6 @@ services:
     command:
       - host_listener
       - --database-url=${DATABASE_URL}
-      - --coprocessor-api-key=${TENANT_API_KEY}
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_WS_URL}
@@ -78,7 +77,6 @@ services:
     command:
       - host_listener_poller
       - --database-url=${DATABASE_URL}
-      - --coprocessor-api-key=${TENANT_API_KEY}
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_HTTP_URL}
@@ -140,7 +138,7 @@ services:
       - --pg-pool-max-connections=10
       - --worker-polling-interval-ms=1000
       - --work-items-batch-size=10
-      - --tenant-key-cache-size=32
+      - --key-cache-size=32
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4
     depends_on:
@@ -188,7 +186,6 @@ services:
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
-      - --tenant-api-key=${TENANT_API_KEY}
       - --pg-listen-channels
       - event_pbs_computations
       - event_ciphertext_computed

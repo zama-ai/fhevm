@@ -7,10 +7,9 @@ use alloy::providers::{Provider, ProviderBuilder, WalletProvider, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use serial_test::serial;
-use sqlx::postgres::PgPoolOptions;
-use sqlx::types::Uuid;
 use tokio::time::sleep;
 
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::utils::DatabaseURL;
 use host_listener::database::tfhe_event_propagate::Database;
 use host_listener::poller::{run_poller, PollerConfig};
@@ -36,24 +35,14 @@ async fn poller_state_round_trip() -> Result<(), Box<dyn std::error::Error>> {
     let db_instance =
         test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
             .await?;
-    let pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(db_instance.db_url())
-        .await?;
-
-    let coprocessor_api_key =
-        sqlx::query!("SELECT tenant_api_key FROM tenants LIMIT 1")
-            .fetch_one(&pool)
-            .await?
-            .tenant_api_key;
+    let chain_id = ChainId::try_from(42_u64).unwrap();
 
     let db_url: DatabaseURL = db_instance.db_url.clone();
-    let mut db = Database::new(&db_url, &coprocessor_api_key, 128).await?;
-    let chain_id = i64::try_from(db.chain_id).unwrap();
+    let mut db = Database::new(&db_url, chain_id, 128).await?;
 
     let pool = db.pool.read().await.clone();
     sqlx::query("DELETE FROM host_listener_poller_state WHERE chain_id = $1")
-        .bind(chain_id)
+        .bind(chain_id.as_i64())
         .execute(&pool)
         .await?;
 
@@ -82,41 +71,28 @@ async fn poller_catches_up_to_safe_tip(
     let db_instance =
         test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
             .await?;
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .connect(db_instance.db_url())
-        .await?;
-
-    let coprocessor_api_key: Uuid =
-        sqlx::query!("SELECT tenant_api_key FROM tenants LIMIT 1")
-            .fetch_one(&pool)
-            .await?
-            .tenant_api_key;
+    let chain_id = ChainId::try_from(42_u64).unwrap();
 
     let db_url: DatabaseURL = db_instance.db_url.clone();
-    let db = Database::new(&db_url, &coprocessor_api_key, 128).await?;
-    let chain_id = db.chain_id as i64;
-    let tenant_id = db.tenant_id;
+    let db = Database::new(&db_url, chain_id, 128).await?;
     let pool = db.pool.read().await.clone();
     sqlx::query("DELETE FROM host_listener_poller_state WHERE chain_id = $1")
-        .bind(chain_id)
+        .bind(chain_id.as_i64())
         .execute(&pool)
         .await?;
     sqlx::query("DELETE FROM host_chain_blocks_valid WHERE chain_id = $1")
-        .bind(chain_id)
+        .bind(chain_id.as_i64())
         .execute(&pool)
         .await?;
-    sqlx::query("DELETE FROM computations WHERE tenant_id = $1")
-        .bind(tenant_id)
+    sqlx::query("DELETE FROM computations")
         .execute(&pool)
         .await?;
-    sqlx::query("DELETE FROM allowed_handles WHERE tenant_id = $1")
-        .bind(tenant_id)
+    sqlx::query("DELETE FROM allowed_handles")
         .execute(&pool)
         .await?;
 
     // Spin up a local chain and emit events so the poller starts behind the head.
-    let anvil = Anvil::new().chain_id(chain_id as u64).spawn();
+    let anvil = Anvil::new().chain_id(chain_id.as_u64()).spawn();
     let ws_url = anvil.ws_endpoint();
     let http_url = anvil.endpoint();
 
@@ -188,7 +164,6 @@ async fn poller_catches_up_to_safe_tip(
         acl_address: *acl_contract.address(),
         tfhe_address: *tfhe_contract.address(),
         database_url: db_url.clone(),
-        coprocessor_api_key,
         finality_lag,
         batch_size: 2,
         poll_interval: Duration::from_millis(200),
@@ -211,7 +186,7 @@ async fn poller_catches_up_to_safe_tip(
             "SELECT last_caught_up_block FROM host_listener_poller_state \
              WHERE chain_id = $1",
         )
-        .bind(chain_id)
+        .bind(chain_id.as_i64())
         .fetch_optional(&pool)
         .await?;
 
@@ -236,23 +211,19 @@ async fn poller_catches_up_to_safe_tip(
     poller_handle.abort();
     let _ = poller_handle.await;
 
-    let computations_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM computations WHERE tenant_id = $1",
-    )
-    .bind(tenant_id)
-    .fetch_one(&pool)
-    .await?;
-    let allowed_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM allowed_handles WHERE tenant_id = $1",
-    )
-    .bind(tenant_id)
-    .fetch_one(&pool)
-    .await?;
+    let computations_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM computations")
+            .fetch_one(&pool)
+            .await?;
+    let allowed_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM allowed_handles")
+            .fetch_one(&pool)
+            .await?;
     let last_valid_block = sqlx::query_scalar::<_, Option<i64>>(
         "SELECT MAX(block_number) FROM host_chain_blocks_valid \
          WHERE chain_id = $1",
     )
-    .bind(chain_id)
+    .bind(chain_id.as_i64())
     .fetch_one(&pool)
     .await?
     .unwrap_or_default();

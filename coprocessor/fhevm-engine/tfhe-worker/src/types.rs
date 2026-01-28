@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use fhevm_engine_common::types::FhevmError;
 use scheduler::dfg::types::SchedulerError;
 
@@ -15,10 +13,6 @@ pub enum CoprocessorError {
     UnexistingInputCiphertextsFound(Vec<String>),
     AlreadyExistingResultHandlesFound(Vec<String>),
     OutputHandleIsAlsoInputHandle(String),
-    CannotParseTenantEthereumAddress {
-        bad_address: String,
-        parsing_error: String,
-    },
     CannotParseEthereumAddress {
         bad_address: String,
         parsing_error: String,
@@ -55,12 +49,12 @@ pub enum CoprocessorError {
         uncomputable_handle_dependency: String,
     },
     MissingKeys {
-        tenant_id: i32,
+        reason: String,
     },
 }
 
 impl std::fmt::Display for CoprocessorError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::DbError(dbe) => {
                 write!(f, "Coprocessor db error: {:?}", dbe)
@@ -118,16 +112,6 @@ impl std::fmt::Display for CoprocessorError {
                     handle
                 )
             }
-            Self::CannotParseTenantEthereumAddress {
-                bad_address,
-                parsing_error,
-            } => {
-                write!(
-                    f,
-                    "Cannot parse tenant ethereum verifying contract address: {}, error: {}",
-                    bad_address, parsing_error,
-                )
-            }
             Self::CannotParseEthereumAddress {
                 bad_address,
                 parsing_error,
@@ -165,8 +149,8 @@ impl std::fmt::Display for CoprocessorError {
             Self::FhevmError(e) => {
                 write!(f, "fhevm error: {:?}", e)
             }
-            Self::MissingKeys { tenant_id } => {
-                write!(f, "no keys found in DB for tenant: {tenant_id}")
+            Self::MissingKeys { reason } => {
+                write!(f, "Missing keys: {}", reason)
             }
         }
     }
@@ -190,19 +174,4 @@ impl From<CoprocessorError> for tonic::Status {
     fn from(err: CoprocessorError) -> Self {
         tonic::Status::from_error(Box::new(err))
     }
-}
-
-pub struct TfheTenantKeys {
-    pub tenant_id: i32,
-    pub chain_id: i64,
-    pub verifying_contract_address: String,
-    pub acl_contract_address: String,
-    pub sks: tfhe::ServerKey,
-    #[cfg(feature = "gpu")]
-    pub csks: tfhe::CompressedServerKey,
-    #[cfg(feature = "gpu")]
-    pub gpu_sks: Vec<tfhe::CudaServerKey>,
-
-    pub pks: tfhe::CompactPublicKey,
-    pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
 }

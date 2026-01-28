@@ -222,6 +222,7 @@ impl SerializedFhevmKeys {
 
     pub fn load_from_disk(keys_directory: &str) -> Self {
         let keys_dir = std::path::Path::new(&keys_directory);
+        #[cfg_attr(feature = "gpu", allow(unused_variables))]
         let (sns_pk, sks, cks, pks, pp) = if !cfg!(feature = "gpu") {
             ("sns_pk", "sks", "cks", "pks", "pp")
         } else {

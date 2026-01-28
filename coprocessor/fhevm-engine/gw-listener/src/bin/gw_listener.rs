@@ -3,6 +3,7 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::{metrics_server, telemetry, utils::DatabaseURL};
 use gw_listener::aws_s3::AwsS3Client;
 use gw_listener::chain_id_from_env;
@@ -148,7 +149,12 @@ async fn main() -> anyhow::Result<()> {
 
     let cancel_token = CancellationToken::new();
 
-    let Some(host_chain_id) = conf.host_chain_id.or_else(chain_id_from_env) else {
+    let Some(host_chain_id) = conf
+        .host_chain_id
+        .map(ChainId::try_from)
+        .transpose()?
+        .or_else(chain_id_from_env)
+    else {
         anyhow::bail!("--host-chain-id or CHAIN_ID env var is missing.")
     };
     let config = ConfigSettings {

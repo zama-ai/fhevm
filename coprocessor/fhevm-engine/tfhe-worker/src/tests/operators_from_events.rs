@@ -2,6 +2,7 @@ use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
 use sqlx::types::time::PrimitiveDateTime;
 
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
@@ -11,7 +12,7 @@ use host_listener::database::tfhe_event_propagate::{
 
 use crate::tests::operators::{generate_binary_test_cases, generate_unary_test_cases};
 use crate::tests::utils::{decrypt_ciphertexts, wait_until_all_allowed_handles_computed};
-use crate::tests::utils::{default_api_key, setup_test_app, TestInstance};
+use crate::tests::utils::{setup_test_app, TestInstance};
 
 use crate::tests::operators::BinaryOperatorTestCase;
 use crate::tests::operators::UnaryOperatorTestCase;
@@ -261,11 +262,9 @@ fn next_handle() -> Handle {
 }
 
 async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
-    let coprocessor_api_key = sqlx::types::Uuid::parse_str(default_api_key()).unwrap();
-
     ListenerDatabase::new(
         &app.db_url().into(),
-        &coprocessor_api_key,
+        ChainId::try_from(42_u64).unwrap(),
         default_dependence_cache_size(),
     )
     .await
@@ -367,7 +366,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
     wait_until_all_allowed_handles_computed(&app).await?;
     for (op, output_handle) in cases {
         let decrypt_request = vec![output_handle.to_vec()];
-        let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
         let decr_response = &resp[0];
         println!("Checking computation for binary test bits:{} op:{} is_scalar:{} lhs:{} rhs:{} output:{}",
             op.bits, op.operator, op.is_scalar, op.lhs, op.rhs, decr_response.value);
@@ -488,7 +487,7 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
         wait_until_all_allowed_handles_computed(&app).await?;
 
         let decrypt_request = vec![output_handle.to_vec()];
-        let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
         let decr_response = &resp[0];
         println!(
             "Checking computation for unary test bits:{} op:{} input:{} output:{}",
@@ -657,7 +656,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
             tx.commit().await?;
             wait_until_all_allowed_handles_computed(&app).await?;
             let decrypt_request = vec![output_handle.to_vec()];
-            let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+            let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
             let decr_response = &resp[0];
             println!(
                 "Checking if then else computation for test type:{} control:{} lhs:{} rhs:{} output:{}",
@@ -752,7 +751,7 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
 
             wait_until_all_allowed_handles_computed(&app).await?;
             let decrypt_request = vec![output_handle.to_vec()];
-            let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+            let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
             let decr_response = &resp[0];
 
             println!(
@@ -869,7 +868,7 @@ async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
             output2_handle.to_vec(),
             output3_handle.to_vec(),
         ];
-        let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
+        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
         assert_eq!(resp[0].output_type, rand_type as i16);
         assert_eq!(resp[1].output_type, rand_type as i16);
         assert_eq!(resp[2].output_type, rand_type as i16);

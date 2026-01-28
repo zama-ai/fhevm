@@ -73,10 +73,6 @@ name = "tfhe_worker"
 path = "src/bin/tfhe_worker.rs"
 
 [[bin]]
-name = "cli"
-path = "src/bin/cli.rs"
-
-[[bin]]
 name = "utils"
 path = "src/bin/utils.rs"
 

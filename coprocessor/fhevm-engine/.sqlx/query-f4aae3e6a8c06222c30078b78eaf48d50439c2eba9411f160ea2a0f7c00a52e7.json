@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO crs (crs_id, crs)\n        VALUES ($1, $2)\n        ON CONFLICT (crs_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f4aae3e6a8c06222c30078b78eaf48d50439c2eba9411f160ea2a0f7c00a52e7"
+}

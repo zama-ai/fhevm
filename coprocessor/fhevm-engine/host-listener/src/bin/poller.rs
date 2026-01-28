@@ -1,9 +1,7 @@
 use std::time::Duration;
 
 use alloy::primitives::Address;
-use anyhow::Context;
 use clap::Parser;
-use sqlx::types::Uuid;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
 
@@ -33,9 +31,6 @@ struct Args {
 
     #[arg(long, help = "PostgreSQL connection URL")]
     database_url: DatabaseURL,
-
-    #[arg(long, help = "Coprocessor API key")]
-    coprocessor_api_key: Option<Uuid>,
 
     #[arg(
         long,
@@ -138,16 +133,11 @@ async fn main() -> anyhow::Result<()> {
         cancel_token.child_token(),
     );
 
-    let coprocessor_api_key = args
-        .coprocessor_api_key
-        .context("A Coprocessor API key is required to access the database")?;
-
     let config = PollerConfig {
         url: args.url,
         acl_address: args.acl_contract_address,
         tfhe_address: args.tfhe_contract_address,
         database_url: args.database_url,
-        coprocessor_api_key,
         finality_lag: args.finality_lag,
         batch_size: args.batch_size,
         poll_interval: Duration::from_millis(args.poll_interval_ms),

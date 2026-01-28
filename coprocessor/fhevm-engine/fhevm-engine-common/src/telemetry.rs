@@ -1,3 +1,4 @@
+use crate::chain_id::ChainId;
 use crate::utils::to_hex;
 use bigdecimal::num_traits::ToPrimitive;
 use opentelemetry::{
@@ -370,7 +371,7 @@ impl TransactionMetrics {
     pub async fn begin_transaction(
         &self,
         pool: &sqlx::PgPool,
-        chain_id: i64,
+        chain_id: ChainId,
         txn_id: &[u8],
         block_number: u64,
     ) -> Result<bool, sqlx::Error> {
@@ -385,7 +386,7 @@ impl TransactionMetrics {
             ON CONFLICT (id) DO NOTHING
         "#,
             txn_id,
-            chain_id,
+            chain_id.as_i64(),
             block_number as i64
         )
         .execute(pool)
@@ -515,7 +516,7 @@ impl TransactionMetrics {
 /// Marks a transaction as started using the global transaction manager
 pub async fn try_begin_transaction(
     pool: &sqlx::PgPool,
-    chain_id: i64,
+    chain_id: ChainId,
     transaction_id: &[u8],
     block_number: u64,
 ) {

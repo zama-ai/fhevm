@@ -19,6 +19,7 @@ use alloy::{
 
 use anyhow::Result;
 use async_trait::async_trait;
+use fhevm_engine_common::chain_id::ChainId;
 use sqlx::types::BigDecimal;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use tokio::task::JoinSet;
@@ -30,7 +31,6 @@ use super::TransactionOperation;
 
 pub type BlockHash = FixedBytes<32>;
 pub type DbTransaction<'l> = sqlx::Transaction<'l, Postgres>;
-type ChaindId = alloy::primitives::Uint<256, 4>;
 
 use fhevm_gateway_bindings::multichain_acl::MultichainACL;
 use fhevm_gateway_bindings::multichain_acl::MultichainACL::MultichainACLErrors;
@@ -45,7 +45,7 @@ pub struct DelegationRow {
     #[allow(dead_code)]
     pub old_expiration_date: u64,
     pub new_expiration_date: u64,
-    pub host_chain_id: u64,
+    pub host_chain_id: ChainId,
     pub block_hash: Vec<u8>,
     pub block_number: u64,
     pub transaction_id: Option<Vec<u8>>,
@@ -412,7 +412,7 @@ where
             if is_revoke {
                 multichain_acl
                     .revokeUserDecryptionDelegation(
-                        ChaindId::from(delegation.host_chain_id),
+                        delegation.host_chain_id.into(),
                         Address::from_slice(&delegation.delegator),
                         Address::from_slice(&delegation.delegate),
                         Address::from_slice(&delegation.contract_address),
@@ -423,7 +423,7 @@ where
             } else {
                 multichain_acl
                     .delegateUserDecryption(
-                        ChaindId::from(delegation.host_chain_id),
+                        delegation.host_chain_id.into(),
                         Address::from_slice(&delegation.delegator),
                         Address::from_slice(&delegation.delegate),
                         Address::from_slice(&delegation.contract_address),
@@ -543,7 +543,8 @@ pub async fn delayed_sorted_delegation(
             delegation_counter: delegation.delegation_counter as u64,
             old_expiration_date: expiration_date_to_u64(delegation.old_expiration_date),
             new_expiration_date: expiration_date_to_u64(delegation.new_expiration_date),
-            host_chain_id: delegation.host_chain_id as u64,
+            host_chain_id: ChainId::try_from(delegation.host_chain_id)
+                .map_err(|e| anyhow::anyhow!("invalid host_chain_id in DB: {e}"))?,
             block_hash: delegation.block_hash,
             block_number: delegation.block_number as u64,
             transaction_id: delegation.transaction_id,
