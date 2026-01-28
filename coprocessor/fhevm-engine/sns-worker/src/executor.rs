@@ -570,12 +570,8 @@ fn compute_task(
     let ct_type = ct.type_name().to_owned();
     info!( { handle, ct_type }, "Converting ciphertext");
 
-    let mut span = task.otel.child_span("squash_noise");
-    telemetry::attribute(&mut span, "ct_type", ct_type);
-
     match ct.squash_noise_and_serialize(enable_compression) {
         Ok(bytes) => {
-            telemetry::end_span(span);
             info!(
                 handle = handle,
                 length = bytes.len(),
@@ -622,7 +618,6 @@ fn compute_task(
             }
         }
         Err(err) => {
-            telemetry::end_span_with_err(span, err.to_string());
             error!({ handle = handle, error = %err }, "Failed to convert ct");
         }
     };
