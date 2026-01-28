@@ -2,7 +2,7 @@ use crate::utils::to_hex;
 use bigdecimal::num_traits::ToPrimitive;
 use opentelemetry::{
     global::{BoxedSpan, BoxedTracer, ObjectSafeSpan},
-    trace::{SpanBuilder, Status, TraceContextExt, Tracer},
+    trace::{SpanBuilder, Status, TraceContextExt, Tracer, TracerProvider},
     Context, KeyValue,
 };
 use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
@@ -41,6 +41,14 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
 pub fn setup_otlp(
     service_name: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let _ = setup_otlp_tracer(service_name, "otlp-layer")?;
+    Ok(())
+}
+
+pub fn setup_otlp_tracer(
+    service_name: &str,
+    tracer_name: &'static str,
+) -> Result<opentelemetry_sdk::trace::Tracer, Box<dyn std::error::Error + Send + Sync + 'static>> {
     let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .build()?;
@@ -57,9 +65,10 @@ pub fn setup_otlp(
         .with_batch_exporter(otlp_exporter)
         .build();
 
+    let tracer = trace_provider.tracer(tracer_name);
     opentelemetry::global::set_tracer_provider(trace_provider);
 
-    Ok(())
+    Ok(tracer)
 }
 
 #[derive(Clone)]
