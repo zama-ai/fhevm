@@ -2,27 +2,6 @@
 
 ## Coprocessor Backend
 
-### Database
-Some settings of the Coprocessor backend are configured by inserting entries in the PostgreSQL DB.
-
-At the time of writing, we don't have a tool or automation for doing the configuration. The DB schema can be used as a reference, though: [schema](../../../../fhevm-engine/coprocessor/migrations/20240722111257_coprocessor.sql).
-
-The `tenants` table contains a list of tenants that are using the Coprocessor backend. A tenant could be thought of as a separate blockchain (or a separate FHE key, i.e. using multiple FHE keys on a blockchain). The fields in `tenants` are:
-
-| Field                      | Description                                        |
-| -------------------------- | -------------------------------------------------- |
-| tenant_id                  | unique tenant identifier                           |
-| tenant_api_key             | an API key that authenticates access to the server |
-| chain_id                   | the chain ID of the chain this tenant operates on  |
-| verifying_contract_address | address of the InputVerifier contract              |
-| acl_contract_address       | address of the ACL contract                        |
-| pks_key                    | a serialization of the FHE public key              |
-| sks_key                    | a serialization of the FHE server key              |
-| public_params              | a serialization of the CRS public params           |
-| cks_key                    | optional secret FHE key, for debugging only        |
-| is_admin                   | if tenant is an administrator                      |
-
-
 ### Command Line
 
 You can use the `--help` command line switch on the coprocessor to get a help screen as follows:

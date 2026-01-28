@@ -228,13 +228,13 @@ async fn test_custom_function() -> Result<(), Box<dyn std::error::Error>> {
 #[tokio::test]
 #[ignore]
 /// setup test data with keys
-async fn setup_test_user() -> Result<(), Box<dyn std::error::Error>> {
+async fn setup_test_key() -> Result<(), Box<dyn std::error::Error>> {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
         .connect(&std::env::var("DATABASE_URL").expect("expected to get db url"))
         .await?;
 
-    utils::setup_test_user(&pool).await?;
+    utils::setup_test_key(&pool).await?;
 
     Ok(())
 }

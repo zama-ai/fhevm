@@ -129,17 +129,17 @@ pub async fn wait_for_ciphertext(
     Err(sqlx::Error::RowNotFound.into())
 }
 
-/// Inserts a new tenant into the database with the specified ACL contract address
+/// Inserts a new key into the database with the specified ACL contract address
 ///
 /// # Arguments
 /// * `pool` - The database connection pool
 /// * `with_sns_pk` - Enables the importing of SNS sks key which usually is 1.5GB in size
-pub async fn setup_test_user(
+pub async fn setup_test_key(
     pool: &sqlx::PgPool,
     with_sns_pk: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let gpu_enabled = cfg!(feature = "gpu");
-    info!(gpu_enabled, "Setting up test user...");
+    info!(gpu_enabled, "Setting up test key...");
 
     let (sks, cks, pks, pp, sns_pk) = if !cfg!(feature = "gpu") {
         (
@@ -173,9 +173,8 @@ pub async fn setup_test_user(
 
     sqlx::query!(
         "
-            INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key, sns_pk)
+            INSERT INTO keys(chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key, sns_pk)
             VALUES (
-                'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
                 12345,
                 $1,
                 '0x69dE3158643e738a0724418b21a35FAA20CBb1c5',
