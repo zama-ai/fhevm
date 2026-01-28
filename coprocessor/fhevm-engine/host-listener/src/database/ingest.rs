@@ -18,6 +18,7 @@ pub struct BlockLogs<T> {
     pub logs: Vec<T>,
     pub summary: BlockSummary,
     pub catchup: bool,
+    pub finalized: bool,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -165,8 +166,7 @@ pub async fn ingest_block_logs(
             info!(block_number, catchup_insertion, "Catchup inserted events");
         }
     }
-
-    db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
+    db.mark_block_as_valid(&mut tx, &block_logs.summary, block_logs.finalized).await?;
     if at_least_one_insertion {
         db.update_dependence_chain(
             &mut tx,

@@ -287,6 +287,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 logs,
                 summary,
                 catchup: true,
+                finalized: config.finality_lag > 5,
             };
 
             match ingest_with_retry(
