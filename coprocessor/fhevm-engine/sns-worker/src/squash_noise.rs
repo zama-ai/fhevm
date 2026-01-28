@@ -11,19 +11,49 @@ use tfhe::Versionize;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
 macro_rules! squash_and_serialize_with_error {
-    ($value:expr, $target_ty:ty, $enable_compression:expr) => {{
-        let squashed: $target_ty = $value
-            .squash_noise()
-            .map_err(ExecutionError::SquashedNoiseError)?;
+    ($value:expr, $target_ty:ty, $enable_compression:expr, $ct_type:expr) => {{
+        let ct_type = $ct_type;
+
+        let squashed: $target_ty = {
+            let span = tracing::info_span!(
+                "squash_noise_fhe",
+                ct_type = %ct_type,
+                operation = "squash_noise_fhe"
+            );
+            let _enter = span.enter();
+            $value
+                .squash_noise()
+                .map_err(ExecutionError::SquashedNoiseError)?
+        };
 
         if !$enable_compression {
+            let span = tracing::info_span!(
+                "serialize",
+                ct_type = %ct_type,
+                operation = "serialize"
+            );
+            let _enter = span.enter();
             return safe_serialize(&squashed);
         }
 
-        let mut builder = CompressedSquashedNoiseCiphertextListBuilder::new();
-        builder.push(squashed);
-        let list = builder.build()?;
+        let list = {
+            let span = tracing::info_span!(
+                "compress",
+                ct_type = %ct_type,
+                operation = "compress"
+            );
+            let _enter = span.enter();
+            let mut builder = CompressedSquashedNoiseCiphertextListBuilder::new();
+            builder.push(squashed);
+            builder.build()?
+        };
 
+        let span = tracing::info_span!(
+            "serialize",
+            ct_type = %ct_type,
+            operation = "serialize"
+        );
+        let _enter = span.enter();
         Ok(safe_serialize(&list)?)
     }};
 }
@@ -59,43 +89,104 @@ impl SquashNoiseCiphertext for SupportedFheCiphertexts {
         &self,
         enable_compression: bool,
     ) -> Result<Vec<u8>, ExecutionError> {
+        let ct_type = self.type_name();
         match self {
             SupportedFheCiphertexts::FheBool(v) => {
-                squash_and_serialize_with_error!(v, tfhe::SquashedNoiseFheBool, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    tfhe::SquashedNoiseFheBool,
+                    enable_compression,
+                    ct_type
+                )
             }
             SupportedFheCiphertexts::FheUint4(v) => {
-                squash_and_serialize_with_error!(v, SquashedNoiseFheUint, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    SquashedNoiseFheUint,
+                    enable_compression,
+                    ct_type
+                )
             }
 
             SupportedFheCiphertexts::FheUint8(v) => {
-                squash_and_serialize_with_error!(v, SquashedNoiseFheUint, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    SquashedNoiseFheUint,
+                    enable_compression,
+                    ct_type
+                )
             }
             SupportedFheCiphertexts::FheUint16(v) => {
-                squash_and_serialize_with_error!(v, SquashedNoiseFheUint, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    SquashedNoiseFheUint,
+                    enable_compression,
+                    ct_type
+                )
             }
             SupportedFheCiphertexts::FheUint32(v) => {
-                squash_and_serialize_with_error!(v, SquashedNoiseFheUint, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    SquashedNoiseFheUint,
+                    enable_compression,
+                    ct_type
+                )
             }
             SupportedFheCiphertexts::FheUint64(v) => {
-                squash_and_serialize_with_error!(v, SquashedNoiseFheUint, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    SquashedNoiseFheUint,
+                    enable_compression,
+                    ct_type
+                )
             }
             SupportedFheCiphertexts::FheUint128(v) => {
-                squash_and_serialize_with_error!(v, SquashedNoiseFheUint, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    SquashedNoiseFheUint,
+                    enable_compression,
+                    ct_type
+                )
             }
             SupportedFheCiphertexts::FheUint160(v) => {
-                squash_and_serialize_with_error!(v, SquashedNoiseFheUint, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    SquashedNoiseFheUint,
+                    enable_compression,
+                    ct_type
+                )
             }
             SupportedFheCiphertexts::FheUint256(v) => {
-                squash_and_serialize_with_error!(v, SquashedNoiseFheUint, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    SquashedNoiseFheUint,
+                    enable_compression,
+                    ct_type
+                )
             }
             SupportedFheCiphertexts::FheBytes64(v) => {
-                squash_and_serialize_with_error!(v, SquashedNoiseFheUint, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    SquashedNoiseFheUint,
+                    enable_compression,
+                    ct_type
+                )
             }
             SupportedFheCiphertexts::FheBytes128(v) => {
-                squash_and_serialize_with_error!(v, SquashedNoiseFheUint, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    SquashedNoiseFheUint,
+                    enable_compression,
+                    ct_type
+                )
             }
             SupportedFheCiphertexts::FheBytes256(v) => {
-                squash_and_serialize_with_error!(v, SquashedNoiseFheUint, enable_compression)
+                squash_and_serialize_with_error!(
+                    v,
+                    SquashedNoiseFheUint,
+                    enable_compression,
+                    ct_type
+                )
             }
             SupportedFheCiphertexts::Scalar(_) => {
                 panic!("we should never need to serialize scalar")
