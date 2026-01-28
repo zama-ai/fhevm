@@ -509,7 +509,7 @@ fn create_ciphertext(
     telemetry::attribute(t, "chain_id", aux_data.chain_id.to_string());
     telemetry::attribute(t, "ct_idx", ct_idx.to_string());
     telemetry::attribute(t, "user_address", aux_data.user_address.clone());
-    telemetry::attribute(t, "contract_address", aux_data.user_address.clone());
+    telemetry::attribute(t, "contract_address", aux_data.contract_address.clone());
     telemetry::attribute(t, "version", current_ciphertext_version().to_string());
     telemetry::attribute(t, "type", serialized_type.to_string());
     telemetry::attribute(

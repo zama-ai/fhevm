@@ -1,8 +1,10 @@
 use sns_worker::{Config, DBConfig, HealthCheckConfig, S3Config, S3RetryPolicy, SNSMetricsConfig};
 
+use fhevm_engine_common::telemetry;
 use tokio::signal::unix;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod utils;
 
 fn handle_sigint(token: CancellationToken) {
@@ -65,14 +67,46 @@ async fn main() {
     let config: Config = construct_config();
     let parent = CancellationToken::new();
 
-    tracing_subscriber::fmt()
+    let mut otlp_setup_error: Option<String> = None;
+
+    let otel_tracer = if config.service_name.is_empty() {
+        None
+    } else {
+        match telemetry::setup_otlp_tracer(&config.service_name, "otlp-layer") {
+            Ok(tracer) => Some(tracer),
+            Err(err) => {
+                otlp_setup_error = Some(err.to_string());
+                None
+            }
+        }
+    };
+
+    let level_filter = tracing_subscriber::filter::LevelFilter::from_level(config.log_level);
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
         .json()
-        .with_target(false) // drop "target" field so the logs are not too verbose. Instead, span names are used.
-        .with_current_span(true) // keep "span"
-        .with_span_list(false) // drop "spans"
-        .with_level(true)
-        .with_max_level(config.log_level)
-        .init();
+        // drop "target" field so the logs are not too verbose. Instead, span names are used.
+        .with_target(false)
+        // keep "span"
+        .with_current_span(true)
+        // drop "spans"
+        .with_span_list(false)
+        .with_level(true);
+
+    let base = tracing_subscriber::registry()
+        .with(level_filter)
+        .with(fmt_layer);
+
+    if let Some(tracer) = otel_tracer {
+        let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        base.with(otel_layer).init();
+    } else {
+        base.init();
+    }
+
+    if let Some(err) = otlp_setup_error {
+        error!(error = %err, "Failed to setup OTLP");
+    }
 
     // Handle SIGINIT signals
     handle_sigint(parent.clone());
