@@ -108,14 +108,20 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
       break;
     case 'sepolia':
       jsonRpcUrl = process.env.SEPOLIA_ETH_RPC_URL || vars.get('SEPOLIA_ETH_RPC_URL', '') || process.env.RPC_URL;
-      if (!jsonRpcUrl && shouldWarn) {
-        throw new Error('SEPOLIA_ETH_RPC_URL (or RPC_URL) is required for sepolia network');
+      if (!jsonRpcUrl) {
+        if (shouldWarn) {
+          throw new Error('SEPOLIA_ETH_RPC_URL (or RPC_URL) is required for sepolia network');
+        }
+        jsonRpcUrl = 'https://rpc.sepolia.org'; // placeholder for config validation
       }
       break;
     case 'mainnet':
       jsonRpcUrl = process.env.MAINNET_ETH_RPC_URL || vars.get('MAINNET_ETH_RPC_URL', '') || process.env.RPC_URL;
-      if (!jsonRpcUrl && shouldWarn) {
-        throw new Error('MAINNET_ETH_RPC_URL (or RPC_URL) is required for mainnet network');
+      if (!jsonRpcUrl) {
+        if (shouldWarn) {
+          throw new Error('MAINNET_ETH_RPC_URL (or RPC_URL) is required for mainnet network');
+        }
+        jsonRpcUrl = 'https://eth.llamarpc.com'; // placeholder for config validation
       }
       break;
     case 'localCoprocessor':
