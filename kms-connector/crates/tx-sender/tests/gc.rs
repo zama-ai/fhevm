@@ -3,7 +3,8 @@ use connector_utils::{
     tests::{
         db::{
             requests::{
-                insert_rand_public_decryption_request, insert_rand_user_decryption_request,
+                InsertRequestOptions, insert_rand_public_decryption_request,
+                insert_rand_user_decryption_request,
             },
             responses::{insert_rand_public_decrypt_response, insert_rand_user_decrypt_response},
         },
@@ -215,12 +216,15 @@ async fn insert_elem_in_db_and_get_id(
 ) -> anyhow::Result<U256> {
     let id = match elem {
         "PublicDecryptionRequest" => {
-            insert_rand_public_decryption_request(db, None, false, Some(status))
-                .await?
-                .decryptionId
+            insert_rand_public_decryption_request(
+                db,
+                InsertRequestOptions::new().with_status(status),
+            )
+            .await?
+            .decryptionId
         }
         "UserDecryptionRequest" => {
-            insert_rand_user_decryption_request(db, None, false, Some(status))
+            insert_rand_user_decryption_request(db, InsertRequestOptions::new().with_status(status))
                 .await?
                 .decryptionId
         }

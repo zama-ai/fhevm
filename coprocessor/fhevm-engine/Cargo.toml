@@ -42,8 +42,6 @@ aws-credential-types = "1.2.6"
 aws-sdk-kms = { version = "1.68.0", default-features = false }
 aws-sdk-s3 = { version = "1.103.0", features = ["test-util"] }
 bigdecimal = "0.4.8"
-# Do not upgrade bincode and replace asap
-bincode = "=1.3.3"
 clap = { version = "4.5.38", features = ["derive"] }
 daggy = "0.8.1"
 foundry-compilers = { version = "0.19.1", features = ["svm-solc"] }
@@ -77,7 +75,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 ] }
 testcontainers = "0.24.0"
 thiserror = "2.0.12"
-tfhe = { version = "=1.4.0-alpha.4", features = [
+tfhe = { version = "=1.5.1", features = [
     "boolean",
     "shortint",
     "integer",
@@ -85,7 +83,7 @@ tfhe = { version = "=1.4.0-alpha.4", features = [
     "experimental-force_fft_algo_dif4",
 ] }
 tfhe-versionable = "=0.6.2"
-tfhe-zk-pok = "=0.7.4"
+tfhe-zk-pok = "=0.8.0"
 time = "0.3.43"
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-util = "0.7.15"

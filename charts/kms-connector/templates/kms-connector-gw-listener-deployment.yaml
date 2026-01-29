@@ -59,9 +59,9 @@ spec:
             - name: KMS_CONNECTOR_DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
             - name: KMS_CONNECTOR_GATEWAY_URL
-              value: {{ default .Values.commonConfig.gatewayUrl .Values.kmsConnectorGwListener.config.gatewayUrl | quote }}
-            - name: KMS_CONNECTOR_CHAIN_ID
-              value: {{ .Values.commonConfig.chainId | quote }}
+              value: {{ default .Values.commonConfig.gatewayUrl (.Values.kmsConnectorGwListener.config).gatewayUrl | quote }}
+            - name: KMS_CONNECTOR_GATEWAY_CHAIN_ID
+              value: {{ .Values.commonConfig.gatewayChainId | quote }}
             - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
               value: {{ .Values.commonConfig.gatewayContractAddresses.decryption | quote }}
             - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS

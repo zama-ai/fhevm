@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use connector_utils::{
     tests::{
         rand::{rand_address, rand_public_key, rand_signature, rand_u256},
-        setup::{DECRYPTION_MOCK_ADDRESS, KMS_GENERATION_MOCK_ADDRESS, TestInstance},
+        setup::TestInstance,
     },
     types::{
         GatewayEventKind,
@@ -40,8 +40,8 @@ pub async fn start_test_listener(
     from_block_number: Option<u64>,
 ) -> anyhow::Result<JoinHandle<()>> {
     let mut config = Config::default();
-    config.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
-    config.kms_generation_contract.address = KMS_GENERATION_MOCK_ADDRESS;
+    config.decryption_contract.address = *test_instance.decryption_contract().address();
+    config.kms_generation_contract.address = *test_instance.kms_generation_contract().address();
     config.decryption_from_block_number = from_block_number;
     config.kms_operation_from_block_number = from_block_number;
     config.decryption_polling = Duration::from_millis(300);

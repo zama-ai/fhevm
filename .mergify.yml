@@ -21,9 +21,3 @@ pull_request_rules:
         toggle:
           - merge-queued
 
-  - name: merge hotfix immediately
-    conditions:
-      - label = hotfix
-      - "#approved-reviews-by >= 1"
-    actions:
-      merge:

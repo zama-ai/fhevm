@@ -2,7 +2,7 @@ use crate::{
     monitoring::otlp::PropagationContext,
     types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
 };
-use alloy::primitives::U256;
+use alloy::primitives::{FixedBytes, U256};
 use fhevm_gateway_bindings::{
     decryption::Decryption::{
         PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
@@ -23,17 +23,23 @@ use tracing::{info, warn};
 #[derive(Clone, Debug, PartialEq)]
 pub struct GatewayEvent {
     pub kind: GatewayEventKind,
+    pub tx_hash: Option<FixedBytes<32>>,
     pub already_sent: bool,
     pub error_counter: i16,
     pub otlp_context: PropagationContext,
 }
 
 impl GatewayEvent {
-    pub fn new(kind: GatewayEventKind, otlp_context: PropagationContext) -> Self {
+    pub fn new(
+        kind: GatewayEventKind,
+        tx_hash: Option<FixedBytes<32>>,
+        otlp_context: PropagationContext,
+    ) -> Self {
         GatewayEvent {
             kind,
-            error_counter: 0,
+            tx_hash,
             already_sent: false,
+            error_counter: 0,
             otlp_context,
         }
     }
@@ -110,9 +116,13 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
-        error_counter: row.try_get::<i16, _>("error_counter")?,
+        tx_hash: row
+            .try_get::<Vec<u8>, _>("tx_hash")
+            .ok()
+            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        error_counter: row.try_get::<i16, _>("error_counter")?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -130,11 +140,16 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
         publicKey: row.try_get::<Vec<u8>, _>("public_key")?.into(),
         extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
+
     Ok(GatewayEvent {
         kind,
-        error_counter: row.try_get::<i16, _>("error_counter")?,
+        tx_hash: row
+            .try_get::<Vec<u8>, _>("tx_hash")
+            .ok()
+            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        error_counter: row.try_get::<i16, _>("error_counter")?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -146,9 +161,15 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
-        error_counter: 0,
+
+        tx_hash: row
+            .try_get::<Vec<u8>, _>("tx_hash")
+            .ok()
+            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        error_counter: 0,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -159,9 +180,15 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
-        error_counter: 0,
+
+        tx_hash: row
+            .try_get::<Vec<u8>, _>("tx_hash")
+            .ok()
+            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        error_counter: 0,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -173,9 +200,15 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     });
     Ok(GatewayEvent {
         kind,
-        error_counter: 0,
+
+        tx_hash: row
+            .try_get::<Vec<u8>, _>("tx_hash")
+            .ok()
+            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+
         already_sent: row.try_get::<bool, _>("already_sent")?,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        error_counter: 0,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -183,9 +216,15 @@ pub fn from_prss_init_row(row: &PgRow) -> anyhow::Result<GatewayEvent> {
     let kind = GatewayEventKind::PrssInit(U256::from_le_bytes(row.try_get::<[u8; 32], _>("id")?));
     Ok(GatewayEvent {
         kind,
-        error_counter: 0,
+
+        tx_hash: row
+            .try_get::<Vec<u8>, _>("tx_hash")
+            .ok()
+            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+
         already_sent: false,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        error_counter: 0,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 
@@ -198,9 +237,15 @@ pub fn from_key_reshare_same_set_row(row: &PgRow) -> anyhow::Result<GatewayEvent
     });
     Ok(GatewayEvent {
         kind,
-        error_counter: 0,
+
+        tx_hash: row
+            .try_get::<Vec<u8>, _>("tx_hash")
+            .ok()
+            .and_then(|h| FixedBytes::try_from(h.as_slice()).ok()),
+
         already_sent: false,
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        error_counter: 0,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
     })
 }
 

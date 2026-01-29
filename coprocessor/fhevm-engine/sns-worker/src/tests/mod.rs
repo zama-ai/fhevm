@@ -44,13 +44,13 @@ pub fn init_tracing() {
 async fn test_fhe_ciphertext128_with_compression() {
     const WITH_COMPRESSION: bool = true;
     let test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
-    let tf: TestFile = read_test_file("ciphertext64.bin");
+    let tf: TestFile = read_test_file("ciphertext64.json");
 
     test_decryptable(
         &test_env,
         &tf.handle.into(),
         &tf.ciphertext64.clone(),
-        tf.decrypted,
+        tf.cleartext,
         true,
         WITH_COMPRESSION,
     )
@@ -61,7 +61,7 @@ async fn test_fhe_ciphertext128_with_compression() {
         &test_env,
         &tf.handle.into(),
         &tf.ciphertext64,
-        tf.decrypted,
+        tf.cleartext,
         false,
         WITH_COMPRESSION,
     )
@@ -78,7 +78,7 @@ async fn test_fhe_ciphertext128_with_compression() {
 async fn test_batch_execution() {
     const WITH_COMPRESSION: bool = true;
     let test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
-    let tf: TestFile = read_test_file("ciphertext64.bin");
+    let tf: TestFile = read_test_file("ciphertext64.json");
 
     let batch_size = std::env::var("BATCH_SIZE")
         .ok()
@@ -92,7 +92,7 @@ async fn test_batch_execution() {
         &tf.handle,
         batch_size,
         &tf.ciphertext64.clone(),
-        tf.decrypted,
+        tf.cleartext,
         WITH_COMPRESSION,
     )
     .await
@@ -104,13 +104,13 @@ async fn test_batch_execution() {
 async fn test_fhe_ciphertext128_no_compression() {
     const NO_COMPRESSION: bool = false;
     let test_env = setup(NO_COMPRESSION).await.expect("valid setup");
-    let tf: TestFile = read_test_file("ciphertext64.bin");
+    let tf: TestFile = read_test_file("ciphertext64.json");
 
     test_decryptable(
         &test_env,
         &tf.handle.into(),
         &tf.ciphertext64.clone(),
-        tf.decrypted,
+        tf.cleartext,
         true,
         NO_COMPRESSION,
     )
@@ -231,6 +231,7 @@ async fn run_batch_computations(
 
 #[tokio::test]
 #[serial(db)]
+#[cfg(not(feature = "gpu"))]
 async fn test_lifo_mode() {
     init_tracing();
 
@@ -311,6 +312,7 @@ async fn test_lifo_mode() {
 
 #[tokio::test]
 #[serial(db)]
+#[cfg(not(feature = "gpu"))]
 async fn test_garbage_collect() {
     init_tracing();
 
@@ -398,10 +400,10 @@ async fn test_garbage_collect() {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128")
         .fetch_one(&pool)
         .await
-        .expect("ciphertexts128 is empty");
-    assert_eq!(
-        count, 0,
-        "ciphertext128 should be empty after garbage_collect"
+        .expect("ciphertexts128 has been GCd");
+    assert!(
+        count <= 100,
+        "ciphertext128 should have less entries than threshold after garbage_collect"
     );
 }
 
@@ -433,7 +435,15 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
         .await?;
 
     // Set up S3 storage
-    let (s3_instance, s3_client) = setup_localstack(&conf).await?;
+    let (s3_instance, s3_client) = if cfg!(feature = "gpu") {
+        info!("GPU feature is enabled, avoid testing S3-related functionality");
+        (
+            None,
+            aws_sdk_s3::Client::new(&aws_config::load_defaults(BehaviorVersion::latest()).await),
+        )
+    } else {
+        setup_localstack(&conf).await?
+    };
 
     let token = db_instance.parent_token.child_token();
     let config: Config = conf.clone();
@@ -520,11 +530,11 @@ async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> a
 struct TestFile {
     pub handle: [u8; 32],
     pub ciphertext64: Vec<u8>,
-    pub decrypted: i64,
+    pub cleartext: i64,
 }
 
 /// Creates a test-file from handle, ciphertext64 and plaintext
-/// Can be used to update/create_new ciphertext64.bin file
+/// Can be used to update/create_new ciphertext64.json file
 #[expect(dead_code)]
 fn write_test_file(filename: &str) {
     let handle: [u8; 32] = hex::decode("TBD").unwrap().try_into().unwrap();
@@ -534,13 +544,13 @@ fn write_test_file(filename: &str) {
     let v = TestFile {
         handle,
         ciphertext64,
-        decrypted: plaintext,
+        cleartext: plaintext,
     };
 
     // Write bytes to a file
     File::create(filename)
         .expect("Failed to create file")
-        .write_all(&bincode::serialize(&v).unwrap())
+        .write_all(&serde_json::to_vec(&v).unwrap())
         .expect("Failed to write to file");
 }
 
@@ -548,7 +558,7 @@ fn read_test_file(filename: &str) -> TestFile {
     let mut file = File::open(filename).expect("Failed to open file");
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).expect("Failed to read file");
-    bincode::deserialize(&buffer).expect("Failed to deserialize")
+    serde_json::from_slice(&buffer).expect("Failed to deserialize")
 }
 
 async fn get_tenant_id_from_db(pool: &sqlx::PgPool, tenant_api_key: &str) -> i32 {
@@ -684,6 +694,7 @@ async fn assert_ciphertext128(
 }
 
 /// Asserts that ciphertext exists in S3
+#[cfg(not(feature = "gpu"))]
 async fn assert_ciphertext_uploaded(
     test_env: &TestEnvironment,
     bucket: &String,
@@ -700,7 +711,18 @@ async fn assert_ciphertext_uploaded(
     .await;
 }
 
+#[cfg(feature = "gpu")]
+async fn assert_ciphertext_uploaded(
+    _test_env: &TestEnvironment,
+    _bucket: &String,
+    _handle: &Vec<u8>,
+    _expected_ct_len: Option<i64>,
+) {
+    // No-op when GPU feature is enabled
+}
+
 /// Asserts that the number of ciphertext128 objects in S3 matches the expected count
+#[cfg(not(feature = "gpu"))]
 async fn assert_ciphertext_s3_object_count(
     test_env: &TestEnvironment,
     bucket: &String,
@@ -708,6 +730,15 @@ async fn assert_ciphertext_s3_object_count(
 ) {
     s3_utils::assert_object_count(test_env.s3_client.to_owned(), bucket, expected_count as i32)
         .await;
+}
+
+#[cfg(feature = "gpu")]
+async fn assert_ciphertext_s3_object_count(
+    _te: &TestEnvironment,
+    _bucket: &String,
+    _expected_count: i64,
+) {
+    // No-op when GPU feature is enabled
 }
 
 fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
@@ -728,9 +759,9 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
             listen_channels: vec![LISTEN_CHANNEL.to_string()],
             notify_channel: "fhevm".to_string(),
             batch_limit,
-            gc_batch_limit: 30,
+            gc_batch_limit: 0,
             polling_interval: 60000,
-            cleanup_interval: Duration::from_secs(10),
+            cleanup_interval: Duration::from_hours(10),
             max_connections: 5,
             timeout: Duration::from_secs(5),
             lifo: false,

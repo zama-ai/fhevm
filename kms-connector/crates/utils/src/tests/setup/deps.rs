@@ -26,14 +26,6 @@ pub enum DependencyValue {
 }
 
 impl CargoToml {
-    pub fn get_gateway_bindings_version(&self) -> String {
-        self.workspace
-            .dependencies
-            .get("fhevm_gateway_bindings")
-            .unwrap()
-            .get_version()
-    }
-
     pub fn get_kms_grpc_version(&self) -> String {
         self.workspace
             .dependencies
