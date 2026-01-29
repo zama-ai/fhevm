@@ -121,7 +121,7 @@ impl<GP: Provider, HP: Provider> DbEventProcessor<GP, HP> {
         &self,
         event: &mut GatewayEvent,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
-        match &event.kind {
+        let request = match &event.kind {
             GatewayEventKind::PublicDecryption(req) => {
                 self.decryption_processor
                     .check_decryption_not_already_done(req.decryptionId)
@@ -137,7 +137,7 @@ impl<GP: Provider, HP: Provider> DbEventProcessor<GP, HP> {
                         &req.extraData,
                         None,
                     )
-                    .await
+                    .await?
             }
             GatewayEventKind::UserDecryption(req) => {
                 // No need to check decryption is done for user decrypt, as MPC parties don't
@@ -167,7 +167,7 @@ impl<GP: Provider, HP: Provider> DbEventProcessor<GP, HP> {
                             req.publicKey.clone(),
                         )),
                     )
-                    .await
+                    .await?
             }
             GatewayEventKind::PrepKeygen(req) => self
                 .kms_generation_processor
@@ -179,13 +179,13 @@ impl<GP: Provider, HP: Provider> DbEventProcessor<GP, HP> {
                 self.kms_generation_processor.prepare_crsgen_request(req)
             }
             GatewayEventKind::PrssInit(id) => {
-                Ok(self.kms_generation_processor.prepare_prss_init_request(*id))
+                self.kms_generation_processor.prepare_prss_init_request(*id)
             }
             GatewayEventKind::KeyReshareSameSet(req) => self
                 .kms_generation_processor
                 .prepare_initiate_resharing_request(req),
-        }
-        .map_err(ProcessingError::Recoverable)
+        };
+        Ok(request)
     }
 
     /// Core event processing logic function.
@@ -193,7 +193,10 @@ impl<GP: Provider, HP: Provider> DbEventProcessor<GP, HP> {
         &mut self,
         event: &mut GatewayEvent,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
-        let request = self.prepare_request(event).await?;
+        let request = self
+            .prepare_request(event)
+            .await
+            .inspect_err(|_| event.error_counter += 1)?;
 
         if !event.already_sent {
             let (error_count, result) = self.kms_client.send_request(&request).await;

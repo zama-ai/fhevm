@@ -33,12 +33,12 @@ impl KMSGenerationProcessor {
     pub fn prepare_prep_keygen_request(
         &self,
         prep_keygen_request: &PrepKeygenRequest,
-    ) -> anyhow::Result<KmsGrpcRequest> {
+    ) -> KmsGrpcRequest {
         let request_id = Some(RequestId {
             request_id: hex::encode(prep_keygen_request.prepKeygenId.to_be_bytes::<32>()),
         });
 
-        Ok(KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
+        KmsGrpcRequest::PrepKeygen(KeyGenPreprocRequest {
             request_id,
             domain: Some(self.domain.clone()),
             params: prep_keygen_request.paramsType as i32,
@@ -46,13 +46,10 @@ impl KMSGenerationProcessor {
             context_id: None,
             // Used to generate other types of key, but not planned to be supported by the Gateway
             keyset_config: None,
-        }))
+        })
     }
 
-    pub fn prepare_keygen_request(
-        &self,
-        keygen_request: &KeygenRequest,
-    ) -> anyhow::Result<KmsGrpcRequest> {
+    pub fn prepare_keygen_request(&self, keygen_request: &KeygenRequest) -> KmsGrpcRequest {
         let request_id = Some(RequestId {
             request_id: hex::encode(keygen_request.keyId.to_be_bytes::<32>()),
         });
@@ -60,7 +57,7 @@ impl KMSGenerationProcessor {
             request_id: hex::encode(keygen_request.prepKeygenId.to_be_bytes::<32>()),
         });
 
-        Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
+        KmsGrpcRequest::Keygen(KeyGenRequest {
             request_id,
             preproc_id,
             domain: Some(self.domain.clone()),
@@ -70,13 +67,10 @@ impl KMSGenerationProcessor {
             // Used to generate other types of key, but not planned to be supported by the Gateway
             keyset_config: None,
             keyset_added_info: None,
-        }))
+        })
     }
 
-    pub fn prepare_crsgen_request(
-        &self,
-        crsgen_request: &CrsgenRequest,
-    ) -> anyhow::Result<KmsGrpcRequest> {
+    pub fn prepare_crsgen_request(&self, crsgen_request: &CrsgenRequest) -> KmsGrpcRequest {
         let request_id = Some(RequestId {
             request_id: hex::encode(crsgen_request.crsId.to_be_bytes::<32>()),
         });
@@ -91,13 +85,13 @@ impl KMSGenerationProcessor {
                     .ok()
             });
 
-        Ok(KmsGrpcRequest::Crsgen(CrsGenRequest {
+        KmsGrpcRequest::Crsgen(CrsGenRequest {
             request_id,
             domain: Some(self.domain.clone()),
             params: crsgen_request.paramsType as i32,
             max_num_bits,
             context_id: None,
-        }))
+        })
     }
 
     pub fn prepare_prss_init_request(&self, id: U256) -> KmsGrpcRequest {
@@ -110,29 +104,24 @@ impl KMSGenerationProcessor {
         })
     }
 
-    pub fn prepare_initiate_resharing_request(
-        &self,
-        req: &KeyReshareSameSet,
-    ) -> anyhow::Result<KmsGrpcRequest> {
+    pub fn prepare_initiate_resharing_request(&self, req: &KeyReshareSameSet) -> KmsGrpcRequest {
         let request_id = Some(RequestId {
             request_id: hex::encode(req.keyReshareId.to_be_bytes::<32>()),
         });
 
-        Ok(KmsGrpcRequest::KeyReshareSameSet(
-            InitiateResharingRequest {
-                request_id,
-                key_id: Some(RequestId {
-                    request_id: hex::encode(req.keyId.to_be_bytes::<32>()),
-                }),
-                key_digests: vec![], // TODO: update once resharing is implemented
-                preproc_id: Some(RequestId {
-                    request_id: hex::encode(req.prepKeygenId.to_be_bytes::<32>()),
-                }),
-                key_parameters: req.paramsType as i32,
-                domain: Some(self.domain.clone()),
-                epoch_id: None,
-                context_id: None,
-            },
-        ))
+        KmsGrpcRequest::KeyReshareSameSet(InitiateResharingRequest {
+            request_id,
+            key_id: Some(RequestId {
+                request_id: hex::encode(req.keyId.to_be_bytes::<32>()),
+            }),
+            key_digests: vec![], // TODO: update once resharing is implemented
+            preproc_id: Some(RequestId {
+                request_id: hex::encode(req.prepKeygenId.to_be_bytes::<32>()),
+            }),
+            key_parameters: req.paramsType as i32,
+            domain: Some(self.domain.clone()),
+            epoch_id: None,
+            context_id: None,
+        })
     }
 }

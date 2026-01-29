@@ -151,7 +151,7 @@ fn default_grpc_request_retries() -> u8 {
 }
 
 fn default_max_decryption_attempts() -> u16 {
-    200
+    20
 }
 
 fn default_s3_ciphertext_retrieval_retries() -> u8 {
