@@ -30,8 +30,10 @@ The smoke runner uses the same environment variables as the e2e tests:
 Network-specific RPC URLs:
 
 - staging/zwsDev: `RPC_URL` (defaults to localhost:8545)
-- sepolia: `SEPOLIA_ETH_RPC_URL` (required)
-- mainnet: `MAINNET_ETH_RPC_URL` (required)
+- sepolia: `SEPOLIA_ETH_RPC_URL` (falls back to `RPC_URL`)
+- mainnet: `MAINNET_ETH_RPC_URL` (falls back to `RPC_URL`)
+
+For pod deployments, just set `RPC_URL` - it works for all networks.
 
 Mainnet additionally requires `ZAMA_FHEVM_API_KEY`. Set `TEST_INPUT_CONTRACT_ADDRESS` to reuse an existing contract (requires `SMOKE_DEPLOY_CONTRACT=0`).
 
