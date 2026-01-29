@@ -33,7 +33,7 @@ Network-specific RPC URLs:
 - sepolia: `SEPOLIA_ETH_RPC_URL` (required)
 - mainnet: `MAINNET_ETH_RPC_URL` (required)
 
-Mainnet additionally requires `ZAMA_FHEVM_API_KEY` and `TEST_INPUT_CONTRACT_ADDRESS` unless `SMOKE_FORCE_DEPLOY=1`.
+Mainnet additionally requires `ZAMA_FHEVM_API_KEY`. Set `TEST_INPUT_CONTRACT_ADDRESS` to reuse an existing contract (requires `SMOKE_DEPLOY_CONTRACT=0`).
 
 Hardhat loads env from `test-suite/e2e/.env` by default; override with `DOTENV_CONFIG_PATH`.
 You can also store secrets with Hardhat vars, e.g. `npx hardhat vars set SEPOLIA_ETH_RPC_URL` (it will prompt for the value).
@@ -46,10 +46,11 @@ For devnet, `test-suite/e2e/.env.devnet` provides a ready baseline (use `DOTENV_
 - `SMOKE_TX_MAX_RETRIES` (`2`)
 - `SMOKE_FEE_BUMP` (`1.125^4`)
 - `SMOKE_MAX_BACKLOG` (`3`)
-- `SMOKE_CANCEL_BACKLOG` (`true`)
-- `SMOKE_FORCE_DEPLOY` (`0`)
+- `SMOKE_CANCEL_BACKLOG` (`1`) - set to `0` to disable auto-cancel of pending transactions
+- `SMOKE_DEPLOY_CONTRACT` (`1`) - set to `0` to attach to existing contract via `TEST_INPUT_CONTRACT_ADDRESS`
+- `SMOKE_RUN_TESTS` (`1`) - set to `0` to deploy contract only without running tests
 - `SMOKE_DECRYPT_TIMEOUT_SECS` (`120`) - timeout for decryption operations
-- `BETTERSTACK_HEARTBEAT_URL` (optional) - if set, pings BetterStack on success/failure
+- `BETTERSTACK_HEARTBEAT_URL` (optional) - if set, pings BetterStack on success; reports error with exit code on failure
 
 ### Run
 
