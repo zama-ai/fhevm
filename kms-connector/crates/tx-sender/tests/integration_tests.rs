@@ -1,35 +1,33 @@
-mod common;
-
 use alloy::primitives::U256;
 use anyhow::anyhow;
-use common::{
-    insert_rand_keygen_response, insert_rand_prep_keygen_response,
-    insert_rand_public_decrypt_response, insert_rand_user_decrypt_response,
-};
 use connector_utils::{
     config::KmsWallet,
-    conn::connect_to_gateway_with_wallet,
-    tests::setup::{
-        CHAIN_ID, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY, KMS_GENERATION_MOCK_ADDRESS,
-        TestInstance, TestInstanceBuilder,
+    conn::connect_to_rpc_node_with_wallet,
+    tests::{
+        db::responses::{
+            insert_rand_crsgen_response, insert_rand_keygen_response,
+            insert_rand_prep_keygen_response, insert_rand_public_decrypt_response,
+            insert_rand_user_decrypt_response,
+        },
+        setup::{CHAIN_ID, DEPLOYER_PRIVATE_KEY, TestInstance, TestInstanceBuilder},
     },
+    types::db::OperationStatus,
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
     kms_generation::KMSGeneration::KMSGenerationInstance,
 };
 use rstest::rstest;
+use sqlx::Row;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tx_sender::core::{
-    Config, DbKmsResponsePicker, DbKmsResponseRemover, TransactionSender,
+    Config, DbKmsResponsePicker, TransactionSender,
     tx_sender::{TransactionSenderInner, TransactionSenderInnerConfig},
 };
-
-use crate::common::insert_rand_crsgen_response;
 
 #[rstest]
 #[timeout(Duration::from_secs(60))]
@@ -53,7 +51,8 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     info!("Mocking PublicDecryptionResponse in Postgres...");
-    let inserted_response = insert_rand_public_decrypt_response(test_instance.db(), None).await?;
+    let inserted_response =
+        insert_rand_public_decrypt_response(test_instance.db(), None, None).await?;
     info!("PublicDecryptionResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -65,16 +64,18 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
     info!("Response successfully sent to Anvil!");
 
     test_instance
-        .wait_for_log("Successfully removed response from DB!")
+        .wait_for_log("Successfully updated response in DB!")
         .await;
 
-    info!("Checking response has been removed from DB...");
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(decryption_id) FROM public_decryption_responses")
+    info!("Checking response was completed in DB...");
+    let status: OperationStatus =
+        sqlx::query("SELECT status FROM public_decryption_responses WHERE decryption_id = $1")
+            .bind(response.decryptionId.as_le_slice())
             .fetch_one(test_instance.db())
-            .await?;
-    assert_eq!(count, 0);
-    info!("Response successfully removed from DB! Stopping TransactionSender...");
+            .await?
+            .try_get("status")?;
+    assert_eq!(status, OperationStatus::Completed);
+    info!("Response successfully completed in DB! Stopping TransactionSender...");
 
     cancel_token.cancel();
     Ok(tx_sender_task.await?)
@@ -102,7 +103,8 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     info!("Mocking UserDecryptionResponse in Postgres...");
-    let inserted_response = insert_rand_user_decrypt_response(test_instance.db(), None).await?;
+    let inserted_response =
+        insert_rand_user_decrypt_response(test_instance.db(), None, None).await?;
     info!("UserDecryptionResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -114,16 +116,18 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
     info!("Response successfully sent to Anvil!");
 
     test_instance
-        .wait_for_log("Successfully removed response from DB!")
+        .wait_for_log("Successfully updated response in DB!")
         .await;
 
-    info!("Checking response has been removed from DB...");
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(decryption_id) FROM user_decryption_responses")
+    info!("Checking response was completed in DB...");
+    let status: OperationStatus =
+        sqlx::query("SELECT status FROM user_decryption_responses WHERE decryption_id = $1")
+            .bind(response.decryptionId.as_le_slice())
             .fetch_one(test_instance.db())
-            .await?;
-    assert_eq!(count, 0);
-    info!("Response successfully removed from DB! Stopping TransactionSender...");
+            .await?
+            .try_get("status")?;
+    assert_eq!(status, OperationStatus::Completed);
+    info!("Response successfully completed in DB! Stopping TransactionSender...");
 
     cancel_token.cancel();
     Ok(tx_sender_task.await?)
@@ -151,7 +155,8 @@ async fn test_process_prep_keygen_response() -> anyhow::Result<()> {
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     info!("Mocking PrepKeygenResponse in Postgres...");
-    let inserted_response = insert_rand_prep_keygen_response(test_instance.db(), None).await?;
+    let inserted_response =
+        insert_rand_prep_keygen_response(test_instance.db(), None, None).await?;
     info!("PrepKeygenResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -163,15 +168,18 @@ async fn test_process_prep_keygen_response() -> anyhow::Result<()> {
     info!("Response successfully sent to Anvil!");
 
     test_instance
-        .wait_for_log("Successfully removed response from DB!")
+        .wait_for_log("Successfully updated response in DB!")
         .await;
 
-    info!("Checking response has been removed from DB...");
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(prep_keygen_id) FROM prep_keygen_responses")
-        .fetch_one(test_instance.db())
-        .await?;
-    assert_eq!(count, 0);
-    info!("Response successfully removed from DB! Stopping TransactionSender...");
+    info!("Checking response was completed in DB...");
+    let status: OperationStatus =
+        sqlx::query("SELECT status FROM prep_keygen_responses WHERE prep_keygen_id = $1")
+            .bind(response.prepKeygenId.as_le_slice())
+            .fetch_one(test_instance.db())
+            .await?
+            .try_get("status")?;
+    assert_eq!(status, OperationStatus::Completed);
+    info!("Response successfully completed in DB! Stopping TransactionSender...");
 
     cancel_token.cancel();
     Ok(tx_sender_task.await?)
@@ -199,7 +207,7 @@ async fn test_process_keygen_response() -> anyhow::Result<()> {
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     info!("Mocking KeygenResponse in Postgres...");
-    let inserted_response = insert_rand_keygen_response(test_instance.db(), None).await?;
+    let inserted_response = insert_rand_keygen_response(test_instance.db(), None, None).await?;
     info!("KeygenResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -211,15 +219,18 @@ async fn test_process_keygen_response() -> anyhow::Result<()> {
     info!("Response successfully sent to Anvil!");
 
     test_instance
-        .wait_for_log("Successfully removed response from DB!")
+        .wait_for_log("Successfully updated response in DB!")
         .await;
 
-    info!("Checking response has been removed from DB...");
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(key_id) FROM keygen_responses")
-        .fetch_one(test_instance.db())
-        .await?;
-    assert_eq!(count, 0);
-    info!("Response successfully removed from DB! Stopping TransactionSender...");
+    info!("Checking response was completed in DB...");
+    let status: OperationStatus =
+        sqlx::query("SELECT status FROM keygen_responses WHERE key_id = $1")
+            .bind(response.keyId.as_le_slice())
+            .fetch_one(test_instance.db())
+            .await?
+            .try_get("status")?;
+    assert_eq!(status, OperationStatus::Completed);
+    info!("Response successfully completed in DB! Stopping TransactionSender...");
 
     cancel_token.cancel();
     Ok(tx_sender_task.await?)
@@ -247,7 +258,7 @@ async fn test_process_crsgen_response() -> anyhow::Result<()> {
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     info!("Mocking CrsgenResponse in Postgres...");
-    let inserted_response = insert_rand_crsgen_response(test_instance.db(), None).await?;
+    let inserted_response = insert_rand_crsgen_response(test_instance.db(), None, None).await?;
     info!("CrsgenResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -259,15 +270,18 @@ async fn test_process_crsgen_response() -> anyhow::Result<()> {
     info!("Response successfully sent to Anvil!");
 
     test_instance
-        .wait_for_log("Successfully removed response from DB!")
+        .wait_for_log("Successfully updated response in DB!")
         .await;
 
-    info!("Checking response has been removed from DB...");
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(crs_id) FROM crsgen_responses")
-        .fetch_one(test_instance.db())
-        .await?;
-    assert_eq!(count, 0);
-    info!("Response successfully removed from DB! Stopping TransactionSender...");
+    info!("Checking response was completed in DB...");
+    let status: OperationStatus =
+        sqlx::query("SELECT status FROM crsgen_responses WHERE crs_id = $1")
+            .bind(response.crsId.as_le_slice())
+            .fetch_one(test_instance.db())
+            .await?
+            .try_get("status")?;
+    assert_eq!(status, OperationStatus::Completed);
+    info!("Response successfully completed in DB! Stopping TransactionSender...");
 
     cancel_token.cancel();
     Ok(tx_sender_task.await?)
@@ -298,7 +312,7 @@ async fn stress_test() -> anyhow::Result<()> {
     info!("Mocking {nb_response} UserDecryptionResponse in Postgres...");
     let mut responses_id = Vec::with_capacity(nb_response);
     for _ in 0..nb_response {
-        let response = insert_rand_user_decrypt_response(test_instance.db(), None).await?;
+        let response = insert_rand_user_decrypt_response(test_instance.db(), None, None).await?;
         responses_id.push(response.decryption_id);
     }
     info!("{nb_response} UserDecryptionResponse successfully stored!");
@@ -317,16 +331,18 @@ async fn stress_test() -> anyhow::Result<()> {
 
     for _ in 0..nb_response {
         test_instance
-            .wait_for_log("Successfully removed response from DB!")
+            .wait_for_log("Successfully updated response in DB!")
             .await;
     }
-    info!("Checking responses have been removed from DB...");
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(decryption_id) FROM user_decryption_responses")
-            .fetch_one(test_instance.db())
-            .await?;
-    assert_eq!(count, 0);
-    info!("Responses successfully removed from DB! Stopping TransactionSender...");
+
+    info!("Checking responses have been completed in DB...");
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(decryption_id) FROM user_decryption_responses WHERE status = 'completed'",
+    )
+    .fetch_one(test_instance.db())
+    .await?;
+    assert_eq!(count, nb_response as i64);
+    info!("Responses successfully completed in DB! Stopping TransactionSender...");
 
     cancel_token.cancel();
     Ok(tx_sender_task.await?)
@@ -337,10 +353,9 @@ async fn start_test_tx_sender(
     cancel_token: CancellationToken,
 ) -> anyhow::Result<JoinHandle<()>> {
     let response_picker =
-        DbKmsResponsePicker::connect(test_instance.db().clone(), &Config::default().await).await?;
-    let response_remover = DbKmsResponseRemover::new(test_instance.db().clone());
-    let provider = connect_to_gateway_with_wallet(
-        test_instance.anvil_http_endpoint().as_str(),
+        DbKmsResponsePicker::connect(test_instance.db().clone(), &Config::default()).await?;
+    let provider = connect_to_rpc_node_with_wallet(
+        test_instance.anvil_http_endpoint(),
         *CHAIN_ID as u64,
         KmsWallet::from_private_key_str(DEPLOYER_PRIVATE_KEY, Some(*CHAIN_ID as u64))?,
     )
@@ -348,8 +363,11 @@ async fn start_test_tx_sender(
 
     let tx_sender_inner = TransactionSenderInner::new(
         provider.clone(),
-        DecryptionInstance::new(DECRYPTION_MOCK_ADDRESS, provider.clone()),
-        KMSGenerationInstance::new(KMS_GENERATION_MOCK_ADDRESS, provider),
+        DecryptionInstance::new(
+            *test_instance.decryption_contract().address(),
+            provider.clone(),
+        ),
+        KMSGenerationInstance::new(*test_instance.kms_generation_contract().address(), provider),
         TransactionSenderInnerConfig {
             tx_retries: 3,
             tx_retry_interval: Duration::from_millis(100),
@@ -357,7 +375,8 @@ async fn start_test_tx_sender(
             gas_multiplier_percent: 130,
         },
     );
-    let tx_sender = TransactionSender::new(response_picker, tx_sender_inner, response_remover);
+    let tx_sender =
+        TransactionSender::new(response_picker, tx_sender_inner, test_instance.db().clone());
 
     Ok(tokio::spawn(tx_sender.start(cancel_token)))
 }

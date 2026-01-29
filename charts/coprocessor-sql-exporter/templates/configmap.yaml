@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coprocessor-sql-exporter-config
+data:
+  config: |-
+{{ .Files.Get "config/config.yml" | indent 4 }}

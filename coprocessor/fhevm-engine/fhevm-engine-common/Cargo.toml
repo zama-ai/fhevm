@@ -11,7 +11,6 @@ anyhow = { workspace = true }
 alloy = { workspace = true, features = ["providers", "provider-ws"] }
 alloy-provider = { workspace = true }
 bigdecimal = { workspace = true }
-bincode = { workspace = true }
 hex = { workspace = true }
 lru = { workspace = true }
 prost = { workspace = true }
@@ -49,6 +48,7 @@ nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu"]
 latency = []
 throughput = []
+compact-hex = []
 
 [build-dependencies]
 tonic-build = { workspace = true }

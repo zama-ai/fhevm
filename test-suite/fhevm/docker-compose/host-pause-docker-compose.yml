@@ -1,0 +1,20 @@
+services:
+  host-sc-pause:
+    container_name: host-sc-pause
+    image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
+    build:
+      context: ../../../host-contracts
+      dockerfile: Dockerfile
+      cache_from:
+        - ${FHEVM_CACHE_FROM_HOST_SC_PAUSE:-type=gha}
+      cache_to:
+        - ${FHEVM_CACHE_TO_HOST_SC_PAUSE:-type=gha,mode=max}
+    env_file:
+      - ../env/staging/.env.host-sc.local
+    command:
+      - npx hardhat compile && npx hardhat task:pauseACL
+    volumes:
+      - addresses-volume:/app/addresses  # workdir in host's Dockerfile is /app
+
+volumes:
+  addresses-volume:

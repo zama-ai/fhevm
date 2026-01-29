@@ -10,9 +10,6 @@ import {
   decrypt128,
   decrypt256,
   decryptBool,
-  decryptEbytes64,
-  decryptEbytes128,
-  decryptEbytes256,
 } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployRandFixture } from './Rand.fixture';

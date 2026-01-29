@@ -3,33 +3,28 @@ use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::pubsub::SubscriptionStream;
 use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
-use alloy::sol_types::SolEventInterface;
+use alloy::transports::ws::WebSocketConfig;
 use anyhow::{anyhow, Result};
-use fhevm_engine_common::telemetry;
+use clap::Parser;
 use futures_util::stream::StreamExt;
+use rustls;
 use sqlx::types::Uuid;
+use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info, warn, Level};
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
-use tracing::{error, info, warn, Level};
-
-use clap::Parser;
-
-use rustls;
-
-use tokio_util::sync::CancellationToken;
 
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
-use fhevm_engine_common::types::{BlockchainProvider, Handle};
+use fhevm_engine_common::telemetry;
+use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
-use crate::contracts::{AclContract, TfheContract};
-use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_result_handle, ChainId, Database, LogTfhe,
-};
+use crate::database::ingest::{ingest_block_logs, BlockLogs};
+use crate::database::tfhe_event_propagate::{ChainId, Database};
 use crate::health_check::HealthCheck;
 
 pub mod block_history;
@@ -41,6 +36,9 @@ const REORG_RETRY_GET_BLOCK: u64 = 10; // retry 10 times to get logs for a block
 const RETRY_GET_BLOCK_DELAY_IN_MS: u64 = 100;
 
 const DEFAULT_BLOCK_TIME: u64 = 12;
+pub const DEFAULT_DEPENDENCE_CACHE_SIZE: u16 = 10_000;
+pub const DEFAULT_DEPENDENCE_BY_CONNEXITY: bool = false;
+pub const DEFAULT_DEPENDENCE_CROSS_BLOCK: bool = true;
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -63,8 +61,13 @@ pub struct Args {
     #[arg(long, default_value = None, help = "Can be negative from last block", allow_hyphen_values = true)]
     pub start_at_block: Option<i64>,
 
-    #[arg(long, default_value = None)]
-    pub end_at_block: Option<u64>,
+    #[arg(
+        long,
+        default_value = None,
+        help = "End catchup at this block (can be negative from last block)",
+        allow_hyphen_values = true
+    )]
+    pub end_at_block: Option<i64>,
 
     #[arg(long, help = "A Coprocessor API key is needed for database access")]
     pub coprocessor_api_key: Option<Uuid>,
@@ -101,10 +104,24 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value = "128",
+        default_value_t = DEFAULT_DEPENDENCE_CACHE_SIZE,
         help = "Pre-computation dependence chain cache size"
     )]
     pub dependence_cache_size: u16,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_DEPENDENCE_BY_CONNEXITY,
+        help = "Dependence chain are connected components"
+    )]
+    pub dependence_by_connexity: bool,
+
+    #[arg(
+        long,
+        default_value_t = DEFAULT_DEPENDENCE_CROSS_BLOCK,
+        help = "Dependence chain are across blocks"
+    )]
+    pub dependence_cross_block: bool,
 
     #[arg(
         long,
@@ -123,6 +140,22 @@ pub struct Args {
         help = "Maximum number of blocks to wait before a block is finalized"
     )]
     pub catchup_finalization_in_blocks: u64,
+
+    #[arg(
+        long,
+        default_value_t = false,
+        requires = "end_at_block",
+        help = "Run only catchup loop without real-time subscription"
+    )]
+    pub only_catchup_loop: bool,
+
+    #[arg(
+        long,
+        default_value_t = 60u64,
+        requires = "only_catchup_loop",
+        help = "Sleep duration in seconds between catchup loop iterations"
+    )]
+    pub catchup_loop_sleep_secs: u64,
 }
 
 // TODO: to merge with Levent works
@@ -138,7 +171,8 @@ struct InfiniteLogIter {
     pub provider: Arc<RwLock<Option<BlockchainProvider>>>, // required to maintain the stream
     last_valid_block: Option<u64>,
     start_at_block: Option<i64>,
-    end_at_block: Option<u64>,
+    end_at_block: Option<i64>,
+    absolute_end_at_block: Option<u64>,
     catchup_margin: u64,
     catchup_paging: u64,
     pub tick_timeout: HeartBeat,
@@ -146,12 +180,6 @@ struct InfiniteLogIter {
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
     catchup_finalization_in_blocks: u64,
-}
-
-struct BlockLogs<T> {
-    logs: Vec<T>,
-    summary: BlockSummary,
-    catchup: bool,
 }
 
 enum BlockOrTimeoutOrNone {
@@ -178,6 +206,10 @@ mod eth_rpc_err {
     }
 }
 
+fn websocket_config() -> WebSocketConfig {
+    WebSocketConfig::default().max_message_size(Some(256 * 1024 * 1024)) // 256MB
+}
+
 impl InfiniteLogIter {
     fn new(args: &Args) -> Self {
         let mut contract_addresses = vec![];
@@ -200,6 +232,7 @@ impl InfiniteLogIter {
             last_valid_block: None,
             start_at_block: args.start_at_block,
             end_at_block: args.end_at_block,
+            absolute_end_at_block: None,
             catchup_paging: args.catchup_paging.max(1),
             catchup_margin: args.catchup_margin,
             tick_timeout: HeartBeat::default(),
@@ -214,9 +247,24 @@ impl InfiniteLogIter {
     }
 
     async fn get_chain_id(&self) -> anyhow::Result<ChainId> {
-        let ws = WsConnect::new(&self.url);
+        let config = websocket_config();
+        let ws = WsConnect::new(&self.url).with_config(config);
         let provider = ProviderBuilder::new().connect_ws(ws).await?;
         Ok(provider.get_chain_id().await?)
+    }
+
+    /// Resolves `end_at_block` to an absolute block number.
+    /// If `end_at_block` is negative, it is interpreted as relative to the current block.
+    async fn resolve_end_at_block(
+        &self,
+        provider: &BlockchainProvider,
+    ) -> Option<u64> {
+        let n = self.end_at_block?;
+        if n >= 0 {
+            return Some(n as u64);
+        }
+        let last_block = provider.get_block_number().await.ok()?;
+        Some(last_block.saturating_sub(n.unsigned_abs()))
     }
 
     async fn catchup_block_from(
@@ -257,7 +305,10 @@ impl InfiniteLogIter {
             filter = filter.address(self.contract_addresses.clone())
         }
         // we use a specific provider to not disturb the real-time one (no buffer shared)
-        let ws = WsConnect::new(&self.url).with_max_retries(0); // disabled, alloy skips events
+        let config = websocket_config();
+        let ws = WsConnect::new(&self.url)
+            .with_config(config)
+            .with_max_retries(0); // disabled, alloy skips events
         let provider = match ProviderBuilder::new().connect_ws(ws).await {
             Ok(provider) => provider,
             Err(_) => anyhow::bail!("Cannot get a provider"),
@@ -634,16 +685,20 @@ impl InfiniteLogIter {
 
     async fn new_log_stream(&mut self, not_initialized: bool) {
         let mut retry = 20;
+        let config = websocket_config();
         loop {
-            let ws = WsConnect::new(&self.url).with_max_retries(0); // disabled, alloy skips events
-
+            let ws = WsConnect::new(&self.url)
+                .with_config(config)
+                .with_max_retries(0); // disabled, alloy skips events
             match ProviderBuilder::new().connect_ws(ws).await {
                 Ok(provider) => {
                     let catch_up_from =
                         self.catchup_block_from(&provider).await;
+                    self.absolute_end_at_block =
+                        self.resolve_end_at_block(&provider).await;
                     self.catchup_blocks = Some((
                         catch_up_from.as_number().unwrap_or(0),
-                        self.end_at_block,
+                        self.absolute_end_at_block,
                     ));
                     // note subscribing to real-time before reading catchup
                     // events to have the minimal gap between the two
@@ -736,7 +791,7 @@ impl InfiniteLogIter {
     }
 
     async fn end_at_block_reached(&self) -> bool {
-        let Some(end_at_block) = self.end_at_block else {
+        let Some(end_at_block) = self.absolute_end_at_block else {
             return false;
         };
         let current_block_number =
@@ -765,10 +820,16 @@ impl InfiniteLogIter {
                 return self.next_blocklogs.pop_front();
             };
             if self.end_at_block_reached().await {
-                eprintln!(
-                    "End at block reached: {}",
-                    self.end_at_block.unwrap()
-                );
+                match self.end_at_block {
+                    Some(n) if n < 0 => eprintln!(
+                        "End at block reached: {:?} (from {})",
+                        self.absolute_end_at_block, n
+                    ),
+                    _ => eprintln!(
+                        "End at block reached: {:?}",
+                        self.absolute_end_at_block
+                    ),
+                }
                 warn!("Stopping due to --end-at-block");
                 return None;
             }
@@ -797,6 +858,7 @@ impl InfiniteLogIter {
                     warn!(
                         new_block = ?block_logs.summary,
                         block_time = self.block_time,
+                        nb_logs = block_logs.logs.len(),
                         "Block timeout, proceed with last block"
                     );
                     break block_logs;
@@ -812,13 +874,25 @@ impl InfiniteLogIter {
         self.next_blocklogs.push_back(block_logs);
         self.next_blocklogs.pop_front()
     }
+
+    /// Reset state for the next catchup loop iteration.
+    fn reset_for_catchup_loop(&mut self) {
+        self.catchup_blocks = None;
+        self.next_blocklogs.clear();
+        self.last_valid_block = None;
+        self.absolute_end_at_block = None;
+        self.block_history =
+            BlockHistory::new(self.reorg_maximum_duration_in_blocks as usize);
+    }
 }
 
 async fn db_insert_block(
+    chain_id: u64,
     db: &mut Database,
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
+    args: &Args,
 ) -> anyhow::Result<()> {
     info!(
         block = ?block_logs.summary,
@@ -828,14 +902,26 @@ async fn db_insert_block(
     );
     let mut retries = 10;
     loop {
-        let res = db_insert_block_no_retry(
+        let res = ingest_block_logs(
+            chain_id,
             db,
             block_logs,
             acl_contract_address,
             tfhe_contract_address,
+            args.dependence_by_connexity,
+            args.dependence_cross_block,
         )
         .await;
         let Err(err) = res else {
+            // Notify the database of the new block
+            // Delayed delegation rely on this signal to reconsider ready delegation
+            if !block_logs.catchup {
+                if let Err(err) =
+                    db.block_notification(block_logs.summary.number).await
+                {
+                    error!(error = %err, "Error notifying listener for new block");
+                };
+            }
             return Ok(());
         };
         if retries == 0 {
@@ -854,83 +940,32 @@ async fn db_insert_block(
     }
 }
 
-async fn db_insert_block_no_retry(
-    db: &mut Database,
-    block_logs: &BlockLogs<Log>,
-    acl_contract_address: &Option<Address>,
-    tfhe_contract_address: &Option<Address>,
-) -> std::result::Result<(), sqlx::Error> {
-    let mut tx = db.new_transaction().await?;
-    let mut is_allowed = HashSet::<Handle>::new();
-    let mut tfhe_event_log = vec![];
-    for log in &block_logs.logs {
-        let current_address = Some(log.inner.address);
-        let is_acl_address = &current_address == acl_contract_address;
-        if acl_contract_address.is_none() || is_acl_address {
-            if let Ok(event) =
-                AclContract::AclContractEvents::decode_log(&log.inner)
-            {
-                info!(acl_event = ?event, "ACL event");
-                let handles = acl_result_handles(&event);
-                for handle in handles {
-                    is_allowed.insert(handle.to_vec());
-                }
-                db.handle_acl_event(
-                    &mut tx,
-                    &event,
-                    &log.transaction_hash,
-                    &log.block_number,
-                )
-                .await?;
-                continue;
-            }
-        }
-        let is_tfhe_address = &current_address == tfhe_contract_address;
-        if tfhe_contract_address.is_none() || is_tfhe_address {
-            if let Ok(event) =
-                TfheContract::TfheContractEvents::decode_log(&log.inner)
-            {
-                let log = LogTfhe {
-                    event,
-                    transaction_hash: log.transaction_hash,
-                    is_allowed: false, // updated in the next loop
-                    block_number: log.block_number,
-                };
-                tfhe_event_log.push(log);
-                continue;
-            }
-        }
-        if is_acl_address || is_tfhe_address {
-            error!(
-                event_address = ?log.inner.address,
-                acl_contract_address = ?acl_contract_address,
-                tfhe_contract_address = ?tfhe_contract_address,
-                log = ?log,
-                "Cannot decode event",
-            );
-        }
-    }
-    for tfhe_log in tfhe_event_log {
-        info!(tfhe_log = ?tfhe_log, "TFHE event");
-        let is_allowed =
-            if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
-                is_allowed.contains(&result_handle.to_vec())
-            } else {
-                false
-            };
-        let tfhe_log = LogTfhe {
-            is_allowed,
-            ..tfhe_log
-        };
-        db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
-    }
-    db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
-    tx.commit().await
-}
-
 pub async fn main(args: Args) -> anyhow::Result<()> {
     info!("Starting main");
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    // Validate catchup-only mode arguments
+    if args.only_catchup_loop {
+        if let Some(start) = args.start_at_block {
+            if start >= 0 {
+                return Err(anyhow!(
+                    "--only-catchup-loop requires negative --start-at-block (e.g., -40)"
+                ));
+            }
+
+            let blocks_during_sleep =
+                args.catchup_loop_sleep_secs / args.initial_block_time;
+            let lookback_blocks = (-start) as u64;
+
+            if blocks_during_sleep > lookback_blocks {
+                return Err(anyhow!(
+                    "--catchup-loop-sleep-secs {} too large for --start-at-block {}",
+                    args.catchup_loop_sleep_secs,
+                    start
+                ));
+            }
+        }
+    }
 
     let acl_contract_address = if args.acl_contract_address.is_empty() {
         error!("--acl-contract-address cannot be empty");
@@ -1024,17 +1059,47 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             .map(|n| n - args.catchup_margin as i64);
     }
 
-    log_iter.new_log_stream(true).await;
+    loop {
+        log_iter.new_log_stream(true).await;
 
-    while let Some(block_logs) = log_iter.next().await {
-        let _ = db_insert_block(
-            &mut db,
-            &block_logs,
-            &acl_contract_address,
-            &tfhe_contract_address,
-        )
-        .await;
-        // logging & retry on error is already done in db_insert_block
+        while let Some(block_logs) = log_iter.next().await {
+            if args.only_catchup_loop && !block_logs.catchup {
+                break;
+            }
+            let status = db_insert_block(
+                chain_id,
+                &mut db,
+                &block_logs,
+                &acl_contract_address,
+                &tfhe_contract_address,
+                &args,
+            )
+            .await;
+            if status.is_err() {
+                // logging & retry on error is already done in db_insert_block
+                continue;
+            };
+            log_iter.last_valid_block = Some(
+                block_logs
+                    .summary
+                    .number
+                    .max(log_iter.last_valid_block.unwrap_or(0)),
+            );
+        }
+
+        if !args.only_catchup_loop {
+            break;
+        }
+
+        info!(
+            sleep_secs = args.catchup_loop_sleep_secs,
+            "Catchup loop iteration complete, sleeping"
+        );
+        tokio::time::sleep(Duration::from_secs(args.catchup_loop_sleep_secs))
+            .await;
+
+        // Reset state for next iteration
+        log_iter.reset_for_catchup_loop();
     }
     cancel_token.cancel();
     anyhow::Result::Ok(())

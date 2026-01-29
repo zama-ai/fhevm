@@ -108,6 +108,13 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         health_check_port: 8080,
         metric_rerand_batch_latency: MetricsConfig::default(),
         metric_fhe_batch_latency: MetricsConfig::default(),
+        worker_id: None,
+        dcid_ttl_sec: 30,
+        disable_dcid_locking: true,
+        dcid_timeslice_sec: 90,
+        dcid_cleanup_interval_sec: 0,
+        processed_dcid_ttl_sec: 0,
+        dcid_max_no_progress_cycles: 2,
     };
 
     std::thread::spawn(move || {
@@ -384,17 +391,17 @@ pub mod shortint_utils {
             let lwe_dimension = pbs_params.encryption_lwe_dimension();
             CryptoParametersRecord {
                 lwe_dimension: Some(lwe_dimension),
-                br_level: Some(comp_params.br_level),
-                br_base_log: Some(comp_params.br_base_log),
-                packing_ks_level: Some(comp_params.packing_ks_level),
-                packing_ks_base_log: Some(comp_params.packing_ks_base_log),
-                packing_ks_polynomial_size: Some(comp_params.packing_ks_polynomial_size),
-                packing_ks_glwe_dimension: Some(comp_params.packing_ks_glwe_dimension),
-                lwe_per_glwe: Some(comp_params.lwe_per_glwe),
-                storage_log_modulus: Some(comp_params.storage_log_modulus),
+                br_level: Some(comp_params.br_level()),
+                br_base_log: Some(comp_params.br_base_log()),
+                packing_ks_level: Some(comp_params.packing_ks_level()),
+                packing_ks_base_log: Some(comp_params.packing_ks_base_log()),
+                packing_ks_polynomial_size: Some(comp_params.packing_ks_polynomial_size()),
+                packing_ks_glwe_dimension: Some(comp_params.packing_ks_glwe_dimension()),
+                lwe_per_glwe: Some(comp_params.lwe_per_glwe()),
+                storage_log_modulus: Some(comp_params.storage_log_modulus()),
                 lwe_noise_distribution: Some(pbs_params.encryption_noise_distribution()),
                 packing_ks_key_noise_distribution: Some(
-                    comp_params.packing_ks_key_noise_distribution,
+                    comp_params.packing_ks_key_noise_distribution(),
                 ),
                 ciphertext_modulus: Some(pbs_params.ciphertext_modulus()),
                 ..Default::default()

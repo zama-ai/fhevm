@@ -16,18 +16,18 @@ parallel_requests = 1
 # # Defaults to false, if set to true, then `tests_interval` is ignored
 # sequential = false
 
-# The ciphertexts to use for user decryptions
-[[user_ct]]
-# The handle used of the ciphertext
-handle = "0xc07ece86473ba540de4dbef63889f0233f5481dd7dff00000000000030390500"
-# The digest of the ciphertext
-digest = "0x134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
-
 # The ciphertexts to use for public decryptions
 [[public_ct]]
 # The handle used of the ciphertext
-handle = "0x57539e394a6ae1dc4b4f1b00248777ce265eb6d08bff00000000000030390500"
-# The digest of the ciphertext
+handle = "0x1f9b79819b2581535a80f267862540c5eac12ee504ff00000000000030390500"
+# The digest of the ciphertext. Used only for DB tests, it can be a dummy value otherwise
+digest = "0x134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
+
+# The ciphertexts to use for user decryptions
+[[user_ct]]
+# The handle used of the ciphertext
+handle = "0x1d01f83fd1b14d84e9b8680790d993d6848aeb6462ff00000000000030390500"
+# The digest of the ciphertext. Used only for DB tests, it can be a dummy value otherwise
 digest = "0x134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
 
 # Configuration section for stress test using the Gateway chain
@@ -42,7 +42,7 @@ host_chain_id = 12345
 gateway_chain_id = 54321
 
 # Address of the Decryption contract (required)
-decryption_address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+decryption_address = "0x35760912360E875DA50D40a74305575c23D55783"
 
 # Wallet's private key as a hex string
 private_key = "24af7cb5f6cd0f29df22c6f3e2f18ee5b3949f5a489a14b0674bef8fd89bfe91"

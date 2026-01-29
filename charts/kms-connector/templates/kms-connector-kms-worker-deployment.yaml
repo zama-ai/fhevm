@@ -59,9 +59,9 @@ spec:
             - name: KMS_CONNECTOR_DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
             - name: KMS_CONNECTOR_GATEWAY_URL
-              value: {{ default .Values.commonConfig.gatewayUrl .Values.kmsConnectorKmsWorker.config.gatewayUrl | quote }}
-            - name: KMS_CONNECTOR_CHAIN_ID
-              value: {{ .Values.commonConfig.chainId | quote }}
+              value: {{ default .Values.commonConfig.gatewayUrl (.Values.kmsConnectorKmsWorker.config).gatewayUrl | quote }}
+            - name: KMS_CONNECTOR_GATEWAY_CHAIN_ID
+              value: {{ .Values.commonConfig.gatewayChainId | quote }}
             - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
               value: {{ .Values.commonConfig.gatewayContractAddresses.decryption | quote }}
             - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
@@ -78,6 +78,8 @@ spec:
           {{- end }}
             - name: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
               value: {{ .Values.kmsConnectorKmsWorker.config.kmsCoreEndpoints | quote }}
+            - name: KMS_CONNECTOR_HOST_CHAINS
+              value: {{ toJson (.Values.kmsConnectorKmsWorker.config.hostChains) | quote }}
           ports:
             {{- range $portName, $portValue := .Values.kmsConnectorKmsWorker.ports }}
             - name: {{ $portName }}

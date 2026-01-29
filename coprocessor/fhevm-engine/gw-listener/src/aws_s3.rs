@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
-use aws_sdk_s3::config::{Builder, ProvideCredentials};
+use aws_sdk_s3::config::Builder;
 use aws_sdk_s3::Client;
 use tokio_util::bytes;
 use tracing::{error, info, warn};
@@ -33,17 +33,12 @@ pub async fn create_s3_client(
     retry_policy: &S3Policy,
     url: &str,
 ) -> anyhow::Result<aws_sdk_s3::Client> {
-    let sdk_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-
-    let credentials = sdk_config
-        .credentials_provider()
-        .ok_or(anyhow::Error::msg("s3 client: no credential provider"))?
-        .provide_credentials()
-        .await?;
-    info!(access_key = %credentials.access_key_id(), "Loaded AWS credentials");
-
-    let region = sdk_config.region();
-    info!(region = ?region, "Using AWS region");
+    // Configure the AWS Client to be Anonymous as it is only used to fetch files from public buckets
+    // .no_credentials() is the Rust equivalent of --no-sign-request on the aws CLI
+    let sdk_config = aws_config::defaults(BehaviorVersion::latest())
+        .no_credentials()
+        .load()
+        .await;
 
     let timeout_config = TimeoutConfig::builder()
         .connect_timeout(retry_policy.connect_timeout)

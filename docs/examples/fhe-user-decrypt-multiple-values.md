@@ -20,9 +20,9 @@ This ensures Hardhat can compile and test your contracts as expected.
 pragma solidity ^0.8.24;
 
 import { FHE, ebool, euint32, euint64 } from "@fhevm/solidity/lib/FHE.sol";
-import { EthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract UserDecryptMultipleValues is EthereumConfig {
+contract UserDecryptMultipleValues is ZamaEthereumConfig {
   ebool private _encryptedBool; // = 0 (uninitizalized)
   euint32 private _encryptedUint32; // = 0 (uninitizalized)
   euint64 private _encryptedUint64; // = 0 (uninitizalized)

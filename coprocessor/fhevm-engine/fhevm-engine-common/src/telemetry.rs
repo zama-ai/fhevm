@@ -1,4 +1,4 @@
-use crate::utils::compact_hex;
+use crate::utils::to_hex;
 use bigdecimal::num_traits::ToPrimitive;
 use opentelemetry::{
     global::{BoxedSpan, BoxedTracer, ObjectSafeSpan},
@@ -101,10 +101,7 @@ pub fn tracer_with_handle(
     let mut span = tracer.start(span_name);
 
     if !handle.is_empty() {
-        let handle = compact_hex(&handle)
-            .get(0..10)
-            .unwrap_or_default()
-            .to_owned();
+        let handle = to_hex(&handle).get(0..10).unwrap_or_default().to_owned();
 
         span.set_attribute(KeyValue::new("handle", handle));
     }
@@ -128,7 +125,7 @@ pub fn tracer_with_handle(
 // Sets the txn_id attribute to the span
 // The txn_id is a shortened version of the transaction_id (first 10 characters of the hex representation)
 pub fn set_txn_id(span: &mut BoxedSpan, transaction_id: &[u8]) {
-    let txn_id_short = compact_hex(transaction_id)
+    let txn_id_short = to_hex(transaction_id)
         .get(0..10)
         .unwrap_or_default()
         .to_owned();
@@ -355,7 +352,7 @@ impl TransactionMetrics {
         histogram: &prometheus::Histogram,
     ) -> Result<Option<f64>, sqlx::Error> {
         debug!(
-            txn_id = %compact_hex(txn_id),
+            txn_id = %to_hex(txn_id),
             "Marking transaction as completed, recording latency"
         );
 
@@ -400,7 +397,7 @@ impl TransactionMetrics {
             if latency > 0.0 {
                 let latency_sec = latency / 1000.0;
                 info!(
-                    txn_id = %compact_hex(txn_id),
+                    txn_id = %to_hex(txn_id),
                     latency_sec,
                     target = "latency",
                     "Transaction latency recorded"
@@ -457,7 +454,7 @@ pub async fn try_end_l1_transaction(
     transaction_id: &[u8],
 ) -> Result<(), sqlx::Error> {
     debug!(
-        txn_id = %compact_hex(transaction_id),
+        txn_id = %to_hex(transaction_id),
         "Checking if L1 transaction can be ended"
     );
 

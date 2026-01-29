@@ -6,7 +6,9 @@ use host_listener::database::tfhe_event_propagate::{
     ClearConst, Database as ListenerDatabase, Handle, LogTfhe, TransactionHash,
 };
 use rand::Rng;
+use sqlx::types::time::PrimitiveDateTime;
 use sqlx::Postgres;
+use std::ops::DerefMut;
 use std::sync::Arc;
 use tracing::info;
 
@@ -62,12 +64,26 @@ pub fn next_random_handle(ct_type: FheType) -> Handle {
     handle_hash.update(rand::rng().random::<u64>().to_be_bytes());
     let mut handle = handle_hash.finalize().to_vec();
     assert_eq!(handle.len(), 32);
+
+    // Mark it as a mocked handle
+    handle[0..3].copy_from_slice(&[0u8; 3]);
+
     // Handle from computation
     handle[21] = 255u8;
     handle[22..30].copy_from_slice(&ecfg.chain_id.to_be_bytes());
     handle[30] = ct_type as u8;
     handle[31] = 0u8;
     Handle::from_slice(&handle)
+}
+
+pub fn new_transaction_id() -> Handle {
+    let mut handle_hash = Keccak256::new();
+    handle_hash.update(rand::rng().random::<u64>().to_be_bytes());
+    let mut txn_id = handle_hash.finalize().to_vec();
+    assert_eq!(txn_id.len(), 32);
+    // Mark it as a mocked transaction id
+    txn_id[20..32].copy_from_slice(&[0u8; 12]);
+    Handle::from_slice(&txn_id)
 }
 pub fn default_dependence_cache_size() -> u16 {
     128
@@ -76,6 +92,7 @@ pub fn default_dependence_cache_size() -> u16 {
 #[derive(Debug, serde::Deserialize, serde::Serialize, Eq, PartialEq, Clone)]
 pub enum Transaction {
     ERC20Transfer,
+    ERC7984Transfer,
     DEXSwapRequest,
     DEXSwapClaim,
     MULChain,
@@ -83,7 +100,11 @@ pub enum Transaction {
     InputVerif,
     GenPubDecHandles,
     GenUsrDecHandles,
+    BatchAllowHandles,
+    BatchSubmitEncryptedBids,
+    BatchInputProofs,
 }
+
 #[derive(Debug, serde::Deserialize, serde::Serialize, Eq, PartialEq, Clone)]
 pub enum ERCTransferVariant {
     Whitepaper,
@@ -117,6 +138,7 @@ pub struct Scenario {
     pub contract_address: String,
     pub user_address: String,
     pub scenario: Vec<(f64, u64)>,
+    pub batch_size: Option<usize>,
 }
 
 pub struct Job {
@@ -130,15 +152,17 @@ pub struct Context {
     pub args: Args,
     pub ecfg: EnvConfig,
     pub cancel_token: tokio_util::sync::CancellationToken,
+    // Pre-generated inputs pool
+    pub inputs_pool: Vec<Option<Handle>>,
 }
 
 #[allow(dead_code)]
 pub async fn allow_handle(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
     handle: &Vec<u8>,
     event_type: AllowEvents,
     account_address: String,
     transaction_id: TransactionHash,
-    pool: &sqlx::Pool<Postgres>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = std::time::Instant::now();
 
@@ -152,7 +176,7 @@ pub async fn allow_handle(
                 account_address,
                 event_type as i16,
                 transaction_id.to_vec(),
-            ).execute(pool).await?;
+            ).execute(tx.deref_mut()).await?;
     let _query = sqlx::query!(
         "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3) 
                      ON CONFLICT DO NOTHING;",
@@ -160,7 +184,7 @@ pub async fn allow_handle(
         handle,
         transaction_id.to_vec()
     )
-    .execute(pool)
+    .execute(tx.deref_mut())
     .await?;
 
     tracing::debug!(target: "tool", duration = ?started_at.elapsed(), "Handle allowed, db_query");
@@ -169,10 +193,11 @@ pub async fn allow_handle(
 
 #[allow(dead_code)]
 pub async fn allow_handles(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
     handles: &Vec<Vec<u8>>,
     event_type: AllowEvents,
     account_address: String,
-    pool: &sqlx::Pool<Postgres>,
+    disable_pbs_computations: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
     let tenant_id = vec![ecfg.tenant_id; handles.len()];
@@ -187,8 +212,12 @@ pub async fn allow_handles(
         &account_address,
         &event_type,
     )
-    .execute(pool)
+    .execute(tx.deref_mut())
     .await?;
+
+    if disable_pbs_computations {
+        return Ok(());
+    }
     let _query = sqlx::query!(
         "INSERT INTO pbs_computations(tenant_id, handle)
                  SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[]) 
@@ -196,7 +225,7 @@ pub async fn allow_handles(
         &tenant_id,
         handles,
     )
-    .execute(pool)
+    .execute(tx.deref_mut())
     .await?;
     Ok(())
 }
@@ -206,11 +235,13 @@ pub fn as_scalar_uint(big_int: &BigInt) -> ClearConst {
     ClearConst::from_be_slice(&bytes)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn generate_trivial_encrypt(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
     _contract_address: &str,
     user_address: &str,
     transaction_hash: TransactionHash,
-    listener_event_to_db: &mut ListenerDatabase,
+    listener_event_to_db: &ListenerDatabase,
     ct_type: Option<FheType>,
     ct_value: Option<u128>,
     is_allowed: bool,
@@ -230,13 +261,12 @@ pub async fn generate_trivial_encrypt(
         )),
         transaction_hash: Some(transaction_hash),
         is_allowed,
-        block_number: None,
+        block_number: 1,
+        block_timestamp: PrimitiveDateTime::MAX,
+        dependence_chain: transaction_hash,
+        tx_depth_size: 0,
     };
-    let mut tx = listener_event_to_db.new_transaction().await?;
-    listener_event_to_db
-        .insert_tfhe_event(&mut tx, &log)
-        .await?;
-    tx.commit().await?;
+    listener_event_to_db.insert_tfhe_event(tx, &log).await?;
     Ok(handle)
 }
 
@@ -400,23 +430,29 @@ impl EnvConfig {
 }
 
 pub async fn insert_tfhe_event(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     listener_event_to_db: &ListenerDatabase,
     transaction_hash: TransactionHash,
     event: Log<TfheContractEvents>,
     is_allowed: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = tokio::time::Instant::now();
-    let mut tx = listener_event_to_db.new_transaction().await?;
+
     let log = LogTfhe {
         event,
         transaction_hash: Some(transaction_hash),
         is_allowed,
-        block_number: None,
+        block_number: 1,
+        block_timestamp: PrimitiveDateTime::MAX,
+        dependence_chain: transaction_hash,
+        tx_depth_size: 0,
     };
-    listener_event_to_db
-        .insert_tfhe_event(&mut tx, &log)
-        .await?;
-    tx.commit().await?;
+    listener_event_to_db.insert_tfhe_event(tx, &log).await?;
+
     tracing::debug!(target: "tool", duration = ?started_at.elapsed(), "TFHE event, db_query");
     Ok(())
+}
+
+pub async fn pool(listener_event_to_db: &ListenerDatabase) -> sqlx::Pool<Postgres> {
+    listener_event_to_db.pool.clone().read().await.clone()
 }

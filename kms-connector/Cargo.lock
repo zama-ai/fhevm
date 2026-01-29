@@ -1953,7 +1953,7 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.12.2#8a406de72886a469eef71ed590c114775f6ce653"
+source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.0-rc.1#b8e1430acb1cca40890beb0837ccc9c43617ba31"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -2376,12 +2376,12 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "0.15.15"
+version = "0.15.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0faa974509d38b33ff89282db9c3295707ccf031727c0de9772038ec526852ba"
+checksum = "b30fa8254caad766fc03cb0ccae691e14bf3bd72bfff27f72802ce729551b3d6"
 dependencies = [
  "pathdiff",
- "serde",
+ "serde_core",
  "toml",
  "winnow",
 ]
@@ -2400,8 +2400,10 @@ dependencies = [
  "clap",
  "config",
  "fhevm_gateway_bindings",
+ "fhevm_host_bindings",
  "futures",
  "git-version",
+ "humantime-serde",
  "kms-grpc",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -2413,7 +2415,6 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sqlx",
- "tempfile",
  "testcontainers",
  "tfhe",
  "thiserror 2.0.12",
@@ -2780,12 +2781,19 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "dyn-stack"
-version = "0.11.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf6fa63092e3ca9f602f6500fddd05502412b748c4c4682938565b44eb9e0066"
+checksum = "1c4713e43e2886ba72b8271aa66c93d722116acf7a75555cce11dcde84388fe8"
 dependencies = [
  "bytemuck",
+ "dyn-stack-macros",
 ]
+
+[[package]]
+name = "dyn-stack-macros"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1d926b4d407d372f141f93bb444696142c29d32962ccbd3531117cf3aa0bfa9"
 
 [[package]]
 name = "ecdsa"
@@ -2982,7 +2990,14 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.10.0-0#f1f180e50ebe45b39773ee2e71d18a062de37839"
+dependencies = [
+ "alloy",
+ "serde",
+]
+
+[[package]]
+name = "fhevm_host_bindings"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "serde",
@@ -3321,13 +3336,13 @@ dependencies = [
  "bc2wrap",
  "connector-utils",
  "fhevm_gateway_bindings",
+ "humantime-serde",
  "opentelemetry",
  "prometheus",
  "rstest",
  "serde",
  "serial_test",
  "sqlx",
- "tempfile",
  "testcontainers",
  "tokio",
  "tokio-stream",
@@ -3543,6 +3558,22 @@ name = "httpdate"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
+name = "humantime"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
+
+[[package]]
+name = "humantime-serde"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57a3db5ea5923d99402c94e9feb261dc5ee9b4efa158b0315f788cf549cc200c"
+dependencies = [
+ "humantime",
+ "serde",
+]
 
 [[package]]
 name = "hyper"
@@ -4009,13 +4040,14 @@ dependencies = [
 
 [[package]]
 name = "kms-grpc"
-version = "0.12.2"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.12.2#8a406de72886a469eef71ed590c114775f6ce653"
+version = "0.13.0-rc.0"
+source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.0-rc.1#b8e1430acb1cca40890beb0837ccc9c43617ba31"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
  "alloy-sol-types",
  "anyhow",
+ "bc2wrap",
  "cfg-if",
  "hex",
  "prost",
@@ -4041,19 +4073,21 @@ dependencies = [
  "alloy",
  "anyhow",
  "bc2wrap",
- "config",
  "connector-utils",
  "dashmap",
  "fhevm_gateway_bindings",
+ "fhevm_host_bindings",
+ "futures",
+ "humantime-serde",
  "kms-grpc",
  "mocktail",
  "prometheus",
  "rstest",
  "serde",
+ "serde_json",
  "serial_test",
  "sha3",
  "sqlx",
- "tempfile",
  "testcontainers",
  "thiserror 2.0.12",
  "tokio",
@@ -5059,17 +5093,26 @@ dependencies = [
 
 [[package]]
 name = "pulp"
-version = "0.21.5"
+version = "0.22.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96b86df24f0a7ddd5e4b95c94fc9ed8a98f1ca94d3b01bdce2824097e7835907"
+checksum = "2e205bb30d5b916c55e584c22201771bcf2bad9aabd5d4127f38387140c38632"
 dependencies = [
  "bytemuck",
  "cfg-if",
  "libm",
  "num-complex",
+ "paste",
+ "pulp-wasm-simd-flag",
+ "raw-cpuid",
  "reborrow",
  "version_check",
 ]
+
+[[package]]
+name = "pulp-wasm-simd-flag"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40e24eee682d89fb193496edf918a7f407d30175b2e785fe057e4392dfd182e0"
 
 [[package]]
 name = "quick-error"
@@ -5232,6 +5275,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
 dependencies = [
  "rand_core 0.9.3",
+]
+
+[[package]]
+name = "raw-cpuid"
+version = "11.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "498cd0dc59d73224351ee52a95fee0f1a617a2eae0e7d9d720cc622c73a54186"
+dependencies = [
+ "bitflags 2.9.4",
 ]
 
 [[package]]
@@ -5470,9 +5522,9 @@ dependencies = [
 
 [[package]]
 name = "ruint"
-version = "1.17.0"
+version = "1.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a68df0380e5c9d20ce49534f292a36a7514ae21350726efe1865bdb1fa91d278"
+checksum = "c141e807189ad38a07276942c6623032d3753c8859c146104ac2e4d68865945a"
 dependencies = [
  "alloy-rlp",
  "ark-ff 0.3.0",
@@ -5863,9 +5915,9 @@ checksum = "cd0b0ec5f1c1ca621c432a25813d8d60c88abe6d3e08a3eb9cf37d97a0fe3d73"
 
 [[package]]
 name = "serde"
-version = "1.0.226"
+version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0dca6411025b24b60bfa7ec1fe1f8e710ac09782dca409ee8237ba74b51295fd"
+checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
  "serde_derive",
@@ -5873,18 +5925,18 @@ dependencies = [
 
 [[package]]
 name = "serde_core"
-version = "1.0.226"
+version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba2ba63999edb9dac981fb34b3e5c0d111a69b0924e253ed29d83f7c99e966a4"
+checksum = "41d385c7d4ca58e59fc732af25c3983b67ac852c1a25000afe1175de458b67ad"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.226"
+version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8db53ae22f34573731bafa1db20f04027b2d25e02d8205921b569171699cdb33"
+checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6547,9 +6599,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.4.0-alpha.3"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "217d37960449b4c3c9a6c9cf60982bd1f7eaaa9f6a5e64aa4abfc2bfe91fad60"
+checksum = "6fea64405f4e7bce2cea50c3638a32086bc0e22e039bb7bc054389e6633754b3"
 dependencies = [
  "aligned-vec",
  "bincode 1.3.3",
@@ -6573,9 +6625,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-csprng"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58dbda4dff1373da441b7d1f131873c0229a09294327288acdbade48b38d128d"
+checksum = "14e944e0db763d6957e5c2214f06d46da73b8a29b2d1ef087f534f6a3d239777"
 dependencies = [
  "aes",
  "getrandom 0.2.15",
@@ -6587,9 +6639,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-fft"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8621277f2fcbcf56e4cd0e19476854bd9ac195f17f6906476826dceff4063fc"
+checksum = "997f368a7a52f8a49bb9d4530875e70c16838d26ec2f87756ea9523315c4bc26"
 dependencies = [
  "aligned-vec",
  "bytemuck",
@@ -6602,9 +6654,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-ntt"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27e21dbb266f4472337dec6a608ffca2cf911d680b52873db8027c572f22d0fc"
+checksum = "0e4802eabdc20d780bfc32f0e631a3b6d79dc01b3597c7c7ebae0b5df60046b6"
 dependencies = [
  "aligned-vec",
  "bytemuck",
@@ -6613,9 +6665,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-versionable"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f59040e53a3581e1270a18eec2f1798e7bfd1c724b0f5d9db3f2a6f6cff89195"
+checksum = "5cb27ae7e1d5bc7e4662881834ad35f9fe04c6df4d4cf3cadfa84e23da5e9deb"
 dependencies = [
  "aligned-vec",
  "num-complex",
@@ -6625,9 +6677,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-versionable-derive"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9a5d55a09b8aff152dee2fa3d28af8999c3af3f69a8bce728855de21638727e"
+checksum = "085ba3a819d9931325c08ff7430864f941c7b05b0b87d1b0086336cea8f658ab"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6636,9 +6688,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-zk-pok"
-version = "0.7.3"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f7b4fa4d6b7d0bd2b5d37e237e2628dc464fc09d40ad4b95fcd3c5d2461cf98"
+checksum = "a66398e07b6d18938ac47176e1c2796a4aaa9dc6c5f461eea61bf2e94fc66479"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
@@ -6713,8 +6765,8 @@ dependencies = [
 
 [[package]]
 name = "threshold-fhe"
-version = "0.12.2"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.12.2#8a406de72886a469eef71ed590c114775f6ce653"
+version = "0.13.0-rc.0"
+source = "git+https://github.com/zama-ai/kms.git?tag=v0.13.0-rc.1#b8e1430acb1cca40890beb0837ccc9c43617ba31"
 dependencies = [
  "aes",
  "aes-prng",
@@ -6932,12 +6984,12 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.9.5"
+version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75129e1dc5000bfbaa9fee9d1b21f974f9fbad9daec557a521ee6e080825f6e8"
+checksum = "f0dc8b1fb61449e27716ec0e1bdf0f6b8f3e8f6b05391e8497b8b6d7804ea6d8"
 dependencies = [
  "indexmap 2.11.4",
- "serde",
+ "serde_core",
  "serde_spanned",
  "toml_datetime",
  "toml_parser",
@@ -7223,13 +7275,13 @@ dependencies = [
  "bc2wrap",
  "connector-utils",
  "fhevm_gateway_bindings",
+ "humantime-serde",
  "prometheus",
  "rstest",
  "serde",
  "serde_json",
  "serial_test",
  "sqlx",
- "tempfile",
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",

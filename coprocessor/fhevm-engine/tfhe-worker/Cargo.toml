@@ -10,7 +10,6 @@ license.workspace = true
 # workspace dependencies
 alloy = { workspace = true }
 bigdecimal = { workspace = true }
-bincode = { workspace = true }
 clap = { workspace = true }
 hex = { workspace = true }
 lru = { workspace = true }
@@ -24,6 +23,7 @@ strum = { workspace = true }
 sqlx = { workspace = true }
 tfhe = { workspace = true }
 tfhe-zk-pok = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tonic = { workspace = true }
@@ -34,6 +34,7 @@ opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
+chrono = { workspace = true }
 
 # crates.io dependencies
 actix-web = "4.9.0"
@@ -43,6 +44,7 @@ regex = "1.10.6"
 tonic-health = "0.12.3"
 tonic-types = "0.12.3"
 tonic-web = "0.12.3"
+uuid = { version = "1", features = ["v4"] }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
@@ -61,6 +63,7 @@ host-listener = { path = "../host-listener" }
 testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
 serde = { workspace = true }
+serial_test = { workspace = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }

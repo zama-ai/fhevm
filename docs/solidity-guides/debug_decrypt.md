@@ -67,15 +67,6 @@ To utilize the debug functions, import the [utils.ts](https://github.com/zama-ai
 
 For a more complete example, refer to the [ConfidentialERC20 test file](https://github.com/zama-ai/fhevm-hardhat-template/blob/f9505a67db31c988f49b6f4210df47ca3ce97841/test/confidentialERC20/ConfidentialERC20.ts#L181-L205).
 
-### Example: decrypting byte arrays
-
-```typescript
-// Decrypt a 128-byte encrypted value
-const ebytes128Handle: bigint = ...; // Get handle for the encrypted bytes
-const decryptedBytes: string = await debug.decryptEbytes128(ebytes128Handle);
-console.log("Decrypted Bytes:", decryptedBytes);
-```
-
 ## **How it works**
 
 ### Verifying types

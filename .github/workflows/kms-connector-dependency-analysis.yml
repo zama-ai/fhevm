@@ -29,7 +29,9 @@ jobs:
           filters: |
             rust-files:
               - .github/workflows/kms-connector-dependency-analysis.yml
-              - kms-connector/**
+              - kms-connector/crates/**
+              - kms-connector/Cargo.*
+
   dependencies-check:
     name: kms-connector-dependency-analysis/dependencies-check (bpr)
     needs: check-changes
@@ -50,13 +52,13 @@ jobs:
           toolchain: stable
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@84ca29d5c1719e79e23b6af147555a8f4dac79d6 # v1.10.14
+        uses: cargo-bins/cargo-binstall@80aaafe04903087c333980fa2686259ddd34b2d9 # v1.16.6
 
       - name: Install cargo tools
         run: |
           cargo binstall --no-confirm --force \
-            cargo-audit@0.21.2 \
-            cargo-deny@0.16.2
+            cargo-audit@0.22.0 \
+            cargo-deny@0.18.9
 
       - name: Check that Cargo.lock is the source of truth
         run: |
@@ -72,4 +74,3 @@ jobs:
         run: |
           cd kms-connector
           cargo-audit audit
-

@@ -1,10 +1,11 @@
 use tx_sender::{
     core::{Config, TransactionSender},
-    monitoring::health::HealthStatus,
+    monitoring::{health::HealthStatus, metrics::spawn_gauge_update_routine},
 };
 
 use connector_utils::{
     cli::{Cli, Subcommands},
+    config::DeserializeConfig,
     monitoring::{
         health::query_healthcheck_endpoint, otlp::init_otlp_setup, server::start_monitoring_server,
     },
@@ -28,13 +29,13 @@ async fn run() -> anyhow::Result<()> {
     let subcommand = Cli::new("TransactionSender").parse();
     match subcommand {
         Subcommands::Validate { config } => {
-            Config::from_env_and_file(Some(config)).await?;
+            Config::from_env_and_file(Some(config))?;
         }
         Subcommands::Health { endpoint } => {
             query_healthcheck_endpoint::<HealthStatus>(endpoint).await?;
         }
         Subcommands::Start { config } => {
-            let config = Config::from_env_and_file(config.as_ref()).await?;
+            let config = Config::from_env_and_file(config.as_ref())?;
             debug!("{config:?}");
             init_otlp_setup(config.service_name.clone())?;
 
@@ -42,9 +43,15 @@ async fn run() -> anyhow::Result<()> {
             set_task_limit(config.task_limit);
             install_signal_handlers(cancel_token.clone())?;
             let monitoring_endpoint = config.monitoring_endpoint;
+            let gauge_update_interval = config.gauge_update_interval;
 
             info!("Starting TransactionSender");
             let (tx_sender, state) = TransactionSender::from_config(config).await?;
+            spawn_gauge_update_routine(
+                gauge_update_interval,
+                state.db_pool.clone(),
+                cancel_token.clone(),
+            );
             start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
             tx_sender.start(cancel_token).await;
         }

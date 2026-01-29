@@ -4,7 +4,7 @@ on:
   pull_request:
 
 env:
-  ACTIONLINT_VERSION: 1.6.27
+  ACTIONLINT_VERSION: 1.7.10
 
 permissions: {}
 
@@ -24,7 +24,7 @@ jobs:
       - name: actionlint
         uses: raven-actions/actionlint@3a24062651993d40fed1019b58ac6fbdfbf276cc # v2.0.1
         with:
-            flags: "-ignore SC2001"
+            version: ${{ env.ACTIONLINT_VERSION }}
 
       - name: Ensure SHA pinned actions
         uses: zgosalvez/github-actions-ensure-sha-pinned-actions@64418826697dcd77c93a8e4a1f7601a1942e57b5 # v3.0.18
@@ -37,15 +37,14 @@ jobs:
       - name: Install & run commitlint
         if: ${{ !startsWith(github.head_ref, 'mergify/merge-queue/') }}
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title  }}
         run: |
           npm install @commitlint/config-conventional@^18 conventional-changelog-conventionalcommits @commitlint/types@^18
           npm install -g @commitlint/cli@^18
-          npx commitlint --config .github/config/commitlint.config.js --from "${BASE_SHA}" --to "${HEAD_SHA}" --verbose
+          echo "$PR_TITLE" | npx commitlint --config .github/config/commitlint.config.js --verbose
 
       - name: Run zizmor 🌈
         uses: zizmorcore/zizmor-action@e673c3917a1aef3c65c972347ed84ccd013ecda4 # v0.2.0
         with:
           persona: pedantic
-          version: 1.14.2
+          version: 1.17.0

@@ -1,0 +1,21 @@
+{{- if .Values.hostListenerCatchupOnly.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-host-listener-catchup-only
+    app.kubernetes.io/name: {{ include "hostListenerCatchupOnlyName" . }}
+  name: {{ include "hostListenerCatchupOnlyName" . }}
+spec:
+  ports:
+    - name: metrics
+      port: {{ .Values.hostListenerCatchupOnly.ports.metrics }}
+      targetPort: metrics
+    - name: healthcheck
+      port: {{ .Values.hostListenerCatchupOnly.ports.healthcheck }}
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-host-listener-catchup-only
+    app.kubernetes.io/name: {{ include "hostListenerCatchupOnlyName" . }}
+  type: ClusterIP
+{{- end }}

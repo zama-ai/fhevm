@@ -12,6 +12,7 @@ Desktop.ini
 # IDE and editor specific files
 .idea/
 .vscode/
+.claude/
 *.suo
 *.user
 *.userosscache
@@ -36,6 +37,7 @@ logs/
 
 # Build output & temporary directories (generic)
 .cache/
+.buildx-cache/
 temp/
 tmp/
 

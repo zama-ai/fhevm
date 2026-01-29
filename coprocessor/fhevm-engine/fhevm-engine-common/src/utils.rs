@@ -64,20 +64,28 @@ pub fn safe_deserialize_sns_key<T: DeserializeOwned + Named + Unversionize>(
         .map_err(|e| FhevmError::DeserializationError(e.into()))
 }
 
-// Print first 4 and last 4 bytes of a blob as hex
-pub fn compact_hex(blob: &[u8]) -> String {
-    const OFFSET: usize = 8;
-    match blob.len() {
-        0 => String::from("0x"),
-        len if len <= 2 * OFFSET => format!("0x{}", hex::encode(blob)),
-        _ => {
-            let hex_str = hex::encode(blob);
-            format!(
+pub fn to_hex(blob: &[u8]) -> String {
+    let hex_str = hex::encode(blob);
+    // Compact version when the feature is enabled
+    // Useful for local debugging
+    #[cfg(feature = "compact-hex")]
+    {
+        const OFFSET: usize = 8;
+        match blob.len() {
+            0 => String::from("0x"),
+            len if len <= 2 * OFFSET => format!("0x{}", hex_str),
+            _ => format!(
                 "0x{}...{}",
                 &hex_str[..OFFSET],
                 &hex_str[hex_str.len() - OFFSET..]
-            )
+            ),
         }
+    }
+    // Simple full-hex version when feature is disabled
+    // Aligned with fhevm convention
+    #[cfg(not(feature = "compact-hex"))]
+    {
+        format!("0x{}", hex_str)
     }
 }
 
@@ -235,4 +243,28 @@ impl FromStr for DatabaseURL {
         let _ = PgConnectOptions::from_str(s)?;
         Ok(Self(s.to_owned()))
     }
+}
+
+/// Logs whether the GPU backend is enabled or not.
+pub fn log_backend() -> bool {
+    log_backend_impl()
+}
+
+#[cfg(feature = "gpu")]
+fn log_backend_impl() -> bool {
+    use tfhe::core_crypto::gpu::{get_number_of_gpus, get_number_of_sms};
+    let num_gpus = get_number_of_gpus();
+    let streaming_multiprocessors = get_number_of_sms();
+    tracing::info!(
+        num_gpus,
+        streaming_multiprocessors,
+        "GPU feature is enabled"
+    );
+    true
+}
+
+#[cfg(not(feature = "gpu"))]
+fn log_backend_impl() -> bool {
+    tracing::info!("GPU feature is disabled, using CPU backend");
+    false
 }

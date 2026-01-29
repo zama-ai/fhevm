@@ -9,7 +9,7 @@ members = [
     "transaction-sender",
     "zkproof-worker",
     "test-harness",
-    "stress-test-generator"
+    "stress-test-generator",
 ]
 
 [workspace.package]
@@ -18,7 +18,7 @@ edition = "2021"
 license = "BSD-3-Clause-Clear"
 
 [workspace.dependencies]
-alloy = { version = "1.0.41", default-features = false, features = [
+alloy = { version = "1.1.2", default-features = false, features = [
     "essentials",
     "std",
     "reqwest-rustls-tls",
@@ -26,8 +26,13 @@ alloy = { version = "1.0.41", default-features = false, features = [
     "provider-ws",
     "signer-aws",
 ] }
-alloy-provider = "1.0.41"
-alloy-primitives = "1.4.1"
+alloy-provider = { version = "1.1.2", default-features = false, features = [
+    "reqwest",
+    "reqwest-rustls-tls",
+    "ws",
+    "anvil-node",
+] }
+alloy-primitives = "1.5.2"
 async-trait = "0.1.88"
 axum = "0.7"
 tower-http = { version = "0.5", features = ["trace"] }
@@ -37,7 +42,6 @@ aws-credential-types = "1.2.6"
 aws-sdk-kms = { version = "1.68.0", default-features = false }
 aws-sdk-s3 = { version = "1.103.0", features = ["test-util"] }
 bigdecimal = "0.4.8"
-bincode = "1.3.3"
 clap = { version = "4.5.38", features = ["derive", "env"] }
 daggy = "0.8.1"
 foundry-compilers = { version = "0.19.1", features = ["svm-solc"] }
@@ -52,7 +56,7 @@ prometheus = "0.14.0"
 prost = "0.13.5"
 rand = "0.9.1"
 rayon = "1.11.0"
-reqwest = "0.12.20"
+reqwest = { version = "0.12.20", default-features = false, features = ["rustls-tls"] }
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
 semver = "1.0.26"
 serde = "1.0.225"
@@ -67,10 +71,11 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "time",
     "postgres",
     "uuid",
+    "chrono"
 ] }
 testcontainers = "0.24.0"
 thiserror = "2.0.12"
-tfhe = { version = "1.4.0-alpha.3", features = [
+tfhe = { version = "=1.5.1", features = [
     "boolean",
     "shortint",
     "integer",
@@ -78,16 +83,20 @@ tfhe = { version = "1.4.0-alpha.3", features = [
     "experimental-force_fft_algo_dif4",
 ] }
 tfhe-versionable = "=0.6.2"
-tfhe-zk-pok = "0.7.2"
+tfhe-zk-pok = "=0.8.0"
+time = "0.3.43"
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-util = "0.7.15"
 tonic = { version = "0.12.3", features = ["server"] }
 tonic-build = "0.12.3"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["fmt", "json"] }
+tracing-test = "0.2.5"
+union-find = "0.4.3"
 humantime = "2.2.0"
 bytesize = "2.0.1"
 http = "1.3.1"
+chrono = { version = "0.4.41", features = ["serde"] }
 
 [profile.dev.package.tfhe]
 overflow-checks = false
@@ -95,3 +104,9 @@ overflow-checks = false
 [profile.release]
 opt-level = 3
 lto = "fat"
+
+[profile.local]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 16

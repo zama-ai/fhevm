@@ -4,7 +4,8 @@ use clap::{command, Parser};
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::utils::DatabaseURL;
 use humantime::parse_duration;
-use sns_worker::{SchedulePolicy, SNS_LATENCY_OP_HISTOGRAM_CONF};
+use sns_worker::metrics::SNS_LATENCY_OP_HISTOGRAM_CONF;
+use sns_worker::SchedulePolicy;
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -17,10 +18,6 @@ pub struct Args {
     /// Work items batch size
     #[arg(long, default_value_t = 4)]
     pub work_items_batch_size: u32,
-
-    /// Garbage collection batch size
-    #[arg(long, default_value_t = 80)]
-    pub gc_batch_size: u32,
 
     /// NOTIFY/LISTEN channels for database that the worker listen to
     #[arg(long, num_args(1..))]
@@ -88,8 +85,14 @@ pub struct Args {
     #[arg(long, default_value = "120s", value_parser = parse_duration)]
     pub s3_regular_recheck_duration: Duration,
 
-    #[arg(long, default_value = "120s", value_parser = parse_duration)]
+    #[arg(long, default_value = "15min", value_parser = parse_duration)]
     pub cleanup_interval: Duration,
+
+    /// Garbage collection batch size
+    /// Number of ciphertext128 to delete in one GC cycle
+    /// To disable GC set this value to 0
+    #[arg(long, default_value_t = 1000)]
+    pub gc_batch_size: u32,
 
     #[arg(
         long,
@@ -128,6 +131,9 @@ pub struct Args {
     /// Prometheus metrics: coprocessor_sns_op_latency_seconds
     #[arg(long, default_value = "0.1:10.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_sns_op_latency: MetricsConfig,
+
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    pub gauge_update_interval_secs: Option<u32>,
 }
 
 pub fn parse_args() -> Args {

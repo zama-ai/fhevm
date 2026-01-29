@@ -185,11 +185,18 @@ jobs:
         env:
           HARDHAT_NETWORK: hardhat
 
-      - name: Run tests on GPU
+      - name: Run GPU tests for the worker services.
         run: |
-          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor cargo test --release --features=gpu -- --test-threads=1
+          export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor
+          cargo test \
+          -p tfhe-worker \
+          -p sns-worker \
+          -p zkproof-worker \
+          --release \
+          --features=gpu \
+          -- \
+          --test-threads=1
         working-directory: coprocessor/fhevm-engine
-
 
   teardown-instance:
     name: coprocessor-gpu-tests/teardown

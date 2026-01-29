@@ -1,12 +1,14 @@
+use alloy_primitives::Address;
 use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
+use bigdecimal::BigDecimal;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::DatabaseURL;
-use fhevm_engine_common::utils::{compact_hex, HeartBeat};
+use fhevm_engine_common::utils::{to_hex, HeartBeat};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Uuid;
@@ -15,6 +17,7 @@ use sqlx::{PgPool, Postgres};
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
+use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
 use tracing::error;
 use tracing::info;
@@ -34,6 +37,20 @@ pub type ChainId = u64;
 pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
+pub type ChainHash = TransactionHash;
+
+#[derive(Clone, Debug)]
+pub struct Chain {
+    pub hash: ChainHash,
+    pub dependencies: Vec<ChainHash>,
+    pub dependents: Vec<ChainHash>,
+    pub allowed_handle: Vec<Handle>,
+    pub size: u64,
+    pub before_size: u64,
+    pub new_chain: bool,
+}
+pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
+pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
 
@@ -75,7 +92,7 @@ pub struct Database {
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
     pub tenant_id: TenantId,
     pub chain_id: ChainId,
-    bucket_cache: tokio::sync::RwLock<lru::LruCache<Handle, Handle>>,
+    pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
 }
 
@@ -84,7 +101,10 @@ pub struct LogTfhe {
     pub event: Log<TfheContractEvents>,
     pub transaction_hash: Option<TransactionHash>,
     pub is_allowed: bool,
-    pub block_number: Option<u64>,
+    pub block_number: u64,
+    pub block_timestamp: PrimitiveDateTime,
+    pub tx_depth_size: u64,
+    pub dependence_chain: TransactionHash,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -93,14 +113,14 @@ impl Database {
     pub async fn new(
         url: &DatabaseURL,
         coprocessor_api_key: &CoprocessorApiKey,
-        bucket_cache_size: u16,
+        dependence_cache_size: u16,
     ) -> Result<Self> {
         let pool = Self::new_pool(url).await;
         let (tenant_id, chain_id) =
             Self::find_tenant_id(&pool, coprocessor_api_key).await?;
         let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
             std::num::NonZeroU16::new(
-                bucket_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
+                dependence_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
             )
             .unwrap()
             .into(),
@@ -110,7 +130,7 @@ impl Database {
             tenant_id,
             chain_id,
             pool: Arc::new(RwLock::new(pool)),
-            bucket_cache,
+            dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
         })
     }
@@ -141,7 +161,11 @@ impl Database {
     }
 
     pub async fn new_transaction(&self) -> Result<Transaction<'_>, SqlxError> {
-        self.pool.read().await.clone().begin().await
+        self.pool().await.begin().await
+    }
+
+    pub async fn pool(&self) -> sqlx::Pool<Postgres> {
+        self.pool.read().await.clone()
     }
 
     pub async fn reconnect(&mut self) {
@@ -200,14 +224,7 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
-    ) -> Result<(), SqlxError> {
-        let bucket = self
-            .sort_computation_into_bucket(
-                result,
-                dependencies_handles,
-                &log.transaction_hash,
-            )
-            .await;
+    ) -> Result<bool, SqlxError> {
         let dependencies_handles = dependencies_handles
             .iter()
             .map(|d| d.to_vec())
@@ -221,7 +238,6 @@ impl Database {
             fhe_operation,
             scalar_byte,
             log,
-            &bucket,
         )
         .await
     }
@@ -236,14 +252,7 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
-    ) -> Result<(), SqlxError> {
-        let bucket = self
-            .sort_computation_into_bucket(
-                result,
-                dependencies,
-                &log.transaction_hash,
-            )
-            .await;
+    ) -> Result<bool, SqlxError> {
         let dependencies =
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
         self.insert_computation_inner(
@@ -254,7 +263,6 @@ impl Database {
             fhe_operation,
             scalar_byte,
             log,
-            &bucket,
         )
         .await
     }
@@ -269,8 +277,7 @@ impl Database {
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
         log: &LogTfhe,
-        bucket: &Handle,
-    ) -> Result<(), SqlxError> {
+    ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
         let query = sqlx::query!(
@@ -283,9 +290,12 @@ impl Database {
                 is_scalar,
                 dependence_chain_id,
                 transaction_id,
-                is_allowed
+                is_allowed,
+                created_at,
+                schedule_order,
+                is_completed
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9::timestamp, $10)
             ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
             "#,
             tenant_id as i32,
@@ -293,59 +303,19 @@ impl Database {
             &dependencies,
             fhe_operation as i16,
             is_scalar,
-            bucket.to_vec(),
+            log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()),
             log.is_allowed,
+            log.block_timestamp
+                .saturating_add(time::Duration::microseconds(
+                    log.tx_depth_size as i64
+                )),
+            !log.is_allowed,
         );
-        query.execute(tx.deref_mut()).await.map(|_| ())
-    }
-
-    async fn sort_computation_into_bucket(
-        &self,
-        output: &Handle,
-        dependencies: &[&Handle],
-        transaction_hash: &Option<Handle>,
-    ) -> Handle {
-        // If the transaction ID is a hit in the cache, update its
-        // last use and add the output handle in the bucket
-        if let Some(txh) = transaction_hash {
-            // We need a write access here as get updates the LRUcache
-            let mut bucket_cache_write = self.bucket_cache.write().await;
-            if let Some(ce) = bucket_cache_write.get(txh).cloned() {
-                bucket_cache_write.put(*output, ce);
-                return ce;
-            }
-        }
-        // If any input dependence is a match, return its bucket. This
-        // computation is in a connected component with other ops in
-        // this bucket
-        let bucket_cache_read = self.bucket_cache.read().await;
-        for d in dependencies {
-            // We peek here as the reuse is less likely than the use
-            // of the new handle which we add - because handles
-            // operate under single assinment
-            if let Some(ce) = bucket_cache_read.peek(*d).cloned() {
-                drop(bucket_cache_read);
-                let mut bucket_cache_write = self.bucket_cache.write().await;
-                bucket_cache_write.put(*output, ce);
-                // As the transaction hash was not in the cache, add
-                // it to this bucket as well
-                if let Some(txh) = transaction_hash {
-                    bucket_cache_write.put(*txh, ce);
-                }
-                return ce;
-            }
-        }
-        drop(bucket_cache_read);
-        // If this computation is not linked to any others, assign it
-        // to a new empty bucket and add output handle and transaction
-        // hash where relevant
-        let mut bucket_cache_write = self.bucket_cache.write().await;
-        bucket_cache_write.put(*output, *output);
-        if let Some(txh) = transaction_hash {
-            bucket_cache_write.put(*txh, *output);
-        }
-        *output
+        query
+            .execute(tx.deref_mut())
+            .await
+            .map(|result| result.rows_affected() > 0)
     }
 
     #[rustfmt::skip]
@@ -353,7 +323,7 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         log: &LogTfhe,
-    ) -> Result<(), SqlxError> {
+    ) -> Result<bool, SqlxError> {
         use TfheContract as C;
         use TfheContractEvents as E;
         const HAS_SCALAR : FixedBytes::<1> = FixedBytes([1]); // if any dependency is a scalar.
@@ -385,7 +355,7 @@ impl Database {
         ) {
             self.record_transaction_begin(
                 &log.transaction_hash.map(|h| h.to_vec()),
-                &log.block_number,
+                log.block_number,
             ).await;
         };
 
@@ -437,7 +407,7 @@ impl Database {
             | E::Initialized(_)
             | E::Upgraded(_)
             | E::VerifyInput(_)
-            => Ok(()),
+            => Ok(false),
         }
     }
 
@@ -461,7 +431,47 @@ impl Database {
         Ok(())
     }
 
-    pub async fn read_last_valid_block(&mut self) -> Option<i64> {
+    pub async fn poller_get_last_caught_up_block(
+        &self,
+        chain_id: i64,
+    ) -> Result<Option<i64>, SqlxError> {
+        let pool = self.pool.read().await.clone();
+        sqlx::query_scalar(
+            r#"
+            SELECT last_caught_up_block
+            FROM host_listener_poller_state
+            WHERE chain_id = $1
+            "#,
+        )
+        .bind(chain_id)
+        .fetch_optional(&pool)
+        .await
+    }
+
+    pub async fn poller_set_last_caught_up_block(
+        &self,
+        chain_id: i64,
+        block: i64,
+    ) -> Result<(), SqlxError> {
+        let pool = self.pool.read().await.clone();
+        sqlx::query(
+            r#"
+            INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
+            VALUES ($1, $2)
+            ON CONFLICT (chain_id) DO UPDATE
+            SET last_caught_up_block = EXCLUDED.last_caught_up_block,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(chain_id)
+        .bind(block)
+        .execute(&pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn read_last_valid_block(&self) -> Option<i64> {
         let query = sqlx::query!(
             r#"
             SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
@@ -481,8 +491,10 @@ impl Database {
         tx: &mut Transaction<'_>,
         event: &Log<AclContractEvents>,
         transaction_hash: &Option<Handle>,
-        block_number: &Option<u64>,
-    ) -> Result<(), SqlxError> {
+        chain_id: u64,
+        block_hash: &[u8],
+        block_number: u64,
+    ) -> Result<bool, SqlxError> {
         let data = &event.data;
 
         let transaction_hash = transaction_hash.map(|h| h.to_vec());
@@ -494,30 +506,34 @@ impl Database {
             data,
             AclContractEvents::Allowed(_)
                 | AclContractEvents::AllowedForDecryption(_)
+                | AclContractEvents::DelegatedForUserDecryption(_)
+                | AclContractEvents::RevokedDelegationForUserDecryption(_)
         ) {
             self.record_transaction_begin(&transaction_hash, block_number)
                 .await;
         }
-
+        let mut inserted = false;
         match data {
             AclContractEvents::Allowed(allowed) => {
                 let handle = allowed.handle.to_vec();
 
-                self.insert_allowed_handle(
-                    tx,
-                    handle.clone(),
-                    allowed.account.to_string(),
-                    AllowEvents::AllowedAccount,
-                    transaction_hash.clone(),
-                )
-                .await?;
+                inserted |= self
+                    .insert_allowed_handle(
+                        tx,
+                        handle.clone(),
+                        allowed.account.to_string(),
+                        AllowEvents::AllowedAccount,
+                        transaction_hash.clone(),
+                    )
+                    .await?;
 
-                self.insert_pbs_computations(
-                    tx,
-                    &vec![handle],
-                    transaction_hash,
-                )
-                .await?;
+                inserted |= self
+                    .insert_pbs_computations(
+                        tx,
+                        &vec![handle],
+                        transaction_hash,
+                    )
+                    .await?;
             }
             AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
                 let handles = allowed_for_decryption
@@ -528,23 +544,61 @@ impl Database {
 
                 for handle in handles.clone() {
                     info!(
-                        handle = compact_hex(&handle),
+                        handle = to_hex(&handle),
                         "Allowed for public decryption"
                     );
 
-                    self.insert_allowed_handle(
+                    inserted |= self
+                        .insert_allowed_handle(
+                            tx,
+                            handle,
+                            "".to_string(),
+                            AllowEvents::AllowedForDecryption,
+                            transaction_hash.clone(),
+                        )
+                        .await?;
+                }
+
+                inserted |= self
+                    .insert_pbs_computations(
                         tx,
-                        handle,
-                        "".to_string(),
-                        AllowEvents::AllowedForDecryption,
+                        &handles,
                         transaction_hash.clone(),
                     )
                     .await?;
-                }
-
-                self.insert_pbs_computations(
+            }
+            AclContractEvents::DelegatedForUserDecryption(delegation) => {
+                info!(?delegation, "Delegation for user decryption");
+                inserted |= Self::insert_delegation(
                     tx,
-                    &handles,
+                    delegation.delegator,
+                    delegation.delegate,
+                    delegation.contractAddress,
+                    delegation.delegationCounter,
+                    delegation.oldExpirationDate,
+                    delegation.newExpirationDate,
+                    chain_id,
+                    block_hash,
+                    block_number,
+                    transaction_hash.clone(),
+                )
+                .await?;
+            }
+            AclContractEvents::RevokedDelegationForUserDecryption(
+                delegation,
+            ) => {
+                info!(?delegation, "Revoke delegation for user decryption");
+                inserted |= Self::insert_delegation(
+                    tx,
+                    delegation.delegator,
+                    delegation.delegate,
+                    delegation.contractAddress,
+                    delegation.delegationCounter,
+                    delegation.oldExpirationDate,
+                    0, // end the delegation
+                    chain_id,
+                    block_hash,
+                    block_number,
                     transaction_hash.clone(),
                 )
                 .await?;
@@ -552,26 +606,12 @@ impl Database {
             AclContractEvents::Initialized(initialized) => {
                 warn!(event = ?initialized, "unhandled Acl::Initialized event");
             }
-            AclContractEvents::DelegatedForUserDecryption(delegate_account) => {
-                warn!(
-                    event = ?delegate_account,
-                    "unhandled Acl::DelegatedForUserDecryption event"
-                );
-            }
             AclContractEvents::OwnershipTransferStarted(
                 ownership_transfer_started,
             ) => {
                 warn!(
                     event = ?ownership_transfer_started,
                     "unhandled Acl::OwnershipTransferStarted event"
-                );
-            }
-            AclContractEvents::RevokedDelegationForUserDecryption(
-                revoked_delegation,
-            ) => {
-                warn!(
-                    event = ?revoked_delegation,
-                    "unhandled Acl::RevokedDelegationForUserDecryption event"
                 );
             }
             AclContractEvents::OwnershipTransferred(ownership_transferred) => {
@@ -612,7 +652,7 @@ impl Database {
             }
         }
         self.tick.update();
-        Ok(())
+        Ok(inserted)
     }
 
     /// Adds handles to the pbs_computations table and alerts the SnS worker
@@ -622,8 +662,9 @@ impl Database {
         tx: &mut Transaction<'_>,
         handles: &Vec<Vec<u8>>,
         transaction_id: Option<Vec<u8>>,
-    ) -> Result<(), SqlxError> {
+    ) -> Result<bool, SqlxError> {
         let tenant_id = self.tenant_id;
+        let mut inserted = false;
         for handle in handles {
             let query = sqlx::query!(
                 "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3)
@@ -632,9 +673,10 @@ impl Database {
                 handle,
                 transaction_id
             );
-            query.execute(tx.deref_mut()).await?;
+            inserted |=
+                query.execute(tx.deref_mut()).await?.rows_affected() > 0;
         }
-        Ok(())
+        Ok(inserted)
     }
 
     /// Add the handle to the allowed_handles table
@@ -645,7 +687,7 @@ impl Database {
         account_address: String,
         event_type: AllowEvents,
         transaction_id: Option<Vec<u8>>,
-    ) -> Result<(), SqlxError> {
+    ) -> Result<bool, SqlxError> {
         let tenant_id = self.tenant_id;
         let query = sqlx::query!(
             "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4, $5)
@@ -656,14 +698,14 @@ impl Database {
             event_type as i16,
             transaction_id
         );
-        query.execute(tx.deref_mut()).await?;
-        Ok(())
+        let inserted = query.execute(tx.deref_mut()).await?.rows_affected() > 0;
+        Ok(inserted)
     }
 
     async fn record_transaction_begin(
         &self,
         transaction_hash: &Option<Vec<u8>>,
-        block_number: &Option<u64>,
+        block_number: u64,
     ) {
         if let Some(txn_id) = transaction_hash {
             let pool = self.pool.read().await.clone();
@@ -671,10 +713,107 @@ impl Database {
                 &pool,
                 self.chain_id as i64,
                 txn_id.as_ref(),
-                block_number.unwrap_or_default(),
+                block_number,
             )
             .await;
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_delegation(
+        tx: &mut Transaction<'_>,
+        delegator: Address,
+        delegate: Address,
+        contract_address: Address,
+        delegation_counter: u64,
+        old_expiration_date: u64,
+        new_expiration_date: u64,
+        chain_id: u64,
+        block_hash: &[u8],
+        block_number: u64,
+        transaction_id: Option<Vec<u8>>,
+    ) -> Result<bool, SqlxError> {
+        // ON CONFLIT is done on Unique constraint
+        let query = sqlx::query!(
+            "INSERT INTO delegate_user_decrypt(
+                delegator, delegate, contract_address, delegation_counter, old_expiration_date, new_expiration_date, host_chain_id, block_number, block_hash, transaction_id, on_gateway, reorg_out)
+            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false, false)
+            ON CONFLICT DO NOTHING",
+            &delegator.into_array(),
+            &delegate.into_array(),
+            &contract_address.into_array(),
+            delegation_counter as i64,
+            BigDecimal::from(old_expiration_date),
+            BigDecimal::from(new_expiration_date),
+            chain_id as i64,
+            block_number as i64,
+            block_hash,
+            transaction_id
+        );
+        let inserted = query.execute(tx.deref_mut()).await?.rows_affected() > 0;
+        Ok(inserted)
+    }
+
+    pub async fn block_notification(
+        &mut self,
+        last_block_number: u64,
+    ) -> Result<(), SqlxError> {
+        let query = sqlx::query!(
+            "SELECT pg_notify($1, $2)",
+            "new_host_block",
+            last_block_number.to_string()
+        );
+        query.execute(&self.pool().await).await?;
+        Ok(())
+    }
+
+    pub async fn update_dependence_chain(
+        &self,
+        tx: &mut Transaction<'_>,
+        chains: OrderedChains,
+        block_timestamp: PrimitiveDateTime,
+        block_summary: &BlockSummary,
+    ) -> Result<(), SqlxError> {
+        for chain in chains {
+            let last_updated_at = block_timestamp.saturating_add(
+                TimeDuration::microseconds(chain.before_size as i64),
+            );
+            let dependents = chain
+                .dependents
+                .iter()
+                .map(|h| h.to_vec())
+                .collect::<Vec<_>>();
+            sqlx::query!(
+                r#"
+                INSERT INTO dependence_chain(
+                    dependence_chain_id,
+                    status,
+                    last_updated_at,
+                    dependency_count,
+                    dependents,
+                    block_hash,
+                    block_height
+                ) VALUES (
+                  $1, 'updated', $2::timestamp, $3, $4, $5, $6
+                )
+                ON CONFLICT (dependence_chain_id) DO UPDATE
+                SET status = 'updated',
+                    last_updated_at = CASE
+                        WHEN dependence_chain.status = 'processed' THEN EXCLUDED.last_updated_at
+                        ELSE dependence_chain.last_updated_at
+                    END
+                "#,
+                chain.hash.to_vec(),
+                last_updated_at,
+                chain.dependencies.len() as i64,
+                &dependents,
+                block_summary.hash.to_vec(),
+                block_summary.number as i64,
+            )
+            .execute(tx.deref_mut())
+            .await?;
+        }
+        Ok(())
     }
 }
 
@@ -795,13 +934,163 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
         }
         AclContractEvents::Initialized(_)
         | AclContractEvents::DelegatedForUserDecryption(_)
+        | AclContractEvents::RevokedDelegationForUserDecryption(_)
         | AclContractEvents::OwnershipTransferStarted(_)
         | AclContractEvents::OwnershipTransferred(_)
-        | AclContractEvents::RevokedDelegationForUserDecryption(_)
         | AclContractEvents::Upgraded(_)
         | AclContractEvents::Paused(_)
         | AclContractEvents::Unpaused(_)
         | AclContractEvents::BlockedAccount(_)
         | AclContractEvents::UnblockedAccount(_) => vec![],
+    }
+}
+
+pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+    match op {
+        E::Cast(C::Cast { ct, .. })
+        | E::FheNeg(C::FheNeg { ct, .. })
+        | E::FheNot(C::FheNot { ct, .. }) => vec![*ct],
+
+        E::FheAdd(C::FheAdd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitAnd(C::FheBitAnd {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitOr(C::FheBitOr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheBitXor(C::FheBitXor {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheDiv(C::FheDiv {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMax(C::FheMax {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMin(C::FheMin {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheMul(C::FheMul {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRem(C::FheRem {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotl(C::FheRotl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRotr(C::FheRotr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShl(C::FheShl {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheShr(C::FheShr {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheSub(C::FheSub {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheEq(C::FheEq {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGe(C::FheGe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheGt(C::FheGt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLe(C::FheLe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheLt(C::FheLt {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheNe(C::FheNe {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        }) => {
+            if scalarByte.const_is_zero() {
+                vec![*lhs, *rhs]
+            } else {
+                vec![*lhs]
+            }
+        }
+
+        E::FheIfThenElse(C::FheIfThenElse {
+            control,
+            ifTrue,
+            ifFalse,
+            ..
+        }) => {
+            vec![*control, *ifTrue, *ifFalse]
+        }
+
+        E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => vec![],
+
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
     }
 }

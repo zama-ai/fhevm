@@ -3,7 +3,6 @@ use std::time::Duration;
 use crate::{
     metrics::{ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER, ADD_CIPHERTEXT_MATERIAL_SUCCESS_COUNTER},
     nonce_managed_provider::NonceManagedProvider,
-    overprovision_gas_limit::try_overprovision_gas_limit,
     REVIEW,
 };
 
@@ -14,25 +13,23 @@ use alloy::{
     primitives::{Address, FixedBytes, U256},
     providers::Provider,
     rpc::types::TransactionRequest,
-    sol,
     transports::{RpcError, TransportErrorKind},
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{telemetry, tenant_keys::query_tenant_info, utils::compact_hex};
+use fhevm_engine_common::{telemetry, tenant_keys::query_tenant_info, utils::to_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
-use CiphertextCommits::CiphertextCommitsErrors;
 
-sol!(
-    #[sol(rpc)]
-    CiphertextCommits,
-    "artifacts/CiphertextCommits.sol/CiphertextCommits.json"
-);
+use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
+use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits::CiphertextCommitsErrors;
 
 #[derive(Clone)]
-pub struct AddCiphertextOperation<P: Provider<Ethereum> + Clone + 'static> {
+pub struct AddCiphertextOperation<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     ciphertext_commits_address: Address,
     provider: NonceManagedProvider<P>,
     conf: crate::ConfigSettings,
@@ -40,7 +37,10 @@ pub struct AddCiphertextOperation<P: Provider<Ethereum> + Clone + 'static> {
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
+impl<P> AddCiphertextOperation<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     async fn send_transaction(
         &self,
         handle: &[u8],
@@ -49,23 +49,21 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         current_unlimited_retries_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        let h = compact_hex(handle);
+        let h = to_hex(handle);
 
         info!(handle = h, "Processing transaction");
         let _t = telemetry::tracer("call_add_ciphertext", &src_transaction_id);
 
-        let overprovisioned_txn_req = try_overprovision_gas_limit(
-            txn_request,
-            self.provider.inner(),
-            self.conf.gas_limit_overprovision_percent,
-        )
-        .await;
-        let transaction = match self
+        let receipt = match self
             .provider
-            .send_transaction(overprovisioned_txn_req.clone())
+            .send_sync_with_overprovision(
+                txn_request,
+                self.conf.gas_limit_overprovision_percent,
+                Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
+            )
             .await
         {
-            Ok(txn) => txn,
+            Ok(receipt) => receipt,
             Err(e) if self.already_added_error(&e).is_some() => {
                 warn!(
                     handle = h,
@@ -84,7 +82,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
             {
                 ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                 warn!(
-                    transaction_request = ?overprovisioned_txn_req,
                     error = %e,
                     handle = h,
                     "Transaction sending failed with unlimited retry error"
@@ -100,7 +97,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
             Err(e) => {
                 ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                 warn!(
-                    transaction_request = ?overprovisioned_txn_req,
                     error = %e,
                     handle = h,
                     "Transaction sending failed"
@@ -112,30 +108,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
                 )
                 .await?;
                 bail!(e);
-            }
-        };
-
-        // We assume that if we were able to send the transaction, we will be able to get a receipt, eventually. If there is a transport
-        // error in-between, we rely on the retry logic to handle it.
-        let receipt = match transaction
-            .with_timeout(Some(Duration::from_secs(
-                self.conf.txn_receipt_timeout_secs as u64,
-            )))
-            .with_required_confirmations(self.conf.required_txn_confirmations as u64)
-            .get_receipt()
-            .await
-        {
-            Ok(receipt) => receipt,
-            Err(e) => {
-                ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
-                error!(error = %e, "Getting receipt failed");
-                self.increment_txn_limited_retries_count(
-                    handle,
-                    &e.to_string(),
-                    current_limited_retries_count,
-                )
-                .await?;
-                return Err(anyhow::Error::new(e));
             }
         };
 
@@ -182,8 +154,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
     fn already_added_error(&self, err: &RpcError<TransportErrorKind>) -> Option<Address> {
         err.as_error_resp()
             .and_then(|payload| payload.as_decoded_interface_error::<CiphertextCommitsErrors>())
-            .map(|error| match error {
-                CiphertextCommitsErrors::CoprocessorAlreadyAdded(c) => c.coprocessorTxSenderAddress,
+            .and_then(|error| match error {
+                CiphertextCommitsErrors::CoprocessorAlreadyAdded(c) => Some(c.txSender),
+                _ => None,
             })
     }
 
@@ -208,6 +181,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         .execute(&self.db_pool)
         .await?;
 
+        // Delete the local 128-bit ciphertext after successful transaction
+        // The db copy is no longer needed once the ciphertext commit has been added on-chain
+        //
+        // The deletion happens here but not in the SNS worker after upload because
+        // here it is less probable that the deletion fails due to a race condition
+        delete_ct128_from_db(&self.db_pool, handle.to_vec()).await?;
+
         if let Some(txn_hash) = src_transaction_id {
             telemetry::try_end_l1_transaction(&self.db_pool, &txn_hash).await?;
         }
@@ -216,7 +196,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
     }
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
+impl<P> AddCiphertextOperation<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     pub fn new(
         ciphertext_commits_address: Address,
         provider: NonceManagedProvider<P>,
@@ -245,7 +228,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         err: &str,
         current_retry_count: i32,
     ) -> anyhow::Result<()> {
-        let compact_hex_handle = compact_hex(handle);
+        let compact_hex_handle = to_hex(handle);
         if current_retry_count == self.conf.add_ciphertexts_max_retries - 1 {
             error!(
                 action = REVIEW,
@@ -281,7 +264,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         err: &str,
         current_unlimited_retries_count: i32,
     ) -> anyhow::Result<()> {
-        let compact_hex_handle = compact_hex(handle);
+        let compact_hex_handle = to_hex(handle);
         if current_unlimited_retries_count >= (self.conf.review_after_unlimited_retries as i32) - 1
         {
             error!(
@@ -334,6 +317,7 @@ where
             AND ciphertext IS NOT NULL
             AND ciphertext128 IS NOT NULL
             AND txn_limited_retries_count < $1
+            ORDER BY created_at ASC
             LIMIT $2",
             self.conf.add_ciphertexts_max_retries,
             self.conf.add_ciphertexts_batch_limit as i64,
@@ -370,7 +354,7 @@ where
                         FixedBytes::from(try_into_array::<32>(ct128)?),
                     ),
                     _ => {
-                        error!(handle = compact_hex(&handle), "Missing ciphertext(s)");
+                        error!(handle = to_hex(&handle), "Missing ciphertext(s)");
                         continue;
                     }
                 };
@@ -379,11 +363,11 @@ where
             let key_id = U256::from_be_bytes(tenant_info.key_id);
 
             info!(
-                handle = compact_hex(&handle),
+                handle = to_hex(&handle),
                 chain_id = tenant_info.chain_id,
-                key_id = compact_hex(&tenant_info.key_id),
-                ct64 = compact_hex(ciphertext64_digest.as_ref()),
-                ct128 = compact_hex(ciphertext128_digest.as_ref()),
+                key_id = to_hex(&tenant_info.key_id),
+                ct64_digest = to_hex(ciphertext64_digest.as_ref()),
+                ct128_digest = to_hex(ciphertext128_digest.as_ref()),
                 "Adding ciphertext"
             );
 
@@ -429,4 +413,24 @@ where
 
         Ok(maybe_has_more_work)
     }
+}
+
+/// Deletes the local record of a 128-bit ciphertext
+async fn delete_ct128_from_db(
+    pool: &sqlx::Pool<Postgres>,
+    handle: Vec<u8>,
+) -> Result<(), sqlx::Error> {
+    let rows_affected = sqlx::query!("DELETE FROM ciphertexts128 WHERE  handle = $1", handle)
+        .execute(pool)
+        .await?
+        .rows_affected();
+
+    if rows_affected > 0 {
+        info!(
+            rows_affected,
+            handle = to_hex(&handle),
+            "Deleted local ct128"
+        );
+    }
+    Ok(())
 }

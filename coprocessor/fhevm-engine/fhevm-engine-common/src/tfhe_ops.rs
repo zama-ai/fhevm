@@ -292,7 +292,8 @@ pub fn extract_ct_list(
     let mut res = Vec::new();
     for idx in 0..expanded.len() {
         let Some(data_kind) = expanded.get_kind_of(idx) else {
-            panic!("we're itering over what ciphertext told us how many ciphertexts are there, it must exist")
+            tracing::error!(len = expanded.len(), idx, "get_kind_of returned None");
+            continue;
         };
 
         match data_kind {

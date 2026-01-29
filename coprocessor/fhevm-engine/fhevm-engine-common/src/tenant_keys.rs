@@ -12,7 +12,12 @@ pub struct TfheTenantKeys {
     pub chain_id: i64,
     pub verifying_contract_address: String,
     pub acl_contract_address: String,
+
+    #[cfg(not(feature = "gpu"))]
     pub sks: tfhe::ServerKey,
+
+    #[cfg(feature = "gpu")]
+    pub sks: tfhe::CudaServerKey,
 
     pub pks: tfhe::CompactPublicKey,
     pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
@@ -23,7 +28,12 @@ pub struct FetchTenantKeyResult {
     pub chain_id: i64,
     pub verifying_contract_address: String,
     pub acl_contract_address: String,
+
+    #[cfg(not(feature = "gpu"))]
     pub server_key: tfhe::ServerKey,
+    #[cfg(feature = "gpu")]
+    pub server_key: tfhe::CudaServerKey,
+
     pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
     pub pks: tfhe::CompactPublicKey,
 }
@@ -103,7 +113,7 @@ where
         #[cfg(feature = "gpu")]
         let sks = {
             let csks: tfhe::CompressedServerKey = safe_deserialize_key(&sks_key)?;
-            csks.decompress()
+            csks.decompress_to_gpu()
         };
         let pks: tfhe::CompactPublicKey = safe_deserialize_key(&pks_key)?;
         let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&public_params_key)?;

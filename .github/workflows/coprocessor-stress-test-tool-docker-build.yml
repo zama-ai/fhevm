@@ -1,13 +1,10 @@
 name: coprocessor-stress-test-tool-docker-build
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
   release:
     types:
       - published
+  workflow_dispatch:
 
 permissions: {}
 
@@ -17,7 +14,6 @@ concurrency:
 
 jobs:
   check-changes:
-    name: coprocessor-stress-test-tool-docker-build/check-changes
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
@@ -34,15 +30,18 @@ jobs:
         with:
           filters: |
             coprocessor-stress-test-tool:
-              - .github/workflows/coprocessor-docker-build-stress-test-tool.yml
+              - .github/workflows/coprocessor-stress-test-tool-docker-build.yml
               - coprocessor/fhevm-engine/stress-test-generator/**
               - coprocessor/fhevm-engine/Cargo.toml
               - coprocessor/fhevm-engine/Cargo.lock
+
   build:
-    name: coprocessor-stress-test-tool-docker-build/build
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-coprocessor-stress-test-tool == 'true' || github.event_name == 'release' }}
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@530bf56e4e25ffef3a2a41b22e506d5c26960434 # v1.0.0
+    if: |
+      needs.check-changes.outputs.changes-coprocessor-stress-test-tool == 'true'
+      || github.event_name == 'release'
+      || github.event_name == 'workflow_dispatch'
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -64,3 +63,4 @@ jobs:
       image-name: "fhevm/coprocessor/stress-test-tool"
       docker-file: "coprocessor/fhevm-engine/stress-test-generator/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-stress-test-tool"
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml

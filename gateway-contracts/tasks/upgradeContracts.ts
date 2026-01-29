@@ -251,21 +251,7 @@ task("task:upgradeGatewayConfig")
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
-    // Parse the KMS nodes
-    const numKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
-    const kmsNodes = [];
-    for (let idx = 0; idx < numKmsNodes; idx++) {
-      kmsNodes.push({
-        txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
-        signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
-        ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
-        storageUrl: getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`),
-      });
-    }
-
-    console.log("New KMS nodes:", kmsNodes);
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [kmsNodes]);
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, []);
   });
 
 task("task:upgradeKMSGeneration")
