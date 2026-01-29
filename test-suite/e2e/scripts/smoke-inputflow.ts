@@ -279,11 +279,13 @@ async function runSmoke(): Promise<void> {
 
   let contractAddress: string;
   let contract: ReturnType<typeof contractFactory.attach>;
+  let deployMs = 0;
 
   if (deployContract) {
     if (existingContractAddress) {
       console.log('SMOKE_DEPLOY_CONTRACT ignoring TEST_INPUT_CONTRACT_ADDRESS');
     }
+    const deployStart = Date.now();
     const deployTx = await contractFactory.getDeployTransaction();
     const deployNonce = await provider.getTransactionCount(signerAddress, 'pending');
     let gasEstimate: bigint;
@@ -312,6 +314,7 @@ async function runSmoke(): Promise<void> {
     if (receipt.status !== 1 || !receipt.contractAddress) {
       throw new Error('Deployment failed or no contract address in receipt');
     }
+    deployMs = Date.now() - deployStart;
 
     contractAddress = receipt.contractAddress;
     contract = contractFactory.attach(contractAddress);
@@ -324,13 +327,17 @@ async function runSmoke(): Promise<void> {
     throw new Error('TEST_INPUT_CONTRACT_ADDRESS is required when SMOKE_DEPLOY_CONTRACT=0.');
   }
 
+  let timingReport = deployMs > 0 ? `deploy=${deployMs}ms ` : '';
+
   if (!runTests) {
-    console.log(`SMOKE_DEPLOY_ONLY contract=${contractAddress}`);
+    console.log(`SMOKE_DEPLOY_ONLY contract=${contractAddress} ${timingReport.trim()}`);
   } else {
+    const encryptStart = Date.now();
     const instance = await createInstance();
     const input = instance.createEncryptedInput(contractAddress, signerAddress);
     input.add64(7n);
     const encryptedInput = await input.encrypt();
+    const encryptMs = Date.now() - encryptStart;
 
     const callNonce = await provider.getTransactionCount(signerAddress, 'pending');
     let callGasEstimate: bigint;
@@ -342,6 +349,7 @@ async function runSmoke(): Promise<void> {
     }
     const gasLimit = (callGasEstimate * 120n) / 100n;
 
+    const txStart = Date.now();
     const receipt = await sendWithRetries({
       signer,
       label: 'add42ToInput64',
@@ -355,11 +363,14 @@ async function runSmoke(): Promise<void> {
           gasLimit,
         }),
     });
+    const txMs = Date.now() - txStart;
 
     assert.equal(receipt.status, 1, 'on-chain call failed');
 
     const handle = await contract.resUint64();
     const { publicKey, privateKey } = instance.generateKeypair();
+
+    const decryptStart = Date.now();
     const decryptedValue = await withTimeout(
       userDecryptSingleHandle(handle, contractAddress, instance, signer, privateKey, publicKey),
       decryptTimeoutMs,
@@ -369,8 +380,10 @@ async function runSmoke(): Promise<void> {
 
     const res = await withTimeout(instance.publicDecrypt([handle]), decryptTimeoutMs, 'publicDecrypt');
     assert.deepEqual(res.clearValues, { [handle]: 49n });
+    const decryptMs = Date.now() - decryptStart;
 
-    console.log(`SMOKE_SUCCESS signer=${signerAddress} contract=${contractAddress}`);
+    timingReport += `encrypt=${encryptMs}ms tx=${txMs}ms decrypt=${decryptMs}ms`;
+    console.log(`SMOKE_SUCCESS signer=${signerAddress} contract=${contractAddress} ${timingReport.trim()}`);
   }
 
   // Heartbeat ping on success
