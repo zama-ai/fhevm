@@ -19,13 +19,20 @@ and hardened transaction handling.
 
 ### Prereqs
 
-The smoke runner uses the same environment variables as the e2e tests:
+**For sepolia/mainnet**, most config is auto-populated from the SDK (`SepoliaConfig`/`MainnetConfig`).
+You only need:
 
+- `RPC_URL` (or `SEPOLIA_ETH_RPC_URL` / `MAINNET_ETH_RPC_URL`)
 - `MNEMONIC`
-- `RELAYER_URL`
-- `KMS_VERIFIER_CONTRACT_ADDRESS`, `ACL_CONTRACT_ADDRESS`, `INPUT_VERIFIER_CONTRACT_ADDRESS`
-- `CHAIN_ID_GATEWAY`, `CHAIN_ID_HOST`
-- `DECRYPTION_ADDRESS`, `INPUT_VERIFICATION_ADDRESS`
+- `ZAMA_FHEVM_API_KEY` (mainnet only)
+
+**For devnet**, use the pre-configured `.env.devnet` (all addresses included):
+
+```shell
+DOTENV_CONFIG_PATH=./.env.devnet npx hardhat run --network devnet scripts/smoke-inputflow.ts
+```
+
+**For other networks** (staging, custom), set all variables manually - see `.env.example`.
 
 Network-specific RPC URLs:
 
@@ -35,7 +42,7 @@ Network-specific RPC URLs:
 
 For pod deployments, just set `RPC_URL` - it works for all networks.
 
-Mainnet additionally requires `ZAMA_FHEVM_API_KEY`. Set `TEST_INPUT_CONTRACT_ADDRESS` to reuse an existing contract (requires `SMOKE_DEPLOY_CONTRACT=0`).
+Set `TEST_INPUT_CONTRACT_ADDRESS` to reuse an existing contract (requires `SMOKE_DEPLOY_CONTRACT=0`).
 
 Hardhat loads env from `test-suite/e2e/.env` by default; override with `DOTENV_CONFIG_PATH`.
 You can also store secrets with Hardhat vars, e.g. `npx hardhat vars set SEPOLIA_ETH_RPC_URL` (it will prompt for the value).
