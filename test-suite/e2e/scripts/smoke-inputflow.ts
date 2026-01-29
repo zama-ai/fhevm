@@ -60,6 +60,14 @@ const parseIndices = (value: string): number[] => {
   return indices;
 };
 
+const parseBooleanEnv = (name: string, defaultValue: boolean): boolean => {
+  const value = process.env[name];
+  if (value === undefined) return defaultValue;
+  if (value === '1') return true;
+  if (value === '0') return false;
+  throw new Error(`${name} must be '0' or '1' (got: "${value}")`);
+};
+
 const formatSignerState = (state: SignerState): string =>
   `index=${state.index} address=${state.address} latest=${state.latest} pending=${state.pending} balance=${ethers.formatEther(
     state.balance,
@@ -209,8 +217,9 @@ async function runSmoke(): Promise<void> {
   const feeBump = Number(process.env.SMOKE_FEE_BUMP) || DEFAULT_FEE_BUMP;
   const maxBacklog = Number(process.env.SMOKE_MAX_BACKLOG) || DEFAULT_MAX_BACKLOG;
   const decryptTimeoutMs = (Number(process.env.SMOKE_DECRYPT_TIMEOUT_SECS) || DEFAULT_DECRYPT_TIMEOUT_SECS) * 1000;
-  const allowCancel = process.env.SMOKE_CANCEL_BACKLOG !== 'false';
-  const forceDeploy = Boolean(process.env.SMOKE_FORCE_DEPLOY);
+  const allowCancel = parseBooleanEnv('SMOKE_CANCEL_BACKLOG', true);
+  const deployContract = parseBooleanEnv('SMOKE_DEPLOY_CONTRACT', true);
+  const runTests = parseBooleanEnv('SMOKE_RUN_TESTS', true);
   const existingContractAddress = process.env.TEST_INPUT_CONTRACT_ADDRESS;
 
   const allSigners = await ethers.getSigners();
@@ -271,9 +280,9 @@ async function runSmoke(): Promise<void> {
   let contractAddress: string;
   let contract: ReturnType<typeof contractFactory.attach>;
 
-  if (forceDeploy) {
+  if (deployContract) {
     if (existingContractAddress) {
-      console.log('SMOKE_FORCE_DEPLOY ignoring TEST_INPUT_CONTRACT_ADDRESS');
+      console.log('SMOKE_DEPLOY_CONTRACT ignoring TEST_INPUT_CONTRACT_ADDRESS');
     }
     const deployTx = await contractFactory.getDeployTransaction();
     const deployNonce = await provider.getTransactionCount(signerAddress, 'pending');
@@ -312,55 +321,57 @@ async function runSmoke(): Promise<void> {
     contract = contractFactory.attach(contractAddress);
     console.log(`SMOKE_ATTACH contractAddress=${contractAddress}`);
   } else {
-    throw new Error(
-      'TEST_INPUT_CONTRACT_ADDRESS is required for smoke runs. Set SMOKE_FORCE_DEPLOY=1 to deploy explicitly.',
+    throw new Error('TEST_INPUT_CONTRACT_ADDRESS is required when SMOKE_DEPLOY_CONTRACT=0.');
+  }
+
+  if (!runTests) {
+    console.log(`SMOKE_DEPLOY_ONLY contract=${contractAddress}`);
+  } else {
+    const instance = await createInstance();
+    const input = instance.createEncryptedInput(contractAddress, signerAddress);
+    input.add64(7n);
+    const encryptedInput = await input.encrypt();
+
+    const callNonce = await provider.getTransactionCount(signerAddress, 'pending');
+    let callGasEstimate: bigint;
+    try {
+      callGasEstimate = await contract.add42ToInput64.estimateGas(encryptedInput.handles[0], encryptedInput.inputProof);
+    } catch (err) {
+      console.error('SMOKE_GAS_ESTIMATE_FAILED operation=add42ToInput64', err);
+      throw new Error(`Gas estimation failed for add42ToInput64: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const gasLimit = (callGasEstimate * 120n) / 100n;
+
+    const receipt = await sendWithRetries({
+      signer,
+      label: 'add42ToInput64',
+      nonce: callNonce,
+      timeoutMs,
+      maxRetries,
+      feeBump,
+      send: (overrides) =>
+        contract.add42ToInput64(encryptedInput.handles[0], encryptedInput.inputProof, {
+          ...overrides,
+          gasLimit,
+        }),
+    });
+
+    assert.equal(receipt.status, 1, 'on-chain call failed');
+
+    const handle = await contract.resUint64();
+    const { publicKey, privateKey } = instance.generateKeypair();
+    const decryptedValue = await withTimeout(
+      userDecryptSingleHandle(handle, contractAddress, instance, signer, privateKey, publicKey),
+      decryptTimeoutMs,
+      'userDecryptSingleHandle',
     );
+    assert.equal(decryptedValue, 49n);
+
+    const res = await withTimeout(instance.publicDecrypt([handle]), decryptTimeoutMs, 'publicDecrypt');
+    assert.deepEqual(res.clearValues, { [handle]: 49n });
+
+    console.log(`SMOKE_SUCCESS signer=${signerAddress} contract=${contractAddress}`);
   }
-
-  const instance = await createInstance();
-  const input = instance.createEncryptedInput(contractAddress, signerAddress);
-  input.add64(7n);
-  const encryptedInput = await input.encrypt();
-
-  const callNonce = await provider.getTransactionCount(signerAddress, 'pending');
-  let callGasEstimate: bigint;
-  try {
-    callGasEstimate = await contract.add42ToInput64.estimateGas(encryptedInput.handles[0], encryptedInput.inputProof);
-  } catch (err) {
-    console.error('SMOKE_GAS_ESTIMATE_FAILED operation=add42ToInput64', err);
-    throw new Error(`Gas estimation failed for add42ToInput64: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  const gasLimit = (callGasEstimate * 120n) / 100n;
-
-  const receipt = await sendWithRetries({
-    signer,
-    label: 'add42ToInput64',
-    nonce: callNonce,
-    timeoutMs,
-    maxRetries,
-    feeBump,
-    send: (overrides) =>
-      contract.add42ToInput64(encryptedInput.handles[0], encryptedInput.inputProof, {
-        ...overrides,
-        gasLimit,
-      }),
-  });
-
-  assert.equal(receipt.status, 1, 'on-chain call failed');
-
-  const handle = await contract.resUint64();
-  const { publicKey, privateKey } = instance.generateKeypair();
-  const decryptedValue = await withTimeout(
-    userDecryptSingleHandle(handle, contractAddress, instance, signer, privateKey, publicKey),
-    decryptTimeoutMs,
-    'userDecryptSingleHandle',
-  );
-  assert.equal(decryptedValue, 49n);
-
-  const res = await withTimeout(instance.publicDecrypt([handle]), decryptTimeoutMs, 'publicDecrypt');
-  assert.deepEqual(res.clearValues, { [handle]: 49n });
-
-  console.log(`SMOKE_SUCCESS signer=${signerAddress} contract=${contractAddress}`);
 
   // Heartbeat ping on success
   const heartbeatUrl = process.env.BETTERSTACK_HEARTBEAT_URL;
@@ -406,11 +417,15 @@ async function runSmoke(): Promise<void> {
 }
 
 runSmoke().catch(async (error) => {
-  console.error(`SMOKE_FAILED ${String(error)}`);
+  const errorMessage = String(error);
+  console.error(`SMOKE_FAILED ${errorMessage}`);
   process.exitCode = 1;
 
   const heartbeatUrl = process.env.BETTERSTACK_HEARTBEAT_URL;
   if (heartbeatUrl) {
-    await fetch(`${heartbeatUrl}/fail`).catch(() => {});
+    await fetch(`${heartbeatUrl}/1`, {
+      method: 'POST',
+      body: errorMessage.slice(0, 10000),
+    }).catch(() => {});
   }
 });
