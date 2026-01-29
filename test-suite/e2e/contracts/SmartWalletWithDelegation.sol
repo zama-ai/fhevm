@@ -4,9 +4,8 @@ pragma solidity ^0.8.24;
 import "@fhevm/solidity/lib/FHE.sol";
 import {E2ECoprocessorConfig} from "./E2ECoprocessorConfigLocal.sol";
 
-/// @notice Simple MultiSig contract that supports delegated user decryption.
-/// @dev Simplified version with a single owner for testing delegation scenarios.
-contract SimpleMultiSigWithDelegation is E2ECoprocessorConfig {
+/// @notice SmartWallet contract that supports delegated user decryption.
+contract SmartWalletWithDelegation is E2ECoprocessorConfig {
     struct Transaction {
         address target;
         bytes data;
@@ -53,7 +52,7 @@ contract SimpleMultiSigWithDelegation is E2ECoprocessorConfig {
     }
 
     /// @notice Delegate user decryption for a specific contract.
-    /// @dev This allows an EOA to decrypt confidential data owned by this multisig.
+    /// @dev This allows an EOA to decrypt confidential data owned by this smart wallet.
     /// @param delegate The address that will be able to user decrypt.
     /// @param delegateContractAddress The contract address for which delegation applies.
     /// @param expirationTimestamp When the delegation expires.

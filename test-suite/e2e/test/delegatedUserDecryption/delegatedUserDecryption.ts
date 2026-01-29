@@ -19,18 +19,18 @@ describe('Delegated user decryption', function () {
     await this.token.waitForDeployment();
     this.tokenAddress = await this.token.getAddress();
 
-    // Deploy SimpleMultiSigWithDelegation with Bob as the owner.
-    const multisigFactory = await ethers.getContractFactory('SimpleMultiSigWithDelegation');
-    this.multisig = await multisigFactory.connect(this.signers.bob).deploy(this.signers.bob.address);
-    await this.multisig.waitForDeployment();
-    this.multisigAddress = await this.multisig.getAddress();
+    // Deploy SmartWalletWithDelegation with Bob as the owner.
+    const smartWalletFactory = await ethers.getContractFactory('SmartWalletWithDelegation');
+    this.smartWallet = await smartWalletFactory.connect(this.signers.bob).deploy(this.signers.bob.address);
+    await this.smartWallet.waitForDeployment();
+    this.smartWalletAddress = await this.smartWallet.getAddress();
 
     // Alice mints tokens to herself.
     const mintAmount = 1000000n;
     const mintTx = await this.token.connect(this.signers.alice).mint(mintAmount);
     await mintTx.wait();
 
-    // Alice transfers some tokens to the multisig contract.
+    // Alice transfers some tokens to the smartWallet contract.
     const transferAmount = 500000n;
     const input = this.instances.alice.createEncryptedInput(this.tokenAddress, this.signers.alice.address);
     input.add64(transferAmount);
@@ -39,17 +39,17 @@ describe('Delegated user decryption', function () {
     const transferTx = await this.token
       .connect(this.signers.alice)
     ['transfer(address,bytes32,bytes)'](
-      this.multisigAddress,
+      this.smartWalletAddress,
       encryptedTransferAmount.handles[0],
       encryptedTransferAmount.inputProof,
     );
     await transferTx.wait();
   });
 
-  it('test delegated user decryption - multisig owner delegates his own EOA to decrypt the multisig balance', async function () {
-    // Bob (multisig owner) delegates decryption rights to his own EOA.
+  it('test delegated user decryption - smartWallet owner delegates his own EOA to decrypt the smartWallet balance', async function () {
+    // Bob (smartWallet owner) delegates decryption rights to his own EOA.
     const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
-    const delegateTx = await this.multisig
+    const delegateTx = await this.smartWallet
       .connect(this.signers.bob)
       .delegateUserDecryption(
         this.signers.bob.address,
@@ -62,17 +62,17 @@ describe('Delegated user decryption', function () {
     const currentBlock = await ethers.provider.getBlockNumber();
     await waitForBlock(currentBlock + 15);
 
-    // Get the encrypted balance handle of the multisig.
-    const balanceHandle = await this.token.balanceOf(this.multisigAddress);
+    // Get the encrypted balance handle of the smartWallet.
+    const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
 
-    // Bob's EOA can now decrypt the multisig's confidential balance.
+    // Bob's EOA can now decrypt the smartWallet's confidential balance.
     const { publicKey, privateKey } = this.instances.bob.generateKeypair();
 
     const decryptedBalance = await delegatedUserDecryptSingleHandle(
       this.instances.bob,
       balanceHandle,
       this.tokenAddress,
-      this.multisigAddress,
+      this.smartWalletAddress,
       this.signers.bob.address,
       this.signers.bob,
       privateKey,
@@ -83,10 +83,10 @@ describe('Delegated user decryption', function () {
     expect(decryptedBalance).to.equal(500000n);
   });
 
-  it('test delegated user decryption - multisig owner delegates a third EOA to decrypt the multisig balance', async function () {
-    // Bob (multisig owner) delegates decryption rights to Carol's EOA.
+  it('test delegated user decryption - smartWallet owner delegates a third EOA to decrypt the smartWallet balance', async function () {
+    // Bob (smartWallet owner) delegates decryption rights to Carol's EOA.
     const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
-    const delegateTx = await this.multisig
+    const delegateTx = await this.smartWallet
       .connect(this.signers.bob)
       .delegateUserDecryption(
         this.signers.carol.address,
@@ -99,17 +99,17 @@ describe('Delegated user decryption', function () {
     const currentBlock = await ethers.provider.getBlockNumber();
     await waitForBlock(currentBlock + 15);
 
-    // Get the encrypted balance handle of the multisig.
-    const balanceHandle = await this.token.balanceOf(this.multisigAddress);
+    // Get the encrypted balance handle of the smartWallet.
+    const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
 
-    // Carol's EOA can now decrypt the multisig's confidential balance.
+    // Carol's EOA can now decrypt the smartWallet's confidential balance.
     const { publicKey, privateKey } = this.instances.carol.generateKeypair();
 
     const decryptedBalance = await delegatedUserDecryptSingleHandle(
       this.instances.carol,
       balanceHandle,
       this.tokenAddress,
-      this.multisigAddress,
+      this.smartWalletAddress,
       this.signers.carol.address,
       this.signers.carol,
       privateKey,
@@ -120,10 +120,10 @@ describe('Delegated user decryption', function () {
     expect(decryptedBalance).to.equal(500000n);
   });
 
-  it('test delegated user decryption - multisig can execute transference of funds to a third EOA', async function () {
-    // First, Bob needs to delegate so the multisig can initiate transfers.
+  it('test delegated user decryption - smartWallet can execute transference of funds to a third EOA', async function () {
+    // First, Bob needs to delegate so the smartWallet can initiate transfers.
     const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400;
-    const delegateTx = await this.multisig
+    const delegateTx = await this.smartWallet
       .connect(this.signers.bob)
       .delegateUserDecryption(
         this.signers.bob.address,
@@ -136,24 +136,24 @@ describe('Delegated user decryption', function () {
     let currentBlock = await ethers.provider.getBlockNumber();
     await waitForBlock(currentBlock + 15);
 
-    // Get the current multisig balance before transfer
-    const multisigBalanceBefore = await this.token.balanceOf(this.multisigAddress);
+    // Get the current smartWallet balance before transfer
+    const smartWalletBalanceBefore = await this.token.balanceOf(this.smartWalletAddress);
     const { publicKey: pkBefore, privateKey: skBefore } = this.instances.bob.generateKeypair();
     const decryptedBalanceBefore = await delegatedUserDecryptSingleHandle(
       this.instances.bob,
-      multisigBalanceBefore,
+      smartWalletBalanceBefore,
       this.tokenAddress,
-      this.multisigAddress,
+      this.smartWalletAddress,
       this.signers.bob.address,
       this.signers.bob,
       skBefore,
       pkBefore,
     );
 
-    // Bob proposes a transaction from the multisig to transfer tokens to Carol.
-    // The encrypted input must be created for the multisig address since it will be the msg.sender.
+    // Bob proposes a transaction from the smartWallet to transfer tokens to Carol.
+    // The encrypted input must be created for the smartWallet address since it will be the msg.sender.
     const transferAmount = 100000n;
-    const input = this.instances.bob.createEncryptedInput(this.tokenAddress, this.multisigAddress);
+    const input = this.instances.bob.createEncryptedInput(this.tokenAddress, this.smartWalletAddress);
     input.add64(transferAmount);
     const encryptedTransferAmount = await input.encrypt();
 
@@ -168,42 +168,42 @@ describe('Delegated user decryption', function () {
     );
 
     // Propose the transaction.
-    const proposeTx = await this.multisig
+    const proposeTx = await this.smartWallet
       .connect(this.signers.bob)
       .proposeTx(this.tokenAddress, transferData);
     await proposeTx.wait();
 
     // Get the transaction ID.
-    const txId = await this.multisig.txCounter();
+    const txId = await this.smartWallet.txCounter();
 
     // Execute the transaction.
-    const executeTx = await this.multisig
+    const executeTx = await this.smartWallet
       .connect(this.signers.bob)
       .executeTx(txId);
     await executeTx.wait();
 
-    // Verify the multisig balance decreased.
-    const multisigBalanceAfter = await this.token.balanceOf(this.multisigAddress);
+    // Verify the smartWallet balance decreased.
+    const smartWalletBalanceAfter = await this.token.balanceOf(this.smartWalletAddress);
     const { publicKey: pkAfter, privateKey: skAfter } = this.instances.bob.generateKeypair();
     const decryptedBalanceAfter = await delegatedUserDecryptSingleHandle(
       this.instances.bob,
-      multisigBalanceAfter,
+      smartWalletBalanceAfter,
       this.tokenAddress,
-      this.multisigAddress,
+      this.smartWalletAddress,
       this.signers.bob.address,
       this.signers.bob,
       skAfter,
       pkAfter,
     );
 
-    // The multisig balance should have decreased by the transfer amount.
+    // The smartWallet balance should have decreased by the transfer amount.
     expect(Number(decryptedBalanceBefore) - Number(decryptedBalanceAfter)).to.equal(Number(transferAmount));
   });
 
-  it('test delegated user decryption - multisig revokes the delegation of user decryption to an EOA', async function () {
+  it('test delegated user decryption - smartWallet revokes the delegation of user decryption to an EOA', async function () {
     // First, ensure Bob has delegation.
     const expirationTimestamp = Math.floor(Date.now() / 1000) + 86400;
-    const delegateTx = await this.multisig
+    const delegateTx = await this.smartWallet
       .connect(this.signers.bob)
       .delegateUserDecryption(
         this.signers.bob.address,
@@ -217,7 +217,7 @@ describe('Delegated user decryption', function () {
     await waitForBlock(currentBlock1 + 15);
 
     // Revoke the delegation for Bob's EOA.
-    const revokeTx = await this.multisig
+    const revokeTx = await this.smartWallet
       .connect(this.signers.bob)
       .revokeUserDecryptionDelegation(
         this.signers.bob.address,
@@ -229,8 +229,8 @@ describe('Delegated user decryption', function () {
     const currentBlock2 = await ethers.provider.getBlockNumber();
     await waitForBlock(currentBlock2 + 15);
 
-    // Try to decrypt the multisig balance with Bob's EOA, which should now fail.
-    const balanceHandle = await this.token.balanceOf(this.multisigAddress);
+    // Try to decrypt the smartWallet balance with Bob's EOA, which should now fail.
+    const balanceHandle = await this.token.balanceOf(this.smartWalletAddress);
     const { publicKey, privateKey } = this.instances.bob.generateKeypair();
 
     await expect(
@@ -238,7 +238,7 @@ describe('Delegated user decryption', function () {
         this.instances.bob,
         balanceHandle,
         this.tokenAddress,
-        this.multisigAddress,
+        this.smartWalletAddress,
         this.signers.bob.address,
         this.signers.bob,
         privateKey,

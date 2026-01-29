@@ -81,6 +81,10 @@ gateway:
       max_concurrency: 250
       capacity: 11000
       safety_margin: 1000
+    delegated_user_decrypt:
+      max_concurrency: 250
+      capacity: 11000
+      safety_margin: 1000
   contracts:
     decryption_address: "0x35760912360E875DA50D40a74305575c23D55783"
     input_verification_address: "0x1ceFA8E3F3271358218B52c33929Cf76078004c1"
