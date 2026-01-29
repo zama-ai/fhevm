@@ -108,13 +108,13 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
       break;
     case 'sepolia':
       jsonRpcUrl = process.env.SEPOLIA_ETH_RPC_URL ?? vars.get('SEPOLIA_ETH_RPC_URL', '');
-      if (!jsonRpcUrl) {
+      if (!jsonRpcUrl && shouldWarn) {
         throw new Error('SEPOLIA_ETH_RPC_URL is required for sepolia network');
       }
       break;
     case 'mainnet':
       jsonRpcUrl = process.env.MAINNET_ETH_RPC_URL ?? vars.get('MAINNET_ETH_RPC_URL', '');
-      if (!jsonRpcUrl) {
+      if (!jsonRpcUrl && shouldWarn) {
         throw new Error('MAINNET_ETH_RPC_URL is required for mainnet network');
       }
       break;
