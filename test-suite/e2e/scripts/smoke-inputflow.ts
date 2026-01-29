@@ -27,7 +27,7 @@ type SignerState = {
   balance: bigint;
 };
 
-const DEFAULT_SIGNER_INDICES = '0';
+const DEFAULT_SIGNER_INDICES = '0,1,2';
 const DEFAULT_TX_MAX_RETRIES = 2;
 const DEFAULT_MAX_BACKLOG = 3;
 const TIME_PER_BLOCK = 12;
@@ -38,14 +38,21 @@ const DEFAULT_DECRYPT_TIMEOUT_SECS = 120;
 
 const MIN_PRIORITY_FEE = ethers.parseUnits('2', 'gwei');
 const CANCEL_GAS_LIMIT = 21_000n;
+const LOW_BALANCE_THRESHOLD = ethers.parseEther('0.1');
+const SMOKE_GAS_ESTIMATE = 1_000_000n; // ~1M gas covers deploy + call with buffer
 const RECEIPT_POLL_MS = 4_000;
 
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms: ${label}`)), timeoutMs);
+  });
   return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms: ${label}`)), timeoutMs),
-    ),
+    promise.then((result) => {
+      clearTimeout(timer);
+      return result;
+    }),
+    timeoutPromise,
   ]);
 };
 
@@ -68,10 +75,11 @@ const parseBooleanEnv = (name: string, defaultValue: boolean): boolean => {
   throw new Error(`${name} must be '0' or '1' (got: "${value}")`);
 };
 
-const formatSignerState = (state: SignerState): string =>
-  `index=${state.index} address=${state.address} latest=${state.latest} pending=${state.pending} balance=${ethers.formatEther(
-    state.balance,
-  )} ETH`;
+const formatSignerState = (state: SignerState): string => {
+  const balanceStr = ethers.formatEther(state.balance);
+  const lowBalanceWarning = state.balance < LOW_BALANCE_THRESHOLD ? ' ⚠️ LOW_BALANCE' : '';
+  return `index=${state.index} address=${state.address} latest=${state.latest} pending=${state.pending} balance=${balanceStr} ETH${lowBalanceWarning}`;
+};
 
 const bumpFees = (base: FeeData, multiplier: number): FeeData => {
   const scaled = BigInt(Math.round(multiplier * 100));
@@ -225,12 +233,17 @@ async function runSmoke(): Promise<void> {
   const allSigners = await ethers.getSigners();
   const states = await getSignerStates(provider, allSigners, signerIndices);
 
+  // Calculate minimum usable balance based on current gas prices
+  const baseFees = await getBaseFees(provider);
+  const minUsableBalance = baseFees.maxFeePerGas * SMOKE_GAS_ESTIMATE;
+
   console.log(`SMOKE_START network=${network.name} chainId=${(await provider.getNetwork()).chainId}`);
+  console.log(`SMOKE_SIGNERS_AVAILABLE count=${states.length} minBalance=${ethers.formatEther(minUsableBalance)} ETH`);
   states.forEach((state) => {
-    console.log(`SMOKE_SIGNER_STATE ${formatSignerState(state)}`);
+    console.log(`  SMOKE_SIGNER ${formatSignerState(state)}`);
   });
 
-  let selected = states.find((state) => state.pending === state.latest && state.balance > 0n);
+  let selected = states.find((state) => state.pending === state.latest && state.balance >= minUsableBalance);
 
   if (!selected) {
     if (!allowCancel) {
@@ -247,8 +260,11 @@ async function runSmoke(): Promise<void> {
     if (backlog > maxBacklog) {
       throw new Error(`Signer backlog too large (backlog=${backlog}, max=${maxBacklog}).`);
     }
-    if (primary.balance === 0n) {
-      throw new Error(`Signer ${primary.address} has zero balance; cannot auto-cancel.`);
+    const minCancelBalance = baseFees.maxFeePerGas * CANCEL_GAS_LIMIT * BigInt(backlog);
+    if (primary.balance < minCancelBalance) {
+      throw new Error(
+        `Signer ${primary.address} has insufficient balance for cancel (need ${ethers.formatEther(minCancelBalance)} ETH, have ${ethers.formatEther(primary.balance)} ETH)`,
+      );
     }
 
     console.log(`SMOKE_CANCEL backlog=${backlog} signer=${primary.address}`);
@@ -396,15 +412,14 @@ async function runSmoke(): Promise<void> {
 
   // Post-success cleanup: clear backlogs on any unclean signers
   if (allowCancel) {
-    const minBalanceForCancel = CANCEL_GAS_LIMIT * MIN_PRIORITY_FEE * 2n;
-
     for (const state of states) {
       const backlog = state.pending - state.latest;
       if (backlog <= 0) continue;
 
+      const minBalanceForCancel = baseFees.maxFeePerGas * CANCEL_GAS_LIMIT * BigInt(backlog);
       if (state.balance < minBalanceForCancel) {
         console.warn(
-          `SMOKE_CLEANUP_SKIPPED signer=${state.address} reason=low_balance balance=${ethers.formatEther(state.balance)}`,
+          `SMOKE_CLEANUP_SKIPPED signer=${state.address} reason=low_balance need=${ethers.formatEther(minBalanceForCancel)} have=${ethers.formatEther(state.balance)}`,
         );
         continue;
       }

@@ -48,9 +48,25 @@ Hardhat loads env from `test-suite/e2e/.env` by default; override with `DOTENV_C
 You can also store secrets with Hardhat vars, e.g. `npx hardhat vars set SEPOLIA_ETH_RPC_URL` (it will prompt for the value).
 For devnet, `test-suite/e2e/.env.devnet` provides a ready baseline (use `DOTENV_CONFIG_PATH=./.env.devnet`).
 
+### Signer configuration
+
+The smoke runner uses HD wallet signers derived from `MNEMONIC`. By default, it uses indices `0,1,2`
+for automatic failover - if one signer has a stuck transaction, it falls back to another.
+
+**Important:** All configured signers should be funded for maximum resilience. The script logs all
+available signers at startup with their balances and warns if any have low balance (< 0.1 ETH).
+
+To derive signer addresses from a mnemonic (for funding):
+```shell
+# Using Foundry's cast
+cast wallet address --mnemonic "your mnemonic here" --mnemonic-index 0
+cast wallet address --mnemonic "your mnemonic here" --mnemonic-index 1
+cast wallet address --mnemonic "your mnemonic here" --mnemonic-index 2
+```
+
 ### Smoke-specific knobs (defaults in parentheses)
 
-- `SMOKE_SIGNER_INDICES` (`0`)
+- `SMOKE_SIGNER_INDICES` (`0,1,2`) - comma-separated list of signer indices to use for failover
 - `SMOKE_TX_TIMEOUT_SECS` (`48`)
 - `SMOKE_TX_MAX_RETRIES` (`2`)
 - `SMOKE_FEE_BUMP` (`1.125^4`)
