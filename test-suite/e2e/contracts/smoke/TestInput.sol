@@ -3,7 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import {E2ECoprocessorConfig} from "./E2ECoprocessorConfigLocal.sol";
+import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
 
 contract TestInput is E2ECoprocessorConfig {
     euint64 public resUint64;
