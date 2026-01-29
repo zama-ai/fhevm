@@ -41,7 +41,7 @@ export RELAYER_VERSION=${RELAYER_VERSION:-"sha-e612c5e"}
 export RELAYER_MIGRATE_VERSION=${RELAYER_MIGRATE_VERSION:-"sha-e612c5e"}
 # Test-suite docker image cannot be updated with 0.10.x releases because of the introduction a
 # breaking change in delegate user decryption tests in https://github.com/zama-ai/fhevm/pull/1092
-export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"77c5c4e"}
+export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"e9821bb"}
 
 
 function print_logo() {
