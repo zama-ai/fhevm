@@ -1,6 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
+use axum::http::StatusCode;
 use axum::{response::IntoResponse, Json};
 use tokio::{sync::watch, time::timeout};
 use tracing::{error, info};
@@ -93,7 +95,13 @@ impl KeyUrlHandler {
             HttpApiVersion::V2,
             async move {
                 match response {
-                    Some(keyurl_response) => Json(keyurl_response).into_response(),
+                    Some(keyurl_response) => {
+                        let status_code = StatusCode::OK;
+
+                        info!(http_status = status_code.as_u16(), "HTTP response");
+
+                        (status_code, Json(keyurl_response)).into_response()
+                    }
                     None => {
                         error!("key url not configured");
                         RelayerV2ResponseFailed::service_unavailable("Key URL not yet initialized")

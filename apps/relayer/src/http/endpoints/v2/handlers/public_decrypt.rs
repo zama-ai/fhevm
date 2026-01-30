@@ -350,6 +350,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             "Computed retry-after for public decrypt POST"
         );
 
+        let status_code = StatusCode::ACCEPTED;
         let response = PublicDecryptPostResponseJson {
             status: ApiResponseStatus::Queued,
             request_id: request_id_for_response.to_string(),
@@ -358,9 +359,16 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             },
         };
 
+        info!(
+            request_id = %request_id_for_response,
+            http_status = status_code.as_u16(),
+            ext_job_id = %assigned_ext_job_id,
+            "HTTP response"
+        );
+
         // Add Retry-After header with the dynamically computed retry value
         (
-            StatusCode::ACCEPTED,
+            status_code,
             [(header::RETRY_AFTER, retry_after.to_string())],
             Json(response),
         )
@@ -393,9 +401,18 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 crate::core::event::PublicDecryptResponse,
                             >(res)
                             {
+                                let status_code = StatusCode::OK;
                                 let api_response = PublicDecryptResponseJson::from(core_response);
+
+                                info!(
+                                    request_id = %request_id,
+                                    http_status = status_code.as_u16(),
+                                    ext_job_id = %job_id,
+                                    "HTTP response"
+                                );
+
                                 (
-                                    StatusCode::OK,
+                                    status_code,
                                     Json(PublicDecryptStatusResponseJson {
                                         status: ApiResponseStatus::Succeeded,
                                         request_id: request_id.to_string(), // Per-request UUID
@@ -516,6 +533,8 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             )
                             .await;
 
+                        let status_code = StatusCode::ACCEPTED;
+
                         info!(
                             req_id = %request_id,
                             ext_job_id = %job_id,
@@ -524,8 +543,15 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             "Computed retry-after for public decrypt GET"
                         );
 
+                        info!(
+                            request_id = %request_id,
+                            http_status = status_code.as_u16(),
+                            ext_job_id = %job_id,
+                            "HTTP response"
+                        );
+
                         (
-                            StatusCode::ACCEPTED,
+                            status_code,
                             [(header::RETRY_AFTER, retry_after.to_string())],
                             Json(PublicDecryptStatusResponseJson {
                                 status: ApiResponseStatus::Queued,

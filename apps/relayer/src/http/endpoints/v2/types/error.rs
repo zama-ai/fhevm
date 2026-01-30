@@ -1,6 +1,7 @@
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::info;
 use utoipa::ToSchema;
 
 use crate::http::utils::responses::{to_camel_case, FieldJsonErrorType, ParseError};
@@ -189,8 +190,19 @@ impl RelayerV2ApiError503 {
 impl RelayerV2ResponseFailed {
     /// Creates a request error response (400) for body read failures, etc.
     pub fn request_error(message: &str, request_id: &str) -> (StatusCode, Json<Self>) {
+        let status_code = StatusCode::BAD_REQUEST;
+        let label = "request_error";
+
+        info!(
+            request_id,
+            http_status = status_code.as_u16(),
+            label,
+            message,
+            "HTTP response"
+        );
+
         (
-            StatusCode::BAD_REQUEST,
+            status_code,
             Json(Self {
                 status: ApiResponseStatus::Failed,
                 request_id: Some(request_id.to_string()),
@@ -200,20 +212,37 @@ impl RelayerV2ResponseFailed {
     }
 
     /// Creates an error response from a ParseError
-    pub fn from_parse_error(parse_error: &ParseError, request_id: &str) -> (StatusCode, Json<Self>) {
+    pub fn from_parse_error(
+        parse_error: &ParseError,
+        request_id: &str,
+    ) -> (StatusCode, Json<Self>) {
+        let status_code = StatusCode::BAD_REQUEST;
+
         match parse_error {
-            ParseError::MalformedJson(message) => (
-                StatusCode::BAD_REQUEST,
-                Json(Self {
-                    status: ApiResponseStatus::Failed,
-                    request_id: Some(request_id.to_string()),
-                    error: serde_json::to_value(RelayerV2ApiError400NoDetails {
-                        label: "malformed_json".to_string(),
-                        message: message.clone(),
-                    })
-                    .unwrap(),
-                }),
-            ),
+            ParseError::MalformedJson(message) => {
+                let label = "malformed_json";
+
+                info!(
+                    request_id,
+                    http_status = status_code.as_u16(),
+                    label,
+                    message = message.as_str(),
+                    "HTTP response"
+                );
+
+                (
+                    status_code,
+                    Json(Self {
+                        status: ApiResponseStatus::Failed,
+                        request_id: Some(request_id.to_string()),
+                        error: serde_json::to_value(RelayerV2ApiError400NoDetails {
+                            label: label.to_string(),
+                            message: message.clone(),
+                        })
+                        .unwrap(),
+                    }),
+                )
+            }
             ParseError::FieldSpecificJson {
                 field_name,
                 issue,
@@ -222,21 +251,33 @@ impl RelayerV2ResponseFailed {
                 let field_name = to_camel_case(field_name);
                 let (label, message) = match error_type {
                     FieldJsonErrorType::Missing => (
-                        "missing_fields".to_string(),
+                        "missing_fields",
                         format!("Missing 1 required field in the request: {}", field_name),
                     ),
                     FieldJsonErrorType::InvalidType | FieldJsonErrorType::Unknown => (
-                        "validation_failed".to_string(),
-                        format!("Validation failed for 1 field in the request: {}", field_name),
+                        "validation_failed",
+                        format!(
+                            "Validation failed for 1 field in the request: {}",
+                            field_name
+                        ),
                     ),
                 };
+
+                info!(
+                    request_id,
+                    http_status = status_code.as_u16(),
+                    label,
+                    message = message.as_str(),
+                    "HTTP response"
+                );
+
                 (
-                    StatusCode::BAD_REQUEST,
+                    status_code,
                     Json(Self {
                         status: ApiResponseStatus::Failed,
                         request_id: Some(request_id.to_string()),
                         error: serde_json::to_value(RelayerV2ApiError400WithDetails {
-                            label,
+                            label: label.to_string(),
                             message,
                             details: vec![RelayerV2ErrorDetail {
                                 field: field_name,
@@ -248,6 +289,7 @@ impl RelayerV2ResponseFailed {
                 )
             }
             ParseError::ValidationFailed(errors) => {
+                let label = "validation_failed";
                 let details: Vec<RelayerV2ErrorDetail> = errors
                     .field_errors()
                     .iter()
@@ -280,13 +322,21 @@ impl RelayerV2ResponseFailed {
                     )
                 };
 
+                info!(
+                    request_id,
+                    http_status = status_code.as_u16(),
+                    label,
+                    message = message.as_str(),
+                    "HTTP response"
+                );
+
                 (
-                    StatusCode::BAD_REQUEST,
+                    status_code,
                     Json(Self {
                         status: ApiResponseStatus::Failed,
                         request_id: Some(request_id.to_string()),
                         error: serde_json::to_value(RelayerV2ApiError400WithDetails {
-                            label: "validation_failed".to_string(),
+                            label: label.to_string(),
                             message,
                             details,
                         })
@@ -312,21 +362,35 @@ impl RelayerV2ResponseFailed {
     ) -> impl IntoResponse {
         use axum::http::header;
 
+        let status_code = StatusCode::TOO_MANY_REQUESTS;
+        let label = "rate_limited";
+        let message = format!("Server is experiencing high processing load: {}", reason);
+
+        info!(
+            request_id,
+            http_status = status_code.as_u16(),
+            label,
+            message = message.as_str(),
+            "HTTP response"
+        );
+
         let response = Self {
             status: ApiResponseStatus::Failed,
             request_id: Some(request_id.to_string()),
             error: serde_json::to_value(RelayerV2ApiError429 {
-                label: "rate_limited".to_string(),
-                message: format!("Server is experiencing high processing load: {}", reason),
+                label: label.to_string(),
+                message,
             })
             .unwrap(),
         };
 
-        let mut http_response = (StatusCode::TOO_MANY_REQUESTS, Json(response)).into_response();
+        let mut http_response = (status_code, Json(response)).into_response();
 
         // Add Retry-After header
         if let Ok(header_value) = retry_after.parse() {
-            http_response.headers_mut().insert(header::RETRY_AFTER, header_value);
+            http_response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, header_value);
         }
 
         http_response
@@ -334,20 +398,40 @@ impl RelayerV2ResponseFailed {
 
     /// Creates an internal server error response (500)
     pub fn internal_server_error(request_id: &str) -> (StatusCode, Json<Self>) {
+        let status_code = StatusCode::INTERNAL_SERVER_ERROR;
+        let label = "internal_server_error";
+        let message = "Internal server error";
+
+        info!(
+            request_id,
+            http_status = status_code.as_u16(),
+            label,
+            message,
+            "HTTP response"
+        );
+
         (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            status_code,
             Json(Self {
                 status: ApiResponseStatus::Failed,
                 request_id: Some(request_id.to_string()),
-                error: RelayerV2ApiError500::internal_server_error("Internal server error"),
+                error: RelayerV2ApiError500::internal_server_error(message),
             }),
         )
     }
 
     /// Creates a service unavailable response (503)
     pub fn service_unavailable(message: &str) -> (StatusCode, Json<Self>) {
+        let status_code = StatusCode::SERVICE_UNAVAILABLE;
+        let label = "readiness_check_timed_out";
+
+        info!(
+            http_status = status_code.as_u16(),
+            label, message, "HTTP response"
+        );
+
         (
-            StatusCode::SERVICE_UNAVAILABLE,
+            status_code,
             Json(Self {
                 status: ApiResponseStatus::Failed,
                 request_id: None,
@@ -376,8 +460,7 @@ mod tests {
 
     #[test]
     fn test_internal_server_error_has_status_and_request_id() {
-        let (status_code, json) =
-            RelayerV2ResponseFailed::internal_server_error("test-request-id");
+        let (status_code, json) = RelayerV2ResponseFailed::internal_server_error("test-request-id");
 
         assert_eq!(status_code, StatusCode::INTERNAL_SERVER_ERROR);
 
@@ -457,8 +540,7 @@ mod tests {
         let (_, json) = RelayerV2ResponseFailed::request_error("test error", "test-request-id");
 
         let serialized = serde_json::to_string(&json.0).expect("Failed to serialize");
-        let parsed: serde_json::Value =
-            serde_json::from_str(&serialized).expect("Failed to parse");
+        let parsed: serde_json::Value = serde_json::from_str(&serialized).expect("Failed to parse");
 
         // Verify the top-level structure has status, request_id, and error fields
         assert!(parsed.get("status").is_some(), "Should have status field");
