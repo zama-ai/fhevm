@@ -1,5 +1,6 @@
 use super::super::types::error::{
-    RelayerV2ApiError400NoDetails, RelayerV2ApiError404, RelayerV2ApiError500, RelayerV2ApiError503,
+    RelayerV2ApiError400NoDetails, RelayerV2ApiError404, RelayerV2ApiError500,
+    RelayerV2ApiError503, RelayerV2ResponseFailed,
 };
 use super::super::types::public_decrypt::{
     PublicDecryptPostResponseJson, PublicDecryptQueuedResult, PublicDecryptResponseJson,
@@ -185,9 +186,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         let body = match AxumBytes::from_request(req, _state).await {
             Ok(body) => body,
             Err(_) => {
-                let mut response = AppResponse::<()>::request_error("Failed to read request body");
-                response.set_request_id(&request_id.to_string());
-                return response.into_response();
+                return RelayerV2ResponseFailed::request_error(
+                    "Failed to read request body",
+                    &request_id.to_string(),
+                )
+                .into_response();
             }
         };
 
@@ -195,9 +198,11 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             match parse_and_validate::<PublicDecryptRequestJson, PublicDecryptRequest>(&body) {
                 Ok(request) => request,
                 Err(parse_error) => {
-                    let error_response: AppResponse<()> =
-                        parse_error.to_app_response(&request_id.to_string());
-                    return error_response.into_response();
+                    return RelayerV2ResponseFailed::from_parse_error(
+                        &parse_error,
+                        &request_id.to_string(),
+                    )
+                    .into_response();
                 }
             };
 
@@ -226,7 +231,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             int_job_id = ?int_job_id,
                             "Public decrypt v2 is bounced by full queue"
                         );
-                        return AppResponse::<()>::protocol_overloaded(
+                        return RelayerV2ResponseFailed::protocol_overloaded(
                             "relayer is currently processing too many requests",
                             &self.retry_after_seconds.to_string(),
                             &request_id.to_string(),
@@ -240,10 +245,8 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                     "Failed to insert/get public decrypt into/from database: {}",
                     e
                 );
-                return AppResponse::<()>::internal_server_error_with_request_id(
-                    request_id.to_string(),
-                )
-                .into_response();
+                return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
+                    .into_response();
             }
         }
 
@@ -264,10 +267,8 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                     "Failed to insert/get public decrypt into/from database: {}",
                     e
                 );
-                return AppResponse::<()>::internal_server_error_with_request_id(
-                    request_id.to_string(),
-                )
-                .into_response();
+                return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
+                    .into_response();
             }
         };
 
@@ -292,10 +293,8 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
 
             if let Err(e) = self.orchestrator.dispatch_event(event).await {
                 error!("Failed to dispatch event to orchestrator: {:?}", e);
-                return AppResponse::<()>::internal_server_error_with_request_id(
-                    request_id.to_string(),
-                )
-                .into_response();
+                return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
+                    .into_response();
             }
 
             info!(
