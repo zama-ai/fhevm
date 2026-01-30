@@ -454,6 +454,6 @@ runSmoke().catch(async (error) => {
     await fetch(`${heartbeatUrl}/1`, {
       method: 'POST',
       body: errorMessage.slice(0, 10000),
-    }).catch(() => {});
+    }).catch((err) => console.warn(`SMOKE_HEARTBEAT_FAILED ${err.message}`));
   }
 });
