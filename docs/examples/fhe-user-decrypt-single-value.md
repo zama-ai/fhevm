@@ -20,13 +20,13 @@ This ensures Hardhat can compile and test your contracts as expected.
 pragma solidity ^0.8.24;
 
 import { FHE, euint32 } from "@fhevm/solidity/lib/FHE.sol";
-import { EthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /**
  * This trivial example demonstrates the FHE decryption mechanism
  * and highlights common pitfalls developers may encounter.
  */
-contract UserDecryptSingleValue is EthereumConfig {
+contract UserDecryptSingleValue is ZamaEthereumConfig {
   euint32 private _trivialEuint32;
 
   // solhint-disable-next-line no-empty-blocks

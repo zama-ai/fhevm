@@ -43,11 +43,13 @@ async fn add_ciphertext_digests(#[case] signer_type: SignerType) -> anyhow::Resu
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
+        provider.inner().clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
@@ -145,16 +147,23 @@ async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> any
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
+        provider.inner().clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
     )
     .await?;
+
+    // Record initial transaction count.
+    let initial_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
@@ -197,6 +206,13 @@ async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> any
         }
         sleep(Duration::from_millis(500)).await;
     }
+
+    let tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    assert_eq!(
+        tx_count, initial_tx_count,
+        "Expected no new transaction to be sent due to revert"
+    );
+
     sqlx::query!(
         "
         delete from tenants where tenant_id = $1",
@@ -234,11 +250,13 @@ async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
+        provider.inner().clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
@@ -346,11 +364,13 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
+        provider.inner().clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
@@ -445,11 +465,13 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
     );
 
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
+        provider.inner().clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
         None,
@@ -556,11 +578,13 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
     let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         *ciphertext_commits.address(),
         PrivateKeySigner::random().address(),
         env.signer.clone(),
         provider.clone(),
+        provider.inner().clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
         None,

@@ -10,6 +10,7 @@ use fhevm_gateway_bindings::{
     decryption::Decryption::SnsCiphertextMaterial,
     gateway_config::GatewayConfig::{self, GatewayConfigInstance},
 };
+use futures::future::try_join_all;
 use kms_grpc::kms::v1::{CiphertextFormat, TypedCiphertext};
 use sha3::{Digest, Keccak256};
 use std::sync::LazyLock;
@@ -49,21 +50,20 @@ where
         }
     }
 
-    /// Helper method to retrieve ciphertext materials from S3.
+    /// Helper method to retrieve ciphertext materials from S3 concurrently.
     pub async fn retrieve_sns_ciphertext_materials(
         &self,
         sns_materials: &[SnsCiphertextMaterial],
     ) -> anyhow::Result<Vec<TypedCiphertext>> {
-        let mut sns_ciphertext_materials = Vec::new();
-        for sns_material in sns_materials {
-            let ciphertext = self.retrieve_s3_ciphertext_with_retry(sns_material).await?;
-            sns_ciphertext_materials.push(ciphertext);
-        }
-        Ok(sns_ciphertext_materials)
+        let fetch_futures = sns_materials
+            .iter()
+            .map(|sns_material| self.retrieve_s3_ciphertext_with_retry(sns_material));
+
+        try_join_all(fetch_futures).await
     }
 
     /// Retrieves a ciphertext from S3 with `self.s3_ct_retrieval_retries` retries.
-    pub async fn retrieve_s3_ciphertext_with_retry(
+    async fn retrieve_s3_ciphertext_with_retry(
         &self,
         sns_material: &SnsCiphertextMaterial,
     ) -> anyhow::Result<TypedCiphertext> {
@@ -112,10 +112,7 @@ where
         let mut s3_urls = Vec::new();
         for address in coprocessor_addresses.iter() {
             match self.get_coprocessor_s3_urls(*address).await {
-                Ok(s3_url) => {
-                    info!("Successfully fetched S3 bucket URL for coprocessor {address}: {s3_url}");
-                    s3_urls.push(s3_url);
-                }
+                Ok(s3_url) => s3_urls.push(s3_url),
                 Err(e) => {
                     warn!("Failed to prefetch S3 bucket URL for coprocessor {address}: {e}");
                 }
@@ -155,9 +152,7 @@ where
 
         S3_BUCKET_CACHE.insert(copro_addr, s3_bucket_url.clone());
         log_cache("S3 cache state after insert");
-        info!(
-            "Successfully retrieved and cached S3 bucket URL for coprocessor {copro_addr}: {s3_bucket_url}"
-        );
+        info!("S3 bucket URL for coprocessor {copro_addr} retrieved and cached: {s3_bucket_url}");
         Ok(s3_bucket_url)
     }
 

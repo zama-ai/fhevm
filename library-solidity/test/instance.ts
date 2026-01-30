@@ -139,7 +139,7 @@ const getDecryptor = () => {
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
  *
- * @param {bigint} a handle to decrypt
+ * @param {bigint} handle handle to decrypt
  * @returns {bool}
  */
 export const decryptBool = async (handle: string): Promise<boolean> => {
@@ -156,7 +156,7 @@ export const decryptBool = async (handle: string): Promise<boolean> => {
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
  *
- * @param {bigint} a handle to decrypt
+ * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt8 = async (handle: string): Promise<bigint> => {
@@ -173,7 +173,7 @@ export const decrypt8 = async (handle: string): Promise<bigint> => {
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
  *
- * @param {bigint} a handle to decrypt
+ * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt16 = async (handle: string): Promise<bigint> => {
@@ -190,7 +190,7 @@ export const decrypt16 = async (handle: string): Promise<bigint> => {
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
  *
- * @param {bigint} a handle to decrypt
+ * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt32 = async (handle: string): Promise<bigint> => {
@@ -207,7 +207,7 @@ export const decrypt32 = async (handle: string): Promise<bigint> => {
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
  *
- * @param {bigint} a handle to decrypt
+ * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt64 = async (handle: string): Promise<bigint> => {
@@ -224,7 +224,7 @@ export const decrypt64 = async (handle: string): Promise<bigint> => {
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
  *
- * @param {bigint} a handle to decrypt
+ * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt128 = async (handle: string): Promise<bigint> => {
@@ -241,7 +241,7 @@ export const decrypt128 = async (handle: string): Promise<bigint> => {
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
  *
- * @param {bigint} a handle to decrypt
+ * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt256 = async (handle: string): Promise<bigint> => {
@@ -258,7 +258,7 @@ export const decrypt256 = async (handle: string): Promise<bigint> => {
  * This function is intended for debugging purposes only.
  * It cannot be used in production code, since it requires the FHE private key for decryption.
  *
- * @param {bigint} a handle to decrypt
+ * @param {bigint} handle handle to decrypt
  * @returns {string}
  */
 export const decryptAddress = async (handle: string): Promise<string> => {
@@ -269,56 +269,5 @@ export const decryptAddress = async (handle: string): Promise<string> => {
     return handleStr;
   } else {
     return getDecryptor().decryptAddress(await getCiphertext(handle, ethers));
-  }
-};
-
-/**
- * @debug
- * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
- *
- * @param {bigint} a handle to decrypt
- * @returns {bigint}
- */
-export const decryptEbytes64 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
-  } else {
-    return getDecryptor().decryptEbytes64(await getCiphertext(handle, ethers));
-  }
-};
-
-/**
- * @debug
- * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
- *
- * @param {bigint} a handle to decrypt
- * @returns {bigint}
- */
-export const decryptEbytes128 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
-  } else {
-    return getDecryptor().decryptEbytes128(await getCiphertext(handle, ethers));
-  }
-};
-
-/**
- * @debug
- * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
- *
- * @param {bigint} a handle to decrypt
- * @returns {bigint}
- */
-export const decryptEbytes256 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
-  } else {
-    return getDecryptor().decryptEbytes256(await getCiphertext(handle, ethers));
   }
 };

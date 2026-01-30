@@ -6,9 +6,9 @@ services:
       context: ../../../gateway-contracts
       dockerfile: Dockerfile
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_GATEWAY_SC_DEPLOY:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_GATEWAY_SC_DEPLOY:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.gateway-sc.local
     command:
@@ -23,9 +23,9 @@ services:
       context: ../../../gateway-contracts
       dockerfile: Dockerfile
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_GATEWAY_SC_ADD_NETWORK:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_GATEWAY_SC_ADD_NETWORK:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.gateway-sc.local
     command:
@@ -45,9 +45,9 @@ services:
       context: ../../../gateway-contracts
       dockerfile: Dockerfile
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_GATEWAY_SC_ADD_PAUSERS:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_GATEWAY_SC_ADD_PAUSERS:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.gateway-sc.local
     command:
@@ -67,13 +67,16 @@ services:
       context: ../../../gateway-contracts
       dockerfile: Dockerfile
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_GATEWAY_SC_TRIGGER_KEYGEN:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_GATEWAY_SC_TRIGGER_KEYGEN:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.gateway-sc.local
+    # Using test parameters (--params-type 1) is currently not possible at it can make the random
+    # tests fail with a high probability (1/2 chance), so we instead use default parameters (--params-type 0).
+    # See https://github.com/zama-ai/fhevm-internal/issues/685
     command:
-      - npx hardhat task:triggerKeygen --params-type 1
+      - npx hardhat task:triggerKeygen --params-type 0
     depends_on:
       gateway-sc-add-pausers:
         condition: service_completed_successfully
@@ -89,13 +92,16 @@ services:
       context: ../../../gateway-contracts
       dockerfile: Dockerfile
       cache_from:
-        - type=gha
+        - ${FHEVM_CACHE_FROM_GATEWAY_SC_TRIGGER_CRSGEN:-type=gha}
       cache_to:
-        - type=gha,mode=max
+        - ${FHEVM_CACHE_TO_GATEWAY_SC_TRIGGER_CRSGEN:-type=gha,mode=max}
     env_file:
       - ../env/staging/.env.gateway-sc.local
+    # Using test parameters (--params-type 1) is currently not possible for keygen (see above), and
+    # CRS parameters must be of the same type as the keygen parameters.
+    # See https://github.com/zama-ai/fhevm-internal/issues/685
     command:
-      - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048
+      - npx hardhat task:triggerCrsgen --params-type 0 --max-bit-length 2048
     depends_on:
       gateway-sc-trigger-keygen:
         condition: service_completed_successfully

@@ -9,9 +9,8 @@
 # Gateway Team ownership
 /gateway-contracts/ @zama-ai/fhevm-gateway
 /host-contracts/ @zama-ai/fhevm-gateway
-/protocol-contracts/ @zama-ai/fhevm-gateway
 /library-solidity/ @zama-ai/fhevm-gateway
-/kms-connector/ @zama-ai/fhevm-gateway
+/kms-connector/ @zama-ai/mpc-devs @zama-ai/fhevm-gateway @dartdart26
 
 # Coprocessor Team ownership
 /coprocessor/ @zama-ai/fhevm-coprocessor

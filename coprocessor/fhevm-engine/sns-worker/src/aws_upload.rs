@@ -1,3 +1,4 @@
+use crate::metrics::{AWS_UPLOAD_FAILURE_COUNTER, AWS_UPLOAD_SUCCESS_COUNTER};
 use crate::{
     BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, TaskStatus,
     UploadJob,
@@ -10,7 +11,7 @@ use aws_sdk_s3::Client;
 use bytesize::ByteSize;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry::{self};
-use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::utils::to_hex;
 use futures::future::join_all;
 use opentelemetry::global::BoxedSpan;
 use sha3::{Digest, Keccak256};
@@ -130,7 +131,7 @@ async fn run_uploader_loop(
                         {
                             warn!(
                                 error = %err,
-                                handle = compact_hex(&item.handle),
+                                handle = to_hex(&item.handle),
                                 "Failed to lock pending uploads",
                             );
                             trx.rollback().await?;
@@ -167,7 +168,10 @@ async fn run_uploader_loop(
                 let h = tokio::spawn(async move {
                     let s = item.otel.child_span("upload_s3");
                     match upload_ciphertexts(trx, item, &client, &conf).instrument(error_span!("upload_s3")).await {
-                        Ok(()) => telemetry::end_span(s),
+                        Ok(()) => {
+                            telemetry::end_span(s);
+                            AWS_UPLOAD_SUCCESS_COUNTER.inc();
+                        }
                         Err(err) => {
                             if let ExecutionError::S3TransientError(_) = err {
                                 ready_flag.store(false, Ordering::Release);
@@ -175,8 +179,8 @@ async fn run_uploader_loop(
                             } else {
                                 error!(error = %err, "Failed to upload ciphertexts");
                             }
-
                             telemetry::end_span_with_err(s, err.to_string());
+                            AWS_UPLOAD_FAILURE_COUNTER.inc();
                         }
                     }
                     drop(permit);
@@ -220,7 +224,7 @@ async fn upload_ciphertexts(
     client: &Client,
     conf: &S3Config,
 ) -> Result<(), ExecutionError> {
-    let handle_as_hex: String = compact_hex(&task.handle);
+    let handle_as_hex: String = to_hex(&task.handle);
     info!(handle = handle_as_hex, "Received task");
 
     let mut jobs = vec![];
@@ -438,7 +442,7 @@ async fn fetch_pending_uploads(
         // Fetch missing ciphertext128
         if ciphertext128_digest.is_none() {
             if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext128 FROM ciphertexts WHERE tenant_id = $1 AND handle = $2;",
+                "SELECT ciphertext FROM ciphertexts128 WHERE tenant_id = $1 AND handle = $2;",
                 row.tenant_id,
                 handle
             )
@@ -446,7 +450,7 @@ async fn fetch_pending_uploads(
             .await
             {
                 if let Some(record) = row {
-                    match record.ciphertext128 {
+                    match record.ciphertext {
                         Some(ct) if !ct.is_empty() => {
                             ct128 = ct;
                         }
@@ -467,7 +471,7 @@ async fn fetch_pending_uploads(
                 Some(ct) => ct,
                 None => {
                     error!(
-                        handle = compact_hex(&handle),
+                        handle = to_hex(&handle),
                         format_id = row.ciphertext128_format,
                         "Failed to create a BigCiphertext from DB data",
                     );
@@ -588,7 +592,7 @@ async fn try_resubmit(
                 for task in jobs {
                     select! {
                         _ = tasks.send(task.clone()) => {
-                            info!(handle = compact_hex(task.handle()), "resubmitted");
+                            info!(handle = to_hex(task.handle()), "resubmitted");
                         },
                         _ = token.cancelled() => {
                             return Ok(());

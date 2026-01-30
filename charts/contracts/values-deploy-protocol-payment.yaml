@@ -1,0 +1,82 @@
+# =============================================================================
+# FHEVM Smart Contracts Configuration
+# =============================================================================
+# This chart handles deployment of new ProtocolPayment gateway contract for fhevm 0.10
+# =============================================================================
+
+# NOTE: These values are for reference only
+# The chart is for gateway only
+
+# -----------------------------------------------------------------------------
+# Deploy ProtocolPayment
+# -----------------------------------------------------------------------------
+# Deploys the ProtocolPayment gateway contract, after setting the payment bridging contract addresses
+# This should be done before upgrading other contracts to fhevm 0.10 
+deployProtocolPayment:
+  enabled: true
+
+  # Prevent redeployment if already done for current version
+  # preventRedeployment: false
+
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/gateway-contracts
+    tag: v0.10.0
+
+  # ConfigMap to store deployed contract addresses
+  configmap:
+    name: "addresses"
+    annotations:
+
+  # Environment variables
+  env:
+    # ZamaOFT address
+    # The address of the ZamaOFT contract
+    - name: ZAMA_OFT_ADDRESS
+      value: ""
+
+    # Fees sender to burner address
+    # The address of the FeesSenderToBurner contract
+    - name: FEES_SENDER_TO_BURNER_ADDRESS
+      value: ""
+
+    # Input verification price
+    # The price is in $ZAMA base units (using 18 decimals)
+    - name: INPUT_VERIFICATION_PRICE
+      value: 10000000000000000000
+
+    # Public decryption price
+    # The price is in $ZAMA base units (using 18 decimals)
+    - name: PUBLIC_DECRYPTION_PRICE
+      value: 1000000000000000000
+
+    # User decryption price
+    # The price is in $ZAMA base units (using 18 decimals)
+    - name: USER_DECRYPTION_PRICE
+      value: 1000000000000000000
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Security context for container execution
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10001
+
+  # Commands to run in sequence
+  commands:
+    # Set payment bridging contract addresses
+    - npx hardhat task:setPaymentBridgingContractAddresses
+
+    # Deploy ProtocolPayment contract
+    - npx hardhat task:deploySingleContract --name ProtocolPayment
+    
+    # Verify the contract
+    - npx hardhat task:verifyProtocolPayment

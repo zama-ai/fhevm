@@ -5,6 +5,7 @@ pub mod user;
 pub use public::{init_public_decryption_response_listener, public_decryption_burst};
 pub use user::{init_user_decryption_response_listener, user_decryption_burst};
 
+use crate::blockchain::manager::AppProvider;
 use alloy::{
     primitives::{B256, LogData, U256},
     providers::Provider,
@@ -15,8 +16,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, trace, warn};
 
-use crate::blockchain::manager::AppProvider;
-
+pub const BURST_WAIT_TIMEOUT: Duration = Duration::from_mins(5);
 pub const EVENT_LISTENER_POLLING: Duration = Duration::from_millis(500);
 
 fn extract_id_from_receipt<F>(
@@ -62,11 +62,8 @@ where
     for i in 1..=TX_RETRIES {
         overprovision_gas(provider, &mut decryption_call).await;
 
-        trace!("Sending transaction to the Gateway");
-        match provider
-            .send_transaction_sync(decryption_call.clone())
-            .await
-        {
+        debug!("Sending transaction to the Gateway");
+        match send_tx_sync_with_increased_gas_limit(provider, &mut decryption_call).await {
             Ok(receipt) => {
                 let id = extract_id_fn(&receipt)?;
                 id_sender.send(id)?;
@@ -81,6 +78,21 @@ where
     Err(anyhow!(
         "All transactions attempt failed. Last error: {last_error}"
     ))
+}
+
+async fn send_tx_sync_with_increased_gas_limit(
+    provider: &AppProvider,
+    call: &mut TransactionRequest,
+) -> anyhow::Result<TransactionReceipt> {
+    // Force a fresh gas estimation on each attempt to account for state drift
+    call.gas = None;
+    overprovision_gas(provider, call).await;
+
+    let receipt = provider.send_transaction_sync(call.clone()).await?;
+    if !receipt.status() {
+        return Err(anyhow!("Tx {} was reverted", receipt.transaction_hash));
+    }
+    Ok(receipt)
 }
 
 async fn overprovision_gas<P: Provider>(provider: &P, call: &mut TransactionRequest) {

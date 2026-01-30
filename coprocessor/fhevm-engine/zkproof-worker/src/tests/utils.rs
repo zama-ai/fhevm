@@ -15,7 +15,7 @@ pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
         .expect("valid db instance");
 
     let conf = crate::Config {
-        database_url: test_instance.db_url().to_owned(),
+        database_url: test_instance.db_url.clone(),
         listen_database_channel: "fhevm".to_string(),
         notify_database_channel: "notify".to_string(),
         pg_pool_connections: 10,

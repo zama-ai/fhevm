@@ -132,7 +132,7 @@ impl TestEnvironment {
                 .await
                 .expect("valid db instance");
             eprintln!("New test database on {}", instance.db_url());
-            conf.database_url = instance.db_url().to_owned();
+            conf.database_url = instance.db_url.clone();
             _test_instance = Some(instance);
         };
         conf.error_sleep_initial_secs = 1;
@@ -140,7 +140,7 @@ impl TestEnvironment {
         let db_pool = PgPoolOptions::new()
             .max_connections(16)
             .acquire_timeout(Duration::from_secs(5))
-            .connect(&conf.database_url)
+            .connect(conf.database_url.as_str())
             .await?;
 
         // Delete all proofs from the database.
@@ -567,13 +567,13 @@ async fn keygen_ok_catchup_gen(positive: bool) -> anyhow::Result<()> {
     assert!(has_not_server_key(&env.db_pool.clone()).await?);
     assert!(has_not_crs(&env.db_pool.clone()).await?);
 
-    let catchup_kms_generation_from_block = if positive {
+    let replay_from_block = if positive {
         Some(0)
     } else {
         Some(-(provider.get_block_number().await? as i64))
     };
     let conf = ConfigSettings {
-        catchup_kms_generation_from_block,
+        replay_from_block,
         ..env.conf.clone()
     };
     let gw_listener = GatewayListener::new(

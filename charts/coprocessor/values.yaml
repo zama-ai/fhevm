@@ -153,8 +153,12 @@ hostListener:
     - --initial-block-time=12  # it can switch to real blockTime when data is available
     - --log-level=INFO
     - --health-port=8080
-    - --dependence-cache-size=128
     - --reorg-maximum-duration-in-blocks=50
+
+    ### Dependence chains parameters
+    # - --dependence-cache-size=10000
+    # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
+    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
 
     ### Catchup parameters (optional)
     # - --catchup-margin
@@ -165,6 +169,212 @@ hostListener:
     ### New in v0.10
     - --service-name="host-listener"
     - --catchup-finalization-in-blocks=20  # Continuous catchup will wait for block "finalization"
+
+  # Service ports configuration
+  ports:
+    metrics: 9100
+    healthcheck: 8080
+
+  serviceMonitor:
+    enabled: false
+
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Health check probes
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  affinity:
+    enabled: false
+
+  tolerations:
+    enabled: false
+    items: []
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
+# Host Listener Poller
+# -----------------------------------------------------------------------------
+# Processes blockchain events from the host chain
+hostListenerPoller:
+  enabled: false
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.10.0
+
+  replicas: 1
+
+  # Environment variables
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+
+  # Command line arguments for the host listener poller
+  args:
+    ### Required parameters
+    - --database-url=$(DATABASE_URL)
+    - --coprocessor-api-key=$(TENANT_API_KEY)
+    - --url=$(ETHEREUM_RPC_HTTP_URL)
+    - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+    - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+
+    ### Polling and block processing parameters
+    - --finality-lag=3
+    - --batch-size=100  # Maximum number of blocks to process per iteration
+    - --poll-interval-ms=6000  # Sleep duration between iterations in milliseconds (half block time ~6s for Ethereum)
+    - --retry-interval-ms=1000  # Backoff between retry attempts for RPC/DB failures in milliseconds
+    - --max-http-retries=45  # Maximum number of HTTP/RPC retry attempts before failing an operation
+    - --rpc-compute-units-per-second=1000  # Rate limiting budget for RPC calls during block catchup (compute units per second)
+
+    ### Observability parameters
+    - --log-level=INFO
+    - --health-port=8080
+    - --service-name=host-listener-poller
+
+    ### Prometheus metrics
+    - --metrics-addr=0.0.0.0:9100  # Address for Prometheus metrics HTTP server
+
+    ### Dependence chains parameters
+    # - --dependence-cache-size=10000
+    # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
+    # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
+
+  # Service ports configuration
+  ports:
+    metrics: 9100
+    healthcheck: 8080
+
+  serviceMonitor:
+    enabled: false
+
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Health check probes
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  affinity:
+    enabled: false
+
+  tolerations:
+    enabled: false
+    items: []
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
+# Host Listener Catchup Only
+# -----------------------------------------------------------------------------
+# Host listener variant that runs only the catchup loop without real-time subscription.
+hostListenerCatchupOnly:
+  enabled: false
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm-coprocessor
+    tag: v0.10.0
+
+  replicas: 1
+
+  # Environment variables
+  env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-db-url
+          key: coprocessor-db-url
+    - name: TENANT_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: coprocessor-api-key
+          key: coprocessor-api-key
+
+  # Command line arguments for the host listener catchup only mode
+  # NOTE: --only-catchup-loop requires --end-at-block to be set
+  args:
+    - --database-url=$(DATABASE_URL)
+    - --coprocessor-api-key=$(TENANT_API_KEY)
+    - --url=$(ETHEREUM_RPC_URL)
+    - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
+    - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
+    - --initial-block-time=12
+    - --log-level=INFO
+    - --health-port=8080
+    - --dependence-cache-size=128
+    - --reorg-maximum-duration-in-blocks=50
+    - --service-name="host-listener-catchup-only"
+    - --catchup-finalization-in-blocks=20
+
+    ### Catchup-only specific parameters (required)
+    - --only-catchup-loop
+    - --end-at-block=-15  # Relative to latest block (negative value)
+    - --catchup-loop-sleep-secs=60
+
+    ### Optional catchup parameters
+    # - --start-at-block  # To catch up from a specific block
+    # - --catchup-margin
+    # - --catchup-paging
 
   # Service ports configuration
   ports:
@@ -251,13 +461,14 @@ gwListener:
     - --provider-max-retries=4294967295
     - --provider-retry-interval=4s
     - --log-level=INFO
-    - --get-logs-poll-interval=1s
+    - --get-logs-poll-interval=500ms
     - --get-logs-block-batch-size=100
     - --service-name=gw-listener
-    ### Catchup parameters (optional)
-    # --catchup-kms-generation-from-block BLOCK_NUMBER
+    - --log-last-processed-every-number-of-updates=50
+    ### Replay parameters (optional)
+    # --replay-from-block BLOCK_NUMBER
     # To go back in time from latest block
-    # --catchup-kms-generation-from-block -NB_BLOCK
+    # --replay-from-block -NB_BLOCK
 
   # Service ports configuration
   ports:
@@ -344,7 +555,7 @@ tfheWorker:
     - --run-bg-worker=true
     - --worker-polling-interval-ms=10000
     - --work-items-batch-size=100  # scheduling changed
-    - --dependence-chains-per-batch=100
+    - --dependence-chains-per-batch=100  # Deprecated. To be removed in a future release.
     - --tenant-key-cache-size=32
     - --coprocessor-fhe-threads=64  # scheduling changed
     - --tokio-threads=16  # scheduling changed
@@ -361,6 +572,23 @@ tfheWorker:
     - --maximum-handles-per-input=0
     - --server-addr=""
     - --coprocessor-private-key=""
+    # Unique worker identifier (valid UUID v4 format)
+    # If not set, defaults to a random UUID generated at startup
+    - --worker-id=$(WORKER_ID)
+    - --dcid-ttl-sec=30  # Time-to-live (in seconds) for dependence chain locks
+    # Disable dependence chain ID locking
+    # WARNING: May cause multiple workers to process the same DCID concurrently
+    # Defaults to false
+    - --disable-dcid-locking=false
+    # Time slice (in seconds) for processing a single dependence chain
+    # Locks are released if processing exceeds this duration
+    - --dcid-timeslice-sec=90
+    # Processed DCIDs older than this value are cleaned up
+    # Defaults to 48 hours (172800 seconds)
+    # Time-to-live (in seconds) for processed dependence chains
+    - --processed-dcid-ttl-sec=172800
+    - --dcid-cleanup-interval-sec=3600  # Interval (in seconds) for cleaning up expired DCID locks
+    - --dcid-max-no-progress-cycles=2   # Worker cycles without progress before releasing
 
   # Service ports configuration
   ports:
@@ -601,10 +829,12 @@ snsWorker:
     - --cleanup-interval=120s
     - --liveness-threshold=70s
     - --lifo=false
-    - --enable-compssion=true
+    - --enable-compression=true
     - --schedule-policy=rayon_parallel
     - --service-name=sns-worker
     - --log-level=INFO
+    # Only enable `gauge-update-interval-secs` for some of the workers to reduce DB load and not have duplicate metrics data for no reason.
+    # --gauge-update-interval-secs=10
     # - --pg-auto-explain-with-min-duration="30s"
     # - --keys-file-path
 
@@ -742,9 +972,8 @@ txSender:
     - --allow-handle-max-retries=2147483647
     - --add-ciphertexts-max-retries=2147483647
     - --error-sleep-initial-secs=1
-    - --error-sleep-max-secs=300
-    - --txn-receipt-timeout-secs=10
-    - --required-txn-confirmations=0
+    - --error-sleep-max-secs=4
+    - --txn-receipt-timeout-secs=4
     - --review-after-unlimited-retries=30
     - --provider-max-retries=4294967295
     - --provider-retry-interval=4s
@@ -755,8 +984,16 @@ txSender:
     - --gas-limit-overprovision-percent=120
     - --graceful-shutdown-timeout=8s
     - --service-name=txn-sender
+    # New in 0.10
     - --metric-host-txn-latency=0.1:60.0:0.1
     - --metric-zkproof-txn-latency=0.1:60.0:0.1
+    - --gauge-update-interval-secs=10
+    - --host-chain-url=$(ETHEREUM_RPC_URL)
+    - --delegation-block-delay=10  # not applied immediately to avoid reorg
+    - --delegation-clear-after-n_blocks=648000  # ~3 months at 12s block time, only on successful delegations
+    - --delegation-fallback-polling=30  # polling fallback in seconds when notification are not received
+    - --delegation-max-retry=100000  # does not include immediate retry on transient error which are infinite
+    - --retry-immediately-on-nonce-error=0  # Deprecated. To be removed in a future release.
 
   # Service ports configuration
   ports:

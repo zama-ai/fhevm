@@ -1,6 +1,9 @@
 use crate::{
     monitoring::otlp::PropagationContext,
-    types::{KmsGrpcResponse, db::KeyDigestDbItem, gw_event},
+    types::{
+        KmsGrpcResponse,
+        db::{KeyDigestDbItem, OperationStatus},
+    },
 };
 use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
@@ -14,40 +17,12 @@ use kms_grpc::{
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use std::fmt::Display;
-use tracing::debug;
+use tracing::{debug, info, warn};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KmsResponse {
     pub kind: KmsResponseKind,
     pub otlp_context: PropagationContext,
-}
-
-impl KmsResponse {
-    pub fn new(kind: KmsResponseKind, otlp_context: PropagationContext) -> Self {
-        Self { kind, otlp_context }
-    }
-
-    /// Sets the `under_process` field of the event associated to this response as `FALSE` in the
-    /// database.
-    pub async fn mark_associated_event_as_pending(&self, db: &Pool<Postgres>) {
-        match &self.kind {
-            KmsResponseKind::PublicDecryption(r) => {
-                gw_event::mark_public_decryption_as_pending(db, r.decryption_id, true).await
-            }
-            KmsResponseKind::UserDecryption(r) => {
-                gw_event::mark_user_decryption_as_pending(db, r.decryption_id, true).await
-            }
-            KmsResponseKind::PrepKeygen(r) => {
-                gw_event::mark_prep_keygen_as_pending(db, r.prep_keygen_id, true).await
-            }
-            KmsResponseKind::Keygen(r) => {
-                gw_event::mark_keygen_as_pending(db, r.key_id, true).await
-            }
-            KmsResponseKind::Crsgen(r) => {
-                gw_event::mark_crsgen_as_pending(db, r.crs_id, true).await
-            }
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -95,6 +70,76 @@ pub struct CrsgenResponse {
     pub signature: Vec<u8>,
 }
 
+impl KmsResponse {
+    pub fn new(kind: KmsResponseKind, otlp_context: PropagationContext) -> Self {
+        Self { kind, otlp_context }
+    }
+
+    /// Sets the response's `status` field to `pending` in the database.
+    pub async fn mark_as_pending(&self, db: &Pool<Postgres>) {
+        warn!("Failed to process response. Restoring `status` field to `pending` in DB...");
+        self.update_status(db, OperationStatus::Pending).await
+    }
+
+    /// Sets the response's `status` field to `completed` in the database.
+    pub async fn mark_as_completed(&self, db: &Pool<Postgres>) {
+        info!(
+            "Response successfully processed. Setting its `status` field to `completed` in DB..."
+        );
+        self.update_status(db, OperationStatus::Completed).await
+    }
+
+    /// Sets the response's `status` field to `failed` in the database.
+    pub async fn mark_as_failed(&self, db: &Pool<Postgres>) {
+        warn!("Failed to process response. Restoring `status` field to `failed` in DB...");
+        self.update_status(db, OperationStatus::Failed).await
+    }
+
+    async fn update_status(&self, db: &Pool<Postgres>, status: OperationStatus) {
+        let query = match &self.kind {
+            KmsResponseKind::PublicDecryption(r) => sqlx::query!(
+                "UPDATE public_decryption_responses SET status = $1 WHERE decryption_id = $2",
+                status as OperationStatus,
+                r.decryption_id.as_le_slice()
+            ),
+            KmsResponseKind::UserDecryption(r) => sqlx::query!(
+                "UPDATE user_decryption_responses SET status = $1 WHERE decryption_id = $2",
+                status as OperationStatus,
+                r.decryption_id.as_le_slice()
+            ),
+            KmsResponseKind::PrepKeygen(r) => sqlx::query!(
+                "UPDATE prep_keygen_responses SET status = $1 WHERE prep_keygen_id = $2",
+                status as OperationStatus,
+                r.prep_keygen_id.as_le_slice()
+            ),
+            KmsResponseKind::Keygen(r) => sqlx::query!(
+                "UPDATE keygen_responses SET status = $1 WHERE key_id = $2",
+                status as OperationStatus,
+                r.key_id.as_le_slice()
+            ),
+            KmsResponseKind::Crsgen(r) => sqlx::query!(
+                "UPDATE crsgen_responses SET status = $1 WHERE crs_id = $2",
+                status as OperationStatus,
+                r.crs_id.as_le_slice()
+            ),
+        };
+
+        let query_result = match query.execute(db).await {
+            Ok(result) => result,
+            Err(e) => return warn!("Failed to update response: {e}"),
+        };
+
+        if query_result.rows_affected() == 1 {
+            info!("Successfully updated response in DB!");
+        } else {
+            warn!(
+                "Unexpected query result while updating response: {:?}",
+                query_result
+            )
+        }
+    }
+}
+
 impl KmsResponseKind {
     /// Processes a KMS GRPC response into a `KmsResponse` enum.
     pub fn process(response: KmsGrpcResponse) -> anyhow::Result<Self> {
@@ -127,7 +172,7 @@ impl KmsResponseKind {
 
 pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::PublicDecryption(PublicDecryptionResponse {
             decryption_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
             decrypted_result: row.try_get("decrypted_result")?,
@@ -139,7 +184,7 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
 
 pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::UserDecryption(UserDecryptionResponse {
             decryption_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
             user_decrypted_shares: row.try_get("user_decrypted_shares")?,
@@ -151,7 +196,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
 
 pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::PrepKeygen(PrepKeygenResponse {
             prep_keygen_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
             signature: row.try_get("signature")?,
@@ -161,7 +206,7 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
 
 pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::Keygen(KeygenResponse {
             key_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
             key_digests: row.try_get("key_digests")?,
@@ -172,7 +217,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
 
 pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
     Ok(KmsResponse {
-        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        otlp_context: bc2wrap::deserialize_safe(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
         kind: KmsResponseKind::Crsgen(CrsgenResponse {
             crs_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
             crs_digest: row.try_get("crs_digest")?,
@@ -331,3 +376,22 @@ impl Display for KmsResponseKind {
         }
     }
 }
+
+impl KmsResponseKind {
+    /// Converts the `KmsResponseKind` in a `&str` format.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            KmsResponseKind::PublicDecryption(_) => PUBLIC_DECRYPTION_RESPONSE_STR,
+            KmsResponseKind::UserDecryption(_) => USER_DECRYPTION_RESPONSE_STR,
+            KmsResponseKind::PrepKeygen(_) => PREP_KEYGEN_RESPONSE_STR,
+            KmsResponseKind::Keygen(_) => KEYGEN_RESPONSE_STR,
+            KmsResponseKind::Crsgen(_) => CRSGEN_RESPONSE_STR,
+        }
+    }
+}
+
+pub const PUBLIC_DECRYPTION_RESPONSE_STR: &str = "public_decryption_response";
+pub const USER_DECRYPTION_RESPONSE_STR: &str = "user_decryption_response";
+pub const PREP_KEYGEN_RESPONSE_STR: &str = "prep_keygen_response";
+pub const KEYGEN_RESPONSE_STR: &str = "keygen_response";
+pub const CRSGEN_RESPONSE_STR: &str = "crsgen_response";

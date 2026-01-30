@@ -1,5 +1,6 @@
 use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
+use sqlx::types::time::PrimitiveDateTime;
 
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract;
@@ -36,12 +37,15 @@ async fn insert_tfhe_event(
     tx: &mut Transaction<'_>,
     log: alloy::rpc::types::Log<TfheContractEvents>,
     is_allowed: bool,
-) -> Result<(), sqlx::Error> {
+) -> Result<bool, sqlx::Error> {
     let event = LogTfhe {
         event: log.inner,
         transaction_hash: log.transaction_hash,
         is_allowed,
-        block_number: log.block_number,
+        block_number: log.block_number.unwrap_or(0),
+        block_timestamp: PrimitiveDateTime::MAX,
+        dependence_chain: log.transaction_hash.unwrap_or_default(),
+        tx_depth_size: 0,
     };
     db.insert_tfhe_event(tx, &event).await
 }
@@ -50,7 +54,7 @@ pub async fn allow_handle(
     db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
     handle: &[u8],
-) -> Result<(), sqlx::Error> {
+) -> Result<bool, sqlx::Error> {
     let account_address = String::new();
     let event_type = AllowEvents::AllowedForDecryption;
     db.insert_allowed_handle(tx, handle.to_owned(), account_address, event_type, None)
@@ -258,10 +262,14 @@ fn next_handle() -> Handle {
 
 async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
     let coprocessor_api_key = sqlx::types::Uuid::parse_str(default_api_key()).unwrap();
-    let url = app.db_url().to_string();
-    ListenerDatabase::new(&url, &coprocessor_api_key, default_dependence_cache_size())
-        .await
-        .unwrap()
+
+    ListenerDatabase::new(
+        &app.db_url().into(),
+        &coprocessor_api_key,
+        default_dependence_cache_size(),
+    )
+    .await
+    .unwrap()
 }
 
 #[tokio::test]

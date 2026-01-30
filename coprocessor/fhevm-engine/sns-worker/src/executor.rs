@@ -1,5 +1,8 @@
 use crate::aws_upload::check_is_ready;
 use crate::keyset::fetch_keyset;
+use crate::metrics::SNS_LATENCY_OP_HISTOGRAM;
+use crate::metrics::TASK_EXECUTE_FAILURE_COUNTER;
+use crate::metrics::TASK_EXECUTE_SUCCESS_COUNTER;
 use crate::squash_noise::SquashNoiseCiphertext;
 use crate::BigCiphertext;
 use crate::Ciphertext128Format;
@@ -9,7 +12,6 @@ use crate::KeySet;
 use crate::SchedulePolicy;
 use crate::TaskStatus;
 use crate::UploadJob;
-use crate::SNS_LATENCY_OP_HISTOGRAM;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use core::panic;
@@ -18,7 +20,7 @@ use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
-use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::with_panic_guard;
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
@@ -241,7 +243,15 @@ pub(crate) async fn run_loop(
             continue;
         };
 
-        let maybe_remaining = fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token).await?;
+        let (maybe_remaining, _tasks_processed) =
+            fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token)
+                .await
+                .inspect(|(_, tasks_processed)| {
+                    TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
+                })
+                .inspect_err(|_| {
+                    TASK_EXECUTE_FAILURE_COUNTER.inc();
+                })?;
         if maybe_remaining {
             if token.is_cancelled() {
                 return Ok(());
@@ -278,29 +288,51 @@ pub(crate) async fn run_loop(
     }
 }
 
-// Clean up the database by removing old ciphertexts128 already uploaded to S3.
+/// Clean up the database by removing old ciphertexts128 already uploaded to S3.
+/// Ideally, the table will be cleaned up by txn-sender if it's working properly
 pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionError> {
+    if limit == 0 {
+        // GC disabled
+        return Ok(());
+    }
+
+    let count: Option<i64> = sqlx::query_scalar!(
+        "
+        SELECT COUNT(*)::BIGINT
+        FROM ciphertexts128
+        "
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let count = count.unwrap_or(0);
+    if count <= limit as i64 {
+        // Avoid unnecessary cleanup when there are not too many rows
+        return Ok(());
+    }
+
+    info!(count, "Starting garbage collection of ciphertexts128");
+
     // Limit the number of rows to update in case of a large backlog due to catchup or burst
     // Skip Locked to prevent concurrent updates
     let start = SystemTime::now();
     let rows_affected: u64 = sqlx::query!(
         "
-        WITH to_update AS (
-            SELECT c.ctid
-            FROM ciphertexts c
+        WITH uploaded_ct128 AS (
+            SELECT c.tenant_id, c.handle
+            FROM ciphertexts128 c
             JOIN ciphertext_digest d
             ON d.tenant_id = c.tenant_id
             AND d.handle = c.handle
-            WHERE c.ciphertext128 IS NOT NULL
-            AND d.ciphertext128 IS NOT NULL
-            ORDER BY c.created_at
-            FOR UPDATE SKIP LOCKED
-            LIMIT $1::INT
+            WHERE d.ciphertext128 IS NOT NULL
+            FOR UPDATE OF c SKIP LOCKED
+            LIMIT $1
         )
 
-        UPDATE ciphertexts
-            SET ciphertext128 = NULL
-            WHERE ctid IN (SELECT ctid FROM to_update);
+        DELETE FROM ciphertexts128 c
+        USING uploaded_ct128 r
+        WHERE c.tenant_id = r.tenant_id
+        AND c.handle = r.handle;
         ",
         limit as i32
     )
@@ -320,13 +352,14 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 }
 
 /// Fetch and process SnS tasks from the database.
+/// Returns (maybe_remaining, number_of_tasks_processed) on success.
 async fn fetch_and_execute_sns_tasks(
     pool: &PgPool,
     tx: &Sender<UploadJob>,
     keys: &KeySet,
     conf: &Config,
     token: &CancellationToken,
-) -> Result<bool, ExecutionError> {
+) -> Result<(bool, usize), ExecutionError> {
     let mut db_txn = match pool.begin().await {
         Ok(txn) => txn,
         Err(err) => {
@@ -344,8 +377,10 @@ async fn fetch_and_execute_sns_tasks(
     let trx = &mut db_txn;
 
     let mut maybe_remaining = false;
+    let tasks_processed;
     if let Some(mut tasks) = query_sns_tasks(trx, conf.db.batch_limit, order).await? {
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
+        tasks_processed = tasks.len();
 
         let t = telemetry::tracer("batch_execution", &None);
         t.set_attribute("count", tasks.len().to_string());
@@ -360,6 +395,7 @@ async fn fetch_and_execute_sns_tasks(
         )?;
 
         let s = t.child_span("batch_store_ciphertext128");
+
         update_ciphertext128(trx, &mut tasks).await?;
         notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
 
@@ -379,10 +415,11 @@ async fn fetch_and_execute_sns_tasks(
             }
         }
     } else {
+        tasks_processed = 0;
         db_txn.rollback().await?;
     }
 
-    Ok(maybe_remaining)
+    Ok((maybe_remaining, tasks_processed))
 }
 
 /// Queries the database for a fixed number of tasks.
@@ -518,7 +555,7 @@ fn compute_task(
     let span = error_span!("compute", thread_id = %thread_id);
     let _enter = span.enter();
 
-    let handle = compact_hex(&task.handle);
+    let handle = to_hex(&task.handle);
 
     // Check if the task is cancelled
     if token.is_cancelled() {
@@ -632,57 +669,51 @@ fn squash_noise_with_guard(
 /// The ct128 is temporarily stored in PostgresDB to ensure reliability.
 /// After the AWS uploader successfully uploads the ct128 to S3, the ct128 blob
 /// is deleted from Postgres.
-///
-/// The assumption for now is that the DB insertion is faster and more reliable
-/// than the S3 upload. Later on, the DB insertion of ct128 might be removed
-/// completely.
 async fn update_ciphertext128(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &mut [HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks {
-        if task.ct128.is_empty() {
-            error!(
-                handle = compact_hex(&task.handle),
-                "ct128 not computed for task"
-            );
-            continue;
-        }
+        if !task.ct128.is_empty() {
+            let ciphertext128 = task.ct128.bytes();
+            let s = task.otel.child_span("ciphertexts128_insert");
+            let res = sqlx::query!(
+                "
+                INSERT INTO ciphertexts128 (
+                        tenant_id,
+                        handle,
+                        ciphertext
+                )
+                VALUES ($1, $2, $3)",
+                task.tenant_id,
+                task.handle,
+                ciphertext128,
+            )
+            .execute(db_txn.as_mut())
+            .await;
 
-        let ciphertext128 = task.ct128.bytes();
-        let s = task.otel.child_span("ct128_db_insert");
-
-        // Insert the ciphertext128 into the database for reliability
-        // Later on, we clean up all uploaded ct128
-        let res = sqlx::query!(
-            "
-                UPDATE ciphertexts
-                SET ciphertext128 = $1
-                WHERE handle = $2;",
-            ciphertext128,
-            task.handle
-        )
-        .execute(db_txn.as_mut())
-        .await;
-
-        match res {
-            Ok(val) => {
-                info!(
-                    handle = compact_hex(&task.handle),
-                    query_res = format!("{:?}", val),
-                    "Inserted ct128 in DB"
-                );
-                telemetry::end_span(s);
+            match res {
+                Ok(val) => {
+                    info!(
+                        handle = to_hex(&task.handle),
+                        query_res = format!("{:?}", val),
+                        size = ciphertext128.len(),
+                        "Persisted ct128 successfully"
+                    );
+                    telemetry::end_span(s);
+                }
+                Err(err) => {
+                    error!( handle = to_hex(&task.handle), error = %err, "Failed to persist ct128");
+                    telemetry::end_span_with_err(s, err.to_string());
+                    // Although the S3-upload might still succeed, we consider this as a failure
+                    // Worst-case scenario, the SnS-computation will be retried later.
+                    // However, if both DB insertion and S3 upload fail, this guarantees that the computation
+                    // will be retried and the ct128 uploaded.
+                    task.status = TaskStatus::TransientErr(err.to_string());
+                }
             }
-            Err(err) => {
-                error!( handle = compact_hex(&task.handle), error = %err, "Failed to insert ct128 into DB");
-                telemetry::end_span_with_err(s, err.to_string());
-                // Although the S3-upload might still succeed, we consider this as a failure
-                // Worst-case scenario, the SnS-computation will be retried later.
-                // However, if both DB insertion and S3 upload fail, this guarantees that the computation
-                // will be retried and the ct128 uploaded.
-                task.status = TaskStatus::TransientErr(err.to_string());
-            }
+        } else {
+            error!(handle = to_hex(&task.handle), "ct128 not computed");
         }
 
         // Notify add_ciphertexts
@@ -795,7 +826,7 @@ fn decrypt_big_ct(
             }
             .expect("Failed to decrypt");
 
-            info!(plaintext = pt, handle = compact_hex(handle), "Decrypted");
+            info!(plaintext = pt, handle = to_hex(handle), "Decrypted");
         }
     }
 }

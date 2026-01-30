@@ -30,6 +30,7 @@ jobs:
             gw-contracts:
               - .github/workflows/gateway-contracts-deployment-tests.yml
               - gateway-contracts/**
+
   sc-deploy:
     name: gateway-contracts-deployment-tests/sc-deploy (bpr)
     needs: check-changes
@@ -121,6 +122,26 @@ jobs:
             exit 1
           else
             echo "CRS generation triggering completed successfully with expected completion message"
+          fi
+
+      - name: Check mock smart contract deployment
+        working-directory: gateway-contracts
+        run: |
+
+          ## Check Mock contracts deployment
+          timeout 300s bash -c 'while docker ps --filter "name=deploy-gateway-mock-contracts" --format "{{.Status}}" | grep -q "Up"; do sleep 5; done'
+          docker compose logs deploy-gateway-mock-contracts > mock_contracts_deployment_logs.txt
+          EXIT_CODE_SC=$(docker inspect --format='{{.State.ExitCode}}' deploy-gateway-mock-contracts)
+          # display logs for debugging
+          # cat mock_contracts_deployment_logs.txt
+          if [ "$EXIT_CODE_SC" -ne 0 ]; then
+            echo "Mock contract deployment failed with exit code $EXIT_CODE_SC"
+            exit 1
+          elif ! grep -q "Mock contract deployment done!" mock_contracts_deployment_logs.txt; then
+            echo "Mock contract deployment did not complete successfully - 'Mock contract deployment done!' message not found in logs"
+            exit 1
+          else
+            echo "Mock contract deployment completed successfully with expected completion message"
           fi
 
       - name: Clean up

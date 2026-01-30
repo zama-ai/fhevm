@@ -1,5 +1,6 @@
 use alloy::primitives::Uint;
 use alloy::transports::http::reqwest::Url;
+use fhevm_engine_common::utils::DatabaseURL;
 use std::time::Duration;
 
 use tracing::error;
@@ -36,7 +37,7 @@ impl TryFrom<u8> for KeyType {
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {
     pub host_chain_id: ChainId,
-    pub database_url: String,
+    pub database_url: DatabaseURL,
     pub database_pool_size: u32,
     pub verify_proof_req_db_channel: String,
 
@@ -51,7 +52,9 @@ pub struct ConfigSettings {
 
     pub get_logs_poll_interval: Duration,
     pub get_logs_block_batch_size: u64,
-    pub catchup_kms_generation_from_block: Option<i64>,
+    pub replay_from_block: Option<i64>,
+
+    pub log_last_processed_every_number_of_updates: u64,
 }
 
 pub fn chain_id_from_env() -> Option<ChainId> {
@@ -67,8 +70,7 @@ impl Default for ConfigSettings {
     fn default() -> Self {
         Self {
             host_chain_id: chain_id_from_env().unwrap_or(12345),
-            database_url: std::env::var("DATABASE_URL")
-                .unwrap_or("postgres://postgres:postgres@localhost/coprocessor".to_owned()),
+            database_url: DatabaseURL::default(),
             database_pool_size: 16,
             verify_proof_req_db_channel: "event_zkpok_new_work".to_owned(),
             gw_url: "ws://127.0.0.1:8546".try_into().expect("Invalid URL"),
@@ -76,9 +78,10 @@ impl Default for ConfigSettings {
             error_sleep_max_secs: 10,
             health_check_port: 8080,
             health_check_timeout: Duration::from_secs(4),
-            get_logs_poll_interval: Duration::from_secs(1),
+            get_logs_poll_interval: Duration::from_millis(500),
             get_logs_block_batch_size: 100,
-            catchup_kms_generation_from_block: None,
+            replay_from_block: None,
+            log_last_processed_every_number_of_updates: 50,
         }
     }
 }

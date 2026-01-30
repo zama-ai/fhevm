@@ -23,7 +23,7 @@ describe('HTTPPublicDecrypt', function () {
     const expectedRes = {
       [handleBool]: true,
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 
   it('test HTTPPublicDecrypt mixed', async function () {
@@ -36,6 +36,6 @@ describe('HTTPPublicDecrypt', function () {
       [handle32]: 242n,
       [handleAddress]: '0xfC4382C084fCA3f4fB07c3BCDA906C01797595a8',
     };
-    assert.deepEqual(res, expectedRes);
+    assert.deepEqual(res.clearValues, expectedRes);
   });
 });

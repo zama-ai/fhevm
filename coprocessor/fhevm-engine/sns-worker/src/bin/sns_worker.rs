@@ -1,4 +1,4 @@
-use sns_worker::{Config, DBConfig, HealthCheckConfig, S3Config, S3RetryPolicy};
+use sns_worker::{Config, DBConfig, HealthCheckConfig, S3Config, S3RetryPolicy, SNSMetricsConfig};
 
 use tokio::signal::unix;
 use tokio_util::sync::CancellationToken;
@@ -16,15 +16,15 @@ fn handle_sigint(token: CancellationToken) {
 fn construct_config() -> Config {
     let args: utils::daemon_cli::Args = utils::daemon_cli::parse_args();
 
-    let db_url = args
-        .database_url
-        .clone()
-        .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
+    let db_url = args.database_url.clone().unwrap_or_default();
 
     Config {
         tenant_api_key: args.tenant_api_key,
         service_name: args.service_name,
-        metrics_addr: args.metrics_addr,
+        metrics: SNSMetricsConfig {
+            addr: args.metrics_addr,
+            gauge_update_interval_secs: args.gauge_update_interval_secs,
+        },
         db: DBConfig {
             url: db_url,
             listen_channels: args.pg_listen_channels,

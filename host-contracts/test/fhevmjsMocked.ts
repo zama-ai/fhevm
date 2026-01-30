@@ -45,9 +45,6 @@ enum Types {
   euint128 = 6,
   eaddress = 7,
   euint256 = 8,
-  ebytes64 = 9,
-  ebytes128 = 10,
-  ebytes256 = 11,
 }
 
 const sum = (arr: number[]) => arr.reduce((acc, val) => acc + val, 0);
@@ -104,18 +101,6 @@ function createUintToUint8ArrayFunction(numBits: number) {
         break;
       case 256:
         byteBuffer = Buffer.from([Types.euint256]);
-        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
-        break;
-      case 512:
-        byteBuffer = Buffer.from([Types.ebytes64]);
-        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
-        break;
-      case 1024:
-        byteBuffer = Buffer.from([Types.ebytes128]);
-        totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
-        break;
-      case 2048:
-        byteBuffer = Buffer.from([Types.ebytes256]);
         totalBuffer = Buffer.concat([byteBuffer, combinedBuffer]);
         break;
       default:
@@ -299,36 +284,6 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       checkEncryptedValue(value, 256);
       values.push(BigInt(value));
       bits.push(256);
-      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
-      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
-      return this;
-    },
-    addBytes64(value: Uint8Array) {
-      if (value.length !== 64) throw Error('Uncorrect length of input Uint8Array, should be 64 for an ebytes64');
-      const bigIntValue = bytesToBigInt(value);
-      checkEncryptedValue(bigIntValue, 512);
-      values.push(bigIntValue);
-      bits.push(512);
-      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
-      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
-      return this;
-    },
-    addBytes128(value: Uint8Array) {
-      if (value.length !== 128) throw Error('Uncorrect length of input Uint8Array, should be 128 for an ebytes128');
-      const bigIntValue = bytesToBigInt(value);
-      checkEncryptedValue(bigIntValue, 1024);
-      values.push(bigIntValue);
-      bits.push(1024);
-      if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
-      if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
-      return this;
-    },
-    addBytes256(value: Uint8Array) {
-      if (value.length !== 256) throw Error('Uncorrect length of input Uint8Array, should be 256 for an ebytes256');
-      const bigIntValue = bytesToBigInt(value);
-      checkEncryptedValue(bigIntValue, 2048);
-      values.push(bigIntValue);
-      bits.push(2048);
       if (sum(bits) > 2048) throw Error('Packing more than 2048 bits in a single input ciphertext is unsupported');
       if (bits.length > 256) throw Error('Packing more than 256 variables in a single input ciphertext is unsupported');
       return this;

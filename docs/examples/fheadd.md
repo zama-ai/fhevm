@@ -18,9 +18,9 @@ This ensures Hardhat can compile and test your contracts as expected.
 pragma solidity ^0.8.24;
 
 import { FHE, euint8, externalEuint8 } from "@fhevm/solidity/lib/FHE.sol";
-import { EthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract FHEAdd is EthereumConfig {
+contract FHEAdd is ZamaEthereumConfig {
   euint8 private _a;
   euint8 private _b;
   // solhint-disable-next-line var-name-mixedcase

@@ -1,7 +1,6 @@
 use super::TransactionOperation;
 use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
-use crate::overprovision_gas_limit::try_overprovision_gas_limit;
 use crate::AbstractSigner;
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, U256};
@@ -16,7 +15,9 @@ use std::convert::TryInto;
 use std::time::Duration;
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
-use InputVerification::InputVerificationErrors;
+
+use fhevm_gateway_bindings::input_verification::InputVerification;
+use fhevm_gateway_bindings::input_verification::InputVerification::InputVerificationErrors;
 
 sol! {
     struct CiphertextVerification {
@@ -28,14 +29,11 @@ sol! {
     }
 }
 
-sol!(
-    #[sol(rpc)]
-    InputVerification,
-    "artifacts/InputVerification.sol/InputVerification.json"
-);
-
 #[derive(Clone)]
-pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> {
+pub(crate) struct VerifyProofOperation<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     input_verification_address: Address,
     provider: NonceManagedProvider<P>,
     signer: AbstractSigner,
@@ -45,7 +43,10 @@ pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> 
     db_pool: Pool<Postgres>,
 }
 
-impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOperation<P> {
+impl<P> VerifyProofOperation<P>
+where
+    P: Provider<Ethereum> + Clone + 'static,
+{
     pub(crate) async fn new(
         input_verification_address: Address,
         provider: NonceManagedProvider<P>,
@@ -125,18 +126,16 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         info!(zk_proof_id = txn_request.0, "Processing transaction");
         let _t = telemetry::tracer("call_verify_proof_resp", &src_transaction_id);
 
-        let overprovisioned_txn_req = try_overprovision_gas_limit(
-            txn_request.1,
-            self.provider.inner(),
-            self.conf.gas_limit_overprovision_percent,
-        )
-        .await;
-        let transaction = match self
+        let receipt = match self
             .provider
-            .send_transaction(overprovisioned_txn_req.clone())
+            .send_sync_with_overprovision(
+                txn_request.1,
+                self.conf.gas_limit_overprovision_percent,
+                Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
+            )
             .await
         {
-            Ok(txn) => txn,
+            Ok(receipt) => receipt,
             Err(e) => {
                 if let Some(InputVerificationErrors::CoprocessorAlreadyVerified(_)) =
                     e.as_error_resp().and_then(|payload| {
@@ -163,7 +162,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
                 } else {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     error!(
-                        transaction_request = ?overprovisioned_txn_req,
+                        zk_proof_id = txn_request.0,
                         error = %e,
                         "Transaction sending failed"
                     );
@@ -178,30 +177,9 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
             }
         };
 
-        let receipt = match transaction
-            .with_timeout(Some(Duration::from_secs(
-                self.conf.txn_receipt_timeout_secs as u64,
-            )))
-            .with_required_confirmations(self.conf.required_txn_confirmations as u64)
-            .get_receipt()
-            .await
-        {
-            Ok(receipt) => receipt,
-            Err(e) => {
-                VERIFY_PROOF_FAIL_COUNTER.inc();
-                error!(error = %e, "Getting receipt failed");
-                self.update_retry_count_by_proof_id(
-                    txn_request.0,
-                    current_retry_count,
-                    &e.to_string(),
-                )
-                .await?;
-                return Err(anyhow::Error::new(e));
-            }
-        };
-
         if receipt.status() {
             info!(
+                zk_proof_id = txn_request.0,
                 transaction_hash = %receipt.transaction_hash,
                 "Transaction succeeded"
             );
@@ -216,6 +194,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         } else {
             VERIFY_PROOF_FAIL_COUNTER.inc();
             error!(
+                zk_proof_id = txn_request.0,
                 transaction_hash = %receipt.transaction_hash,
                 status = receipt.status(),
                 "Transaction failed"
@@ -227,9 +206,10 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
             )
             .await?;
             return Err(anyhow::anyhow!(
-                "Transaction {} failed with status {}",
+                "Transaction {} for zk_proof_id {} failed with status {}",
                 receipt.transaction_hash,
-                receipt.status()
+                txn_request.0,
+                receipt.status(),
             ));
         }
         Ok(())

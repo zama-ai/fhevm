@@ -109,7 +109,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         pg_pool_max_connections: 2,
         server_addr: format!("127.0.0.1:{app_port}"),
         metrics_addr: None,
-        database_url: Some(db_url.to_string()),
+        database_url: Some(db_url.into()),
         maximum_compact_inputs_upload: 10,
         coprocessor_private_key: "./coprocessor.key".to_string(),
         service_name: "coprocessor".to_string(),
@@ -117,6 +117,13 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         health_check_port: 8081,
         metric_rerand_batch_latency: MetricsConfig::default(),
         metric_fhe_batch_latency: MetricsConfig::default(),
+        worker_id: None,
+        dcid_ttl_sec: 30,
+        disable_dcid_locking: true,
+        dcid_timeslice_sec: 90,
+        dcid_cleanup_interval_sec: 0,
+        processed_dcid_ttl_sec: 0,
+        dcid_max_no_progress_cycles: 2,
     };
 
     std::thread::spawn(move || {

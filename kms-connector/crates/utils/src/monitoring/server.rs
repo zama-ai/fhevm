@@ -1,7 +1,7 @@
 use crate::monitoring::{health::Healthcheck, otlp::metrics_responder};
 use actix_web::{HttpResponse, web::Data};
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tokio::{select, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -9,8 +9,8 @@ use tracing::{error, info};
 /// Number of workers for the monitoring server.
 const MONITORING_SERVER_WORKER: usize = 1;
 
-pub fn default_monitoring_endpoint() -> String {
-    "0.0.0.0:9100".to_string()
+pub fn default_monitoring_endpoint() -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 9100)
 }
 
 /// Starts the HTTP server exposing the healthchecks and metrics collection endpoints.

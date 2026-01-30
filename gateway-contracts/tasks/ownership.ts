@@ -1,8 +1,7 @@
 import { Wallet } from "ethers";
 import { task, types } from "hardhat/config";
 
-import { getRequiredEnvVar } from "./utils/loadVariables";
-import { pascalCaseToSnakeCase } from "./utils/stringOps";
+import { getRequiredAddressEnvVar, getRequiredEnvVar } from "./utils/loadVariables";
 
 task(
   "task:transferGatewayOwnership",
@@ -14,9 +13,7 @@ task(
     const deployer = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY")).connect(ethers.provider);
 
     // Get the GatewayConfig contract: its owner is the owner of all gateway contracts
-    const gatewayConfigSnakeCase = pascalCaseToSnakeCase("GatewayConfig");
-    const gatewayConfigAddressEnvVarName = `${gatewayConfigSnakeCase.toUpperCase()}_ADDRESS`;
-    const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
+    const gatewayConfigContractAddress = getRequiredAddressEnvVar("GatewayConfig");
     const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
     if ((await gatewayConfigContract.owner()) !== deployer.address) {
@@ -44,9 +41,7 @@ task(
   const newOwner = new Wallet(getRequiredEnvVar("NEW_OWNER_PRIVATE_KEY")).connect(ethers.provider);
 
   // Get the GatewayConfig contract: its owner is the owner of all gateway contracts
-  const gatewayConfigSnakeCase = pascalCaseToSnakeCase("GatewayConfig");
-  const gatewayConfigAddressEnvVarName = `${gatewayConfigSnakeCase.toUpperCase()}_ADDRESS`;
-  const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
+  const gatewayConfigContractAddress = getRequiredAddressEnvVar("GatewayConfig");
   const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
   if ((await gatewayConfigContract.pendingOwner()) !== newOwner.address) {

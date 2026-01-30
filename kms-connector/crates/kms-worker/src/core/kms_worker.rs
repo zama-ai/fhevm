@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     core::{
         KmsResponsePublisher,
@@ -14,16 +16,17 @@ use crate::{
 use alloy::transports::http::reqwest;
 use anyhow::anyhow;
 use connector_utils::{
-    conn::{GatewayProvider, connect_to_db, connect_to_gateway},
+    conn::{DefaultProvider, connect_to_db, connect_to_rpc_node},
     tasks::spawn_with_limit,
     types::{GatewayEvent, KmsResponse},
 };
+use fhevm_host_bindings::acl::ACL;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct processing stored Gateway's events.
-pub struct KmsWorker<E, Proc, Publ> {
+pub struct KmsWorker<E, Proc> {
     /// The entity responsible for picking events to process.
     event_picker: E,
 
@@ -31,17 +34,20 @@ pub struct KmsWorker<E, Proc, Publ> {
     event_processor: Proc,
 
     /// The entity responsible for publishing KMS Core's responses.
-    response_publisher: Publ,
+    response_publisher: DbKmsResponsePublisher,
 }
 
-impl<E, Proc, Publ> KmsWorker<E, Proc, Publ>
+impl<E, Proc> KmsWorker<E, Proc>
 where
     E: EventPicker<Event = GatewayEvent>,
     Proc: EventProcessor<Event = GatewayEvent> + Clone + Send + 'static,
-    Publ: KmsResponsePublisher + Clone + Send + 'static,
 {
-    /// Creates a new `KmsWorker<E, Proc, Publ, R>`.
-    pub fn new(event_picker: E, event_processor: Proc, response_publisher: Publ) -> Self {
+    /// Creates a new `KmsWorker<E, Proc>`.
+    pub fn new(
+        event_picker: E,
+        event_processor: Proc,
+        response_publisher: DbKmsResponsePublisher,
+    ) -> Self {
         Self {
             event_picker,
             event_processor,
@@ -75,7 +81,7 @@ where
             let response_publisher = self.response_publisher.clone();
 
             spawn_with_limit(async move {
-                Self::process_event(event_processor, response_publisher, event).await
+                Self::handle_event(event_processor, response_publisher, event).await
             })
             .await;
         }
@@ -83,9 +89,9 @@ where
 
     /// Processes an event coming from the Gateway.
     #[tracing::instrument(skip(event_processor, response_publisher), fields(event = % event.kind))]
-    async fn process_event(
+    async fn handle_event(
         mut event_processor: Proc,
-        response_publisher: Publ,
+        response_publisher: DbKmsResponsePublisher,
         mut event: GatewayEvent,
     ) {
         let otlp_context = event.otlp_context.clone();
@@ -97,16 +103,32 @@ where
 
         let response = KmsResponse::new(response_kind, otlp_context);
         if let Err(e) = response_publisher.publish_response(response).await {
+            response_publisher.mark_event_as_pending(event).await;
             error!("Failed to publish response: {e}");
         }
     }
 }
 
-impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePublisher> {
+impl KmsWorker<DbEventPicker, DbEventProcessor<DefaultProvider, DefaultProvider>> {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<DefaultProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
+
+        let gateway_provider =
+            connect_to_rpc_node(config.gateway_url.clone(), config.gateway_chain_id).await?;
+
+        let mut acl_contracts = HashMap::new();
+        for host_chain in &config.host_chains {
+            let provider = connect_to_rpc_node(host_chain.url.clone(), host_chain.chain_id).await?;
+            let acl_contract = ACL::new(host_chain.acl_address, provider);
+            let host_chain_id = host_chain.chain_id;
+            if acl_contracts.insert(host_chain_id, acl_contract).is_some() {
+                return Err(anyhow!(
+                    "Duplicate host chain in config for chain ID {host_chain_id}"
+                ));
+            };
+        }
+
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
         let s3_client = reqwest::Client::builder()
@@ -116,105 +138,26 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
-        let s3_service = S3Service::new(&config, provider.clone(), s3_client);
-        let decryption_processor = DecryptionProcessor::new(&config, s3_service);
+        let s3_service = S3Service::new(&config, gateway_provider.clone(), s3_client);
+        let decryption_processor =
+            DecryptionProcessor::new(&config, gateway_provider.clone(), acl_contracts, s3_service);
         let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let event_processor = DbEventProcessor::new(
             kms_client.clone(),
             decryption_processor,
             kms_generation_processor,
+            config.max_decryption_attempts,
             db_pool.clone(),
         );
         let response_publisher = DbKmsResponsePublisher::new(db_pool.clone());
 
         let state = State::new(
             db_pool,
-            provider,
+            gateway_provider,
             kms_health_client,
             config.healthcheck_timeout,
         );
         let kms_worker = KmsWorker::new(event_picker, event_processor, response_publisher);
         Ok((kms_worker, state))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use connector_utils::{
-        tests::rand::{rand_signature, rand_u256},
-        types::{GatewayEvent, KmsResponse, KmsResponseKind, UserDecryptionResponse},
-    };
-    use std::time::Duration;
-    use tracing_test::traced_test;
-
-    #[tokio::test]
-    #[traced_test]
-    async fn test_kms_worker() {
-        let event_picker = MockEventPicker::new();
-        let event_processor = MockEventProcessor {};
-        let response_publisher = MockResponsePublisher {};
-
-        let worker = KmsWorker::new(event_picker, event_processor, response_publisher);
-
-        let cancel_token = CancellationToken::new();
-        let worker_task = tokio::spawn(worker.start(cancel_token.clone()));
-
-        // Give time to the worker to process event
-        tokio::time::sleep(Duration::from_millis(300)).await;
-
-        cancel_token.cancel();
-        worker_task.await.unwrap();
-
-        logs_contain("Event has been picked");
-        logs_contain("Response has been published");
-    }
-
-    struct MockEventPicker {
-        first_pick: bool,
-    }
-
-    impl MockEventPicker {
-        fn new() -> Self {
-            Self { first_pick: true }
-        }
-    }
-
-    impl EventPicker for MockEventPicker {
-        type Event = GatewayEvent;
-        async fn pick_events(&mut self) -> anyhow::Result<Vec<Self::Event>> {
-            if self.first_pick {
-                info!("Event has been picked");
-                self.first_pick = false;
-            } else {
-                std::future::pending::<()>().await; // Wait forever
-            }
-            Ok(vec![])
-        }
-    }
-
-    #[derive(Clone)]
-    struct MockEventProcessor {}
-
-    impl EventProcessor for MockEventProcessor {
-        type Event = GatewayEvent;
-        async fn process(&mut self, _event: &mut Self::Event) -> Option<KmsResponseKind> {
-            Some(KmsResponseKind::UserDecryption(UserDecryptionResponse {
-                decryption_id: rand_u256(),
-                user_decrypted_shares: vec![],
-                signature: rand_signature(),
-                extra_data: vec![],
-            }))
-        }
-    }
-
-    #[derive(Clone)]
-    struct MockResponsePublisher {}
-
-    impl KmsResponsePublisher for MockResponsePublisher {
-        async fn publish_response(&self, _response: KmsResponse) -> anyhow::Result<()> {
-            info!("Response has been published");
-            Ok(())
-        }
     }
 }

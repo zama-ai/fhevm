@@ -5,6 +5,7 @@ mod tests;
 
 pub mod verifier;
 use std::{
+    fmt::{self, Display},
     io,
     sync::{LazyLock, OnceLock},
     time::Duration,
@@ -14,6 +15,7 @@ use fhevm_engine_common::{
     pg_pool::ServiceError,
     telemetry::{register_histogram, MetricsConfig},
     types::FhevmError,
+    utils::DatabaseURL,
 };
 use prometheus::Histogram;
 use thiserror::Error;
@@ -29,9 +31,6 @@ pub enum ExecutionError {
 
     #[error("Connection to PostgreSQL is lost")]
     LostDbConnection,
-
-    #[error("Serialization error: {0}")]
-    SerializationError(#[from] bincode::Error),
 
     #[error("IO error: {0}")]
     IOError(#[from] io::Error),
@@ -77,7 +76,7 @@ impl From<ExecutionError> for ServiceError {
 
 #[derive(Default, Debug, Clone)]
 pub struct Config {
-    pub database_url: String,
+    pub database_url: DatabaseURL,
     pub listen_database_channel: String,
     pub notify_database_channel: String,
     pub pg_pool_connections: u32,
@@ -96,3 +95,19 @@ pub static ZKVERIFY_OP_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(||
         "ZK verification latencies in seconds",
     )
 });
+impl Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Config {{ database_url: {}, listen_database_channel: {}, notify_database_channel: {}, pg_pool_connections: {}, pg_polling_interval: {}, pg_timeout: {:?}, pg_auto_explain_with_min_duration: {:?}, worker_thread_count: {} }}",
+            self.database_url,
+            self.listen_database_channel,
+            self.notify_database_channel,
+            self.pg_pool_connections,
+            self.pg_polling_interval,
+            self.pg_timeout,
+            self.pg_auto_explain_with_min_duration,
+            self.worker_thread_count
+        )
+    }
+}

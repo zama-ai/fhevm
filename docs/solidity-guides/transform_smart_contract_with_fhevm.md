@@ -55,9 +55,9 @@ Replace standard data types and operations with their FHEVM equivalents for the 
 pragma solidity ^0.8.0;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import {EthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract EncryptedSimpleVoting is EthereumConfig {
+contract EncryptedSimpleVoting is ZamaEthereumConfig {
     enum VotingStatus {
         Open,
         DecryptionInProgress,

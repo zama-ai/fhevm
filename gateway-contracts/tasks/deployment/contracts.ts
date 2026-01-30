@@ -2,7 +2,7 @@ import { Wallet } from "ethers";
 import { task, types } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 
-import { getRequiredEnvVar, loadGatewayAddresses, pascalCaseToAddressEnvVar } from "../utils";
+import { getRequiredAddressEnvVar, getRequiredEnvVar, loadGatewayAddresses } from "../utils";
 import { setPaymentBridgingContractAddresses } from "./paymentBridging/setAddresses";
 import { GATEWAY_CONFIG_EMPTY_PROXY_NAME, REGULAR_EMPTY_PROXY_NAME } from "./utils";
 
@@ -28,11 +28,8 @@ async function deployContractImplementation(
     loadGatewayAddresses();
   }
 
-  // Determine env variable name for the proxy contract address
-  const addressEnvVarName = pascalCaseToAddressEnvVar(name);
-
   // Get the proxy address
-  const proxyAddress = getRequiredEnvVar(addressEnvVarName);
+  const proxyAddress = getRequiredAddressEnvVar(name);
 
   // Force import
   const proxy = await upgrades.forceImport(proxyAddress, proxyImplementation);

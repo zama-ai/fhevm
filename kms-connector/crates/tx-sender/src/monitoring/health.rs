@@ -1,6 +1,6 @@
 use actix_web::http::StatusCode;
 use connector_utils::{
-    conn::WalletGatewayProvider,
+    conn::WalletProvider,
     monitoring::health::{Healthcheck, database_healthcheck, gateway_healthcheck},
 };
 use serde::{Deserialize, Serialize};
@@ -10,15 +10,15 @@ use std::time::Duration;
 #[derive(Clone)]
 /// The struct used to monitor the state of the `TransactionSender`.
 pub struct State {
-    db_pool: Pool<Postgres>,
-    provider: WalletGatewayProvider,
+    pub db_pool: Pool<Postgres>,
+    provider: WalletProvider,
     healthcheck_timeout: Duration,
 }
 
 impl State {
     pub fn new(
         db_pool: Pool<Postgres>,
-        provider: WalletGatewayProvider,
+        provider: WalletProvider,
         healthcheck_timeout: Duration,
     ) -> Self {
         Self {

@@ -11,6 +11,7 @@ use alloy::{
     sol,
     transports::http::reqwest::Url,
 };
+use fhevm_engine_common::utils::DatabaseURL;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use test_harness::localstack::{
     create_aws_aws_kms_client, create_localstack_kms_signing_key, start_localstack,
@@ -80,13 +81,18 @@ impl TestEnvironment {
             .try_init();
 
         let db_pool = PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&conf.database_url)
+            .max_connections(10)
+            .connect(DatabaseURL::default().as_str())
             .await?;
 
         Self::truncate_tables(
             &db_pool,
-            vec!["verify_proofs", "ciphertext_digest", "allowed_handles"],
+            vec![
+                "verify_proofs",
+                "ciphertext_digest",
+                "allowed_handles",
+                "delegate_user_decrypt",
+            ],
         )
         .await?;
 
@@ -141,10 +147,11 @@ impl TestEnvironment {
     }
 
     pub fn recreate_anvil(&mut self) -> anyhow::Result<()> {
+        let port = self.anvil.as_ref().unwrap().port();
         if let Some(old) = self.anvil.take() {
             drop(old);
         }
-        self.anvil = Some(Self::new_anvil()?);
+        self.anvil = Some(Self::new_anvil_with_port(port)?);
         Ok(())
     }
 
@@ -161,7 +168,11 @@ impl TestEnvironment {
     }
 
     fn new_anvil() -> anyhow::Result<AnvilInstance> {
-        Ok(Anvil::new().port(13389_u16).try_spawn()?)
+        Ok(Anvil::new().block_time(1).try_spawn()?)
+    }
+
+    fn new_anvil_with_port(port: u16) -> anyhow::Result<AnvilInstance> {
+        Ok(Anvil::new().block_time(1).port(port).try_spawn()?)
     }
 
     async fn truncate_tables(db_pool: &sqlx::PgPool, tables: Vec<&str>) -> Result<(), sqlx::Error> {

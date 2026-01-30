@@ -2,8 +2,7 @@ import { Wallet } from "ethers";
 import { task, types } from "hardhat/config";
 import { HardhatEthersHelpers } from "hardhat/types";
 
-import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
-import { pascalCaseToSnakeCase } from "./utils/stringOps";
+import { getRequiredAddressEnvVar, getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 
 // Helper function to get a Gateway contract and its proxy address
 async function getGatewayContract(
@@ -21,12 +20,8 @@ async function getGatewayContract(
     loadGatewayAddresses();
   }
 
-  // Determine env variable name for the proxy contract address
-  const nameSnakeCase = pascalCaseToSnakeCase(name);
-  const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;
-
   // Get the proxy address
-  const proxyAddress = getRequiredEnvVar(addressEnvVarName);
+  const proxyAddress = getRequiredAddressEnvVar(name);
 
   const contract = await ethers.getContractAt(name, proxyAddress, account);
 

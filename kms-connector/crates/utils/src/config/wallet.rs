@@ -16,14 +16,7 @@ use tracing::{debug, info};
 /// - Creating wallets from private key strings
 /// - Creating wallets from AWS KMS keys
 #[derive(Clone, Debug)]
-pub struct KmsWallet {
-    /// The signer implementation - either local or AWS KMS
-    signer: WalletSigner,
-}
-
-/// Internal enum to hold either a local or AWS KMS signer
-#[derive(Clone, Debug)]
-enum WalletSigner {
+pub enum KmsWallet {
     /// Local signer using a private key
     Local(PrivateKeySigner),
     /// AWS KMS signer
@@ -73,9 +66,7 @@ impl KmsWallet {
         let signer = PrivateKeySigner::from_signing_key(signing_key).with_chain_id(chain_id);
 
         info!("Created wallet from private key string");
-        Ok(Self {
-            signer: WalletSigner::Local(signer),
-        })
+        Ok(Self::Local(signer))
     }
 
     /// Create a new wallet from AWS KMS configuration
@@ -116,17 +107,15 @@ impl KmsWallet {
             "Created wallet from AWS KMS with address: {}",
             aws_signer.address()
         );
-        Ok(Self {
-            signer: WalletSigner::AwsKms(aws_signer),
-        })
+        Ok(Self::AwsKms(aws_signer))
     }
 
     /// Get the wallet's address
     pub fn address(&self) -> Address {
         debug!("Getting wallet address");
-        match &self.signer {
-            WalletSigner::Local(signer) => signer.address(),
-            WalletSigner::AwsKms(signer) => signer.address(),
+        match &self {
+            Self::Local(signer) => signer.address(),
+            Self::AwsKms(signer) => signer.address(),
         }
     }
 }
@@ -135,9 +124,9 @@ impl IntoWallet for KmsWallet {
     type NetworkWallet = EthereumWallet;
 
     fn into_wallet(self) -> Self::NetworkWallet {
-        match self.signer {
-            WalletSigner::Local(wallet) => wallet.into(),
-            WalletSigner::AwsKms(wallet) => wallet.into(),
+        match self {
+            Self::Local(wallet) => wallet.into(),
+            Self::AwsKms(wallet) => wallet.into(),
         }
     }
 }
@@ -185,9 +174,7 @@ mod tests {
         pub fn random(chain_id: Option<ChainId>) -> Result<Self> {
             let signer = PrivateKeySigner::random().with_chain_id(chain_id);
             info!("Created random wallet");
-            Ok(Self {
-                signer: WalletSigner::Local(signer),
-            })
+            Ok(Self::Local(signer))
         }
     }
 }

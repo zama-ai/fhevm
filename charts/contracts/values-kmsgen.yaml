@@ -1,0 +1,214 @@
+# =============================================================================
+# FHEVM Smart Contracts Configuration
+# =============================================================================
+# This chart handles KMS generation methods from gateway contracts
+# =============================================================================
+
+# NOTE: These values are for reference only
+# The chart is for gateway only
+
+# -----------------------------------------------------------------------------
+# Key generation
+# -----------------------------------------------------------------------------
+# Triggers the generation of an FHE key from the gateway contracts
+keygen:
+  enabled: true
+
+  # Prevent redeployment if already done for current version
+  # preventRedeployment: false
+
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/gateway-contracts
+    tag: v0.10.0
+
+  # ConfigMap to store deployed contract addresses
+  configmap:
+    name: "addresses"
+    annotations:
+
+  # Environment variables
+  env:
+    # Deployer's private key
+    - name: DEPLOYER_PRIVATE_KEY
+      value: ""
+
+    # KMSGeneration contract address
+    - name: KMS_GENERATION_ADDRESS
+      value: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Security context for container execution
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10001
+
+  # Commands to run in sequence
+  commands:
+    # Trigger key generation for cryptographic operations
+    # Params type:
+    # - 0: Default parameters
+    # - 1: Test parameters
+    - npx hardhat task:triggerKeygen --params-type 1
+
+# -----------------------------------------------------------------------------
+# CRS generation
+# -----------------------------------------------------------------------------
+# Triggers the generation of an CRS from the gateway contracts
+crsgen:
+  enabled: true
+
+  # Prevent redeployment if already done for current version
+  # preventRedeployment: false
+
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/gateway-contracts
+    tag: v0.10.0
+
+  # ConfigMap to store deployed contract addresses
+  configmap:
+    name: "addresses"
+    annotations:
+
+  # Environment variables
+  env:
+    # Deployer's private key
+    - name: DEPLOYER_PRIVATE_KEY
+      value: ""
+
+    # KMSGeneration contract address
+    - name: KMS_GENERATION_ADDRESS
+      value: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Security context for container execution
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10001
+
+  # Commands to run in sequence
+  commands:
+    # Trigger CRS generation for cryptographic operations
+    # Params type:
+    # - 0: Default parameters
+    # - 1: Test parameters
+    - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048
+
+# -----------------------------------------------------------------------------
+# PRSS initialization
+# -----------------------------------------------------------------------------
+# Triggers the initialization of the PRSS from the gateway contracts
+prssInit:
+  enabled: true
+
+  # Prevent redeployment if already done for current version
+  # preventRedeployment: false
+
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/gateway-contracts
+    tag: v0.10.0
+
+  # ConfigMap to store deployed contract addresses
+  configmap:
+    name: "addresses"
+    annotations:
+
+  # Environment variables
+  env:
+    # Deployer's private key
+    - name: DEPLOYER_PRIVATE_KEY
+      value: ""
+
+    # KMSGeneration contract address
+    - name: KMS_GENERATION_ADDRESS
+      value: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Security context for container execution
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10001
+
+  # Commands to run in sequence
+  commands:
+    # Trigger PRSS initialization
+    - npx hardhat task:prssInit
+
+# -----------------------------------------------------------------------------
+# Key resharing for same set of KMS nodes
+# -----------------------------------------------------------------------------
+# Triggers the resharing of the given key ID from the gateway contracts
+keyReshareSameSet:
+  enabled: true
+
+  # Prevent redeployment if already done for current version
+  # preventRedeployment: false
+
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/gateway-contracts
+    tag: v0.10.0
+
+  # ConfigMap to store deployed contract addresses
+  configmap:
+    name: "addresses"
+    annotations:
+
+  # Environment variables
+  env:
+    # Deployer's private key
+    - name: DEPLOYER_PRIVATE_KEY
+      value: ""
+
+    # KMSGeneration contract address
+    - name: KMS_GENERATION_ADDRESS
+      value: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Security context for container execution
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10000
+    fsGroup: 10001
+
+  # Commands to run in sequence
+  commands:
+    # Trigger key resharing for same set of KMS nodes
+    - npx hardhat task:keyReshareSameSet --key-id <key-id>

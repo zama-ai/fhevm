@@ -395,7 +395,7 @@ contract KMSVerifierTest is Test {
      *      by setting up three signers, creating a list of handles, generating a
      *      decrypted result, computing the digest, and verifying the signatures.
      */
-    function test_VerifyInputEIP712KMSSignaturesWork() public {
+    function test_VerifyDecryptionEIP712KMSSignaturesWork() public {
         _upgradeProxyWithSigners(3);
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
@@ -418,9 +418,9 @@ contract KMSVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that verifyInputEIP712KMSSignatures fails as expected if the digest is invalid.
+     * @dev Tests that verifyDecryptionEIP712KMSSignatures fails as expected if the digest is invalid.
      */
-    function test_VerifyInputEIP712KMSSignaturesFailAsExpectedIfDigestIsInvalid() public {
+    function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfDigestIsInvalid() public {
         _upgradeProxyWithSigners(3);
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
@@ -447,7 +447,7 @@ contract KMSVerifierTest is Test {
     /**
      * @dev Tests that the verification of EIP-712 KMS signatures fails as expected when no signer is added.
      */
-    function test_VerifyInputEIP712KMSSignaturesFailAsExpectedIfNoSignerAdded() public {
+    function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfNoSignerAdded() public {
         _upgradeProxyWithSigners(1);
         bytes32[] memory handlesList = new bytes32[](3);
         handlesList[0] = bytes32(uint256(4));
@@ -476,7 +476,7 @@ contract KMSVerifierTest is Test {
     /**
      * @dev Tests that the verification of EIP-712 KMS signatures fails as expected when no signature is provided.
      */
-    function test_VerifyInputEIP712KMSSignaturesFailAsExpectedIfNoSignatureProvided() public {
+    function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfNoSignatureProvided() public {
         _upgradeProxyWithSigners(3);
 
         bytes32[] memory handlesList = _generateMockHandlesList(3);
@@ -495,7 +495,7 @@ contract KMSVerifierTest is Test {
      * @dev Tests that the verification of EIP-712 KMS signatures fails as expected
      *      if the number of signatures is less than the defined threshold.
      */
-    function test_VerifyInputEIP712KMSSignaturesFailAsExpectedIfNumberOfSignaturesIsInferiorToThreshold() public {
+    function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfNumberOfSignaturesIsInferiorToThreshold() public {
         _upgradeProxyWithSigners(3);
 
         vm.prank(owner);
@@ -520,7 +520,7 @@ contract KMSVerifierTest is Test {
     /**
      * @dev Tests that the verification of EIP-712 KMS signatures fails as expected if the same signer is used twice.
      */
-    function test_VerifyInputEIP712KMSSignaturesFailAsExpectedIfSameSignerIsUsedTwice() public {
+    function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfSameSignerIsUsedTwice() public {
         _upgradeProxyWithSigners(3);
 
         /// @dev The threshold is set to 2, so we need at least 2 signatures from different signers.
@@ -551,7 +551,7 @@ contract KMSVerifierTest is Test {
     /**
      * @dev Tests that the verifyDecryptionEIP712KMSSignatures function fails if the decryptionProof is empty.
      */
-    function test_VerifyInputEIP712KMSSignaturesFailsIfEmptyDecryptionProof() public {
+    function test_VerifyDecryptionEIP712KMSSignaturesFailsIfEmptyDecryptionProof() public {
         _upgradeProxyWithSigners(3);
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
@@ -565,7 +565,7 @@ contract KMSVerifierTest is Test {
     /**
      * @dev Tests that the verifyDecryptionEIP712KMSSignatures function fails if the length of the decryption proof is invalid.
      */
-    function test_VerifyInputEIP712KMSSignaturesFailsIfDeserializingDecryptionProofFail(uint256 randomValue) public {
+    function test_VerifyDecryptionEIP712KMSSignaturesFailsIfDeserializingDecryptionProofFail(uint256 randomValue) public {
         _upgradeProxyWithSigners(3);
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 

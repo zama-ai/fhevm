@@ -8,6 +8,7 @@ use tokio::task::JoinSet;
 
 pub mod daemon_cli;
 mod db_queries;
+pub mod dependence_chain;
 pub mod health_check;
 pub mod server;
 
@@ -70,11 +71,8 @@ pub async fn async_main(
         }
     }
 
-    let health_check = health_check::HealthCheck::new(
-        args.database_url
-            .clone()
-            .unwrap_or("no_database_url".to_string()),
-    );
+    let database_url = args.database_url.clone().unwrap_or_default();
+    let health_check = health_check::HealthCheck::new(database_url);
 
     let mut set = JoinSet::new();
     if args.run_server {
@@ -83,7 +81,9 @@ pub async fn async_main(
     }
 
     if args.run_bg_worker {
-        info!(target: "async_main", "Initializing background worker");
+        let gpu_enabled = fhevm_engine_common::utils::log_backend();
+        info!(target: "async_main", gpu_enabled,  "Initializing background worker");
+
         set.spawn(tfhe_worker::run_tfhe_worker(
             args.clone(),
             health_check.clone(),

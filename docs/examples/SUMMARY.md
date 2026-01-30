@@ -10,8 +10,8 @@
 - Decryption
   - [User decrypt single value](fhe-user-decrypt-single-value.md)
   - [User decrypt multiple values](fhe-user-decrypt-multiple-values.md)
-  - [Public Decrypt single value](fhe-public-decrypt-single-value.md)
-  - [Public Decrypt multiple values](fhe-public-decrypt-multiple-values.md)
+  - [Public Decrypt single value](heads-or-tails.md)
+  - [Public Decrypt multiple values](highest-die-roll.md)
 
 ## OpenZeppelin confidential contracts
 
@@ -22,8 +22,4 @@
   - [Swap ERC7984 to ERC20](openzeppelin/swapERC7984ToERC20.md)
   - [Swap ERC7984 to ERC7984](openzeppelin/swapERC7984ToERC7984.md)
 - [Vesting Wallet](openzeppelin/vesting-wallet.md)
-
-## Advanced
-
-- [Sealed-bid auction](sealed-bid-auction.md)
-  - [Sealed-bid auction tutorial](sealed-bid-auction-tutorial.md)
+- [Integration guide for wallets](./wallet-guide.md)

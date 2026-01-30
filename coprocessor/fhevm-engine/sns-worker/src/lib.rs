@@ -3,6 +3,8 @@ mod executor;
 mod keyset;
 mod squash_noise;
 
+pub mod metrics;
+
 #[cfg(test)]
 mod tests;
 
@@ -21,12 +23,10 @@ use fhevm_engine_common::{
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
     telemetry::{self, OtelTracer},
-    telemetry::{register_histogram, MetricsConfig},
     types::FhevmError,
-    utils::compact_hex,
+    utils::{to_hex, DatabaseURL},
 };
 use futures::join;
-use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
@@ -43,24 +43,28 @@ use tracing::{error, info, Level};
 use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
     executor::SwitchNSquashService,
+    metrics::spawn_gauge_update_routine,
 };
-
-use prometheus::Histogram;
-use std::sync::{LazyLock, OnceLock};
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
 pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[cfg(feature = "gpu")]
+type ServerKey = tfhe::CudaServerKey;
+#[cfg(not(feature = "gpu"))]
+type ServerKey = tfhe::ServerKey;
+
+#[derive(Clone)]
 pub struct KeySet {
-    pub server_key: tfhe::ServerKey,
+    /// Optional ClientKey for decrypting on testing
     pub client_key: Option<tfhe::ClientKey>,
+    pub server_key: ServerKey,
 }
 
 #[derive(Clone)]
 pub struct DBConfig {
-    pub url: String,
+    pub url: DatabaseURL,
     pub listen_channels: Vec<String>,
     pub notify_channel: String,
     pub batch_limit: u32,
@@ -75,15 +79,10 @@ pub struct DBConfig {
     pub lifo: bool,
 }
 
-impl std::fmt::Debug for DBConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Custom debug impl to avoid printing sensitive information
-        write!(
-            f,
-            "db_listen_channel: {:?}, db_notify_channel: {}, db_batch_limit: {}, db_gc_batch_limit: {}, db_polling_interval: {}, db_cleanup_interval: {:?}, db_max_connections: {}, db_timeout: {:?}, lifo: {}",
-            self.listen_channels, self.notify_channel, self.batch_limit, self.gc_batch_limit, self.polling_interval, self.cleanup_interval, self.max_connections, self.timeout, self.lifo
-        )
-    }
+#[derive(Clone, Default, Debug)]
+pub struct SNSMetricsConfig {
+    pub addr: Option<String>,
+    pub gauge_update_interval_secs: Option<u32>,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -109,7 +108,7 @@ pub struct HealthCheckConfig {
     pub port: u16,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Config {
     pub tenant_api_key: String,
     pub service_name: String,
@@ -117,13 +116,13 @@ pub struct Config {
     pub s3: S3Config,
     pub log_level: Level,
     pub health_checks: HealthCheckConfig,
-    pub metrics_addr: Option<String>,
+    pub metrics: SNSMetricsConfig,
     pub enable_compression: bool,
     pub schedule_policy: SchedulePolicy,
     pub pg_auto_explain_with_min_duration: Option<Duration>,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SchedulePolicy {
     Sequential,
     #[default]
@@ -256,7 +255,7 @@ impl HandleItem {
             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             self.tenant_id,
             self.handle,
-            self.transaction_id
+            self.transaction_id,
         )
         .execute(db_txn.as_mut())
         .await?;
@@ -284,8 +283,8 @@ impl HandleItem {
 
         info!(
             "Mark ct128 as uploaded, handle: {}, digest: {}, format: {:?}",
-            compact_hex(&self.handle),
-            compact_hex(&digest),
+            to_hex(&self.handle),
+            to_hex(&digest),
             format,
         );
 
@@ -309,8 +308,8 @@ impl HandleItem {
 
         info!(
             "Mark ct64 as uploaded, handle: {}, digest: {}",
-            compact_hex(&self.handle),
-            compact_hex(&digest)
+            to_hex(&self.handle),
+            to_hex(&digest)
         );
 
         Ok(())
@@ -352,9 +351,6 @@ pub enum ExecutionError {
     #[error("CtType error: {0}")]
     CtType(#[from] FhevmError),
 
-    #[error("Serialization error: {0}")]
-    SerializationError(#[from] bincode::Error),
-
     #[error("Missing 128-bit ciphertext: {0}")]
     MissingCiphertext128(String),
 
@@ -372,6 +368,9 @@ pub enum ExecutionError {
 
     #[error("Squashed noise error: {0}")]
     SquashedNoiseError(#[from] tfhe::Error),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
 
     #[error("Deserialization error: {0}")]
     DeserializationError(String),
@@ -422,9 +421,6 @@ pub async fn run_computation_loop(
     events_tx: InternalEvents,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = conf.health_checks.port;
-
-    // Start metrics server
-    metrics_server::spawn(conf.metrics_addr.clone(), token.child_token());
 
     let service = Arc::new(
         SwitchNSquashService::create(
@@ -532,7 +528,8 @@ pub async fn run_all(
         mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
 
     let rayon_threads = rayon::current_num_threads();
-    info!(config = ?config, rayon_threads, "Starting SNS worker");
+    let gpu_enabled = fhevm_engine_common::utils::log_backend();
+    info!(gpu_enabled, rayon_threads, config = %config, "Starting SNS worker");
 
     if !config.service_name.is_empty() {
         if let Err(err) = telemetry::setup_otlp(&config.service_name) {
@@ -565,6 +562,21 @@ pub async fn run_all(
 
     let pg_mngr = pool_mngr.clone();
 
+    // Start metrics server
+    metrics_server::spawn(conf.metrics.addr.clone(), token.child_token());
+
+    // Start gauge update routine.
+    if let Some(interval_secs) = conf.metrics.gauge_update_interval_secs {
+        info!(
+            interval_secs = interval_secs,
+            "Starting gauge update routine"
+        );
+        spawn_gauge_update_routine(
+            Duration::from_secs(interval_secs.into()),
+            pg_mngr.pool().clone(),
+        );
+    }
+
     // Spawns a task to handle S3 uploads
     spawn(async move {
         if let Err(err) = run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await {
@@ -585,12 +597,3 @@ pub async fn run_all(
 
     Ok(())
 }
-
-pub static SNS_LATENCY_OP_HISTOGRAM_CONF: OnceLock<MetricsConfig> = OnceLock::new();
-pub static SNS_LATENCY_OP_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
-    register_histogram(
-        SNS_LATENCY_OP_HISTOGRAM_CONF.get(),
-        "coprocessor_sns_op_latency_seconds",
-        "Squash_noise computation latencies in seconds",
-    )
-});
