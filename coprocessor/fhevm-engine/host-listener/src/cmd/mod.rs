@@ -2,7 +2,7 @@ use alloy::eips::BlockId;
 use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::pubsub::SubscriptionStream;
-use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
+use alloy::rpc::types::{Block, Filter, Header, Log};
 use alloy::transports::ws::WebSocketConfig;
 use anyhow::{anyhow, Result};
 use clap::Parser;
@@ -292,17 +292,13 @@ impl InfiniteLogIter {
     async fn catchup_block_from(
         &self,
         provider: &BlockchainProvider,
-    ) -> Result<BlockNumberOrTag> {
+    ) -> Result<u64> {
         if let Some(last_seen_block) = self.last_valid_block {
-            return Ok(BlockNumberOrTag::Number(
-                last_seen_block - self.catchup_margin + 1,
-            ));
+            return Ok(last_seen_block - self.catchup_margin + 1);
         }
         if let Some(start_at_block) = self.start_at_block {
             if start_at_block >= 0 {
-                return Ok(BlockNumberOrTag::Number(
-                    start_at_block.try_into()?,
-                ));
+                return Ok(start_at_block.try_into()?);
             }
         }
         let block_number = tokio::time::timeout(
@@ -311,16 +307,14 @@ impl InfiniteLogIter {
         )
         .await?;
         let Ok(last_block) = block_number else {
-            return Ok(BlockNumberOrTag::Earliest); // should not happend
+            anyhow::bail!("get_block_number failed");
         };
         let catch_size = if let Some(start_at_block) = self.start_at_block {
             (-start_at_block).try_into()?
         } else {
             self.catchup_margin
         };
-        Ok(BlockNumberOrTag::Number(
-            last_block - catch_size.min(last_block),
-        ))
+        Ok(last_block - catch_size.min(last_block))
     }
 
     async fn get_blocks_logs_range_no_retry(
@@ -767,10 +761,7 @@ impl InfiniteLogIter {
         let catch_up_from = self.catchup_block_from(&provider).await?;
         self.absolute_end_at_block =
             self.resolve_end_at_block(&provider).await?;
-        self.catchup_blocks = Some((
-            catch_up_from.as_number().unwrap_or(0),
-            self.absolute_end_at_block,
-        ));
+        self.catchup_blocks = Some((catch_up_from, self.absolute_end_at_block));
         // note subscribing to real-time before reading catchup
         // events to have the minimal gap between the two
         // TODO: but it does not guarantee no gap for now
