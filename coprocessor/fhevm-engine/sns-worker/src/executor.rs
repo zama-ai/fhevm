@@ -742,7 +742,7 @@ async fn update_computations_status(
             }
             TaskStatus::UnrecoverableErr(err_msg) => {
                 // The computation should not be retried unless manually triggered
-                warn!( handle = compact_hex(&task.handle), error = %err_msg, "Computation failed, unrecoverable err");
+                warn!( handle = to_hex(&task.handle), error = %err_msg, "Computation failed, unrecoverable err");
                 sqlx::query!(
                     "
                     UPDATE pbs_computations
@@ -755,7 +755,7 @@ async fn update_computations_status(
                 .await?;
             }
             TaskStatus::TransientErr(err_msg) => {
-                warn!( handle = compact_hex(&task.handle), error = %err_msg, "Computation failed, transient err");
+                warn!( handle = to_hex(&task.handle), error = %err_msg, "Computation failed, transient err");
                 sqlx::query!(
                     "
                     UPDATE pbs_computations
