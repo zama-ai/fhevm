@@ -32,6 +32,8 @@ logs/
 .env.*
 !.env.example
 !.env.sample
+# Allow shared env templates in subprojects
+!test-suite/e2e/.env.devnet
 # If you have .env files specific to subprojects, e.g. subproject/.env,
 # the .env rule above will catch them.
 
