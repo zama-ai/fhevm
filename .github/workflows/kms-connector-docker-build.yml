@@ -144,6 +144,7 @@ jobs:
   # Centralizes all build/re-tag logic in one place for maintainability  #
   ########################################################################
   build-decisions:
+    name: build-decisions
     runs-on: ubuntu-latest
     if: always()
     needs:

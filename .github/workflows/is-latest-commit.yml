@@ -19,15 +19,17 @@ jobs:
         id: check
         env:
           CURRENT_COMMIT: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          LATEST_COMMIT=$(git ls-remote https://github.com/${{ github.repository }}.git refs/heads/${{ github.ref_name }} | cut -f1)
+          LATEST_COMMIT=$(git ls-remote https://github.com/"$REPOSITORY".git refs/heads/"$REF_NAME" | cut -f1)
           if [ -z "$LATEST_COMMIT" ]; then
-            echo "::error::Failed to fetch latest commit for ${{ github.ref_name }}"
+            echo "::error::Failed to fetch latest commit for $REF_NAME"
             exit 1
           elif [ "$LATEST_COMMIT" == "$CURRENT_COMMIT" ]; then
-            echo "is_latest=true" >> $GITHUB_OUTPUT
-            echo "Current commit $CURRENT_COMMIT is the latest on ${{ github.ref_name }}"
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+            echo "Current commit $CURRENT_COMMIT is the latest on $REF_NAME"
           else
-            echo "is_latest=false" >> $GITHUB_OUTPUT
-            echo "Current commit $CURRENT_COMMIT is not the latest on ${{ github.ref_name }} (latest: $LATEST_COMMIT)."
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "Current commit $CURRENT_COMMIT is not the latest on $REF_NAME (latest: $LATEST_COMMIT)."
           fi
