@@ -606,17 +606,25 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             "Computed retry-after for delegated user decrypt POST"
         );
 
+        let status_code = StatusCode::ACCEPTED;
         let response = UserDecryptPostResponseJson {
-            status: "queued".to_string(),
+            status: ApiResponseStatus::Queued,
             request_id: request_id_for_response.to_string(),
             result: UserDecryptQueuedResult {
                 job_id: assigned_ext_job_id.to_string(),
             },
         };
 
+        info!(
+            request_id = %request_id_for_response,
+            http_status = status_code.as_u16(),
+            ext_job_id = %assigned_ext_job_id,
+            "HTTP response"
+        );
+
         // Add Retry-After header with the dynamically computed retry value
         (
-            StatusCode::ACCEPTED,
+            status_code,
             [(header::RETRY_AFTER, retry_after.to_string())],
             Json(response),
         )
