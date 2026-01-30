@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
 
       - name: actionlint
-        uses: raven-actions/actionlint@3a24062651993d40fed1019b58ac6fbdfbf276cc # v2.0.1
+        uses: raven-actions/actionlint@e01d1ea33dd6a5ed517d95b4c0c357560ac6f518 # v2.1.1
         with:
             version: ${{ env.ACTIONLINT_VERSION }}
 
