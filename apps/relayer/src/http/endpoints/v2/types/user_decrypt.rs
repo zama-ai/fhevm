@@ -1,3 +1,4 @@
+use super::error::ApiResponseStatus;
 use crate::http::endpoints::common::types::{ChainId, HandleContractPairJson, RequestValidityJson};
 use crate::http::utils::redact::{redact_count, redact_len};
 use crate::http::{de_string_or_number, serialize_vec_as_hex};
@@ -84,7 +85,7 @@ pub struct DelegatedUserDecryptRequestJson {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptPostResponseJson {
-    pub status: String,
+    pub status: ApiResponseStatus,
     pub request_id: String,
     pub result: UserDecryptQueuedResult,
 }
@@ -134,7 +135,7 @@ impl Serialize for UserDecryptResponsePayloadJson {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptStatusResponseJson {
-    pub status: String, // "pending", "completed", "failed"
+    pub status: ApiResponseStatus,
     pub request_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<UserDecryptResponseJson>,

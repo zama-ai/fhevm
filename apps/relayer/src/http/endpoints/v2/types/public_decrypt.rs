@@ -1,3 +1,4 @@
+use super::error::ApiResponseStatus;
 use crate::http::utils::redact::{redact_count, redact_len};
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
@@ -22,7 +23,7 @@ pub struct PublicDecryptRequestJson {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicDecryptPostResponseJson {
-    pub status: String,
+    pub status: ApiResponseStatus,
     pub request_id: String,
     pub result: PublicDecryptQueuedResult,
 }
@@ -52,7 +53,7 @@ pub struct PublicDecryptResponseJson {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicDecryptStatusResponseJson {
-    pub status: String, // "pending", "completed", "failed"
+    pub status: ApiResponseStatus,
     pub request_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<PublicDecryptResponseJson>,

@@ -5,6 +5,18 @@ use utoipa::ToSchema;
 
 use crate::http::utils::responses::{to_camel_case, FieldJsonErrorType, ParseError};
 
+/// Status field values for V2 API responses
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ApiResponseStatus {
+    /// Request is queued for processing
+    Queued,
+    /// Request completed successfully
+    Succeeded,
+    /// Request failed
+    Failed,
+}
+
 // Error response structures for the v2 API
 
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
@@ -57,7 +69,7 @@ pub struct RelayerV2ErrorDetail {
 // Failed response wrapper
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 pub struct RelayerV2ResponseFailed {
-    pub status: String, // "failed"
+    pub status: ApiResponseStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
     pub error: serde_json::Value, // One of the RelayerV2ApiError* types above
@@ -66,7 +78,7 @@ pub struct RelayerV2ResponseFailed {
 // Queued response (202)
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 pub struct RelayerV2ResponseQueued {
-    pub status: String, // "queued"
+    pub status: ApiResponseStatus,
     pub request_id: String,
     pub result: RelayerV2ResultQueued,
 }
@@ -180,7 +192,7 @@ impl RelayerV2ResponseFailed {
         (
             StatusCode::BAD_REQUEST,
             Json(Self {
-                status: "failed".to_string(),
+                status: ApiResponseStatus::Failed,
                 request_id: Some(request_id.to_string()),
                 error: RelayerV2ApiError400NoDetails::validation_error(message),
             }),
@@ -193,7 +205,7 @@ impl RelayerV2ResponseFailed {
             ParseError::MalformedJson(message) => (
                 StatusCode::BAD_REQUEST,
                 Json(Self {
-                    status: "failed".to_string(),
+                    status: ApiResponseStatus::Failed,
                     request_id: Some(request_id.to_string()),
                     error: serde_json::to_value(RelayerV2ApiError400NoDetails {
                         label: "malformed_json".to_string(),
@@ -221,7 +233,7 @@ impl RelayerV2ResponseFailed {
                 (
                     StatusCode::BAD_REQUEST,
                     Json(Self {
-                        status: "failed".to_string(),
+                        status: ApiResponseStatus::Failed,
                         request_id: Some(request_id.to_string()),
                         error: serde_json::to_value(RelayerV2ApiError400WithDetails {
                             label,
@@ -271,7 +283,7 @@ impl RelayerV2ResponseFailed {
                 (
                     StatusCode::BAD_REQUEST,
                     Json(Self {
-                        status: "failed".to_string(),
+                        status: ApiResponseStatus::Failed,
                         request_id: Some(request_id.to_string()),
                         error: serde_json::to_value(RelayerV2ApiError400WithDetails {
                             label: "validation_failed".to_string(),
@@ -301,7 +313,7 @@ impl RelayerV2ResponseFailed {
         use axum::http::header;
 
         let response = Self {
-            status: "failed".to_string(),
+            status: ApiResponseStatus::Failed,
             request_id: Some(request_id.to_string()),
             error: serde_json::to_value(RelayerV2ApiError429 {
                 label: "rate_limited".to_string(),
@@ -325,7 +337,7 @@ impl RelayerV2ResponseFailed {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(Self {
-                status: "failed".to_string(),
+                status: ApiResponseStatus::Failed,
                 request_id: Some(request_id.to_string()),
                 error: RelayerV2ApiError500::internal_server_error("Internal server error"),
             }),
@@ -337,7 +349,7 @@ impl RelayerV2ResponseFailed {
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(Self {
-                status: "failed".to_string(),
+                status: ApiResponseStatus::Failed,
                 request_id: None,
                 error: RelayerV2ApiError503::readiness_check_timed_out(message),
             }),
@@ -357,7 +369,7 @@ mod tests {
         assert_eq!(status_code, StatusCode::BAD_REQUEST);
 
         let response = json.0;
-        assert_eq!(response.status, "failed");
+        assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, Some("test-request-id".to_string()));
         assert_eq!(response.error["label"], "request_error");
     }
@@ -370,7 +382,7 @@ mod tests {
         assert_eq!(status_code, StatusCode::INTERNAL_SERVER_ERROR);
 
         let response = json.0;
-        assert_eq!(response.status, "failed");
+        assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, Some("test-request-id".to_string()));
         assert_eq!(response.error["label"], "internal_server_error");
     }
@@ -383,7 +395,7 @@ mod tests {
         assert_eq!(status_code, StatusCode::SERVICE_UNAVAILABLE);
 
         let response = json.0;
-        assert_eq!(response.status, "failed");
+        assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, None);
         assert_eq!(response.error["label"], "readiness_check_timed_out");
     }
@@ -397,7 +409,7 @@ mod tests {
         assert_eq!(status_code, StatusCode::BAD_REQUEST);
 
         let response = json.0;
-        assert_eq!(response.status, "failed");
+        assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, Some("test-request-id".to_string()));
         assert_eq!(response.error["label"], "malformed_json");
     }
@@ -415,7 +427,7 @@ mod tests {
         assert_eq!(status_code, StatusCode::BAD_REQUEST);
 
         let response = json.0;
-        assert_eq!(response.status, "failed");
+        assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, Some("test-request-id".to_string()));
         assert_eq!(response.error["label"], "missing_fields");
         assert!(response.error["details"].is_array());
@@ -435,7 +447,7 @@ mod tests {
         assert_eq!(status_code, StatusCode::BAD_REQUEST);
 
         let response = json.0;
-        assert_eq!(response.status, "failed");
+        assert_eq!(response.status, ApiResponseStatus::Failed);
         assert_eq!(response.request_id, Some("test-request-id".to_string()));
         assert_eq!(response.error["label"], "validation_failed");
     }

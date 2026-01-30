@@ -1,3 +1,4 @@
+use super::error::ApiResponseStatus;
 use super::ChainId;
 use crate::http::de_string_or_number;
 use crate::http::utils::redact::{redact_count_opt, redact_len};
@@ -34,7 +35,7 @@ pub struct InputProofRequestJson {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct InputProofPostResponseJson {
-    pub status: String,
+    pub status: ApiResponseStatus,
     pub request_id: String,
     pub result: InputProofQueuedResult,
 }
@@ -66,7 +67,7 @@ pub struct InputProofResponseJson {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct InputProofStatusResponseJson {
-    pub status: String, // "queued", "succeeded", "failed"
+    pub status: ApiResponseStatus,
     pub request_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<InputProofResponseJson>,

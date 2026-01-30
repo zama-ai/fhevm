@@ -1,5 +1,5 @@
 use super::super::types::error::{
-    RelayerV2ApiError400NoDetails, RelayerV2ApiError404, RelayerV2ApiError500,
+    ApiResponseStatus, RelayerV2ApiError400NoDetails, RelayerV2ApiError404, RelayerV2ApiError500,
     RelayerV2ApiError503, RelayerV2ResponseFailed,
 };
 use super::super::types::public_decrypt::{
@@ -351,7 +351,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
         );
 
         let response = PublicDecryptPostResponseJson {
-            status: "queued".to_string(),
+            status: ApiResponseStatus::Queued,
             request_id: request_id_for_response.to_string(),
             result: PublicDecryptQueuedResult {
                 job_id: assigned_ext_job_id.to_string(),
@@ -397,7 +397,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 (
                                     StatusCode::OK,
                                     Json(PublicDecryptStatusResponseJson {
-                                        status: "succeeded".to_string(),
+                                        status: ApiResponseStatus::Succeeded,
                                         request_id: request_id.to_string(), // Per-request UUID
                                         result: Some(api_response),
                                         error: None,
@@ -409,7 +409,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                                 (
                                     StatusCode::INTERNAL_SERVER_ERROR,
                                     Json(PublicDecryptStatusResponseJson {
-                                        status: "failed".to_string(),
+                                        status: ApiResponseStatus::Failed,
                                         request_id: request_id.to_string(),
                                         result: None,
                                         error: Some(RelayerV2ApiError500::internal_server_error(
@@ -424,7 +424,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             (
                                 StatusCode::INTERNAL_SERVER_ERROR,
                                 Json(PublicDecryptStatusResponseJson {
-                                    status: "failed".to_string(),
+                                    status: ApiResponseStatus::Failed,
                                     request_id: request_id.to_string(),
                                     result: None,
                                     error: Some(RelayerV2ApiError500::internal_server_error(
@@ -450,7 +450,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         (
                             StatusCode::SERVICE_UNAVAILABLE,
                             Json(PublicDecryptStatusResponseJson {
-                                status: "failed".to_string(),
+                                status: ApiResponseStatus::Failed,
                                 request_id: request_id.to_string(),
                                 result: None,
                                 error: Some(RelayerV2ApiError503::response_timed_out(&error_msg)),
@@ -477,7 +477,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                         (
                             status_code,
                             Json(PublicDecryptStatusResponseJson {
-                                status: "failed".to_string(),
+                                status: ApiResponseStatus::Failed,
                                 request_id: request_id.to_string(),
                                 result: None,
                                 error: Some(error_value),
@@ -528,7 +528,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                             StatusCode::ACCEPTED,
                             [(header::RETRY_AFTER, retry_after.to_string())],
                             Json(PublicDecryptStatusResponseJson {
-                                status: "queued".to_string(),
+                                status: ApiResponseStatus::Queued,
                                 request_id: request_id.to_string(),
                                 result: None,
                                 error: None,
@@ -541,7 +541,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
             Ok(None) => (
                 StatusCode::NOT_FOUND,
                 Json(PublicDecryptStatusResponseJson {
-                    status: "failed".to_string(),
+                    status: ApiResponseStatus::Failed,
                     request_id: request_id.to_string(),
                     result: None,
                     error: Some(RelayerV2ApiError404::not_found("Request not found")),
@@ -553,7 +553,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(PublicDecryptStatusResponseJson {
-                        status: "failed".to_string(),
+                        status: ApiResponseStatus::Failed,
                         request_id: request_id.to_string(),
                         result: None,
                         error: Some(RelayerV2ApiError500::internal_server_error(
