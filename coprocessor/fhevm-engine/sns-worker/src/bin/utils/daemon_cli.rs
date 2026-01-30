@@ -53,7 +53,7 @@ pub struct Args {
     pub keys_file_path: Option<String>,
 
     /// sns-executor service name in OTLP traces
-    #[arg(long, default_value = "sns-executor")]
+    #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "sns-executor")]
     pub service_name: String,
 
     /// S3 bucket name for ct128 ciphertexts
