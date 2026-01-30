@@ -55,11 +55,8 @@ const relayerUrl = process.env.RELAYER_URL || defaults?.relayerUrl;
 if (!relayerUrl) throw new Error('RELAYER_URL is required');
 
 // API key is a secret - support hardhat vars for secure storage
+// Auth is optional since internal smoke tests don't go through Kong
 const apiKey = process.env.ZAMA_FHEVM_API_KEY ?? vars.get('ZAMA_FHEVM_API_KEY', '');
-const isMainnet = network.name === 'mainnet' || network.config.chainId === 1;
-if (isMainnet && !apiKey) {
-  throw new Error('ZAMA_FHEVM_API_KEY is required for mainnet');
-}
 const auth = apiKey ? { __type: 'ApiKeyHeader' as const, value: apiKey } : undefined;
 
 export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {

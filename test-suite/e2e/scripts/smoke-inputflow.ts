@@ -39,7 +39,7 @@ const DEFAULT_DECRYPT_TIMEOUT_SECS = 120;
 
 const MIN_PRIORITY_FEE = ethers.parseUnits('2', 'gwei');
 const CANCEL_GAS_LIMIT = 21_000n;
-const LOW_BALANCE_THRESHOLD = ethers.parseEther('0.1');
+const LOW_BALANCE_THRESHOLD = ethers.parseEther('0.005');
 const SMOKE_GAS_ESTIMATE = 1_000_000n; // ~1M gas covers deploy + call with buffer
 
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
