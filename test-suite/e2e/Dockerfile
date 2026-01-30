@@ -32,7 +32,11 @@ COPY test-suite/e2e ./test-suite/e2e
 
 WORKDIR /app/test-suite/e2e
 
-RUN npx hardhat compile
+# Compile with retry logic (compiler download can be flaky)
+RUN for i in 1 2 3 4 5; do \
+        npx hardhat compile && break || \
+        echo "Compile attempt $i failed, retrying in 10s..." && sleep 10; \
+    done
 
 # --- Runtime Stage ---
 FROM node:${NODE_VERSION} AS prod
