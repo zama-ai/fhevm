@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 import { aclAddress, coprocessorAddress, createInstance, kmsVerifierAddress } from '../test/instance';
 import { userDecryptSingleHandle } from '../test/utils';
+import type { SmokeTestInput } from '../types';
 
 type FeeData = {
   maxFeePerGas: bigint;
@@ -291,10 +292,10 @@ async function runSmoke(): Promise<void> {
 
   const signer = selected.signer;
   const signerAddress = signer.address;
-  const contractFactory = await ethers.getContractFactory('TestInput', signer);
+  const contractFactory = await ethers.getContractFactory('SmokeTestInput', signer);
 
   let contractAddress: string;
-  let contract: ReturnType<typeof contractFactory.attach>;
+  let contract: SmokeTestInput;
   let deployMs = 0;
 
   if (deployContract) {
@@ -318,7 +319,7 @@ async function runSmoke(): Promise<void> {
 
     const receipt = await sendWithRetries({
       signer,
-      label: 'deploy-TestInput',
+      label: 'deploy-SmokeTestInput',
       nonce: deployNonce,
       timeoutMs,
       maxRetries,
@@ -336,11 +337,11 @@ async function runSmoke(): Promise<void> {
     deployMs = Date.now() - deployStart;
 
     contractAddress = receipt.contractAddress;
-    contract = contractFactory.attach(contractAddress);
+    contract = contractFactory.attach(contractAddress) as SmokeTestInput;
     console.log(`SMOKE_DEPLOYED contractAddress=${contractAddress}`);
   } else if (existingContractAddress) {
     contractAddress = existingContractAddress;
-    contract = contractFactory.attach(contractAddress);
+    contract = contractFactory.attach(contractAddress) as SmokeTestInput;
     console.log(`SMOKE_ATTACH contractAddress=${contractAddress}`);
   } else {
     throw new Error('TEST_INPUT_CONTRACT_ADDRESS is required when SMOKE_DEPLOY_CONTRACT=0.');
