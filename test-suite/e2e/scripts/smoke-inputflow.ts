@@ -41,7 +41,6 @@ const MIN_PRIORITY_FEE = ethers.parseUnits('2', 'gwei');
 const CANCEL_GAS_LIMIT = 21_000n;
 const LOW_BALANCE_THRESHOLD = ethers.parseEther('0.1');
 const SMOKE_GAS_ESTIMATE = 1_000_000n; // ~1M gas covers deploy + call with buffer
-const RECEIPT_POLL_MS = 4_000;
 
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
   let timer: NodeJS.Timeout;
@@ -111,20 +110,6 @@ const getBaseFees = async (provider: Provider): Promise<FeeData> => {
   return { maxFeePerGas, maxPriorityFeePerGas };
 };
 
-const waitForReceipt = async (
-  provider: Provider,
-  txHash: string,
-  timeoutMs: number,
-): Promise<TransactionReceipt | null> => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const receipt = await provider.getTransactionReceipt(txHash);
-    if (receipt) return receipt;
-    await new Promise((resolve) => setTimeout(resolve, RECEIPT_POLL_MS));
-  }
-  return null;
-};
-
 const sendWithRetries = async (params: {
   signer: HardhatEthersSigner;
   label: string;
@@ -139,15 +124,22 @@ const sendWithRetries = async (params: {
   if (!provider) throw new Error('Signer has no provider');
 
   const baseFees = await getBaseFees(provider);
-  let lastError: Error | undefined;
   const sentTxHashes: string[] = [];
 
-  // Helper to check if any previously sent tx got mined
-  const checkPreviousTxs = async (): Promise<TransactionReceipt | null> => {
+  // Check if any previously sent tx was mined (used after send failure and as final fallback)
+  const findMinedReceipt = async (): Promise<TransactionReceipt | null> => {
     for (const hash of sentTxHashes) {
-      const receipt = await provider.getTransactionReceipt(hash);
+      let receipt: TransactionReceipt | null;
+      try {
+        receipt = await provider.getTransactionReceipt(hash);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.warn(`SMOKE_TX_RECEIPT_CHECK_FAILED label=${label} hash=${hash} error=${msg}`);
+        continue;
+      }
       if (receipt) {
         console.log(`SMOKE_TX_LATE_RECEIPT label=${label} hash=${hash}`);
+        if (receipt.status !== 1) throw new Error(`Transaction reverted (label=${label}, hash=${hash})`);
         return receipt;
       }
     }
@@ -156,42 +148,66 @@ const sendWithRetries = async (params: {
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const fees = bumpFees(baseFees, Math.pow(feeBump, attempt));
-    let tx: TransactionResponse;
 
+    // 1. Try to send (may fail if nonce was consumed by a previous tx)
+    let tx: TransactionResponse;
     try {
       tx = await send({ nonce, ...fees });
+      sentTxHashes.push(tx.hash);
+      console.log(`SMOKE_TX_SENT label=${label} nonce=${nonce} hash=${tx.hash} attempt=${attempt}`);
     } catch (error) {
-      // Send failed - maybe because a previous tx just got mined (nonce used)
-      const lateReceipt = await checkPreviousTxs();
-      if (lateReceipt) {
-        if (lateReceipt.status === 1) return lateReceipt;
-        throw new Error(`Transaction reverted (label=${label}, hash=${lateReceipt.hash})`);
-      }
-      lastError = error instanceof Error ? error : new Error(String(error));
-      console.warn(`SMOKE_TX_SEND_FAILED label=${label} nonce=${nonce} attempt=${attempt}`);
+      const mined = await findMinedReceipt();
+      if (mined) return mined;
+      const msg = error instanceof Error ? error.message : String(error);
+      console.warn(`SMOKE_TX_SEND_FAILED label=${label} nonce=${nonce} attempt=${attempt} error=${msg}`);
       continue;
     }
 
-    sentTxHashes.push(tx.hash);
-    console.log(`SMOKE_TX_SENT label=${label} nonce=${nonce} hash=${tx.hash} attempt=${attempt}`);
-    const receipt = await waitForReceipt(provider, tx.hash, timeoutMs);
-    if (receipt) {
-      if (receipt.status === 1) return receipt;
-      throw new Error(`Transaction reverted (label=${label}, hash=${tx.hash})`);
+    // 2. Wait for confirmation (tx.wait handles TRANSACTION_REPLACED internally)
+    try {
+      const receipt = await tx.wait(1, timeoutMs);
+      if (receipt?.status === 1) return receipt;
+      if (receipt) throw new Error(`Transaction reverted (label=${label}, hash=${tx.hash})`);
+      // receipt is null → timeout
+      console.warn(`SMOKE_TX_TIMEOUT label=${label} nonce=${nonce} attempt=${attempt} hash=${tx.hash}`);
+      continue;
+    } catch (error: unknown) {
+      const err = error as { code?: string; reason?: string; receipt?: TransactionReceipt };
+
+      // ethers v6 throws TRANSACTION_REPLACED when another tx with same nonce was mined.
+      // The `reason` field indicates what happened:
+      //   - "repriced": same tx data, higher fees (our retry got mined) → SUCCESS
+      //   - "cancelled": 0-value self-transfer (nonce was cancelled) → NOT our tx
+      //   - "replaced": completely different tx (another process used nonce) → NOT our tx
+      // In our controlled smoke test, only "repriced" should occur. We defensively
+      // reject other reasons to avoid misreporting success for unrelated transactions.
+      if (err.code === 'TRANSACTION_REPLACED') {
+        const reason = err.reason;
+        const receiptHash = err.receipt?.hash ?? 'unknown';
+        if (reason === 'repriced' && err.receipt) {
+          console.log(`SMOKE_TX_REPRICED label=${label} original=${tx.hash} mined=${receiptHash}`);
+          if (err.receipt.status === 1) return err.receipt;
+          throw new Error(`Repriced transaction reverted (label=${label}, hash=${receiptHash})`);
+        }
+        // Cancelled or replaced by unrelated tx - log warning and retry
+        console.warn(
+          `SMOKE_TX_REPLACED_UNEXPECTED label=${label} original=${tx.hash} reason=${reason} mined=${receiptHash}`,
+        );
+        continue;
+      }
+
+      // Unknown error (unlikely) - continue to next attempt
+      const msg = error instanceof Error ? error.message : String(error);
+      console.warn(`SMOKE_TX_WAIT_ERROR label=${label} nonce=${nonce} attempt=${attempt} error=${msg}`);
+      continue;
     }
-
-    console.warn(`SMOKE_TX_TIMEOUT label=${label} nonce=${nonce} attempt=${attempt} hash=${tx.hash}`);
-    lastError = new Error(`Timeout waiting for tx ${tx.hash} (label=${label})`);
   }
 
-  // Final check before giving up - a tx might have been mined during the last attempt
-  const finalReceipt = await checkPreviousTxs();
-  if (finalReceipt) {
-    if (finalReceipt.status === 1) return finalReceipt;
-    throw new Error(`Transaction reverted (label=${label}, hash=${finalReceipt.hash})`);
-  }
+  // 3. Final fallback: a tx may have been mined after our last wait timed out
+  const mined = await findMinedReceipt();
+  if (mined) return mined;
 
-  throw lastError ?? new Error(`Failed to send transaction (label=${label})`);
+  throw new Error(`All ${maxRetries + 1} attempts failed (label=${label})`);
 };
 
 const getSignerStates = async (
