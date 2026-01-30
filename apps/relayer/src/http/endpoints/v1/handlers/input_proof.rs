@@ -24,6 +24,7 @@ use axum::{http::StatusCode, Json};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::{error, info, instrument, span, warn, Level};
+use uuid::Uuid;
 
 pub type InputProofResponse = AppResponse<super::super::types::input_proof::InputProofResponseJson>;
 
@@ -84,7 +85,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
     where
         S: Send + Sync,
     {
-        let request_id = self.orchestrator.new_internal_request_id();
+        let request_id = Uuid::new_v4();
         let _span = span!(Level::INFO, "handle-input-req", request_id = %request_id);
 
         info!(

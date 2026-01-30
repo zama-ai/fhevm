@@ -174,7 +174,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static>
     where
         S: Send + Sync,
     {
-        let request_id = self.orchestrator.new_internal_request_id();
+        let request_id = Uuid::new_v4();
         let _span = span!(Level::INFO, "handle-public-decrypt-post-req", request_id = %request_id);
 
         info!(
