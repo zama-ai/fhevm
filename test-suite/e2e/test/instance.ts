@@ -12,11 +12,27 @@ const defaults = (() => {
   return undefined;
 })();
 
-const kmsAdd = process.env.KMS_VERIFIER_CONTRACT_ADDRESS || defaults?.kmsContractAddress;
-if (!kmsAdd) throw new Error('KMS_VERIFIER_CONTRACT_ADDRESS is required');
+const requireEnv = (value: string | undefined, name: string): string => {
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+};
 
-const aclAdd = process.env.ACL_CONTRACT_ADDRESS || defaults?.aclContractAddress;
-if (!aclAdd) throw new Error('ACL_CONTRACT_ADDRESS is required');
+const kmsVerifierAddress = requireEnv(
+  process.env.KMS_VERIFIER_CONTRACT_ADDRESS || defaults?.kmsContractAddress,
+  'KMS_VERIFIER_CONTRACT_ADDRESS',
+);
+
+const aclAddress = requireEnv(process.env.ACL_CONTRACT_ADDRESS || defaults?.aclContractAddress, 'ACL_CONTRACT_ADDRESS');
+
+// Coprocessor/executor address defaults (not in SDK, values from ZamaConfig.sol)
+const coprocessorDefaults: Record<string, string> = {
+  sepolia: '0x92C920834Ec8941d2C77D188936E1f7A6f49c127',
+  mainnet: '0xD82385dADa1ae3E969447f20A3164F6213100e75',
+};
+const coprocessorAddress = requireEnv(
+  process.env.FHEVM_EXECUTOR_CONTRACT_ADDRESS || coprocessorDefaults[network.name],
+  'FHEVM_EXECUTOR_CONTRACT_ADDRESS',
+);
 
 const inputAdd = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS || defaults?.inputVerifierContractAddress;
 if (!inputAdd) throw new Error('INPUT_VERIFIER_CONTRACT_ADDRESS is required');
@@ -60,9 +76,9 @@ export const createInstance = async () => {
   return createFhevmInstance({
     verifyingContractAddressDecryption,
     verifyingContractAddressInputVerification,
-    kmsContractAddress: kmsAdd,
+    kmsContractAddress: kmsVerifierAddress,
     inputVerifierContractAddress: inputAdd,
-    aclContractAddress: aclAdd,
+    aclContractAddress: aclAddress,
     network: network.config.url,
     relayerUrl,
     gatewayChainId: gatewayChainID,
@@ -70,3 +86,6 @@ export const createInstance = async () => {
     ...(auth ? { auth } : {}),
   });
 };
+
+// Export coprocessor config addresses for smoke tests
+export { aclAddress, coprocessorAddress, kmsVerifierAddress };

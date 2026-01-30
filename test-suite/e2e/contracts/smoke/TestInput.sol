@@ -3,10 +3,20 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
+import {CoprocessorConfig} from "@fhevm/solidity/lib/Impl.sol";
 
-contract TestInput is E2ECoprocessorConfig {
+contract TestInput {
     euint64 public resUint64;
+
+    constructor(address aclAddress, address coprocessorAddress, address kmsVerifierAddress) {
+        FHE.setCoprocessor(
+            CoprocessorConfig({
+                ACLAddress: aclAddress,
+                CoprocessorAddress: coprocessorAddress,
+                KMSVerifierAddress: kmsVerifierAddress
+            })
+        );
+    }
 
     function requestUint64NonTrivial(externalEuint64 inputHandle, bytes calldata inputProof) public {
         resUint64 = FHE.fromExternal(inputHandle, inputProof);

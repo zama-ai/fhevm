@@ -3,7 +3,7 @@ import type { Provider, TransactionReceipt, TransactionResponse } from 'ethers';
 import { ethers, network } from 'hardhat';
 import assert from 'node:assert/strict';
 
-import { createInstance } from '../test/instance';
+import { aclAddress, coprocessorAddress, createInstance, kmsVerifierAddress } from '../test/instance';
 import { userDecryptSingleHandle } from '../test/utils';
 
 type FeeData = {
@@ -301,8 +301,11 @@ async function runSmoke(): Promise<void> {
     if (existingContractAddress) {
       console.log('SMOKE_DEPLOY_CONTRACT ignoring TEST_INPUT_CONTRACT_ADDRESS');
     }
+    console.log(
+      `SMOKE_COPROCESSOR_CONFIG acl=${aclAddress} coprocessor=${coprocessorAddress} kms=${kmsVerifierAddress}`,
+    );
     const deployStart = Date.now();
-    const deployTx = await contractFactory.getDeployTransaction();
+    const deployTx = await contractFactory.getDeployTransaction(aclAddress, coprocessorAddress, kmsVerifierAddress);
     const deployNonce = await provider.getTransactionCount(signerAddress, 'pending');
     let gasEstimate: bigint;
     try {
