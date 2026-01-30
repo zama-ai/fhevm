@@ -2,6 +2,12 @@ name: host-contracts-docker-build
 
 on:
   workflow_call:
+    inputs:
+      is_workflow_call:
+        description: "Indicates if the workflow is called from another workflow"
+        type: boolean
+        default: true
+        required: false
     secrets:
       AWS_ACCESS_KEY_S3_USER:
         required: true
@@ -29,12 +35,13 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: host-contracts-docker-build-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
+  is-latest-commit:
+    uses: ./.github/workflows/is-latest-commit.yml
+    if: github.event_name == 'push'
+
   check-changes:
+    if: github.event_name == 'push' || inputs.is_workflow_call
     uses: ./.github/workflows/check-changes-for-docker-build.yml
     secrets:
       GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
@@ -52,11 +59,18 @@ jobs:
           - host-contracts/**
 
   build:
-    needs: check-changes
+    needs: [is-latest-commit, check-changes]
+    concurrency:
+      group: host-contracts-build-${{ github.ref_name }}
+      cancel-in-progress: true
     if: |
-      needs.check-changes.outputs.changes == 'true'
-      || github.event_name == 'release'
-      || github.event_name == 'workflow_dispatch'
+      always()
+      && (
+        github.event_name == 'release'
+        || github.event_name == 'workflow_dispatch'
+        || (github.event_name == 'push' && needs.is-latest-commit.outputs.is_latest == 'true' && needs.check-changes.outputs.changes == 'true')
+        || (inputs.is_workflow_call && needs.check-changes.outputs.changes == 'true')
+      )
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
@@ -80,9 +94,12 @@ jobs:
       app-cache-dir: "fhevm-host-contracts"
 
   re-tag-image:
-    needs: check-changes
+    needs: [is-latest-commit, check-changes]
     if: |
-      needs.check-changes.outputs.changes != 'true' && github.event_name == 'push'
+      always()
+      && (
+        github.event_name == 'push' && needs.is-latest-commit.outputs.is_latest == 'true' && needs.check-changes.outputs.changes != 'true'
+      )
     permissions:
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
