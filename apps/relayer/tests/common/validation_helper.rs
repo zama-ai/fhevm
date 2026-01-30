@@ -190,3 +190,175 @@ pub fn expect_malformed_json(
         })
     }
 }
+
+/// Verify that a V2 error response has the correct structure with status and request_id fields
+#[allow(dead_code)]
+pub fn expect_v2_error_response(
+    expected_status_code: u16,
+    expected_error_label: &str,
+) -> impl FnOnce(reqwest::Response) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+{
+    let expected_error_label = expected_error_label.to_string();
+    move |res| {
+        Box::pin(async move {
+            let status_code = res.status().as_u16();
+            assert_eq!(
+                status_code, expected_status_code,
+                "Expected status code {}, got {}",
+                expected_status_code, status_code
+            );
+
+            let body: serde_json::Value = res.json().await.expect("Failed to parse response body");
+
+            // Verify status field exists and equals "failed"
+            assert_eq!(
+                body.get("status").and_then(|v| v.as_str()),
+                Some("failed"),
+                "V2 error response must have status='failed', got: {:?}",
+                body
+            );
+
+            // Verify request_id field exists and is a non-empty string
+            let request_id = body
+                .get("request_id")
+                .expect("V2 error response must have request_id field");
+            assert!(
+                request_id.is_string(),
+                "request_id must be a string, got: {:?}",
+                request_id
+            );
+            let request_id_str = request_id.as_str().unwrap();
+            assert!(!request_id_str.is_empty(), "request_id must not be empty");
+
+            // Verify error field exists and has the expected label
+            let error = body
+                .get("error")
+                .expect("V2 error response must have error field");
+            assert_eq!(
+                error.get("label").and_then(|v| v.as_str()),
+                Some(expected_error_label.as_str()),
+                "Expected error label '{}', got: {:?}",
+                expected_error_label,
+                error
+            );
+        })
+    }
+}
+
+/// Verify V2 validation error with specific field details
+#[allow(dead_code)]
+pub fn expect_v2_validation_error(
+    field: &str,
+    issue_contains: &str,
+) -> impl FnOnce(reqwest::Response) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+{
+    let field = field.to_string();
+    let issue_contains = issue_contains.to_string();
+    move |res| {
+        Box::pin(async move {
+            assert_eq!(res.status(), 400);
+
+            let body: serde_json::Value = res.json().await.expect("Failed to parse response body");
+
+            // Verify V2 structure
+            assert_eq!(
+                body.get("status").and_then(|v| v.as_str()),
+                Some("failed"),
+                "V2 error response must have status='failed'"
+            );
+            assert!(
+                body.get("request_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false),
+                "V2 error response must have non-empty request_id"
+            );
+
+            // Verify error details
+            let error = body.get("error").expect("Must have error field");
+            let label = error.get("label").and_then(|v| v.as_str()).unwrap_or("");
+            assert!(
+                label == "validation_failed" || label == "missing_fields",
+                "Expected validation_failed or missing_fields label, got: {}",
+                label
+            );
+
+            let details = error.get("details").and_then(|v| v.as_array());
+            assert!(details.is_some(), "Error must have details array");
+            let details = details.unwrap();
+            assert!(
+                details.iter().any(|d| {
+                    let f = d.get("field").and_then(|v| v.as_str()).unwrap_or("");
+                    let i = d.get("issue").and_then(|v| v.as_str()).unwrap_or("");
+                    f == field && i.contains(&issue_contains)
+                }),
+                "Expected field '{}' with issue containing '{}', got: {:?}",
+                field,
+                issue_contains,
+                details
+            );
+        })
+    }
+}
+
+/// Verify V2 malformed JSON error response
+#[allow(dead_code)]
+pub fn expect_v2_malformed_json(
+) -> impl FnOnce(reqwest::Response) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+{
+    expect_v2_error_response(400, "malformed_json")
+}
+
+/// Verify V2 missing field error response
+#[allow(dead_code)]
+pub fn expect_v2_missing_field(
+    field: &str,
+) -> impl FnOnce(reqwest::Response) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+{
+    let field = field.to_string();
+    move |res| {
+        Box::pin(async move {
+            assert_eq!(res.status(), 400);
+
+            let body: serde_json::Value = res.json().await.expect("Failed to parse response body");
+
+            // Verify V2 structure
+            assert_eq!(
+                body.get("status").and_then(|v| v.as_str()),
+                Some("failed"),
+                "V2 error response must have status='failed'"
+            );
+            assert!(
+                body.get("request_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false),
+                "V2 error response must have non-empty request_id"
+            );
+
+            // Verify error details
+            let error = body.get("error").expect("Must have error field");
+            let label = error.get("label").and_then(|v| v.as_str()).unwrap_or("");
+            assert_eq!(
+                label, "missing_fields",
+                "Expected missing_fields label, got: {}",
+                label
+            );
+
+            let details = error.get("details").and_then(|v| v.as_array());
+            assert!(details.is_some(), "Error must have details array");
+            let details = details.unwrap();
+            assert!(
+                details.iter().any(|d| {
+                    let f = d.get("field").and_then(|v| v.as_str()).unwrap_or("");
+                    let i = d.get("issue").and_then(|v| v.as_str()).unwrap_or("");
+                    f == field && i.contains(validation_messages::GENERIC_REQUIRED_BUT_MISSING)
+                }),
+                "Expected field '{}' with issue containing '{}', got: {:?}",
+                field,
+                validation_messages::GENERIC_REQUIRED_BUT_MISSING,
+                details
+            );
+        })
+    }
+}

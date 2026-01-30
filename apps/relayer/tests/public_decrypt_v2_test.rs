@@ -3,11 +3,17 @@ mod common;
 use crate::common::utils::{
     assert_retry_after_header_present, create_timeout_test_config, TestSetup,
 };
+use crate::common::validation_helper::{
+    expect_v2_malformed_json, expect_v2_validation_error, test_endpoint, test_endpoint_raw_body,
+    with_invalid_field,
+};
 use alloy::primitives::B256;
 use ethereum_rpc_mock::Response;
+use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::public_decrypt::{
     PublicDecryptPostResponseJson, PublicDecryptStatusResponseJson,
 };
+use fhevm_relayer::http::validation_messages as constants_validation;
 use rand::{rng, Rng};
 use serde_json::json;
 use std::str::FromStr;
@@ -99,7 +105,7 @@ mod helpers {
             .json()
             .await
             .expect("Failed to parse POST response");
-        assert_eq!(post_response.status, "queued");
+        assert_eq!(post_response.status, ApiResponseStatus::Queued);
         post_response.result.job_id
     }
 
@@ -146,7 +152,7 @@ async fn test_success_single_request() {
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
     assert_eq!(status, reqwest::StatusCode::OK);
-    assert_eq!(body.status, "succeeded");
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
     assert!(body.result.is_some());
 
     setup.shutdown().await;
@@ -175,7 +181,7 @@ async fn test_nonce_too_low_then_succeeds() {
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
     assert_eq!(status, reqwest::StatusCode::OK);
-    assert_eq!(body.status, "succeeded");
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
     assert!(body.result.is_some());
 
     setup.shutdown().await;
@@ -204,7 +210,7 @@ async fn test_nonce_too_high_then_succeeds() {
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
     assert_eq!(status, reqwest::StatusCode::OK);
-    assert_eq!(body.status, "succeeded");
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
     assert!(body.result.is_some());
 
     setup.shutdown().await;
@@ -235,7 +241,7 @@ async fn test_max_retries_exceeded_fails() {
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
     assert_ne!(status, reqwest::StatusCode::OK);
-    assert_eq!(body.status, "failed");
+    assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
     setup.shutdown().await;
@@ -256,7 +262,7 @@ async fn test_contract_paused_returns_503() {
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
     assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(body.status, "failed");
+    assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
     let error = body.error.as_ref().expect("Error should be present");
@@ -284,7 +290,7 @@ async fn test_invalid_signature_returns_400() {
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
     assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
-    assert_eq!(body.status, "failed");
+    assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
     assert_eq!(
@@ -314,7 +320,7 @@ async fn test_insufficient_balance_returns_503() {
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
     assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(body.status, "failed");
+    assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
     let error = body.error.as_ref().expect("Error should be present");
@@ -342,7 +348,7 @@ async fn test_insufficient_allowance_returns_503() {
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
     assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(body.status, "failed");
+    assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
     let error = body.error.as_ref().expect("Error should be present");
@@ -370,7 +376,7 @@ async fn test_unknown_selector_returns_500() {
     let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
 
     assert_eq!(status, reqwest::StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(body.status, "failed");
+    assert_eq!(body.status, ApiResponseStatus::Failed);
     assert!(body.result.is_none());
 
     let error = body.error.as_ref().expect("Error should be present");
@@ -427,7 +433,7 @@ async fn test_consecutive_duplicate_requests_succeed() {
         .await
         .expect("Failed to parse first POST response");
 
-    assert_eq!(post_response1.status, "queued");
+    assert_eq!(post_response1.status, ApiResponseStatus::Queued);
     let job_id_1 = &post_response1.result.job_id;
 
     // Send consecutive duplicate request (same payload)
@@ -448,7 +454,7 @@ async fn test_consecutive_duplicate_requests_succeed() {
         .await
         .expect("Failed to parse second POST response");
 
-    assert_eq!(post_response2.status, "queued");
+    assert_eq!(post_response2.status, ApiResponseStatus::Queued);
     let job_id_2 = &post_response2.result.job_id;
 
     // Print job_ids for debugging
@@ -561,7 +567,7 @@ async fn test_retry_after_failure_creates_new_job_id() {
     // Wait for it to fail
     let (status1, body1) = helpers::poll_until_terminal(&setup, &job_id_1).await;
     assert_ne!(status1, reqwest::StatusCode::OK);
-    assert_eq!(body1.status, "failed");
+    assert_eq!(body1.status, ApiResponseStatus::Failed);
     println!("First attempt failed as expected");
 
     // Retry with same payload after failure
@@ -631,5 +637,37 @@ async fn test_timeout() {
     .await;
 
     // Cleanup
+    setup.shutdown().await;
+}
+
+/// Test that malformed JSON returns V2 error format with status and request_id
+#[tokio::test]
+async fn test_v2_post_malformed_json_has_status_and_request_id() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    test_endpoint_raw_body(
+        &helpers::v2_public_decrypt_post_url(&setup),
+        "{ invalid json }",
+        expect_v2_malformed_json(),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+/// Test that validation errors return V2 error format with status and request_id
+#[tokio::test]
+async fn test_v2_post_validation_error_has_status_and_request_id() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let base_payload = helpers::create_public_decrypt_payload();
+
+    test_endpoint(
+        &helpers::v2_public_decrypt_post_url(&setup),
+        base_payload,
+        with_invalid_field("extraData", json!("invalid")),
+        expect_v2_validation_error("extraData", constants_validation::EXACT_MUST_BE_0X00),
+    )
+    .await;
+
     setup.shutdown().await;
 }
