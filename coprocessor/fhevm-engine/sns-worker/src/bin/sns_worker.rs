@@ -25,6 +25,8 @@ fn construct_config() -> Config {
             addr: args.metrics_addr,
             gauge_update_interval_secs: args.gauge_update_interval_secs,
         },
+        signer_type: args.signer_type,
+        private_key: args.private_key,
         db: DBConfig {
             url: db_url,
             listen_channels: args.pg_listen_channels,
