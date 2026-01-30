@@ -21,7 +21,10 @@ jobs:
           CURRENT_COMMIT: ${{ github.sha }}
         run: |
           LATEST_COMMIT=$(git ls-remote https://github.com/${{ github.repository }}.git refs/heads/${{ github.ref_name }} | cut -f1)
-          if [ "$LATEST_COMMIT" == "$CURRENT_COMMIT" ]; then
+          if [ -z "$LATEST_COMMIT" ]; then
+            echo "::error::Failed to fetch latest commit for ${{ github.ref_name }}"
+            exit 1
+          elif [ "$LATEST_COMMIT" == "$CURRENT_COMMIT" ]; then
             echo "is_latest=true" >> $GITHUB_OUTPUT
             echo "Current commit $CURRENT_COMMIT is the latest on ${{ github.ref_name }}"
           else
