@@ -261,7 +261,12 @@ impl InfiniteLogIter {
         let config = websocket_config();
         let ws = WsConnect::new(&self.url).with_config(config);
         let provider = ProviderBuilder::new().connect_ws(ws).await?;
-        Ok(provider.get_chain_id().await?)
+        let chain_id = tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            provider.get_chain_id(),
+        )
+        .await??;
+        Ok(chain_id)
     }
 
     /// Resolves `end_at_block` to an absolute block number.
