@@ -128,7 +128,7 @@ impl InputProofRepository {
             ON CONFLICT (int_job_id)
             WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)
               AND int_job_id != '\x0000000000000000000000000000000000000000000000000000000000000000'
-            DO UPDATE SET updated_at = NOW()
+            DO UPDATE SET updated_at = input_proof_req.updated_at
             RETURNING ext_job_id, (xmax = 0) AS "is_inserted!", req_status AS "req_status!: ReqStatus", accepted, res
             "#,
             ext_job_id,
