@@ -42,7 +42,7 @@ aws-credential-types = "1.2.6"
 aws-sdk-kms = { version = "1.68.0", default-features = false }
 aws-sdk-s3 = { version = "1.103.0", features = ["test-util"] }
 bigdecimal = "0.4.8"
-clap = { version = "4.5.38", features = ["derive"] }
+clap = { version = "4.5.38", features = ["derive", "env"] }
 daggy = "0.8.1"
 foundry-compilers = { version = "0.19.1", features = ["svm-solc"] }
 futures-util = "0.3.31"

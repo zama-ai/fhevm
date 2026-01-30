@@ -112,7 +112,7 @@ where
                 .await
                 .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
             {
-                return Err(ProcessingError::Irrecoverable(anyhow!(
+                return Err(ProcessingError::Recoverable(anyhow!(
                     "{} is not allowed for decrypt!",
                     hex::encode(ct.ctHandle)
                 )));
@@ -225,18 +225,18 @@ where
         .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
 
         if !is_delegated {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
+            return Err(ProcessingError::Recoverable(anyhow!(
                 "{user_address} is not a delegate of {delegator_address} for contract \
                     {contract_address} and handle {handle_hex}!",
             )));
         }
         if !delegator_allowed {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
+            return Err(ProcessingError::Recoverable(anyhow!(
                 "{delegator_address} is not allowed to decrypt {handle_hex}!",
             )));
         }
         if !contract_allowed {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
+            return Err(ProcessingError::Recoverable(anyhow!(
                 "{contract_address} is not allowed to decrypt {handle_hex}!",
             )));
         }
@@ -260,12 +260,12 @@ where
                 .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?;
 
         if !user_allowed {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
+            return Err(ProcessingError::Recoverable(anyhow!(
                 "{user_address} is not allowed to decrypt {handle_hex}!",
             )));
         }
         if !contract_allowed {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
+            return Err(ProcessingError::Recoverable(anyhow!(
                 "{contract_address} is not allowed to decrypt {handle_hex}!",
             )));
         }
@@ -279,13 +279,15 @@ where
         sns_materials: &[SnsCiphertextMaterial],
         extra_data: &Bytes,
         user_decrypt_data: Option<UserDecryptionExtraData>,
-    ) -> anyhow::Result<KmsGrpcRequest> {
+    ) -> Result<KmsGrpcRequest, ProcessingError> {
         // Extract keyId from the first SNS ciphertext material if available
         let key_id = sns_materials
             .first()
             .map(|m| hex::encode(m.keyId.to_be_bytes::<32>()))
             .ok_or_else(|| {
-                anyhow!("No snsCtMaterials found, cannot proceed without a valid key_id")
+                ProcessingError::Irrecoverable(anyhow!(
+                    "No snsCtMaterials found, cannot proceed without a valid key_id"
+                ))
             })?;
         info!("Extracted key_id {key_id} from snsCtMaterials[0]");
 
@@ -330,14 +332,17 @@ where
         &self,
         key_id: &str,
         sns_materials: &[SnsCiphertextMaterial],
-    ) -> anyhow::Result<Vec<TypedCiphertext>> {
+    ) -> Result<Vec<TypedCiphertext>, ProcessingError> {
         let sns_ciphertext_materials = self
             .s3_service
             .retrieve_sns_ciphertext_materials(sns_materials)
-            .await?;
+            .await
+            .map_err(ProcessingError::Recoverable)?;
 
         if sns_ciphertext_materials.is_empty() {
-            return Err(anyhow!("Failed to retrieve any ciphertext materials"));
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "Failed to retrieve any ciphertext materials"
+            )));
         }
 
         // Extract and log FHE types for all ciphertexts
@@ -467,7 +472,7 @@ mod tests {
         ExpectedOutcome::Recoverable
     )]
     #[case::allowed(PubDecryptACLMock::Success(true), ExpectedOutcome::Ok)]
-    #[case::not_allowed(PubDecryptACLMock::Success(false), ExpectedOutcome::Irrecoverable)]
+    #[case::not_allowed(PubDecryptACLMock::Success(false), ExpectedOutcome::Recoverable)]
     #[tokio::test]
     async fn check_ciphertexts_allowed_for_public_decryption(
         #[case] mock_response: PubDecryptACLMock,
@@ -528,15 +533,15 @@ mod tests {
     )]
     #[case::not_allowed(
         UserDecryptACLMock::Success { user_allowed: false, contract_allowed: false },
-        ExpectedOutcome::Irrecoverable
+        ExpectedOutcome::Recoverable
     )]
     #[case::user_allowed_contract_not_allowed(
         UserDecryptACLMock::Success { user_allowed: true, contract_allowed: false },
-        ExpectedOutcome::Irrecoverable
+        ExpectedOutcome::Recoverable
     )]
     #[case::user_not_allowed_contract_allowed(
         UserDecryptACLMock::Success { user_allowed: false, contract_allowed: true },
-        ExpectedOutcome::Irrecoverable
+        ExpectedOutcome::Recoverable
     )]
     #[tokio::test]
     async fn check_ciphertexts_allowed_for_user_decryption(
@@ -618,17 +623,17 @@ mod tests {
     )]
     #[case::delegator_allowed_contract_not_allowed(
         DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: true, contract_allowed: false },
-        ExpectedOutcome::Irrecoverable,
+        ExpectedOutcome::Recoverable,
         Some("is not allowed to decrypt")
     )]
     #[case::delegator_not_allowed_contract_allowed(
         DelegatedUserDecryptACLMock::Success { is_delegated: true, delegator_allowed: false, contract_allowed: true },
-        ExpectedOutcome::Irrecoverable,
+        ExpectedOutcome::Recoverable,
         Some("is not allowed to decrypt")
     )]
     #[case::not_delegated(
         DelegatedUserDecryptACLMock::Success { is_delegated: false, delegator_allowed: true, contract_allowed: true },
-        ExpectedOutcome::Irrecoverable,
+        ExpectedOutcome::Recoverable,
         Some("is not a delegate of")
     )]
     #[tokio::test]

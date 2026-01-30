@@ -40,6 +40,8 @@ pub const DEFAULT_DEPENDENCE_CACHE_SIZE: u16 = 10_000;
 pub const DEFAULT_DEPENDENCE_BY_CONNEXITY: bool = false;
 pub const DEFAULT_DEPENDENCE_CROSS_BLOCK: bool = true;
 
+const TIMEOUT_REQUEST_ON_WEBSOCKET: u64 = 15;
+
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
@@ -131,7 +133,7 @@ pub struct Args {
     pub reorg_maximum_duration_in_blocks: u64,
 
     /// service name in OTLP traces
-    #[arg(long, default_value = "host-listener")]
+    #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "host-listener")]
     pub service_name: String,
 
     #[arg(
@@ -156,6 +158,13 @@ pub struct Args {
         help = "Sleep duration in seconds between catchup loop iterations"
     )]
     pub catchup_loop_sleep_secs: u64,
+
+    #[arg(
+        long,
+        default_value_t = TIMEOUT_REQUEST_ON_WEBSOCKET,
+        help = "Timeout in seconds for RPC calls over websocket"
+    )]
+    pub timeout_request_websocket: u64,
 }
 
 // TODO: to merge with Levent works
@@ -180,6 +189,7 @@ struct InfiniteLogIter {
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
     catchup_finalization_in_blocks: u64,
+    timeout_request_websocket: u64,
 }
 
 enum BlockOrTimeoutOrNone {
@@ -243,6 +253,7 @@ impl InfiniteLogIter {
                 args.reorg_maximum_duration_in_blocks as usize,
             ),
             catchup_finalization_in_blocks: args.catchup_finalization_in_blocks,
+            timeout_request_websocket: args.timeout_request_websocket,
         }
     }
 
@@ -313,13 +324,27 @@ impl InfiniteLogIter {
             Ok(provider) => provider,
             Err(_) => anyhow::bail!("Cannot get a provider"),
         };
-        provider.get_logs(&filter).await.map_err(|err| {
-            if eth_rpc_err::too_much_blocks_or_events(&err) {
-                anyhow::anyhow!("Too much blocks or events: {err}")
-            } else {
-                anyhow::anyhow!("Cannot get logs for {filter:?} due to {err}")
+        // Timeout to prevent hanging indefinitely on buggy node
+        match tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            provider.get_logs(&filter),
+        )
+        .await
+        {
+            Err(_) => {
+                anyhow::bail!("Timeout getting range logs for {filter:?}")
             }
-        })
+            Ok(Err(err)) => {
+                if eth_rpc_err::too_much_blocks_or_events(&err) {
+                    anyhow::bail!("Too much blocks or events: {err}")
+                } else {
+                    anyhow::bail!(
+                        "Cannot get range logs for {filter:?} due to {err}"
+                    )
+                }
+            }
+            Ok(Ok(logs)) => Ok(logs),
+        }
     }
 
     async fn deduce_block_summary(
@@ -501,17 +526,24 @@ impl InfiniteLogIter {
                 error!("No provider, inconsistent state");
                 return Err(anyhow::anyhow!("No provider, inconsistent state"));
             };
-            let block = provider.get_block(block_id).await;
-            match block {
-                Ok(Some(block)) => return Ok(block),
-                Ok(None) => error!(
+            let block = tokio::time::timeout(
+                Duration::from_secs(self.timeout_request_websocket),
+                provider.get_block(block_id),
+            );
+            match block.await {
+                Ok(Ok(Some(block))) => return Ok(block),
+                Ok(Ok(None)) => error!(
                     block_id = ?block_id,
-                    "Cannot get current block {block_id}, retrying",
+                    "Cannot get block {block_id}, retrying",
                 ),
-                Err(err) => error!(
+                Ok(Err(err)) => error!(
                     block_id = ?block_id,
                     error = %err,
-                    "Cannot get current block {block_id}, retrying",
+                    "Cannot get block {block_id}, retrying",
+                ),
+                Err(_) => error!(
+                    block_id = ?block_id,
+                    "Timeout getting block {block_id}, retrying",
                 ),
             }
             if i != REORG_RETRY_GET_BLOCK {
@@ -530,17 +562,24 @@ impl InfiniteLogIter {
                 error!("No provider, inconsistent state");
                 return Err(anyhow::anyhow!("No provider, inconsistent state"));
             };
-            let block = provider.get_block_by_hash(block_hash).await;
-            match block {
-                Ok(Some(block)) => return Ok(block),
-                Ok(None) => error!(
+            let block = tokio::time::timeout(
+                Duration::from_secs(self.timeout_request_websocket),
+                provider.get_block_by_hash(block_hash),
+            );
+            match block.await {
+                Ok(Ok(Some(block))) => return Ok(block),
+                Ok(Ok(None)) => error!(
                     block_hash = ?block_hash,
-                    "Cannot get block, retrying",
+                    "Cannot get block by hash, retrying",
                 ),
-                Err(err) => error!(
+                Ok(Err(err)) => error!(
                     block_hash = ?block_hash,
                     error = %err,
-                    "Cannot get block, retrying",
+                    "Cannot get block by hash, retrying",
+                ),
+                Err(_) => error!(
+                    block_hash = ?block_hash,
+                    "Timeout getting block by hash, retrying",
                 ),
             }
             if i != REORG_RETRY_GET_BLOCK {
@@ -551,7 +590,7 @@ impl InfiniteLogIter {
             }
         }
         Err(anyhow::anyhow!(
-            "Cannot get block {block_hash} after retries"
+            "Cannot get block by hash {block_hash} after retries"
         ))
     }
 
@@ -568,10 +607,27 @@ impl InfiniteLogIter {
                 error!("No provider, inconsistent state");
                 return Err(anyhow::anyhow!("No provider, inconsistent state"));
             };
-            let logs = provider.get_logs(&filter).await;
-            match logs {
-                Ok(logs) => return Ok(logs),
-                Err(err) => {
+            match tokio::time::timeout(
+                Duration::from_secs(self.timeout_request_websocket),
+                provider.get_logs(&filter),
+            )
+            .await
+            {
+                Err(_) => {
+                    error!(
+                        block_hash = ?block_hash,
+                        "Timeout getting logs for block {block_hash}, retrying",
+                    );
+                    tokio::time::sleep(Duration::from_millis(
+                        RETRY_GET_LOGS_DELAY_IN_MS,
+                    ))
+                    .await;
+                    continue;
+                }
+                Ok(Ok(logs)) => {
+                    return Ok(logs);
+                }
+                Ok(Err(err)) => {
                     error!(
                         block_hash = ?block_hash,
                         error = %err,
@@ -853,6 +909,7 @@ impl InfiniteLogIter {
                     let Ok(block_logs) = self.find_last_block_and_logs().await
                     else {
                         error!("Cannot get last block and logs");
+                        self.stream = None; // to restart
                         continue;
                     };
                     warn!(

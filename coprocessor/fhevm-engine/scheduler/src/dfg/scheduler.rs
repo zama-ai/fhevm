@@ -139,11 +139,8 @@ impl<'a> Scheduler<'a> {
             DeviceSelection::RoundRobin => {
                 static LAST: std::sync::atomic::AtomicUsize =
                     std::sync::atomic::AtomicUsize::new(0);
-                let i = LAST.load(std::sync::atomic::Ordering::Acquire);
-                LAST.store(
-                    (i + 1) % self.csks.len(),
-                    std::sync::atomic::Ordering::Release,
-                );
+                // Use fetch_add to increment atomically
+                let i = LAST.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % self.csks.len();
                 Ok((self.csks[i].clone(), self.cpk.clone()))
             }
             DeviceSelection::NA => Ok((self.csks[0].clone(), self.cpk.clone())),
@@ -420,7 +417,10 @@ fn execute_partition(
                     }
                 }
                 // Update partition's outputs (allowed handles only)
-                let node = dfg.graph.node_weight_mut(nidx).unwrap();
+                let Some(node) = dfg.graph.node_weight_mut(nidx) else {
+                    error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
+                    continue;
+                };
                 res.insert(
                     node.result_handle.clone(),
                     result.1.map(|v| TaskResult {
