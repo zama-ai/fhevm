@@ -77,7 +77,7 @@ async fn test_fhe_ciphertext128_with_compression() {
 #[serial(db)]
 async fn test_batch_execution() {
     const WITH_COMPRESSION: bool = true;
-    let test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
+    let mut test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
     let tf: TestFile = read_test_file("ciphertext64.json");
 
     let batch_size = std::env::var("BATCH_SIZE")
@@ -135,7 +135,7 @@ async fn test_batch_execution_with_s3_retry() {
         &tf.handle,
         batch_size,
         &tf.ciphertext64.clone(),
-        tf.decrypted,
+        tf.cleartext,
         WITH_COMPRESSION,
     )
     .await
@@ -573,7 +573,6 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
     } else {
         setup_localstack(&conf).await?
     };
- 
 
     let token = db_instance.parent_token.child_token();
     let config: Config = conf.clone();
