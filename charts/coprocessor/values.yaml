@@ -170,6 +170,9 @@ hostListener:
     - --service-name="host-listener"
     - --catchup-finalization-in-blocks=20  # Continuous catchup will wait for block "finalization"
 
+    ### New in v0.11
+    # - --timeout-request-websocket=15 # OPTIONAL, Default timeout in seconds for websocket interactions
+
   # Service ports configuration
   ports:
     metrics: 9100
