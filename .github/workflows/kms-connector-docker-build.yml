@@ -159,7 +159,7 @@ jobs:
       tx_sender: ${{ steps.decide.outputs.tx_sender }}
     steps:
       - id: decide
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v0.8.0
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           EVENT_NAME: ${{ github.event_name }}
           NEEDS: ${{ toJSON(needs) }}
