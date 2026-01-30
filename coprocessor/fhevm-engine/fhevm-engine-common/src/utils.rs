@@ -141,6 +141,7 @@ macro_rules! with_panic_guard {
             }
         }
     }};
+}
 /// Simple wrapper around Database URL string to provide
 /// url constraints and masking functionality.
 #[derive(Clone)]
