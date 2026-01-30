@@ -77,7 +77,7 @@ async fn test_fhe_ciphertext128_with_compression() {
 #[serial(db)]
 async fn test_batch_execution() {
     const WITH_COMPRESSION: bool = true;
-    let test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
+    let mut test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
     let tf: TestFile = read_test_file("ciphertext64.json");
 
     let batch_size = std::env::var("BATCH_SIZE")
@@ -88,7 +88,7 @@ async fn test_batch_execution() {
     info!("Batch size: {}", batch_size);
 
     run_batch_computations(
-        &test_env,
+        &mut test_env,
         &tf.handle,
         batch_size,
         &tf.ciphertext64.clone(),
@@ -97,6 +97,49 @@ async fn test_batch_execution() {
     )
     .await
     .expect("run_batch_computations should succeed");
+}
+
+/// Tests batch execution of SnS computations with S3 retry logic.
+/// Inserts a batch of identical ciphertext64 entries with unique handles,
+/// pauses the LocalStack instance to simulate S3 unavailability,
+/// triggers the SNS worker to convert them,
+/// then unpauses LocalStack and verifies that all ct128 are uploaded
+#[tokio::test]
+#[serial(db)]
+async fn test_batch_execution_with_s3_retry() {
+    const WITH_COMPRESSION: bool = true;
+    let mut test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
+    let tf: TestFile = read_test_file("ciphertext64.bin");
+
+    // Pause LocalStack to simulate S3 unavailability
+    test_env
+        .s3_instance
+        .as_ref()
+        .unwrap()
+        .container
+        .pause()
+        .await
+        .expect("Pause LocalStack");
+
+    info!("Paused LocalStack to test S3 retry logic");
+
+    let batch_size = std::env::var("BATCH_SIZE")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(100);
+
+    info!("Batch size: {}", batch_size);
+
+    run_batch_and_unpause_s3(
+        &mut test_env,
+        &tf.handle,
+        batch_size,
+        &tf.ciphertext64.clone(),
+        tf.cleartext,
+        WITH_COMPRESSION,
+    )
+    .await
+    .expect("run_batch_and_unpause_s3 should succeed");
 }
 
 #[tokio::test]
@@ -148,6 +191,7 @@ async fn test_decryptable(
         with_compression,
         handle,
         expected_result,
+        true,
     )
     .await?;
 
@@ -155,7 +199,7 @@ async fn test_decryptable(
 }
 
 async fn run_batch_computations(
-    test_env: &TestEnvironment,
+    test_env: &mut TestEnvironment,
     base_handle: &[u8],
     batch_size: u16,
     ciphertext: &Vec<u8>,
@@ -163,8 +207,8 @@ async fn run_batch_computations(
     with_compression: bool,
 ) -> anyhow::Result<()> {
     let pool = &test_env.pool;
-    let bucket128 = &test_env.conf.s3.bucket_ct128;
-    let bucket64 = &test_env.conf.s3.bucket_ct64;
+    let bucket128 = &test_env.conf.s3.bucket_ct128.clone();
+    let bucket64 = &test_env.conf.s3.bucket_ct64.clone();
 
     clean_up(pool).await?;
 
@@ -210,6 +254,7 @@ async fn run_batch_computations(
                 with_compression,
                 &handle,
                 expected_cleartext,
+                true,
             )
             .await
         });
@@ -229,6 +274,90 @@ async fn run_batch_computations(
     anyhow::Result::<()>::Ok(())
 }
 
+/// Runs batch computations while LocalStack S3 is paused, then unpauses it
+async fn run_batch_and_unpause_s3(
+    test_env: &mut TestEnvironment,
+    base_handle: &[u8],
+    batch_size: u16,
+    ciphertext: &Vec<u8>,
+    expected_cleartext: i64,
+    with_compression: bool,
+) -> anyhow::Result<()> {
+    let pool = &test_env.pool;
+    let bucket128 = &test_env.conf.s3.bucket_ct128.clone();
+    let bucket64 = &test_env.conf.s3.bucket_ct64.clone();
+    info!(batch_size, "Inserting ciphertexts ...");
+
+    let mut handles = Vec::new();
+    let tenant_id = get_tenant_id_from_db(pool, TENANT_API_KEY).await;
+    for i in 0..batch_size {
+        let mut handle = base_handle.to_owned();
+
+        // Modify first two bytes of the handle to make it unique
+        // However the ciphertext64 will be the same
+        handle[0] = (i >> 8) as u8;
+        handle[1] = (i & 0xFF) as u8;
+        test_harness::db_utils::insert_ciphertext64(pool, tenant_id, &handle, ciphertext).await?;
+        test_harness::db_utils::insert_into_pbs_computations(pool, tenant_id, &handle).await?;
+        handles.push(handle);
+    }
+
+    info!(batch_size, "Inserted batch");
+
+    // Send notification only after the batch was fully inserted
+    sqlx::query("SELECT pg_notify($1, '')")
+        .bind(LISTEN_CHANNEL)
+        .execute(pool)
+        .await?;
+
+    info!("Sent pg_notify to SnS worker");
+
+    // Wait a bit to ensure that the SNS worker has converted all ciphertexts
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    info!("Unpause LocalStack ...");
+    test_env
+        .s3_instance
+        .as_ref()
+        .unwrap()
+        .container
+        .unpause()
+        .await
+        .expect("LocalStack unpaused");
+
+    info!("LocalStack unpaused");
+
+    let start = std::time::Instant::now();
+    let mut set = tokio::task::JoinSet::new();
+    for handle in handles.iter() {
+        let test_env = test_env.clone();
+        let handle = handle.clone();
+        set.spawn(async move {
+            assert_ciphertext128(
+                &test_env,
+                tenant_id,
+                with_compression,
+                &handle,
+                expected_cleartext,
+                true,
+            )
+            .await
+        });
+    }
+
+    while let Some(res) = set.join_next().await {
+        res??;
+    }
+
+    let elapsed = start.elapsed();
+    info!(elapsed = ?elapsed, batch_size, "Batch execution completed");
+
+    // Assert that all ciphertext128 objects are uploaded to S3
+    assert_ciphertext_s3_object_count(test_env, bucket128, batch_size as i64).await;
+    assert_ciphertext_s3_object_count(test_env, bucket64, batch_size as i64).await;
+
+    anyhow::Result::<()>::Ok(())
+}
 #[tokio::test]
 #[serial(db)]
 #[cfg(not(feature = "gpu"))]
@@ -450,6 +579,8 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
 
     let client_key: Option<ClientKey> = fetch_client_key(&pool, &TENANT_API_KEY.to_owned()).await?;
 
+    clean_up(&pool.clone()).await?;
+
     let (events_tx, mut events_rx) = mpsc::channel::<&'static str>(10);
     tokio::spawn(async move {
         crate::run_all(config, token, Some(events_tx))
@@ -486,7 +617,8 @@ async fn setup_localstack(
         if std::env::var("TEST_GLOBAL_LOCALSTACK").unwrap_or("0".to_string()) == "1" {
             (None, LOCALSTACK_PORT)
         } else {
-            let localstack_instance = Arc::new(test_harness::localstack::start_localstack().await?);
+            let localstack_instance: Arc<LocalstackContainer> =
+                Arc::new(test_harness::localstack::start_localstack().await?);
             let host_port = localstack_instance.host_port;
             (Some(localstack_instance), host_port)
         };
@@ -609,7 +741,12 @@ async fn insert_into_pbs_computations(
 async fn clean_up(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     truncate_tables(
         pool,
-        vec!["pbs_computations", "ciphertexts", "ciphertext_digest"],
+        vec![
+            "pbs_computations",
+            "ciphertexts",
+            "ciphertexts128",
+            "ciphertext_digest",
+        ],
     )
     .await?;
 
@@ -628,10 +765,11 @@ async fn assert_ciphertext128(
     with_compression: bool,
     handle: &Vec<u8>,
     expected_value: i64,
+    enable_s3_assert: bool,
 ) -> anyhow::Result<()> {
     let pool = &test_env.pool;
     let client_key = &test_env.client_key;
-    let ct = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 100).await?;
+    let ct = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 1000).await?;
 
     info!("Ciphertext len: {:?}", ct.len());
 
@@ -678,16 +816,18 @@ async fn assert_ciphertext128(
 
     #[cfg(feature = "test_s3_use_handle_as_key")]
     {
-        info!("Asserting ciphertext uploaded to S3");
+        if enable_s3_assert {
+            info!("Asserting ciphertext uploaded to S3");
 
-        assert_ciphertext_uploaded(
-            test_env,
-            &test_env.conf.s3.bucket_ct128,
-            handle,
-            Some(ct.len() as i64),
-        )
-        .await;
-        assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct64, handle, None).await;
+            assert_ciphertext_uploaded(
+                test_env,
+                &test_env.conf.s3.bucket_ct128,
+                handle,
+                Some(ct.len() as i64),
+            )
+            .await;
+            assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct64, handle, None).await;
+        }
     }
 
     Ok(())
@@ -759,7 +899,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
             listen_channels: vec![LISTEN_CHANNEL.to_string()],
             notify_channel: "fhevm".to_string(),
             batch_limit,
-            gc_batch_limit: 0,
+            gc_batch_limit: 0, // Disable automatic garbage collection in tests
             polling_interval: 60000,
             cleanup_interval: Duration::from_hours(10),
             max_connections: 5,
@@ -771,11 +911,11 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
             bucket_ct64: "ct64".to_owned(),
             max_concurrent_uploads: 2000,
             retry_policy: S3RetryPolicy {
-                max_retries_per_upload: 100,
+                max_retries_per_upload: 1,
                 max_backoff: Duration::from_secs(10),
-                max_retries_timeout: Duration::from_secs(120),
+                max_retries_timeout: Duration::from_secs(3),
                 recheck_duration: Duration::from_secs(2),
-                regular_recheck_duration: Duration::from_secs(120),
+                regular_recheck_duration: Duration::from_secs(3),
             },
         },
         service_name: "".to_owned(),
