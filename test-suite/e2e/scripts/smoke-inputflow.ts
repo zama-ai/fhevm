@@ -37,7 +37,7 @@ const DEFAULT_TX_TIMEOUT_SECS = TIME_PER_BLOCK * NUMBER_OF_BLOCKS;
 const DEFAULT_FEE_BUMP = 1.125 ** NUMBER_OF_BLOCKS;
 const DEFAULT_DECRYPT_TIMEOUT_SECS = 120;
 
-const MIN_PRIORITY_FEE = ethers.parseUnits('2', 'gwei');
+const FALLBACK_PRIORITY_FEE = ethers.parseUnits('0.1', 'gwei');
 const CANCEL_GAS_LIMIT = 21_000n;
 const LOW_BALANCE_THRESHOLD = ethers.parseEther('0.005');
 const SMOKE_GAS_ESTIMATE = 1_000_000n; // ~1M gas covers deploy + call with buffer
@@ -93,13 +93,12 @@ const bumpFees = (base: FeeData, multiplier: number): FeeData => {
 
 const getBaseFees = async (provider: Provider): Promise<FeeData> => {
   const feeData = await provider.getFeeData();
-  const priority = feeData.maxPriorityFeePerGas ?? MIN_PRIORITY_FEE;
-  const maxPriorityFeePerGas = priority > MIN_PRIORITY_FEE ? priority : MIN_PRIORITY_FEE;
+  const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? FALLBACK_PRIORITY_FEE;
   let maxFeePerGas = feeData.maxFeePerGas ?? null;
 
   if (maxFeePerGas == null) {
     const pendingBlock = await provider.getBlock('pending');
-    const baseFee = pendingBlock?.baseFeePerGas ?? feeData.gasPrice ?? MIN_PRIORITY_FEE;
+    const baseFee = pendingBlock?.baseFeePerGas ?? feeData.gasPrice ?? FALLBACK_PRIORITY_FEE;
     maxFeePerGas = baseFee * 2n + maxPriorityFeePerGas;
   }
 
