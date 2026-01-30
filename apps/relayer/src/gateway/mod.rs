@@ -123,6 +123,7 @@ pub async fn initialize_gateway(
             .clone(),
         settings.gateway.contracts.clone(),
         repositories.input_proof.clone(),
+        settings.gateway.gw_event_not_found_retry.clone(),
     );
 
     PublicDecryptGatewayHandler::new(
@@ -137,6 +138,7 @@ pub async fn initialize_gateway(
             .clone(),
         decryption_address,
         repositories.public_decrypt.clone(),
+        settings.gateway.gw_event_not_found_retry.clone(),
     );
 
     UserDecryptGatewayHandler::new(
@@ -153,9 +155,12 @@ pub async fn initialize_gateway(
             .readiness_throttlers
             .delegated_user_decrypt_readiness_throttler
             .clone(),
-        decryption_address,
-        settings.gateway.contracts.user_decrypt_shares_threshold as usize,
         repositories.user_decrypt.clone(),
+        user_decrypt_handler::UserDecryptHandlerConfig {
+            decryption_address,
+            shares_threshold: settings.gateway.contracts.user_decrypt_shares_threshold as usize,
+            gw_event_retry: settings.gateway.gw_event_not_found_retry.clone(),
+        },
     );
 
     // Register transaction helper with orchestrator for health checks

@@ -1,5 +1,5 @@
 use crate::{
-    config::settings::{AppConfigError, ContractConfig},
+    config::settings::{AppConfigError, ContractConfig, GwEventNotFoundRetryConfig},
     core::{
         errors::EventProcessingError,
         event::{
@@ -31,6 +31,7 @@ use crate::{
     },
 };
 use std::str::FromStr;
+use std::time::Duration;
 
 use alloy::primitives::{Address, FixedBytes, TxHash};
 
@@ -45,6 +46,7 @@ pub struct InputProofGatewayHandler {
     tx_throttler: TxThrottlingSender<GatewayTxTask>,
     contracts: ContractConfig,
     input_proof_repo: Arc<InputProofRepository>,
+    gw_event_retry_config: GwEventNotFoundRetryConfig,
 }
 
 impl InputProofGatewayHandler {
@@ -53,12 +55,14 @@ impl InputProofGatewayHandler {
         tx_throttler: TxThrottlingSender<GatewayTxTask>,
         contracts: ContractConfig,
         input_proof_repo: Arc<InputProofRepository>,
+        gw_event_retry_config: GwEventNotFoundRetryConfig,
     ) -> Arc<Self> {
         let handler = Arc::new(Self {
             dispatcher: Arc::clone(&dispatcher),
             tx_throttler,
             contracts,
             input_proof_repo,
+            gw_event_retry_config,
         });
 
         // Self-register for events
@@ -327,10 +331,98 @@ impl InputProofGatewayHandler {
                 }
             },
             InputProofCompletionOutcome::NotFound => {
-                warn!(
-                    gw_reference_id = ?request_event.zkProofId,
-                    "Input proof not found for gw_reference_id"
-                );
+                // TEMPORARY FIX: Retry with delays - gateway event may have arrived before
+                // gw_reference_id was stored (race condition during high RPC latency).
+                // TODO: Replace with proper event buffering solution.
+                let retry_config = &self.gw_event_retry_config;
+                for attempt in 1..=retry_config.max_retries {
+                    warn!(
+                        step = %InputProofStep::GwEventRetrying,
+                        gw_reference_id = ?request_event.zkProofId,
+                        attempt = attempt,
+                        max_retries = retry_config.max_retries,
+                        "Gateway event arrived before gw_reference_id stored, retrying"
+                    );
+
+                    tokio::time::sleep(Duration::from_millis(retry_config.retry_delay_ms)).await;
+
+                    let retry_outcome = self
+                        .input_proof_repo
+                        .accept_and_complete_input_proof_req(
+                            request_event.zkProofId,
+                            input_proof_response.clone(),
+                            &tx_hash_str,
+                        )
+                        .await
+                        .map_err(|e| EventProcessingError::SqlOperationFailed {
+                            operation: "input_proof.accept_and_complete_input_proof_req"
+                                .to_string(),
+                            reason: e.to_string(),
+                        })?;
+
+                    match retry_outcome {
+                        InputProofCompletionOutcome::Completed { int_job_id } => {
+                            info!(
+                                step = %InputProofStep::GwEventReceived,
+                                int_job_id = %int_job_id,
+                                gw_reference_id = ?request_event.zkProofId,
+                                attempt = attempt,
+                                "Request found on retry, processing complete"
+                            );
+
+                            let next_event_data: RelayerEventData =
+                                RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
+                                    accepted: true,
+                                    input_proof_response: Some(input_proof_response.clone()),
+                                });
+
+                            let next_event =
+                                RelayerEvent::new(int_job_id, event.api_version, next_event_data);
+
+                            if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+                                error!(?e, "Failed to dispatch input proof response event");
+                            } else {
+                                info!(
+                                    step = %InputProofStep::RespSent,
+                                    int_job_id = %int_job_id,
+                                    "Response dispatched to HTTP handlers"
+                                );
+                            }
+                            return Ok(());
+                        }
+                        InputProofCompletionOutcome::AlreadyCompleted { int_job_id } => {
+                            debug!(
+                                int_job_id = %int_job_id,
+                                attempt = attempt,
+                                "Input proof already completed on retry"
+                            );
+                            return Ok(());
+                        }
+                        InputProofCompletionOutcome::AlreadyInFinalState {
+                            int_job_id,
+                            current_status,
+                        } => {
+                            debug!(
+                                int_job_id = %int_job_id,
+                                current_status = ?current_status,
+                                attempt = attempt,
+                                "Input proof in final state on retry"
+                            );
+                            return Ok(());
+                        }
+                        InputProofCompletionOutcome::NotFound => {
+                            if attempt == retry_config.max_retries {
+                                warn!(
+                                    step = %InputProofStep::GwEventRetrying,
+                                    gw_reference_id = ?request_event.zkProofId,
+                                    max_retries = retry_config.max_retries,
+                                    "Request not found after all retries, dropping event"
+                                );
+                            }
+                            // Continue to next attempt
+                        }
+                    }
+                }
             }
         }
 
@@ -422,10 +514,98 @@ impl InputProofGatewayHandler {
                 }
             },
             InputProofCompletionOutcome::NotFound => {
-                warn!(
-                    gw_reference_id = ?reject_proof_response.zkProofId,
-                    "Input proof not found for gw_reference_id (rejection)"
-                );
+                // TEMPORARY FIX: Retry with delays - gateway event may have arrived before
+                // gw_reference_id was stored (race condition during high RPC latency).
+                // TODO: Replace with proper event buffering solution.
+                let retry_config = &self.gw_event_retry_config;
+                for attempt in 1..=retry_config.max_retries {
+                    warn!(
+                        step = %InputProofStep::GwEventRetrying,
+                        gw_reference_id = ?reject_proof_response.zkProofId,
+                        attempt = attempt,
+                        max_retries = retry_config.max_retries,
+                        "Gateway event arrived before gw_reference_id stored, retrying (rejection)"
+                    );
+
+                    tokio::time::sleep(Duration::from_millis(retry_config.retry_delay_ms)).await;
+
+                    let retry_outcome = self
+                        .input_proof_repo
+                        .reject_and_complete_input_proof_req(
+                            reject_proof_response.zkProofId,
+                            "Proof Rejected".to_string(),
+                            &format!("{:?}", tx_hash),
+                        )
+                        .await
+                        .map_err(|e| EventProcessingError::SqlOperationFailed {
+                            operation: "input_proof.reject_and_complete_input_proof_req"
+                                .to_string(),
+                            reason: e.to_string(),
+                        })?;
+
+                    match retry_outcome {
+                        InputProofCompletionOutcome::Completed { int_job_id } => {
+                            info!(
+                                step = %InputProofStep::GwEventReceived,
+                                int_job_id = %int_job_id,
+                                gw_reference_id = ?reject_proof_response.zkProofId,
+                                attempt = attempt,
+                                "Request found on retry, processing rejection"
+                            );
+
+                            let next_event_data: RelayerEventData =
+                                RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
+                                    accepted: false,
+                                    input_proof_response: None,
+                                });
+
+                            let next_event =
+                                RelayerEvent::new(int_job_id, event.api_version, next_event_data);
+
+                            if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+                                error!(?e, "Failed to dispatch input proof rejection event");
+                            } else {
+                                info!(
+                                    step = %InputProofStep::RespSent,
+                                    int_job_id = %int_job_id,
+                                    "Rejection response dispatched to HTTP handlers"
+                                );
+                            }
+                            return Ok(());
+                        }
+                        InputProofCompletionOutcome::AlreadyCompleted { int_job_id } => {
+                            debug!(
+                                int_job_id = %int_job_id,
+                                attempt = attempt,
+                                "Input proof already completed on retry (rejection)"
+                            );
+                            return Ok(());
+                        }
+                        InputProofCompletionOutcome::AlreadyInFinalState {
+                            int_job_id,
+                            current_status,
+                        } => {
+                            debug!(
+                                int_job_id = %int_job_id,
+                                current_status = ?current_status,
+                                attempt = attempt,
+                                "Input proof in final state on retry (rejection)"
+                            );
+                            return Ok(());
+                        }
+                        InputProofCompletionOutcome::NotFound => {
+                            if attempt == retry_config.max_retries {
+                                warn!(
+                                    step = %InputProofStep::GwEventRetrying,
+                                    gw_reference_id = ?reject_proof_response.zkProofId,
+                                    max_retries = retry_config.max_retries,
+                                    "Request not found after all retries, dropping rejection event"
+                                );
+                            }
+                            // Continue to next attempt
+                        }
+                    }
+                }
             }
         }
 

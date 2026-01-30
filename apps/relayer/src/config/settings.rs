@@ -14,6 +14,36 @@ const MAX_LISTENERS: usize = 5;
 const MIN_DEDUP_TTL_SECONDS: u64 = 1;
 const MAX_DEDUP_TTL_SECONDS: u64 = 10;
 
+/// Configuration for retrying when gateway event arrives before gw_reference_id is stored.
+/// This is a workaround for the race condition where send_raw_transaction_sync has high latency.
+/// TODO: Replace with proper event buffering solution.
+#[derive(Debug, Deserialize, Clone)]
+pub struct GwEventNotFoundRetryConfig {
+    /// Maximum number of retry attempts (default: 3)
+    #[serde(default = "default_gw_event_retry_max_retries")]
+    pub max_retries: u32,
+    /// Delay between retries in milliseconds (default: 1000)
+    #[serde(default = "default_gw_event_retry_delay_ms")]
+    pub retry_delay_ms: u64,
+}
+
+fn default_gw_event_retry_max_retries() -> u32 {
+    3
+}
+
+fn default_gw_event_retry_delay_ms() -> u64 {
+    1000
+}
+
+impl Default for GwEventNotFoundRetryConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: default_gw_event_retry_max_retries(),
+            retry_delay_ms: default_gw_event_retry_delay_ms(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct GatewayConfig {
     pub blockchain_rpc: BlockchainRpcConfig,
@@ -21,6 +51,9 @@ pub struct GatewayConfig {
     pub tx_engine: TxEngineConfig,
     pub readiness_checker: ReadinessCheckConfig,
     pub contracts: ContractConfig,
+    /// Retry config for gateway events arriving before gw_reference_id stored
+    #[serde(default)]
+    pub gw_event_not_found_retry: GwEventNotFoundRetryConfig,
 }
 
 impl GatewayConfig {

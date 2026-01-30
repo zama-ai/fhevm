@@ -31,6 +31,7 @@ pub enum PublicDecryptStep {
 
     // Degraded path (WARN)
     Bounced,
+    GwEventRetrying, // Gateway event arrived before gw_reference_id stored
 }
 
 impl fmt::Display for PublicDecryptStep {
@@ -46,6 +47,7 @@ impl fmt::Display for PublicDecryptStep {
             Self::GwEventReceived => "gw_event_received",
             Self::RespSent => "resp_sent",
             Self::Bounced => "bounced",
+            Self::GwEventRetrying => "gw_event_retrying",
         };
         write!(f, "{}", s)
     }
@@ -71,6 +73,7 @@ pub enum UserDecryptStep {
     // Degraded path (WARN)
     Bounced,
     LateShareReceived,
+    GwEventRetrying, // Gateway event arrived before gw_reference_id stored
 }
 
 impl fmt::Display for UserDecryptStep {
@@ -88,6 +91,7 @@ impl fmt::Display for UserDecryptStep {
             Self::RespSent => "resp_sent",
             Self::Bounced => "bounced",
             Self::LateShareReceived => "late_share_received",
+            Self::GwEventRetrying => "gw_event_retrying",
         };
         write!(f, "{}", s)
     }
@@ -111,6 +115,7 @@ pub enum InputProofStep {
 
     // Degraded path (WARN)
     Bounced,
+    GwEventRetrying, // Gateway event arrived before gw_reference_id stored
 }
 
 impl fmt::Display for InputProofStep {
@@ -126,6 +131,7 @@ impl fmt::Display for InputProofStep {
             Self::ProofRejected => "proof_rejected",
             Self::RespSent => "resp_sent",
             Self::Bounced => "bounced",
+            Self::GwEventRetrying => "gw_event_retrying",
         };
         write!(f, "{}", s)
     }

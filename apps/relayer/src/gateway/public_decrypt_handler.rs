@@ -1,4 +1,5 @@
 use crate::{
+    config::settings::GwEventNotFoundRetryConfig,
     core::{
         errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG},
         event::{
@@ -37,6 +38,7 @@ use alloy::primitives::{Address, Bytes, FixedBytes, TxHash};
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, error, info, instrument, warn};
 
 #[derive(Clone)]
@@ -46,6 +48,7 @@ pub struct GatewayHandler {
     public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
     decryption_address: Address,
     public_decrypt_repo: Arc<PublicDecryptRepository>,
+    gw_event_retry_config: GwEventNotFoundRetryConfig,
 }
 
 impl GatewayHandler {
@@ -55,6 +58,7 @@ impl GatewayHandler {
         public_decrypt_readiness_throttler: ReadinessSender<PublicDecryptReadinessTask>,
         decryption_address: Address,
         public_decrypt_repo: Arc<PublicDecryptRepository>,
+        gw_event_retry_config: GwEventNotFoundRetryConfig,
     ) -> Arc<Self> {
         let handler = Arc::new(Self {
             dispatcher: Arc::clone(&dispatcher),
@@ -62,6 +66,7 @@ impl GatewayHandler {
             public_decrypt_readiness_throttler,
             decryption_address,
             public_decrypt_repo,
+            gw_event_retry_config,
         });
 
         // Self-register for events
@@ -408,10 +413,101 @@ impl GatewayHandler {
                 }
             },
             PublicDecryptCompletionOutcome::NotFound => {
-                warn!(
-                    gw_reference_id = %public_decryption_id,
-                    "Public decrypt not found for gw_reference_id"
-                );
+                // TEMPORARY FIX: Retry with delays - gateway event may have arrived before
+                // gw_reference_id was stored (race condition during high RPC latency).
+                // TODO: Replace with proper event buffering solution.
+                let retry_config = &self.gw_event_retry_config;
+                for attempt in 1..=retry_config.max_retries {
+                    warn!(
+                        step = %PublicDecryptStep::GwEventRetrying,
+                        gw_reference_id = %public_decryption_id,
+                        attempt = attempt,
+                        max_retries = retry_config.max_retries,
+                        "Gateway event arrived before gw_reference_id stored, retrying"
+                    );
+
+                    tokio::time::sleep(Duration::from_millis(retry_config.retry_delay_ms)).await;
+
+                    let retry_outcome = self
+                        .public_decrypt_repo
+                        .complete_req_with_res(
+                            public_decryption_id,
+                            decrypt_response.clone(),
+                            &tx_hash_str,
+                        )
+                        .await
+                        .map_err(|e| EventProcessingError::SqlOperationFailed {
+                            operation: "public_decrypt.complete_req_with_res".to_string(),
+                            reason: e.to_string(),
+                        })?;
+
+                    match retry_outcome {
+                        PublicDecryptCompletionOutcome::Completed { int_job_id } => {
+                            info!(
+                                step = %PublicDecryptStep::GwEventReceived,
+                                int_job_id = %int_job_id,
+                                gw_reference_id = %public_decryption_id,
+                                attempt = attempt,
+                                "Request found on retry, processing complete"
+                            );
+
+                            // Dispatch response event to notify waiting HTTP handlers
+                            let response_event_data = RelayerEventData::PublicDecrypt(
+                                PublicDecryptEventData::RespRcvdFromGw {
+                                    decrypt_response: decrypt_response.clone(),
+                                },
+                            );
+
+                            let response_event = RelayerEvent::new(
+                                int_job_id,
+                                event.api_version,
+                                response_event_data,
+                            );
+
+                            if let Err(e) = self.dispatcher.dispatch_event(response_event).await {
+                                error!(?e, "Failed to dispatch response event to HTTP handlers");
+                            } else {
+                                info!(
+                                    step = %PublicDecryptStep::RespSent,
+                                    int_job_id = %int_job_id,
+                                    "Response dispatched to HTTP handlers"
+                                );
+                            }
+                            return Ok(());
+                        }
+                        PublicDecryptCompletionOutcome::AlreadyCompleted { int_job_id } => {
+                            debug!(
+                                int_job_id = %int_job_id,
+                                attempt = attempt,
+                                "Public decrypt already completed on retry"
+                            );
+                            return Ok(());
+                        }
+                        PublicDecryptCompletionOutcome::AlreadyInFinalState {
+                            int_job_id,
+                            current_status,
+                        } => {
+                            debug!(
+                                int_job_id = %int_job_id,
+                                current_status = ?current_status,
+                                attempt = attempt,
+                                "Public decrypt in final state on retry"
+                            );
+                            return Ok(());
+                        }
+                        PublicDecryptCompletionOutcome::NotFound => {
+                            if attempt == retry_config.max_retries {
+                                warn!(
+                                    step = %PublicDecryptStep::GwEventRetrying,
+                                    gw_reference_id = %public_decryption_id,
+                                    max_retries = retry_config.max_retries,
+                                    "Request not found after all retries, dropping event"
+                                );
+                            }
+                            // Continue to next attempt
+                        }
+                    }
+                }
             }
         }
 

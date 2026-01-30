@@ -1,4 +1,5 @@
 use crate::{
+    config::settings::GwEventNotFoundRetryConfig,
     core::{
         errors::{EventProcessingError, READINESS_CHECK_TIMEOUT_MSG},
         event::{
@@ -41,6 +42,7 @@ use alloy::primitives::{Address, Bytes, FixedBytes, TxHash, U256};
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, error, info, instrument, warn};
 
 impl From<&HandleContractPair> for Decryption::CtHandleContractPair {
@@ -52,15 +54,22 @@ impl From<&HandleContractPair> for Decryption::CtHandleContractPair {
     }
 }
 
+/// Configuration for the user decrypt handler.
+#[derive(Clone)]
+pub struct UserDecryptHandlerConfig {
+    pub decryption_address: Address,
+    pub shares_threshold: usize,
+    pub gw_event_retry: GwEventNotFoundRetryConfig,
+}
+
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     tx_throttler: TxThrottlingSender<GatewayTxTask>,
     user_decrypt_readiness_throttler: ReadinessSender<UserDecryptReadinessTask>,
     delegated_user_decrypt_readiness_throttler: ReadinessSender<DelegatedUserDecryptReadinessTask>,
-    decryption_address: Address,
     user_decrypt_repo: Arc<UserDecryptRepository>,
-    user_decrypt_shares_threshold: i64,
+    config: UserDecryptHandlerConfig,
 }
 
 impl GatewayHandler {
@@ -71,18 +80,16 @@ impl GatewayHandler {
         delegated_user_decrypt_readiness_throttler: ReadinessSender<
             DelegatedUserDecryptReadinessTask,
         >,
-        decryption_address: Address,
-        user_decrypt_shares_threshold: usize,
         user_decrypt_repo: Arc<UserDecryptRepository>,
+        config: UserDecryptHandlerConfig,
     ) -> Arc<Self> {
         let handler = Arc::new(Self {
             dispatcher: Arc::clone(&dispatcher),
             tx_throttler,
             user_decrypt_readiness_throttler,
             delegated_user_decrypt_readiness_throttler,
-            decryption_address,
             user_decrypt_repo,
-            user_decrypt_shares_threshold: user_decrypt_shares_threshold as i64,
+            config,
         });
 
         // Self-register for events
@@ -403,7 +410,7 @@ impl GatewayHandler {
         calldata_bytes: Bytes,
         job_id_hash: [u8; 32],
     ) -> Result<(), EventProcessingError> {
-        let decryption_address = self.decryption_address;
+        let decryption_address = self.config.decryption_address;
 
         let job_id = JobId::from(job_id_hash);
 
@@ -482,6 +489,7 @@ impl GatewayHandler {
     /// Stores individual share in database and atomically completes request if threshold is reached.
     ///
     /// Uses atomic transaction to prevent race conditions with timeout jobs.
+    /// Includes retry logic for the race condition where gateway events arrive before gw_reference_id is stored.
     async fn store_share_and_check_threshold(
         &self,
         event: RelayerEvent,
@@ -489,28 +497,131 @@ impl GatewayHandler {
         tx_hash: TxHash,
     ) -> Result<(), EventProcessingError> {
         let user_decryption_id = user_decrypt_response.decryptionId;
-        let threshold = self.user_decrypt_shares_threshold;
+        let threshold = self.config.shares_threshold as i64;
 
         let tx_hash_str = format!("{:?}", tx_hash);
+        // Pre-compute hex-encoded values to avoid lifetime issues with closures
+        let share_hex = hex::encode(&user_decrypt_response.userDecryptedShare);
+        let kms_signature_hex = hex::encode(&user_decrypt_response.signature);
+        let extra_data_hex = hex::encode(&user_decrypt_response.extraData);
+
         let params = ShareInsertParams {
             gw_reference_id: user_decryption_id,
             share_index: user_decrypt_response.indexShare,
-            share: &hex::encode(&user_decrypt_response.userDecryptedShare),
-            kms_signature: &hex::encode(&user_decrypt_response.signature),
-            extra_data: &hex::encode(&user_decrypt_response.extraData),
+            share: &share_hex,
+            kms_signature: &kms_signature_hex,
+            extra_data: &extra_data_hex,
             tx_hash: &tx_hash_str,
         };
 
-        let outcome = self
+        let outcome = match self
             .user_decrypt_repo
             .insert_share_and_complete_if_threshold_reached(params, threshold)
             .await
-            .map_err(|e| EventProcessingError::SqlOperationFailed {
-                operation: "user_decrypt.insert_share_and_complete_if_threshold_reached"
-                    .to_string(),
-                reason: e.to_string(),
-            })?;
+        {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                let error_str = e.to_string();
+                // Check if this is the "Request not found" error which indicates the race condition
+                if error_str.contains("Request not found when threshold reached") {
+                    // TEMPORARY FIX: Retry with delays - gateway event may have arrived before
+                    // gw_reference_id was stored (race condition during high RPC latency).
+                    // TODO: Replace with proper event buffering solution.
+                    let retry_config = &self.config.gw_event_retry;
+                    for attempt in 1..=retry_config.max_retries {
+                        warn!(
+                            step = %UserDecryptStep::GwEventRetrying,
+                            gw_reference_id = %user_decryption_id,
+                            attempt = attempt,
+                            max_retries = retry_config.max_retries,
+                            "Gateway event arrived before gw_reference_id stored, retrying"
+                        );
 
+                        tokio::time::sleep(Duration::from_millis(retry_config.retry_delay_ms))
+                            .await;
+
+                        let retry_params = ShareInsertParams {
+                            gw_reference_id: user_decryption_id,
+                            share_index: user_decrypt_response.indexShare,
+                            share: &share_hex,
+                            kms_signature: &kms_signature_hex,
+                            extra_data: &extra_data_hex,
+                            tx_hash: &tx_hash_str,
+                        };
+
+                        match self
+                            .user_decrypt_repo
+                            .insert_share_and_complete_if_threshold_reached(retry_params, threshold)
+                            .await
+                        {
+                            Ok(retry_outcome) => {
+                                info!(
+                                    step = %UserDecryptStep::ShareReceived,
+                                    int_job_id = %event.job_id,
+                                    gw_reference_id = %user_decryption_id,
+                                    attempt = attempt,
+                                    "Request found on retry"
+                                );
+                                return self
+                                    .handle_share_completion_outcome(
+                                        event,
+                                        user_decryption_id,
+                                        threshold,
+                                        retry_outcome,
+                                    )
+                                    .await;
+                            }
+                            Err(retry_err) => {
+                                let retry_error_str = retry_err.to_string();
+                                if retry_error_str
+                                    .contains("Request not found when threshold reached")
+                                {
+                                    if attempt == retry_config.max_retries {
+                                        warn!(
+                                            step = %UserDecryptStep::GwEventRetrying,
+                                            gw_reference_id = %user_decryption_id,
+                                            max_retries = retry_config.max_retries,
+                                            "Request not found after all retries, dropping event"
+                                        );
+                                        return Ok(());
+                                    }
+                                    // Continue to next attempt
+                                } else {
+                                    // Different error on retry, propagate it
+                                    return Err(EventProcessingError::SqlOperationFailed {
+                                        operation:
+                                            "user_decrypt.insert_share_and_complete_if_threshold_reached"
+                                                .to_string(),
+                                        reason: retry_error_str,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    // Exhausted all retries without finding the request
+                    return Ok(());
+                }
+                // Not the race condition error, propagate it
+                return Err(EventProcessingError::SqlOperationFailed {
+                    operation: "user_decrypt.insert_share_and_complete_if_threshold_reached"
+                        .to_string(),
+                    reason: error_str,
+                });
+            }
+        };
+
+        self.handle_share_completion_outcome(event, user_decryption_id, threshold, outcome)
+            .await
+    }
+
+    /// Handles the outcome of share insertion and completion check.
+    async fn handle_share_completion_outcome(
+        &self,
+        event: RelayerEvent,
+        user_decryption_id: U256,
+        threshold: i64,
+        outcome: ShareCompletionOutcome,
+    ) -> Result<(), EventProcessingError> {
         match outcome {
             ShareCompletionOutcome::Completed {
                 count,
@@ -613,7 +724,7 @@ impl GatewayHandler {
         shares: Vec<UserDecryptShare>,
     ) {
         let count = shares.len();
-        let threshold = self.user_decrypt_shares_threshold as usize;
+        let threshold = self.config.shares_threshold;
 
         // Validate share count matches threshold exactly (database LIMIT should ensure this)
         if shares.len() != threshold {
@@ -621,7 +732,7 @@ impl GatewayHandler {
                 job_id = %event.job_id,
                 got_count = %count,
                 expected_count = %threshold,
-                threshold = %self.user_decrypt_shares_threshold,
+                threshold = %self.config.shares_threshold,
                 "Number of shares not matching count"
             );
             for share in shares {

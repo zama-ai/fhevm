@@ -99,6 +99,12 @@ gateway:
     decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
     input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
     user_decrypt_shares_threshold: 9
+  # Retry configuration for gateway events arriving before gw_reference_id is stored.
+  # This is a workaround for the race condition where send_raw_transaction_sync has high latency.
+  # TODO: Replace with proper event buffering solution.
+  gw_event_not_found_retry:
+    max_retries: 3
+    retry_delay_ms: 1000
 log:
 
   format: "pretty"          # compact, pretty, or json
