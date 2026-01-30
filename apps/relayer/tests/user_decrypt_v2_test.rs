@@ -4,8 +4,8 @@ use crate::common::utils::{
     assert_retry_after_header_present, create_timeout_test_config, TestSetup,
 };
 use crate::common::validation_helper::{
-    expect_v2_malformed_json, expect_v2_validation_error, test_endpoint, test_endpoint_raw_body,
-    with_invalid_field,
+    expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
+    test_endpoint_raw_body, with_invalid_field,
 };
 use alloy::primitives::{Address, Bytes, B256};
 use ethereum_rpc_mock::Response;
@@ -15,6 +15,7 @@ use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
 };
 use fhevm_relayer::http::validation_messages as constants_validation;
 use rand::{rng, Rng};
+use rstest::rstest;
 use serde_json::json;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -25,6 +26,8 @@ mod constants {
 
     pub const EXTRA_DATA: &str = "0x00";
     pub const REQUEST_VALIDITY_DAYS: &str = "10";
+    // Should fail since this date is in the future (2035)
+    pub const FUTURE_DATE: &str = "2051218800";
 
     // Timeout test configuration
     pub const TIMEOUT_DURATION_SECS: u64 = 3;
@@ -959,6 +962,249 @@ async fn test_v2_post_validation_error_has_status_and_request_id() {
         base_payload,
         with_invalid_field("extraData", json!("invalid")),
         expect_v2_validation_error("extraData", constants_validation::EXACT_MUST_BE_0X00),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+// Chain ID validation
+#[case::empty_chain_id("contractsChainId", json!(""), constants_validation::NUMBER_DECIMAL_OR_HEX)]
+#[case::invalid_chain_id_decimal("contractsChainId", json!("abc123"), constants_validation::NUMBER_DECIMAL_OR_HEX)]
+#[case::invalid_chain_id_hex("contractsChainId", json!("0xzzz"), constants_validation::NUMBER_DECIMAL_OR_HEX)]
+// Contract addresses validation
+#[case::empty_contract_addresses("contractAddresses", json!([]), constants_validation::MUST_NOT_BE_EMPTY)]
+#[case::short_contract_address("contractAddresses", json!(["0xfds"]), constants_validation::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::long_contract_address("contractAddresses", json!(["0x1234567890123456789012345678901234567890123"]), constants_validation::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::missing_0x_contract_address("contractAddresses", json!(["1234567890123456789012345678901234567890"]), constants_validation::HEX_MUST_START_WITH_0X)]
+#[case::invalid_hex_contract_address("contractAddresses", json!(["0x123zzz5678901234567890123456789012345678"]), constants_validation::HEX_INVALID_CHARACTERS)]
+#[case::contract_address_with_invalid_hex_g("contractAddresses", json!(["0x123456789012345678901234567890123456789g"]), constants_validation::HEX_INVALID_CHARACTERS)]
+#[case::empty_string_contract_address("contractAddresses", json!([""]), constants_validation::HEX_MUST_START_WITH_0X)]
+#[tokio::test]
+async fn test_error_invalid_fields_set_1(
+    #[case] field: &str,
+    #[case] invalid_value: serde_json::Value,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    test_endpoint(
+        &helpers::v2_user_decrypt_post_url(&setup),
+        base_payload,
+        with_invalid_field(field, invalid_value),
+        expect_v2_validation_error(field, expected_issue),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+// User address validation
+#[case::empty_user_address("userAddress", json!(""), constants_validation::HEX_MUST_START_WITH_0X)]
+#[case::short_user_address("userAddress", json!("0xfds"), constants_validation::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::long_user_address("userAddress", json!("0x1234567890123456789012345678901234567890123"), constants_validation::LENGTH_MUST_BE_42_CHARACTERS)]
+#[case::missing_0x_user_address("userAddress", json!("1234567890123456789012345678901234567890"), constants_validation::HEX_MUST_START_WITH_0X)]
+#[case::invalid_hex_user_address("userAddress", json!("0x123zzz5678901234567890123456789012345678"), constants_validation::HEX_INVALID_CHARACTERS)]
+#[case::user_address_with_invalid_hex_g("userAddress", json!("0x123456789012345678901234567890123456789g"), constants_validation::HEX_INVALID_CHARACTERS)]
+#[case::empty_string_user_address("userAddress", json!(""), constants_validation::HEX_MUST_START_WITH_0X)]
+// Handle contract pairs validation
+#[case::empty_handle_contract_pairs("handleContractPairs", json!([]), constants_validation::MUST_NOT_BE_EMPTY)]
+#[tokio::test]
+async fn test_error_invalid_fields_set_2(
+    #[case] field: &str,
+    #[case] invalid_value: serde_json::Value,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    test_endpoint(
+        &helpers::v2_user_decrypt_post_url(&setup),
+        base_payload,
+        with_invalid_field(field, invalid_value),
+        expect_v2_validation_error(field, expected_issue),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+// Signature validation
+#[case::short_signature("signature", json!("abcdef12"), constants_validation::LENGTH_MUST_BE_130_CHARACTERS)]
+#[case::long_signature("signature", json!("abcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"), constants_validation::LENGTH_MUST_BE_130_CHARACTERS)]
+#[case::signature_with_0x_prefix("signature", json!("0xabcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"), constants_validation::HEX_MUST_NOT_START_WITH_0X)]
+#[case::signature_with_invalid_hex_g("signature", json!("abcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890g"), constants_validation::HEX_INVALID_STRING)]
+#[case::empty_signature("signature", json!(""), constants_validation::LENGTH_MUST_BE_130_CHARACTERS)]
+// Public key validation
+#[case::public_key_with_0x_prefix("publicKey", json!("0xabcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"), constants_validation::HEX_MUST_NOT_START_WITH_0X)]
+#[case::public_key_with_invalid_hex_g("publicKey", json!("abcdef123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890g"), constants_validation::HEX_INVALID_STRING)]
+#[case::empty_public_key("publicKey", json!(""), constants_validation::MUST_NOT_BE_EMPTY)]
+// Extra data validation
+#[case::empty_extra_data("extraData", json!(""), constants_validation::EXACT_MUST_BE_0X00)]
+#[case::wrong_extra_data("extraData", json!("0x01"), constants_validation::EXACT_MUST_BE_0X00)]
+#[case::invalid_extra_data("extraData", json!("invalid"), constants_validation::EXACT_MUST_BE_0X00)]
+#[tokio::test]
+async fn test_error_invalid_fields_set_3(
+    #[case] field: &str,
+    #[case] invalid_value: serde_json::Value,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    test_endpoint(
+        &helpers::v2_user_decrypt_post_url(&setup),
+        base_payload,
+        with_invalid_field(field, invalid_value),
+        expect_v2_validation_error(field, expected_issue),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+#[case::short_handle("0xabcdef", constants_validation::LENGTH_MUST_BE_64_CHARACTERS)]
+#[case::long_handle(
+    "0xabcdef1234567890123456789012345678901234567890123456789012345678901234567890",
+    constants_validation::LENGTH_MUST_BE_64_CHARACTERS
+)]
+#[case::handle_with_invalid_hex_g(
+    "0xabcdefg123456789012345678901234567890123456789012345678901234567890",
+    constants_validation::HEX_INVALID_STRING
+)]
+#[case::handle_without_0x_prefix(
+    "abcdef123456789012345678901234567890123456789012345678901234567890",
+    constants_validation::HEX_MUST_START_WITH_0X
+)]
+#[case::empty_handle("", constants_validation::HEX_MUST_START_WITH_0X)]
+#[tokio::test]
+async fn test_error_invalid_nested_handle_fields(
+    #[case] invalid_handle: &str,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let mut base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    // Modify the nested handle field with the test case value
+    base_payload["handleContractPairs"][0]["handle"] = json!(invalid_handle);
+
+    test_endpoint(
+        &helpers::v2_user_decrypt_post_url(&setup),
+        base_payload,
+        |_| {}, // No additional modifications needed
+        expect_v2_validation_error("handleContractPairs", expected_issue),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+#[case::future_timestamp(
+    constants::FUTURE_DATE,
+    constants_validation::TIMESTAMP_MUST_NOT_BE_IN_FUTURE
+)]
+#[tokio::test]
+async fn test_error_invalid_nested_handle_fields_2(
+    #[case] future_date: &str,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let mut base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    // Modify the nested handle field with the test case value
+    base_payload["requestValidity"]["startTimestamp"] = json!(future_date);
+
+    test_endpoint(
+        &helpers::v2_user_decrypt_post_url(&setup),
+        base_payload,
+        |_| {}, // No additional modifications needed
+        expect_v2_validation_error("requestValidity", expected_issue),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+#[case::missing_contracts_chain_id("contractsChainId")]
+#[case::missing_contract_addresses("contractAddresses")]
+#[case::missing_user_address("userAddress")]
+#[case::missing_handle_contract_pairs("handleContractPairs")]
+#[case::missing_request_validity("requestValidity")]
+#[case::missing_signature("signature")]
+#[case::missing_public_key("publicKey")]
+#[case::missing_extra_data("extraData")]
+#[tokio::test]
+async fn test_error_missing_fields(#[case] field: &str) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let user_address = helpers::random_address();
+    let contract_address = helpers::random_address();
+    let base_payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        contract_address,
+        user_address,
+    );
+
+    test_endpoint(
+        &helpers::v2_user_decrypt_post_url(&setup),
+        base_payload,
+        |p| {
+            p.as_object_mut().unwrap().remove(field);
+        },
+        expect_v2_missing_field(field),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+#[case::missing_closing_brace(r#"{"field": "value""#)]
+#[case::missing_comma(r#"{"field1": "value1" "field2": "value2"}"#)]
+#[tokio::test]
+async fn test_error_malformed_json(#[case] malformed_json: &str) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    test_endpoint_raw_body(
+        &helpers::v2_user_decrypt_post_url(&setup),
+        malformed_json,
+        expect_v2_malformed_json(),
     )
     .await;
 

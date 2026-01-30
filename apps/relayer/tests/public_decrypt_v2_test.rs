@@ -4,8 +4,8 @@ use crate::common::utils::{
     assert_retry_after_header_present, create_timeout_test_config, TestSetup,
 };
 use crate::common::validation_helper::{
-    expect_v2_malformed_json, expect_v2_validation_error, test_endpoint, test_endpoint_raw_body,
-    with_invalid_field,
+    expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
+    test_endpoint_raw_body, with_invalid_field,
 };
 use alloy::primitives::B256;
 use ethereum_rpc_mock::Response;
@@ -15,6 +15,7 @@ use fhevm_relayer::http::endpoints::v2::types::public_decrypt::{
 };
 use fhevm_relayer::http::validation_messages as constants_validation;
 use rand::{rng, Rng};
+use rstest::rstest;
 use serde_json::json;
 use std::str::FromStr;
 use tempfile::TempDir;
@@ -666,6 +667,76 @@ async fn test_v2_post_validation_error_has_status_and_request_id() {
         base_payload,
         with_invalid_field("extraData", json!("invalid")),
         expect_v2_validation_error("extraData", constants_validation::EXACT_MUST_BE_0X00),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+// Ciphertext handles validation
+#[case::empty_ciphertext_handles("ciphertextHandles", json!([]), constants_validation::MUST_NOT_BE_EMPTY)]
+#[case::invalid_hex_ciphertext_handle("ciphertextHandles", json!(["0xabcdefabcdefs"]), constants_validation::HEX_INVALID_STRING)]
+#[case::odd_length_ciphertext_handle("ciphertextHandles", json!(["0xabcdef1"]), constants_validation::HEX_INVALID_STRING)]
+#[case::ciphertext_handle_with_invalid_hex_g("ciphertextHandles", json!(["0xabcdefg"]), constants_validation::HEX_INVALID_STRING)]
+#[case::ciphertext_handle_without_0x_prefix("ciphertextHandles", json!(["abcdef123456789012345678901234567890123456789012345678901234567890"]), constants_validation::HEX_MUST_START_WITH_0X)]
+#[case::empty_string_ciphertext_handle("ciphertextHandles", json!([""]), constants_validation::HEX_MUST_START_WITH_0X)]
+// Extra data validation
+#[case::empty_extra_data("extraData", json!(""), constants_validation::EXACT_MUST_BE_0X00)]
+#[case::wrong_extra_data("extraData", json!("0x01"), constants_validation::EXACT_MUST_BE_0X00)]
+#[case::invalid_extra_data("extraData", json!("invalid"), constants_validation::EXACT_MUST_BE_0X00)]
+#[tokio::test]
+async fn test_error_invalid_fields(
+    #[case] field: &str,
+    #[case] invalid_value: serde_json::Value,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let base_payload = helpers::create_public_decrypt_payload();
+
+    test_endpoint(
+        &helpers::v2_public_decrypt_post_url(&setup),
+        base_payload,
+        with_invalid_field(field, invalid_value),
+        expect_v2_validation_error(field, expected_issue),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+#[case::missing_ciphertext_handles("ciphertextHandles")]
+#[case::missing_extra_data("extraData")]
+#[tokio::test]
+async fn test_error_missing_fields(#[case] field: &str) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let base_payload = helpers::create_public_decrypt_payload();
+
+    test_endpoint(
+        &helpers::v2_public_decrypt_post_url(&setup),
+        base_payload,
+        |p| {
+            p.as_object_mut().unwrap().remove(field);
+        },
+        expect_v2_missing_field(field),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+#[rstest]
+#[case::missing_closing_brace(r#"{"field": "value""#)]
+#[case::missing_comma(r#"{"field1": "value1" "field2": "value2"}"#)]
+#[tokio::test]
+async fn test_error_malformed_json(#[case] malformed_json: &str) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    test_endpoint_raw_body(
+        &helpers::v2_public_decrypt_post_url(&setup),
+        malformed_json,
+        expect_v2_malformed_json(),
     )
     .await;
 
