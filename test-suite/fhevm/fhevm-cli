@@ -37,8 +37,8 @@ export HOST_VERSION=${HOST_VERSION:-"v0.10.9"}
 
 # Other services.
 export CORE_VERSION=${CORE_VERSION:-"v0.13.0-rc.1"}
-export RELAYER_VERSION=${RELAYER_VERSION:-"sha-e612c5e"}
-export RELAYER_MIGRATE_VERSION=${RELAYER_MIGRATE_VERSION:-"sha-e612c5e"}
+export RELAYER_VERSION=${RELAYER_VERSION:-"v0.9.0-rc.1"}
+export RELAYER_MIGRATE_VERSION=${RELAYER_MIGRATE_VERSION:-"v0.9.0-rc.1"}
 # Test-suite docker image cannot be updated with 0.10.x releases because of the introduction a
 # breaking change in delegate user decryption tests in https://github.com/zama-ai/fhevm/pull/1092
 export TEST_SUITE_VERSION=${TEST_SUITE_VERSION:-"e9821bb"}
