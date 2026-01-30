@@ -45,7 +45,7 @@ describe('User decryption', function () {
       expect.fail('Expected an error to be thrown - Bob should not be able to user decrypt Alice balance');
     } catch (error) {
       expect(error.message).to.equal(
-        `User ${this.signers.bob.address} is not authorized to user decrypt handle ${handle}!`,
+        `User address ${this.signers.bob.address} is not authorized to user decrypt handle ${handle}!`,
       );
     }
 
@@ -87,7 +87,7 @@ describe('User decryption', function () {
       expect.fail('Expected an error to be thrown - userAddress and contractAddress cannot be equal');
     } catch (error) {
       expect(error.message).to.equal(
-        `userAddress ${this.signers.alice.address} should not be equal to contractAddress when requesting user decryption!`,
+        `User address ${this.signers.alice.address} should not be equal to contract address when requesting user decryption!`,
       );
     }
   });

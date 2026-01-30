@@ -5,6 +5,8 @@ import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { userDecryptSingleHandle } from '../utils';
 
+const ENFORCED_PAUSE_SELECTOR = '0xd93c0665';
+
 describe('Paused gateway', function () {
   before(async function () {
     await initSigners(2);
@@ -37,7 +39,7 @@ describe('Paused gateway', function () {
     );
     inputAlice.add64(18446744073709550042n);
 
-    await expect(inputAlice.encrypt()).to.be.rejectedWith(new RegExp('Could not estimate gas'));
+    await expect(inputAlice.encrypt()).to.be.rejectedWith(new RegExp(ENFORCED_PAUSE_SELECTOR));
   });
 
   // The following test case should cover the Decryption.userDecryptionRequest method calling.
@@ -53,7 +55,7 @@ describe('Paused gateway', function () {
         privateKey,
         publicKey,
       ),
-    ).to.be.rejectedWith(new RegExp('Could not estimate gas'));
+    ).to.be.rejectedWith(new RegExp(ENFORCED_PAUSE_SELECTOR));
   });
 
   // The following test case should cover the Decryption.publicDecryptionRequest method calling.
@@ -62,7 +64,7 @@ describe('Paused gateway', function () {
     const handleAddress = await this.httpPublicDecryptContract.xAddress();
     const handle32 = await this.httpPublicDecryptContract.xUint32();
     await expect(this.instances.alice.publicDecrypt([handleAddress, handle32, handleBool])).to.be.rejectedWith(
-      new RegExp('Could not estimate gas'),
+      new RegExp(ENFORCED_PAUSE_SELECTOR),
     );
   });
 });
