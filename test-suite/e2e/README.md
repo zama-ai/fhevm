@@ -54,7 +54,7 @@ The smoke runner uses HD wallet signers derived from `MNEMONIC`. By default, it 
 for automatic failover - if one signer has a stuck transaction, it falls back to another.
 
 **Important:** All configured signers should be funded for maximum resilience. The script logs all
-available signers at startup with their balances and warns if any have low balance (< 0.1 ETH).
+available signers at startup with their balances and warns if any have low balance (< 0.005 ETH).
 
 To derive signer addresses from a mnemonic (for funding):
 ```shell
