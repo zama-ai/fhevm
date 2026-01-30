@@ -140,6 +140,7 @@ jobs:
           - kms-connector/crates/gw-listener/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
+          - gateway-contracts/rust-bindings/**
 
   build-gw-listener:
     needs: check-changes-gw-listener
@@ -186,6 +187,8 @@ jobs:
           - kms-connector/crates/kms-worker/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
+          - gateway-contracts/rust-bindings/**
+          - host-contracts/rust-bindings/**
 
   build-kms-worker:
     needs: check-changes-kms-worker
@@ -232,6 +235,7 @@ jobs:
           - kms-connector/crates/tx-sender/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
+          - gateway-contracts/rust-bindings/**
 
   build-tx-sender:
     needs: check-changes-tx-sender

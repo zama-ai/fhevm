@@ -2,17 +2,14 @@ use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::{
     config::KmsWallet,
-    conn::connect_to_gateway_with_wallet,
+    conn::connect_to_rpc_node_with_wallet,
     tests::{
         db::responses::{
             insert_rand_crsgen_response, insert_rand_keygen_response,
             insert_rand_prep_keygen_response, insert_rand_public_decrypt_response,
             insert_rand_user_decrypt_response,
         },
-        setup::{
-            CHAIN_ID, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY, KMS_GENERATION_MOCK_ADDRESS,
-            TestInstance, TestInstanceBuilder,
-        },
+        setup::{CHAIN_ID, DEPLOYER_PRIVATE_KEY, TestInstance, TestInstanceBuilder},
     },
     types::db::OperationStatus,
 };
@@ -357,7 +354,7 @@ async fn start_test_tx_sender(
 ) -> anyhow::Result<JoinHandle<()>> {
     let response_picker =
         DbKmsResponsePicker::connect(test_instance.db().clone(), &Config::default()).await?;
-    let provider = connect_to_gateway_with_wallet(
+    let provider = connect_to_rpc_node_with_wallet(
         test_instance.anvil_http_endpoint(),
         *CHAIN_ID as u64,
         KmsWallet::from_private_key_str(DEPLOYER_PRIVATE_KEY, Some(*CHAIN_ID as u64))?,
@@ -366,8 +363,11 @@ async fn start_test_tx_sender(
 
     let tx_sender_inner = TransactionSenderInner::new(
         provider.clone(),
-        DecryptionInstance::new(DECRYPTION_MOCK_ADDRESS, provider.clone()),
-        KMSGenerationInstance::new(KMS_GENERATION_MOCK_ADDRESS, provider),
+        DecryptionInstance::new(
+            *test_instance.decryption_contract().address(),
+            provider.clone(),
+        ),
+        KMSGenerationInstance::new(*test_instance.kms_generation_contract().address(), provider),
         TransactionSenderInnerConfig {
             tx_retries: 3,
             tx_retry_interval: Duration::from_millis(100),

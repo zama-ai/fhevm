@@ -139,11 +139,8 @@ impl<'a> Scheduler<'a> {
             DeviceSelection::RoundRobin => {
                 static LAST: std::sync::atomic::AtomicUsize =
                     std::sync::atomic::AtomicUsize::new(0);
-                let i = LAST.load(std::sync::atomic::Ordering::Acquire);
-                LAST.store(
-                    (i + 1) % self.csks.len(),
-                    std::sync::atomic::Ordering::Release,
-                );
+                // Use fetch_add to increment atomically
+                let i = LAST.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % self.csks.len();
                 Ok((self.csks[i].clone(), self.cpk.clone()))
             }
             DeviceSelection::NA => Ok((self.csks[0].clone(), self.cpk.clone())),
@@ -299,29 +296,6 @@ fn re_randomise_transaction_inputs(
     }
     Ok(())
 }
-fn decompress_transaction_inputs(
-    inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
-    transaction_id: &Handle,
-    gpu_idx: usize,
-    _cpk: tfhe::CompactPublicKey,
-) -> Result<()> {
-    // TODO: implement re-randomisation on GPU. For now just decompress inputs
-    for txinput in inputs.values_mut() {
-        match txinput {
-            Some(DFGTxInput::Value(_)) => {}
-            Some(DFGTxInput::Compressed(((t, c), allowed))) => {
-                let decomp = SupportedFheCiphertexts::decompress(*t, c, gpu_idx)?;
-                *txinput = Some(DFGTxInput::Value((decomp, *allowed)));
-            }
-            None => {
-                error!(target: "scheduler", { transaction_id = ?hex::encode(transaction_id) },
-		       "Missing transaction input while trying to decompress");
-                return Err(SchedulerError::MissingInputs.into());
-            }
-        }
-    }
-    Ok(())
-}
 
 type ComponentSet = Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle, usize)>;
 fn execute_partition(
@@ -366,7 +340,7 @@ fn execute_partition(
             }
         }
 
-        if !cfg!(feature = "gpu") {
+        {
             let mut s = tracer.start_with_context("rerandomise_inputs", &loop_ctx);
             telemetry::set_txn_id(&mut s, &tid);
             let started_at = std::time::Instant::now();
@@ -394,29 +368,6 @@ fn execute_partition(
 
             let elapsed = started_at.elapsed();
             RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
-            drop(s);
-        } else {
-            let mut s = tracer.start_with_context("decompress_transaction_inputs", &loop_ctx);
-            telemetry::set_txn_id(&mut s, &tid);
-            // If re-randomisation is not available (e.g., on GPU),
-            // only decompress ciphertexts
-            if let Err(e) = decompress_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
-                error!(target: "scheduler", {transaction_id = ?hex::encode(tid), error = ?e },
-		       "Error while decompressing inputs");
-                for nidx in dfg.graph.node_identifiers() {
-                    let Some(node) = dfg.graph.node_weight_mut(nidx) else {
-                        error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
-                        continue;
-                    };
-                    if node.is_allowed {
-                        res.insert(
-                            node.result_handle.clone(),
-                            Err(SchedulerError::ReRandomisationError.into()),
-                        );
-                    }
-                }
-                continue 'tx;
-            }
             drop(s);
         }
 
@@ -466,7 +417,10 @@ fn execute_partition(
                     }
                 }
                 // Update partition's outputs (allowed handles only)
-                let node = dfg.graph.node_weight_mut(nidx).unwrap();
+                let Some(node) = dfg.graph.node_weight_mut(nidx) else {
+                    error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
+                    continue;
+                };
                 res.insert(
                     node.result_handle.clone(),
                     result.1.map(|v| TaskResult {

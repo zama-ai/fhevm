@@ -11,7 +11,7 @@ use connector_utils::types::{
 use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use tonic::Code;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -25,12 +25,12 @@ pub trait EventProcessor: Send {
 
 /// Struct that processes Gateway's events coming from a `Postgres` database.
 #[derive(Clone)]
-pub struct DbEventProcessor<P: Provider> {
+pub struct DbEventProcessor<GP: Provider, HP: Provider> {
     /// The GRPC client used to communicate with the KMS Core.
     kms_client: KmsClient,
 
     /// The entity used to process decryption requests.
-    decryption_processor: DecryptionProcessor<P>,
+    decryption_processor: DecryptionProcessor<GP, HP>,
 
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor,
@@ -42,7 +42,7 @@ pub struct DbEventProcessor<P: Provider> {
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider> EventProcessor for DbEventProcessor<P> {
+impl<GP: Provider, HP: Provider> EventProcessor for DbEventProcessor<GP, HP> {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
@@ -98,10 +98,10 @@ pub enum ProcessingError {
     Recoverable(anyhow::Error),
 }
 
-impl<P: Provider> DbEventProcessor<P> {
+impl<GP: Provider, HP: Provider> DbEventProcessor<GP, HP> {
     pub fn new(
         kms_client: KmsClient,
-        decryption_processor: DecryptionProcessor<P>,
+        decryption_processor: DecryptionProcessor<GP, HP>,
         kms_generation_processor: KMSGenerationProcessor,
         max_decryption_attempts: u16,
         db_pool: Pool<Postgres>,
@@ -119,13 +119,17 @@ impl<P: Provider> DbEventProcessor<P> {
     #[tracing::instrument(skip_all)]
     async fn prepare_request(
         &self,
-        event: &GatewayEvent,
+        event: &mut GatewayEvent,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
-        match &event.kind {
+        let request = match &event.kind {
             GatewayEventKind::PublicDecryption(req) => {
                 self.decryption_processor
                     .check_decryption_not_already_done(req.decryptionId)
                     .await?;
+                self.decryption_processor
+                    .check_ciphertexts_allowed_for_public_decryption(&req.snsCtMaterials)
+                    .await?;
+
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -133,11 +137,26 @@ impl<P: Provider> DbEventProcessor<P> {
                         &req.extraData,
                         None,
                     )
-                    .await
+                    .await?
             }
             GatewayEventKind::UserDecryption(req) => {
                 // No need to check decryption is done for user decrypt, as MPC parties don't
                 // communicate between each other for user decrypt
+
+                // Skip the ACL check if we don't have the `tx_hash` just for v0.11.
+                // This is tracked by this issue: https://github.com/zama-ai/fhevm-internal/issues/916.
+                if let Some(tx_hash) = event.tx_hash {
+                    let calldata = self.decryption_processor.fetch_calldata(tx_hash).await?;
+                    self.decryption_processor
+                        .check_ciphertexts_allowed_for_user_decryption(
+                            calldata,
+                            &req.snsCtMaterials,
+                            req.userAddress,
+                        )
+                        .await?;
+                } else {
+                    warn!("No `tx_hash` found. Skipping the ACL check!");
+                }
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -148,7 +167,7 @@ impl<P: Provider> DbEventProcessor<P> {
                             req.publicKey.clone(),
                         )),
                     )
-                    .await
+                    .await?
             }
             GatewayEventKind::PrepKeygen(req) => self
                 .kms_generation_processor
@@ -160,13 +179,13 @@ impl<P: Provider> DbEventProcessor<P> {
                 self.kms_generation_processor.prepare_crsgen_request(req)
             }
             GatewayEventKind::PrssInit(id) => {
-                Ok(self.kms_generation_processor.prepare_prss_init_request(*id))
+                self.kms_generation_processor.prepare_prss_init_request(*id)
             }
             GatewayEventKind::KeyReshareSameSet(req) => self
                 .kms_generation_processor
                 .prepare_initiate_resharing_request(req),
-        }
-        .map_err(ProcessingError::Recoverable)
+        };
+        Ok(request)
     }
 
     /// Core event processing logic function.
@@ -174,7 +193,10 @@ impl<P: Provider> DbEventProcessor<P> {
         &mut self,
         event: &mut GatewayEvent,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
-        let request = self.prepare_request(event).await?;
+        let request = self
+            .prepare_request(event)
+            .await
+            .inspect_err(|_| event.error_counter += 1)?;
 
         if !event.already_sent {
             let (error_count, result) = self.kms_client.send_request(&request).await;

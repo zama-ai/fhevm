@@ -13,7 +13,6 @@ aws-sdk-s3 = "1.103.0" # not in workspace
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 bigdecimal = { workspace = true }
-bincode = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }

@@ -136,6 +136,11 @@ jobs:
     steps:
       - name: Install git LFS
         run: |
+          # Wait for apt locks to be released (e.g., unattended-upgrades may hold the lock on fresh instances)
+          while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+            echo "Waiting for apt lock to be released..."
+            sleep 5
+          done
           sudo apt-get update
           sudo apt-get install -y git-lfs
           git lfs install

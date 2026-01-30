@@ -5,10 +5,10 @@
 # service_name = "kms-connector-gw-listener"
 
 # Chain ID for the Gateway network (required)
-# ENV: KMS_CONNECTOR_CHAIN_ID
-chain_id = 54321
+# ENV: KMS_CONNECTOR_GATEWAY_CHAIN_ID
+gateway_chain_id = 54321
 
-# Gateway WebSocket RPC URL endpoint (required)
+# Gateway HTTP RPC URL endpoint (required)
 # ENV: KMS_CONNECTOR_GATEWAY_URL
 gateway_url = "http://localhost:8545"
 
