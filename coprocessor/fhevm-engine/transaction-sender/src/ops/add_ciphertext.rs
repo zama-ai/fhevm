@@ -17,7 +17,7 @@ use alloy::{
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{telemetry, tenant_keys::query_tenant_info, utils::to_hex};
+use fhevm_engine_common::{telemetry, utils::to_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -311,7 +311,7 @@ where
         // ciphertexts have been successfully uploaded to AWS S3 buckets.
         let rows = sqlx::query!(
             "
-            SELECT handle, ciphertext, ciphertext128, tenant_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
+            SELECT handle, key_id, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
             FROM ciphertext_digest
             WHERE txn_is_sent = false
             AND ciphertext IS NOT NULL
@@ -337,14 +337,6 @@ where
             let transaction_id = row.transaction_id.clone();
             let t = telemetry::tracer("prepare_add_ciphertext", &transaction_id);
 
-            let tenant_info = match query_tenant_info(&self.db_pool, row.tenant_id).await {
-                Ok(res) => res,
-                Err(_) => {
-                    error!(tenant_id = row.tenant_id, "Failed to get key_id for tenant");
-                    continue;
-                }
-            };
-
             let handle = row.handle.clone();
 
             let (ciphertext64_digest, ciphertext128_digest) =
@@ -360,12 +352,16 @@ where
                 };
 
             let handle_bytes32 = FixedBytes::from(try_into_array::<32>(handle.clone())?);
-            let key_id = U256::from_be_bytes(tenant_info.key_id);
+            let key_id_bytes32: [u8; 32] = row
+                .key_id
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("Failed to convert key_id to [u8; 32]"))?;
+            let key_id = U256::from_be_bytes(key_id_bytes32);
 
             info!(
                 handle = to_hex(&handle),
-                chain_id = tenant_info.chain_id,
-                key_id = to_hex(&tenant_info.key_id),
+                host_chain_id = row.host_chain_id,
+                key_id = to_hex(&key_id_bytes32),
                 ct64_digest = to_hex(ciphertext64_digest.as_ref()),
                 ct128_digest = to_hex(ciphertext128_digest.as_ref()),
                 "Adding ciphertext"

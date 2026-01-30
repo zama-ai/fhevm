@@ -10,7 +10,7 @@ use rstest::*;
 use serial_test::serial;
 use sqlx::PgPool;
 use std::time::Duration;
-use test_harness::db_utils::insert_random_tenant;
+use test_harness::db_utils::insert_random_keys_and_host_chain;
 use tokio::time::sleep;
 use transaction_sender::is_backend_gone;
 use transaction_sender::{
@@ -21,17 +21,15 @@ mod common;
 
 async fn insert_allowed_handle(
     pool: &PgPool,
-    tenant_id: i32,
     handle: &[u8; 32],
     account_address: Address,
     event_type: AllowEvents,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-        INSERT INTO allowed_handles (tenant_id, handle, account_address, event_type)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO allowed_handles (handle, account_address, event_type)
+        VALUES ($1, $2, $3)
         "#,
-        tenant_id,
         handle,
         account_address.to_string(),
         event_type as i16,
@@ -125,7 +123,7 @@ async fn allow_call(
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+    insert_random_keys_and_host_chain(&env.db_pool).await?;
 
     // Record initial transaction count.
     let initial_tx_count = provider
@@ -135,7 +133,6 @@ async fn allow_call(
     let handle = random::<[u8; 32]>();
     insert_allowed_handle(
         &env.db_pool,
-        tenant_id,
         &handle,
         PrivateKeySigner::random().address(),
         event_type,
@@ -166,13 +163,6 @@ async fn allow_call(
 
         sleep(Duration::from_millis(500)).await;
     }
-    sqlx::query!(
-        "
-        delete from tenants where tenant_id = $1",
-        tenant_id
-    )
-    .execute(&env.db_pool)
-    .await?;
 
     let tx_count = provider.get_transaction_count(env.signer.address()).await?;
 
@@ -253,7 +243,7 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+    insert_random_keys_and_host_chain(&env.db_pool).await?;
 
     // Simulate a transport error by stopping the anvil instance.
     env.drop_anvil();
@@ -261,7 +251,6 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
     let handle = random::<[u8; 32]>();
     insert_allowed_handle(
         &env.db_pool,
-        tenant_id,
         &handle,
         PrivateKeySigner::random().address(),
         AllowEvents::AllowedAccount,
@@ -295,13 +284,6 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
 
         sleep(Duration::from_millis(500)).await;
     }
-    sqlx::query!(
-        "
-        delete from tenants where tenant_id = $1",
-        tenant_id
-    )
-    .execute(&env.db_pool)
-    .await?;
 
     // Expect that the sender will stop on its own due to BackendGone.
     let err = run_handle.await?.err().unwrap();
@@ -354,7 +336,7 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
-    let tenant_id = insert_random_tenant(&env.db_pool).await?;
+    insert_random_keys_and_host_chain(&env.db_pool).await?;
 
     // Simulate an AWS KMS error by stopping the localstack instance.
     env.stop_localstack().await;
@@ -362,7 +344,6 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
     let handle = random::<[u8; 32]>();
     insert_allowed_handle(
         &env.db_pool,
-        tenant_id,
         &handle,
         PrivateKeySigner::random().address(),
         AllowEvents::AllowedAccount,
@@ -396,13 +377,6 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
 
         sleep(Duration::from_millis(500)).await;
     }
-    sqlx::query!(
-        "
-        delete from tenants where tenant_id = $1",
-        tenant_id
-    )
-    .execute(&env.db_pool)
-    .await?;
 
     env.cancel_token.cancel();
     run_handle.await??;

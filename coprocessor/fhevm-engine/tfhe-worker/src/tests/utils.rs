@@ -178,8 +178,8 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
 
     println!("Running migrations...");
     sqlx::migrate!("./migrations").run(&pool).await?;
-    println!("Creating test user");
-    setup_test_user(&pool).await?;
+    println!("Creating test keys");
+    setup_test_key(&pool).await?;
     println!("DB prepared");
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
@@ -225,7 +225,7 @@ pub struct DecryptionResult {
     pub output_type: i16,
 }
 
-pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn setup_test_key(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
     let (sks, cks, pks, pp) = if !cfg!(feature = "gpu") {
         (
             "../fhevm-keys/sks",
@@ -247,9 +247,8 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
     let public_params = tokio::fs::read(pp).await.expect("can't read public params");
     sqlx::query!(
         "
-            INSERT INTO tenants(tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
+            INSERT INTO keys(chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, cks_key)
             VALUES (
-                'a1503fb6-d79b-4e9e-826d-44cf262f3e05',
                 12345,
                 '0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2',
                 '0x69dE3158643e738a0724418b21a35FAA20CBb1c5',
