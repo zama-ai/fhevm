@@ -236,6 +236,9 @@ pub struct HandleItem {
 
     pub otel: OtelTracer,
     pub transaction_id: Option<Vec<u8>>,
+
+    /// Status of the processing task
+    status: TaskStatus,
 }
 
 impl HandleItem {
@@ -311,6 +314,10 @@ impl HandleItem {
 
         Ok(())
     }
+
+    fn is_completed(&self) -> bool {
+        matches!(self.status, TaskStatus::Completed)
+    }
 }
 
 impl From<ExecutionError> for ServiceError {
@@ -322,6 +329,15 @@ impl From<ExecutionError> for ServiceError {
             other => ServiceError::InternalError(other.to_string()),
         }
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+enum TaskStatus {
+    #[default]
+    Pending, // Task is pending processing
+    TransientErr(String),     // A temporary error occurred, can retry
+    UnrecoverableErr(String), // A permanent error occurred, cannot retry
+    Completed,                // The operation was successful
 }
 
 #[derive(Error, Debug)]
@@ -367,6 +383,12 @@ pub enum ExecutionError {
 
     #[error("Internal send error: {0}")]
     InternalSendError(String),
+
+    #[error("Panic on decompression: {0}")]
+    DecompressionPanic(String),
+
+    #[error("Panic on squash noise: {0}")]
+    SquashNoisePanic(String),
 }
 
 #[derive(Clone)]

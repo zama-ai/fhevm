@@ -10,15 +10,18 @@ use crate::HandleItem;
 use crate::InternalEvents;
 use crate::KeySet;
 use crate::SchedulePolicy;
+use crate::TaskStatus;
 use crate::UploadJob;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
+use core::panic;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::to_hex;
+use fhevm_engine_common::with_panic_guard;
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
 use sqlx::Pool;
@@ -391,16 +394,17 @@ async fn fetch_and_execute_sns_tasks(
             token.clone(),
         )?;
 
-        update_computations_status(trx, &tasks).await?;
-
         let s = t.child_span("batch_store_ciphertext128");
 
-        update_ciphertext128(trx, &tasks).await?;
+        update_ciphertext128(trx, &mut tasks).await?;
         notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
 
         // Try to enqueue the tasks for upload in the DB
         // This is a best-effort attempt, as the upload worker might not be available
         enqueue_upload_tasks(trx, &tasks).await?;
+
+        update_computations_status(trx, &tasks).await?;
+
         telemetry::end_span(s);
 
         db_txn.commit().await?;
@@ -434,6 +438,7 @@ pub async fn query_sns_tasks(
         ON a.handle = c.handle
         WHERE c.ciphertext IS NOT NULL
         AND a.is_completed = FALSE
+        AND a.schedule_order <= NOW()
         ORDER BY a.created_at {}
         FOR UPDATE SKIP LOCKED
         LIMIT $1;
@@ -472,6 +477,7 @@ pub async fn query_sns_tasks(
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
                 otel: telemetry::tracer_with_handle("task", handle, &transaction_id),
                 transaction_id,
+                status: TaskStatus::default(),
             })
         })
         .collect::<Result<Vec<_>, ExecutionError>>()?;
@@ -483,9 +489,10 @@ async fn enqueue_upload_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
-    for task in tasks.iter() {
+    for task in tasks.iter().filter(|t| t.is_completed()) {
         task.enqueue_upload_task(db_txn).await?;
     }
+
     Ok(())
 }
 
@@ -559,28 +566,42 @@ fn compute_task(
     let ct64_compressed = task.ct64_compressed.as_ref();
     if ct64_compressed.is_empty() {
         error!({ handle }, "Empty ciphertext64, skipping task");
+        task.status = TaskStatus::UnrecoverableErr("Empty ciphertext64".to_string());
         return; // Skip empty ciphertexts
     }
 
     let s = task.otel.child_span("decompress_ct64");
 
-    let ct = decompress_ct(&task.handle, ct64_compressed).unwrap(); // TODO handle error properly
-    telemetry::end_span(s);
+    let ct: SupportedFheCiphertexts = match decompress_ct_with_guard(&task.handle, ct64_compressed)
+    {
+        Ok(ct) => {
+            telemetry::end_span(s);
+            ct
+        }
+        Err(err) => {
+            error!( { handle, error = %err }, "Failed to decompress ct64");
+            telemetry::end_span_with_err(s, "failed to decompress".to_string());
+
+            task.status = TaskStatus::UnrecoverableErr(err.to_string());
+            return;
+        }
+    };
 
     let ct_type = ct.type_name().to_owned();
-    info!( { handle, ct_type }, "Converting ciphertext");
+    info!( { handle, ct_type }, "Squash_noise ct");
 
     let mut span = task.otel.child_span("squash_noise");
     telemetry::attribute(&mut span, "ct_type", ct_type);
 
-    match ct.squash_noise_and_serialize(enable_compression) {
+    match squash_noise_with_guard(&ct, enable_compression) {
         Ok(bytes) => {
             telemetry::end_span(span);
+
             info!(
                 handle = handle,
                 length = bytes.len(),
                 compressed = enable_compression,
-                "Ciphertext converted"
+                "Squash_noise completed"
             );
 
             #[cfg(feature = "test_decrypt_128")]
@@ -593,6 +614,7 @@ fn compute_task(
             };
 
             task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
+            task.status = TaskStatus::Completed;
 
             // Start uploading the ciphertexts as soon as the ct128 is computed
             //
@@ -623,9 +645,23 @@ fn compute_task(
         }
         Err(err) => {
             telemetry::end_span_with_err(span, err.to_string());
+            task.status = TaskStatus::UnrecoverableErr(err.to_string());
             error!({ handle = handle, error = %err }, "Failed to convert ct");
         }
     };
+}
+
+fn squash_noise_with_guard(
+    ct: &SupportedFheCiphertexts,
+    enable_compression: bool,
+) -> Result<Vec<u8>, ExecutionError> {
+    with_panic_guard!(ct.squash_noise_and_serialize(enable_compression)).map_err(|e| {
+        // Map panic to SquashNoisePanic
+        ExecutionError::SquashNoisePanic(format!(
+            "Panic occurred while squashing noise and serializing: {}",
+            e
+        ))
+    })?
 }
 
 /// Updates the database with the computed large ciphertexts.
@@ -635,7 +671,7 @@ fn compute_task(
 /// is deleted from Postgres.
 async fn update_ciphertext128(
     db_txn: &mut Transaction<'_, Postgres>,
-    tasks: &[HandleItem],
+    tasks: &mut [HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks {
         if !task.ct128.is_empty() {
@@ -669,14 +705,18 @@ async fn update_ciphertext128(
                 Err(err) => {
                     error!( handle = to_hex(&task.handle), error = %err, "Failed to persist ct128");
                     telemetry::end_span_with_err(s, err.to_string());
-                    // Although this is a single error, we drop the entire batch to be on the safe side
-                    // This will ensure we will not mark a task as completed falsely
-                    return Err(err.into());
+                    // Although the S3-upload might still succeed, we consider this as a failure
+                    // Worst-case scenario, the SnS-computation will be retried later.
+                    // However, if both DB insertion and S3 upload fail, this guarantees that the computation
+                    // will be retried and the ct128 uploaded.
+                    task.status = TaskStatus::TransientErr(err.to_string());
                 }
             }
         } else {
             error!(handle = to_hex(&task.handle), "ct128 not computed");
         }
+
+        // Notify add_ciphertexts
     }
 
     Ok(())
@@ -687,18 +727,49 @@ async fn update_computations_status(
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks {
-        if !task.ct128.is_empty() {
-            sqlx::query!(
-                "
-                UPDATE pbs_computations
-                SET is_completed = TRUE, completed_at = NOW()
-                WHERE handle = $1;",
-                task.handle
-            )
-            .execute(db_txn.as_mut())
-            .await?;
-        } else {
-            error!( handle = ?task.handle, "Large ciphertext not computed for task");
+        match &task.status {
+            TaskStatus::Completed => {
+                // Mark the computation as completed and clear transient error
+                sqlx::query!(
+                    "
+                    UPDATE pbs_computations
+                    SET is_completed = TRUE, error = NULL, completed_at = NOW()
+                    WHERE handle = $1;",
+                    task.handle
+                )
+                .execute(db_txn.as_mut())
+                .await?;
+            }
+            TaskStatus::UnrecoverableErr(err_msg) => {
+                // The computation should not be retried unless manually triggered
+                warn!( handle = to_hex(&task.handle), error = %err_msg, "Computation failed, unrecoverable err");
+                sqlx::query!(
+                    "
+                    UPDATE pbs_computations
+                    SET is_completed = TRUE, error = $2, completed_at = NOW()
+                    WHERE handle = $1;",
+                    task.handle,
+                    err_msg
+                )
+                .execute(db_txn.as_mut())
+                .await?;
+            }
+            TaskStatus::TransientErr(err_msg) => {
+                warn!( handle = to_hex(&task.handle), error = %err_msg, "Computation failed, transient err");
+                sqlx::query!(
+                    "
+                    UPDATE pbs_computations
+                    SET is_completed = FALSE, error = $2, schedule_order = NOW() + INTERVAL '1 minute'
+                    WHERE handle = $1;",
+                    task.handle,
+                    err_msg
+                )
+                .execute(db_txn.as_mut())
+                .await?;
+            }
+            TaskStatus::Pending => {
+                error!( handle = ?task.handle, "Unexpected task status");
+            }
         }
     }
     Ok(())
@@ -717,13 +788,23 @@ async fn notify_ciphertext128_ready(
 }
 
 /// Decompresses a ciphertext based on its type.
-fn decompress_ct(
+fn decompress_ct_with_guard(
     handle: &[u8],
     compressed_ct: &[u8],
 ) -> Result<SupportedFheCiphertexts, ExecutionError> {
     let ct_type = get_ct_type(handle)?;
 
-    let result = SupportedFheCiphertexts::decompress_no_memcheck(ct_type, compressed_ct)?;
+    let result = with_panic_guard!(SupportedFheCiphertexts::decompress_no_memcheck(
+        ct_type,
+        compressed_ct
+    ))
+    .map_err(|e| {
+        // Map panic to DecompressionError
+        ExecutionError::DecompressionPanic(format!(
+            "Panic occurred while decompressing ct of type {}: {}",
+            ct_type, e
+        ))
+    })??;
     Ok(result)
 }
 #[cfg(feature = "test_decrypt_128")]
