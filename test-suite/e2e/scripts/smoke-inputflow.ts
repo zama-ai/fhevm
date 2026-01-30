@@ -163,18 +163,34 @@ const sendWithRetries = async (params: {
       continue;
     }
 
-    // 2. Wait for confirmation (tx.wait handles TRANSACTION_REPLACED internally)
+    // 2. Wait for confirmation
+    // ethers v6 tx.wait() behavior:
+    //   - Success: returns receipt with status === 1
+    //   - Revert: throws CALL_EXCEPTION (receipt available on error)
+    //   - Timeout: throws TIMEOUT
+    //   - Replacement mined: throws TRANSACTION_REPLACED
     try {
       const receipt = await tx.wait(1, timeoutMs);
+      // Success - tx mined and not reverted
       if (receipt?.status === 1) return receipt;
-      if (receipt) throw new Error(`Transaction reverted (label=${label}, hash=${tx.hash})`);
-      // receipt is null → timeout
-      console.warn(`SMOKE_TX_TIMEOUT label=${label} nonce=${nonce} attempt=${attempt} hash=${tx.hash}`);
-      continue;
+      // Defensive: if somehow we get a receipt with status !== 1, treat as revert
+      throw new Error(`Transaction reverted (label=${label}, hash=${tx.hash})`);
     } catch (error: unknown) {
       const err = error as { code?: string; reason?: string; receipt?: TransactionReceipt };
 
-      // ethers v6 throws TRANSACTION_REPLACED when another tx with same nonce was mined.
+      // CALL_EXCEPTION: tx was mined but reverted - terminal error, don't retry
+      if (err.code === 'CALL_EXCEPTION') {
+        const receiptHash = err.receipt?.hash ?? tx.hash;
+        throw new Error(`Transaction reverted (label=${label}, hash=${receiptHash})`);
+      }
+
+      // TIMEOUT: tx.wait() timed out - retry with bumped fees
+      if (err.code === 'TIMEOUT') {
+        console.warn(`SMOKE_TX_TIMEOUT label=${label} nonce=${nonce} attempt=${attempt} hash=${tx.hash}`);
+        continue;
+      }
+
+      // TRANSACTION_REPLACED: another tx with same nonce was mined
       // The `reason` field indicates what happened:
       //   - "repriced": same tx data, higher fees (our retry got mined) → SUCCESS
       //   - "cancelled": 0-value self-transfer (nonce was cancelled) → NOT our tx
@@ -196,7 +212,7 @@ const sendWithRetries = async (params: {
         continue;
       }
 
-      // Unknown error (unlikely) - continue to next attempt
+      // Unknown error - log and retry (network issues, etc.)
       const msg = error instanceof Error ? error.message : String(error);
       console.warn(`SMOKE_TX_WAIT_ERROR label=${label} nonce=${nonce} attempt=${attempt} error=${msg}`);
       continue;
@@ -458,8 +474,10 @@ async function runSmoke(): Promise<void> {
   }
 
   // Post-success cleanup: clear backlogs on any unclean signers
+  // Re-fetch state since nonces may have changed during the test
   if (allowCancel) {
-    for (const state of states) {
+    const freshStates = await getSignerStates(provider, allSigners, signerIndices);
+    for (const state of freshStates) {
       const backlog = state.pending - state.latest;
       if (backlog <= 0) continue;
 
