@@ -3,10 +3,24 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import {E2ECoprocessorConfig} from "./E2ECoprocessorConfigLocal.sol";
+import {CoprocessorConfig} from "@fhevm/solidity/lib/Impl.sol";
 
-contract TestInput is E2ECoprocessorConfig {
+/// @notice Smoke test contract with constructor-based coprocessor config injection.
+/// @dev Unlike TestInput.sol which uses E2ECoprocessorConfig (sed-patched at runtime),
+/// this contract receives addresses at deploy time, enabling smoke tests to run on
+/// devnet, sepolia, and mainnet without sed patching.
+contract SmokeTestInput {
     euint64 public resUint64;
+
+    constructor(address aclAddress, address coprocessorAddress, address kmsVerifierAddress) {
+        FHE.setCoprocessor(
+            CoprocessorConfig({
+                ACLAddress: aclAddress,
+                CoprocessorAddress: coprocessorAddress,
+                KMSVerifierAddress: kmsVerifierAddress
+            })
+        );
+    }
 
     function requestUint64NonTrivial(externalEuint64 inputHandle, bytes calldata inputProof) public {
         resUint64 = FHE.fromExternal(inputHandle, inputProof);
