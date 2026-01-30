@@ -140,6 +140,19 @@ const sendWithRetries = async (params: {
 
   const baseFees = await getBaseFees(provider);
   let lastError: Error | undefined;
+  const sentTxHashes: string[] = [];
+
+  // Helper to check if any previously sent tx got mined
+  const checkPreviousTxs = async (): Promise<TransactionReceipt | null> => {
+    for (const hash of sentTxHashes) {
+      const receipt = await provider.getTransactionReceipt(hash);
+      if (receipt) {
+        console.log(`SMOKE_TX_LATE_RECEIPT label=${label} hash=${hash}`);
+        return receipt;
+      }
+    }
+    return null;
+  };
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const fees = bumpFees(baseFees, Math.pow(feeBump, attempt));
@@ -148,11 +161,18 @@ const sendWithRetries = async (params: {
     try {
       tx = await send({ nonce, ...fees });
     } catch (error) {
+      // Send failed - maybe because a previous tx just got mined (nonce used)
+      const lateReceipt = await checkPreviousTxs();
+      if (lateReceipt) {
+        if (lateReceipt.status === 1) return lateReceipt;
+        throw new Error(`Transaction reverted (label=${label}, hash=${lateReceipt.hash})`);
+      }
       lastError = error instanceof Error ? error : new Error(String(error));
       console.warn(`SMOKE_TX_SEND_FAILED label=${label} nonce=${nonce} attempt=${attempt}`);
       continue;
     }
 
+    sentTxHashes.push(tx.hash);
     console.log(`SMOKE_TX_SENT label=${label} nonce=${nonce} hash=${tx.hash} attempt=${attempt}`);
     const receipt = await waitForReceipt(provider, tx.hash, timeoutMs);
     if (receipt) {
@@ -162,6 +182,13 @@ const sendWithRetries = async (params: {
 
     console.warn(`SMOKE_TX_TIMEOUT label=${label} nonce=${nonce} attempt=${attempt} hash=${tx.hash}`);
     lastError = new Error(`Timeout waiting for tx ${tx.hash} (label=${label})`);
+  }
+
+  // Final check before giving up - a tx might have been mined during the last attempt
+  const finalReceipt = await checkPreviousTxs();
+  if (finalReceipt) {
+    if (finalReceipt.status === 1) return finalReceipt;
+    throw new Error(`Transaction reverted (label=${label}, hash=${finalReceipt.hash})`);
   }
 
   throw lastError ?? new Error(`Failed to send transaction (label=${label})`);
