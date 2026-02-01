@@ -51,17 +51,8 @@ fn build_contracts() {
     }
     println!("Ran npm ci successfully");
 
-    // Step 3: Run `npm install && HARDHAT_NETWORK=hardhat npm run
-    // deploy:emptyProxies && npx hardhat compile` in ../../contracts
-    let npm_install_status = Command::new("npm")
-        .arg("install")
-        .status()
-        .expect("Failed to run npm install");
-    if !npm_install_status.success() {
-        panic!("Error: npm install failed");
-    }
-    println!("Ran npm install successfully");
-
+    // Step 3: Run `HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies
+    // && npx hardhat compile` in ../../contracts
     let npm_run_status = Command::new("npm")
         .env("HARDHAT_NETWORK", "hardhat")
         .args(["run", "deploy:emptyProxies"])
