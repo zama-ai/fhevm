@@ -41,9 +41,9 @@ COPY package.json package-lock.json ./
 COPY host-contracts ./host-contracts
 
 # Compile host-contracts
-WORKDIR /app/host-contracts
-RUN cp .env.example .env && \
+RUN cp host-contracts/.env.example host-contracts/.env && \
     npm ci --workspace=host-contracts --include-workspace-root=false && \
+    cd host-contracts && \
     HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && \
     npx hardhat compile
 
