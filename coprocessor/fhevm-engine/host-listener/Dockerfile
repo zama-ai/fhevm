@@ -5,10 +5,9 @@ USER root
 
 WORKDIR /app
 
-# Copy root package files for workspace resolution
+# Copy root lockfile for workspace resolution
 COPY package.json package-lock.json ./
 
-# Copy host-contracts (workspace member)
 COPY host-contracts ./host-contracts
 
 # Compiled host-contracts for listeners
