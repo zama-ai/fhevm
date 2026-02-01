@@ -40,7 +40,7 @@ COPY host-contracts ./host-contracts
 # Compile host-contracts
 WORKDIR /app/host-contracts
 RUN cp .env.example .env && \
-    npm install && \
+    npm ci && \
     HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && \
     npx hardhat compile
 
@@ -50,7 +50,7 @@ COPY gateway-contracts ./gateway-contracts
 
 # Compile gateway-contracts
 WORKDIR /app/gateway-contracts
-RUN npm install && \
+RUN npm ci && \
     DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
 
 # =============================================================================
