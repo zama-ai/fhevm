@@ -115,7 +115,7 @@ fn tx_of_handle(
     (handle_creator, handle_consumer)
 }
 
-async fn fill_tx_dependence_maps(
+async fn populate_tx_dependencies(
     txs: &mut HashMap<TransactionHash, Transaction>,
     past_chains: &ChainCache,
 ) {
@@ -721,7 +721,7 @@ pub async fn dependence_chains(
     across_blocks: bool,
 ) -> OrderedChains {
     let (ordered_hash, mut txs) = scan_transactions(logs);
-    fill_tx_dependence_maps(&mut txs, past_chains).await;
+    populate_tx_dependencies(&mut txs, past_chains).await;
     debug!("Transactions: {:?}", txs.values());
     let GroupBuild {
         ordered_groups,
