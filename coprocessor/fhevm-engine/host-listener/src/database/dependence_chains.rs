@@ -77,6 +77,7 @@ fn scan_transactions(
 }
 
 fn tx_of_handle(
+    ordered_txs_hash: &[TransactionHash],
     ordered_txs: &HashMap<TransactionHash, Transaction>,
 ) -> (
     HashMap<Handle, TransactionHash>,
@@ -85,12 +86,18 @@ fn tx_of_handle(
     // handle to tx maps
     let mut handle_creator = HashMap::new(); // no intermediate value
     let mut handle_consumer = HashMap::new();
-    for tx in ordered_txs.values() {
+    for tx_hash in ordered_txs_hash {
+        let Some(tx) = ordered_txs.get(tx_hash) else {
+            continue;
+        };
         for handle in &tx.allowed_handle {
             handle_creator.insert(*handle, tx.tx_hash);
         }
     }
-    for tx in ordered_txs.values() {
+    for tx_hash in ordered_txs_hash {
+        let Some(tx) = ordered_txs.get(tx_hash) else {
+            continue;
+        };
         for handle in &tx.input_handle {
             if tx.output_handle.contains(handle) {
                 // self dependency, ignore
@@ -140,14 +147,18 @@ fn compute_unseen_and_depth(
 }
 
 async fn fill_tx_dependence_maps(
+    ordered_txs_hash: &[TransactionHash],
     txs: &mut HashMap<TransactionHash, Transaction>,
     used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
     past_chains: &ChainCache,
 ) {
     // handle to tx maps
-    let (handle_creator, handle_consumer) = tx_of_handle(txs);
+    let (handle_creator, handle_consumer) = tx_of_handle(ordered_txs_hash, txs);
     // txs relations
-    for tx in txs.values_mut() {
+    for tx_hash in ordered_txs_hash {
+        let Some(tx) = txs.get_mut(tx_hash) else {
+            continue;
+        };
         // this tx depends on dep_tx
         for input_handle in &tx.input_handle {
             if tx.output_handle.contains(input_handle) {
@@ -581,7 +592,13 @@ pub async fn dependence_chains(
         TransactionHash,
         HashSet<TransactionHash>,
     > = HashMap::with_capacity(txs.len());
-    fill_tx_dependence_maps(&mut txs, &mut used_txs_chains, past_chains).await;
+    fill_tx_dependence_maps(
+        &ordered_hash,
+        &mut txs,
+        &mut used_txs_chains,
+        past_chains,
+    )
+    .await;
     debug!("Transactions: {:?}", txs.values());
     let mut ordered_txs = topological_order(ordered_hash, txs);
     let chains = if connex {
