@@ -278,18 +278,31 @@ fn topological_order(
                     let mut pruned_inputs = input_txs;
                     pruned_inputs.retain(|dep| !cycle_deps.contains(dep));
                     let mut depth_size = 0;
+                    let mut remaining_unseen = Vec::new();
                     for input_tx in &pruned_inputs {
-                        if let Some(dep_tx) = txs.get(input_tx) {
-                            depth_size =
-                                depth_size.max(dep_tx.depth_size + dep_tx.size);
+                        let Some(dep_tx) = txs.get(input_tx) else {
+                            continue;
+                        };
+                        depth_size =
+                            depth_size.max(dep_tx.depth_size + dep_tx.size);
+                        if !done_tx.contains(input_tx) {
+                            remaining_unseen.push(*input_tx);
                         }
                     }
                     if let Some(tx) = txs.get_mut(&tx_hash) {
                         tx.input_tx.retain(|dep| !cycle_deps.contains(dep));
-                        tx.depth_size = depth_size;
+                        if remaining_unseen.is_empty() {
+                            tx.depth_size = depth_size;
+                        }
                     }
-                    reordered.push(tx_hash);
-                    done_tx.insert(tx_hash);
+                    if remaining_unseen.is_empty() {
+                        reordered.push(tx_hash);
+                        done_tx.insert(tx_hash);
+                    } else {
+                        stack.push(tx_hash);
+                        stack.extend(remaining_unseen.iter().copied());
+                        stacked_tx.extend(remaining_unseen);
+                    }
                     continue;
                 }
                 stack.push(tx_hash);
@@ -938,6 +951,45 @@ mod tests {
 
         let last = ordered[ordered.len() - 1];
         assert!(txs.get(&last).unwrap().input_tx.is_empty());
+    }
+
+    #[test]
+    fn test_topological_order_cycle_cut_with_extra_dep() {
+        let mut txs = std::collections::HashMap::new();
+        let tx_a = TransactionHash::with_last_byte(0);
+        let tx_b = TransactionHash::with_last_byte(1);
+        let tx_x = TransactionHash::with_last_byte(2);
+
+        let mut a = Transaction::new(tx_a);
+        a.size = 1;
+        a.input_tx.insert(tx_b);
+        txs.insert(tx_a, a);
+
+        let mut b = Transaction::new(tx_b);
+        b.size = 1;
+        b.input_tx.insert(tx_a);
+        b.input_tx.insert(tx_x);
+        txs.insert(tx_b, b);
+
+        let mut x = Transaction::new(tx_x);
+        x.size = 1;
+        txs.insert(tx_x, x);
+
+        let ordered = vec![tx_a, tx_b, tx_x];
+        let ordered_txs = topological_order(ordered, txs);
+        let ordered_hashes =
+            ordered_txs.iter().map(|tx| tx.tx_hash).collect::<Vec<_>>();
+
+        assert_eq!(ordered_hashes, vec![tx_x, tx_b, tx_a]);
+
+        let txs = ordered_txs
+            .into_iter()
+            .map(|tx| (tx.tx_hash, tx))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(txs.get(&tx_b).unwrap().input_tx.len(), 1);
+        assert!(txs.get(&tx_b).unwrap().input_tx.contains(&tx_x));
+        assert!(txs.get(&tx_a).unwrap().input_tx.contains(&tx_b));
+        assert!(txs.get(&tx_x).unwrap().input_tx.is_empty());
     }
 
     fn past_chain(last_byte: u8) -> Chain {
