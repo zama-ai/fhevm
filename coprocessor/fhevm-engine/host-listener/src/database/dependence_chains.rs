@@ -91,7 +91,7 @@ fn tx_of_handle(
             continue;
         };
         for handle in &tx.allowed_handle {
-            handle_creator.entry(*handle).or_insert(tx.tx_hash);
+            handle_creator.insert(*handle, tx.tx_hash);
         }
     }
     for tx_hash in ordered_txs_hash {
