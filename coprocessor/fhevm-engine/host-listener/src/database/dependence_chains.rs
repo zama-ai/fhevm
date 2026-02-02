@@ -235,9 +235,14 @@ fn topological_order(
                 done_tx.insert(tx_hash);
                 continue;
             };
+            let input_txs = tx
+                .input_tx
+                .iter()
+                .copied()
+                .collect::<Vec<TransactionHash>>();
             let mut unseen = vec![];
             let mut depth_size = 0;
-            for input_tx in &tx.input_tx {
+            for input_tx in &input_txs {
                 match txs.get(input_tx) {
                     None => {
                         // previous block tx, already seen
@@ -260,14 +265,29 @@ fn topological_order(
                 done_tx.insert(tx_hash);
             } else {
                 let mut cut_cycle = false;
+                let mut cycle_deps = HashSet::new();
                 for unseen_tx_hash in unseen.iter() {
                     error!("Reordering transaction: tx {:?} depends on unseen tx {:?}", tx, txs.get(unseen_tx_hash));
                     if stacked_tx.contains(unseen_tx_hash) {
                         error!("Fake cyclic dependency detected for transaction {:?}, cutting", tx_hash);
                         cut_cycle = true;
+                        cycle_deps.insert(*unseen_tx_hash);
                     }
                 }
                 if cut_cycle {
+                    let mut pruned_inputs = input_txs;
+                    pruned_inputs.retain(|dep| !cycle_deps.contains(dep));
+                    let mut depth_size = 0;
+                    for input_tx in &pruned_inputs {
+                        if let Some(dep_tx) = txs.get(input_tx) {
+                            depth_size =
+                                depth_size.max(dep_tx.depth_size + dep_tx.size);
+                        }
+                    }
+                    if let Some(tx) = txs.get_mut(&tx_hash) {
+                        tx.input_tx.retain(|dep| !cycle_deps.contains(dep));
+                        tx.depth_size = depth_size;
+                    }
                     reordered.push(tx_hash);
                     done_tx.insert(tx_hash);
                     continue;
@@ -588,6 +608,7 @@ mod tests {
     use alloy::primitives::FixedBytes;
     use alloy_primitives::Address;
 
+    use super::{topological_order, Transaction};
     use crate::contracts::TfheContract as C;
     use crate::contracts::TfheContract::TfheContractEvents as E;
     use crate::database::dependence_chains::dependence_chains;
@@ -881,6 +902,42 @@ mod tests {
         assert_eq!(chains[0].dependents, vec![tx3]);
         assert_eq!(chains[1].dependents, vec![tx3]);
         assert!(chains[2].dependents.is_empty());
+    }
+
+    #[test]
+    fn test_topological_order_cycle_cut_max_observed() {
+        let mut txs = std::collections::HashMap::new();
+        let mut ordered = Vec::new();
+        for i in 0u8..6 {
+            let tx_hash = TransactionHash::with_last_byte(i);
+            ordered.push(tx_hash);
+            let mut tx = Transaction::new(tx_hash);
+            tx.size = 1;
+            txs.insert(tx_hash, tx);
+        }
+
+        for i in 0..ordered.len() {
+            let curr = ordered[i];
+            let next = ordered[(i + 1) % ordered.len()];
+            txs.get_mut(&curr).unwrap().input_tx.insert(next);
+        }
+
+        let ordered_txs = topological_order(ordered.clone(), txs);
+        let txs = ordered_txs
+            .into_iter()
+            .map(|tx| (tx.tx_hash, tx))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        for i in 0..ordered.len() - 1 {
+            let curr = ordered[i];
+            let next = ordered[i + 1];
+            let tx = txs.get(&curr).unwrap();
+            assert_eq!(tx.input_tx.len(), 1);
+            assert!(tx.input_tx.contains(&next));
+        }
+
+        let last = ordered[ordered.len() - 1];
+        assert!(txs.get(&last).unwrap().input_tx.is_empty());
     }
 
     fn past_chain(last_byte: u8) -> Chain {
