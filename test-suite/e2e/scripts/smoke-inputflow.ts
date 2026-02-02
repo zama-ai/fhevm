@@ -10,6 +10,7 @@ import type { SmokeTestInput } from '../types';
 type FeeData = {
   maxFeePerGas: bigint;
   maxPriorityFeePerGas: bigint;
+  baseFeePerGas?: bigint | null;
 };
 
 type TxOverrides = {
@@ -35,17 +36,95 @@ const TIME_PER_BLOCK = 12;
 const NUMBER_OF_BLOCKS = 4;
 const DEFAULT_TX_TIMEOUT_SECS = TIME_PER_BLOCK * NUMBER_OF_BLOCKS;
 const DEFAULT_FEE_BUMP = 1.125 ** NUMBER_OF_BLOCKS;
-const DEFAULT_DECRYPT_TIMEOUT_SECS = 120;
+const DEFAULT_DECRYPT_TIMEOUT_SECS = 300;
 
 const FALLBACK_PRIORITY_FEE = ethers.parseUnits('0.1', 'gwei');
 const CANCEL_GAS_LIMIT = 21_000n;
 const LOW_BALANCE_THRESHOLD = ethers.parseEther('0.005');
 const SMOKE_GAS_ESTIMATE = 1_000_000n; // ~1M gas covers deploy + call with buffer
 
+class SmokeTimeoutError extends Error {
+  label: string;
+  constructor(label: string, timeoutMs: number) {
+    super(`Timeout after ${timeoutMs}ms: ${label}`);
+    this.name = 'SmokeTimeoutError';
+    this.label = label;
+  }
+}
+
+const formatGwei = (value: bigint): string => `${ethers.formatUnits(value, 'gwei')} gwei`;
+const formatEth = (value: bigint): string => `${ethers.formatEther(value)} ETH`;
+
+const parseOptionalGweiEnv = (name: string): bigint | null => {
+  const value = process.env[name];
+  if (value === undefined || value === '') return null;
+  if (!/^\d+(\.\d+)?$/.test(value)) {
+    throw new Error(`${name} must be a positive number of gwei (got: "${value}")`);
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive number of gwei (got: "${value}")`);
+  }
+  return ethers.parseUnits(value, 'gwei');
+};
+
+const describeError = (error: unknown): string => {
+  if (error instanceof Error) {
+    const err = error as Error & {
+      code?: string;
+      reason?: string;
+      shortMessage?: string;
+      data?: unknown;
+    };
+    const details: string[] = [];
+    if (err.code) details.push(`code=${err.code}`);
+    if (err.reason) details.push(`reason=${err.reason}`);
+    if (err.shortMessage) details.push(`shortMessage=${err.shortMessage}`);
+    if (err.data !== undefined) details.push(`data=${String(err.data)}`);
+    return details.length > 0 ? `${err.message} (${details.join(' ')})` : err.message;
+  }
+  return String(error);
+};
+
+const logTxReceipt = (params: {
+  label: string;
+  receipt: TransactionReceipt;
+  nonce?: number;
+  note?: string;
+}): void => {
+  const { label, receipt, nonce, note } = params;
+  const effectiveGasPrice = receipt.effectiveGasPrice ?? null;
+  const feePaid = effectiveGasPrice ? receipt.gasUsed * effectiveGasPrice : null;
+  const parts = [
+    `SMOKE_TX_MINED label=${label}`,
+    nonce === undefined ? null : `nonce=${nonce}`,
+    `hash=${receipt.hash}`,
+    `block=${receipt.blockNumber}`,
+    `status=${receipt.status}`,
+    `gasUsed=${receipt.gasUsed}`,
+    effectiveGasPrice ? `effectiveGasPrice=${formatGwei(effectiveGasPrice)}` : null,
+    feePaid ? `fee=${formatEth(feePaid)}` : null,
+    note ? `note=${note}` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  console.log(parts);
+};
+
+const getFailureClass = (error: unknown): string => {
+  if (error instanceof SmokeTimeoutError) {
+    if (error.label === 'userDecryptSingleHandle' || error.label === 'publicDecrypt') {
+      return 'decrypt_timeout';
+    }
+    return 'timeout';
+  }
+  return 'error';
+};
+
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
   let timer: NodeJS.Timeout;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms: ${label}`)), timeoutMs);
+    timer = setTimeout(() => reject(new SmokeTimeoutError(label, timeoutMs)), timeoutMs);
   });
   return Promise.race([
     promise.then((result) => {
@@ -93,12 +172,13 @@ const bumpFees = (base: FeeData, multiplier: number): FeeData => {
 
 const getBaseFees = async (provider: Provider): Promise<FeeData> => {
   const feeData = await provider.getFeeData();
+  const pendingBlock = await provider.getBlock('pending');
+  const baseFeePerGas = pendingBlock?.baseFeePerGas ?? null;
   const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas ?? FALLBACK_PRIORITY_FEE;
   let maxFeePerGas = feeData.maxFeePerGas ?? null;
 
   if (maxFeePerGas == null) {
-    const pendingBlock = await provider.getBlock('pending');
-    const baseFee = pendingBlock?.baseFeePerGas ?? feeData.gasPrice ?? FALLBACK_PRIORITY_FEE;
+    const baseFee = baseFeePerGas ?? feeData.gasPrice ?? FALLBACK_PRIORITY_FEE;
     maxFeePerGas = baseFee * 2n + maxPriorityFeePerGas;
   }
 
@@ -106,7 +186,7 @@ const getBaseFees = async (provider: Provider): Promise<FeeData> => {
     maxFeePerGas = maxPriorityFeePerGas;
   }
 
-  return { maxFeePerGas, maxPriorityFeePerGas };
+  return { maxFeePerGas, maxPriorityFeePerGas, baseFeePerGas };
 };
 
 const sendWithRetries = async (params: {
@@ -116,14 +196,37 @@ const sendWithRetries = async (params: {
   timeoutMs: number;
   maxRetries: number;
   feeBump: number;
+  maxFeePerGasCap?: bigint | null;
+  maxPriorityFeePerGasCap?: bigint | null;
   send: (overrides: TxOverrides) => Promise<TransactionResponse>;
 }): Promise<TransactionReceipt> => {
-  const { signer, label, nonce, timeoutMs, maxRetries, feeBump, send } = params;
+  const { signer, label, nonce, timeoutMs, maxRetries, feeBump, maxFeePerGasCap, maxPriorityFeePerGasCap, send } =
+    params;
   const provider = signer.provider;
   if (!provider) throw new Error('Signer has no provider');
 
   const baseFees = await getBaseFees(provider);
   const sentTxHashes: string[] = [];
+  let lastError: string | null = null;
+
+  const logFeeCaps = (fees: FeeData, attempt: number): void => {
+    if (maxFeePerGasCap && fees.maxFeePerGas > maxFeePerGasCap) {
+      const message = `SMOKE_GAS_CAP_EXCEEDED label=${label} attempt=${attempt} maxFee=${formatGwei(
+        fees.maxFeePerGas,
+      )} cap=${formatGwei(maxFeePerGasCap)}`;
+      lastError = message;
+      console.error(message);
+      throw new Error(message);
+    }
+    if (maxPriorityFeePerGasCap && fees.maxPriorityFeePerGas > maxPriorityFeePerGasCap) {
+      const message = `SMOKE_PRIORITY_FEE_CAP_EXCEEDED label=${label} attempt=${attempt} maxPriority=${formatGwei(
+        fees.maxPriorityFeePerGas,
+      )} cap=${formatGwei(maxPriorityFeePerGasCap)}`;
+      lastError = message;
+      console.error(message);
+      throw new Error(message);
+    }
+  };
 
   // Check if any previously sent tx was mined (used after send failure and as final fallback)
   const findMinedReceipt = async (): Promise<TransactionReceipt | null> => {
@@ -132,12 +235,13 @@ const sendWithRetries = async (params: {
       try {
         receipt = await provider.getTransactionReceipt(hash);
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = describeError(error);
         console.warn(`SMOKE_TX_RECEIPT_CHECK_FAILED label=${label} hash=${hash} error=${msg}`);
         continue;
       }
       if (receipt) {
         console.log(`SMOKE_TX_LATE_RECEIPT label=${label} hash=${hash}`);
+        logTxReceipt({ label, receipt, nonce, note: 'late-receipt' });
         if (receipt.status !== 1) throw new Error(`Transaction reverted (label=${label}, hash=${hash})`);
         return receipt;
       }
@@ -147,6 +251,18 @@ const sendWithRetries = async (params: {
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const fees = bumpFees(baseFees, Math.pow(feeBump, attempt));
+    logFeeCaps(fees, attempt);
+    const feeParts = [
+      `SMOKE_TX_FEES label=${label}`,
+      `nonce=${nonce}`,
+      `attempt=${attempt}`,
+      `maxFee=${formatGwei(fees.maxFeePerGas)}`,
+      `maxPriority=${formatGwei(fees.maxPriorityFeePerGas)}`,
+      baseFees.baseFeePerGas ? `baseFee=${formatGwei(baseFees.baseFeePerGas)}` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    console.log(feeParts);
 
     // 1. Try to send (may fail if nonce was consumed by a previous tx)
     let tx: TransactionResponse;
@@ -157,7 +273,8 @@ const sendWithRetries = async (params: {
     } catch (error) {
       const mined = await findMinedReceipt();
       if (mined) return mined;
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = describeError(error);
+      lastError = `send_failed: ${msg}`;
       console.warn(`SMOKE_TX_SEND_FAILED label=${label} nonce=${nonce} attempt=${attempt} error=${msg}`);
       continue;
     }
@@ -171,7 +288,10 @@ const sendWithRetries = async (params: {
     try {
       const receipt = await tx.wait(1, timeoutMs);
       // Success - tx mined and not reverted
-      if (receipt?.status === 1) return receipt;
+      if (receipt?.status === 1) {
+        logTxReceipt({ label, receipt, nonce });
+        return receipt;
+      }
       // Defensive: if somehow we get a receipt with status !== 1, treat as revert
       throw new Error(`Transaction reverted (label=${label}, hash=${tx.hash})`);
     } catch (error: unknown) {
@@ -180,12 +300,16 @@ const sendWithRetries = async (params: {
       // CALL_EXCEPTION: tx was mined but reverted - terminal error, don't retry
       if (err.code === 'CALL_EXCEPTION') {
         const receiptHash = err.receipt?.hash ?? tx.hash;
+        if (err.receipt) {
+          logTxReceipt({ label, receipt: err.receipt, nonce, note: 'revert' });
+        }
         throw new Error(`Transaction reverted (label=${label}, hash=${receiptHash})`);
       }
 
       // TIMEOUT: tx.wait() timed out - retry with bumped fees
       if (err.code === 'TIMEOUT') {
         console.warn(`SMOKE_TX_TIMEOUT label=${label} nonce=${nonce} attempt=${attempt} hash=${tx.hash}`);
+        lastError = `timeout: ${tx.hash}`;
         continue;
       }
 
@@ -201,6 +325,7 @@ const sendWithRetries = async (params: {
         const receiptHash = err.receipt?.hash ?? 'unknown';
         if (reason === 'repriced' && err.receipt) {
           console.log(`SMOKE_TX_REPRICED label=${label} original=${tx.hash} mined=${receiptHash}`);
+          logTxReceipt({ label, receipt: err.receipt, nonce, note: 'repriced' });
           if (err.receipt.status === 1) return err.receipt;
           throw new Error(`Repriced transaction reverted (label=${label}, hash=${receiptHash})`);
         }
@@ -208,11 +333,13 @@ const sendWithRetries = async (params: {
         console.warn(
           `SMOKE_TX_REPLACED_UNEXPECTED label=${label} original=${tx.hash} reason=${reason} mined=${receiptHash}`,
         );
+        lastError = `replaced_unexpected: reason=${reason ?? 'unknown'} hash=${receiptHash}`;
         continue;
       }
 
       // Unknown error - log and retry (network issues, etc.)
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = describeError(error);
+      lastError = `wait_error: ${msg}`;
       console.warn(`SMOKE_TX_WAIT_ERROR label=${label} nonce=${nonce} attempt=${attempt} error=${msg}`);
       continue;
     }
@@ -222,7 +349,7 @@ const sendWithRetries = async (params: {
   const mined = await findMinedReceipt();
   if (mined) return mined;
 
-  throw new Error(`All ${maxRetries + 1} attempts failed (label=${label})`);
+  throw new Error(`All ${maxRetries + 1} attempts failed (label=${label})${lastError ? ` lastError=${lastError}` : ''}`);
 };
 
 const getSignerStates = async (
@@ -254,8 +381,10 @@ const cancelBacklog = async (params: {
   timeoutMs: number;
   maxRetries: number;
   feeBump: number;
+  maxFeePerGasCap?: bigint | null;
+  maxPriorityFeePerGasCap?: bigint | null;
 }): Promise<void> => {
-  const { signer, latest, pending, timeoutMs, maxRetries, feeBump } = params;
+  const { signer, latest, pending, timeoutMs, maxRetries, feeBump, maxFeePerGasCap, maxPriorityFeePerGasCap } = params;
 
   for (let nonce = latest; nonce < pending; nonce += 1) {
     await sendWithRetries({
@@ -265,6 +394,8 @@ const cancelBacklog = async (params: {
       timeoutMs,
       maxRetries,
       feeBump,
+      maxFeePerGasCap,
+      maxPriorityFeePerGasCap,
       send: (overrides) =>
         signer.sendTransaction({
           to: signer.address,
@@ -288,6 +419,8 @@ async function runSmoke(): Promise<void> {
   const deployContract = parseBooleanEnv('SMOKE_DEPLOY_CONTRACT', true);
   const runTests = parseBooleanEnv('SMOKE_RUN_TESTS', true);
   const existingContractAddress = process.env.TEST_INPUT_CONTRACT_ADDRESS;
+  const maxFeePerGasCap = parseOptionalGweiEnv('SMOKE_MAX_FEE_GWEI');
+  const maxPriorityFeePerGasCap = parseOptionalGweiEnv('SMOKE_MAX_PRIORITY_FEE_GWEI');
 
   const allSigners = await ethers.getSigners();
   const states = await getSignerStates(provider, allSigners, signerIndices);
@@ -298,13 +431,59 @@ async function runSmoke(): Promise<void> {
 
   console.log(`SMOKE_START network=${network.name} chainId=${(await provider.getNetwork()).chainId}`);
   console.log(`SMOKE_SIGNERS_AVAILABLE count=${states.length} minBalance=${ethers.formatEther(minUsableBalance)} ETH`);
+  console.log(
+    `SMOKE_BASE_FEES maxFee=${formatGwei(baseFees.maxFeePerGas)} maxPriority=${formatGwei(
+      baseFees.maxPriorityFeePerGas,
+    )}${baseFees.baseFeePerGas ? ` baseFee=${formatGwei(baseFees.baseFeePerGas)}` : ''}`,
+  );
+  if (maxFeePerGasCap || maxPriorityFeePerGasCap) {
+    console.log(
+      `SMOKE_GAS_CAPS maxFee=${maxFeePerGasCap ? formatGwei(maxFeePerGasCap) : 'none'} maxPriority=${
+        maxPriorityFeePerGasCap ? formatGwei(maxPriorityFeePerGasCap) : 'none'
+      }`,
+    );
+  }
   states.forEach((state) => {
     console.log(`  SMOKE_SIGNER ${formatSignerState(state)}`);
   });
 
-  let selected = states.find((state) => state.pending === state.latest && state.balance >= minUsableBalance);
+  if (maxFeePerGasCap && baseFees.maxFeePerGas > maxFeePerGasCap) {
+    const message = `SMOKE_GAS_CAP_EXCEEDED_PRECHECK maxFee=${formatGwei(
+      baseFees.maxFeePerGas,
+    )} cap=${formatGwei(maxFeePerGasCap)}`;
+    console.error(message);
+    throw new Error(message);
+  }
+  if (maxPriorityFeePerGasCap && baseFees.maxPriorityFeePerGas > maxPriorityFeePerGasCap) {
+    const message = `SMOKE_PRIORITY_FEE_CAP_EXCEEDED_PRECHECK maxPriority=${formatGwei(
+      baseFees.maxPriorityFeePerGas,
+    )} cap=${formatGwei(maxPriorityFeePerGasCap)}`;
+    console.error(message);
+    throw new Error(message);
+  }
+
+  const cleanStates = states.filter((state) => state.pending === state.latest);
+  const fundedCleanStates = cleanStates.filter((state) => state.balance >= minUsableBalance);
+
+  let selected = fundedCleanStates[0];
 
   if (!selected) {
+    if (cleanStates.length > 0) {
+      console.error(
+        `SMOKE_NO_SIGNER_WITH_BALANCE minBalance=${formatEth(minUsableBalance)} maxFee=${formatGwei(
+          baseFees.maxFeePerGas,
+        )}`,
+      );
+      cleanStates.forEach((state) => {
+        const deficit = minUsableBalance - state.balance;
+        console.error(
+          `SMOKE_SIGNER_INSUFFICIENT ${formatSignerState(state)} need=${formatEth(
+            minUsableBalance,
+          )} deficit=${formatEth(deficit)}`,
+        );
+      });
+      throw new Error('No clean signer has sufficient balance for smoke test.');
+    }
     if (!allowCancel) {
       throw new Error('All signers have pending backlogs and auto-cancel is disabled.');
     }
@@ -334,6 +513,8 @@ async function runSmoke(): Promise<void> {
       timeoutMs,
       maxRetries,
       feeBump,
+      maxFeePerGasCap,
+      maxPriorityFeePerGasCap,
     });
 
     const [latest, pending] = await Promise.all([
@@ -382,6 +563,8 @@ async function runSmoke(): Promise<void> {
       timeoutMs,
       maxRetries,
       feeBump,
+      maxFeePerGasCap,
+      maxPriorityFeePerGasCap,
       send: (overrides) =>
         signer.sendTransaction({
           ...deployTx,
@@ -435,6 +618,8 @@ async function runSmoke(): Promise<void> {
       timeoutMs,
       maxRetries,
       feeBump,
+      maxFeePerGasCap,
+      maxPriorityFeePerGasCap,
       send: (overrides) =>
         contract.add42ToInput64(encryptedInput.handles[0], encryptedInput.inputProof, {
           ...overrides,
@@ -449,16 +634,27 @@ async function runSmoke(): Promise<void> {
     const { publicKey, privateKey } = instance.generateKeypair();
 
     const decryptStart = Date.now();
-    const decryptedValue = await withTimeout(
-      userDecryptSingleHandle(handle, contractAddress, instance, signer, privateKey, publicKey),
-      decryptTimeoutMs,
-      'userDecryptSingleHandle',
-    );
-    assert.equal(decryptedValue, 49n);
+    console.log(`SMOKE_DECRYPT_START handle=${handle} timeoutMs=${decryptTimeoutMs}`);
+    let decryptMs = 0;
+    try {
+      const decryptedValue = await withTimeout(
+        userDecryptSingleHandle(handle, contractAddress, instance, signer, privateKey, publicKey),
+        decryptTimeoutMs,
+        'userDecryptSingleHandle',
+      );
+      console.log(`SMOKE_DECRYPT_USER_DONE ms=${Date.now() - decryptStart}`);
+      assert.equal(decryptedValue, 49n);
 
-    const res = await withTimeout(instance.publicDecrypt([handle]), decryptTimeoutMs, 'publicDecrypt');
-    assert.deepEqual(res.clearValues, { [handle]: 49n });
-    const decryptMs = Date.now() - decryptStart;
+      const res = await withTimeout(instance.publicDecrypt([handle]), decryptTimeoutMs, 'publicDecrypt');
+      console.log(`SMOKE_DECRYPT_PUBLIC_DONE ms=${Date.now() - decryptStart}`);
+      assert.deepEqual(res.clearValues, { [handle]: 49n });
+      decryptMs = Date.now() - decryptStart;
+    } catch (error) {
+      if (error instanceof SmokeTimeoutError) {
+        console.error(`SMOKE_DECRYPT_TIMEOUT step=${error.label} timeoutMs=${decryptTimeoutMs}`);
+      }
+      throw error;
+    }
 
     timingReport += `encrypt=${encryptMs}ms tx=${txMs}ms decrypt=${decryptMs}ms`;
     console.log(`SMOKE_SUCCESS signer=${signerAddress} contract=${contractAddress} ${timingReport.trim()}`);
@@ -496,28 +692,36 @@ async function runSmoke(): Promise<void> {
       }
 
       console.log(`SMOKE_CLEANUP signer=${state.address} backlog=${backlog}`);
-      await cancelBacklog({
-        signer: state.signer,
-        latest: state.latest,
-        pending: state.pending,
-        timeoutMs,
-        maxRetries,
-        feeBump,
-      });
+      try {
+        await cancelBacklog({
+          signer: state.signer,
+          latest: state.latest,
+          pending: state.pending,
+          timeoutMs,
+          maxRetries,
+          feeBump,
+          maxFeePerGasCap,
+          maxPriorityFeePerGasCap,
+        });
+      } catch (error) {
+        console.warn(`SMOKE_CLEANUP_FAILED signer=${state.address} error=${describeError(error)}`);
+      }
     }
   }
 }
 
 runSmoke().catch(async (error) => {
-  const errorMessage = String(error);
-  console.error(`SMOKE_FAILED ${errorMessage}`);
+  const errorMessage = describeError(error);
+  const failureClass = getFailureClass(error);
+  console.error(`SMOKE_FAILED class=${failureClass} ${errorMessage}`);
   process.exitCode = 1;
 
   const heartbeatUrl = process.env.BETTERSTACK_HEARTBEAT_URL;
   if (heartbeatUrl) {
+    const failurePayload = `class=${failureClass}\n${errorMessage}`;
     await fetch(`${heartbeatUrl}/1`, {
       method: 'POST',
-      body: errorMessage.slice(0, 10000),
+      body: failurePayload.slice(0, 10000),
     }).catch((err) => console.warn(`SMOKE_HEARTBEAT_FAILED ${err.message}`));
   }
 });

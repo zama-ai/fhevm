@@ -55,6 +55,8 @@ for automatic failover - if one signer has a stuck transaction, it falls back to
 
 **Important:** All configured signers should be funded for maximum resilience. The script logs all
 available signers at startup with their balances and warns if any have low balance (< 0.005 ETH).
+Post-success cleanup will attempt to cancel any remaining pending transactions, but failures in that
+cleanup step do not fail the smoke run.
 
 To derive signer addresses from a mnemonic (for funding):
 ```shell
@@ -70,11 +72,13 @@ cast wallet address --mnemonic "your mnemonic here" --mnemonic-index 2
 - `SMOKE_TX_TIMEOUT_SECS` (`48`)
 - `SMOKE_TX_MAX_RETRIES` (`2`)
 - `SMOKE_FEE_BUMP` (`1.125^4`)
+- `SMOKE_MAX_FEE_GWEI` (optional) - fail fast if maxFeePerGas exceeds this cap (unset = no cap)
+- `SMOKE_MAX_PRIORITY_FEE_GWEI` (optional) - fail fast if maxPriorityFeePerGas exceeds this cap (unset = no cap)
 - `SMOKE_MAX_BACKLOG` (`3`)
 - `SMOKE_CANCEL_BACKLOG` (`1`) - set to `0` to disable auto-cancel of pending transactions
 - `SMOKE_DEPLOY_CONTRACT` (`1`) - set to `0` to attach to existing contract via `TEST_INPUT_CONTRACT_ADDRESS`
 - `SMOKE_RUN_TESTS` (`1`) - set to `0` to deploy contract only without running tests
-- `SMOKE_DECRYPT_TIMEOUT_SECS` (`120`) - timeout for decryption operations
+- `SMOKE_DECRYPT_TIMEOUT_SECS` (`300`) - timeout for decryption operations
 - `BETTERSTACK_HEARTBEAT_URL` (optional) - if set, pings BetterStack on success; reports error with exit code on failure
 
 ### Run
