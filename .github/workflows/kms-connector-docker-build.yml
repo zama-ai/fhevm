@@ -175,7 +175,7 @@ jobs:
             const event = process.env.EVENT_NAME;
             const needs = JSON.parse(process.env.NEEDS);
             const inputs = JSON.parse(process.env.INPUTS);
-            const isLatestCommit = needs['is-latest-commit'].outputs?.is_latest === 'true' || false;
+            const isLatestCommit = needs['is-latest-commit'].outputs?.is_latest === 'true';
             const isWorkflowCall = inputs.is_workflow_call ?? false;
 
             const decideAction = (changes, manualInput) => {
