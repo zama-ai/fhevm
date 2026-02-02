@@ -1,0 +1,35 @@
+name: is-latest-commit
+
+on:
+  workflow_call:
+    outputs:
+      is_latest:
+        description: "Whether the current commit is the latest on the target branch"
+        value: ${{ jobs.check.outputs.is_latest }}
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      is_latest: ${{ steps.check.outputs.is_latest }}
+    steps:
+      - name: Check if current commit is latest on target branch
+        id: check
+        env:
+          CURRENT_COMMIT: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          LATEST_COMMIT=$(git ls-remote https://github.com/"$REPOSITORY".git refs/heads/"$REF_NAME" | cut -f1)
+          if [ -z "$LATEST_COMMIT" ]; then
+            echo "::error::Failed to fetch latest commit for $REF_NAME"
+            exit 1
+          elif [ "$LATEST_COMMIT" == "$CURRENT_COMMIT" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+            echo "Current commit $CURRENT_COMMIT is the latest on $REF_NAME"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "Current commit $CURRENT_COMMIT is not the latest on $REF_NAME (latest: $LATEST_COMMIT)."
+          fi
