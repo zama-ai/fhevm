@@ -306,6 +306,12 @@ fn build_group_nodes(
     let mut edges = Vec::new();
     for (group_id, group_tx) in group_txs.iter() {
         for dep in group_tx.input_tx.iter() {
+            used_groups_chains
+                .entry(*dep)
+                .and_modify(|v| {
+                    v.insert(*group_id);
+                })
+                .or_insert_with(|| HashSet::from([*group_id]));
             if group_ids.contains(dep) {
                 edges.push((*dep, *group_id));
             }
@@ -315,12 +321,6 @@ fn build_group_nodes(
         if let Some(dep_tx) = group_txs.get_mut(&dep) {
             dep_tx.output_tx.insert(child);
         }
-        used_groups_chains
-            .entry(dep)
-            .and_modify(|v| {
-                v.insert(child);
-            })
-            .or_insert_with(|| HashSet::from([child]));
     }
 
     GroupBuild {
