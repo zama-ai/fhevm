@@ -3,9 +3,10 @@ use tfhe::ServerKey;
 use fhevm_engine_common::utils::{safe_deserialize_sns_key, safe_serialize_key};
 
 pub fn extract_server_key_without_ns(sns_key: &[u8]) -> anyhow::Result<Vec<u8>> {
-    // for integration tests
-    if sns_key == "key_bytes".as_bytes() {
-        return Ok("key_bytes".as_bytes().to_vec());
+    // Bypass for integration tests
+    #[cfg(feature = "test_bypass_key_extraction")]
+    if sns_key == b"key_bytes" {
+        return Ok(b"key_bytes".to_vec());
     }
 
     let server_key: ServerKey = safe_deserialize_sns_key(sns_key)?;
