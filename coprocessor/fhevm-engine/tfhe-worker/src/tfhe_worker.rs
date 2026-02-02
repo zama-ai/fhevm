@@ -314,10 +314,10 @@ async fn query_ciphertexts<'a>(
     // index ciphertexts in hashmap
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
         HashMap::with_capacity(ciphertexts_rows.len());
-    for row in &ciphertexts_rows {
+    for row in ciphertexts_rows {
         let _ = ciphertext_map.insert(
-            row.handle.clone(),
-            (row.ciphertext_type, row.ciphertext.clone()),
+            row.handle,
+            (row.ciphertext_type, row.ciphertext),
         );
     }
     Ok(ciphertext_map)
