@@ -1,6 +1,6 @@
 import '@nomicfoundation/hardhat-toolbox';
 import dotenv from 'dotenv';
-import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
+import type { HardhatUserConfig } from 'hardhat/config';
 import { task, vars } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';

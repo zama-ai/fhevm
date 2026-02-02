@@ -127,10 +127,7 @@ const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, label: string): 
     timer = setTimeout(() => reject(new SmokeTimeoutError(label, timeoutMs)), timeoutMs);
   });
   return Promise.race([
-    promise.then((result) => {
-      clearTimeout(timer);
-      return result;
-    }),
+    promise.finally(() => clearTimeout(timer)),
     timeoutPromise,
   ]);
 };
@@ -517,14 +514,15 @@ async function runSmoke(): Promise<void> {
       maxPriorityFeePerGasCap,
     });
 
-    const [latest, pending] = await Promise.all([
+    const [latest, pending, balance] = await Promise.all([
       provider.getTransactionCount(primary.address, 'latest'),
       provider.getTransactionCount(primary.address, 'pending'),
+      provider.getBalance(primary.address),
     ]);
     if (pending !== latest) {
       throw new Error('Backlog remains after auto-cancel.');
     }
-    selected = { ...primary, latest, pending };
+    selected = { ...primary, latest, pending, balance };
   }
 
   console.log(`SMOKE_SIGNER_SELECTED ${formatSignerState(selected)}`);
@@ -665,7 +663,7 @@ async function runSmoke(): Promise<void> {
   if (heartbeatUrl) {
     await fetch(heartbeatUrl)
       .then(() => console.log('SMOKE_HEARTBEAT_SENT'))
-      .catch((err) => console.warn(`SMOKE_HEARTBEAT_FAILED ${err.message}`));
+      .catch((err) => console.error(`SMOKE_HEARTBEAT_FAILED ${err.message}`));
   }
 
   // Post-success cleanup: clear backlogs on any unclean signers
@@ -704,7 +702,7 @@ async function runSmoke(): Promise<void> {
           maxPriorityFeePerGasCap,
         });
       } catch (error) {
-        console.warn(`SMOKE_CLEANUP_FAILED signer=${state.address} error=${describeError(error)}`);
+        console.error(`SMOKE_CLEANUP_FAILED signer=${state.address} error=${describeError(error)}`);
       }
     }
   }
@@ -722,6 +720,6 @@ runSmoke().catch(async (error) => {
     await fetch(`${heartbeatUrl}/1`, {
       method: 'POST',
       body: failurePayload.slice(0, 10000),
-    }).catch((err) => console.warn(`SMOKE_HEARTBEAT_FAILED ${err.message}`));
+    }).catch((err) => console.error(`SMOKE_HEARTBEAT_FAILED ${err.message}`));
   }
 });
