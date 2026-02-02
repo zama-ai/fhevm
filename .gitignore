@@ -12,7 +12,12 @@ Desktop.ini
 # IDE and editor specific files
 .idea/
 .vscode/
-.claude/
+.claude
+!.claude/
+.claude/*
+!.claude/skills/
+!.claude/skills/**
+!.claude/CLAUDE.md
 *.suo
 *.user
 *.userosscache
