@@ -115,6 +115,30 @@ fn tx_of_handle(
     (handle_creator, handle_consumer)
 }
 
+fn compute_unseen_and_depth(
+    inputs: &[TransactionHash],
+    txs: &HashMap<TransactionHash, Transaction>,
+    done_tx: &HashSet<TransactionHash>,
+) -> (Vec<TransactionHash>, u64) {
+    let mut unseen = Vec::new();
+    let mut depth_size = 0;
+    for input_tx in inputs {
+        match txs.get(input_tx) {
+            None => {
+                // previous block tx, already seen
+                continue;
+            }
+            Some(dep_tx) => {
+                depth_size = depth_size.max(dep_tx.depth_size + dep_tx.size);
+            }
+        }
+        if !done_tx.contains(input_tx) {
+            unseen.push(*input_tx);
+        }
+    }
+    (unseen, depth_size)
+}
+
 async fn fill_tx_dependence_maps(
     txs: &mut HashMap<TransactionHash, Transaction>,
     used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
@@ -240,23 +264,8 @@ fn topological_order(
                 .iter()
                 .copied()
                 .collect::<Vec<TransactionHash>>();
-            let mut unseen = vec![];
-            let mut depth_size = 0;
-            for input_tx in &input_txs {
-                match txs.get(input_tx) {
-                    None => {
-                        // previous block tx, already seen
-                        continue;
-                    }
-                    Some(dep_tx) => {
-                        depth_size =
-                            depth_size.max(dep_tx.depth_size + dep_tx.size);
-                    }
-                }
-                if !done_tx.contains(input_tx) {
-                    unseen.push(*input_tx);
-                }
-            }
+            let (unseen, depth_size) =
+                compute_unseen_and_depth(&input_txs, &txs, &done_tx);
             if unseen.is_empty() {
                 if let Some(tx) = txs.get_mut(&tx_hash) {
                     tx.depth_size = depth_size;
@@ -277,18 +286,12 @@ fn topological_order(
                 if cut_cycle {
                     let mut pruned_inputs = input_txs;
                     pruned_inputs.retain(|dep| !cycle_deps.contains(dep));
-                    let mut depth_size = 0;
-                    let mut remaining_unseen = Vec::new();
-                    for input_tx in &pruned_inputs {
-                        let Some(dep_tx) = txs.get(input_tx) else {
-                            continue;
-                        };
-                        depth_size =
-                            depth_size.max(dep_tx.depth_size + dep_tx.size);
-                        if !done_tx.contains(input_tx) {
-                            remaining_unseen.push(*input_tx);
-                        }
-                    }
+                    let (remaining_unseen, depth_size) =
+                        compute_unseen_and_depth(
+                            &pruned_inputs,
+                            &txs,
+                            &done_tx,
+                        );
                     if let Some(tx) = txs.get_mut(&tx_hash) {
                         tx.input_tx.retain(|dep| !cycle_deps.contains(dep));
                         if remaining_unseen.is_empty() {
