@@ -20,7 +20,7 @@ Before starting this tutorial, ensure you have:
 2. Set up the OpenZeppelin confidential contracts library 
 
 For help with these steps, refer to the following tutorial:
-- [Setting up OpenZeppelin confidential contracts](./openzeppelin/README.md)
+- [Setting up OpenZeppelin confidential contracts](./README.md)
 
 ## Understanding the architecture
 
