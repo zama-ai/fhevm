@@ -117,7 +117,6 @@ fn tx_of_handle(
 
 async fn fill_tx_dependence_maps(
     txs: &mut HashMap<TransactionHash, Transaction>,
-    used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
     past_chains: &ChainCache,
 ) {
     // handle to tx maps
@@ -133,31 +132,11 @@ async fn fill_tx_dependence_maps(
             if let Some(dep_tx) = handle_creator.get(input_handle) {
                 // intra block
                 tx.input_tx.insert(*dep_tx);
-                used_txs_chains
-                    .entry(*dep_tx)
-                    .and_modify(|v| {
-                        v.insert(tx.tx_hash);
-                    })
-                    .or_insert({
-                        let mut h = HashSet::new();
-                        h.insert(tx.tx_hash);
-                        h
-                    });
             } else if let Some(dep_tx_hash) =
                 past_chains.write().await.get(input_handle)
             {
                 // extra block, this is directly a chain hash
                 tx.input_tx.insert(*dep_tx_hash);
-                used_txs_chains
-                    .entry(*dep_tx_hash)
-                    .and_modify(|v| {
-                        v.insert(tx.tx_hash);
-                    })
-                    .or_insert({
-                        let mut h = HashSet::new();
-                        h.insert(tx.tx_hash);
-                        h
-                    });
             }
         }
         // this tx is used by consumer_tx
@@ -174,6 +153,207 @@ async fn fill_tx_dependence_maps(
             }
         }
     }
+}
+
+fn scc_groups(
+    ordered_hash: &[TransactionHash],
+    txs: &HashMap<TransactionHash, Transaction>,
+) -> Vec<Vec<TransactionHash>> {
+    let mut graph: HashMap<TransactionHash, Vec<TransactionHash>> =
+        HashMap::with_capacity(txs.len());
+    let mut rev_graph: HashMap<TransactionHash, Vec<TransactionHash>> =
+        HashMap::with_capacity(txs.len());
+    for (&tx_hash, tx) in txs.iter() {
+        let deps = tx
+            .input_tx
+            .iter()
+            .filter(|dep| txs.contains_key(*dep))
+            .copied()
+            .collect::<Vec<_>>();
+        graph.insert(tx_hash, deps.clone());
+        rev_graph.entry(tx_hash).or_default();
+        for dep in deps {
+            rev_graph.entry(dep).or_default().push(tx_hash);
+        }
+    }
+
+    let mut visited = HashSet::with_capacity(txs.len());
+    let mut order = Vec::with_capacity(txs.len());
+    for tx_hash in ordered_hash.iter().copied() {
+        if visited.contains(&tx_hash) {
+            continue;
+        }
+        let mut stack = Vec::new();
+        stack.push((tx_hash, false));
+        while let Some((node, processed)) = stack.pop() {
+            if processed {
+                order.push(node);
+                continue;
+            }
+            if visited.contains(&node) {
+                continue;
+            }
+            visited.insert(node);
+            stack.push((node, true));
+            if let Some(neighbors) = graph.get(&node) {
+                for &next in neighbors {
+                    if !visited.contains(&next) {
+                        stack.push((next, false));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut assigned = HashSet::with_capacity(txs.len());
+    let mut groups = Vec::new();
+    for &tx_hash in order.iter().rev() {
+        if assigned.contains(&tx_hash) {
+            continue;
+        }
+        let mut group = Vec::new();
+        let mut stack = vec![tx_hash];
+        assigned.insert(tx_hash);
+        while let Some(node) = stack.pop() {
+            group.push(node);
+            if let Some(neighbors) = rev_graph.get(&node) {
+                for &prev in neighbors {
+                    if assigned.insert(prev) {
+                        stack.push(prev);
+                    }
+                }
+            }
+        }
+        groups.push(group);
+    }
+
+    let mut tx_index = HashMap::with_capacity(ordered_hash.len());
+    for (idx, hash) in ordered_hash.iter().enumerate() {
+        tx_index.insert(*hash, idx);
+    }
+    for group in groups.iter_mut() {
+        group.sort_by_key(|hash| {
+            tx_index.get(hash).copied().unwrap_or(usize::MAX)
+        });
+    }
+    groups.sort_by_key(|group| {
+        tx_index.get(&group[0]).copied().unwrap_or(usize::MAX)
+    });
+    groups
+}
+
+struct GroupBuild {
+    ordered_groups: Vec<TransactionHash>,
+    group_txs: HashMap<TransactionHash, Transaction>,
+    group_members: HashMap<TransactionHash, Vec<TransactionHash>>,
+    used_groups_chains: HashMap<TransactionHash, HashSet<TransactionHash>>,
+}
+
+fn build_group_nodes(
+    ordered_hash: &[TransactionHash],
+    txs: &HashMap<TransactionHash, Transaction>,
+) -> GroupBuild {
+    let groups = scc_groups(ordered_hash, txs);
+    let mut group_members = HashMap::with_capacity(groups.len());
+    let mut group_by_tx = HashMap::with_capacity(txs.len());
+    let mut group_txs = HashMap::with_capacity(groups.len());
+    let mut ordered_groups = Vec::with_capacity(groups.len());
+
+    for members in groups {
+        if members.is_empty() {
+            continue;
+        }
+        let group_id = members[0];
+        ordered_groups.push(group_id);
+        group_members.insert(group_id, members.clone());
+        for member in members.iter().copied() {
+            group_by_tx.insert(member, group_id);
+        }
+    }
+
+    for (group_id, members) in group_members.iter() {
+        let mut size: u64 = 0;
+        let mut allowed_handle = Vec::new();
+        let mut input_groups = HashSet::new();
+        for member in members {
+            let Some(tx) = txs.get(member) else {
+                continue;
+            };
+            size = size.saturating_add(tx.size);
+            allowed_handle.extend(tx.allowed_handle.iter());
+            for dep in tx.input_tx.iter() {
+                if let Some(dep_group) = group_by_tx.get(dep) {
+                    if dep_group != group_id {
+                        input_groups.insert(*dep_group);
+                    }
+                } else {
+                    input_groups.insert(*dep);
+                }
+            }
+        }
+        let mut group_tx = Transaction::new(*group_id);
+        group_tx.size = size;
+        group_tx.allowed_handle = allowed_handle;
+        group_tx.input_tx = input_groups;
+        group_txs.insert(*group_id, group_tx);
+    }
+
+    let group_ids = group_txs.keys().copied().collect::<HashSet<_>>();
+    let mut used_groups_chains: HashMap<
+        TransactionHash,
+        HashSet<TransactionHash>,
+    > = HashMap::with_capacity(group_txs.len());
+    let mut edges = Vec::new();
+    for (group_id, group_tx) in group_txs.iter() {
+        for dep in group_tx.input_tx.iter() {
+            if group_ids.contains(dep) {
+                edges.push((*dep, *group_id));
+            }
+        }
+    }
+    for (dep, child) in edges {
+        if let Some(dep_tx) = group_txs.get_mut(&dep) {
+            dep_tx.output_tx.insert(child);
+        }
+        used_groups_chains
+            .entry(dep)
+            .and_modify(|v| {
+                v.insert(child);
+            })
+            .or_insert_with(|| HashSet::from([child]));
+    }
+
+    GroupBuild {
+        ordered_groups,
+        group_txs,
+        group_members,
+        used_groups_chains,
+    }
+}
+
+fn expand_groups(
+    ordered_groups: &[Transaction],
+    group_members: &HashMap<TransactionHash, Vec<TransactionHash>>,
+    txs: &mut HashMap<TransactionHash, Transaction>,
+) -> Vec<Transaction> {
+    let mut ordered_txs = Vec::with_capacity(txs.len());
+    for group in ordered_groups {
+        let Some(members) = group_members.get(&group.tx_hash) else {
+            continue;
+        };
+        let mut offset = 0;
+        for member in members {
+            let Some(mut tx) = txs.remove(member) else {
+                error!("Transaction {:?} missing in txs map", member);
+                continue;
+            };
+            tx.linear_chain = group.linear_chain;
+            tx.depth_size = group.depth_size.saturating_add(offset);
+            offset = offset.saturating_add(tx.size);
+            ordered_txs.push(tx);
+        }
+    }
+    ordered_txs
 }
 
 fn topological_order(
@@ -541,22 +721,25 @@ pub async fn dependence_chains(
     across_blocks: bool,
 ) -> OrderedChains {
     let (ordered_hash, mut txs) = scan_transactions(logs);
-    let mut used_txs_chains: HashMap<
-        TransactionHash,
-        HashSet<TransactionHash>,
-    > = HashMap::with_capacity(txs.len());
-    fill_tx_dependence_maps(&mut txs, &mut used_txs_chains, past_chains).await;
+    fill_tx_dependence_maps(&mut txs, past_chains).await;
     debug!("Transactions: {:?}", txs.values());
-    let mut ordered_txs = topological_order(ordered_hash, txs);
+    let GroupBuild {
+        ordered_groups,
+        group_txs,
+        group_members,
+        mut used_groups_chains,
+    } = build_group_nodes(&ordered_hash, &txs);
+    let mut ordered_groups = topological_order(ordered_groups, group_txs);
     let chains = if connex {
-        grouping_to_chains_connex(&mut ordered_txs).await
+        grouping_to_chains_connex(&mut ordered_groups).await
     } else {
         grouping_to_chains_no_fork(
-            &mut ordered_txs,
-            &mut used_txs_chains,
+            &mut ordered_groups,
+            &mut used_groups_chains,
             across_blocks,
         )
     };
+    let ordered_txs = expand_groups(&ordered_groups, &group_members, &mut txs);
     // propagate to logs
     let txs = ordered_txs
         .iter()
@@ -585,6 +768,8 @@ pub async fn dependence_chains(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use alloy::primitives::FixedBytes;
     use alloy_primitives::Address;
 
@@ -881,6 +1066,77 @@ mod tests {
         assert_eq!(chains[0].dependents, vec![tx3]);
         assert_eq!(chains[1].dependents, vec![tx3]);
         assert!(chains[2].dependents.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_dependence_chains_cycle_grouping() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(0);
+        let tx2 = TransactionHash::with_last_byte(1);
+        let tx3 = TransactionHash::with_last_byte(2);
+
+        let h1 = allowed_input_handle(&mut logs, tx1);
+        let h2 = op1(h1, &mut logs, tx2);
+        let h3 = op1(h2, &mut logs, tx3);
+        let _h4 = op1(h3, &mut logs, tx1);
+
+        let chains = dependence_chains(&mut logs, &cache, false, true).await;
+        let cycle_chain = logs[0].dependence_chain;
+        assert!(logs.iter().all(|log| log.dependence_chain == cycle_chain));
+        assert_eq!(chains.len(), 1);
+        assert!(chains.iter().any(|chain| chain.hash == cycle_chain));
+    }
+
+    #[tokio::test]
+    async fn test_dependence_chains_cycle_group_with_two_parents() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(0);
+        let tx2 = TransactionHash::with_last_byte(1);
+        let tx3 = TransactionHash::with_last_byte(2);
+        let tx_x = TransactionHash::with_last_byte(10);
+        let tx_y = TransactionHash::with_last_byte(11);
+
+        let hx = allowed_input_handle(&mut logs, tx_x);
+        let hy = allowed_input_handle(&mut logs, tx_y);
+
+        let h1 = allowed_input_handle(&mut logs, tx1);
+        let h2 = op1(h1, &mut logs, tx2);
+        let h3 = op1(h2, &mut logs, tx3);
+        let _h4 = op2(h3, hx, &mut logs, tx1);
+        let _h5 = op2(h3, hy, &mut logs, tx1);
+
+        let chains = dependence_chains(&mut logs, &cache, false, true).await;
+        let mut chain_by_tx = HashMap::new();
+        for log in &logs {
+            let tx_hash = log.transaction_hash.unwrap();
+            chain_by_tx
+                .entry(tx_hash)
+                .and_modify(|chain| {
+                    assert_eq!(*chain, log.dependence_chain);
+                })
+                .or_insert(log.dependence_chain);
+        }
+        let cycle_chain = chain_by_tx[&tx1];
+        assert_eq!(cycle_chain, chain_by_tx[&tx2]);
+        assert_eq!(cycle_chain, chain_by_tx[&tx3]);
+
+        let chain_x = chain_by_tx[&tx_x];
+        let chain_y = chain_by_tx[&tx_y];
+
+        let cycle_entry = chains
+            .iter()
+            .find(|chain| chain.hash == cycle_chain)
+            .expect("missing cycle chain");
+        assert_eq!(cycle_entry.dependencies.len(), 2);
+        assert!(cycle_entry.dependencies.contains(&chain_x));
+        assert!(cycle_entry.dependencies.contains(&chain_y));
+        assert!(!cycle_entry.dependencies.contains(&cycle_chain));
     }
 
     fn past_chain(last_byte: u8) -> Chain {
