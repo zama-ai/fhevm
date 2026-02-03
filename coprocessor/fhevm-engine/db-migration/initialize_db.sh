@@ -13,10 +13,8 @@ done
 
 if [ "$USE_ABSOLUTE_PATHS" = true ]; then
   MIGRATION_DIR="/migrations"
-  KEY_DIR="/fhevm-keys"
 else
   MIGRATION_DIR="./migrations"
-  KEY_DIR="./../fhevm-keys"
 fi
 
 echo "-------------- Start database initilaization --------------"

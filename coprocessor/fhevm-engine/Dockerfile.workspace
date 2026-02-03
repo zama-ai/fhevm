@@ -34,13 +34,16 @@ FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
 USER root
 WORKDIR /app
 
+# Copy root lockfile for workspace resolution
+COPY package.json package-lock.json ./
+
 # Copy host-contracts for host-listener
 COPY host-contracts ./host-contracts
 
 # Compile host-contracts
-WORKDIR /app/host-contracts
-RUN cp .env.example .env && \
-    npm install && \
+RUN cp host-contracts/.env.example host-contracts/.env && \
+    npm ci --workspace=host-contracts --include-workspace-root=false && \
+    cd host-contracts && \
     HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && \
     npx hardhat compile
 
@@ -50,7 +53,7 @@ COPY gateway-contracts ./gateway-contracts
 
 # Compile gateway-contracts
 WORKDIR /app/gateway-contracts
-RUN npm install && \
+RUN npm ci && \
     DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
 
 # =============================================================================

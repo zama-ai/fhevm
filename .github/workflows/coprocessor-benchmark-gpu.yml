@@ -232,7 +232,7 @@ jobs:
         run: |
           cp ./host-contracts/.env.example ./host-contracts/.env
           npm --workspace=host-contracts ci --include=optional
-          cd host-contracts && npm install && npm run deploy:emptyProxies && npx hardhat compile
+          cd host-contracts && npm run deploy:emptyProxies && npx hardhat compile
 
       - name: Run benchmarks on GPU
         run: |
