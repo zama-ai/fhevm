@@ -225,8 +225,8 @@ async fn run_batch_computations(
     info!(elapsed = ?elapsed, batch_size, "Batch execution completed");
 
     // Assert that all ciphertext128 objects are uploaded to S3
-    assert_ciphertext_s3_object_count(test_env, bucket128, batch_size as i64).await;
-    assert_ciphertext_s3_object_count(test_env, bucket64, batch_size as i64).await;
+    assert_ciphertext_s3_object_count(test_env, bucket128, 2 * batch_size as i64).await;
+    assert_ciphertext_s3_object_count(test_env, bucket64, 2 * batch_size as i64).await;
 
     anyhow::Result::<()>::Ok(())
 }
