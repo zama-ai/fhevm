@@ -3888,6 +3888,7 @@ dependencies = [
  "fhevm_gateway_bindings",
  "foundry-compilers",
  "futures-util",
+ "gw-listener",
  "humantime",
  "prometheus",
  "rustls 0.23.31",

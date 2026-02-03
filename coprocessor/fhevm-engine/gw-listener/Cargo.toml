@@ -5,6 +5,10 @@ authors.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+test_bypass_key_extraction = []
+
 [dependencies]
 # workspace dependencies
 alloy = { workspace = true }
@@ -43,3 +47,8 @@ alloy = { workspace = true, features = ["node-bindings"] }
 aws-smithy-mocks = "0.1.1"
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
+
+# Enable test bypass features for integration tests
+[dev-dependencies.gw-listener]
+path = "."
+features = ["test_bypass_key_extraction"]
