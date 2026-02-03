@@ -19,6 +19,7 @@ KMS can be configured to two modes:
   - [Quickstart](#quickstart)
   - [Forcing Local Builds](#wip---forcing-local-builds---build)
   - [Local Developer Optimizations](#local-developer-optimizations)
+  - [Local OTEL Tracing](#local-otel-tracing)
   - [Resuming a Deployment](#resuming-a-deployment)
   - [Deploying a Single Step](#deploying-a-single-step)
 - [Security Policy](#security-policy)
@@ -112,6 +113,48 @@ When running tests and you know your Hardhat artifacts are already up to date, y
 ```sh
 ./fhevm-cli test input-proof --no-hardhat-compile
 ```
+
+### Local OTEL Tracing
+
+To validate OpenTelemetry spans locally (e.g., coprocessor `sns-worker` spans), use the tracing docker-compose and point services to the local OTLP collector.
+
+If you are using `--build` locally, make sure you can pull from our private registries:
+
+- `ghcr.io` for prebuilt base images
+- `cgr.dev` for Chainguard bases used by coprocessor images
+
+You may need to run:
+
+```sh
+docker login ghcr.io
+docker login cgr.dev
+```
+
+```sh
+cd test-suite/fhevm
+
+# 1) Deploy the stack (build locally if you changed Rust code)
+./fhevm-cli deploy --build --local
+
+# 2) Start local tracing backends (Jaeger + Prometheus)
+docker compose -f docker-compose/tracing-docker-compose.yml up -d
+
+# 3) Configure OTLP exporter for coprocessor services
+cat >> env/staging/.env.coprocessor.local <<'EOF'
+OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+EOF
+
+# 4) Restart coprocessor services to pick up OTEL config
+./fhevm-cli upgrade coprocessor
+
+# 5) Generate traffic to emit spans
+./fhevm-cli test input-proof
+```
+
+Then open:
+- Jaeger UI: `http://localhost:16686`
+- Prometheus: `http://localhost:9090`
 
 ### Resuming a deployment
 
