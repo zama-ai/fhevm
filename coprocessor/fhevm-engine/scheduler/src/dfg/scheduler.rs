@@ -16,7 +16,7 @@ use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
 use fhevm_engine_common::{common::FheOperation, telemetry};
-use opentelemetry::trace::{Span, Status, Tracer};
+use opentelemetry::trace::{Span, Status, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
 use std::collections::HashMap;
 use tfhe::ReRandomizationContext;
@@ -423,6 +423,7 @@ fn execute_partition(
         let mut s = tracer.start_with_context("execute_transaction", &loop_ctx);
         telemetry::set_txn_id(&mut s, &tid);
         let started_at = std::time::Instant::now();
+        let exec_ctx = loop_ctx.with_remote_span_context(s.span_context().clone());
 
         let Ok(ts) = daggy::petgraph::algo::toposort(&dfg.graph, None) else {
             error!(target: "scheduler", {transaction_id = ?tid },
@@ -454,7 +455,7 @@ fn execute_partition(
                 gpu_idx,
                 &tid,
                 &tracer,
-                &loop_ctx,
+                &exec_ctx,
             );
             if let Ok(result) = result {
                 let nidx = NodeIndex::new(result.0);
