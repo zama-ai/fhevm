@@ -5,12 +5,17 @@ USER root
 
 WORKDIR /app
 
+# Copy root lockfile for workspace resolution
+COPY package.json package-lock.json ./
+
 COPY host-contracts ./host-contracts
 
 # Compiled host-contracts for listeners
-WORKDIR /app/host-contracts
-RUN cp .env.example .env
-RUN npm install && HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && npx hardhat compile
+RUN cp host-contracts/.env.example host-contracts/.env && \
+    npm ci --workspace=host-contracts --include-workspace-root=false && \
+    cd host-contracts && \
+    HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && \
+    npx hardhat compile
 
 # Stage 1: Build Host Listener
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
