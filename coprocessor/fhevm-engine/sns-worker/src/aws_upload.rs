@@ -163,7 +163,7 @@ async fn run_uploader_loop(
                 }
 
                 // Acquire a permit for an upload
-                let permit = semaphore.clone().acquire_owned().await.expect("Failed to acquire semaphore permit");
+                let permit = semaphore.clone().acquire_owned().await.map_err(|err| ExecutionError::InternalError(err.to_string()))?;
                 let client = client.clone();
                 let conf = conf.clone();
                 let ready_flag = is_ready.clone();
