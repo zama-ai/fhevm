@@ -2,7 +2,7 @@ use alloy::eips::BlockId;
 use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::pubsub::SubscriptionStream;
-use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
+use alloy::rpc::types::{Block, Filter, Header, Log};
 use alloy::transports::ws::WebSocketConfig;
 use anyhow::{anyhow, Result};
 use clap::Parser;
@@ -261,7 +261,12 @@ impl InfiniteLogIter {
         let config = websocket_config();
         let ws = WsConnect::new(&self.url).with_config(config);
         let provider = ProviderBuilder::new().connect_ws(ws).await?;
-        Ok(provider.get_chain_id().await?)
+        let chain_id = tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            provider.get_chain_id(),
+        )
+        .await??;
+        Ok(chain_id)
     }
 
     /// Resolves `end_at_block` to an absolute block number.
@@ -269,40 +274,47 @@ impl InfiniteLogIter {
     async fn resolve_end_at_block(
         &self,
         provider: &BlockchainProvider,
-    ) -> Option<u64> {
-        let n = self.end_at_block?;
+    ) -> Result<Option<u64>> {
+        let Some(n) = self.end_at_block else {
+            return Ok(None);
+        };
         if n >= 0 {
-            return Some(n as u64);
+            return Ok(Some(n as u64));
         }
-        let last_block = provider.get_block_number().await.ok()?;
-        Some(last_block.saturating_sub(n.unsigned_abs()))
+        let last_block = tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            provider.get_block_number(),
+        )
+        .await??;
+        Ok(Some(last_block.saturating_sub(n.unsigned_abs())))
     }
 
     async fn catchup_block_from(
         &self,
         provider: &BlockchainProvider,
-    ) -> BlockNumberOrTag {
+    ) -> Result<u64> {
         if let Some(last_seen_block) = self.last_valid_block {
-            return BlockNumberOrTag::Number(
-                last_seen_block - self.catchup_margin + 1,
-            );
+            return Ok(last_seen_block - self.catchup_margin + 1);
         }
         if let Some(start_at_block) = self.start_at_block {
             if start_at_block >= 0 {
-                return BlockNumberOrTag::Number(
-                    start_at_block.try_into().unwrap(),
-                );
+                return Ok(start_at_block.try_into()?);
             }
         }
-        let Ok(last_block) = provider.get_block_number().await else {
-            return BlockNumberOrTag::Earliest; // should not happend
+        let block_number = tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            provider.get_block_number(),
+        )
+        .await?;
+        let Ok(last_block) = block_number else {
+            anyhow::bail!("get_block_number failed");
         };
         let catch_size = if let Some(start_at_block) = self.start_at_block {
-            (-start_at_block).try_into().unwrap()
+            (-start_at_block).try_into()?
         } else {
             self.catchup_margin
         };
-        BlockNumberOrTag::Number(last_block - catch_size.min(last_block))
+        Ok(last_block - catch_size.min(last_block))
     }
 
     async fn get_blocks_logs_range_no_retry(
@@ -532,11 +544,11 @@ impl InfiniteLogIter {
             );
             match block.await {
                 Ok(Ok(Some(block))) => return Ok(block),
-                Ok(Ok(None)) => error!(
+                Ok(Ok(None)) => warn!(
                     block_id = ?block_id,
                     "Cannot get block {block_id}, retrying",
                 ),
-                Ok(Err(err)) => error!(
+                Ok(Err(err)) => warn!(
                     block_id = ?block_id,
                     error = %err,
                     "Cannot get block {block_id}, retrying",
@@ -553,7 +565,8 @@ impl InfiniteLogIter {
                 .await;
             }
         }
-        Err(anyhow::anyhow!("Cannot get current block after retries"))
+        error!(block_id = ?block_id, "Cannot get block after many retries");
+        anyhow::bail!("Cannot get block {block_id} after many retries")
     }
 
     async fn get_block(&self, block_hash: BlockHash) -> Result<Block> {
@@ -739,72 +752,32 @@ impl InfiniteLogIter {
         warn!("Missing ancestors catchup done.");
     }
 
-    async fn new_log_stream(&mut self, not_initialized: bool) {
-        let mut retry = 20;
+    async fn new_log_stream_no_retry(&mut self) -> Result<()> {
         let config = websocket_config();
-        loop {
-            let ws = WsConnect::new(&self.url)
-                .with_config(config)
-                .with_max_retries(0); // disabled, alloy skips events
-            match ProviderBuilder::new().connect_ws(ws).await {
-                Ok(provider) => {
-                    let catch_up_from =
-                        self.catchup_block_from(&provider).await;
-                    self.absolute_end_at_block =
-                        self.resolve_end_at_block(&provider).await;
-                    self.catchup_blocks = Some((
-                        catch_up_from.as_number().unwrap_or(0),
-                        self.absolute_end_at_block,
-                    ));
-                    // note subscribing to real-time before reading catchup
-                    // events to have the minimal gap between the two
-                    // TODO: but it does not guarantee no gap for now
-                    // (implementation dependant)
-                    // subscribe_logs does not honor from_block and sometime not to_block
-                    // so we rely on catchup_blocks and end_at_block_reached
-                    self.stream = Some(
-                        provider
-                            .subscribe_blocks()
-                            .await
-                            .expect("BLA2")
-                            .into_stream(),
-                    );
-                    let _ = self.provider.write().await.replace(provider);
-                    info!(contracts = ?self.contract_addresses, "Listening on contracts");
-                    return;
-                }
-                Err(err) => {
-                    let delay = if not_initialized {
-                        if retry == 0 {
-                            // TODO: remove panic and, instead, propagate the error
-                            error!(
-                                error = %err,
-                                "Cannot connect",
-                            );
-                            panic!("Cannot connect due to {err}.",)
-                        }
-                        5
-                    } else {
-                        1
-                    };
-                    if not_initialized {
-                        warn!(
-                            error = %err,
-                            delay_secs = delay,
-                            retry = retry,
-                            "Cannot connect. Will retry",
-                        );
-                    } else {
-                        warn!(
-                            error = %err,
-                            delay_secs = delay,
-                            "Cannot connect. Will retry infinitely",
-                        );
-                    }
-                    retry -= 1;
-                    tokio::time::sleep(Duration::from_secs(delay)).await;
-                }
-            }
+        let ws = WsConnect::new(&self.url)
+            .with_config(config)
+            .with_max_retries(0); // disabled, alloy skips events
+        let provider = ProviderBuilder::new().connect_ws(ws).await?;
+        let catch_up_from = self.catchup_block_from(&provider).await?;
+        self.absolute_end_at_block =
+            self.resolve_end_at_block(&provider).await?;
+        self.catchup_blocks = Some((catch_up_from, self.absolute_end_at_block));
+        // note subscribing to real-time before reading catchup
+        // events to have the minimal gap between the two
+        // TODO: but it does not guarantee no gap for now
+        // (implementation dependant)
+        // subscribe_logs does not honor from_block and sometime not to_block
+        // so we rely on catchup_blocks and end_at_block_reached
+        self.stream = Some(provider.subscribe_blocks().await?.into_stream());
+        let _ = self.provider.write().await.replace(provider);
+        info!(contracts = ?self.contract_addresses, "Listening on contracts");
+        Ok(())
+    }
+
+    async fn new_log_stream(&mut self) {
+        while let Err(err) = self.new_log_stream_no_retry().await {
+            warn!(error = %err, "Error creating new log stream, retrying");
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -862,11 +835,9 @@ impl InfiniteLogIter {
     }
 
     async fn next(&mut self) -> Option<BlockLogs<Log>> {
-        let mut not_initialized = self.stream.is_none();
         let block_logs = loop {
             if self.stream.is_none() {
-                self.new_log_stream(not_initialized).await;
-                not_initialized = false;
+                self.new_log_stream().await;
                 continue;
             };
             if self.next_blocklogs.is_empty() {
@@ -1116,8 +1087,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             .map(|n| n - args.catchup_margin as i64);
     }
 
+    // Check connection works
+    log_iter.new_log_stream_no_retry().await?;
+
     loop {
-        log_iter.new_log_stream(true).await;
+        log_iter.stream = None; // force new connection each iteration
 
         while let Some(block_logs) = log_iter.next().await {
             if args.only_catchup_loop && !block_logs.catchup {
