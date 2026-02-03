@@ -181,7 +181,7 @@ jobs:
 
       - run: cp ./host-contracts/.env.example ./host-contracts/.env
       - run: npm --workspace=host-contracts ci --include=optional
-      - run: "cd host-contracts && npm install && npm run deploy:emptyProxies && npx hardhat compile"
+      - run: "cd host-contracts && npm run deploy:emptyProxies && npx hardhat compile"
         env:
           HARDHAT_NETWORK: hardhat
 
