@@ -524,14 +524,7 @@ tfheWorker:
     - --service-name=tfhe-worker  # tfhe-worker service name in OTLP traces
     - --log-level=INFO
     # Should not be used (unsafe - testing only, keep 0/false values except CI)
-    - --run-server=false
     - --generate-fhe-keys=false
-    - --server-maximum-ciphertexts-to-schedule=0
-    - --server-maximum-ciphertexts-to-get=0
-    - --maximum-compact-inputs-upload=0
-    - --maximum-handles-per-input=0
-    - --server-addr=""
-    - --coprocessor-private-key=""
     # Unique worker identifier (valid UUID v4 format)
     # If not set, defaults to a random UUID generated at startup
     - --worker-id=$(WORKER_ID)

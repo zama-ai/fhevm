@@ -1,185 +1,108 @@
-use std::str::FromStr;
+use bigdecimal::num_bigint::BigInt;
 
-use crate::server::common::FheOperation;
-use crate::server::tfhe_worker::async_computation_input::Input;
-use crate::server::tfhe_worker::fhevm_coprocessor_client::FhevmCoprocessorClient;
-use crate::server::tfhe_worker::{
-    AsyncComputation, AsyncComputationInput, AsyncComputeRequest, GetCiphertextBatch,
-    TrivialEncryptBatch, TrivialEncryptRequestSingle,
+use host_listener::contracts::TfheContract;
+use host_listener::contracts::TfheContract::TfheContractEvents;
+use host_listener::database::tfhe_event_propagate::{ClearConst, ScalarByte};
+use serial_test::serial;
+
+use crate::tests::events::{
+    allow_handle, insert_tfhe_event, listener_db, next_handle, tfhe_log, to_ty,
 };
-use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
-use test_harness::db_utils::setup_test_key as setup_test_key_in_db;
-use tonic::metadata::MetadataValue;
-use utils::{
-    decrypt_ciphertexts, default_api_key, random_handle, wait_until_all_allowed_handles_computed,
+use crate::tests::utils::{
+    decrypt_ciphertexts, setup_test_app, wait_until_all_allowed_handles_computed,
 };
 
 mod dependence_chain;
 mod errors;
+mod events;
 mod health_check;
-mod inputs;
-mod migrations;
 mod operators;
 mod operators_from_events;
-mod random;
 mod scheduling_bench;
 mod utils;
 
+fn as_clear_uint(big_int: &BigInt) -> ClearConst {
+    let (_, bytes) = big_int.to_bytes_be();
+    ClearConst::from_be_slice(&bytes)
+}
+
 #[tokio::test]
-async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
-    let app = utils::setup_test_app().await?;
+#[serial(db)]
+async fn test_smoke_events() -> Result<(), Box<dyn std::error::Error>> {
+    let app = setup_test_app().await?;
+    let listener = listener_db(&app).await;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
         .connect(app.db_url())
         .await?;
 
-    let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
+    let transaction_id = next_handle();
+    let h1 = next_handle();
+    let h2 = next_handle();
+    let h3 = next_handle();
 
-    let api_key_header = format!("bearer {}", default_api_key());
-    let ct_type = 4; // i32
+    let ct_type = 4; // u32
+    let caller = "0x0000000000000000000000000000000000000000"
+        .parse()
+        .unwrap();
 
-    let transaction_id = random_handle().to_be_bytes();
-    let h1 = random_handle().to_be_bytes();
-    let h2 = random_handle().to_be_bytes();
-    let h3 = random_handle().to_be_bytes();
-    let h4 = random_handle().to_be_bytes();
-    // unused, non existing
-    let h5 = random_handle().to_be_bytes();
+    let mut tx = listener.new_transaction().await?;
+    insert_tfhe_event(
+        &listener,
+        &mut tx,
+        tfhe_log(
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller,
+                pt: as_clear_uint(&BigInt::from(123u32)),
+                toType: to_ty(ct_type),
+                result: h1,
+            }),
+            transaction_id,
+        ),
+        false,
+    )
+    .await?;
+    insert_tfhe_event(
+        &listener,
+        &mut tx,
+        tfhe_log(
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller,
+                pt: as_clear_uint(&BigInt::from(124u32)),
+                toType: to_ty(ct_type),
+                result: h2,
+            }),
+            transaction_id,
+        ),
+        false,
+    )
+    .await?;
 
-    // encrypt two ciphertexts
-    {
-        let mut encrypt_request = tonic::Request::new(TrivialEncryptBatch {
-            values: vec![
-                TrivialEncryptRequestSingle {
-                    handle: h1.to_vec(),
-                    be_value: vec![123],
-                    output_type: ct_type,
-                },
-                TrivialEncryptRequestSingle {
-                    handle: h2.to_vec(),
-                    be_value: vec![124],
-                    output_type: ct_type,
-                },
-            ],
-        });
-        encrypt_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.trivial_encrypt_ciphertexts(encrypt_request).await?;
-        println!("encryption request: {:?}", resp);
-    }
+    insert_tfhe_event(
+        &listener,
+        &mut tx,
+        tfhe_log(
+            TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                caller,
+                lhs: h1,
+                rhs: h2,
+                scalarByte: ScalarByte::from(0u8),
+                result: h3,
+            }),
+            transaction_id,
+        ),
+        true,
+    )
+    .await?;
+    allow_handle(&listener, &mut tx, h3.as_ref()).await?;
+    tx.commit().await?;
 
-    // compute
-    {
-        let mut compute_request = tonic::Request::new(AsyncComputeRequest {
-            computations: vec![
-                AsyncComputation {
-                    operation: FheOperation::FheAdd.into(),
-                    transaction_id: transaction_id.to_vec(),
-                    output_handle: h3.to_vec(),
-                    inputs: vec![
-                        AsyncComputationInput {
-                            input: Some(Input::InputHandle(h4.to_vec())),
-                        },
-                        AsyncComputationInput {
-                            input: Some(Input::Scalar(vec![0x00, 0x10])),
-                        },
-                    ],
-                    is_allowed: true,
-                },
-                AsyncComputation {
-                    operation: FheOperation::FheAdd.into(),
-                    transaction_id: transaction_id.to_vec(),
-                    output_handle: h4.to_vec(),
-                    inputs: vec![
-                        AsyncComputationInput {
-                            input: Some(Input::InputHandle(h1.to_vec())),
-                        },
-                        AsyncComputationInput {
-                            input: Some(Input::InputHandle(h2.to_vec())),
-                        },
-                    ],
-                    is_allowed: true,
-                },
-            ],
-        });
-        compute_request.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.async_compute(compute_request).await?;
-        println!("compute request: {:?}", resp);
-    }
-
-    println!("sleeping for computation to complete...");
     wait_until_all_allowed_handles_computed(&app).await?;
 
-    // decrypt values
-    {
-        let decrypt_request = vec![h4.to_vec(), h3.to_vec()];
-        let resp = decrypt_ciphertexts(&pool, decrypt_request).await?;
-        println!("decrypt request: {:?}", resp);
-        assert_eq!(resp.len(), 2);
-        // first value
-        assert_eq!(resp[0].value, "247");
-        assert_eq!(resp[0].output_type, ct_type as i16);
-        // second value
-        assert_eq!(resp[1].value, "263");
-        assert_eq!(resp[1].output_type, ct_type as i16);
-    }
-
-    // compute
-    {
-        let mut get_cts_req = tonic::Request::new(GetCiphertextBatch {
-            handles: vec![
-                h1.to_vec(),
-                h2.to_vec(),
-                h3.to_vec(),
-                h4.to_vec(),
-                h5.to_vec(),
-            ],
-        });
-        get_cts_req.metadata_mut().append(
-            "authorization",
-            MetadataValue::from_str(&api_key_header).unwrap(),
-        );
-        let resp = client.get_ciphertexts(get_cts_req).await?;
-        let output = resp.get_ref();
-        assert_eq!(output.responses.len(), 5);
-
-        assert_eq!(output.responses[0].handle, h1);
-        assert_eq!(output.responses[1].handle, h2);
-        assert_eq!(output.responses[2].handle, h3);
-        assert_eq!(output.responses[3].handle, h4);
-        assert_eq!(output.responses[4].handle, h5);
-
-        assert!(output.responses[0].ciphertext.is_some());
-        assert!(output.responses[1].ciphertext.is_some());
-        assert!(output.responses[2].ciphertext.is_some());
-        assert!(output.responses[3].ciphertext.is_some());
-        assert!(output.responses[4].ciphertext.is_none());
-
-        let ct1 = output.responses[0].ciphertext.clone().unwrap();
-        let ct2 = output.responses[1].ciphertext.clone().unwrap();
-        let ct3 = output.responses[2].ciphertext.clone().unwrap();
-        let ct4 = output.responses[3].ciphertext.clone().unwrap();
-
-        assert_eq!(ct1.ciphertext_type, ct_type);
-        assert_eq!(ct2.ciphertext_type, ct_type);
-        assert_eq!(ct3.ciphertext_type, ct_type);
-        assert_eq!(ct4.ciphertext_type, ct_type);
-
-        assert_eq!(ct1.ciphertext_version, current_ciphertext_version() as i32);
-        assert_eq!(ct2.ciphertext_version, current_ciphertext_version() as i32);
-        assert_eq!(ct3.ciphertext_version, current_ciphertext_version() as i32);
-        assert_eq!(ct4.ciphertext_version, current_ciphertext_version() as i32);
-
-        assert_eq!(ct1.signature.len(), 65);
-        assert_eq!(ct2.signature.len(), 65);
-        assert_eq!(ct3.signature.len(), 65);
-        assert_eq!(ct4.signature.len(), 65);
-    }
+    let resp = decrypt_ciphertexts(&pool, 1, vec![h3.to_vec()]).await?;
+    assert_eq!(resp.len(), 1);
+    assert_eq!(resp[0].output_type, ct_type as i16);
+    assert_eq!(resp[0].value, "247");
 
     Ok(())
 }
@@ -218,24 +141,7 @@ async fn test_custom_function() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap(),
         ],
     )
-    .await
-    .unwrap();
-
-    println!("{:#?}", res);
-
-    Ok(())
-}
-
-#[tokio::test]
-#[ignore]
-/// setup test data with keys
-async fn setup_test_key() -> Result<(), Box<dyn std::error::Error>> {
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&std::env::var("DATABASE_URL").expect("expected to get db url"))
-        .await?;
-
-    setup_test_key_in_db(&pool, false).await?;
-
+    .await?;
+    println!("decrypted ciphertexts: {:?}", res);
     Ok(())
 }

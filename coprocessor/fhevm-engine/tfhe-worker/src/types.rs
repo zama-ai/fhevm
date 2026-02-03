@@ -170,8 +170,17 @@ impl From<SchedulerError> for CoprocessorError {
     }
 }
 
-impl From<CoprocessorError> for tonic::Status {
-    fn from(err: CoprocessorError) -> Self {
-        tonic::Status::from_error(Box::new(err))
-    }
+pub struct TfheTenantKeys {
+    pub tenant_id: i32,
+    pub chain_id: i64,
+    pub verifying_contract_address: String,
+    pub acl_contract_address: String,
+    pub sks: tfhe::ServerKey,
+    #[cfg(feature = "gpu")]
+    pub csks: tfhe::CompressedServerKey,
+    #[cfg(feature = "gpu")]
+    pub gpu_sks: Vec<tfhe::CudaServerKey>,
+
+    pub pks: tfhe::CompactPublicKey,
+    pub public_params: Arc<tfhe::zk::CompactPkeCrs>,
 }
