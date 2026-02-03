@@ -14,7 +14,6 @@ Options:
       --tokio-threads <TOKIO_THREADS>                           [default: 4]
       --fhe-compute-threads <FHE_COMPUTE_THREADS>               [default: 8]
       --policy-fhe-compute-threads <POLICY_FHE_COMPUTE_THREADS> [default: 8]
-      --server-addr <SERVER_ADDR>                               [default: 127.0.0.1:50051]
   -h, --help                                                    Print help
   -V, --version
 ```

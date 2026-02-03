@@ -186,12 +186,6 @@ impl From<SchedulerError> for CoprocessorError {
     }
 }
 
-impl From<CoprocessorError> for tonic::Status {
-    fn from(err: CoprocessorError) -> Self {
-        tonic::Status::from_error(Box::new(err))
-    }
-}
-
 pub struct TfheTenantKeys {
     pub tenant_id: i32,
     pub chain_id: i64,
