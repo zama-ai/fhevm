@@ -16,7 +16,7 @@ use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
 use fhevm_engine_common::{common::FheOperation, telemetry};
-use opentelemetry::trace::{Span, Tracer};
+use opentelemetry::trace::{Span, Status, Tracer};
 use opentelemetry::KeyValue;
 use std::collections::HashMap;
 use tfhe::ReRandomizationContext;
@@ -369,6 +369,9 @@ fn execute_partition(
                 Err(e) => {
                     error!(target: "scheduler", {transaction_id = ?hex::encode(&tid), error = ?e },
                            "Error while decompressing inputs");
+                    decomp_span.set_status(Status::Error {
+                        description: e.to_string().into(),
+                    });
                     decomp_span.end();
                     for nidx in dfg.graph.node_identifiers() {
                         let Some(node) = dfg.graph.node_weight_mut(nidx) else {
@@ -378,7 +381,7 @@ fn execute_partition(
                         if node.is_allowed {
                             res.insert(
                                 node.result_handle.clone(),
-                                Err(SchedulerError::MissingInputs.into()),
+                                Err(SchedulerError::DecompressionError.into()),
                             );
                         }
                     }
@@ -560,21 +563,20 @@ fn run_computation(
             )
         }
         Ok(fhe_op) => {
-            let op_name = format!("{:?}", fhe_op);
+            let op_name = fhe_op.as_str_name();
 
             // FHE operation span
             let mut fhe_span = tracer.start_with_context("fhe_operation", ctx);
             telemetry::set_txn_id(&mut fhe_span, transaction_id);
-            fhe_span.set_attribute(KeyValue::new("operation", op_name.clone()));
+            fhe_span.set_attribute(KeyValue::new("operation", op_name));
             fhe_span.set_attribute(KeyValue::new("operation_code", operation as i64));
             if !inputs.is_empty() {
                 fhe_span.set_attribute(KeyValue::new("input_type", inputs[0].type_name()));
             }
 
             let result = perform_fhe_operation(operation as i16, &inputs, gpu_idx);
-            fhe_span.end();
 
-            match result {
+            let op_result = match result {
                 Ok(result) => {
                     if is_allowed {
                         // Compression span
@@ -594,8 +596,15 @@ fn run_computation(
                         (graph_node_index, Ok((result, None)))
                     }
                 }
-                Err(e) => (graph_node_index, Err(e.into())),
-            }
+                Err(e) => {
+                    fhe_span.set_status(Status::Error {
+                        description: e.to_string().into(),
+                    });
+                    (graph_node_index, Err(e.into()))
+                }
+            };
+            fhe_span.end();
+            op_result
         }
         Err(e) => (graph_node_index, Err(e.into())),
     }
