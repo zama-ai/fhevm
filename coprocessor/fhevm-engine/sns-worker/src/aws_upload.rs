@@ -647,6 +647,8 @@ async fn fetch_pending_uploads(
                 } else {
                     error!(handle = hex::encode(&handle), "Missing ciphertext");
                 }
+            } else {
+                error!(handle = hex::encode(&handle), "Failed to fetch ciphertext");
             }
         }
 
@@ -671,6 +673,11 @@ async fn fetch_pending_uploads(
                 } else {
                     error!(handle = hex::encode(&handle), "Missing ciphertext128");
                 }
+            } else {
+                error!(
+                    handle = hex::encode(&handle),
+                    "Failed to fetch ciphertext128"
+                );
             }
         }
 
