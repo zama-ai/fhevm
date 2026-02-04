@@ -271,6 +271,7 @@ contract ACL is
         /**
          * @dev Arbitrum block timestamps may be up to one hour ahead of L1.
          *
+         * TODO: still needed once multichainACL on gateway has been removed?
          * Since the expiration is propagated to the Gateway MultichainACL contract deployed on Arbitrum,
          * we enforce a 1-hour lower bound to stay within Arbitrum’s valid timestamp range
          * and avoid premature expiration due to clock drift.
