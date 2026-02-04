@@ -440,8 +440,7 @@ contract Decryption is
         // - Extract the handles and check their conformance
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
             ctHandleContractPairs,
-            contractsInfo,
-            userAddress
+            contractsInfo
         );
 
         // Initialize the UserDecryptRequestVerification structure for the signature validation.
@@ -527,8 +526,7 @@ contract Decryption is
         // Extract the handles and check their conformance.
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
             ctHandleContractPairs,
-            contractsInfo,
-            delegationAccounts.delegatorAddress
+            contractsInfo
         );
 
         // Using scoped local variable to avoid "stack too deep" errors. This will be revisited during the EIP-712 struct refactor.
@@ -1012,16 +1010,12 @@ contract Decryption is
      * @dev - Contract address inclusion in the list of allowed contract addresses
      * @param ctHandleContractPairs The list of ciphertext handles and contract addresses
      * @param contractsInfo The contracts' information (chain ID, addresses).
-     * @param allowedAddress The address that is allowed to access the handles (unused, kept for interface compatibility)
      * @return ctHandles The list of ciphertext handles
      */
     function _extractCtHandlesCheckConformanceUser(
         CtHandleContractPair[] calldata ctHandleContractPairs,
-        ContractsInfo calldata contractsInfo,
-        address allowedAddress
+        ContractsInfo calldata contractsInfo
     ) internal view virtual returns (bytes32[] memory ctHandles) {
-        // Silence unused variable warning (ACL checks performed by KMS)
-        allowedAddress;
 
         // Check that the list of ctHandleContractPair is not empty
         if (ctHandleContractPairs.length == 0) {
