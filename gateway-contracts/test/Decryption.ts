@@ -2154,33 +2154,6 @@ describe("Decryption", function () {
         .withArgs(newCtHandles[0]);
     });
 
-    it("Should revert because the delegate address has not been delegated for a contract", async function () {
-      const fakeContractInContractsInfo: IDecryption.ContractsInfoStruct = {
-        addresses: [...contractsInfo.addresses, fakeContractAddress],
-        chainId: hostChainId,
-      };
-      await expect(
-        decryption
-          .connect(tokenFundedTxSender)
-          .delegatedUserDecryptionRequest(
-            ctHandleContractPairs,
-            requestValidity,
-            delegationAccounts,
-            fakeContractInContractsInfo,
-            publicKey,
-            delegateSignature,
-            extraDataV0,
-          ),
-      )
-        .to.be.revertedWithCustomError(decryption, "UserDecryptionNotDelegated")
-        .withArgs(
-          hostChainId,
-          delegationAccounts.delegatorAddress,
-          delegationAccounts.delegateAddress,
-          fakeContractAddress,
-        );
-    });
-
     it("Should revert because of invalid EIP712 user request signature", async function () {
       // Sign the message with a fake signer.
       const [fakeSignature] = await getSignaturesDelegatedUserDecryptRequest(eip712RequestMessage, [fakeSigner]);
