@@ -33,6 +33,17 @@ By default the listener propagate TFHE operation events to the database.
 You can change the database url using --database-url, it defaults to a local test database url.
 If you want to disable TFHE operation events propagation, you can provide an empty database-url.
 
+### Dependent ops throttling (optional)
+
+Two flags enable a per-replica limiter for dependent ops:
+
+- `--dependent-ops-rate-per-min` (0 disables, mainnet can leave at 0)
+- `--dependent-ops-burst` (defaults to rate when set to 0)
+
+When enabled, the listener defers dependent ops by writing a future `schedule_order`.
+To avoid order inversion across multiple host-listener types (main/catchup/poller),
+we clamp `schedule_order` via the `dependence_chain_schedule` table (one row per chain).
+
 ## Events in FHEVM
 
 ### Blockchain Events

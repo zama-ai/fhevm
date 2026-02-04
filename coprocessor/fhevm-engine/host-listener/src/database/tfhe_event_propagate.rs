@@ -15,7 +15,6 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Uuid;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
-use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -116,7 +115,6 @@ pub struct Database {
     pub tenant_id: TenantId,
     pub chain_id: ChainId,
     chain_id_label: String,
-    last_scheduled_by_chain: Arc<Mutex<HashMap<Vec<u8>, PrimitiveDateTime>>>,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
     dependent_ops_limiter: Option<Arc<Mutex<DependentOpsLimiter>>>,
@@ -194,21 +192,6 @@ impl DependentOpsLimiter {
     }
 }
 
-fn clamp_schedule_order(
-    last_scheduled_by_chain: &mut HashMap<Vec<u8>, PrimitiveDateTime>,
-    chain_id: Vec<u8>,
-    schedule_order: PrimitiveDateTime,
-) -> PrimitiveDateTime {
-    let next = match last_scheduled_by_chain.get(&chain_id) {
-        Some(last) if *last >= schedule_order => {
-            last.saturating_add(TimeDuration::microseconds(1))
-        }
-        _ => schedule_order,
-    };
-    last_scheduled_by_chain.insert(chain_id, next);
-    next
-}
-
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
 
 impl Database {
@@ -232,7 +215,6 @@ impl Database {
             tenant_id,
             chain_id,
             chain_id_label: chain_id.to_string(),
-            last_scheduled_by_chain: Arc::new(Mutex::new(HashMap::new())),
             pool: Arc::new(RwLock::new(pool)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
@@ -397,7 +379,8 @@ impl Database {
                 .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64,
                 ));
-        if log.is_allowed && !dependencies.is_empty() {
+        let has_dependencies = log.is_allowed && !dependencies.is_empty();
+        if has_dependencies {
             if let Some(limiter) = &self.dependent_ops_limiter {
                 let defer_for = limiter.lock().await.defer_duration();
                 if defer_for.is_zero() {
@@ -418,13 +401,14 @@ impl Database {
                 }
             }
         }
-        if self.dependent_ops_limiter.is_some() {
-            let mut last_scheduled = self.last_scheduled_by_chain.lock().await;
-            schedule_order = clamp_schedule_order(
-                &mut last_scheduled,
-                dependence_chain_id.clone(),
-                schedule_order,
-            );
+        if self.dependent_ops_limiter.is_some() && has_dependencies {
+            schedule_order = self
+                .clamp_schedule_order_db(
+                    tx,
+                    &dependence_chain_id,
+                    schedule_order,
+                )
+                .await?;
         }
         let query = sqlx::query!(
             r#"
@@ -459,6 +443,36 @@ impl Database {
             .execute(tx.deref_mut())
             .await
             .map(|result| result.rows_affected() > 0)
+    }
+
+    async fn clamp_schedule_order_db(
+        &self,
+        tx: &mut Transaction<'_>,
+        dependence_chain_id: &[u8],
+        schedule_order: PrimitiveDateTime,
+    ) -> Result<PrimitiveDateTime, SqlxError> {
+        // Monotonic clamp shared across all host-listener types.
+        // Uses a single row per dependence_chain_id to avoid order inversions
+        // across restarts or concurrent HL instances.
+        let clamped = sqlx::query_scalar(
+            r#"
+            INSERT INTO dependence_chain_schedule(
+                dependence_chain_id,
+                last_scheduled_at
+            ) VALUES ($1, $2::timestamp)
+            ON CONFLICT (dependence_chain_id) DO UPDATE
+            SET last_scheduled_at = GREATEST(
+                dependence_chain_schedule.last_scheduled_at + INTERVAL '1 microsecond',
+                EXCLUDED.last_scheduled_at
+            )
+            RETURNING last_scheduled_at
+            "#,
+        )
+        .bind(dependence_chain_id)
+        .bind(schedule_order)
+        .fetch_one(tx.deref_mut())
+        .await?;
+        Ok(clamped)
     }
 
     #[rustfmt::skip]
@@ -1266,18 +1280,5 @@ mod tests {
     #[test]
     fn dependent_ops_limiter_disabled_when_rate_zero() {
         assert!(DependentOpsLimiter::new(0, 10).is_none());
-    }
-
-    #[test]
-    fn clamp_schedule_order_is_monotonic_per_chain() {
-        let mut last_scheduled = HashMap::new();
-        let chain_id = vec![1, 2, 3];
-        let base = PrimitiveDateTime::MIN;
-        let first =
-            clamp_schedule_order(&mut last_scheduled, chain_id.clone(), base);
-        assert_eq!(first, base);
-        let second =
-            clamp_schedule_order(&mut last_scheduled, chain_id.clone(), base);
-        assert!(second > base);
     }
 }
