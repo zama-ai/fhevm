@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import { aclAddress, coprocessorAddress, createInstance, kmsVerifierAddress } from '../test/instance';
 import { userDecryptSingleHandle } from '../test/utils';
 import type { SmokeTestInput } from '../types';
+import type { SmokeContext } from './smoke-reporting';
+import { buildSmokeFailureReport, describeError } from './smoke-reporting';
 
 type FeeData = {
   maxFeePerGas: bigint;
@@ -43,6 +45,15 @@ const CANCEL_GAS_LIMIT = 21_000n;
 const LOW_BALANCE_THRESHOLD = ethers.parseEther('0.005');
 const SMOKE_GAS_ESTIMATE = 1_000_000n; // ~1M gas covers deploy + call with buffer
 
+const smokeContext: SmokeContext = {
+  hostname: process.env.HOSTNAME,
+  network: network.name,
+};
+
+const setSmokePhase = (phase: string): void => {
+  smokeContext.phase = phase;
+};
+
 class SmokeTimeoutError extends Error {
   label: string;
   constructor(label: string, timeoutMs: number) {
@@ -68,30 +79,7 @@ const parseOptionalGweiEnv = (name: string): bigint | null => {
   return ethers.parseUnits(value, 'gwei');
 };
 
-const describeError = (error: unknown): string => {
-  if (error instanceof Error) {
-    const err = error as Error & {
-      code?: string;
-      reason?: string;
-      shortMessage?: string;
-      data?: unknown;
-    };
-    const details: string[] = [];
-    if (err.code) details.push(`code=${err.code}`);
-    if (err.reason) details.push(`reason=${err.reason}`);
-    if (err.shortMessage) details.push(`shortMessage=${err.shortMessage}`);
-    if (err.data !== undefined) details.push(`data=${String(err.data)}`);
-    return details.length > 0 ? `${err.message} (${details.join(' ')})` : err.message;
-  }
-  return String(error);
-};
-
-const logTxReceipt = (params: {
-  label: string;
-  receipt: TransactionReceipt;
-  nonce?: number;
-  note?: string;
-}): void => {
+const logTxReceipt = (params: { label: string; receipt: TransactionReceipt; nonce?: number; note?: string }): void => {
   const { label, receipt, nonce, note } = params;
   const effectiveGasPrice = receipt.effectiveGasPrice ?? null;
   const feePaid = effectiveGasPrice ? receipt.gasUsed * effectiveGasPrice : null;
@@ -126,10 +114,7 @@ const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, label: string): 
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new SmokeTimeoutError(label, timeoutMs)), timeoutMs);
   });
-  return Promise.race([
-    promise.finally(() => clearTimeout(timer)),
-    timeoutPromise,
-  ]);
+  return Promise.race([promise.finally(() => clearTimeout(timer)), timeoutPromise]);
 };
 
 const parseIndices = (value: string): number[] => {
@@ -266,6 +251,7 @@ const sendWithRetries = async (params: {
     try {
       tx = await send({ nonce, ...fees });
       sentTxHashes.push(tx.hash);
+      smokeContext.lastTx = { label, nonce, hash: tx.hash };
       console.log(`SMOKE_TX_SENT label=${label} nonce=${nonce} hash=${tx.hash} attempt=${attempt}`);
     } catch (error) {
       const mined = await findMinedReceipt();
@@ -346,7 +332,9 @@ const sendWithRetries = async (params: {
   const mined = await findMinedReceipt();
   if (mined) return mined;
 
-  throw new Error(`All ${maxRetries + 1} attempts failed (label=${label})${lastError ? ` lastError=${lastError}` : ''}`);
+  throw new Error(
+    `All ${maxRetries + 1} attempts failed (label=${label})${lastError ? ` lastError=${lastError}` : ''}`,
+  );
 };
 
 const getSignerStates = async (
@@ -405,6 +393,7 @@ const cancelBacklog = async (params: {
 };
 
 async function runSmoke(): Promise<void> {
+  setSmokePhase('startup');
   const provider = ethers.provider;
   const signerIndices = parseIndices(process.env.SMOKE_SIGNER_INDICES ?? DEFAULT_SIGNER_INDICES);
   const timeoutMs = (Number(process.env.SMOKE_TX_TIMEOUT_SECS) || DEFAULT_TX_TIMEOUT_SECS) * 1000;
@@ -421,12 +410,15 @@ async function runSmoke(): Promise<void> {
 
   const allSigners = await ethers.getSigners();
   const states = await getSignerStates(provider, allSigners, signerIndices);
+  const networkInfo = await provider.getNetwork();
+  smokeContext.network = network.name;
+  smokeContext.chainId = networkInfo.chainId.toString();
 
   // Calculate minimum usable balance based on current gas prices
   const baseFees = await getBaseFees(provider);
   const minUsableBalance = baseFees.maxFeePerGas * SMOKE_GAS_ESTIMATE;
 
-  console.log(`SMOKE_START network=${network.name} chainId=${(await provider.getNetwork()).chainId}`);
+  console.log(`SMOKE_START network=${network.name} chainId=${networkInfo.chainId}`);
   console.log(`SMOKE_SIGNERS_AVAILABLE count=${states.length} minBalance=${ethers.formatEther(minUsableBalance)} ETH`);
   console.log(
     `SMOKE_BASE_FEES maxFee=${formatGwei(baseFees.maxFeePerGas)} maxPriority=${formatGwei(
@@ -465,6 +457,7 @@ async function runSmoke(): Promise<void> {
   let selected = fundedCleanStates[0];
 
   if (!selected) {
+    setSmokePhase('select_signer');
     if (cleanStates.length > 0) {
       console.error(
         `SMOKE_NO_SIGNER_WITH_BALANCE minBalance=${formatEth(minUsableBalance)} maxFee=${formatGwei(
@@ -503,6 +496,7 @@ async function runSmoke(): Promise<void> {
     }
 
     console.log(`SMOKE_CANCEL backlog=${backlog} signer=${primary.address}`);
+    setSmokePhase('cancel_backlog');
     await cancelBacklog({
       signer: primary.signer,
       latest: primary.latest,
@@ -526,6 +520,7 @@ async function runSmoke(): Promise<void> {
   }
 
   console.log(`SMOKE_SIGNER_SELECTED ${formatSignerState(selected)}`);
+  smokeContext.signer = selected.address;
 
   const signer = selected.signer;
   const signerAddress = signer.address;
@@ -536,6 +531,7 @@ async function runSmoke(): Promise<void> {
   let deployMs = 0;
 
   if (deployContract) {
+    setSmokePhase('deploy');
     if (existingContractAddress) {
       console.log('SMOKE_DEPLOY_CONTRACT ignoring TEST_INPUT_CONTRACT_ADDRESS');
     }
@@ -577,10 +573,13 @@ async function runSmoke(): Promise<void> {
 
     contractAddress = receipt.contractAddress;
     contract = contractFactory.attach(contractAddress) as SmokeTestInput;
+    smokeContext.contract = contractAddress;
     console.log(`SMOKE_DEPLOYED contractAddress=${contractAddress}`);
   } else if (existingContractAddress) {
+    setSmokePhase('attach');
     contractAddress = existingContractAddress;
     contract = contractFactory.attach(contractAddress) as SmokeTestInput;
+    smokeContext.contract = contractAddress;
     console.log(`SMOKE_ATTACH contractAddress=${contractAddress}`);
   } else {
     throw new Error('TEST_INPUT_CONTRACT_ADDRESS is required when SMOKE_DEPLOY_CONTRACT=0.');
@@ -591,6 +590,7 @@ async function runSmoke(): Promise<void> {
   if (!runTests) {
     console.log(`SMOKE_DEPLOY_ONLY contract=${contractAddress} ${timingReport.trim()}`);
   } else {
+    setSmokePhase('encrypt');
     const encryptStart = Date.now();
     const instance = await createInstance();
     const input = instance.createEncryptedInput(contractAddress, signerAddress);
@@ -628,13 +628,16 @@ async function runSmoke(): Promise<void> {
 
     assert.equal(receipt.status, 1, 'on-chain call failed');
 
+    setSmokePhase('decrypt');
     const handle = await contract.resUint64();
+    smokeContext.handle = String(handle);
     const { publicKey, privateKey } = instance.generateKeypair();
 
     const decryptStart = Date.now();
     console.log(`SMOKE_DECRYPT_START handle=${handle} timeoutMs=${decryptTimeoutMs}`);
     let decryptMs = 0;
     try {
+      setSmokePhase('decrypt_user');
       const decryptedValue = await withTimeout(
         userDecryptSingleHandle(handle, contractAddress, instance, signer, privateKey, publicKey),
         decryptTimeoutMs,
@@ -643,6 +646,7 @@ async function runSmoke(): Promise<void> {
       console.log(`SMOKE_DECRYPT_USER_DONE ms=${Date.now() - decryptStart}`);
       assert.equal(decryptedValue, 49n);
 
+      setSmokePhase('decrypt_public');
       const res = await withTimeout(instance.publicDecrypt([handle]), decryptTimeoutMs, 'publicDecrypt');
       console.log(`SMOKE_DECRYPT_PUBLIC_DONE ms=${Date.now() - decryptStart}`);
       assert.deepEqual(res.clearValues, { [handle]: 49n });
@@ -658,6 +662,7 @@ async function runSmoke(): Promise<void> {
     console.log(`SMOKE_SUCCESS signer=${signerAddress} contract=${contractAddress} ${timingReport.trim()}`);
   }
 
+  setSmokePhase('cleanup');
   // Heartbeat ping on success
   const heartbeatUrl = process.env.BETTERSTACK_HEARTBEAT_URL;
   if (heartbeatUrl) {
@@ -709,17 +714,19 @@ async function runSmoke(): Promise<void> {
 }
 
 runSmoke().catch(async (error) => {
-  const errorMessage = describeError(error);
   const failureClass = getFailureClass(error);
-  console.error(`SMOKE_FAILED class=${failureClass} ${errorMessage}`);
+  const report = buildSmokeFailureReport({ failureClass, error, context: smokeContext });
+  console.error(`SMOKE_FAILED class=${failureClass} ${report.errorMessage}`);
+  console.error(`SMOKE_FAILED_SUMMARY ${report.summary}`);
+  console.error(`SMOKE_FAILED_RELAYER_META ${report.relayerMetaJson}`);
+  console.error(`SMOKE_FAILED_RAW ${report.rawErrorBlob}`);
   process.exitCode = 1;
 
   const heartbeatUrl = process.env.BETTERSTACK_HEARTBEAT_URL;
   if (heartbeatUrl) {
-    const failurePayload = `class=${failureClass}\n${errorMessage}`;
     await fetch(`${heartbeatUrl}/1`, {
       method: 'POST',
-      body: failurePayload.slice(0, 10000),
+      body: report.heartbeatPayload,
     }).catch((err) => console.error(`SMOKE_HEARTBEAT_FAILED ${err.message}`));
   }
 });
