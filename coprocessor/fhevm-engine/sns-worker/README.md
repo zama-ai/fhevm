@@ -17,19 +17,19 @@ Upon receiving a notification, it mainly does the following steps:
 
 Runs sns-executor. See also `src/bin/utils/daemon_cli.rs`
 
- 
+
 ## Running a SnS Worker
 
-### The SnS key can be retrieved from the Large Objects table (pg_largeobject). Before running a worker, the sns_pk should be imported into tenants tables as shown below. If tenants table is not in use, then keys can be passed with CLI param --keys_file_path
+### The SnS key can be retrieved from the Large Objects table (pg_largeobject). Before running a worker, the sns_pk should be imported into the keys table as shown below. If the keys table is not in use, then keys can be passed with CLI param --keys_file_path
 ```sql
 -- Example query to import sns_pk from fhevm-keys/sns_pk
 -- Import the sns_pk into the Large Object storage
 sns_pk_loid := lo_import('../fhevm-keys/sns_pk');
 
--- Update the tenants table with the new Large Object OID
-UPDATE tenants
+-- Update the keys table with the new Large Object OID
+UPDATE keys
 SET sns_pk = sns_pk_loid
-WHERE tenant_id = 1;
+WHERE sequence_number = (SELECT sequence_number FROM keys ORDER BY sequence_number DESC LIMIT 1);
 ```
 
 ### Multiple workers can be launched independently to perform 128-PBS computations.
@@ -37,10 +37,12 @@ WHERE tenant_id = 1;
 # Run a single instance of the worker
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor \
 cargo run --release -- \
---tenant-api-key "a1503fb6-d79b-4e9e-826d-44cf262f3e05" \
 --pg-listen-channels "event_pbs_computations" "event_ciphertext_computed" \
 --pg-notify-channel "event_pbs_computed" \
 ```
+
+Notes:
+- `host_chain_id` is read directly from `pbs_computations`/`ciphertext_digest` rows.
 
 ## Testing
 
@@ -59,4 +61,3 @@ COPROCESSOR_TEST_LOCALHOST_RESET=1  cargo test --release -- --nocapture
 # Then, on every run
 COPROCESSOR_TEST_LOCALHOST=1  cargo test --release
 ```
-
