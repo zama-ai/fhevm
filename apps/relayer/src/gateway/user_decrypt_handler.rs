@@ -936,6 +936,28 @@ impl GatewayHandler {
                         );
                     }
                 }
+
+                if let RelayerEventData::DelegatedUserDecrypt(
+                    DelegatedUserDecryptEventData::ReadinessCheckTimedOut {
+                        ref decrypt_request,
+                        ..
+                    },
+                ) = event.data
+                {
+                    let job_id_hash = decrypt_request.content_hash();
+
+                    if let Err(db_err) = self
+                        .user_decrypt_repo
+                        .update_status_to_timed_out(&job_id_hash[..], READINESS_CHECK_TIMEOUT_MSG)
+                        .await
+                    {
+                        error!(
+                            job_id = %event.job_id,
+                            db_error = %db_err,
+                            "Failed to update timeout status in database"
+                        );
+                    }
+                }
             }
 
             _ => {
@@ -954,6 +976,29 @@ impl GatewayHandler {
                     let err_reason = format!("Processing Failed: {}", error);
 
                     // TODO(mano): Review if nested error logging is necessary or can be simplified
+                    if let Err(db_err) = self
+                        .user_decrypt_repo
+                        .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
+                        .await
+                    {
+                        error!(
+                            job_id = %event.job_id,
+                            db_error = %db_err,
+                            "Failed to update failure status in database"
+                        );
+                    }
+                }
+
+                if let RelayerEventData::DelegatedUserDecrypt(
+                    DelegatedUserDecryptEventData::ReqRcvdFromUser {
+                        ref decrypt_request,
+                        ..
+                    },
+                ) = event.data
+                {
+                    let job_id_hash = decrypt_request.content_hash();
+                    let err_reason = format!("Processing Failed: {}", error);
+
                     if let Err(db_err) = self
                         .user_decrypt_repo
                         .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
@@ -989,6 +1034,29 @@ impl GatewayHandler {
                     }
                 }
 
+                if let RelayerEventData::DelegatedUserDecrypt(
+                    DelegatedUserDecryptEventData::ReadinessCheckFailed {
+                        ref decrypt_request,
+                        ..
+                    },
+                ) = event.data
+                {
+                    let job_id_hash = decrypt_request.content_hash();
+                    let err_reason = format!("Processing Failed: {}", error);
+
+                    if let Err(db_err) = self
+                        .user_decrypt_repo
+                        .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
+                        .await
+                    {
+                        error!(
+                            job_id = %event.job_id,
+                            db_error = %db_err,
+                            "Failed to update failure status in database"
+                        );
+                    }
+                }
+
                 if let RelayerEventData::UserDecrypt(UserDecryptEventData::ReadinessCheckPassed {
                     ref decrypt_request,
                     ..
@@ -1010,6 +1078,29 @@ impl GatewayHandler {
                         );
                     }
                 }
+
+                if let RelayerEventData::DelegatedUserDecrypt(
+                    DelegatedUserDecryptEventData::ReadinessCheckPassed {
+                        ref decrypt_request,
+                        ..
+                    },
+                ) = event.data
+                {
+                    let job_id_hash = decrypt_request.content_hash();
+                    let err_reason = format!("Processing Failed: {}", error);
+
+                    if let Err(db_err) = self
+                        .user_decrypt_repo
+                        .update_status_to_failure_on_tx_failed(&job_id_hash[..], &err_reason)
+                        .await
+                    {
+                        error!(
+                            job_id = %event.job_id,
+                            db_error = %db_err,
+                            "Failed to update failure status in database"
+                        );
+                    }
+                }
             }
         }
 
@@ -1018,9 +1109,16 @@ impl GatewayHandler {
 
     /// Dispatches failure event to notify waiting HTTP handlers.
     async fn notify_failed(&self, event: RelayerEvent, error: EventProcessingError) {
-        let error_event = event.derive_next_event(RelayerEventData::UserDecrypt(
-            UserDecryptEventData::Failed { error },
-        ));
+        let error_event_data = match &event.data {
+            RelayerEventData::DelegatedUserDecrypt(_) => {
+                RelayerEventData::DelegatedUserDecrypt(DelegatedUserDecryptEventData::Failed {
+                    error,
+                })
+            }
+            _ => RelayerEventData::UserDecrypt(UserDecryptEventData::Failed { error }),
+        };
+
+        let error_event = event.derive_next_event(error_event_data);
 
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
             error!(?e, "Failed to dispatch error event");
