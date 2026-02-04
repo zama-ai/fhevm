@@ -19,7 +19,6 @@ fn construct_config() -> Config {
     let db_url = args.database_url.clone().unwrap_or_default();
 
     Config {
-        tenant_api_key: args.tenant_api_key,
         service_name: args.service_name,
         metrics: SNSMetricsConfig {
             addr: args.metrics_addr,

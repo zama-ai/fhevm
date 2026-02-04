@@ -1,4 +1,7 @@
-use fhevm_engine_common::{db_keys::read_keys_from_large_object, utils::safe_deserialize_sns_key};
+use fhevm_engine_common::{
+    db_keys::{read_keys_from_large_object, DbKeyId},
+    utils::safe_deserialize_sns_key,
+};
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -8,47 +11,52 @@ use crate::{ExecutionError, KeySet};
 
 const SKS_KEY_WITH_NOISE_SQUASHING_SIZE: usize = 1_150 * 1_000_000; // ~1.1 GB
 
-/// Retrieve the keyset from the database
-pub(crate) async fn fetch_keyset(
-    cache: &Arc<RwLock<lru::LruCache<String, KeySet>>>,
-    pool: &PgPool,
-    tenant_api_key: &String,
-) -> Result<Option<KeySet>, ExecutionError> {
-    let mut cache = cache.write().await;
-    if let Some(keys) = cache.get(tenant_api_key) {
-        info!(tenant_api_key, "Cache hit");
-        return Ok(Some(keys.clone()));
+async fn fetch_latest_key_id(pool: &PgPool) -> Result<Option<(DbKeyId, i64)>, ExecutionError> {
+    let record = sqlx::query(
+        "SELECT key_id, sequence_number FROM keys ORDER BY sequence_number DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(record) = record {
+        let key_id: DbKeyId = record.try_get("key_id")?;
+        let sequence_number: i64 = record.try_get("sequence_number")?;
+        Ok(Some((key_id, sequence_number)))
+    } else {
+        Ok(None)
     }
+}
 
-    info!(tenant_api_key, "Cache miss");
-
-    let Some((client_key, server_key)) = fetch_keys(pool, tenant_api_key).await? else {
+pub(crate) async fn fetch_latest_keyset(
+    cache: &Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
+    pool: &PgPool,
+) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
+    let Some((key_id, _sequence_number)) = fetch_latest_key_id(pool).await? else {
         return Ok(None);
     };
 
-    let key_set: KeySet = KeySet {
-        client_key,
-        server_key,
-    };
-
-    cache.push(tenant_api_key.clone(), key_set.clone());
-    Ok(Some(key_set))
+    let keyset = fetch_keyset_by_id(cache, pool, &key_id).await?;
+    Ok(keyset.map(|keys| (key_id, keys)))
 }
 
-/// Retrieve both the ClientKey and ServerKey from the tenants table
-///
-/// The ServerKey is stored in a large object (LOB) in the database.
-/// ServerKey must be generated with enable_noise_squashing option.
-///
-/// The ClientKey is stored in a bytea column and is optional. It's used only
-/// for decrypting on testing.
-pub async fn fetch_keys(
+async fn fetch_keyset_by_id(
+    cache: &Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     pool: &PgPool,
-    tenant_api_key: &String,
-) -> anyhow::Result<Option<(Option<tfhe::ClientKey>, crate::ServerKey)>> {
+    key_id: &DbKeyId,
+) -> Result<Option<KeySet>, ExecutionError> {
+    {
+        let mut cache = cache.write().await;
+        if let Some(keys) = cache.get(key_id) {
+            info!(key_id = hex::encode(key_id), "Cache hit");
+            return Ok(Some(keys.clone()));
+        }
+    }
+
+    info!(key_id = hex::encode(key_id), "Cache miss");
+
     let blob = read_keys_from_large_object(
         pool,
-        tenant_api_key,
+        key_id.clone(),
         "sns_pk",
         SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
     )
@@ -75,24 +83,29 @@ pub async fn fetch_keys(
     };
 
     // Optionally retrieve the ClientKey for testing purposes
-    let client_key = fetch_client_key(pool, tenant_api_key).await?;
-    Ok(Some((client_key, server_key)))
+    let client_key = fetch_client_key(pool, key_id).await?;
+
+    let key_set = KeySet {
+        key_id: key_id.clone(),
+        client_key,
+        server_key,
+    };
+
+    let mut cache = cache.write().await;
+    cache.put(key_id.clone(), key_set.clone());
+    Ok(Some(key_set))
 }
 
 pub async fn fetch_client_key(
     pool: &PgPool,
-    tenant_api_key: &String,
+    key_id: &DbKeyId,
 ) -> anyhow::Result<Option<tfhe::ClientKey>> {
-    if let Ok(keys) = sqlx::query(
-        "
-                SELECT cks_key FROM tenants
-                WHERE tenant_api_key = $1::uuid
-            ",
-    )
-    .bind(tenant_api_key)
-    .fetch_one(pool)
-    .await
-    {
+    let keys = sqlx::query("SELECT cks_key FROM keys WHERE key_id = $1")
+        .bind(key_id)
+        .fetch_optional(pool)
+        .await?;
+
+    if let Some(keys) = keys {
         if let Ok(cks) = keys.try_get::<Vec<u8>, _>(0) {
             if !cks.is_empty() {
                 info!(bytes_len = cks.len(), "Retrieved cks");

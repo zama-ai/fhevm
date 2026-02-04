@@ -1,5 +1,5 @@
 use crate::aws_upload::check_is_ready;
-use crate::keyset::fetch_keyset;
+use crate::keyset::fetch_latest_keyset;
 use crate::metrics::SNS_LATENCY_OP_HISTOGRAM;
 use crate::metrics::TASK_EXECUTE_FAILURE_COUNTER;
 use crate::metrics::TASK_EXECUTE_SUCCESS_COUNTER;
@@ -13,6 +13,7 @@ use crate::SchedulePolicy;
 use crate::UploadJob;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
+use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
@@ -142,7 +143,7 @@ impl SwitchNSquashService {
     }
 
     pub async fn run(&self, pool_mngr: &PostgresPoolManager) {
-        let keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>> = Arc::new(RwLock::new(
+        let keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>> = Arc::new(RwLock::new(
             lru::LruCache::new(NonZeroUsize::new(10).unwrap()),
         ));
 
@@ -174,19 +175,10 @@ impl SwitchNSquashService {
 
 async fn get_keyset(
     pool: PgPool,
-    keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>>,
-    tenant_api_key: &String,
-) -> Result<Option<KeySet>, ExecutionError> {
+    keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
+) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
     let _t = telemetry::tracer("fetch_keyset", &None);
-    {
-        let mut cache = keys_cache.write().await;
-        if let Some(keys) = cache.get(tenant_api_key) {
-            info!(tenant_api_key = tenant_api_key, "Keyset found in cache");
-            return Ok(Some(keys.clone()));
-        }
-    }
-    let keys: Option<KeySet> = fetch_keyset(&keys_cache, &pool, tenant_api_key).await?;
-    Ok(keys)
+    fetch_latest_keyset(&keys_cache, &pool).await
 }
 
 /// Executes the worker logic for the SnS task.
@@ -196,12 +188,11 @@ pub(crate) async fn run_loop(
     pool: PgPool,
     token: CancellationToken,
     last_active_at: Arc<RwLock<SystemTime>>,
-    keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>>,
+    keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     events_tx: InternalEvents,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
-    let tenant_api_key = &conf.tenant_api_key;
     let mut listener = PgListener::connect_with(&pool).await?;
     info!("Connected to PostgresDB");
 
@@ -209,7 +200,7 @@ pub(crate) async fn run_loop(
         .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
         .await?;
 
-    let mut keys = None;
+    let mut keys: Option<(DbKeyId, KeySet)> = None;
     let mut gc_ticker = interval(conf.db.cleanup_interval);
     let mut gc_timestamp = SystemTime::now();
     let mut polling_ticker = interval(Duration::from_secs(conf.db.polling_interval.into()));
@@ -218,27 +209,30 @@ pub(crate) async fn run_loop(
         // Continue looping until the service is cancelled or a critical error occurs
         update_last_active(last_active_at.clone()).await;
 
-        let Some(keys) = keys.as_ref() else {
-            keys = get_keyset(pool.clone(), keys_cache.clone(), tenant_api_key).await?;
-            if keys.is_some() {
-                info!(tenant_api_key = tenant_api_key, "Fetched keyset");
+        let latest_keys = get_keyset(pool.clone(), keys_cache.clone()).await?;
+        if let Some((key_id, keyset)) = latest_keys {
+            let key_changed = keys
+                .as_ref()
+                .map(|(current_key_id, _)| current_key_id != &key_id)
+                .unwrap_or(true);
+            if key_changed {
+                info!(key_id = hex::encode(&key_id), "Fetched keyset");
                 // Notify that the keys are loaded
                 if let Some(events_tx) = &events_tx {
                     let _ = events_tx.try_send("event_keys_loaded");
                 }
-            } else {
-                warn!(
-                    tenant_api_key = tenant_api_key,
-                    "No keys available, retrying in 5 seconds"
-                );
-                tokio::time::sleep(Duration::from_secs(5)).await;
             }
-
+            keys = Some((key_id, keyset));
+        } else {
+            warn!("No keys available, retrying in 5 seconds");
+            tokio::time::sleep(Duration::from_secs(5)).await;
             if token.is_cancelled() {
                 return Ok(());
             }
             continue;
-        };
+        }
+
+        let (_, keys) = keys.as_ref().expect("keyset should be available");
 
         let (maybe_remaining, _tasks_processed) =
             fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token)
@@ -316,11 +310,10 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     let rows_affected: u64 = sqlx::query!(
         "
         WITH uploaded_ct128 AS (
-            SELECT c.tenant_id, c.handle
+            SELECT c.handle
             FROM ciphertexts128 c
             JOIN ciphertext_digest d
-            ON d.tenant_id = c.tenant_id
-            AND d.handle = c.handle
+            ON d.handle = c.handle
             WHERE d.ciphertext128 IS NOT NULL
             FOR UPDATE OF c SKIP LOCKED
             LIMIT $1
@@ -328,8 +321,7 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
         DELETE FROM ciphertexts128 c
         USING uploaded_ct128 r
-        WHERE c.tenant_id = r.tenant_id
-        AND c.handle = r.handle;
+        WHERE c.handle = r.handle;
         ",
         limit as i32
     )
@@ -375,7 +367,7 @@ async fn fetch_and_execute_sns_tasks(
 
     let mut maybe_remaining = false;
     let tasks_processed;
-    if let Some(mut tasks) = query_sns_tasks(trx, conf.db.batch_limit, order).await? {
+    if let Some(mut tasks) = query_sns_tasks(trx, conf.db.batch_limit, order, &keys.key_id).await? {
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
 
@@ -423,6 +415,7 @@ pub async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     limit: u32,
     order: Order,
+    key_id: &DbKeyId,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
     let start_time = SystemTime::now();
 
@@ -460,13 +453,16 @@ pub async fn query_sns_tasks(
     let tasks = records
         .into_iter()
         .map(|record| {
-            let tenant_id: i32 = record.try_get("tenant_id")?;
+            let host_chain_id: i64 = record.try_get("host_chain_id")?;
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
 
             Ok(HandleItem {
-                tenant_id,
+                // NOTE: Ensure all coprocessors use the same key_id during rotation
+                // to keep ciphertext_digest consensus on the gateway.
+                key_id: key_id.clone(),
+                host_chain_id,
                 handle: handle.clone(),
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
@@ -644,12 +640,10 @@ async fn update_ciphertext128(
             let res = sqlx::query!(
                 "
                 INSERT INTO ciphertexts128 (
-                        tenant_id,
                         handle,
                         ciphertext
                 )
-                VALUES ($1, $2, $3)",
-                task.tenant_id,
+                VALUES ($1, $2)",
                 task.handle,
                 ciphertext128,
             )

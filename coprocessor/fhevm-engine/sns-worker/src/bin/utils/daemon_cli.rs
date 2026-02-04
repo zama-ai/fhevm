@@ -11,10 +11,6 @@ use tracing::Level;
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
-    /// Tenant API key
-    #[arg(long)]
-    pub tenant_api_key: String,
-
     /// Work items batch size
     #[arg(long, default_value_t = 4)]
     pub work_items_batch_size: u32,

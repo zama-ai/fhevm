@@ -119,10 +119,9 @@ async fn run_uploader_loop(
                     UploadJob::DatabaseLock(item) => {
                         if let Err(err) = sqlx::query!(
                             "SELECT * FROM ciphertext_digest
-                                    WHERE handle = $2 AND tenant_id = $1 AND
+                                    WHERE handle = $1 AND
                                     (ciphertext128 IS NULL OR ciphertext IS NULL)
                                     FOR UPDATE SKIP LOCKED",
-                                    item.tenant_id,
                                     item.handle
                         )
                         .fetch_one(trx.as_mut())
@@ -234,7 +233,6 @@ async fn upload_ciphertexts(
         info!(
             handle = handle_as_hex,
             len = ?ByteSize::b(ct128_bytes.len() as u64),
-            tenant_id = task.tenant_id,
             "Uploading ct128"
         );
 
@@ -286,7 +284,6 @@ async fn upload_ciphertexts(
         info!(
             handle = handle_as_hex,
             len = ?ByteSize::b(ct64_compressed.len() as u64),
-            tenant_id = task.tenant_id,
             "Uploading ct64",
         );
 
@@ -400,7 +397,7 @@ async fn fetch_pending_uploads(
     limit: i64,
 ) -> Result<Vec<UploadJob>, ExecutionError> {
     let rows = sqlx::query!(
-        "SELECT tenant_id, handle, ciphertext, ciphertext128, ciphertext128_format, transaction_id 
+        "SELECT handle, ciphertext, ciphertext128, ciphertext128_format, transaction_id, host_chain_id, key_id
         FROM ciphertext_digest 
         WHERE ciphertext IS NULL OR ciphertext128 IS NULL
         FOR UPDATE SKIP LOCKED
@@ -423,8 +420,7 @@ async fn fetch_pending_uploads(
         // Fetch missing ciphertext
         if ciphertext_digest.is_none() {
             if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext FROM ciphertexts WHERE tenant_id = $1 AND handle = $2;",
-                row.tenant_id,
+                "SELECT ciphertext FROM ciphertexts WHERE handle = $1;",
                 handle
             )
             .fetch_optional(db_pool)
@@ -441,8 +437,7 @@ async fn fetch_pending_uploads(
         // Fetch missing ciphertext128
         if ciphertext128_digest.is_none() {
             if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext FROM ciphertexts128 WHERE tenant_id = $1 AND handle = $2;",
-                row.tenant_id,
+                "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1;",
                 handle
             )
             .fetch_optional(db_pool)
@@ -484,7 +479,8 @@ async fn fetch_pending_uploads(
 
         if !ct64_compressed.is_empty() || !is_ct128_empty {
             let item = HandleItem {
-                tenant_id: row.tenant_id,
+                host_chain_id: row.host_chain_id,
+                key_id: row.key_id,
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128: Arc::new(ct128),
