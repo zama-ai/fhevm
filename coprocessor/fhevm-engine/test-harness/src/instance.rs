@@ -69,7 +69,7 @@ async fn setup_test_app_existing_localhost(
 
     info!("Using existing local database at {db_url}");
 
-    let _ = get_sns_pk_size(&sqlx::PgPool::connect(db_url.as_str()).await?, 12345).await;
+    let _ = get_sns_pk_size(&sqlx::PgPool::connect(db_url.as_str()).await?).await;
 
     Ok(DBInstance {
         _container: None,
@@ -160,9 +160,8 @@ async fn create_database(
     Ok(())
 }
 
-pub async fn get_sns_pk_size(pool: &sqlx::PgPool, chain_id: i64) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query("SELECT sns_pk FROM keys WHERE chain_id = $1 ORDER BY sequence_number DESC LIMIT 1")
-        .bind(chain_id)
+pub async fn get_sns_pk_size(pool: &sqlx::PgPool) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query("SELECT sns_pk FROM keys ORDER BY sequence_number DESC LIMIT 1")
         .fetch_optional(pool)
         .await?;
 
@@ -172,7 +171,7 @@ pub async fn get_sns_pk_size(pool: &sqlx::PgPool, chain_id: i64) -> Result<i64, 
     };
 
     let oid: Oid = row.try_get(0)?;
-    info!(oid = ?oid, chain_id, "Found sns_pk oid");
+    info!(oid = ?oid, "Found sns_pk oid");
     let row = sqlx::query_scalar(
         "SELECT COALESCE(SUM(octet_length(data))::bigint, 0) FROM pg_largeobject WHERE loid = $1",
     )
