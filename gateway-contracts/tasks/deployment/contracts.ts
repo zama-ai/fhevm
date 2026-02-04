@@ -149,11 +149,6 @@ task("task:deployCiphertextCommits").setAction(async function (_, hre) {
   await deployContractImplementation("CiphertextCommits", hre, REGULAR_EMPTY_PROXY_NAME, true);
 });
 
-// Deploy the MultichainACL contract
-task("task:deployMultichainACL").setAction(async function (_, hre) {
-  await deployContractImplementation("MultichainACL", hre, REGULAR_EMPTY_PROXY_NAME, true);
-});
-
 // Deploy the Decryption contract
 task("task:deployDecryption").setAction(async function (_, hre) {
   await deployContractImplementation("Decryption", hre, REGULAR_EMPTY_PROXY_NAME, true);
@@ -217,9 +212,6 @@ task("task:deployImplementationContracts").setAction(async function (_, hre) {
 
   console.log("Deploy CiphertextCommits contract:");
   await hre.run("task:deployCiphertextCommits");
-
-  console.log("Deploy MultichainACL contract:");
-  await hre.run("task:deployMultichainACL");
 
   console.log("Deploy Decryption contract:");
   await hre.run("task:deployDecryption");

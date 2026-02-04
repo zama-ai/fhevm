@@ -17,7 +17,6 @@ The **FHEVM Gateway** is a set of smart contracts that enables decrypting FHE ci
 | `GatewayConfig`     | Administer configuration settings                           | - Register KMS nodes, coprocessors and host chains. <br> - Update KMS nodes, coprocessors and host chains.                        |
 | `InputVerification` | Verify an input's zero-knowledge proof of knowledge (ZKPoK) | - Verify a ZKPoK<br>- Reject a ZKPoK                                                                                              |
 | `KMSGeneration`     | Orchestrate KMS-related materials                           | - Trigger generation of FHE keys<br>- Trigger generation of CRS                                                                   |
-| `MultichainACL`     | Centralize Access Control Lists (ACL) from all host chains  | - Grant account access to ciphertexts<br>- Authorize public decryption of ciphertexts<br>- Delegate account access to ciphertexts |
 | `ProtocolPayment`   | Orchestrate protocol payments                               | - Define operation prices<br>- Transfer protocol fees to FeesSenderToBurner contract fees                                         |
 | `PauserSet`         | Administer pauser role                                      | - Register, remove and swap pauser addresses                                                                                      |
 
