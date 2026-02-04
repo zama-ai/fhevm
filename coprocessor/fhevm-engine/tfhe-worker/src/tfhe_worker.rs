@@ -531,7 +531,7 @@ async fn build_transaction_graph_and_execute<'a>(
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
     let ciphertext_map =
         query_ciphertexts(&cts_to_query, *tenant_id, trx, tracer, loop_ctx).await?;
-    // Check if we retrieved all needed CTs - if not, we may not want to proceed to execution
+    // Check if we retrieved all needed CTs
     if cts_to_query.len() != ciphertext_map.len() {
         if let Some(dcid_lock) = dcid_mngr.get_current_lock() {
             warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - ciphertext_map.len()), dcid = %hex::encode(dcid_lock.dependence_chain_id) },

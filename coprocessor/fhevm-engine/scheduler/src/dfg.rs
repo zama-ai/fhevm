@@ -331,12 +331,11 @@ impl DFComponentGraph {
                     } else {
                         dependence_pairs.push((producer[0].0, consumer));
                     }
-                } else {
-                    self.needed_map
-                        .entry(i.clone())
-                        .and_modify(|uses| uses.push(consumer))
-                        .or_insert(vec![consumer]);
                 }
+                self.needed_map
+                    .entry(i.clone())
+                    .and_modify(|uses| uses.push(consumer))
+                    .or_insert(vec![consumer]);
             }
         }
 
