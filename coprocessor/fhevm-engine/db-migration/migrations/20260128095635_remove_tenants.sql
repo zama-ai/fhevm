@@ -80,6 +80,12 @@ ALTER TABLE ciphertexts DROP CONSTRAINT ciphertexts_pkey;
 ALTER TABLE ciphertexts DROP COLUMN tenant_id;
 ALTER TABLE ciphertexts ADD PRIMARY KEY (handle, ciphertext_version);
 
+-- ciphertexts128.tenant_id no longer needed.
+ALTER TABLE ciphertexts128 DROP CONSTRAINT ciphertexts128_pkey;
+ALTER TABLE ciphertexts128 DROP COLUMN tenant_id;
+ALTER TABLE ciphertexts128 ADD PRIMARY KEY (handle);
+DROP INDEX IF EXISTS idx_ciphertexts128_handle;
+
 -- computations.tenant_id no longer needed.
 ALTER TABLE computations DROP CONSTRAINT computations_pkey;
 DROP INDEX IF EXISTS idx_computations_pk;
@@ -87,6 +93,10 @@ ALTER TABLE computations DROP COLUMN tenant_id;
 ALTER TABLE computations ADD PRIMARY KEY (output_handle, transaction_id);
 
 -- pbs_computations.tenant_id no longer needed.
+ALTER TABLE pbs_computations ADD COLUMN host_chain_id BIGINT DEFAULT NULL;
+UPDATE pbs_computations SET host_chain_id = (SELECT chain_id FROM keys WHERE tenant_id = pbs_computations.tenant_id);
+ALTER TABLE pbs_computations ALTER COLUMN host_chain_id SET NOT NULL;
+ALTER TABLE pbs_computations ADD CONSTRAINT pbs_computations_host_chain_id_positive CHECK (host_chain_id > 0);
 ALTER TABLE pbs_computations DROP CONSTRAINT pbs_computations_pkey;
 ALTER TABLE pbs_computations DROP COLUMN tenant_id;
 ALTER TABLE pbs_computations ADD PRIMARY KEY (handle);
