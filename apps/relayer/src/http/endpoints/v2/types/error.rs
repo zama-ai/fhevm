@@ -5,6 +5,7 @@ use tracing::info;
 use utoipa::ToSchema;
 
 use crate::http::utils::responses::{to_camel_case, FieldJsonErrorType, ParseError};
+use crate::http::utils::validation_messages;
 
 /// Status field values for V2 API responses
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -248,11 +249,12 @@ impl RelayerV2ResponseFailed {
                 issue,
                 error_type,
             } => {
-                let field_name = to_camel_case(field_name);
-                let (label, message) = match error_type {
+                // field_name is already camelCase from serde (unlike ValidationFailed which uses snake_case)
+                let (label, message, detail_issue) = match error_type {
                     FieldJsonErrorType::Missing => (
                         "missing_fields",
                         format!("Missing 1 required field in the request: {}", field_name),
+                        validation_messages::GENERIC_REQUIRED_BUT_MISSING.to_string(),
                     ),
                     FieldJsonErrorType::InvalidType | FieldJsonErrorType::Unknown => (
                         "validation_failed",
@@ -260,6 +262,7 @@ impl RelayerV2ResponseFailed {
                             "Validation failed for 1 field in the request: {}",
                             field_name
                         ),
+                        issue.clone(),
                     ),
                 };
 
@@ -280,8 +283,8 @@ impl RelayerV2ResponseFailed {
                             label: label.to_string(),
                             message,
                             details: vec![RelayerV2ErrorDetail {
-                                field: field_name,
-                                issue: issue.clone(),
+                                field: field_name.clone(),
+                                issue: detail_issue,
                             }],
                         })
                         .unwrap(),
@@ -514,6 +517,11 @@ mod tests {
         assert_eq!(response.request_id, Some("test-request-id".to_string()));
         assert_eq!(response.error["label"], "missing_fields");
         assert!(response.error["details"].is_array());
+
+        // Verify field name is preserved as camelCase (not corrupted to lowercase)
+        let details = response.error["details"].as_array().unwrap();
+        assert_eq!(details[0]["field"], "contractChainId");
+        assert_eq!(details[0]["issue"], "Required but missing");
     }
 
     #[test]
