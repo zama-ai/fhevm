@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO crsgen_responses(crs_id, crs_digest, signature, otlp_context, status) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+  "query": "INSERT INTO user_decryption_responses(decryption_id, user_decrypted_shares, signature, extra_data, created_at, otlp_context, status) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
@@ -8,6 +8,8 @@
         "Bytea",
         "Bytea",
         "Bytea",
+        "Bytea",
+        "Timestamptz",
         "Bytea",
         {
           "Custom": {
@@ -26,5 +28,5 @@
     },
     "nullable": []
   },
-  "hash": "70c9f021267ee3989cfc313cd95f1aa1af7163fda39518bf6c9f9dc4a10911f1"
+  "hash": "a7b4dbcc2bd1d95a9ec562782e467612eff6a1663688e7ed7b5cb181807fd5f3"
 }
