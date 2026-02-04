@@ -1,7 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use union_find::{QuickUnionUf, UnionBySize, UnionFind};
 
 use crate::database::tfhe_event_propagate::{
@@ -76,84 +76,38 @@ fn scan_transactions(
     (ordered_txs_hash, txs)
 }
 
-fn tx_of_handle(
-    ordered_txs_hash: &[TransactionHash],
-    ordered_txs: &HashMap<TransactionHash, Transaction>,
-) -> (
-    HashMap<Handle, TransactionHash>,
-    HashMap<Handle, HashSet<TransactionHash>>,
-) {
-    // handle to tx maps
-    let mut handle_creator = HashMap::new(); // no intermediate value
-    let mut handle_consumer = HashMap::new();
-    for tx_hash in ordered_txs_hash {
-        let Some(tx) = ordered_txs.get(tx_hash) else {
-            continue;
-        };
-        for handle in &tx.allowed_handle {
-            handle_creator.insert(*handle, tx.tx_hash);
-        }
-    }
-    for tx_hash in ordered_txs_hash {
-        let Some(tx) = ordered_txs.get(tx_hash) else {
-            continue;
-        };
-        for handle in &tx.input_handle {
-            if tx.output_handle.contains(handle) {
-                // self dependency, ignore
-                continue;
-            }
-            if !handle_creator.contains_key(handle) {
-                // non allowed handle, could be from past chain
-                continue;
-            }
-            match handle_consumer.entry(*handle) {
-                Entry::Vacant(e) => {
-                    let mut set = HashSet::new();
-                    set.insert(tx.tx_hash);
-                    e.insert(set);
-                }
-                Entry::Occupied(mut e) => {
-                    e.get_mut().insert(tx.tx_hash);
-                }
-            }
-        }
-    }
-    (handle_creator, handle_consumer)
-}
-
 async fn fill_tx_dependence_maps(
     ordered_txs_hash: &[TransactionHash],
     txs: &mut HashMap<TransactionHash, Transaction>,
     used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
     past_chains: &ChainCache,
 ) {
-    // handle to tx maps
-    let (handle_creator, handle_consumer) = tx_of_handle(ordered_txs_hash, txs);
-    // txs relations
+    let mut allowed_handle_tx: HashMap<Handle, TransactionHash> =
+        HashMap::new();
     for tx_hash in ordered_txs_hash {
         let Some(tx) = txs.get_mut(tx_hash) else {
+            error!("Tx hash {:?} not found in txs map", tx_hash);
             continue;
         };
         // this tx depends on dep_tx
+        let mut producer_tx = Vec::with_capacity(tx.input_handle.len());
         for input_handle in &tx.input_handle {
-            if tx.output_handle.contains(input_handle) {
-                // self dependency, ignore
-                continue;
-            }
-            if let Some(dep_tx) = handle_creator.get(input_handle) {
+            if let Some(dep_tx) = allowed_handle_tx.get(input_handle) {
                 // intra block
+                // mark as consumer
                 tx.input_tx.insert(*dep_tx);
                 used_txs_chains
                     .entry(*dep_tx)
                     .and_modify(|v| {
-                        v.insert(tx.tx_hash);
+                        v.insert(*tx_hash);
                     })
                     .or_insert({
                         let mut h = HashSet::new();
-                        h.insert(tx.tx_hash);
+                        h.insert(*tx_hash);
                         h
                     });
+                // memorize as producer
+                producer_tx.push(*dep_tx);
             } else if let Some(dep_tx_hash) =
                 past_chains.write().await.get(input_handle)
             {
@@ -171,84 +125,22 @@ async fn fill_tx_dependence_maps(
                     });
             }
         }
-        // this tx is used by consumer_tx
-        for output_handle in &tx.output_handle {
-            let Some(consumer_txs) = handle_consumer.get(output_handle) else {
-                continue;
-            };
-            for dep_tx in consumer_txs {
-                if *dep_tx == tx.tx_hash {
-                    // self dependency, ignore
-                    continue;
-                }
-                tx.output_tx.insert(*dep_tx);
-            }
+        // update allowed handle for next txs
+        for allowed_handle in &tx.allowed_handle {
+            allowed_handle_tx.entry(*allowed_handle).or_insert(*tx_hash);
         }
-    }
-}
-
-fn topological_order(
-    ordered_hash: Vec<TransactionHash>,
-    mut txs: HashMap<TransactionHash, Transaction>,
-) -> Vec<Transaction> {
-    let mut tx_index = HashMap::with_capacity(ordered_hash.len());
-    for (index, tx_hash) in ordered_hash.iter().enumerate() {
-        tx_index.insert(*tx_hash, index);
-    }
-
-    // Enforce block ordering: cut any dependency edges that point to a
-    // transaction later in the block. This ignores cycles by removing
-    // the inconsistent (backwards) edges.
-    for &tx_hash in &ordered_hash {
-        let Some(tx) = txs.get_mut(&tx_hash) else {
-            error!("Transaction {:?} missing in txs map", tx_hash);
-            continue;
-        };
-        let Some(&tx_pos) = tx_index.get(&tx_hash) else {
-            continue;
-        };
-        let mut cut_deps = Vec::new();
-        for dep in tx.input_tx.iter() {
-            let Some(&dep_pos) = tx_index.get(dep) else {
-                // past chain or unknown, keep it
-                continue;
-            };
-            if dep_pos > tx_pos {
-                cut_deps.push(*dep);
-            }
-        }
-        if !cut_deps.is_empty() {
-            for dep in &cut_deps {
-                warn!(
-                    "Cutting dependency against block order: tx {:?} depends on later tx {:?}",
-                    tx_hash, dep
-                );
-            }
-            tx.input_tx.retain(|dep| !cut_deps.contains(dep));
-        }
-    }
-
-    // Compute depth_size in block order (after pruning).
-    for &tx_hash in &ordered_hash {
-        let Some(tx) = txs.get(&tx_hash) else {
-            error!("Transaction {:?} missing in txs map", tx_hash);
-            continue;
-        };
+        // propagate memorized producers
         let mut depth_size = 0;
-        for input_tx in &tx.input_tx {
-            if let Some(dep_tx) = txs.get(input_tx) {
+        for dep_tx in &producer_tx {
+            txs.entry(*dep_tx).and_modify(|dep_tx| {
+                dep_tx.output_tx.insert(*tx_hash);
                 depth_size = depth_size.max(dep_tx.depth_size + dep_tx.size);
-            }
+            });
         }
-        if let Some(tx) = txs.get_mut(&tx_hash) {
-            tx.depth_size = depth_size;
-        }
+        txs.entry(*tx_hash).and_modify(|dep_tx| {
+            dep_tx.depth_size = depth_size;
+        });
     }
-
-    ordered_hash
-        .iter()
-        .filter_map(|tx_hash| txs.remove(tx_hash))
-        .collect()
 }
 
 fn rebuild_used_txs_chains(
@@ -537,7 +429,10 @@ pub async fn dependence_chains(
     )
     .await;
     debug!("Transactions: {:?}", txs.values());
-    let mut ordered_txs = topological_order(ordered_hash, txs);
+    let mut ordered_txs: Vec<_> = ordered_hash
+        .iter()
+        .filter_map(|tx_hash| txs.remove(tx_hash))
+        .collect();
     // Rebuild after pruning to avoid stale dependents.
     used_txs_chains = rebuild_used_txs_chains(&ordered_txs);
     let chains = if connex {
@@ -580,7 +475,6 @@ mod tests {
     use alloy::primitives::FixedBytes;
     use alloy_primitives::Address;
 
-    use super::{topological_order, Transaction};
     use crate::contracts::TfheContract as C;
     use crate::contracts::TfheContract::TfheContractEvents as E;
     use crate::database::dependence_chains::dependence_chains;
@@ -670,25 +564,6 @@ mod tests {
             }),
             logs,
             false,
-            tx,
-        );
-        result
-    }
-
-    fn allowed_input_handle(
-        logs: &mut Vec<LogTfhe>,
-        tx: TransactionHash,
-    ) -> Handle {
-        let result = new_handle();
-        push_event(
-            E::TrivialEncrypt(C::TrivialEncrypt {
-                caller: caller(),
-                pt: ClearConst::from_be_slice(&[0]),
-                toType: 0,
-                result,
-            }),
-            logs,
-            true,
             tx,
         );
         result
@@ -792,70 +667,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[tracing_test::traced_test]
-    async fn test_dependence_chains_2_local_chain_bad_tx_order() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
-        let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(0);
-        let tx2 = TransactionHash::with_last_byte(1);
-
-        let va_1 = allowed_input_handle(&mut logs, tx1);
-        let _vb_1 = op1(va_1, &mut logs, tx1);
-        let _vb_2 = op1(va_1, &mut logs, tx2);
-
-        let line = logs.pop().unwrap();
-        logs.insert(0, line);
-
-        let chains = dependence_chains(&mut logs, &cache, false, true).await;
-        assert!(logs_contain("Cutting dependency against block order"));
-        assert_eq!(chains.len(), 2);
-        assert!(chains.iter().any(|chain| chain.hash == tx1));
-        assert!(chains.iter().any(|chain| chain.hash == tx2));
-        assert!(logs.iter().all(|log| {
-            log.dependence_chain == log.transaction_hash.unwrap()
-        }));
-        assert_eq!(cache.read().await.len(), 3);
-    }
-
-    #[tokio::test]
-    #[tracing_test::traced_test]
-    async fn test_dependence_chains_pruned_edge_does_not_create_fork() {
-        let cache = ChainCache::new(lru::LruCache::new(
-            std::num::NonZeroUsize::new(100).unwrap(),
-        ));
-        let mut logs = vec![];
-        let tx_a = TransactionHash::with_last_byte(0);
-        let tx_b = TransactionHash::with_last_byte(1);
-        let tx_c = TransactionHash::with_last_byte(2);
-
-        let va = allowed_input_handle(&mut logs, tx_a);
-        let _vb = op1(va, &mut logs, tx_b);
-        let _vc = op1(va, &mut logs, tx_c);
-
-        let line = logs.pop().unwrap();
-        logs.insert(0, line);
-
-        let chains = dependence_chains(&mut logs, &cache, false, true).await;
-        assert!(logs_contain("Cutting dependency against block order"));
-        assert_eq!(chains.len(), 2);
-        assert!(chains.iter().any(|chain| chain.hash == tx_a));
-        assert!(chains.iter().any(|chain| chain.hash == tx_c));
-        assert!(!chains.iter().any(|chain| chain.hash == tx_b));
-
-        let chain_for = |tx| {
-            logs.iter()
-                .find(|log| log.transaction_hash == Some(tx))
-                .unwrap()
-                .dependence_chain
-        };
-        assert_eq!(chain_for(tx_a), tx_a);
-        assert_eq!(chain_for(tx_c), tx_c);
-        assert_eq!(chain_for(tx_b), tx_a);
-    }
-
-    #[tokio::test]
     async fn test_dependence_chains_2_local_chain_mixed() {
         let cache = ChainCache::new(lru::LruCache::new(
             std::num::NonZeroUsize::new(100).unwrap(),
@@ -914,41 +725,6 @@ mod tests {
         assert_eq!(chains[0].dependents, vec![tx3]);
         assert_eq!(chains[1].dependents, vec![tx3]);
         assert!(chains[2].dependents.is_empty());
-    }
-
-    #[test]
-    fn test_topological_order_cycle_cut_max_observed() {
-        let mut txs = std::collections::HashMap::new();
-        let mut ordered = Vec::new();
-        for i in 0u8..6 {
-            let tx_hash = TransactionHash::with_last_byte(i);
-            ordered.push(tx_hash);
-            let mut tx = Transaction::new(tx_hash);
-            tx.size = 1;
-            txs.insert(tx_hash, tx);
-        }
-
-        for i in 0..ordered.len() {
-            let curr = ordered[i];
-            let next = ordered[(i + 1) % ordered.len()];
-            txs.get_mut(&curr).unwrap().input_tx.insert(next);
-        }
-
-        let ordered_txs = topological_order(ordered.clone(), txs);
-        let txs = ordered_txs
-            .into_iter()
-            .map(|tx| (tx.tx_hash, tx))
-            .collect::<std::collections::HashMap<_, _>>();
-
-        for curr in ordered.iter().take(ordered.len() - 1) {
-            let tx = txs.get(curr).unwrap();
-            assert!(tx.input_tx.is_empty());
-        }
-
-        let last = ordered[ordered.len() - 1];
-        let last_tx = txs.get(&last).unwrap();
-        assert_eq!(last_tx.input_tx.len(), 1);
-        assert!(last_tx.input_tx.contains(&ordered[0]));
     }
 
     fn past_chain(last_byte: u8) -> Chain {
