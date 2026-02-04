@@ -249,8 +249,8 @@ async fn test_lifo_mode() {
             host_chain_id,
             &Vec::from([i as u8; 32]),
         )
-            .await
-            .unwrap();
+        .await
+        .unwrap();
     }
 
     let mut trx = pool.begin().await.unwrap();
