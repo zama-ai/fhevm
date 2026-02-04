@@ -438,10 +438,7 @@ contract Decryption is
         }
 
         // - Extract the handles and check their conformance
-        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
-            ctHandleContractPairs,
-            contractsInfo
-        );
+        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(ctHandleContractPairs, contractsInfo);
 
         // Initialize the UserDecryptRequestVerification structure for the signature validation.
         UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
@@ -524,10 +521,7 @@ contract Decryption is
         }
 
         // Extract the handles and check their conformance.
-        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
-            ctHandleContractPairs,
-            contractsInfo
-        );
+        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(ctHandleContractPairs, contractsInfo);
 
         // Using scoped local variable to avoid "stack too deep" errors. This will be revisited during the EIP-712 struct refactor.
         // See: https://github.com/zama-ai/fhevm-internal/issues/403
@@ -1016,7 +1010,6 @@ contract Decryption is
         CtHandleContractPair[] calldata ctHandleContractPairs,
         ContractsInfo calldata contractsInfo
     ) internal view virtual returns (bytes32[] memory ctHandles) {
-
         // Check that the list of ctHandleContractPair is not empty
         if (ctHandleContractPairs.length == 0) {
             revert EmptyCtHandleContractPairs();
