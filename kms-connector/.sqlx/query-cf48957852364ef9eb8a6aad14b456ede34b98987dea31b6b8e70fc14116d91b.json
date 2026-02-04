@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO keygen_responses(key_id, key_digests, signature, otlp_context, status) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+  "query": "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, tx_hash, created_at, otlp_context,\n            already_sent, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
@@ -8,30 +8,28 @@
         "Bytea",
         {
           "Custom": {
-            "name": "key_digest[]",
+            "name": "sns_ciphertext_material[]",
             "kind": {
               "Array": {
                 "Custom": {
-                  "name": "key_digest",
+                  "name": "sns_ciphertext_material",
                   "kind": {
                     "Composite": [
                       [
-                        "key_type",
-                        {
-                          "Custom": {
-                            "name": "key_type",
-                            "kind": {
-                              "Enum": [
-                                "Server",
-                                "Public"
-                              ]
-                            }
-                          }
-                        }
+                        "ct_handle",
+                        "Bytea"
                       ],
                       [
-                        "digest",
+                        "key_id",
                         "Bytea"
+                      ],
+                      [
+                        "sns_ciphertext_digest",
+                        "Bytea"
+                      ],
+                      [
+                        "coprocessor_tx_sender_addresses",
+                        "ByteaArray"
                       ]
                     ]
                   }
@@ -42,6 +40,9 @@
         },
         "Bytea",
         "Bytea",
+        "Timestamptz",
+        "Bytea",
+        "Bool",
         {
           "Custom": {
             "name": "operation_status",
@@ -59,5 +60,5 @@
     },
     "nullable": []
   },
-  "hash": "fb7fe0e88036441a7ccb5ae083545ef7b2178e39c6e32ead5d9a3848ef72a616"
+  "hash": "cf48957852364ef9eb8a6aad14b456ede34b98987dea31b6b8e70fc14116d91b"
 }

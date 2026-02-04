@@ -1,12 +1,14 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO prep_keygen_responses(prep_keygen_id, signature, otlp_context, status) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+  "query": "INSERT INTO crsgen_responses(crs_id, crs_digest, signature, created_at, otlp_context, status) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
       "Left": [
         "Bytea",
         "Bytea",
+        "Bytea",
+        "Timestamptz",
         "Bytea",
         {
           "Custom": {
@@ -25,5 +27,5 @@
     },
     "nullable": []
   },
-  "hash": "9424450a5fe75af91766f2dfe3463e81e8872ed262b34a6d6865af21f24ba3da"
+  "hash": "2cba0042171405be7ad8ae68b8f2df139f79dbd8a70ad48aca3c15ab6933ed35"
 }
