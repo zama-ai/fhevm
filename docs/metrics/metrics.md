@@ -290,6 +290,13 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Alarm**: If the counter increases over a period of time.
    - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 
+#### Metric Name: `kms_connector_worker_decryption_latency_seconds`
+ - **Type**: Histogram
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
+ - **Description**: Measures the latency of decryptions at the KMS worker level, from event creation to processing. Only applies to `public_decryption_request` and `user_decryption_request` event types. Bucket boundaries (in seconds): 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0.
+ - **Alarm**: None for now. Need more experience with this metric first.
+
 ### tx-sender
 
 #### Metric Name: `kms_connector_tx_sender_response_received_counter`
@@ -336,4 +343,11 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Labels**:
    - `response_type`: see [description](#metric-name-kms_connector_tx_sender_response_received_counter) (only available for decryption right now!)
  - **Description**: Tracks the number of KMS responses not yet sent to the Gateway in the kms-connector's DB.
+ - **Alarm**: Need more experience with this metric first.
+
+#### Metric Name: `kms_connector_tx_sender_response_forwarding_latency_seconds`
+ - **Type**: Histogram
+ - **Labels**:
+   - `response_type`: see [description](#metric-name-kms_connector_tx_sender_response_received_counter)
+ - **Description**: Measures the latency from response creation in DB to successful blockchain transaction confirmation. Bucket boundaries (in seconds): 0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0.
  - **Alarm**: Need more experience with this metric first.

@@ -1,4 +1,9 @@
-use prometheus::{IntCounter, IntCounterVec, register_int_counter, register_int_counter_vec};
+use connector_utils::types::{GatewayEvent, GatewayEventKind, db::EventType};
+use prometheus::{
+    HistogramOpts, HistogramVec, IntCounter, IntCounterVec, register_histogram_vec,
+    register_int_counter, register_int_counter_vec,
+};
+use sqlx::types::chrono::Utc;
 use std::sync::LazyLock;
 
 pub static EVENT_RECEIVED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -70,3 +75,31 @@ pub static S3_CIPHERTEXT_RETRIEVAL_ERRORS: LazyLock<IntCounter> = LazyLock::new(
     )
     .unwrap()
 });
+
+/// Histogram bucket boundaries (in seconds) for decryption latency measurements.
+/// Ranges from 10ms to 30s to capture both fast and slow decryption.
+const DECRYPTION_LATENCY_BUCKETS: &[f64] = &[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0];
+
+pub static DECRYPTION_LATENCY_HISTOGRAM: LazyLock<HistogramVec> = LazyLock::new(|| {
+    register_histogram_vec!(
+        HistogramOpts::new(
+            "kms_connector_worker_decryption_latency_seconds",
+            "Latency of decryptions at the KmsWorker level"
+        )
+        .buckets(DECRYPTION_LATENCY_BUCKETS.to_vec()),
+        &["event_type"]
+    )
+    .unwrap()
+});
+
+pub fn register_event_latency(event: &GatewayEvent) {
+    if matches!(
+        event.kind,
+        GatewayEventKind::PublicDecryption(_) | GatewayEventKind::UserDecryption(_)
+    ) {
+        let elapsed = Utc::now() - event.created_at;
+        DECRYPTION_LATENCY_HISTOGRAM
+            .with_label_values(&[EventType::from(&event.kind).as_str()])
+            .observe(elapsed.as_seconds_f64());
+    }
+}

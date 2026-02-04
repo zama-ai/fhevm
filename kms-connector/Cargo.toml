@@ -53,7 +53,7 @@ humantime-serde = "=1.1.1"
 opentelemetry = "=0.30.0"
 opentelemetry-otlp = { version = "=0.30.0", features = ["grpc-tonic"] }
 opentelemetry_sdk = "=0.30.0"
-prometheus = "=0.14.0"
+prometheus = { version = "=0.14.0", default-features = false, features = ["protobuf"] }
 rustls = { version = "=0.23.31", default-features = false, features = [
     "aws-lc-rs",
 ] }
