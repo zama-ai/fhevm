@@ -83,6 +83,7 @@ pub struct DatabaseChainLock {
     pub last_updated_at: DateTime<Utc>,
     pub block_height: Option<i64>,
     pub block_timestamp: Option<DateTime<Utc>>,
+    pub schedule_lane: i16,
     pub match_reason: String,
 }
 
@@ -101,6 +102,7 @@ impl fmt::Debug for DatabaseChainLock {
             .field("last_updated_at", &self.last_updated_at)
             .field("block_height", &self.block_height)
             .field("block_ts", &self.block_timestamp)
+            .field("schedule_lane", &self.schedule_lane)
             .field("match_reason", &self.match_reason)
             .finish()
     }
@@ -175,7 +177,7 @@ impl LockMngr {
                             AND
                             dependency_count = 0     -- No pending dependencies
                         )
-                ORDER BY last_updated_at ASC        -- FIFO
+                ORDER BY schedule_lane ASC, last_updated_at ASC -- fast lane first
                 FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
                 LIMIT 1
             )
@@ -337,7 +339,7 @@ impl LockMngr {
         // Since UPDATE always acquire a row-level lock internally,
         // this acts as atomic_exchange
         let rows = if let Some(update_at) = update_at {
-            sqlx::query!(
+            sqlx::query(
             r#"
             UPDATE dependence_chain
             SET
@@ -345,6 +347,10 @@ impl LockMngr {
                 lock_acquired_at = NULL,
                 lock_expires_at = NULL,
                 last_updated_at = $4::timestamp,
+                schedule_lane = CASE
+                    WHEN status = 'processing' AND $3::bool THEN 0
+                    ELSE schedule_lane
+                END,
                 status = CASE
                     WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
                     WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
@@ -353,21 +359,25 @@ impl LockMngr {
             WHERE worker_id = $1
             AND dependence_chain_id = $2
             "#,
-            self.worker_id,
-            dep_chain_id,
-            mark_as_processed,
-	    update_at,
         )
+        .bind(self.worker_id)
+        .bind(&dep_chain_id)
+        .bind(mark_as_processed)
+        .bind(update_at)
         .execute(&self.pool)
         .await?
         } else {
-            sqlx::query!(
+            sqlx::query(
             r#"
             UPDATE dependence_chain
             SET
                 worker_id = NULL,
                 lock_acquired_at = NULL,
                 lock_expires_at = NULL,
+                schedule_lane = CASE
+                    WHEN status = 'processing' AND $3::bool THEN 0
+                    ELSE schedule_lane
+                END,
                 status = CASE
                     WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
                     WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
@@ -376,10 +386,10 @@ impl LockMngr {
             WHERE worker_id = $1
             AND dependence_chain_id = $2
             "#,
-            self.worker_id,
-            dep_chain_id,
-            mark_as_processed,
         )
+        .bind(self.worker_id)
+        .bind(&dep_chain_id)
+        .bind(mark_as_processed)
         .execute(&self.pool)
         .await?
         };

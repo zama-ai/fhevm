@@ -33,6 +33,18 @@ By default the listener propagate TFHE operation events to the database.
 You can change the database url using --database-url, it defaults to a local test database url.
 If you want to disable TFHE operation events propagation, you can provide an empty database-url.
 
+### Dependent ops throttling (optional)
+
+Two flags enable a per-replica limiter for dependent ops:
+
+- `--dependent-ops-rate-per-min` (0 disables, mainnet can leave at 0)
+- `--dependent-ops-burst` (defaults to rate when set to 0)
+
+When enabled, over-limit dependent ops are assigned to a slow lane by setting
+`dependence_chain.schedule_lane = 1`. The tfhe-worker processes lane 0 first,
+then lane 1, which isolates heavy dependent traffic without reordering within
+a chain.
+
 ## Events in FHEVM
 
 ### Blockchain Events

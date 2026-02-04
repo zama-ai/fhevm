@@ -58,6 +58,54 @@ async fn test_acquire_next_lock() {
 
 #[tokio::test]
 #[serial(db)]
+async fn test_acquire_next_lock_prefers_fast_lane() {
+    let instance = setup().await;
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(instance.db_url())
+        .await
+        .expect("Failed to connect to the database");
+
+    let fast_id = vec![1u8];
+    let slow_id = vec![2u8];
+
+    sqlx::query(
+        r#"
+        INSERT INTO dependence_chain
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_lane)
+        VALUES ($1, 'updated', NOW() - INTERVAL '1 minute', NOW(), 1, 0)
+        "#,
+    )
+    .bind(&fast_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        r#"
+        INSERT INTO dependence_chain
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_lane)
+        VALUES ($1, 'updated', NOW() - INTERVAL '2 minute', NOW(), 2, 1)
+        "#,
+    )
+    .bind(&slow_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let mut mgr_fast =
+        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
+    let (acquired_fast, _) = mgr_fast.acquire_next_lock().await.unwrap();
+    assert_eq!(acquired_fast, Some(fast_id.clone()));
+
+    let mut mgr_slow =
+        LockMngr::new_with_conf(Uuid::new_v4(), pool.clone(), 3600, false, None, None, None);
+    let (acquired_slow, _) = mgr_slow.acquire_next_lock().await.unwrap();
+    assert_eq!(acquired_slow, Some(slow_id.clone()));
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_work_stealing() {
     let instance = setup().await;
     let pool = sqlx::postgres::PgPoolOptions::new()

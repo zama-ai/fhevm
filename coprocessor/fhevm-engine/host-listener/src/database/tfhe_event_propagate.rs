@@ -15,7 +15,7 @@ use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -112,7 +112,7 @@ pub struct Database {
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
     pub chain_id: ChainId,
     chain_id_label: String,
-    last_scheduled_by_chain: Arc<Mutex<HashMap<Vec<u8>, PrimitiveDateTime>>>,
+    greylisted_chains: Arc<Mutex<HashSet<Vec<u8>>>>,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
     dependent_ops_limiter: Option<Arc<Mutex<DependentOpsLimiter>>>,
@@ -190,21 +190,6 @@ impl DependentOpsLimiter {
     }
 }
 
-fn clamp_schedule_order(
-    last_scheduled_by_chain: &mut HashMap<Vec<u8>, PrimitiveDateTime>,
-    chain_id: Vec<u8>,
-    schedule_order: PrimitiveDateTime,
-) -> PrimitiveDateTime {
-    let next = match last_scheduled_by_chain.get(&chain_id) {
-        Some(last) if *last >= schedule_order => {
-            last.saturating_add(TimeDuration::microseconds(1))
-        }
-        _ => schedule_order,
-    };
-    last_scheduled_by_chain.insert(chain_id, next);
-    next
-}
-
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
 
 impl Database {
@@ -225,7 +210,7 @@ impl Database {
             url: url.clone(),
             chain_id,
             chain_id_label: chain_id.to_string(),
-            last_scheduled_by_chain: Arc::new(Mutex::new(HashMap::new())),
+            greylisted_chains: Arc::new(Mutex::new(HashSet::new())),
             pool: Arc::new(RwLock::new(pool)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
@@ -347,12 +332,13 @@ impl Database {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
         let dependence_chain_id = log.dependence_chain.to_vec();
-        let mut schedule_order =
+        let schedule_order =
             log.block_timestamp
                 .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64,
                 ));
-        if log.is_allowed && !dependencies.is_empty() {
+        let has_dependencies = log.is_allowed && !dependencies.is_empty();
+        if has_dependencies {
             if let Some(limiter) = &self.dependent_ops_limiter {
                 let defer_for = limiter.lock().await.defer_duration();
                 if defer_for.is_zero() {
@@ -360,26 +346,13 @@ impl Database {
                         .with_label_values(&[self.chain_id_label.as_str()])
                         .inc();
                 } else {
-                    // Defer by writing a future schedule_order; worker still
-                    // pulls earliest schedule_order, so this smooths load without blocking ingest.
-                    let defer_micros =
-                        defer_for.as_micros().min(i64::MAX as u128) as i64;
-                    schedule_order = schedule_order.saturating_add(
-                        TimeDuration::microseconds(defer_micros),
-                    );
                     DEPENDENT_OPS_THROTTLED
                         .with_label_values(&[self.chain_id_label.as_str()])
                         .inc();
+                    let mut greylisted = self.greylisted_chains.lock().await;
+                    greylisted.insert(dependence_chain_id.clone());
                 }
             }
-        }
-        if self.dependent_ops_limiter.is_some() {
-            let mut last_scheduled = self.last_scheduled_by_chain.lock().await;
-            schedule_order = clamp_schedule_order(
-                &mut last_scheduled,
-                dependence_chain_id.clone(),
-                schedule_order,
-            );
         }
         let query = sqlx::query!(
             r#"
@@ -868,7 +841,10 @@ impl Database {
         block_timestamp: PrimitiveDateTime,
         block_summary: &BlockSummary,
     ) -> Result<(), SqlxError> {
+        let mut greylisted = self.greylisted_chains.lock().await;
         for chain in chains {
+            let chain_id = chain.hash.to_vec();
+            let schedule_lane = i16::from(greylisted.remove(&chain_id));
             let last_updated_at = block_timestamp.saturating_add(
                 TimeDuration::microseconds(chain.before_size as i64),
             );
@@ -877,7 +853,7 @@ impl Database {
                 .iter()
                 .map(|h| h.to_vec())
                 .collect::<Vec<_>>();
-            sqlx::query!(
+            sqlx::query(
                 r#"
                 INSERT INTO dependence_chain(
                     dependence_chain_id,
@@ -886,9 +862,10 @@ impl Database {
                     dependency_count,
                     dependents,
                     block_hash,
-                    block_height
+                    block_height,
+                    schedule_lane
                 ) VALUES (
-                  $1, 'updated', $2::timestamp, $3, $4, $5, $6
+                  $1, 'updated', $2::timestamp, $3, $4, $5, $6, $7
                 )
                 ON CONFLICT (dependence_chain_id) DO UPDATE
                 SET status = 'updated',
@@ -902,14 +879,20 @@ impl Database {
                             FROM unnest(dependence_chain.dependents || EXCLUDED.dependents) AS d
                         )
                     )
+                    ,
+                    schedule_lane = GREATEST(
+                        dependence_chain.schedule_lane,
+                        EXCLUDED.schedule_lane
+                    )
                 "#,
-                chain.hash.to_vec(),
-                last_updated_at,
-                chain.dependencies.len() as i64,
-                &dependents,
-                block_summary.hash.to_vec(),
-                block_summary.number as i64,
             )
+            .bind(chain_id)
+            .bind(last_updated_at)
+            .bind(chain.dependencies.len() as i64)
+            .bind(&dependents)
+            .bind(block_summary.hash.to_vec())
+            .bind(block_summary.number as i64)
+            .bind(schedule_lane)
             .execute(tx.deref_mut())
             .await?;
         }
@@ -1223,18 +1206,5 @@ mod tests {
     #[test]
     fn dependent_ops_limiter_disabled_when_rate_zero() {
         assert!(DependentOpsLimiter::new(0, 10).is_none());
-    }
-
-    #[test]
-    fn clamp_schedule_order_is_monotonic_per_chain() {
-        let mut last_scheduled = HashMap::new();
-        let chain_id = vec![1, 2, 3];
-        let base = PrimitiveDateTime::MIN;
-        let first =
-            clamp_schedule_order(&mut last_scheduled, chain_id.clone(), base);
-        assert_eq!(first, base);
-        let second =
-            clamp_schedule_order(&mut last_scheduled, chain_id.clone(), base);
-        assert!(second > base);
     }
 }
