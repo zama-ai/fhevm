@@ -16,3 +16,19 @@ ALTER TABLE user_decryption_responses ALTER created_at TYPE TIMESTAMPTZ USING cr
 ALTER TABLE prep_keygen_responses ALTER created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC';
 ALTER TABLE keygen_responses ALTER created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC';
 ALTER TABLE crsgen_responses ALTER created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC';
+
+-- Drop default TIMESTAMPZ value as we want to use the KMS Connector time everywhere to avoid time
+-- drift, and have more accurate latency results
+ALTER TABLE public_decryption_requests ALTER COLUMN created_at DROP DEFAULT;
+ALTER TABLE user_decryption_requests ALTER COLUMN created_at DROP DEFAULT;
+ALTER TABLE prep_keygen_requests ALTER COLUMN created_at DROP DEFAULT;
+ALTER TABLE keygen_requests ALTER COLUMN created_at DROP DEFAULT;
+ALTER TABLE crsgen_requests ALTER COLUMN created_at DROP DEFAULT;
+ALTER TABLE prss_init ALTER COLUMN created_at DROP DEFAULT;
+ALTER TABLE key_reshare_same_set ALTER COLUMN created_at DROP DEFAULT;
+ALTER TABLE last_block_polled ALTER COLUMN updated_at DROP DEFAULT;
+ALTER TABLE public_decryption_responses ALTER COLUMN created_at DROP DEFAULT;
+ALTER TABLE user_decryption_responses ALTER COLUMN created_at DROP DEFAULT;
+ALTER TABLE prep_keygen_responses ALTER COLUMN created_at DROP DEFAULT;
+ALTER TABLE keygen_responses ALTER COLUMN created_at DROP DEFAULT;
+ALTER TABLE crsgen_responses ALTER COLUMN created_at DROP DEFAULT;
