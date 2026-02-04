@@ -15,13 +15,18 @@ use kms_grpc::{
     },
     rpc_types::abi_encode_plaintexts,
 };
-use sqlx::{Pool, Postgres, Row, postgres::PgRow};
+use sqlx::{
+    Pool, Postgres, Row,
+    postgres::PgRow,
+    types::chrono::{DateTime, Utc},
+};
 use std::fmt::Display;
 use tracing::{debug, info, warn};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KmsResponse {
     pub kind: KmsResponseKind,
+    pub created_at: DateTime<Utc>,
     pub otlp_context: PropagationContext,
 }
 
@@ -72,7 +77,11 @@ pub struct CrsgenResponse {
 
 impl KmsResponse {
     pub fn new(kind: KmsResponseKind, otlp_context: PropagationContext) -> Self {
-        Self { kind, otlp_context }
+        Self {
+            kind,
+            created_at: Utc::now(),
+            otlp_context,
+        }
     }
 
     /// Sets the response's `status` field to `pending` in the database.
@@ -179,6 +188,7 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             signature: row.try_get("signature")?,
             extra_data: row.try_get("extra_data")?,
         }),
+        created_at: row.try_get("created_at")?,
     })
 }
 
@@ -191,6 +201,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             signature: row.try_get("signature")?,
             extra_data: row.try_get("extra_data")?,
         }),
+        created_at: row.try_get("created_at")?,
     })
 }
 
@@ -201,6 +212,7 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             prep_keygen_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
             signature: row.try_get("signature")?,
         }),
+        created_at: row.try_get("created_at")?,
     })
 }
 
@@ -212,6 +224,7 @@ pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             key_digests: row.try_get("key_digests")?,
             signature: row.try_get("signature")?,
         }),
+        created_at: row.try_get("created_at")?,
     })
 }
 
@@ -223,6 +236,7 @@ pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
             crs_digest: row.try_get("crs_digest")?,
             signature: row.try_get("signature")?,
         }),
+        created_at: row.try_get("created_at")?,
     })
 }
 

@@ -344,3 +344,10 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
    - `response_type`: see [description](#metric-name-kms_connector_tx_sender_response_received_counter) (only available for decryption right now!)
  - **Description**: Tracks the number of KMS responses not yet sent to the Gateway in the kms-connector's DB.
  - **Alarm**: Need more experience with this metric first.
+
+#### Metric Name: `kms_connector_tx_sender_response_forwarding_latency_seconds`
+ - **Type**: Histogram
+ - **Labels**:
+   - `response_type`: see [description](#metric-name-kms_connector_tx_sender_response_received_counter)
+ - **Description**: Measures the latency from response creation in DB to successful blockchain transaction confirmation. Bucket boundaries (in seconds): 0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0.
+ - **Alarm**: Need more experience with this metric first.
