@@ -232,6 +232,7 @@ pub(crate) async fn run_loop(
             continue;
         }
 
+        // keys is guaranteed by the branch above; panic here if that invariant ever regresses.
         let (_, keys) = keys.as_ref().expect("keyset should be available");
 
         let (maybe_remaining, _tasks_processed) =
@@ -459,8 +460,8 @@ pub async fn query_sns_tasks(
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
 
             Ok(HandleItem {
-                // NOTE: Ensure all coprocessors use the same key_id during rotation
-                // to keep ciphertext_digest consensus on the gateway.
+                // TODO: During key rotation, ensure all coprocessors pin the same key_id for a batch
+                // (e.g., via gateway coordination) to keep ciphertext_digest consistent.
                 key_id: key_id.clone(),
                 host_chain_id,
                 handle: handle.clone(),
