@@ -87,6 +87,8 @@ pub struct PollerConfig {
     pub dependence_cache_size: u16,
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
+    pub dependent_ops_rate_per_min: u32,
+    pub dependent_ops_burst: u32,
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
@@ -139,6 +141,10 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         config.dependence_cache_size,
     )
     .await?;
+    db.set_dependent_ops_limiter(
+        config.dependent_ops_rate_per_min,
+        config.dependent_ops_burst,
+    );
 
     if chain_id != db.chain_id {
         error!(
