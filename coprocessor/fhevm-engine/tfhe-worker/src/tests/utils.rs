@@ -262,7 +262,13 @@ pub async fn wait_until_all_allowed_handles_computed(
         .connect(test_instance.db_url())
         .await?;
 
-    let timeout = Duration::from_secs(120);
+    // CI (esp. GPU) can be substantially slower / noisier than local runs.
+    // Keep this configurable so we don't get flaky timeouts on shared runners.
+    let timeout_secs = std::env::var("FHEVM_TEST_COMPUTE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(600);
+    let timeout = Duration::from_secs(timeout_secs);
     let start = std::time::Instant::now();
     loop {
         if start.elapsed() > timeout {
