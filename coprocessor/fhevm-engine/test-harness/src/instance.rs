@@ -63,7 +63,7 @@ async fn setup_test_app_existing_localhost(
 
     if with_reset {
         info!("Resetting local database at {db_url}");
-        let admin_db_url = db_url.to_string().replace("coprocessor", "postgres");
+        let admin_db_url = db_url.as_str().replace("coprocessor", "postgres");
         create_database(&admin_db_url, db_url.as_str(), mode).await?;
     }
 
@@ -161,10 +161,15 @@ async fn create_database(
 }
 
 pub async fn get_sns_pk_size(pool: &sqlx::PgPool, chain_id: i64) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query("SELECT sns_pk FROM tenants WHERE chain_id = $1")
+    let row = sqlx::query("SELECT sns_pk FROM keys WHERE chain_id = $1 ORDER BY sequence_number DESC LIMIT 1")
         .bind(chain_id)
-        .fetch_one(pool)
+        .fetch_optional(pool)
         .await?;
+
+    let Some(row) = row else {
+        info!("No sns_pk found in keys");
+        return Ok(0);
+    };
 
     let oid: Oid = row.try_get(0)?;
     info!(oid = ?oid, chain_id, "Found sns_pk oid");

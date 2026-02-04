@@ -55,12 +55,14 @@ pub async fn insert_ciphertext64(
 
 pub async fn insert_into_pbs_computations(
     pool: &sqlx::PgPool,
+    host_chain_id: i64,
     handle: &Vec<u8>,
 ) -> Result<(), anyhow::Error> {
     let _ = query!(
-        "INSERT INTO pbs_computations(handle) VALUES($1) 
+        "INSERT INTO pbs_computations(handle, host_chain_id) VALUES($1, $2) 
              ON CONFLICT DO NOTHING;",
         handle,
+        host_chain_id,
     )
     .execute(pool)
     .await
@@ -99,14 +101,12 @@ pub async fn insert_ciphertext_digest(
 // Poll database until ciphertext128 of the specified handle is available
 pub async fn wait_for_ciphertext(
     pool: &sqlx::PgPool,
-    tenant_id: i32,
     handle: &Vec<u8>,
     retries: u64,
 ) -> anyhow::Result<Vec<u8>> {
     for retry in 0..retries {
         let record = sqlx::query!(
-            "SELECT ciphertext FROM ciphertexts128 WHERE tenant_id = $1 AND handle = $2",
-            tenant_id,
+            "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1",
             handle
         )
         .fetch_one(pool)
