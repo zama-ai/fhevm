@@ -180,23 +180,13 @@ pub async fn mock_event_on_gw(
 pub async fn fetch_from_db(db: &Pool<Postgres>, event_type: EventType) -> sqlx::Result<Vec<PgRow>> {
     info!("Checking {event_type} is stored in DB...");
     let query = match event_type {
-        EventType::PublicDecryptionRequest => {
-            "SELECT decryption_id, sns_ct_materials, extra_data FROM public_decryption_requests"
-        }
-        EventType::UserDecryptionRequest => {
-            "SELECT decryption_id, sns_ct_materials, user_address, public_key FROM user_decryption_requests"
-        }
-        EventType::PrepKeygenRequest => {
-            "SELECT prep_keygen_id, epoch_id, params_type FROM prep_keygen_requests"
-        }
-        EventType::KeygenRequest => "SELECT prep_keygen_id, key_id FROM keygen_requests",
-        EventType::CrsgenRequest => {
-            "SELECT crs_id, max_bit_length, params_type FROM crsgen_requests"
-        }
-        EventType::PrssInit => "SELECT id FROM prss_init",
-        EventType::KeyReshareSameSet => {
-            "SELECT prep_keygen_id, key_id, key_reshare_id, params_type FROM key_reshare_same_set"
-        }
+        EventType::PublicDecryptionRequest => "SELECT * FROM public_decryption_requests",
+        EventType::UserDecryptionRequest => "SELECT * FROM user_decryption_requests",
+        EventType::PrepKeygenRequest => "SELECT * FROM prep_keygen_requests",
+        EventType::KeygenRequest => "SELECT * FROM keygen_requests",
+        EventType::CrsgenRequest => "SELECT * FROM crsgen_requests",
+        EventType::PrssInit => "SELECT * FROM prss_init",
+        EventType::KeyReshareSameSet => "SELECT * FROM key_reshare_same_set",
     };
     sqlx::query(query).fetch_all(db).await
 }
