@@ -113,6 +113,20 @@ struct Args {
         help = "Dependence chain are across blocks"
     )]
     pub dependence_cross_block: bool,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Global dependent ops rate limit per minute (0 disables)"
+    )]
+    pub dependent_ops_rate_per_min: u32,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Burst size for dependent ops limiter (0 = same as rate)"
+    )]
+    pub dependent_ops_burst: u32,
 }
 
 #[tokio::main]
@@ -149,6 +163,8 @@ async fn main() -> anyhow::Result<()> {
         dependence_cache_size: args.dependence_cache_size,
         dependence_by_connexity: args.dependence_by_connexity,
         dependence_cross_block: args.dependence_cross_block,
+        dependent_ops_rate_per_min: args.dependent_ops_rate_per_min,
+        dependent_ops_burst: args.dependent_ops_burst,
     };
 
     run_poller(config).await

@@ -10,14 +10,19 @@ use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
+use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
+use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::Duration;
+use std::time::Instant;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
+use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tracing::error;
 use tracing::info;
@@ -35,6 +40,24 @@ pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
 pub type ChainHash = TransactionHash;
+
+static DEPENDENT_OPS_ALLOWED: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "host_listener_dependent_ops_allowed",
+        "Number of dependent ops allowed by the limiter",
+        &["chain_id"]
+    )
+    .unwrap()
+});
+
+static DEPENDENT_OPS_THROTTLED: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "host_listener_dependent_ops_throttled",
+        "Number of dependent ops deferred by the limiter",
+        &["chain_id"]
+    )
+    .unwrap()
+});
 
 #[derive(Clone, Debug)]
 pub struct Chain {
@@ -88,8 +111,11 @@ pub struct Database {
     url: DatabaseURL,
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
     pub chain_id: ChainId,
+    chain_id_label: String,
+    last_scheduled_by_chain: Arc<Mutex<HashMap<Vec<u8>, PrimitiveDateTime>>>,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
+    dependent_ops_limiter: Option<Arc<Mutex<DependentOpsLimiter>>>,
 }
 
 #[derive(Debug)]
@@ -101,6 +127,82 @@ pub struct LogTfhe {
     pub block_timestamp: PrimitiveDateTime,
     pub tx_depth_size: u64,
     pub dependence_chain: TransactionHash,
+}
+
+#[derive(Debug)]
+struct DependentOpsLimiter {
+    rate_per_min: u32,
+    burst: u32,
+    tokens: f64,
+    last_refill: Instant,
+}
+
+impl DependentOpsLimiter {
+    fn new(rate_per_min: u32, burst: u32) -> Option<Self> {
+        if rate_per_min == 0 {
+            return None;
+        }
+        let burst = if burst == 0 {
+            rate_per_min.max(1)
+        } else {
+            burst
+        };
+        Some(Self {
+            rate_per_min,
+            burst,
+            tokens: burst as f64,
+            last_refill: Instant::now(),
+        })
+    }
+
+    fn defer_duration(&mut self) -> Duration {
+        let now = Instant::now();
+        self.refill(now);
+        let rate_per_sec = self.rate_per_min as f64 / 60.0;
+        if rate_per_sec <= 0.0 {
+            return Duration::ZERO;
+        }
+        self.tokens -= 1.0;
+        if self.tokens >= 0.0 {
+            Duration::ZERO
+        } else {
+            let deficit = -self.tokens;
+            let wait_secs = deficit / rate_per_sec;
+            if wait_secs <= 0.0 {
+                Duration::ZERO
+            } else {
+                Duration::from_secs_f64(wait_secs)
+            }
+        }
+    }
+
+    fn refill(&mut self, now: Instant) {
+        let elapsed = now.duration_since(self.last_refill).as_secs_f64();
+        if elapsed <= 0.0 {
+            return;
+        }
+        let rate_per_sec = self.rate_per_min as f64 / 60.0;
+        let added = elapsed * rate_per_sec;
+        if added > 0.0 {
+            self.tokens = (self.tokens + added).min(self.burst as f64);
+            self.last_refill = now;
+        }
+    }
+}
+
+fn clamp_schedule_order(
+    last_scheduled_by_chain: &mut HashMap<Vec<u8>, PrimitiveDateTime>,
+    chain_id: Vec<u8>,
+    schedule_order: PrimitiveDateTime,
+) -> PrimitiveDateTime {
+    let next = match last_scheduled_by_chain.get(&chain_id) {
+        Some(last) if *last >= schedule_order => {
+            last.saturating_add(TimeDuration::microseconds(1))
+        }
+        _ => schedule_order,
+    };
+    last_scheduled_by_chain.insert(chain_id, next);
+    next
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -122,10 +224,19 @@ impl Database {
         Ok(Database {
             url: url.clone(),
             chain_id,
+            chain_id_label: chain_id.to_string(),
+            last_scheduled_by_chain: Arc::new(Mutex::new(HashMap::new())),
             pool: Arc::new(RwLock::new(pool)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
+            dependent_ops_limiter: None,
         })
+    }
+
+    pub fn set_dependent_ops_limiter(&mut self, rate_per_min: u32, burst: u32) {
+        self.dependent_ops_limiter =
+            DependentOpsLimiter::new(rate_per_min, burst)
+                .map(|limiter| Arc::new(Mutex::new(limiter)));
     }
 
     async fn new_pool(url: &DatabaseURL) -> PgPool {
@@ -235,6 +346,41 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
+        let dependence_chain_id = log.dependence_chain.to_vec();
+        let mut schedule_order =
+            log.block_timestamp
+                .saturating_add(TimeDuration::microseconds(
+                    log.tx_depth_size as i64,
+                ));
+        if log.is_allowed && !dependencies.is_empty() {
+            if let Some(limiter) = &self.dependent_ops_limiter {
+                let defer_for = limiter.lock().await.defer_duration();
+                if defer_for.is_zero() {
+                    DEPENDENT_OPS_ALLOWED
+                        .with_label_values(&[self.chain_id_label.as_str()])
+                        .inc();
+                } else {
+                    // Defer by writing a future schedule_order; worker still
+                    // pulls earliest schedule_order, so this smooths load without blocking ingest.
+                    let defer_micros =
+                        defer_for.as_micros().min(i64::MAX as u128) as i64;
+                    schedule_order = schedule_order.saturating_add(
+                        TimeDuration::microseconds(defer_micros),
+                    );
+                    DEPENDENT_OPS_THROTTLED
+                        .with_label_values(&[self.chain_id_label.as_str()])
+                        .inc();
+                }
+            }
+        }
+        if self.dependent_ops_limiter.is_some() {
+            let mut last_scheduled = self.last_scheduled_by_chain.lock().await;
+            schedule_order = clamp_schedule_order(
+                &mut last_scheduled,
+                dependence_chain_id.clone(),
+                schedule_order,
+            );
+        }
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -257,13 +403,10 @@ impl Database {
             &dependencies,
             fhe_operation as i16,
             is_scalar,
-            log.dependence_chain.to_vec(),
+            dependence_chain_id,
             log.transaction_hash.map(|txh| txh.to_vec()),
             log.is_allowed,
-            log.block_timestamp
-                .saturating_add(time::Duration::microseconds(
-                    log.tx_depth_size as i64
-                )),
+            schedule_order,
             !log.is_allowed,
             self.chain_id.as_i64()
         );
@@ -1049,5 +1192,49 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
         E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => vec![],
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dependent_ops_limiter_defers_after_burst() {
+        let mut limiter = DependentOpsLimiter::new(60, 2).unwrap();
+        assert!(limiter.defer_duration().is_zero());
+        assert!(limiter.defer_duration().is_zero());
+        let deferred = limiter.defer_duration();
+        assert!(deferred > Duration::ZERO);
+    }
+
+    #[test]
+    fn dependent_ops_limiter_refills_over_time() {
+        let mut limiter = DependentOpsLimiter::new(60, 1).unwrap();
+        assert!(limiter.defer_duration().is_zero());
+        let deferred = limiter.defer_duration();
+        assert!(deferred > Duration::ZERO);
+        limiter.last_refill =
+            Instant::now().checked_sub(Duration::from_secs(2)).unwrap();
+        let allowed_after_refill = limiter.defer_duration();
+        assert!(allowed_after_refill.is_zero());
+    }
+
+    #[test]
+    fn dependent_ops_limiter_disabled_when_rate_zero() {
+        assert!(DependentOpsLimiter::new(0, 10).is_none());
+    }
+
+    #[test]
+    fn clamp_schedule_order_is_monotonic_per_chain() {
+        let mut last_scheduled = HashMap::new();
+        let chain_id = vec![1, 2, 3];
+        let base = PrimitiveDateTime::MIN;
+        let first =
+            clamp_schedule_order(&mut last_scheduled, chain_id.clone(), base);
+        assert_eq!(first, base);
+        let second =
+            clamp_schedule_order(&mut last_scheduled, chain_id.clone(), base);
+        assert!(second > base);
     }
 }

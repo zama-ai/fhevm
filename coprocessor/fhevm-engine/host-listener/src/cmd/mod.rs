@@ -124,6 +124,20 @@ pub struct Args {
 
     #[arg(
         long,
+        default_value_t = 0,
+        help = "Global dependent ops rate limit per minute (0 disables)"
+    )]
+    pub dependent_ops_rate_per_min: u32,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Burst size for dependent ops limiter (0 = same as rate)"
+    )]
+    pub dependent_ops_burst: u32,
+
+    #[arg(
+        long,
         default_value = "50",
         help = "Maximum duration in blocks to detect reorgs"
     )]
