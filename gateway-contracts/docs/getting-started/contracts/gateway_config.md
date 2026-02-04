@@ -87,7 +87,7 @@ A coprocessor is also part of a set of multiple coprocessors. They are used to :
 
 - perform FHE computations on ciphertexts
 - verify inputs' zero-knowledge proof of knowledge (ZKPoK) based on requests from the `InputVerification` contract
-- handle access controls to ciphertexts for all registered [host chains](#host-chains), which are centralized in the `MultichainACL` contract
+- handle access controls to ciphertexts for all registered [host chains](#host-chains).
 
 Several metadata are stored for each coprocessor:
 

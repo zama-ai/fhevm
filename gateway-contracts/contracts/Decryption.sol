@@ -1,21 +1,15 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 import { IDecryption } from "./interfaces/IDecryption.sol";
-import {
-    ciphertextCommitsAddress,
-    gatewayConfigAddress,
-    multichainACLAddress
-} from "../addresses/GatewayAddresses.sol";
+import { ciphertextCommitsAddress, gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
-import { IMultichainACL } from "./interfaces/IMultichainACL.sol";
 import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
-import { MultichainACLChecks } from "./shared/MultichainACLChecks.sol";
 import { FheType } from "./shared/FheType.sol";
 import { Pausable } from "./shared/Pausable.sol";
 import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
@@ -35,7 +29,6 @@ contract Decryption is
     UUPSUpgradeableEmptyProxy,
     GatewayOwnable,
     GatewayConfigChecks,
-    MultichainACLChecks,
     ProtocolPaymentUtils,
     Pausable
 {
@@ -121,11 +114,6 @@ contract Decryption is
      * @notice The address of the GatewayConfig contract for checking if a signer is valid.
      */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
-
-    /**
-     * @notice The address of the MultichainACL contract for checking if a decryption requests are allowed.
-     */
-    IMultichainACL private constant MULTICHAIN_ACL = IMultichainACL(multichainACLAddress);
 
     /**
      * @notice The address of the CiphertextCommits contract for getting ciphertext materials.
@@ -543,14 +531,6 @@ contract Decryption is
             delegationAccounts.delegatorAddress
         );
 
-        // Check that the delegate address has been granted access to the contract addresses by the delegator.
-        _checkIsUserDecryptionDelegated(
-            contractsInfo.chainId,
-            delegationAccounts.delegatorAddress,
-            delegationAccounts.delegateAddress,
-            contractsInfo.addresses
-        );
-
         // Using scoped local variable to avoid "stack too deep" errors. This will be revisited during the EIP-712 struct refactor.
         // See: https://github.com/zama-ai/fhevm-internal/issues/403
         {
@@ -693,13 +673,10 @@ contract Decryption is
             return false;
         }
 
-        // For each handle, check that it is allowed for public decryption and that the ciphertext
-        // material represented by it has been added.
+        // For each handle, check that the ciphertext material represented by it has been added.
+        // ACL checks are performed by the KMS.
         for (uint256 i = 0; i < ctHandles.length; i++) {
-            if (
-                !MULTICHAIN_ACL.isPublicDecryptAllowed(ctHandles[i]) ||
-                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandles[i])
-            ) {
+            if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandles[i])) {
                 return false;
             }
         }
@@ -714,22 +691,18 @@ contract Decryption is
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata /* extraData */
     ) external view virtual returns (bool) {
+        // Silence unused variable warning
+        userAddress;
+
         // Return false if the list of handles is empty
         if (ctHandleContractPairs.length == 0) {
             return false;
         }
 
-        // For each handle, check that the user and contracts accounts have access to it and that the
-        // ciphertext material represented by it has been added.
+        // For each handle, check that the ciphertext material represented by it has been added.
+        // ACL checks are performed by the KMS.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            if (
-                !MULTICHAIN_ACL.isAccountAllowed(ctHandleContractPairs[i].ctHandle, userAddress) ||
-                !MULTICHAIN_ACL.isAccountAllowed(
-                    ctHandleContractPairs[i].ctHandle,
-                    ctHandleContractPairs[i].contractAddress
-                ) ||
-                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
-            ) {
+            if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)) {
                 return false;
             }
         }
@@ -744,34 +717,17 @@ contract Decryption is
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata /* extraData */
     ) external view virtual returns (bool) {
+        // Silence unused variable warning
+        delegationAccounts;
+
         if (ctHandleContractPairs.length == 0) {
             return false;
         }
 
-        // For each ctHandleContractPair, check that the delegator has delegated decryption to the delegate
-        // for the given contract address, that both the delegator and the contract are allowed on the
-        // ciphertext handle, and that the ciphertext material for the handle has been added.
+        // For each ctHandleContractPair, check that the ciphertext material for the handle has been added.
+        // ACL checks (delegation, account permissions) are performed by the KMS.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            // Extract the chain ID from the ciphertext handle
-            uint256 chainId = HandleOps.extractChainId(ctHandleContractPairs[i].ctHandle);
-
-            if (
-                !MULTICHAIN_ACL.isUserDecryptionDelegated(
-                    chainId,
-                    delegationAccounts.delegatorAddress,
-                    delegationAccounts.delegateAddress,
-                    ctHandleContractPairs[i].contractAddress
-                ) ||
-                !MULTICHAIN_ACL.isAccountAllowed(
-                    ctHandleContractPairs[i].ctHandle,
-                    delegationAccounts.delegatorAddress
-                ) ||
-                !MULTICHAIN_ACL.isAccountAllowed(
-                    ctHandleContractPairs[i].ctHandle,
-                    ctHandleContractPairs[i].contractAddress
-                ) ||
-                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
-            ) {
+            if (!CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)) {
                 return false;
             }
         }
@@ -1027,7 +983,6 @@ contract Decryption is
      * @dev Checks include:
      * @dev - Total bit size for each handle
      * @dev - FHE type validity for each handle
-     * @dev - Handles are allowed for public decryption
      * @param ctHandles The list of ciphertext handles
      */
     function _checkCtHandlesConformancePublic(bytes32[] memory ctHandles) internal view virtual {
@@ -1041,9 +996,6 @@ contract Decryption is
             // Add the bit size of the FHE type to the total bit size
             // This reverts if the FHE type is invalid or not supported.
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
-
-            // Check that the handles are allowed for public decryption.
-            _checkIsPublicDecryptAllowed(ctHandle);
         }
 
         // Revert if the total bit size exceeds the maximum allowed.
@@ -1057,12 +1009,10 @@ contract Decryption is
      * @dev Checks include:
      * @dev - Total bit size for each handle
      * @dev - FHE type validity for each handle
-     * @dev - Contract addresses have access to the handles
-     * @dev - Allowed address has access to the handles
      * @dev - Contract address inclusion in the list of allowed contract addresses
      * @param ctHandleContractPairs The list of ciphertext handles and contract addresses
      * @param contractsInfo The contracts' information (chain ID, addresses).
-     * @param allowedAddress The address that is allowed to access the handles
+     * @param allowedAddress The address that is allowed to access the handles (unused, kept for interface compatibility)
      * @return ctHandles The list of ciphertext handles
      */
     function _extractCtHandlesCheckConformanceUser(
@@ -1070,6 +1020,9 @@ contract Decryption is
         ContractsInfo calldata contractsInfo,
         address allowedAddress
     ) internal view virtual returns (bytes32[] memory ctHandles) {
+        // Silence unused variable warning (ACL checks performed by KMS)
+        allowedAddress;
+
         // Check that the list of ctHandleContractPair is not empty
         if (ctHandleContractPairs.length == 0) {
             revert EmptyCtHandleContractPairs();
@@ -1094,10 +1047,6 @@ contract Decryption is
             // Add the bit size of the FHE type to the total bit size
             // This reverts if the FHE type is invalid or not supported
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
-
-            // Check that the allowed and contract accounts have access to the handles.
-            _checkIsAccountAllowed(ctHandle, allowedAddress);
-            _checkIsAccountAllowed(ctHandle, contractAddress);
 
             // Check the contract is included in the list of allowed contract addresses.
             if (!_containsContractAddress(contractsInfo.addresses, contractAddress)) {
