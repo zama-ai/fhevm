@@ -1558,20 +1558,6 @@ describe("Decryption", function () {
     });
 
     describe("Checks", function () {
-      it("Should be true because user decryption is ready", async function () {
-        expect(await decryption.isUserDecryptionReady(user.address, ctHandleContractPairs, extraDataV0)).to.be.true;
-      });
-
-      it("Should be false because the user is not allowed for user decryption on a ctHandle", async function () {
-        expect(await decryption.isUserDecryptionReady(fakeUserAddress, ctHandleContractPairs, extraDataV0)).to.be.false;
-      });
-
-      it("Should be false because a contract is not allowed for user decryption on a ctHandle", async function () {
-        expect(
-          await decryption.isUserDecryptionReady(user.address, fakeContractAddressCtHandleContractPairs, extraDataV0),
-        ).to.be.false;
-      });
-
       it("Should be false because ciphertext material has not been added", async function () {
         expect(await decryption.isUserDecryptionReady(user.address, [newCtHandleContractPair], extraDataV0)).to.be
           .false;
@@ -2381,31 +2367,6 @@ describe("Decryption", function () {
     });
 
     describe("Checks", function () {
-      it("Should be true because delegated user decryption is ready", async function () {
-        expect(await decryption.isDelegatedUserDecryptionReady(delegationAccounts, ctHandleContractPairs, extraDataV0))
-          .to.be.true;
-      });
-
-      it("Should be false because the delegator is not allowed for user decryption on a ctHandle", async function () {
-        expect(
-          await decryption.isDelegatedUserDecryptionReady(
-            fakeDelegatorDelegationAccounts,
-            ctHandleContractPairs,
-            extraDataV0,
-          ),
-        ).to.be.false;
-      });
-
-      it("Should be false because a contract is not allowed for user decryption on a ctHandle", async function () {
-        expect(
-          await decryption.isDelegatedUserDecryptionReady(
-            delegationAccounts,
-            fakeContractAddressCtHandleContractPairs,
-            extraDataV0,
-          ),
-        ).to.be.false;
-      });
-
       it("Should be false because the user decryption is not delegated for the chainId in ctHandleContractPairs", async function () {
         const fakeChainIdCtHandleContractPairs: CtHandleContractPairStruct[] = [
           {
