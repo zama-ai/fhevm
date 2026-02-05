@@ -16,8 +16,10 @@ mod dependence_chain;
 mod errors;
 mod events;
 mod health_check;
+mod inputs_from_compact_list;
 mod operators;
 mod operators_from_events;
+mod random_events;
 mod scheduling_bench;
 mod utils;
 

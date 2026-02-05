@@ -19,8 +19,18 @@ use crate::tests::utils::{
 
 pub fn supported_types() -> &'static [i32] {
     &[
-        0, // bool
-        8, // 256 bit
+        0,  // bool
+        1,  // 4 bit
+        2,  // 8 bit
+        3,  // 16 bit
+        4,  // 32 bit
+        5,  // 64 bit
+        6,  // 128 bit
+        7,  // 160 bit
+        8,  // 256 bit
+        9,  // ebytes 64
+        10, // ebytes 128
+        11, // ebytes 256
     ]
 }
 
