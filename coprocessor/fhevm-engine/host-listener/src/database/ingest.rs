@@ -199,20 +199,13 @@ pub async fn ingest_block_logs(
             if options.dependent_ops_max_per_chain > 0
                 && stats.total > options.dependent_ops_max_per_chain
             {
-                let level =
-                    1 + (stats.total / options.dependent_ops_max_per_chain);
-                priority =
-                    priority.max(SchedulePriority::from_u32_clamped(level));
+                priority = SchedulePriority::SLOW;
             }
             if options.dependent_ops_max_callers_per_chain > 0
                 && (stats.by_caller.len() as u32)
                     > options.dependent_ops_max_callers_per_chain
             {
-                let level = 1
-                    + ((stats.by_caller.len() as u32)
-                        / options.dependent_ops_max_callers_per_chain);
-                priority =
-                    priority.max(SchedulePriority::from_u32_clamped(level));
+                priority = SchedulePriority::SLOW;
             }
             if priority != SchedulePriority::FAST {
                 throttled += stats.total as u64;
@@ -233,7 +226,7 @@ pub async fn ingest_block_logs(
             }
             if throttled_chain {
                 schedule_priority_by_chain
-                    .insert(chain.hash, SchedulePriority::THROTTLED);
+                    .insert(chain.hash, SchedulePriority::SLOW);
             }
         }
         db.record_dependent_ops_metrics(allowed, throttled);

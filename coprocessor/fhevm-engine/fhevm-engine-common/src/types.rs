@@ -1024,42 +1024,32 @@ pub fn is_ebytes_type(inp: i16) -> bool {
     (9..=11).contains(&inp)
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Default)]
-pub struct SchedulePriority(i16);
+#[repr(i16)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+pub enum SchedulePriority {
+    #[default]
+    Fast = 0,
+    Slow = 1,
+}
 
 impl SchedulePriority {
-    pub const FAST: Self = Self(0);
-    pub const THROTTLED: Self = Self(1);
-    pub const MAX: Self = Self(100);
-
-    pub fn as_i16(self) -> i16 {
-        self.0
-    }
-
-    pub fn from_u32_clamped(value: u32) -> Self {
-        let capped = value.min(Self::MAX.0 as u32);
-        Self(capped as i16)
-    }
-
-    #[must_use]
-    pub fn max(self, other: Self) -> Self {
-        if self.0 >= other.0 {
-            self
-        } else {
-            other
-        }
-    }
+    pub const FAST: Self = Self::Fast;
+    pub const SLOW: Self = Self::Slow;
 }
 
 impl From<SchedulePriority> for i16 {
     fn from(value: SchedulePriority) -> Self {
-        value.as_i16()
+        value as i16
     }
 }
 
 impl From<i16> for SchedulePriority {
     fn from(value: i16) -> Self {
-        Self(value.max(0))
+        if value <= 0 {
+            Self::Fast
+        } else {
+            Self::Slow
+        }
     }
 }
 
