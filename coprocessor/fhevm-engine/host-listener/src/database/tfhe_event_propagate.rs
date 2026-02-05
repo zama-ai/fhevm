@@ -957,42 +957,6 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
     }
 }
 
-pub fn tfhe_caller(op: &TfheContractEvents) -> Option<Address> {
-    use TfheContract as C;
-    use TfheContractEvents as E;
-    match op {
-        E::Cast(C::Cast { caller, .. })
-        | E::FheAdd(C::FheAdd { caller, .. })
-        | E::FheSub(C::FheSub { caller, .. })
-        | E::FheMul(C::FheMul { caller, .. })
-        | E::FheDiv(C::FheDiv { caller, .. })
-        | E::FheRem(C::FheRem { caller, .. })
-        | E::FheBitAnd(C::FheBitAnd { caller, .. })
-        | E::FheBitOr(C::FheBitOr { caller, .. })
-        | E::FheBitXor(C::FheBitXor { caller, .. })
-        | E::FheShl(C::FheShl { caller, .. })
-        | E::FheShr(C::FheShr { caller, .. })
-        | E::FheRotl(C::FheRotl { caller, .. })
-        | E::FheRotr(C::FheRotr { caller, .. })
-        | E::FheEq(C::FheEq { caller, .. })
-        | E::FheNe(C::FheNe { caller, .. })
-        | E::FheGe(C::FheGe { caller, .. })
-        | E::FheGt(C::FheGt { caller, .. })
-        | E::FheLe(C::FheLe { caller, .. })
-        | E::FheLt(C::FheLt { caller, .. })
-        | E::FheMin(C::FheMin { caller, .. })
-        | E::FheMax(C::FheMax { caller, .. })
-        | E::FheNeg(C::FheNeg { caller, .. })
-        | E::FheNot(C::FheNot { caller, .. })
-        | E::FheIfThenElse(C::FheIfThenElse { caller, .. })
-        | E::FheRand(C::FheRand { caller, .. })
-        | E::FheRandBounded(C::FheRandBounded { caller, .. })
-        | E::TrivialEncrypt(C::TrivialEncrypt { caller, .. }) => Some(*caller),
-
-        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
-    }
-}
-
 pub fn tfhe_dependent_op_weight(op: &TfheContractEvents) -> u32 {
     use TfheContract as C;
     use TfheContractEvents as E;
