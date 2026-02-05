@@ -2,7 +2,9 @@ use crate::{
     core::{Config, DbKmsResponsePicker, KmsResponsePicker},
     monitoring::{
         health::State,
-        metrics::{GATEWAY_TX_SENT_COUNTER, GATEWAY_TX_SENT_ERRORS},
+        metrics::{
+            GATEWAY_TX_SENT_COUNTER, GATEWAY_TX_SENT_ERRORS, register_response_forwarding_latency,
+        },
     },
 };
 use alloy::{
@@ -130,7 +132,10 @@ where
                 response.mark_as_pending(&db_pool).await;
                 cancel_token.cancel();
             }
-            Ok(()) => response.mark_as_completed(&db_pool).await,
+            Ok(()) => {
+                response.mark_as_completed(&db_pool).await;
+                register_response_forwarding_latency(&response);
+            }
         }
     }
 }

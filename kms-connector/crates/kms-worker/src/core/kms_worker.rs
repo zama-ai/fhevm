@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{
     core::{
         KmsResponsePublisher,
@@ -11,7 +9,10 @@ use crate::{
         },
         kms_response_publisher::DbKmsResponsePublisher,
     },
-    monitoring::health::{KmsHealthClient, State},
+    monitoring::{
+        health::{KmsHealthClient, State},
+        metrics::register_event_latency,
+    },
 };
 use alloy::transports::http::reqwest;
 use anyhow::anyhow;
@@ -21,6 +22,7 @@ use connector_utils::{
     types::{GatewayEvent, KmsResponse},
 };
 use fhevm_host_bindings::acl::ACL;
+use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -105,6 +107,8 @@ where
         if let Err(e) = response_publisher.publish_response(response).await {
             response_publisher.mark_event_as_pending(event).await;
             error!("Failed to publish response: {e}");
+        } else {
+            register_event_latency(&event);
         }
     }
 }

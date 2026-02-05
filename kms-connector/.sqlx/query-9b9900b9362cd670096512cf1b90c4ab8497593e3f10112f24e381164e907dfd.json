@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO keygen_responses(key_id, key_digests, signature, otlp_context) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+  "query": "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
@@ -41,10 +41,11 @@
           }
         },
         "Bytea",
+        "Timestamptz",
         "Bytea"
       ]
     },
     "nullable": []
   },
-  "hash": "3632e17b59f53983cc2f385caf05b37d8f730eef72776bee1de3356a605b0714"
+  "hash": "9b9900b9362cd670096512cf1b90c4ab8497593e3f10112f24e381164e907dfd"
 }
