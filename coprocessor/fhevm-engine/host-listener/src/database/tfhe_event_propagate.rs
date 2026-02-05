@@ -17,6 +17,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -74,6 +75,7 @@ pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
+const DEFAULT_DEPENDENT_OPS_CALLER_CACHE_SIZE: usize = 10_000;
 
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
 const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
@@ -115,7 +117,7 @@ pub struct Database {
     chain_id_label: String,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
-    dependent_ops_limiter: Option<Arc<Mutex<DependentOpsLimiter>>>,
+    dependent_ops_limiter: Option<Arc<Mutex<DependentOpsLimiters>>>,
 }
 
 #[derive(Debug)]
@@ -183,6 +185,55 @@ impl DependentOpsLimiter {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct DependentOpsLimiters {
+    rate_per_min: u32,
+    burst: u32,
+    callers: lru::LruCache<Address, DependentOpsLimiter>,
+}
+
+impl DependentOpsLimiters {
+    fn new(
+        rate_per_min: u32,
+        burst: u32,
+        caller_cache_size: usize,
+    ) -> Option<Self> {
+        if rate_per_min == 0 {
+            return None;
+        }
+        let burst = if burst == 0 {
+            rate_per_min.max(1)
+        } else {
+            burst
+        };
+        let cache_size = NonZeroUsize::new(caller_cache_size.max(1))
+            .expect("caller cache size must be non-zero");
+        Some(Self {
+            rate_per_min,
+            burst,
+            callers: lru::LruCache::new(cache_size),
+        })
+    }
+
+    pub(crate) fn consume(&mut self, caller: Address, amount: u32) -> bool {
+        if amount == 0 {
+            return false;
+        }
+        let limiter = if let Some(limiter) = self.callers.get_mut(&caller) {
+            limiter
+        } else {
+            let limiter =
+                DependentOpsLimiter::new(self.rate_per_min, self.burst)
+                    .expect("rate_per_min > 0");
+            self.callers.put(caller, limiter);
+            self.callers
+                .get_mut(&caller)
+                .expect("just inserted limiter")
+        };
+        limiter.consume(amount)
+    }
+}
+
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
 
 impl Database {
@@ -211,14 +262,17 @@ impl Database {
     }
 
     pub fn set_dependent_ops_limiter(&mut self, rate_per_min: u32, burst: u32) {
-        self.dependent_ops_limiter =
-            DependentOpsLimiter::new(rate_per_min, burst)
-                .map(|limiter| Arc::new(Mutex::new(limiter)));
+        self.dependent_ops_limiter = DependentOpsLimiters::new(
+            rate_per_min,
+            burst,
+            DEFAULT_DEPENDENT_OPS_CALLER_CACHE_SIZE,
+        )
+        .map(|limiter| Arc::new(Mutex::new(limiter)));
     }
 
     pub(crate) fn dependent_ops_limiter(
         &self,
-    ) -> Option<Arc<Mutex<DependentOpsLimiter>>> {
+    ) -> Option<Arc<Mutex<DependentOpsLimiters>>> {
         self.dependent_ops_limiter.clone()
     }
 
@@ -1028,6 +1082,42 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
     }
 }
 
+pub fn tfhe_caller(op: &TfheContractEvents) -> Option<Address> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+    match op {
+        E::Cast(C::Cast { caller, .. })
+        | E::FheAdd(C::FheAdd { caller, .. })
+        | E::FheSub(C::FheSub { caller, .. })
+        | E::FheMul(C::FheMul { caller, .. })
+        | E::FheDiv(C::FheDiv { caller, .. })
+        | E::FheRem(C::FheRem { caller, .. })
+        | E::FheBitAnd(C::FheBitAnd { caller, .. })
+        | E::FheBitOr(C::FheBitOr { caller, .. })
+        | E::FheBitXor(C::FheBitXor { caller, .. })
+        | E::FheShl(C::FheShl { caller, .. })
+        | E::FheShr(C::FheShr { caller, .. })
+        | E::FheRotl(C::FheRotl { caller, .. })
+        | E::FheRotr(C::FheRotr { caller, .. })
+        | E::FheEq(C::FheEq { caller, .. })
+        | E::FheNe(C::FheNe { caller, .. })
+        | E::FheGe(C::FheGe { caller, .. })
+        | E::FheGt(C::FheGt { caller, .. })
+        | E::FheLe(C::FheLe { caller, .. })
+        | E::FheLt(C::FheLt { caller, .. })
+        | E::FheMin(C::FheMin { caller, .. })
+        | E::FheMax(C::FheMax { caller, .. })
+        | E::FheNeg(C::FheNeg { caller, .. })
+        | E::FheNot(C::FheNot { caller, .. })
+        | E::FheIfThenElse(C::FheIfThenElse { caller, .. })
+        | E::FheRand(C::FheRand { caller, .. })
+        | E::FheRandBounded(C::FheRandBounded { caller, .. })
+        | E::TrivialEncrypt(C::TrivialEncrypt { caller, .. }) => Some(*caller),
+
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
+    }
+}
+
 pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
     use TfheContract as C;
     use TfheContractEvents as E;
@@ -1210,5 +1300,16 @@ mod tests {
         let mut limiter = DependentOpsLimiter::new(60, 2).unwrap();
         assert!(!limiter.consume(2));
         assert!(limiter.consume(1));
+    }
+
+    #[test]
+    fn dependent_ops_limiters_are_isolated_by_caller() {
+        let mut limiters = DependentOpsLimiters::new(60, 2, 10).unwrap();
+        let caller_a = Address::from([0x11u8; 20]);
+        let caller_b = Address::from([0x22u8; 20]);
+        assert!(!limiters.consume(caller_a, 2));
+        assert!(!limiters.consume(caller_b, 2));
+        assert!(limiters.consume(caller_a, 1));
+        assert!(limiters.consume(caller_b, 1));
     }
 }

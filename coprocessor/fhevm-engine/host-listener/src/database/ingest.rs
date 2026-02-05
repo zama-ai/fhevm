@@ -17,8 +17,8 @@ use crate::cmd::block_history::BlockSummary;
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_inputs_handle, tfhe_result_handle, ChainHash,
-    Database, LogTfhe,
+    acl_result_handles, tfhe_caller, tfhe_inputs_handle, tfhe_result_handle,
+    ChainHash, Database, LogTfhe,
 };
 
 pub struct BlockLogs<T> {
@@ -151,7 +151,8 @@ pub async fn ingest_block_logs(
     )
     .await;
 
-    let mut dependent_ops_by_chain: HashMap<ChainHash, u32> = HashMap::new();
+    let mut dependent_ops_by_chain: HashMap<ChainHash, HashMap<Address, u32>> =
+        HashMap::new();
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
         at_least_one_insertion |= inserted;
@@ -159,9 +160,13 @@ pub async fn ingest_block_logs(
             && tfhe_log.is_allowed
             && !tfhe_inputs_handle(&tfhe_log.event).is_empty()
         {
-            *dependent_ops_by_chain
-                .entry(tfhe_log.dependence_chain)
-                .or_default() += 1;
+            if let Some(caller) = tfhe_caller(&tfhe_log.event) {
+                *dependent_ops_by_chain
+                    .entry(tfhe_log.dependence_chain)
+                    .or_default()
+                    .entry(caller)
+                    .or_default() += 1;
+            }
         }
         if block_logs.catchup && inserted {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
@@ -178,18 +183,24 @@ pub async fn ingest_block_logs(
         let mut allowed: u64 = 0;
         let mut throttled: u64 = 0;
         for chain in &chains {
-            let count = dependent_ops_by_chain
-                .get(&chain.hash)
-                .copied()
-                .unwrap_or(0);
-            if count == 0 {
+            let Some(by_caller) = dependent_ops_by_chain.get(&chain.hash)
+            else {
                 continue;
+            };
+            let mut slow_lane = false;
+            for (caller, count) in by_caller {
+                if *count == 0 {
+                    continue;
+                }
+                if limiter.consume(*caller, *count) {
+                    throttled += *count as u64;
+                    slow_lane = true;
+                } else {
+                    allowed += *count as u64;
+                }
             }
-            if limiter.consume(count) {
-                throttled += count as u64;
+            if slow_lane {
                 schedule_lane_by_chain.insert(chain.hash, ScheduleLane::Slow);
-            } else {
-                allowed += count as u64;
             }
         }
         db.record_dependent_ops_metrics(allowed, throttled);
