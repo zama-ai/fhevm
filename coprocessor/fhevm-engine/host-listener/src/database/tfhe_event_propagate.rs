@@ -1122,9 +1122,9 @@ pub fn tfhe_dependent_op_weight(op: &TfheContractEvents) -> u32 {
     use TfheContract as C;
     use TfheContractEvents as E;
     match op {
-        E::FheMul(C::FheMul { .. })
-        | E::FheDiv(C::FheDiv { .. })
-        | E::FheRem(C::FheRem { .. }) => 4,
+        E::FheMul(C::FheMul { .. }) => 7,
+        E::FheDiv(C::FheDiv { .. }) => 5,
+        E::FheRem(C::FheRem { .. }) => 8,
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => 0,
         _ => 1,
     }
