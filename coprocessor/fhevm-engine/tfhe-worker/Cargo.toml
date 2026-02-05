@@ -52,6 +52,7 @@ latency = ["fhevm-engine-common/latency"]
 throughput = ["fhevm-engine-common/throughput"]
 
 [dev-dependencies]
+criterion = { version = "0.5.1", features = ["async_futures"] }
 host-listener = { path = "../host-listener" }
 testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
@@ -65,3 +66,18 @@ path = "src/bin/tfhe_worker.rs"
 [[bin]]
 name = "utils"
 path = "src/bin/utils.rs"
+
+[[bench]]
+name = "erc20"
+path = "benches/erc20.rs"
+harness = false
+
+[[bench]]
+name = "synthetics"
+path = "benches/synthetics.rs"
+harness = false
+
+[[bench]]
+name = "dex"
+path = "benches/dex.rs"
+harness = false
