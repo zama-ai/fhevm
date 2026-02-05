@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import {CoprocessorConfig, FHE} from "@fhevm/solidity/lib/FHE.sol";
 
 library DefaultCoprocessorConfig {
+    /// @dev These addresses are placeholders. They are patched at runtime via sed
+    /// in the E2E test runner script with the actual deployment addresses.
     function getConfig() internal pure returns (CoprocessorConfig memory) {
         return
             CoprocessorConfig({
