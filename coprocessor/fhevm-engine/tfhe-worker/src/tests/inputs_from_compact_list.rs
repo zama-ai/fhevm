@@ -43,6 +43,7 @@ async fn test_compact_input_list_roundtrip() -> Result<(), Box<dyn std::error::E
         .await
         .map_err(|e| -> Box<dyn std::error::Error> { e })?;
     let keys = &keys[0];
+    tfhe::set_server_key(keys.sks.clone());
 
     let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
     let the_list = builder
@@ -84,7 +85,6 @@ async fn test_compact_input_list_roundtrip() -> Result<(), Box<dyn std::error::E
     .execute(tx.as_mut())
     .await?;
 
-    tfhe::set_server_key(keys.sks.clone());
     let mut handles = Vec::with_capacity(expanded.len());
     for (ct_idx, the_ct) in expanded.into_iter().enumerate() {
         let (ct_type, ct_bytes) = the_ct.compress();
