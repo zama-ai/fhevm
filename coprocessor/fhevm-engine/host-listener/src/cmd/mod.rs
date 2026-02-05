@@ -145,13 +145,6 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value_t = 0,
-        help = "Max distinct callers per chain before slow-lane (0 disables)"
-    )]
-    pub dependent_ops_max_callers_per_chain: u32,
-
-    #[arg(
-        long,
         default_value = "50",
         help = "Maximum duration in blocks to detect reorgs"
     )]
@@ -965,8 +958,6 @@ async fn db_insert_block(
                 dependence_by_connexity: args.dependence_by_connexity,
                 dependence_cross_block: args.dependence_cross_block,
                 dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
-                dependent_ops_max_callers_per_chain: args
-                    .dependent_ops_max_callers_per_chain,
             },
         )
         .await;

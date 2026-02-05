@@ -134,13 +134,6 @@ struct Args {
         help = "Max weighted dependent ops per chain before slow-lane (0 disables)"
     )]
     pub dependent_ops_max_per_chain: u32,
-
-    #[arg(
-        long,
-        default_value_t = 0,
-        help = "Max distinct callers per chain before slow-lane (0 disables)"
-    )]
-    pub dependent_ops_max_callers_per_chain: u32,
 }
 
 #[tokio::main]
@@ -180,8 +173,6 @@ async fn main() -> anyhow::Result<()> {
         dependent_ops_rate_per_min: args.dependent_ops_rate_per_min,
         dependent_ops_burst: args.dependent_ops_burst,
         dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
-        dependent_ops_max_callers_per_chain: args
-            .dependent_ops_max_callers_per_chain,
     };
 
     run_poller(config).await

@@ -232,7 +232,6 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         dependent_ops_rate_per_min: 0,
         dependent_ops_burst: 0,
         dependent_ops_max_per_chain: 0,
-        dependent_ops_max_callers_per_chain: 0,
         timeout_request_websocket: 30,
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
@@ -282,7 +281,6 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         dependent_ops_rate_per_min: 0,
         dependent_ops_burst: 0,
         dependent_ops_max_per_chain: 0,
-        dependent_ops_max_callers_per_chain: 0,
         timeout_request_websocket: 30,
     };
 

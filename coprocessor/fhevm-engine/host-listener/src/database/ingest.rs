@@ -27,7 +27,6 @@ pub struct IngestOptions {
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
-    pub dependent_ops_max_callers_per_chain: u32,
 }
 
 #[derive(Default)]
@@ -198,12 +197,6 @@ pub async fn ingest_block_logs(
             let mut priority = SchedulePriority::FAST;
             if options.dependent_ops_max_per_chain > 0
                 && stats.total > options.dependent_ops_max_per_chain
-            {
-                priority = SchedulePriority::SLOW;
-            }
-            if options.dependent_ops_max_callers_per_chain > 0
-                && (stats.by_caller.len() as u32)
-                    > options.dependent_ops_max_callers_per_chain
             {
                 priority = SchedulePriority::SLOW;
             }

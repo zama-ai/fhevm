@@ -89,7 +89,6 @@ pub struct PollerConfig {
     pub dependent_ops_rate_per_min: u32,
     pub dependent_ops_burst: u32,
     pub dependent_ops_max_per_chain: u32,
-    pub dependent_ops_max_callers_per_chain: u32,
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
@@ -285,8 +284,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 dependence_by_connexity: config.dependence_by_connexity,
                 dependence_cross_block: config.dependence_cross_block,
                 dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
-                dependent_ops_max_callers_per_chain: config
-                    .dependent_ops_max_callers_per_chain,
             };
             match ingest_with_retry(
                 chain_id,
