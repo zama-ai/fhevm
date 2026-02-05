@@ -3,13 +3,8 @@ use std::collections::{HashMap, HashSet};
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
-<<<<<<< HEAD
-use fhevm_engine_common::chain_id::ChainId;
-use fhevm_engine_common::types::Handle;
-=======
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::{Handle, ScheduleLane};
->>>>>>> 02dd8eef (refactor(coprocessor): add schedule lane enum)
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{error, info};
 
@@ -25,6 +20,20 @@ pub struct BlockLogs<T> {
     pub logs: Vec<T>,
     pub summary: BlockSummary,
     pub catchup: bool,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct IngestOptions {
+    pub dependence_by_connexity: bool,
+    pub dependence_cross_block: bool,
+    pub dependent_ops_max_per_chain: u32,
+    pub dependent_ops_max_callers_per_chain: u32,
+}
+
+#[derive(Default)]
+struct DependentOpsStats {
+    total: u32,
+    by_caller: HashMap<Address, u32>,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -49,8 +58,7 @@ pub async fn ingest_block_logs(
     block_logs: &BlockLogs<Log>,
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
-    dependence_by_connexity: bool,
-    dependence_cross_block: bool,
+    options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
     let mut is_allowed = HashSet::<Handle>::new();
@@ -146,12 +154,12 @@ pub async fn ingest_block_logs(
     let chains = dependence_chains(
         &mut tfhe_event_log,
         &db.dependence_chain,
-        dependence_by_connexity,
-        dependence_cross_block,
+        options.dependence_by_connexity,
+        options.dependence_cross_block,
     )
     .await;
 
-    let mut dependent_ops_by_chain: HashMap<ChainHash, HashMap<Address, u32>> =
+    let mut dependent_ops_by_chain: HashMap<ChainHash, DependentOpsStats> =
         HashMap::new();
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
@@ -162,11 +170,11 @@ pub async fn ingest_block_logs(
         {
             if let Some(caller) = tfhe_caller(&tfhe_log.event) {
                 let weight = tfhe_dependent_op_weight(&tfhe_log.event);
-                *dependent_ops_by_chain
+                let stats = dependent_ops_by_chain
                     .entry(tfhe_log.dependence_chain)
-                    .or_default()
-                    .entry(caller)
-                    .or_default() += weight;
+                    .or_default();
+                stats.total += weight;
+                *stats.by_caller.entry(caller).or_default() += weight;
             }
         }
         if block_logs.catchup && inserted {
@@ -184,12 +192,28 @@ pub async fn ingest_block_logs(
         let mut allowed: u64 = 0;
         let mut throttled: u64 = 0;
         for chain in &chains {
-            let Some(by_caller) = dependent_ops_by_chain.get(&chain.hash)
-            else {
+            let Some(stats) = dependent_ops_by_chain.get(&chain.hash) else {
                 continue;
             };
             let mut slow_lane = false;
-            for (caller, count) in by_caller {
+            if options.dependent_ops_max_per_chain > 0
+                && stats.total > options.dependent_ops_max_per_chain
+            {
+                slow_lane = true;
+            }
+            if options.dependent_ops_max_callers_per_chain > 0
+                && (stats.by_caller.len() as u32)
+                    > options.dependent_ops_max_callers_per_chain
+            {
+                slow_lane = true;
+            }
+            if slow_lane {
+                throttled += stats.total as u64;
+                schedule_lane_by_chain.insert(chain.hash, ScheduleLane::Slow);
+                continue;
+            }
+            let mut slow_lane = false;
+            for (caller, count) in &stats.by_caller {
                 if *count == 0 {
                     continue;
                 }
