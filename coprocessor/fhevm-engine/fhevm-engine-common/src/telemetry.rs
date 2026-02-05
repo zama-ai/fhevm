@@ -82,6 +82,10 @@ impl OtelTracer {
         self.tracer.start_with_context(name, &self.ctx)
     }
 
+    pub fn context(&self) -> &Context {
+        &self.ctx
+    }
+
     /// Sets attribute to the root span
     pub fn set_attribute(&self, key: &str, value: String) {
         self.ctx

@@ -38,6 +38,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::error_span;
 use tracing::warn;
 use tracing::{debug, error, info};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const S3_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -546,6 +547,7 @@ fn compute_task(
     let started_at = SystemTime::now();
     let thread_id = format!("{:?}", std::thread::current().id());
     let span = error_span!("compute", thread_id = %thread_id);
+    span.set_parent(task.otel.context().clone());
     let _enter = span.enter();
 
     let handle = to_hex(&task.handle);
@@ -569,6 +571,13 @@ fn compute_task(
 
     let ct_type = ct.type_name().to_owned();
     info!( { handle, ct_type }, "Converting ciphertext");
+
+    let squash_span = tracing::info_span!(
+        "squash_noise",
+        ct_type = %ct_type,
+        operation = "squash_noise"
+    );
+    let _squash_enter = squash_span.enter();
 
     match ct.squash_noise_and_serialize(enable_compression) {
         Ok(bytes) => {
