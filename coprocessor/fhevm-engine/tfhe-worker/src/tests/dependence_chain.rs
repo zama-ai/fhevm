@@ -69,26 +69,26 @@ async fn test_acquire_next_lock_prefers_fast_lane() {
     let fast_id = vec![1u8];
     let slow_id = vec![2u8];
 
-    sqlx::query(
+    sqlx::query!(
         r#"
         INSERT INTO dependence_chain
             (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_lane)
         VALUES ($1, 'updated', NOW() - INTERVAL '1 minute', NOW(), 1, 0)
         "#,
+        fast_id,
     )
-    .bind(&fast_id)
     .execute(&pool)
     .await
     .unwrap();
 
-    sqlx::query(
+    sqlx::query!(
         r#"
         INSERT INTO dependence_chain
             (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_lane)
         VALUES ($1, 'updated', NOW() - INTERVAL '2 minute', NOW(), 2, 1)
         "#,
+        slow_id,
     )
-    .bind(&slow_id)
     .execute(&pool)
     .await
     .unwrap();

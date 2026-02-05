@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
@@ -12,7 +12,8 @@ use crate::cmd::block_history::BlockSummary;
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_result_handle, Database, LogTfhe,
+    acl_result_handles, tfhe_inputs_handle, tfhe_result_handle, ChainHash,
+    Database, LogTfhe,
 };
 
 pub struct BlockLogs<T> {
@@ -145,6 +146,40 @@ pub async fn ingest_block_logs(
     )
     .await;
 
+    let mut schedule_lane_by_chain: HashMap<ChainHash, i16> = HashMap::new();
+    if let Some(limiter) = db.dependent_ops_limiter() {
+        let mut dependent_ops_by_chain: HashMap<ChainHash, u32> =
+            HashMap::new();
+        for tfhe_log in &tfhe_event_log {
+            if tfhe_log.is_allowed
+                && !tfhe_inputs_handle(&tfhe_log.event).is_empty()
+            {
+                *dependent_ops_by_chain
+                    .entry(tfhe_log.dependence_chain)
+                    .or_default() += 1;
+            }
+        }
+        let mut limiter = limiter.lock().await;
+        let mut allowed: u64 = 0;
+        let mut throttled: u64 = 0;
+        for chain in &chains {
+            let count = dependent_ops_by_chain
+                .get(&chain.hash)
+                .copied()
+                .unwrap_or(0);
+            if count == 0 {
+                continue;
+            }
+            if limiter.consume(count) {
+                throttled += count as u64;
+                schedule_lane_by_chain.insert(chain.hash, 1);
+            } else {
+                allowed += count as u64;
+            }
+        }
+        db.record_dependent_ops_metrics(allowed, throttled);
+    }
+
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
         at_least_one_insertion |= inserted;
@@ -174,6 +209,7 @@ pub async fn ingest_block_logs(
             chains,
             block_timestamp,
             &block_logs.summary,
+            &schedule_lane_by_chain,
         )
         .await?;
     }

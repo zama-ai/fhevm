@@ -339,7 +339,7 @@ impl LockMngr {
         // Since UPDATE always acquire a row-level lock internally,
         // this acts as atomic_exchange
         let rows = if let Some(update_at) = update_at {
-            sqlx::query(
+            sqlx::query!(
             r#"
             UPDATE dependence_chain
             SET
@@ -359,15 +359,15 @@ impl LockMngr {
             WHERE worker_id = $1
             AND dependence_chain_id = $2
             "#,
+            self.worker_id,
+            dep_chain_id,
+            mark_as_processed,
+            update_at,
         )
-        .bind(self.worker_id)
-        .bind(&dep_chain_id)
-        .bind(mark_as_processed)
-        .bind(update_at)
         .execute(&self.pool)
         .await?
         } else {
-            sqlx::query(
+            sqlx::query!(
             r#"
             UPDATE dependence_chain
             SET
@@ -386,10 +386,10 @@ impl LockMngr {
             WHERE worker_id = $1
             AND dependence_chain_id = $2
             "#,
+            self.worker_id,
+            dep_chain_id,
+            mark_as_processed,
         )
-        .bind(self.worker_id)
-        .bind(&dep_chain_id)
-        .bind(mark_as_processed)
         .execute(&self.pool)
         .await?
         };

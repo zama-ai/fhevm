@@ -15,7 +15,7 @@ use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -112,7 +112,6 @@ pub struct Database {
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
     pub chain_id: ChainId,
     chain_id_label: String,
-    greylisted_chains: Arc<Mutex<HashSet<Vec<u8>>>>,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
     dependent_ops_limiter: Option<Arc<Mutex<DependentOpsLimiter>>>,
@@ -130,7 +129,7 @@ pub struct LogTfhe {
 }
 
 #[derive(Debug)]
-struct DependentOpsLimiter {
+pub(crate) struct DependentOpsLimiter {
     rate_per_min: u32,
     burst: u32,
     tokens: f64,
@@ -155,25 +154,18 @@ impl DependentOpsLimiter {
         })
     }
 
-    fn defer_duration(&mut self) -> Duration {
+    pub(crate) fn consume(&mut self, amount: u32) -> bool {
+        if amount == 0 {
+            return false;
+        }
         let now = Instant::now();
         self.refill(now);
         let rate_per_sec = self.rate_per_min as f64 / 60.0;
         if rate_per_sec <= 0.0 {
-            return Duration::ZERO;
+            return false;
         }
-        self.tokens -= 1.0;
-        if self.tokens >= 0.0 {
-            Duration::ZERO
-        } else {
-            let deficit = -self.tokens;
-            let wait_secs = deficit / rate_per_sec;
-            if wait_secs <= 0.0 {
-                Duration::ZERO
-            } else {
-                Duration::from_secs_f64(wait_secs)
-            }
-        }
+        self.tokens -= amount as f64;
+        self.tokens < 0.0
     }
 
     fn refill(&mut self, now: Instant) {
@@ -210,7 +202,6 @@ impl Database {
             url: url.clone(),
             chain_id,
             chain_id_label: chain_id.to_string(),
-            greylisted_chains: Arc::new(Mutex::new(HashSet::new())),
             pool: Arc::new(RwLock::new(pool)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
@@ -222,6 +213,29 @@ impl Database {
         self.dependent_ops_limiter =
             DependentOpsLimiter::new(rate_per_min, burst)
                 .map(|limiter| Arc::new(Mutex::new(limiter)));
+    }
+
+    pub(crate) fn dependent_ops_limiter(
+        &self,
+    ) -> Option<Arc<Mutex<DependentOpsLimiter>>> {
+        self.dependent_ops_limiter.clone()
+    }
+
+    pub(crate) fn record_dependent_ops_metrics(
+        &self,
+        allowed: u64,
+        throttled: u64,
+    ) {
+        if allowed > 0 {
+            DEPENDENT_OPS_ALLOWED
+                .with_label_values(&[self.chain_id_label.as_str()])
+                .inc_by(allowed);
+        }
+        if throttled > 0 {
+            DEPENDENT_OPS_THROTTLED
+                .with_label_values(&[self.chain_id_label.as_str()])
+                .inc_by(throttled);
+        }
     }
 
     async fn new_pool(url: &DatabaseURL) -> PgPool {
@@ -337,23 +351,6 @@ impl Database {
                 .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64,
                 ));
-        let has_dependencies = log.is_allowed && !dependencies.is_empty();
-        if has_dependencies {
-            if let Some(limiter) = &self.dependent_ops_limiter {
-                let defer_for = limiter.lock().await.defer_duration();
-                if defer_for.is_zero() {
-                    DEPENDENT_OPS_ALLOWED
-                        .with_label_values(&[self.chain_id_label.as_str()])
-                        .inc();
-                } else {
-                    DEPENDENT_OPS_THROTTLED
-                        .with_label_values(&[self.chain_id_label.as_str()])
-                        .inc();
-                    let mut greylisted = self.greylisted_chains.lock().await;
-                    greylisted.insert(dependence_chain_id.clone());
-                }
-            }
-        }
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -840,11 +837,12 @@ impl Database {
         chains: OrderedChains,
         block_timestamp: PrimitiveDateTime,
         block_summary: &BlockSummary,
+        schedule_lane_by_chain: &HashMap<ChainHash, i16>,
     ) -> Result<(), SqlxError> {
-        let mut greylisted = self.greylisted_chains.lock().await;
         for chain in chains {
             let chain_id = chain.hash.to_vec();
-            let schedule_lane = i16::from(greylisted.remove(&chain_id));
+            let schedule_lane =
+                *schedule_lane_by_chain.get(&chain.hash).unwrap_or(&0);
             let last_updated_at = block_timestamp.saturating_add(
                 TimeDuration::microseconds(chain.before_size as i64),
             );
@@ -853,7 +851,7 @@ impl Database {
                 .iter()
                 .map(|h| h.to_vec())
                 .collect::<Vec<_>>();
-            sqlx::query(
+            sqlx::query!(
                 r#"
                 INSERT INTO dependence_chain(
                     dependence_chain_id,
@@ -885,14 +883,14 @@ impl Database {
                         EXCLUDED.schedule_lane
                     )
                 "#,
+                chain_id,
+                last_updated_at,
+                chain.dependencies.len() as i64,
+                &dependents,
+                block_summary.hash.to_vec(),
+                block_summary.number as i64,
+                schedule_lane,
             )
-            .bind(chain_id)
-            .bind(last_updated_at)
-            .bind(chain.dependencies.len() as i64)
-            .bind(&dependents)
-            .bind(block_summary.hash.to_vec())
-            .bind(block_summary.number as i64)
-            .bind(schedule_lane)
             .execute(tx.deref_mut())
             .await?;
         }
@@ -1185,26 +1183,30 @@ mod tests {
     #[test]
     fn dependent_ops_limiter_defers_after_burst() {
         let mut limiter = DependentOpsLimiter::new(60, 2).unwrap();
-        assert!(limiter.defer_duration().is_zero());
-        assert!(limiter.defer_duration().is_zero());
-        let deferred = limiter.defer_duration();
-        assert!(deferred > Duration::ZERO);
+        assert!(!limiter.consume(1));
+        assert!(!limiter.consume(1));
+        assert!(limiter.consume(1));
     }
 
     #[test]
     fn dependent_ops_limiter_refills_over_time() {
         let mut limiter = DependentOpsLimiter::new(60, 1).unwrap();
-        assert!(limiter.defer_duration().is_zero());
-        let deferred = limiter.defer_duration();
-        assert!(deferred > Duration::ZERO);
+        assert!(!limiter.consume(1));
+        assert!(limiter.consume(1));
         limiter.last_refill =
             Instant::now().checked_sub(Duration::from_secs(2)).unwrap();
-        let allowed_after_refill = limiter.defer_duration();
-        assert!(allowed_after_refill.is_zero());
+        assert!(!limiter.consume(1));
     }
 
     #[test]
     fn dependent_ops_limiter_disabled_when_rate_zero() {
         assert!(DependentOpsLimiter::new(0, 10).is_none());
+    }
+
+    #[test]
+    fn dependent_ops_limiter_consume_throttles_after_burst() {
+        let mut limiter = DependentOpsLimiter::new(60, 2).unwrap();
+        assert!(!limiter.consume(2));
+        assert!(limiter.consume(1));
     }
 }
