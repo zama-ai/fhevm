@@ -7,7 +7,7 @@ use bigdecimal::BigDecimal;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
-use fhevm_engine_common::types::ScheduleLane;
+use fhevm_engine_common::types::SchedulePriority;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
@@ -892,13 +892,13 @@ impl Database {
         chains: OrderedChains,
         block_timestamp: PrimitiveDateTime,
         block_summary: &BlockSummary,
-        schedule_lane_by_chain: &HashMap<ChainHash, ScheduleLane>,
+        schedule_priority_by_chain: &HashMap<ChainHash, SchedulePriority>,
     ) -> Result<(), SqlxError> {
         for chain in chains {
             let chain_id = chain.hash.to_vec();
-            let schedule_lane = *schedule_lane_by_chain
+            let schedule_priority = *schedule_priority_by_chain
                 .get(&chain.hash)
-                .unwrap_or(&ScheduleLane::Fast);
+                .unwrap_or(&SchedulePriority::FAST);
             let last_updated_at = block_timestamp.saturating_add(
                 TimeDuration::microseconds(chain.before_size as i64),
             );
@@ -917,7 +917,7 @@ impl Database {
                     dependents,
                     block_hash,
                     block_height,
-                    schedule_lane
+                    schedule_priority
                 ) VALUES (
                   $1, 'updated', $2::timestamp, $3, $4, $5, $6, $7
                 )
@@ -934,9 +934,9 @@ impl Database {
                         )
                     )
                     ,
-                    schedule_lane = GREATEST(
-                        dependence_chain.schedule_lane,
-                        EXCLUDED.schedule_lane
+                    schedule_priority = GREATEST(
+                        dependence_chain.schedule_priority,
+                        EXCLUDED.schedule_priority
                     )
                 "#,
                 chain_id,
@@ -945,7 +945,7 @@ impl Database {
                 &dependents,
                 block_summary.hash.to_vec(),
                 block_summary.number as i64,
-                i16::from(schedule_lane),
+                i16::from(schedule_priority),
             )
             .execute(tx.deref_mut())
             .await?;

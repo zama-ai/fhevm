@@ -83,7 +83,7 @@ pub struct DatabaseChainLock {
     pub last_updated_at: DateTime<Utc>,
     pub block_height: Option<i64>,
     pub block_timestamp: Option<DateTime<Utc>>,
-    pub schedule_lane: i16,
+    pub schedule_priority: i16,
     pub match_reason: String,
 }
 
@@ -102,7 +102,7 @@ impl fmt::Debug for DatabaseChainLock {
             .field("last_updated_at", &self.last_updated_at)
             .field("block_height", &self.block_height)
             .field("block_ts", &self.block_timestamp)
-            .field("schedule_lane", &self.schedule_lane)
+            .field("schedule_priority", &self.schedule_priority)
             .field("match_reason", &self.match_reason)
             .finish()
     }
@@ -177,7 +177,7 @@ impl LockMngr {
                             AND
                             dependency_count = 0     -- No pending dependencies
                         )
-                ORDER BY schedule_lane ASC, last_updated_at ASC -- fast lane first
+                ORDER BY schedule_priority ASC, last_updated_at ASC -- highest priority first
                 FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
                 LIMIT 1
             )
@@ -347,9 +347,9 @@ impl LockMngr {
                 lock_acquired_at = NULL,
                 lock_expires_at = NULL,
                 last_updated_at = $4::timestamp,
-                schedule_lane = CASE
+                schedule_priority = CASE
                     WHEN status = 'processing' AND $3::bool THEN 0
-                    ELSE schedule_lane
+                    ELSE schedule_priority
                 END,
                 status = CASE
                     WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
@@ -374,9 +374,9 @@ impl LockMngr {
                 worker_id = NULL,
                 lock_acquired_at = NULL,
                 lock_expires_at = NULL,
-                schedule_lane = CASE
+                schedule_priority = CASE
                     WHEN status = 'processing' AND $3::bool THEN 0
-                    ELSE schedule_lane
+                    ELSE schedule_priority
                 END,
                 status = CASE
                     WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed

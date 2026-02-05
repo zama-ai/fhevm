@@ -4,7 +4,7 @@ use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::chain_id::ChainId;
-use fhevm_engine_common::types::{Handle, ScheduleLane};
+use fhevm_engine_common::types::{Handle, SchedulePriority};
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{error, info};
 
@@ -185,7 +185,7 @@ pub async fn ingest_block_logs(
         }
     }
 
-    let mut schedule_lane_by_chain: HashMap<ChainHash, ScheduleLane> =
+    let mut schedule_priority_by_chain: HashMap<ChainHash, SchedulePriority> =
         HashMap::new();
     if let Some(limiter) = db.dependent_ops_limiter() {
         let mut limiter = limiter.lock().await;
@@ -195,37 +195,38 @@ pub async fn ingest_block_logs(
             let Some(stats) = dependent_ops_by_chain.get(&chain.hash) else {
                 continue;
             };
-            let mut slow_lane = false;
+            let mut priority = SchedulePriority::FAST;
             if options.dependent_ops_max_per_chain > 0
                 && stats.total > options.dependent_ops_max_per_chain
             {
-                slow_lane = true;
+                priority = priority.max(SchedulePriority::CAP_OPS);
             }
             if options.dependent_ops_max_callers_per_chain > 0
                 && (stats.by_caller.len() as u32)
                     > options.dependent_ops_max_callers_per_chain
             {
-                slow_lane = true;
+                priority = priority.max(SchedulePriority::CAP_CALLERS);
             }
-            if slow_lane {
+            if priority != SchedulePriority::FAST {
                 throttled += stats.total as u64;
-                schedule_lane_by_chain.insert(chain.hash, ScheduleLane::Slow);
+                schedule_priority_by_chain.insert(chain.hash, priority);
                 continue;
             }
-            let mut slow_lane = false;
+            let mut throttled_chain = false;
             for (caller, count) in &stats.by_caller {
                 if *count == 0 {
                     continue;
                 }
                 if limiter.consume(*caller, *count) {
                     throttled += *count as u64;
-                    slow_lane = true;
+                    throttled_chain = true;
                 } else {
                     allowed += *count as u64;
                 }
             }
-            if slow_lane {
-                schedule_lane_by_chain.insert(chain.hash, ScheduleLane::Slow);
+            if throttled_chain {
+                schedule_priority_by_chain
+                    .insert(chain.hash, SchedulePriority::THROTTLED);
             }
         }
         db.record_dependent_ops_metrics(allowed, throttled);
@@ -249,7 +250,7 @@ pub async fn ingest_block_logs(
             chains,
             block_timestamp,
             &block_logs.summary,
-            &schedule_lane_by_chain,
+            &schedule_priority_by_chain,
         )
         .await?;
     }

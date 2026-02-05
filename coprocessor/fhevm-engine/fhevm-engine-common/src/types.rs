@@ -1024,41 +1024,38 @@ pub fn is_ebytes_type(inp: i16) -> bool {
     (9..=11).contains(&inp)
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
-pub enum ScheduleLane {
-    #[default]
-    Fast,
-    Slow,
-}
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Default)]
+pub struct SchedulePriority(i16);
 
-impl ScheduleLane {
-    pub const FAST: Self = Self::Fast;
-    pub const SLOW: Self = Self::Slow;
+impl SchedulePriority {
+    pub const FAST: Self = Self(0);
+    pub const THROTTLED: Self = Self(1);
+    pub const CAP_CALLERS: Self = Self(2);
+    pub const CAP_OPS: Self = Self(3);
 
     pub fn as_i16(self) -> i16 {
-        match self {
-            Self::Fast => 0,
-            Self::Slow => 1,
-        }
+        self.0
     }
 
-    pub fn is_slow(self) -> bool {
-        matches!(self, Self::Slow)
+    #[must_use]
+    pub fn max(self, other: Self) -> Self {
+        if self.0 >= other.0 {
+            self
+        } else {
+            other
+        }
     }
 }
 
-impl From<ScheduleLane> for i16 {
-    fn from(value: ScheduleLane) -> Self {
+impl From<SchedulePriority> for i16 {
+    fn from(value: SchedulePriority) -> Self {
         value.as_i16()
     }
 }
 
-impl From<i16> for ScheduleLane {
+impl From<i16> for SchedulePriority {
     fn from(value: i16) -> Self {
-        match value {
-            1 => Self::Slow,
-            _ => Self::Fast,
-        }
+        Self(value.max(0))
     }
 }
 

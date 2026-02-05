@@ -72,7 +72,7 @@ async fn test_acquire_next_lock_prefers_fast_lane() {
     sqlx::query!(
         r#"
         INSERT INTO dependence_chain
-            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_lane)
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_priority)
         VALUES ($1, 'updated', NOW() - INTERVAL '1 minute', NOW(), 1, 0)
         "#,
         fast_id,
@@ -84,7 +84,7 @@ async fn test_acquire_next_lock_prefers_fast_lane() {
     sqlx::query!(
         r#"
         INSERT INTO dependence_chain
-            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_lane)
+            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_priority)
         VALUES ($1, 'updated', NOW() - INTERVAL '2 minute', NOW(), 2, 1)
         "#,
         slow_id,
