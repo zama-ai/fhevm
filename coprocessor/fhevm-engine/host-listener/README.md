@@ -35,10 +35,9 @@ If you want to disable TFHE operation events propagation, you can provide an emp
 
 ### Dependent ops throttling (optional)
 
-Two flags enable a per-replica limiter for dependent ops:
+One flag enables slow‑lane assignment for heavy dependent chains:
 
-- `--dependent-ops-rate-per-min` (0 disables, mainnet can leave at 0)
-- `--dependent-ops-burst` (defaults to rate when set to 0)
+- `--dependent-ops-max-per-chain` (0 disables)
 
 When enabled, over-limit dependent ops are assigned to a slow lane by setting
 `dependence_chain.schedule_priority = 1`. Priority is monotonic per chain (never

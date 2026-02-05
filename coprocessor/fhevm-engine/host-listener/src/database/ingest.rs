@@ -12,8 +12,8 @@ use crate::cmd::block_history::BlockSummary;
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_caller, tfhe_dependent_op_weight,
-    tfhe_inputs_handle, tfhe_result_handle, ChainHash, Database, LogTfhe,
+    acl_result_handles, tfhe_dependent_op_weight, tfhe_inputs_handle,
+    tfhe_result_handle, ChainHash, Database, LogTfhe,
 };
 
 pub struct BlockLogs<T> {
@@ -32,7 +32,6 @@ pub struct IngestOptions {
 #[derive(Default)]
 struct DependentOpsStats {
     total: u32,
-    by_caller: HashMap<Address, u32>,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -167,14 +166,11 @@ pub async fn ingest_block_logs(
             && tfhe_log.is_allowed
             && !tfhe_inputs_handle(&tfhe_log.event).is_empty()
         {
-            if let Some(caller) = tfhe_caller(&tfhe_log.event) {
-                let weight = tfhe_dependent_op_weight(&tfhe_log.event);
-                let stats = dependent_ops_by_chain
-                    .entry(tfhe_log.dependence_chain)
-                    .or_default();
-                stats.total += weight;
-                *stats.by_caller.entry(caller).or_default() += weight;
-            }
+            let weight = tfhe_dependent_op_weight(&tfhe_log.event);
+            let stats = dependent_ops_by_chain
+                .entry(tfhe_log.dependence_chain)
+                .or_default();
+            stats.total += weight;
         }
         if block_logs.catchup && inserted {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
