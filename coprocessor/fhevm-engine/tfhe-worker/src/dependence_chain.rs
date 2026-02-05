@@ -347,10 +347,6 @@ impl LockMngr {
                 lock_acquired_at = NULL,
                 lock_expires_at = NULL,
                 last_updated_at = $4::timestamp,
-                schedule_priority = CASE
-                    WHEN status = 'processing' AND $3::bool THEN 0
-                    ELSE schedule_priority
-                END,
                 status = CASE
                     WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
                     WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
@@ -374,10 +370,6 @@ impl LockMngr {
                 worker_id = NULL,
                 lock_acquired_at = NULL,
                 lock_expires_at = NULL,
-                schedule_priority = CASE
-                    WHEN status = 'processing' AND $3::bool THEN 0
-                    ELSE schedule_priority
-                END,
                 status = CASE
                     WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
                     WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired

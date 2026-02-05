@@ -41,9 +41,10 @@ Two flags enable a per-replica limiter for dependent ops:
 - `--dependent-ops-burst` (defaults to rate when set to 0)
 
 When enabled, over-limit dependent ops are assigned to a slow lane by setting
-`dependence_chain.schedule_priority = 1`. The tfhe-worker processes priority 0 first,
-then lane 1, which isolates heavy dependent traffic without reordering within
-a chain.
+`dependence_chain.schedule_priority > 0`. Priority is monotonic per chain (never
+reset by workers). The tfhe-worker always prefers priority 0, but will process
+slow-lane work when fast lane is empty, which isolates heavy dependent traffic
+without reordering within a chain.
 
 ## Events in FHEVM
 
