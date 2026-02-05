@@ -146,19 +146,28 @@ pub async fn ingest_block_logs(
     )
     .await;
 
+    let mut dependent_ops_by_chain: HashMap<ChainHash, u32> = HashMap::new();
+    for tfhe_log in tfhe_event_log {
+        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
+        at_least_one_insertion |= inserted;
+        if inserted
+            && tfhe_log.is_allowed
+            && !tfhe_inputs_handle(&tfhe_log.event).is_empty()
+        {
+            *dependent_ops_by_chain
+                .entry(tfhe_log.dependence_chain)
+                .or_default() += 1;
+        }
+        if block_logs.catchup && inserted {
+            info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
+            catchup_insertion += 1;
+        } else {
+            info!(tfhe_log = ?tfhe_log, "TFHE event");
+        }
+    }
+
     let mut schedule_lane_by_chain: HashMap<ChainHash, i16> = HashMap::new();
     if let Some(limiter) = db.dependent_ops_limiter() {
-        let mut dependent_ops_by_chain: HashMap<ChainHash, u32> =
-            HashMap::new();
-        for tfhe_log in &tfhe_event_log {
-            if tfhe_log.is_allowed
-                && !tfhe_inputs_handle(&tfhe_log.event).is_empty()
-            {
-                *dependent_ops_by_chain
-                    .entry(tfhe_log.dependence_chain)
-                    .or_default() += 1;
-            }
-        }
         let mut limiter = limiter.lock().await;
         let mut allowed: u64 = 0;
         let mut throttled: u64 = 0;
@@ -178,17 +187,6 @@ pub async fn ingest_block_logs(
             }
         }
         db.record_dependent_ops_metrics(allowed, throttled);
-    }
-
-    for tfhe_log in tfhe_event_log {
-        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
-        at_least_one_insertion |= inserted;
-        if block_logs.catchup && inserted {
-            info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
-            catchup_insertion += 1;
-        } else {
-            info!(tfhe_log = ?tfhe_log, "TFHE event");
-        }
     }
 
     if catchup_insertion > 0 {
