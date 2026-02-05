@@ -742,7 +742,7 @@ describe('FHEVM manual operations', function () {
 
   it('select ebool - uninitialized', async function () {
     expect(await this.contract.resEbool()).to.equal(0n);
-    const tx = await this.contract.test_ebool_select_unitialized();
+    const tx = await this.contract.test_ebool_select_uninitialized();
     await tx.wait();
     expect(await this.contract.resEbool()).not.to.equal(0n);
     const res = await decryptBool(await this.contract.resEbool());
@@ -751,7 +751,7 @@ describe('FHEVM manual operations', function () {
 
   it('select address - uninitialized', async function () {
     expect(await this.contract.resAdd()).to.equal(0n);
-    const tx = await this.contract.test_ebaddress_select_unitialized();
+    const tx = await this.contract.test_ebaddress_select_uninitialized();
     await tx.wait();
     expect(await this.contract.resAdd()).not.to.equal(0n);
     const res = await decryptAddress(await this.contract.resAdd());
@@ -760,7 +760,7 @@ describe('FHEVM manual operations', function () {
 
   it('select euint64 - uninitialized', async function () {
     expect(await this.contract.resEuint64()).to.equal(0n);
-    const tx = await this.contract.test_euint64_select_unitialized();
+    const tx = await this.contract.test_euint64_select_uninitialized();
     await tx.wait();
     expect(await this.contract.resEuint64()).not.to.equal(0n);
     const res = await decrypt64(await this.contract.resEuint64());

@@ -48,7 +48,6 @@ extend-exclude = [
     # Docs-only scope for now: exclude source/config/test files
     "*.rs",
     "*.sol",
-    "*.ts",
     "*.js",
     "*.py",
     "*.sql",
