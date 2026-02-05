@@ -168,7 +168,7 @@ function max(uint32 a, euint8 b) internal view returns (euint32)
 There are two unary operators: `neg` (`-`) and `not` (`!`). Note that since we work with unsigned integers, the result of negation is interpreted as the modular opposite. The `not` operator returns the value obtained after flipping all the bits of the operand.
 
 {% hint style="info" %}
-More information about the behavior of these operators can be found at the [TFHE-rs docs](https://docs.zama.ai/tfhe-rs/fhe-computation/operations/arithmetic-operations).
+More information about the behaviour of these operators can be found at the [TFHE-rs docs](https://docs.zama.ai/tfhe-rs/fhe-computation/operations/arithmetic-operations).
 {% endhint %}
 
 ### Bitwise operations
@@ -177,7 +177,7 @@ More information about the behavior of these operators can be found at the [TFHE
 
 #### Bitwise operations (`AND`, `OR`, `XOR`)
 
-Unlike other binary operations, bitwise operations do not natively accept a mix of ciphertext and plaintext inputs. To ease developer experience, the `FHE` library adds function overloads for these operations. Such overloads implicitely do a trivial encryption before actually calling the operation function, as shown in the examples below.
+Unlike other binary operations, bitwise operations do not natively accept a mix of ciphertext and plaintext inputs. To ease developer experience, the `FHE` library adds function overloads for these operations. Such overloads implicitly do a trivial encryption before actually calling the operation function, as shown in the examples below.
 
 Available for euint\* types:
 
@@ -227,7 +227,7 @@ function rotr(euint32 a, euint16 b) internal view returns (euint32)
 **Note** that in the case of ciphertext-plaintext operations, since our backend only accepts plaintext right operands, calling the operation with a plaintext left operand will actually invert the operand order and call the _opposite_ comparison.
 {% endhint %}
 
-The result of comparison operations is an encrypted boolean (`ebool`). In the backend, the boolean is represented by an encrypted unsinged integer of bit width 8, but this is abstracted away by the Solidity library.
+The result of comparison operations is an encrypted boolean (`ebool`). In the backend, the boolean is represented by an encrypted unsigned integer of bit width 8, but this is abstracted away by the Solidity library.
 
 Available for all encrypted types:
 

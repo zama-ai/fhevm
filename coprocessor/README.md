@@ -2,7 +2,7 @@
 **FHEVM Coprocessor** provides the execution service for FHE computations.
 
 It includes a **Coprocessor** service [FHEVM-coprocessor](docs/getting_started/fhevm/coprocessor/coprocessor_backend.md). The Coprocessor
-itself consists of multiple microservices, e.g. for FHE compute, input verify, transaction sending, listenting to events, etc.
+itself consists of multiple microservices, e.g. for FHE compute, input verify, transaction sending, listening to events, etc.
 
 ## Main features
 
@@ -86,7 +86,7 @@ Options:
           Work items batch size [default: 10]
       --tenant-key-cache-size <TENANT_KEY_CACHE_SIZE>
           Tenant key cache size [default: 32]
-      --maximimum-compact-inputs-upload <MAXIMIMUM_COMPACT_INPUTS_UPLOAD>
+      --maximum-compact-inputs-upload <MAXIMUM_COMPACT_INPUTS_UPLOAD>
           Maximum compact inputs to upload [default: 10]
       --maximum-handles-per-input <MAXIMUM_HANDLES_PER_INPUT>
           Maximum compact inputs to upload [default: 255]
