@@ -1118,6 +1118,18 @@ pub fn tfhe_caller(op: &TfheContractEvents) -> Option<Address> {
     }
 }
 
+pub fn tfhe_dependent_op_weight(op: &TfheContractEvents) -> u32 {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+    match op {
+        E::FheMul(C::FheMul { .. })
+        | E::FheDiv(C::FheDiv { .. })
+        | E::FheRem(C::FheRem { .. }) => 4,
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => 0,
+        _ => 1,
+    }
+}
+
 pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
     use TfheContract as C;
     use TfheContractEvents as E;
