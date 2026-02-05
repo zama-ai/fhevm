@@ -1024,6 +1024,44 @@ pub fn is_ebytes_type(inp: i16) -> bool {
     (9..=11).contains(&inp)
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+pub enum ScheduleLane {
+    #[default]
+    Fast,
+    Slow,
+}
+
+impl ScheduleLane {
+    pub const FAST: Self = Self::Fast;
+    pub const SLOW: Self = Self::Slow;
+
+    pub fn as_i16(self) -> i16 {
+        match self {
+            Self::Fast => 0,
+            Self::Slow => 1,
+        }
+    }
+
+    pub fn is_slow(self) -> bool {
+        matches!(self, Self::Slow)
+    }
+}
+
+impl From<ScheduleLane> for i16 {
+    fn from(value: ScheduleLane) -> Self {
+        value.as_i16()
+    }
+}
+
+impl From<i16> for ScheduleLane {
+    fn from(value: i16) -> Self {
+        match value {
+            1 => Self::Slow,
+            _ => Self::Fast,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum AllowEvents {
     AllowedAccount = 0,

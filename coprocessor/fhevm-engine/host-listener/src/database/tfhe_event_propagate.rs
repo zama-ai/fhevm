@@ -7,6 +7,7 @@ use bigdecimal::BigDecimal;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
+use fhevm_engine_common::types::ScheduleLane;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
@@ -160,12 +161,12 @@ impl DependentOpsLimiter {
         }
         let now = Instant::now();
         self.refill(now);
-        let rate_per_sec = self.rate_per_min as f64 / 60.0;
-        if rate_per_sec <= 0.0 {
+        let needed = amount as f64;
+        if self.tokens >= needed {
+            self.tokens -= needed;
             return false;
         }
-        self.tokens -= amount as f64;
-        self.tokens < 0.0
+        true
     }
 
     fn refill(&mut self, now: Instant) {
@@ -837,12 +838,13 @@ impl Database {
         chains: OrderedChains,
         block_timestamp: PrimitiveDateTime,
         block_summary: &BlockSummary,
-        schedule_lane_by_chain: &HashMap<ChainHash, i16>,
+        schedule_lane_by_chain: &HashMap<ChainHash, ScheduleLane>,
     ) -> Result<(), SqlxError> {
         for chain in chains {
             let chain_id = chain.hash.to_vec();
-            let schedule_lane =
-                *schedule_lane_by_chain.get(&chain.hash).unwrap_or(&0);
+            let schedule_lane = *schedule_lane_by_chain
+                .get(&chain.hash)
+                .unwrap_or(&ScheduleLane::Fast);
             let last_updated_at = block_timestamp.saturating_add(
                 TimeDuration::microseconds(chain.before_size as i64),
             );
@@ -889,7 +891,7 @@ impl Database {
                 &dependents,
                 block_summary.hash.to_vec(),
                 block_summary.number as i64,
-                schedule_lane,
+                i16::from(schedule_lane),
             )
             .execute(tx.deref_mut())
             .await?;

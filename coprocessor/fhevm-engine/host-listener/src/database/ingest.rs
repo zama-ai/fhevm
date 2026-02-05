@@ -3,8 +3,13 @@ use std::collections::{HashMap, HashSet};
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
+<<<<<<< HEAD
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::Handle;
+=======
+use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::types::{Handle, ScheduleLane};
+>>>>>>> 02dd8eef (refactor(coprocessor): add schedule lane enum)
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{error, info};
 
@@ -166,7 +171,8 @@ pub async fn ingest_block_logs(
         }
     }
 
-    let mut schedule_lane_by_chain: HashMap<ChainHash, i16> = HashMap::new();
+    let mut schedule_lane_by_chain: HashMap<ChainHash, ScheduleLane> =
+        HashMap::new();
     if let Some(limiter) = db.dependent_ops_limiter() {
         let mut limiter = limiter.lock().await;
         let mut allowed: u64 = 0;
@@ -181,7 +187,7 @@ pub async fn ingest_block_logs(
             }
             if limiter.consume(count) {
                 throttled += count as u64;
-                schedule_lane_by_chain.insert(chain.hash, 1);
+                schedule_lane_by_chain.insert(chain.hash, ScheduleLane::Slow);
             } else {
                 allowed += count as u64;
             }
