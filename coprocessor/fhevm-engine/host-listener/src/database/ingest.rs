@@ -31,7 +31,7 @@ pub struct IngestOptions {
 
 #[derive(Default)]
 struct DependentOpsStats {
-    total: u32,
+    total: u64,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -166,11 +166,11 @@ pub async fn ingest_block_logs(
             && tfhe_log.is_allowed
             && !tfhe_inputs_handle(&tfhe_log.event).is_empty()
         {
-            let weight = tfhe_dependent_op_weight(&tfhe_log.event);
+            let weight = u64::from(tfhe_dependent_op_weight(&tfhe_log.event));
             let stats = dependent_ops_by_chain
                 .entry(tfhe_log.dependence_chain)
                 .or_default();
-            stats.total += weight;
+            stats.total = stats.total.saturating_add(weight);
         }
         if block_logs.catchup && inserted {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
@@ -189,13 +189,13 @@ pub async fn ingest_block_logs(
             continue;
         };
         if options.dependent_ops_max_per_chain > 0
-            && stats.total > options.dependent_ops_max_per_chain
+            && stats.total > u64::from(options.dependent_ops_max_per_chain)
         {
-            throttled += stats.total as u64;
+            throttled += stats.total;
             schedule_priority_by_chain
                 .insert(chain.hash, SchedulePriority::SLOW);
         } else {
-            allowed += stats.total as u64;
+            allowed += stats.total;
         }
     }
     db.record_dependent_ops_metrics(allowed, throttled);
