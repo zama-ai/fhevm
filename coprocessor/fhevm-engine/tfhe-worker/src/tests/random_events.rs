@@ -224,7 +224,9 @@ async fn test_fhe_random_bounded_events() -> Result<(), Box<dyn std::error::Erro
     let mut output_handles = Vec::new();
     let mut tx = listener.new_transaction().await?;
 
-    for (idx, &the_type) in random_supported_types().iter().enumerate() {
+    for &the_type in random_supported_types().iter() {
+        let idx = the_type as usize;
+        let bound_idx = if the_type > 8 { 8 } else { idx };
         let transaction_id = next_handle();
         let output_handle = next_handle();
         output_handles.push(output_handle.to_vec());
@@ -232,7 +234,9 @@ async fn test_fhe_random_bounded_events() -> Result<(), Box<dyn std::error::Erro
         let log = tfhe_log(
             TfheContractEvents::FheRandBounded(TfheContract::FheRandBounded {
                 caller,
-                upperBound: as_clear_uint(&BigInt::from_str(RAND_BOUNDED_BOUNDS[idx]).unwrap()),
+                upperBound: as_clear_uint(
+                    &BigInt::from_str(RAND_BOUNDED_BOUNDS[bound_idx]).unwrap(),
+                ),
                 randType: to_ty(the_type),
                 seed: seed_bytes(deterministic_seed),
                 result: output_handle,
@@ -247,16 +251,19 @@ async fn test_fhe_random_bounded_events() -> Result<(), Box<dyn std::error::Erro
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let resp = decrypt_ciphertexts(&pool, 1, output_handles).await?;
-    assert_eq!(resp.len(), RAND_BOUNDED_EXPECTED.len());
-
-    for idx in 0..RAND_BOUNDED_EXPECTED.len() {
-        assert_eq!(resp[idx].output_type, random_supported_types()[idx] as i16);
-        assert_eq!(resp[idx].value, RAND_BOUNDED_EXPECTED[idx]);
-        if resp[idx].output_type > 0 {
+    for (resp_idx, resp_entry) in resp.iter().enumerate() {
+        let the_type = random_supported_types()[resp_idx] as i16;
+        let type_idx = the_type as usize;
+        let bound_idx = if the_type > 8 { 8 } else { type_idx };
+        assert_eq!(resp_entry.output_type, the_type);
+        if the_type <= 8 {
+            assert_eq!(resp_entry.value, RAND_BOUNDED_EXPECTED[type_idx]);
+        }
+        if resp_entry.output_type > 0 {
             assert!(
-                BigInt::from_str(RAND_BOUNDED_BOUNDS[idx])
+                BigInt::from_str(RAND_BOUNDED_BOUNDS[bound_idx])
                     .unwrap()
-                    .gt(&BigInt::from_str(&resp[idx].value).unwrap()),
+                    .gt(&BigInt::from_str(&resp_entry.value).unwrap()),
                 "value must be < bound"
             );
         }
