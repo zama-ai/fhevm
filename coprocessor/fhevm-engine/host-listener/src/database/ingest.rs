@@ -186,44 +186,23 @@ pub async fn ingest_block_logs(
 
     let mut schedule_priority_by_chain: HashMap<ChainHash, SchedulePriority> =
         HashMap::new();
-    if let Some(limiter) = db.dependent_ops_limiter() {
-        let mut limiter = limiter.lock().await;
-        let mut allowed: u64 = 0;
-        let mut throttled: u64 = 0;
-        for chain in &chains {
-            let Some(stats) = dependent_ops_by_chain.get(&chain.hash) else {
-                continue;
-            };
-            let mut priority = SchedulePriority::FAST;
-            if options.dependent_ops_max_per_chain > 0
-                && stats.total > options.dependent_ops_max_per_chain
-            {
-                priority = SchedulePriority::SLOW;
-            }
-            if priority != SchedulePriority::FAST {
-                throttled += stats.total as u64;
-                schedule_priority_by_chain.insert(chain.hash, priority);
-                continue;
-            }
-            let mut throttled_chain = false;
-            for (caller, count) in &stats.by_caller {
-                if *count == 0 {
-                    continue;
-                }
-                if limiter.consume(*caller, *count) {
-                    throttled += *count as u64;
-                    throttled_chain = true;
-                } else {
-                    allowed += *count as u64;
-                }
-            }
-            if throttled_chain {
-                schedule_priority_by_chain
-                    .insert(chain.hash, SchedulePriority::SLOW);
-            }
+    let mut allowed: u64 = 0;
+    let mut throttled: u64 = 0;
+    for chain in &chains {
+        let Some(stats) = dependent_ops_by_chain.get(&chain.hash) else {
+            continue;
+        };
+        if options.dependent_ops_max_per_chain > 0
+            && stats.total > options.dependent_ops_max_per_chain
+        {
+            throttled += stats.total as u64;
+            schedule_priority_by_chain
+                .insert(chain.hash, SchedulePriority::SLOW);
+        } else {
+            allowed += stats.total as u64;
         }
-        db.record_dependent_ops_metrics(allowed, throttled);
     }
+    db.record_dependent_ops_metrics(allowed, throttled);
 
     if catchup_insertion > 0 {
         if catchup_insertion == block_logs.logs.len() {

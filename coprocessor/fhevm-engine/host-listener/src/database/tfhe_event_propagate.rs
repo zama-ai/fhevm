@@ -17,14 +17,11 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
 use std::collections::HashMap;
-use std::num::NonZeroUsize;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::Duration;
-use std::time::Instant;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
-use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tracing::error;
 use tracing::info;
@@ -75,8 +72,6 @@ pub type ChainCache = RwLock<lru::LruCache<Handle, ChainHash>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
-const DEFAULT_DEPENDENT_OPS_CALLER_CACHE_SIZE: usize = 10_000;
-
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
 const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 
@@ -117,7 +112,6 @@ pub struct Database {
     chain_id_label: String,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
-    dependent_ops_limiter: Option<Arc<Mutex<DependentOpsLimiters>>>,
 }
 
 #[derive(Debug)]
@@ -129,109 +123,6 @@ pub struct LogTfhe {
     pub block_timestamp: PrimitiveDateTime,
     pub tx_depth_size: u64,
     pub dependence_chain: TransactionHash,
-}
-
-#[derive(Debug)]
-pub(crate) struct DependentOpsLimiter {
-    rate_per_min: u32,
-    burst: u32,
-    tokens: f64,
-    last_refill: Instant,
-}
-
-impl DependentOpsLimiter {
-    fn new(rate_per_min: u32, burst: u32) -> Option<Self> {
-        if rate_per_min == 0 {
-            return None;
-        }
-        let burst = if burst == 0 {
-            rate_per_min.max(1)
-        } else {
-            burst
-        };
-        Some(Self {
-            rate_per_min,
-            burst,
-            tokens: burst as f64,
-            last_refill: Instant::now(),
-        })
-    }
-
-    pub(crate) fn consume(&mut self, amount: u32) -> bool {
-        if amount == 0 {
-            return false;
-        }
-        let now = Instant::now();
-        self.refill(now);
-        let needed = amount as f64;
-        if self.tokens >= needed {
-            self.tokens -= needed;
-            return false;
-        }
-        true
-    }
-
-    fn refill(&mut self, now: Instant) {
-        let elapsed = now.duration_since(self.last_refill).as_secs_f64();
-        if elapsed <= 0.0 {
-            return;
-        }
-        let rate_per_sec = self.rate_per_min as f64 / 60.0;
-        let added = elapsed * rate_per_sec;
-        if added > 0.0 {
-            self.tokens = (self.tokens + added).min(self.burst as f64);
-            self.last_refill = now;
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct DependentOpsLimiters {
-    rate_per_min: u32,
-    burst: u32,
-    callers: lru::LruCache<Address, DependentOpsLimiter>,
-}
-
-impl DependentOpsLimiters {
-    fn new(
-        rate_per_min: u32,
-        burst: u32,
-        caller_cache_size: usize,
-    ) -> Option<Self> {
-        if rate_per_min == 0 {
-            return None;
-        }
-        let burst = if burst == 0 {
-            rate_per_min.max(1)
-        } else {
-            burst
-        };
-        let cache_size = NonZeroUsize::new(caller_cache_size.max(1))
-            .expect("caller cache size must be non-zero");
-        Some(Self {
-            rate_per_min,
-            burst,
-            callers: lru::LruCache::new(cache_size),
-        })
-    }
-
-    pub(crate) fn consume(&mut self, caller: Address, amount: u32) -> bool {
-        if amount == 0 {
-            return false;
-        }
-        let limiter = if let Some(limiter) = self.callers.get_mut(&caller) {
-            limiter
-        } else {
-            let limiter =
-                DependentOpsLimiter::new(self.rate_per_min, self.burst)
-                    .expect("rate_per_min > 0");
-            self.callers.put(caller, limiter);
-            self.callers
-                .get_mut(&caller)
-                .expect("just inserted limiter")
-        };
-        limiter.consume(amount)
-    }
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -257,23 +148,7 @@ impl Database {
             pool: Arc::new(RwLock::new(pool)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
-            dependent_ops_limiter: None,
         })
-    }
-
-    pub fn set_dependent_ops_limiter(&mut self, rate_per_min: u32, burst: u32) {
-        self.dependent_ops_limiter = DependentOpsLimiters::new(
-            rate_per_min,
-            burst,
-            DEFAULT_DEPENDENT_OPS_CALLER_CACHE_SIZE,
-        )
-        .map(|limiter| Arc::new(Mutex::new(limiter)));
-    }
-
-    pub(crate) fn dependent_ops_limiter(
-        &self,
-    ) -> Option<Arc<Mutex<DependentOpsLimiters>>> {
-        self.dependent_ops_limiter.clone()
     }
 
     pub(crate) fn record_dependent_ops_metrics(
@@ -1277,51 +1152,5 @@ pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
         E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => vec![],
 
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dependent_ops_limiter_defers_after_burst() {
-        let mut limiter = DependentOpsLimiter::new(60, 2).unwrap();
-        assert!(!limiter.consume(1));
-        assert!(!limiter.consume(1));
-        assert!(limiter.consume(1));
-    }
-
-    #[test]
-    fn dependent_ops_limiter_refills_over_time() {
-        let mut limiter = DependentOpsLimiter::new(60, 1).unwrap();
-        assert!(!limiter.consume(1));
-        assert!(limiter.consume(1));
-        limiter.last_refill =
-            Instant::now().checked_sub(Duration::from_secs(2)).unwrap();
-        assert!(!limiter.consume(1));
-    }
-
-    #[test]
-    fn dependent_ops_limiter_disabled_when_rate_zero() {
-        assert!(DependentOpsLimiter::new(0, 10).is_none());
-    }
-
-    #[test]
-    fn dependent_ops_limiter_consume_throttles_after_burst() {
-        let mut limiter = DependentOpsLimiter::new(60, 2).unwrap();
-        assert!(!limiter.consume(2));
-        assert!(limiter.consume(1));
-    }
-
-    #[test]
-    fn dependent_ops_limiters_are_isolated_by_caller() {
-        let mut limiters = DependentOpsLimiters::new(60, 2, 10).unwrap();
-        let caller_a = Address::from([0x11u8; 20]);
-        let caller_b = Address::from([0x22u8; 20]);
-        assert!(!limiters.consume(caller_a, 2));
-        assert!(!limiters.consume(caller_b, 2));
-        assert!(limiters.consume(caller_a, 1));
-        assert!(limiters.consume(caller_b, 1));
     }
 }
