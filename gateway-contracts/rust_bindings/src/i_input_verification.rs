@@ -442,7 +442,6 @@ error CoprocessorAlreadyRejected(uint256 zkProofId, address txSender, address si
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Address,
@@ -547,7 +546,6 @@ error CoprocessorAlreadyVerified(uint256 zkProofId, address txSender, address si
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Address,
@@ -648,7 +646,6 @@ error VerifyProofNotRequested(uint256 zkProofId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
-        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -1390,7 +1387,6 @@ function getRejectProofConsensusTxSenders(uint256 zkProofId) external view retur
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -1426,7 +1422,6 @@ function getRejectProofConsensusTxSenders(uint256 zkProofId) external view retur
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -1556,7 +1551,6 @@ function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view retur
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -1592,7 +1586,6 @@ function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view retur
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -1719,7 +1712,6 @@ function getVersion() external pure returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1751,7 +1743,6 @@ function getVersion() external pure returns (string memory);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -1867,7 +1858,6 @@ function isProofRejected(uint256 zkProofId) external view returns (bool);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -1901,7 +1891,6 @@ function isProofRejected(uint256 zkProofId) external view returns (bool);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -2023,7 +2012,6 @@ function isProofVerified(uint256 zkProofId) external view returns (bool);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -2057,7 +2045,6 @@ function isProofVerified(uint256 zkProofId) external view returns (bool);
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (bool,);
@@ -2176,7 +2163,6 @@ function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Bytes,
@@ -2219,7 +2205,6 @@ function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2347,7 +2332,6 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Address,
@@ -2405,7 +2389,6 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2545,7 +2528,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<
@@ -2598,7 +2580,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         }
         {
             #[doc(hidden)]
-            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2703,7 +2684,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         }
     };
     ///Container for all the [`IInputVerification`](self) function calls.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     pub enum IInputVerificationCalls {
@@ -2724,6 +2704,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         #[allow(missing_docs)]
         verifyProofResponse(verifyProofResponseCall),
     }
+    #[automatically_derived]
     impl IInputVerificationCalls {
         /// All the selectors of this enum.
         ///
@@ -2741,48 +2722,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
             [206u8, 126u8, 66u8, 87u8],
             [233u8, 111u8, 136u8, 234u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(isProofRejected),
-            ::core::stringify!(getVersion),
-            ::core::stringify!(getRejectProofConsensusTxSenders),
-            ::core::stringify!(verifyProofResponse),
-            ::core::stringify!(rejectProofResponse),
-            ::core::stringify!(verifyProofRequest),
-            ::core::stringify!(getVerifyProofConsensusTxSenders),
-            ::core::stringify!(isProofVerified),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <isProofRejectedCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getRejectProofConsensusTxSendersCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <verifyProofResponseCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <rejectProofResponseCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <verifyProofRequestCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <getVerifyProofConsensusTxSendersCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isProofVerifiedCall as alloy_sol_types::SolCall>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IInputVerificationCalls {
@@ -3148,7 +3087,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         }
     }
     ///Container for all the [`IInputVerification`](self) custom errors.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IInputVerificationErrors {
@@ -3159,6 +3097,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         #[allow(missing_docs)]
         VerifyProofNotRequested(VerifyProofNotRequested),
     }
+    #[automatically_derived]
     impl IInputVerificationErrors {
         /// All the selectors of this enum.
         ///
@@ -3171,38 +3110,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
             [71u8, 17u8, 8u8, 63u8],
             [249u8, 237u8, 67u8, 31u8],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(CoprocessorAlreadyRejected),
-            ::core::stringify!(VerifyProofNotRequested),
-            ::core::stringify!(CoprocessorAlreadyVerified),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <CoprocessorAlreadyRejected as alloy_sol_types::SolError>::SIGNATURE,
-            <VerifyProofNotRequested as alloy_sol_types::SolError>::SIGNATURE,
-            <CoprocessorAlreadyVerified as alloy_sol_types::SolError>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 4usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IInputVerificationErrors {
@@ -3382,7 +3289,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         }
     }
     ///Container for all the [`IInputVerification`](self) events.
-    #[derive(Clone)]
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IInputVerificationEvents {
@@ -3397,6 +3303,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         #[allow(missing_docs)]
         VerifyProofResponseCall(VerifyProofResponseCall),
     }
+    #[automatically_derived]
     impl IInputVerificationEvents {
         /// All the selectors of this enum.
         ///
@@ -3431,42 +3338,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 246u8, 15u8, 114u8, 79u8, 248u8, 16u8, 137u8, 111u8, 65u8, 152u8, 53u8,
             ],
         ];
-        /// The names of the variants in the same order as `SELECTORS`.
-        pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(VerifyProofResponseCall),
-            ::core::stringify!(VerifyProofRequest),
-            ::core::stringify!(RejectProofResponseCall),
-            ::core::stringify!(RejectProofResponse),
-            ::core::stringify!(VerifyProofResponse),
-        ];
-        /// The signatures in the same order as `SELECTORS`.
-        pub const SIGNATURES: &'static [&'static str] = &[
-            <VerifyProofResponseCall as alloy_sol_types::SolEvent>::SIGNATURE,
-            <VerifyProofRequest as alloy_sol_types::SolEvent>::SIGNATURE,
-            <RejectProofResponseCall as alloy_sol_types::SolEvent>::SIGNATURE,
-            <RejectProofResponse as alloy_sol_types::SolEvent>::SIGNATURE,
-            <VerifyProofResponse as alloy_sol_types::SolEvent>::SIGNATURE,
-        ];
-        /// Returns the signature for the given selector, if known.
-        #[inline]
-        pub fn signature_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            match Self::SELECTORS.binary_search(&selector) {
-                ::core::result::Result::Ok(idx) => {
-                    ::core::option::Option::Some(Self::SIGNATURES[idx])
-                }
-                ::core::result::Result::Err(_) => ::core::option::Option::None,
-            }
-        }
-        /// Returns the enum variant name for the given selector, if known.
-        #[inline]
-        pub fn name_by_selector(
-            selector: [u8; 32usize],
-        ) -> ::core::option::Option<&'static str> {
-            let sig = Self::signature_by_selector(selector)?;
-            sig.split_once('(').map(|(name, _)| name)
-        }
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IInputVerificationEvents {
@@ -3587,9 +3458,9 @@ See the [wrapper's documentation](`IInputVerificationInstance`) for more details
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        __provider: P,
+        provider: P,
     ) -> IInputVerificationInstance<P, N> {
-        IInputVerificationInstance::<P, N>::new(address, __provider)
+        IInputVerificationInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -3601,11 +3472,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        __provider: P,
+        provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<IInputVerificationInstance<P, N>>,
     > {
-        IInputVerificationInstance::<P, N>::deploy(__provider)
+        IInputVerificationInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -3616,8 +3487,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IInputVerificationInstance::<P, N>::deploy_builder(__provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        IInputVerificationInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IInputVerification`](self) instance.
 
@@ -3644,6 +3515,7 @@ See the [module-level documentation](self) for all the available methods.*/
         }
     }
     /// Instantiation and getters/setters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -3654,11 +3526,11 @@ See the [wrapper's documentation](`IInputVerificationInstance`) for more details
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            __provider: P,
+            provider: P,
         ) -> Self {
             Self {
                 address,
-                provider: __provider,
+                provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -3669,9 +3541,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            __provider: P,
+            provider: P,
         ) -> alloy_contract::Result<IInputVerificationInstance<P, N>> {
-            let call_builder = Self::deploy_builder(__provider);
+            let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -3681,9 +3553,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                __provider,
+                provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
@@ -3720,6 +3592,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Function calls.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
@@ -3837,6 +3710,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         }
     }
     /// Event filters.
+    #[automatically_derived]
     impl<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
