@@ -199,13 +199,20 @@ pub async fn ingest_block_logs(
             if options.dependent_ops_max_per_chain > 0
                 && stats.total > options.dependent_ops_max_per_chain
             {
-                priority = priority.max(SchedulePriority::CAP_OPS);
+                let level =
+                    1 + (stats.total / options.dependent_ops_max_per_chain);
+                priority =
+                    priority.max(SchedulePriority::from_u32_clamped(level));
             }
             if options.dependent_ops_max_callers_per_chain > 0
                 && (stats.by_caller.len() as u32)
                     > options.dependent_ops_max_callers_per_chain
             {
-                priority = priority.max(SchedulePriority::CAP_CALLERS);
+                let level = 1
+                    + ((stats.by_caller.len() as u32)
+                        / options.dependent_ops_max_callers_per_chain);
+                priority =
+                    priority.max(SchedulePriority::from_u32_clamped(level));
             }
             if priority != SchedulePriority::FAST {
                 throttled += stats.total as u64;

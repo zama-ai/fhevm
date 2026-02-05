@@ -1030,11 +1030,15 @@ pub struct SchedulePriority(i16);
 impl SchedulePriority {
     pub const FAST: Self = Self(0);
     pub const THROTTLED: Self = Self(1);
-    pub const CAP_CALLERS: Self = Self(2);
-    pub const CAP_OPS: Self = Self(3);
+    pub const MAX: Self = Self(100);
 
     pub fn as_i16(self) -> i16 {
         self.0
+    }
+
+    pub fn from_u32_clamped(value: u32) -> Self {
+        let capped = value.min(Self::MAX.0 as u32);
+        Self(capped as i16)
     }
 
     #[must_use]
