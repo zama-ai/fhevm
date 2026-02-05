@@ -10,6 +10,6 @@ The cryptographic operations carried out by the threshold back=end are fulfilled
 The underlying MPC protocol is what is known as a _statistically maliciously robust_ and _proactively_ secure MPC protocol. Specifically this implies the following:
 - Statistically: the underlying protocols cannot be “broken” by an adversary regardless of the amount of computation power. This also means that they do not rely on any exotic cryptographic assumptions. (For practical reasons standard security of hash functions is still required.)
 - Maliciously Robust: the protocol can finish execution _correctly_ with up to `t` parties misbehaving by running rogue software or not participating.
-- Proactive: it is possible to "undo" a leakage of key material of at most `t` parties byt refreshing their key shares. That is, if a few servers are compromised it is possible to make the stolen material 100% useless without the need to regenerate a new public key.
+- Proactive: it is possible to "undo" a leakage of key material of at most `t` parties by refreshing their key shares. That is, if a few servers are compromised it is possible to make the stolen material 100% useless without the need to regenerate a new public key.
 
 The MPC protocol is based on peer-reviewed cryptographic core protocols and peer reviewed modifications. For more modifications see [this paper](https://eprint.iacr.org/2023/815).

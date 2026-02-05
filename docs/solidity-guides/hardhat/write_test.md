@@ -52,7 +52,7 @@ To compute these arguments in TypeScript, you need:
 
 {% step %}
 
-#### Create a new encryted input
+#### Create a new encrypted input
 
 ```ts
 // use the `fhevm` API module from the Hardhat Runtime Environment

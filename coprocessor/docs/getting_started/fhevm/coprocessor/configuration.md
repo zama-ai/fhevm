@@ -46,7 +46,7 @@ Options:
           Work items batch size [default: 10]
       --tenant-key-cache-size <TENANT_KEY_CACHE_SIZE>
           Tenant key cache size [default: 32]
-      --maximimum-compact-inputs-upload <MAXIMIMUM_COMPACT_INPUTS_UPLOAD>
+      --maximum-compact-inputs-upload <MAXIMUM_COMPACT_INPUTS_UPLOAD>
           Maximum compact inputs to upload [default: 10]
       --maximum-handles-per-input <MAXIMUM_HANDLES_PER_INPUT>
           Maximum compact inputs to upload [default: 255]

@@ -22,8 +22,8 @@ While building support for ERC-7984 confidential tokens in your wallet/app, you 
 
 At a high-level, to integrate Zama Protocol into a wallet, you do **not** need to run FHE infrastructure. You can interact with the Zama Protocol using [Relayer SDK](https://docs.zama.org/protocol/relayer-sdk-guides) in your wallet or app. These are the steps at a high-level:
 
-1. **Relayer SDK initialisation** in web app, browser extension, or mobile app. Follow the [setup guide for Relayer SDK](https://docs.zama.org/protocol/relayer-sdk-guides/development-guide/webapp). In browser contexts, importing the library via the CDN links is easiest. Alternatively, do this by importing the `@zama-fhe/relayer-sdk` NPM package.
-2. [Configure and initialise settings](https://docs.zama.org/protocol/relayer-sdk-guides/fhevm-relayer/initialization) for the library.
+1. **Relayer SDK initialization** in web app, browser extension, or mobile app. Follow the [setup guide for Relayer SDK](https://docs.zama.org/protocol/relayer-sdk-guides/development-guide/webapp). In browser contexts, importing the library via the CDN links is easiest. Alternatively, do this by importing the `@zama-fhe/relayer-sdk` NPM package.
+2. [Configure and initialize settings](https://docs.zama.org/protocol/relayer-sdk-guides/fhevm-relayer/initialization) for the library.
 3. **Confidential token (ERC-7984) basics**:
     - Show encrypted balances using **user decryption**.
     - Build **transfers** using encrypted inputs. Refer to [OpenZeppelin’s ERC-7984 token guide](https://docs.openzeppelin.com/confidential-contracts/token).
@@ -73,7 +73,7 @@ pnpm run start
 
 ![Connect wallet to demo app](../.gitbook/assets/wallet-guide-1.png)
 
-**Step 2**: User can now sign and fetch their decrypted ERC-7984 confidential token balance. Balances are stored as ciphertext handles. To display a user’s balance, read the balance handle from your token and [perform **user decryption**](https://docs.zama.ai/protocol/relayer-sdk-guides/v0.1/fhevm-relayer/decryption/user-decryption) with an EIP-712-authorised session in the wallet. Ensure the token grants ACL permission to the user before decrypting.
+**Step 2**: User can now sign and fetch their decrypted ERC-7984 confidential token balance. Balances are stored as ciphertext handles. To display a user’s balance, read the balance handle from your token and [perform **user decryption**](https://docs.zama.ai/protocol/relayer-sdk-guides/v0.1/fhevm-relayer/decryption/user-decryption) with an EIP-712-authorized session in the wallet. Ensure the token grants ACL permission to the user before decrypting.
 
 ![Sign user decryption request](../.gitbook/assets/wallet-guide-2.png)
 
