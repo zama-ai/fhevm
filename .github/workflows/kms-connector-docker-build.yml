@@ -2,6 +2,12 @@ name: kms-connector-docker-build
 
 on:
   workflow_call:
+    inputs:
+      is_workflow_call:
+        description: "Indicates if the workflow is called from another workflow"
+        type: boolean
+        default: true
+        required: false
     secrets:
       AWS_ACCESS_KEY_S3_USER:
         required: true
@@ -50,21 +56,21 @@ on:
         type: boolean
         default: true
   push:
-    branches:
-      - main
+    branches: ['main', 'release/*']
 
 permissions: {}
 
-concurrency:
-  group: kms-connector-build-${{ github.ref_name }}
-  cancel-in-progress: true
-
 jobs:
   ########################################################################
-  #                             DB MIGRATION                             #
+  #                        PRE-BUILD CHECKS                              #
   ########################################################################
+  is-latest-commit:
+    uses: ./.github/workflows/is-latest-commit.yml
+    if: github.event_name == 'push'
+
   check-changes-db-migration:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
     secrets: &check_changes_secrets
       GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
     permissions: &check_changes_permissions
@@ -80,12 +86,128 @@ jobs:
           - .github/workflows/kms-connector-docker-build.yml
           - kms-connector/connector-db/**
 
+  check-changes-gw-listener:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/kms-connector/gw-listener
+      filters: |
+        gw-listener:
+          - .github/workflows/kms-connector-docker-build.yml
+          - kms-connector/crates/gw-listener/**
+          - kms-connector/crates/utils/**
+          - kms-connector/Cargo.*
+          - gateway-contracts/rust-bindings/**
+
+  check-changes-kms-worker:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/kms-connector/kms-worker
+      filters: |
+        kms-worker:
+          - .github/workflows/kms-connector-docker-build.yml
+          - kms-connector/crates/kms-worker/**
+          - kms-connector/crates/utils/**
+          - kms-connector/Cargo.*
+          - gateway-contracts/rust-bindings/**
+          - host-contracts/rust-bindings/**
+
+  check-changes-tx-sender:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      docker-image: fhevm/kms-connector/tx-sender
+      filters: |
+        tx-sender:
+          - .github/workflows/kms-connector-docker-build.yml
+          - kms-connector/crates/tx-sender/**
+          - kms-connector/crates/utils/**
+          - kms-connector/Cargo.*
+          - gateway-contracts/rust-bindings/**
+
+  ########################################################################
+  #                        BUILD DECISIONS                               #
+  # Centralizes all build/re-tag logic in one place for maintainability  #
+  ########################################################################
+  build-decisions:
+    name: build-decisions
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - is-latest-commit
+      - check-changes-db-migration
+      - check-changes-gw-listener
+      - check-changes-kms-worker
+      - check-changes-tx-sender
+    outputs:
+      db_migration: ${{ steps.decide.outputs.db_migration }}
+      gw_listener: ${{ steps.decide.outputs.gw_listener }}
+      kms_worker: ${{ steps.decide.outputs.kms_worker }}
+      tx_sender: ${{ steps.decide.outputs.tx_sender }}
+    steps:
+      - id: decide
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          NEEDS: ${{ toJSON(needs) }}
+          INPUTS: ${{ toJSON(inputs) }}
+        with:
+          script: |
+            // Decision logic (returns: "build", "retag", or "skip"):
+            // - release: always build
+            // - push: only act if latest commit; build if changes, retag otherwise
+            // - workflow_call: build if changes detected, otherwise skip
+            // - workflow_dispatch: build if input is true, otherwise skip
+            const event = process.env.EVENT_NAME;
+            const needs = JSON.parse(process.env.NEEDS);
+            const inputs = JSON.parse(process.env.INPUTS);
+            const isLatestCommit = needs['is-latest-commit'].outputs?.is_latest === 'true';
+            const isWorkflowCall = inputs.is_workflow_call ?? false;
+
+            const decideAction = (changes, manualInput) => {
+              if (event === 'release') return 'build';
+              if (event === 'push') return isLatestCommit ? (changes ? 'build' : 'retag') : 'skip';
+              if (isWorkflowCall) return changes ? 'build' : 'skip';
+              if (!isWorkflowCall && event === 'workflow_dispatch') return manualInput ? 'build' : 'skip';
+              return 'skip';
+            };
+
+            const services = {
+              db_migration: { changes: needs['check-changes-db-migration'].outputs?.changes, build_input: inputs.build_db_migration },
+              gw_listener: { changes: needs['check-changes-gw-listener'].outputs?.changes, build_input: inputs.build_gw_listener },
+              kms_worker: { changes: needs['check-changes-kms-worker'].outputs?.changes, build_input: inputs.build_kms_worker },
+              tx_sender: { changes: needs['check-changes-tx-sender'].outputs?.changes, build_input: inputs.build_tx_sender },
+            };
+
+            core.info(`Event: ${event}, Is latest commit: ${isLatestCommit}, Is workflow call: ${isWorkflowCall}`);
+            for (const [name, { changes, build_input }] of Object.entries(services)) {
+              const action = decideAction(changes === 'true', build_input ?? false);
+              core.setOutput(name, action);
+              core.info(`${name}: ${action} (changes: ${changes}, build_input: ${build_input})`);
+            }
+
+  ########################################################################
+  #                             DB MIGRATION                             #
+  ########################################################################
   build-db-migration:
-    needs: check-changes-db-migration
-    if: |
-      github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes-db-migration.outputs.changes == 'true')
-      || (github.event_name == 'workflow_dispatch' && inputs.build_db_migration)
+    needs: build-decisions
+    concurrency:
+      group: kms-connector-build-db-migration-${{ github.ref_name }}
+      cancel-in-progress: true
+    if: always() && needs.build-decisions.outputs.db_migration == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     secrets: &docker_secrets
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
@@ -109,9 +231,8 @@ jobs:
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   re-tag-db-migration-image:
-    needs: check-changes-db-migration
-    if: |
-      needs.check-changes-db-migration.outputs.changes != 'true' && github.event_name == 'push'
+    needs: [build-decisions, check-changes-db-migration]
+    if: always() && needs.build-decisions.outputs.db_migration == 'retag'
     permissions: &re-tag-image-permissions
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
@@ -126,28 +247,12 @@ jobs:
   ########################################################################
   #                           GATEWAY LISTENER                           #
   ########################################################################
-  check-changes-gw-listener:
-    uses: ./.github/workflows/check-changes-for-docker-build.yml
-    secrets: *check_changes_secrets
-    permissions: *check_changes_permissions
-    with:
-      caller-workflow-event-name: ${{ github.event_name }}
-      caller-workflow-event-before: ${{ github.event.before }}
-      docker-image: fhevm/kms-connector/gw-listener
-      filters: |
-        gw-listener:
-          - .github/workflows/kms-connector-docker-build.yml
-          - kms-connector/crates/gw-listener/**
-          - kms-connector/crates/utils/**
-          - kms-connector/Cargo.*
-          - gateway-contracts/rust-bindings/**
-
   build-gw-listener:
-    needs: check-changes-gw-listener
-    if: |
-      github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes-gw-listener.outputs.changes == 'true')
-      || (github.event_name == 'workflow_dispatch' && inputs.build_gw_listener)
+    needs: build-decisions
+    concurrency:
+      group: kms-connector-build-gw-listener-${{ github.ref_name }}
+      cancel-in-progress: true
+    if: always() && needs.build-decisions.outputs.gw_listener == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
@@ -160,9 +265,8 @@ jobs:
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   re-tag-gw-listener-image:
-    needs: check-changes-gw-listener
-    if: |
-      needs.check-changes-gw-listener.outputs.changes != 'true' && github.event_name == 'push'
+    needs: [build-decisions, check-changes-gw-listener]
+    if: always() && needs.build-decisions.outputs.gw_listener == 'retag'
     permissions: *re-tag-image-permissions
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
@@ -173,29 +277,12 @@ jobs:
   ########################################################################
   #                              KMS WORKER                              #
   ########################################################################
-  check-changes-kms-worker:
-    uses: ./.github/workflows/check-changes-for-docker-build.yml
-    secrets: *check_changes_secrets
-    permissions: *check_changes_permissions
-    with:
-      caller-workflow-event-name: ${{ github.event_name }}
-      caller-workflow-event-before: ${{ github.event.before }}
-      docker-image: fhevm/kms-connector/kms-worker
-      filters: |
-        kms-worker:
-          - .github/workflows/kms-connector-docker-build.yml
-          - kms-connector/crates/kms-worker/**
-          - kms-connector/crates/utils/**
-          - kms-connector/Cargo.*
-          - gateway-contracts/rust-bindings/**
-          - host-contracts/rust-bindings/**
-
   build-kms-worker:
-    needs: check-changes-kms-worker
-    if: |
-      github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes-kms-worker.outputs.changes == 'true')
-      || (github.event_name == 'workflow_dispatch' && inputs.build_kms_worker)
+    needs: build-decisions
+    concurrency:
+      group: kms-connector-build-kms-worker-${{ github.ref_name }}
+      cancel-in-progress: true
+    if: always() && needs.build-decisions.outputs.kms_worker == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
@@ -208,9 +295,8 @@ jobs:
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   re-tag-kms-worker-image:
-    needs: check-changes-kms-worker
-    if: |
-      needs.check-changes-kms-worker.outputs.changes != 'true' && github.event_name == 'push'
+    needs: [build-decisions, check-changes-kms-worker]
+    if: always() && needs.build-decisions.outputs.kms_worker == 'retag'
     permissions: *re-tag-image-permissions
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
@@ -221,28 +307,12 @@ jobs:
   ########################################################################
   #                          TRANSACTION SENDER                          #
   ########################################################################
-  check-changes-tx-sender:
-    uses: ./.github/workflows/check-changes-for-docker-build.yml
-    secrets: *check_changes_secrets
-    permissions: *check_changes_permissions
-    with:
-      caller-workflow-event-name: ${{ github.event_name }}
-      caller-workflow-event-before: ${{ github.event.before }}
-      docker-image: fhevm/kms-connector/tx-sender
-      filters: |
-        tx-sender:
-          - .github/workflows/kms-connector-docker-build.yml
-          - kms-connector/crates/tx-sender/**
-          - kms-connector/crates/utils/**
-          - kms-connector/Cargo.*
-          - gateway-contracts/rust-bindings/**
-
   build-tx-sender:
-    needs: check-changes-tx-sender
-    if: |
-      github.event_name == 'release'
-      || (github.event_name != 'workflow_dispatch' && needs.check-changes-tx-sender.outputs.changes == 'true')
-      || (github.event_name == 'workflow_dispatch' && inputs.build_tx_sender)
+    needs: build-decisions
+    concurrency:
+      group: kms-connector-build-tx-sender-${{ github.ref_name }}
+      cancel-in-progress: true
+    if: always() && needs.build-decisions.outputs.tx_sender == 'build'
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3cf4c2b133947d29e7a313555638621f9ca0345c # v1.0.3
     permissions: *docker_permissions
     secrets: *docker_secrets
@@ -255,9 +325,8 @@ jobs:
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   re-tag-tx-sender-image:
-    needs: check-changes-tx-sender
-    if: |
-      needs.check-changes-tx-sender.outputs.changes != 'true' && github.event_name == 'push'
+    needs: [build-decisions, check-changes-tx-sender]
+    if: always() && needs.build-decisions.outputs.tx_sender == 'retag'
     permissions: *re-tag-image-permissions
     uses: ./.github/workflows/re-tag-docker-image.yml
     with:
