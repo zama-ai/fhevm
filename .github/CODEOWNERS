@@ -3,7 +3,12 @@
 # All pull request should be reviewed by at least one of the members of fhevm-devs
 *    @zama-ai/fhevm-devs
 
-/.github/workflows/	@zama-ai/fhevm-devops @zama-ai/fhevm-devs
+# Production Dockerfiles should be reviewed by members of fhevm-devops
+**/Dockerfile @zama-ai/fhevm-devops
+
+# Test tooling Dockerfiles can be reviewed by members of fhevm-devs
+coprocessor/fhevm-engine/stress-test-generator/Dockerfile @zama-ai/fhevm-devs
+test-suite/gateway-stress/Dockerfile @zama-ai/fhevm-devs
 
 # Gateway Team ownership
 /gateway-contracts/ @zama-ai/fhevm-gateway
