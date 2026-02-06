@@ -1,3 +1,4 @@
+use super::common::try_extract_terminal_config_error;
 use super::TransactionOperation;
 use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
@@ -159,6 +160,19 @@ where
                     );
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
+                } else if let Some(terminal_config_error) = try_extract_terminal_config_error(&e) {
+                    VERIFY_PROOF_FAIL_COUNTER.inc();
+                    error!(
+                        zk_proof_id = txn_request.0,
+                        error = %terminal_config_error,
+                        "Detected non-retryable gateway coprocessor config error while sending verify_proof transaction"
+                    );
+                    self.mark_verify_proof_terminal_config_error(
+                        txn_request.0,
+                        &terminal_config_error.to_string(),
+                    )
+                    .await?;
+                    return Ok(());
                 } else {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     error!(
@@ -212,6 +226,28 @@ where
                 receipt.status(),
             ));
         }
+        Ok(())
+    }
+
+    async fn mark_verify_proof_terminal_config_error(
+        &self,
+        zk_proof_id: i64,
+        error: &str,
+    ) -> anyhow::Result<()> {
+        // Intentionally set retry_count to max so existing max-retry cleanup logic can run unchanged when enabled.
+        sqlx::query!(
+            "UPDATE verify_proofs
+            SET
+                retry_count = $2,
+                last_error = $3,
+                last_retry_at = NOW()
+            WHERE zk_proof_id = $1",
+            zk_proof_id,
+            self.conf.verify_proof_resp_max_retries as i32,
+            error,
+        )
+        .execute(&self.db_pool)
+        .await?;
         Ok(())
     }
 }

@@ -3,7 +3,7 @@ use alloy::network::TxSigner;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::Address, providers::WsConnect};
-use common::{MultichainACL, SignerType, TestEnvironment};
+use common::{is_coprocessor_config_error, MultichainACL, SignerType, TestEnvironment};
 
 use rstest::*;
 use serial_test::serial;
@@ -355,5 +355,163 @@ async fn delegate_user_decrypt_idempotent_error_call(
     }
     env.cancel_token.cancel();
     let _ = run_handle.await?;
+    Ok(())
+}
+
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[tokio::test]
+#[serial(db)]
+async fn delegate_user_decrypt_terminal_on_gw_config_error(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let base_conf = ConfigSettings {
+        delegation_block_delay: 0,
+        delegation_clear_after_n_blocks: 5,
+        delegation_fallback_polling: 1,
+        delegation_max_retry: 3,
+        ..Default::default()
+    };
+    let force_per_test_localstack = false;
+    let env =
+        TestEnvironment::new_with_config(signer_type, base_conf, force_per_test_localstack).await?;
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
+    let already_allowed_revert = false;
+    let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
+    provider_deploy
+        .send_transaction_sync(
+            multichain_acl
+                .setConfigErrorMode(1)
+                .into_transaction_request(),
+        )
+        .await?;
+
+    let config = ConfigSettings {
+        delegation_block_delay: 0,
+        delegation_clear_after_n_blocks: 5,
+        delegation_fallback_polling: 1,
+        delegation_max_retry: 3,
+        ..env.conf.clone()
+    };
+
+    let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
+        PrivateKeySigner::random().address(),
+        PrivateKeySigner::random().address(),
+        *multichain_acl.address(),
+        env.signer.clone(),
+        provider.clone(),
+        provider.inner().clone(),
+        env.cancel_token.clone(),
+        config.clone(),
+        None,
+    )
+    .await?;
+
+    let initial_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+    let chain_id = provider.get_chain_id().await?;
+    let block = provider
+        .inner()
+        .get_block_by_number(BlockNumberOrTag::Latest)
+        .await?
+        .unwrap();
+    let start_block = block.number();
+
+    insert_delegate_user_decrypt(
+        &env.db_pool,
+        *multichain_acl.address(),
+        *multichain_acl.address(),
+        *multichain_acl.address(),
+        0,
+        0,
+        2,
+        chain_id,
+        block.hash().as_ref(),
+        start_block,
+        None,
+    )
+    .await?;
+
+    sqlx::query!(
+        "SELECT pg_notify($1, $2)",
+        "new_host_block",
+        start_block.to_string()
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    for _ in 0..80 {
+        sqlx::query!(
+            "SELECT pg_notify($1, $2)",
+            "new_host_block",
+            start_block.to_string()
+        )
+        .execute(&env.db_pool)
+        .await?;
+
+        let row = sqlx::query!(
+            "SELECT on_gateway, gateway_nb_attempts, gateway_last_error
+             FROM delegate_user_decrypt
+             WHERE block_number = $1",
+            start_block as i64,
+        )
+        .fetch_one(&env.db_pool)
+        .await?;
+        if !row.on_gateway
+            && row.gateway_nb_attempts == (config.delegation_max_retry + 1) as i64
+            && row
+                .gateway_last_error
+                .as_deref()
+                .is_some_and(is_coprocessor_config_error)
+        {
+            break;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+    }
+
+    let row = sqlx::query!(
+        "SELECT on_gateway, gateway_nb_attempts, gateway_last_error
+         FROM delegate_user_decrypt
+         WHERE block_number = $1",
+        start_block as i64,
+    )
+    .fetch_one(&env.db_pool)
+    .await?;
+    assert!(!row.on_gateway);
+    assert_eq!(
+        row.gateway_nb_attempts,
+        (config.delegation_max_retry + 1) as i64
+    );
+    assert!(
+        row.gateway_last_error
+            .as_deref()
+            .is_some_and(is_coprocessor_config_error),
+        "Expected terminal gateway config error, got {:?}",
+        row.gateway_last_error
+    );
+
+    let tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    assert_eq!(
+        tx_count, initial_tx_count,
+        "Expected no transaction to be sent for gateway config errors detected before send"
+    );
+
+    env.cancel_token.cancel();
+    run_handle.await??;
     Ok(())
 }

@@ -1,8 +1,8 @@
 use alloy::network::TxSigner;
-use alloy::providers::ProviderBuilder;
+use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::Address, providers::WsConnect};
-use common::{MultichainACL, SignerType, TestEnvironment};
+use common::{is_coprocessor_config_error, MultichainACL, SignerType, TestEnvironment};
 
 use fhevm_engine_common::types::AllowEvents;
 use rand::random;
@@ -381,5 +381,130 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
     env.cancel_token.cancel();
     run_handle.await??;
 
+    Ok(())
+}
+
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[tokio::test]
+#[serial(db)]
+async fn allow_handle_terminal_on_gw_config_error(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let conf = ConfigSettings {
+        allow_handle_max_retries: 3,
+        ..Default::default()
+    };
+    let force_per_test_localstack = false;
+    let env =
+        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
+            .await?;
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
+    let already_allowed_revert = false;
+    let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
+    provider_deploy
+        .send_transaction_sync(
+            multichain_acl
+                .setConfigErrorMode(1)
+                .into_transaction_request(),
+        )
+        .await?;
+
+    let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
+        PrivateKeySigner::random().address(),
+        PrivateKeySigner::random().address(),
+        *multichain_acl.address(),
+        env.signer.clone(),
+        provider.clone(),
+        provider.inner().clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let initial_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    insert_random_keys_and_host_chain(&env.db_pool).await?;
+    let handle = random::<[u8; 32]>();
+    insert_allowed_handle(
+        &env.db_pool,
+        &handle,
+        PrivateKeySigner::random().address(),
+        AllowEvents::AllowedAccount,
+    )
+    .await?;
+
+    sqlx::query!(
+        "
+        SELECT pg_notify($1, '')",
+        env.conf.allow_handle_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    for _ in 0..60 {
+        let row = sqlx::query!(
+            "SELECT txn_is_sent, txn_limited_retries_count, txn_last_error
+             FROM allowed_handles
+             WHERE handle = $1",
+            &handle[..],
+        )
+        .fetch_one(&env.db_pool)
+        .await?;
+        if !row.txn_is_sent
+            && row.txn_limited_retries_count == conf.allow_handle_max_retries
+            && row
+                .txn_last_error
+                .as_deref()
+                .is_some_and(is_coprocessor_config_error)
+        {
+            break;
+        }
+        sleep(Duration::from_millis(250)).await;
+    }
+
+    let row = sqlx::query!(
+        "SELECT txn_is_sent, txn_limited_retries_count, txn_last_error
+         FROM allowed_handles
+         WHERE handle = $1",
+        &handle[..],
+    )
+    .fetch_one(&env.db_pool)
+    .await?;
+    assert!(!row.txn_is_sent);
+    assert_eq!(row.txn_limited_retries_count, conf.allow_handle_max_retries);
+    assert!(
+        row.txn_last_error
+            .as_deref()
+            .is_some_and(is_coprocessor_config_error),
+        "Expected terminal gateway config error, got {:?}",
+        row.txn_last_error
+    );
+
+    let tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    assert_eq!(
+        tx_count, initial_tx_count,
+        "Expected no transaction to be sent for gateway config errors detected before send"
+    );
+
+    env.cancel_token.cancel();
+    run_handle.await??;
     Ok(())
 }

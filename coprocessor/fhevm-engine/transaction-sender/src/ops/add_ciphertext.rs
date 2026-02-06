@@ -6,7 +6,7 @@ use crate::{
     REVIEW,
 };
 
-use super::common::try_into_array;
+use super::common::{try_extract_terminal_config_error, try_into_array};
 use super::TransactionOperation;
 use alloy::{
     network::{Ethereum, TransactionBuilder},
@@ -74,27 +74,40 @@ where
                     .await?;
                 return Ok(());
             }
-            // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
-            // Local usage are included as they might be transient due to external AWS KMS signers.
-            Err(e)
-                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
-                    || matches!(&e, RpcError::LocalUsageError(_)) =>
-            {
-                ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
-                warn!(
-                    error = %e,
-                    handle = h,
-                    "Transaction sending failed with unlimited retry error"
-                );
-                self.increment_txn_unlimited_retries_count(
-                    handle,
-                    &e.to_string(),
-                    current_unlimited_retries_count,
-                )
-                .await?;
-                bail!(e);
-            }
             Err(e) => {
+                // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
+                // Local usage are included as they might be transient due to external AWS KMS signers.
+                if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
+                    || matches!(&e, RpcError::LocalUsageError(_))
+                {
+                    ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
+                    warn!(
+                        error = %e,
+                        handle = h,
+                        "Transaction sending failed with unlimited retry error"
+                    );
+                    self.increment_txn_unlimited_retries_count(
+                        handle,
+                        &e.to_string(),
+                        current_unlimited_retries_count,
+                    )
+                    .await?;
+                    bail!(e);
+                }
+                if let Some(terminal_config_error) = try_extract_terminal_config_error(&e) {
+                    ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
+                    error!(
+                        error = %terminal_config_error,
+                        handle = h,
+                        "Detected non-retryable gateway coprocessor config error while adding ciphertext"
+                    );
+                    self.mark_add_ciphertext_terminal_config_error(
+                        handle,
+                        &terminal_config_error.to_string(),
+                    )
+                    .await?;
+                    return Ok(());
+                }
                 ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                 warn!(
                     error = %e,
@@ -288,6 +301,27 @@ where
             txn_last_error_at = NOW()
             WHERE handle = $2",
             err,
+            handle,
+        )
+        .execute(&self.db_pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn mark_add_ciphertext_terminal_config_error(
+        &self,
+        handle: &[u8],
+        error: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query!(
+            "UPDATE ciphertext_digest
+            SET
+                txn_limited_retries_count = $1,
+                txn_last_error = $2,
+                txn_last_error_at = NOW()
+            WHERE handle = $3",
+            self.conf.add_ciphertexts_max_retries,
+            error,
             handle,
         )
         .execute(&self.db_pool)

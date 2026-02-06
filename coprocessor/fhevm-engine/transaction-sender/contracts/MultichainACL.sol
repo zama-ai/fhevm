@@ -9,17 +9,46 @@ pragma solidity ^0.8.24;
 contract MultichainACL {
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
     error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
+    error NotCoprocessorSigner(address signerAddress);
+    error NotCoprocessorTxSender(address txSenderAddress);
+    error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
 
     event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
 
     bool alreadyAllowedRevert;
+    ConfigErrorMode configErrorMode;
+
+    enum ConfigErrorMode {
+        None,
+        NotCoprocessorSigner,
+        NotCoprocessorTxSender,
+        CoprocessorSignerDoesNotMatchTxSender
+    }
 
     constructor(bool _alreadyAllowedRevert) {
         alreadyAllowedRevert = _alreadyAllowedRevert;
     }
 
+    function setConfigErrorMode(uint8 mode) external {
+        require(mode <= uint8(ConfigErrorMode.CoprocessorSignerDoesNotMatchTxSender), "invalid mode");
+        configErrorMode = ConfigErrorMode(mode);
+    }
+
+    function maybeRevertConfigError() internal view {
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorSigner) {
+            revert NotCoprocessorSigner(msg.sender);
+        }
+        if (configErrorMode == ConfigErrorMode.NotCoprocessorTxSender) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
+        if (configErrorMode == ConfigErrorMode.CoprocessorSignerDoesNotMatchTxSender) {
+            revert CoprocessorSignerDoesNotMatchTxSender(address(0x1234), msg.sender);
+        }
+    }
+
     function allowAccount(bytes32 ctHandle, address accountAddress, bytes calldata /* extraData */) public {
+        maybeRevertConfigError();
         if (alreadyAllowedRevert) {
             revert CoprocessorAlreadyAllowedAccount(ctHandle, accountAddress, msg.sender);
         }
@@ -27,6 +56,7 @@ contract MultichainACL {
     }
 
     function allowPublicDecrypt(bytes32 ctHandle, bytes calldata /* extraData */) public {
+        maybeRevertConfigError();
         if (alreadyAllowedRevert) {
             revert CoprocessorAlreadyAllowedPublicDecrypt(ctHandle, msg.sender);
         }
@@ -63,6 +93,7 @@ contract MultichainACL {
         uint64 delegationCounter,
         uint64 expirationDate
     ) public {
+        maybeRevertConfigError();
         if (expirationDate == 0) {
             revert UserDecryptionDelegationCounterTooLow(delegationCounter);
         }
@@ -87,6 +118,7 @@ contract MultichainACL {
         uint64 delegationCounter,
         uint64 expirationDate
     ) public {
+        maybeRevertConfigError();
         if (expirationDate == 0) {
             revert UserDecryptionDelegationCounterTooLow(delegationCounter);
         }
