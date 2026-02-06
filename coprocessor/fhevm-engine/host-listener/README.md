@@ -46,8 +46,8 @@ slow-lane work when fast lane is empty, which isolates heavy dependent traffic
 without reordering within a chain.
 
 When set to `0`, host-listener disables slow-lane decisions, skips dependent-op
-throttling accounting, and progressively resets pending slow chains back to
-`schedule_priority = 0` in bounded batches during ingest.
+throttling accounting, and promotes seen chains to
+`schedule_priority = 0` during ingest.
 
 ## Events in FHEVM
 

@@ -16,8 +16,6 @@ use crate::database::tfhe_event_propagate::{
     tfhe_result_handle, ChainHash, Database, LogTfhe,
 };
 
-const SLOW_PRIORITY_RESET_BATCH_SIZE: i64 = 5_000;
-
 pub struct BlockLogs<T> {
     pub logs: Vec<T>,
     pub summary: BlockSummary,
@@ -160,20 +158,11 @@ pub async fn ingest_block_logs(
     .await;
 
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
-    if !slow_lane_enabled {
-        let reset = db
-            .reset_schedule_priorities_batch(
-                &mut tx,
-                SLOW_PRIORITY_RESET_BATCH_SIZE,
-            )
-            .await?;
-        if reset > 0 {
-            info!(
-                count = reset,
-                "Slow-lane disabled: reset a batch of priorities to fast"
-            );
-        }
-    }
+    let seen_chain_ids = if slow_lane_enabled {
+        Vec::new()
+    } else {
+        chains.iter().map(|chain| chain.hash.to_vec()).collect()
+    };
     let mut dependent_ops_by_chain: HashMap<ChainHash, DependentOpsStats> =
         HashMap::new();
     for tfhe_log in tfhe_event_log {
@@ -239,6 +228,17 @@ pub async fn ingest_block_logs(
             &schedule_priority_by_chain,
         )
         .await?;
+    }
+    if !slow_lane_enabled {
+        let promoted = db
+            .promote_seen_schedule_priorities_fast(&mut tx, &seen_chain_ids)
+            .await?;
+        if promoted > 0 {
+            info!(
+                count = promoted,
+                "Slow-lane disabled: promoted seen chains to fast"
+            );
+        }
     }
     tx.commit().await
 }

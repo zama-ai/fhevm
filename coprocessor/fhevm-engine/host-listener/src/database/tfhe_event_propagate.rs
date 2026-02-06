@@ -168,31 +168,24 @@ impl Database {
         }
     }
 
-    pub async fn reset_schedule_priorities_batch(
+    pub async fn promote_seen_schedule_priorities_fast(
         &self,
         tx: &mut Transaction<'_>,
-        batch_size: i64,
+        seen_chain_ids: &[Vec<u8>],
     ) -> Result<u64, SqlxError> {
+        if seen_chain_ids.is_empty() {
+            return Ok(0);
+        }
+
         let rows = sqlx::query(
             r#"
-            WITH batch AS (
-                SELECT dependence_chain_id
-                FROM dependence_chain
-                WHERE schedule_priority = 1
-                  AND status = 'updated'
-                  AND worker_id IS NULL
-                  AND dependency_count = 0
-                ORDER BY last_updated_at ASC
-                LIMIT $1
-                FOR UPDATE SKIP LOCKED
-            )
             UPDATE dependence_chain dc
             SET schedule_priority = 0
-            FROM batch
-            WHERE dc.dependence_chain_id = batch.dependence_chain_id
+            WHERE dc.schedule_priority <> 0
+              AND dc.dependence_chain_id = ANY($1::bytea[])
             "#,
         )
-        .bind(batch_size)
+        .bind(seen_chain_ids)
         .execute(tx.deref_mut())
         .await?;
         Ok(rows.rows_affected())
