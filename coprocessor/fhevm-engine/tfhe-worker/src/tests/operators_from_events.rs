@@ -17,6 +17,19 @@ use crate::tests::utils::{
     decrypt_ciphertexts, setup_test_app, wait_until_all_allowed_handles_computed,
 };
 
+fn parse_csv_i32_env(name: &str) -> Option<Vec<i32>> {
+    let raw = std::env::var(name).ok()?;
+    let parsed: Vec<i32> = raw
+        .split(',')
+        .filter_map(|item| item.trim().parse::<i32>().ok())
+        .collect();
+    if parsed.is_empty() {
+        None
+    } else {
+        Some(parsed)
+    }
+}
+
 pub fn supported_types() -> &'static [i32] {
     &[
         0,  // bool
@@ -221,6 +234,12 @@ fn binary_op_to_event(
 #[serial(db)]
 async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Error>> {
     use fhevm_engine_common::types::SupportedFheOperations as S;
+    let debug_bits = parse_csv_i32_env("FHEVM_DEBUG_BITS");
+    let debug_ops = parse_csv_i32_env("FHEVM_DEBUG_OPS");
+    let debug_scalar = std::env::var("FHEVM_DEBUG_IS_SCALAR")
+        .ok()
+        .and_then(|v| v.parse::<u8>().ok())
+        .map(|v| v != 0);
     let app = setup_test_app().await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
@@ -231,6 +250,21 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
     for op in generate_binary_test_cases() {
         if !supported_types().contains(&op.input_types) {
             continue;
+        }
+        if let Some(bits) = &debug_bits {
+            if !bits.contains(&op.bits) {
+                continue;
+            }
+        }
+        if let Some(ops) = &debug_ops {
+            if !ops.contains(&op.operator) {
+                continue;
+            }
+        }
+        if let Some(expected_scalar) = debug_scalar {
+            if op.is_scalar != expected_scalar {
+                continue;
+            }
         }
         if op.bits > 256 {
             continue;
