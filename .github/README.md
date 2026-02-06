@@ -7,8 +7,8 @@ This directory contains the CI/CD workflows for the fhevm repository.
 The repository uses a set of reusable workflows to build and publish Docker images efficiently. The system is designed to:
 
 1. **Build images only when relevant files change** - avoiding unnecessary builds
-2. **Re-tag existing images when no changes occur** - ensuring every commit on `main` has corresponding Docker image tags without rebuilding
-3. **Deterministic build cancellation** - ensuring that when multiple PRs are merged simultaneously on `main`, only the latest commit's workflow runs (see [Deterministic Build Cancellation](#deterministic-build-cancellation))
+2. **Re-tag existing images when no changes occur** - ensuring every commit on `main`/`release/vx.y.z` has corresponding Docker image tags without rebuilding
+3. **Deterministic build cancellation** - ensuring that when multiple PRs are merged simultaneously on `main`/`release/vx.y.z`, only the latest commit's workflow runs (see [Deterministic Build Cancellation](#deterministic-build-cancellation))
 
 ### Architecture Overview
 
@@ -65,7 +65,7 @@ Determines whether a Docker image needs to be rebuilt by checking if relevant fi
 
 **How it works:**
 
-1. On `push` events to `main`, it searches through recent commits to find the most recent one that has a published Docker image
+1. On `push` events to `main`/`release/vx.y.z`, it searches through recent commits to find the most recent one that has a published Docker image
 2. Uses [dorny/paths-filter](https://github.com/dorny/paths-filter) to check if any relevant files changed between that commit and the current one
 3. Outputs whether changes were detected and the base commit for potential re-tagging
 

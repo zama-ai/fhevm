@@ -1,0 +1,152 @@
+# typos configuration for FHEVM monorepo
+# https://github.com/crate-ci/typos
+
+[files]
+# Directories to exclude from checking
+extend-exclude = [
+    # Dependencies and build artifacts
+    "node_modules/",
+    "target/",
+    "dist/",
+    "build/",
+    "artifacts/",
+    "cache/",
+
+    # Generated code
+    "rust_bindings/",
+    "typechain-types/",
+    "codegen/",
+
+    # External libraries
+    "lib/forge-std/",
+    "lib/openzeppelin-contracts/",
+    "lib/openzeppelin-contracts-upgradeable/",
+    # Specific docs with known legacy typos (tracked separately)
+    "coprocessor/fhevm-engine/host-listener/README.md",
+
+    # Keys and charts (binary/config data)
+    "fhevm-keys/",
+    "charts/",
+
+    # Protocol buffers (generated)
+    "proto/",
+
+    # Lock files and binaries
+    "*.lock",
+    "*.pdf",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.ico",
+    "*.woff",
+    "*.woff2",
+    "*.ttf",
+    "*.eot",
+    "*.min.js",
+    "*.min.css",
+    # Docs-only scope for now: exclude source/config/test files
+    "*.rs",
+    "*.sol",
+    "*.js",
+    "*.sql",
+    "*.toml",
+    "*.yaml",
+    "*.yml",
+    "*.sh",
+    "*.bash",
+    "*.zsh",
+    "*.txt",
+]
+
+[default]
+# Locale for spell checking
+locale = "en-us"
+
+[default.extend-words]
+# British English variants accepted
+behaviour = "behaviour"
+behaviours = "behaviours"
+colour = "colour"
+colours = "colours"
+centre = "centre"
+centres = "centres"
+analyse = "analyse"
+analysed = "analysed"
+analysing = "analysing"
+apologise = "apologise"
+apologised = "apologised"
+apologising = "apologising"
+finalise = "finalise"
+finalised = "finalised"
+finalising = "finalising"
+initialise = "initialise"
+initialised = "initialised"
+initialising = "initialising"
+initialisation = "initialisation"
+serialise = "serialise"
+serialised = "serialised"
+serialising = "serialising"
+serialisation = "serialisation"
+optimise = "optimise"
+optimised = "optimised"
+optimiser = "optimiser"
+organisation = "organisation"
+uncomplete = "uncomplete" # metric identifiers in docs/code
+organised = "organised"
+customise = "customise"
+authorise = "authorise"
+authorised = "authorised"
+decentralised = "decentralised"
+artefacts = "artefacts"
+misbehaviour = "misbehaviour"
+
+# FHE/TFHE terminology - these are valid domain-specific terms
+euint = "euint"           # encrypted unsigned integer type prefix
+ebool = "ebool"           # encrypted boolean
+eaddress = "eaddress"     # encrypted address
+ebytes = "ebytes"         # encrypted bytes
+einput = "einput"         # encrypted input
+
+# Common abbreviations and technical terms
+reencrypt = "reencrypt"   # re-encryption operation
+reencryption = "reencryption"
+decryptor = "decryptor"   # entity that decrypts
+ciphertext = "ciphertext" # encrypted data
+ciphertexts = "ciphertexts"
+plaintext = "plaintext"   # unencrypted data
+plaintexts = "plaintexts"
+
+# Project-specific identifiers
+fhevm = "fhevm"           # FHE Virtual Machine
+tfhe = "tfhe"             # TFHE library
+kms = "kms"               # Key Management Service
+acl = "acl"               # Access Control List
+
+# Crypto/blockchain terms
+uint = "uint"             # unsigned integer (Solidity)
+abi = "abi"               # Application Binary Interface
+eip = "eip"               # Ethereum Improvement Proposal
+calldata = "calldata"     # Solidity calldata keyword
+bytecode = "bytecode"     # compiled contract code
+hardhat = "hardhat"       # Ethereum dev framework
+
+# Common variable/function name patterns that might be flagged
+noop = "noop"             # no operation
+keypair = "keypair"       # cryptographic key pair
+keygen = "keygen"         # key generation
+pubkey = "pubkey"         # public key
+privkey = "privkey"       # private key
+
+# Rust module/variable naming conventions
+consts = "consts"         # common Rust module name for constants
+dbe = "dbe"               # variable name (DbError)
+
+# External project/service names
+Hashi = "Hashi"           # HashiCorp (Hashi bridge project)
+
+# AWS AMI IDs contain random hex strings
+caf = "caf"               # appears in AWS AMI IDs
+
+# Test variable naming patterns
+BA = "BA"                 # used in test variable names (e.g., wrongOrderBAInsteadOfAB)

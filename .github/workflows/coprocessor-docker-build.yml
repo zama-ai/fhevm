@@ -77,8 +77,7 @@ on:
         type: boolean
         default: true
   push:
-    branches:
-      - main
+    branches: ['main', 'release/*']
 
 permissions: {}
 
