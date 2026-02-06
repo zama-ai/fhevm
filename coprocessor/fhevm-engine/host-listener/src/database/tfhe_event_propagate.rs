@@ -168,6 +168,19 @@ impl Database {
         }
     }
 
+    pub async fn reset_schedule_priorities(&self) -> Result<u64, SqlxError> {
+        let rows = sqlx::query(
+            r#"
+            UPDATE dependence_chain
+            SET schedule_priority = 0
+            WHERE schedule_priority <> 0
+            "#,
+        )
+        .execute(&self.pool().await)
+        .await?;
+        Ok(rows.rows_affected())
+    }
+
     async fn new_pool(url: &DatabaseURL) -> PgPool {
         let options: PgConnectOptions = url.parse().expect("bad url");
         let options = options.options([
@@ -960,6 +973,8 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
 pub fn tfhe_dependent_op_weight(op: &TfheContractEvents) -> u32 {
     use TfheContract as C;
     use TfheContractEvents as E;
+    // Relative weights aligned with HCULimit cost ratios:
+    // mul=7x, div=5x, rem=8x, baseline=1x.
     match op {
         E::FheMul(C::FheMul { .. }) => 7,
         E::FheDiv(C::FheDiv { .. }) => 5,

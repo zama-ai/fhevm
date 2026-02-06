@@ -45,6 +45,10 @@ reset by workers). The tfhe-worker always prefers priority 0, but will process
 slow-lane work when fast lane is empty, which isolates heavy dependent traffic
 without reordering within a chain.
 
+When set to `0`, host-listener disables slow-lane decisions, skips dependent-op
+throttling accounting, and resets existing `schedule_priority` values to `0` at
+startup so scheduling is effectively FIFO by `last_updated_at`.
+
 ## Events in FHEVM
 
 ### Blockchain Events

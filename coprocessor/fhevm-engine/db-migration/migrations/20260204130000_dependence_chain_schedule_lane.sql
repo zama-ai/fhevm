@@ -1,2 +1,0 @@
-ALTER TABLE dependence_chain
-  ADD COLUMN IF NOT EXISTS schedule_lane SMALLINT NOT NULL DEFAULT 0;

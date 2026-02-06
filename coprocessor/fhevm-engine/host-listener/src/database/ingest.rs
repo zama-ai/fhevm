@@ -157,12 +157,14 @@ pub async fn ingest_block_logs(
     )
     .await;
 
+    let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
     let mut dependent_ops_by_chain: HashMap<ChainHash, DependentOpsStats> =
         HashMap::new();
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
         at_least_one_insertion |= inserted;
-        if inserted
+        if slow_lane_enabled
+            && inserted
             && tfhe_log.is_allowed
             && !tfhe_inputs_handle(&tfhe_log.event).is_empty()
         {
@@ -182,23 +184,23 @@ pub async fn ingest_block_logs(
 
     let mut schedule_priority_by_chain: HashMap<ChainHash, SchedulePriority> =
         HashMap::new();
-    let mut allowed: u64 = 0;
-    let mut throttled: u64 = 0;
-    for chain in &chains {
-        let Some(stats) = dependent_ops_by_chain.get(&chain.hash) else {
-            continue;
-        };
-        if options.dependent_ops_max_per_chain > 0
-            && stats.total > u64::from(options.dependent_ops_max_per_chain)
-        {
-            throttled += stats.total;
-            schedule_priority_by_chain
-                .insert(chain.hash, SchedulePriority::SLOW);
-        } else {
-            allowed += stats.total;
+    if slow_lane_enabled {
+        let mut allowed: u64 = 0;
+        let mut throttled: u64 = 0;
+        for chain in &chains {
+            let Some(stats) = dependent_ops_by_chain.get(&chain.hash) else {
+                continue;
+            };
+            if stats.total > u64::from(options.dependent_ops_max_per_chain) {
+                throttled += stats.total;
+                schedule_priority_by_chain
+                    .insert(chain.hash, SchedulePriority::SLOW);
+            } else {
+                allowed += stats.total;
+            }
         }
+        db.record_dependent_ops_metrics(allowed, throttled);
     }
-    db.record_dependent_ops_metrics(allowed, throttled);
 
     if catchup_insertion > 0 {
         if catchup_insertion == block_logs.logs.len() {
