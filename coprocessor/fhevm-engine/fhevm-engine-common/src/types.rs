@@ -575,9 +575,6 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheBytes128(c) => builder.push(c.clone()),
             SupportedFheCiphertexts::FheBytes256(c) => builder.push(c.clone()),
         };
-        if !self.clone().to_ciphertext64().block_carries_are_empty() {
-            return Err(FhevmError::CiphertextCompressionRequiresEmptyCarries);
-        }
         let list = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder.build()))
         {
             Ok(Ok(list)) => list,
