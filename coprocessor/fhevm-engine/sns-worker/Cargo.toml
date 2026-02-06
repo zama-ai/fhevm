@@ -20,6 +20,7 @@ tfhe = { workspace = true}
 tokio = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
@@ -61,4 +62,3 @@ test-harness = { path = "../test-harness" }
 [dev-dependencies.sns-worker]
 path = "."
 features = ["test_decrypt_128", "test_s3_use_handle_as_key"]
-
