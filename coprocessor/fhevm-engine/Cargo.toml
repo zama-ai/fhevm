@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "tfhe-worker",
+    "tfhe-dispatcher",
+    "tfhe-compute-node",
     "fhevm-engine-common",
     "host-listener",
     "gw-listener",
