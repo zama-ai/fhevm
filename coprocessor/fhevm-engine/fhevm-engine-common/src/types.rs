@@ -555,8 +555,7 @@ impl SupportedFheCiphertexts {
         }
     }
 
-    pub fn compress(&self) -> std::result::Result<(i16, Vec<u8>), FhevmError> {
-        let type_num = self.type_num();
+    pub fn compress(&self) -> std::result::Result<Vec<u8>, FhevmError> {
         let mut builder = CompressedCiphertextListBuilder::new();
         match self {
             SupportedFheCiphertexts::Scalar(_) => {
@@ -588,7 +587,7 @@ impl SupportedFheCiphertexts {
                 return Err(FhevmError::CiphertextCompressionPanic { message });
             }
         };
-        Ok((type_num, safe_serialize(&list)))
+        Ok(safe_serialize(&list))
     }
 
     #[cfg(feature = "gpu")]

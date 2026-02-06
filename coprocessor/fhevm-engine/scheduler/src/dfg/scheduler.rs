@@ -554,9 +554,10 @@ fn run_computation(
             compress_span.set_attribute(KeyValue::new("ct_type", inputs[0].type_name()));
             compress_span.set_attribute(KeyValue::new("operation", "FheGetCiphertext"));
 
+            let ct_type = inputs[0].type_num();
             let compressed = inputs[0].compress();
             match compressed {
-                Ok((ct_type, ct_bytes)) => {
+                Ok(ct_bytes) => {
                     compress_span
                         .set_attribute(KeyValue::new("compressed_size", ct_bytes.len() as i64));
                     compress_span.end();
@@ -597,9 +598,10 @@ fn run_computation(
                         telemetry::set_txn_id(&mut compress_span, transaction_id);
                         compress_span.set_attribute(KeyValue::new("ct_type", result.type_name()));
                         compress_span.set_attribute(KeyValue::new("operation", op_name));
+                        let ct_type = result.type_num();
                         let compressed = result.compress();
                         match compressed {
-                            Ok((ct_type, ct_bytes)) => {
+                            Ok(ct_bytes) => {
                                 compress_span.set_attribute(KeyValue::new(
                                     "compressed_size",
                                     ct_bytes.len() as i64,
