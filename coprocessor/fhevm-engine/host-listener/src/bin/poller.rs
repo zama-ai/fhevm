@@ -117,7 +117,7 @@ struct Args {
     #[arg(
         long,
         default_value_t = 0,
-        help = "Max weighted dependent ops per chain before slow-lane (0 disables and keeps all chains fast)"
+        help = "Max weighted dependent ops per chain before slow-lane (0 disables; pending slow chains are reset in bounded batches)"
     )]
     pub dependent_ops_max_per_chain: u32,
 }

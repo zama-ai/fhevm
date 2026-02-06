@@ -125,7 +125,7 @@ pub struct Args {
     #[arg(
         long,
         default_value_t = 0,
-        help = "Max weighted dependent ops per chain before slow-lane (0 disables and keeps all chains fast)"
+        help = "Max weighted dependent ops per chain before slow-lane (0 disables; pending slow chains are reset in bounded batches)"
     )]
     pub dependent_ops_max_per_chain: u32,
 
@@ -1049,16 +1049,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let mut db =
         Database::new(&args.database_url, chain_id, args.dependence_cache_size)
             .await?;
-
-    if args.dependent_ops_max_per_chain == 0 {
-        let reset = db.reset_schedule_priorities().await?;
-        if reset > 0 {
-            info!(
-                count = reset,
-                "Slow-lane disabled: reset priorities to fast"
-            );
-        }
-    }
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: log_iter.tick_timeout.clone(),
