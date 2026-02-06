@@ -983,12 +983,13 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
 pub fn tfhe_dependent_op_weight(op: &TfheContractEvents) -> u32 {
     use TfheContract as C;
     use TfheContractEvents as E;
-    // Relative weights aligned with HCULimit cost ratios:
-    // mul=7x, div=5x, rem=8x, baseline=1x.
+    // Coarse worst-case CPU-cost approximation for dependent-op throttling.
+    // Kept intentionally simple and conservative:
+    // rem > div > mul, baseline=1.
     match op {
-        E::FheMul(C::FheMul { .. }) => 7,
-        E::FheDiv(C::FheDiv { .. }) => 5,
-        E::FheRem(C::FheRem { .. }) => 8,
+        E::FheMul(C::FheMul { .. }) => 2,
+        E::FheDiv(C::FheDiv { .. }) => 4,
+        E::FheRem(C::FheRem { .. }) => 6,
         E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => 0,
         _ => 1,
     }
