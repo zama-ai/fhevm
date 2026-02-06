@@ -554,14 +554,25 @@ fn run_computation(
             compress_span.set_attribute(KeyValue::new("ct_type", inputs[0].type_name()));
             compress_span.set_attribute(KeyValue::new("operation", "FheGetCiphertext"));
 
-            let (ct_type, ct_bytes) = inputs[0].compress();
-            compress_span.set_attribute(KeyValue::new("compressed_size", ct_bytes.len() as i64));
-            compress_span.end();
-
-            (
-                graph_node_index,
-                Ok((inputs[0].clone(), Some((ct_type, ct_bytes)))),
-            )
+            let compressed = inputs[0].compress();
+            match compressed {
+                Ok((ct_type, ct_bytes)) => {
+                    compress_span
+                        .set_attribute(KeyValue::new("compressed_size", ct_bytes.len() as i64));
+                    compress_span.end();
+                    (
+                        graph_node_index,
+                        Ok((inputs[0].clone(), Some((ct_type, ct_bytes)))),
+                    )
+                }
+                Err(error) => {
+                    compress_span.set_status(Status::Error {
+                        description: error.to_string().into(),
+                    });
+                    compress_span.end();
+                    (graph_node_index, Err(error.into()))
+                }
+            }
         }
         Ok(fhe_op) => {
             let op_name = fhe_op.as_str_name();
@@ -586,13 +597,24 @@ fn run_computation(
                         telemetry::set_txn_id(&mut compress_span, transaction_id);
                         compress_span.set_attribute(KeyValue::new("ct_type", result.type_name()));
                         compress_span.set_attribute(KeyValue::new("operation", op_name));
-
-                        let (ct_type, ct_bytes) = result.compress();
-                        compress_span
-                            .set_attribute(KeyValue::new("compressed_size", ct_bytes.len() as i64));
-                        compress_span.end();
-
-                        (graph_node_index, Ok((result, Some((ct_type, ct_bytes)))))
+                        let compressed = result.compress();
+                        match compressed {
+                            Ok((ct_type, ct_bytes)) => {
+                                compress_span.set_attribute(KeyValue::new(
+                                    "compressed_size",
+                                    ct_bytes.len() as i64,
+                                ));
+                                compress_span.end();
+                                (graph_node_index, Ok((result, Some((ct_type, ct_bytes)))))
+                            }
+                            Err(error) => {
+                                compress_span.set_status(Status::Error {
+                                    description: error.to_string().into(),
+                                });
+                                compress_span.end();
+                                (graph_node_index, Err(error.into()))
+                            }
+                        }
                     } else {
                         (graph_node_index, Ok((result, None)))
                     }

@@ -493,7 +493,7 @@ fn create_ciphertext(
     // Add the full 256bit hash as re-randomization metadata, NOT the
     // truncated hash of the handle
     the_ct.add_re_randomization_metadata(&handle);
-    let (serialized_type, compressed) = the_ct.compress();
+    let (serialized_type, compressed) = the_ct.compress()?;
 
     // idx cast to u8 must succeed because we don't allow
     // more handles than u8 size

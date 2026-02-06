@@ -23,6 +23,11 @@ pub enum FhevmError {
     DeserializationError(Box<dyn std::error::Error + Sync + Send>),
     CiphertextExpansionError(tfhe::Error),
     ReRandomisationError(tfhe::Error),
+    CiphertextCompressionError(tfhe::Error),
+    CiphertextCompressionPanic {
+        message: String,
+    },
+    CannotCompressScalar,
     CiphertextExpansionUnsupportedCiphertextKind(tfhe::FheTypes),
     FheOperationOnlyOneOperandCanBeScalar {
         fhe_operation: i32,
@@ -152,6 +157,15 @@ impl std::fmt::Display for FhevmError {
             }
             Self::ReRandomisationError(e) => {
                 write!(f, "error re-randomising ciphertext: {:?}", e)
+            }
+            Self::CiphertextCompressionError(e) => {
+                write!(f, "error compressing ciphertext: {:?}", e)
+            }
+            Self::CiphertextCompressionPanic { message } => {
+                write!(f, "panic while compressing ciphertext: {}", message)
+            }
+            Self::CannotCompressScalar => {
+                write!(f, "cannot compress scalar input")
             }
             Self::CiphertextExpansionUnsupportedCiphertextKind(e) => {
                 write!(
@@ -319,6 +333,16 @@ impl std::fmt::Display for FhevmError {
                 )
             }
         }
+    }
+}
+
+fn panic_payload_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "unknown panic payload".to_string()
     }
 }
 
@@ -522,7 +546,7 @@ impl SupportedFheCiphertexts {
         }
     }
 
-    pub fn compress(&self) -> (i16, Vec<u8>) {
+    pub fn compress(&self) -> std::result::Result<(i16, Vec<u8>), FhevmError> {
         let type_num = self.type_num();
         let mut builder = CompressedCiphertextListBuilder::new();
         match self {
@@ -539,12 +563,20 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheBytes128(c) => builder.push(c.clone()),
             SupportedFheCiphertexts::FheBytes256(c) => builder.push(c.clone()),
             SupportedFheCiphertexts::Scalar(_) => {
-                // TODO: Need to fix that, scalars are not ciphertexts.
-                panic!("cannot compress a scalar");
+                return Err(FhevmError::CannotCompressScalar);
             }
         };
-        let list = builder.build().expect("ciphertext compression");
-        (type_num, safe_serialize(&list))
+        let list = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder.build()))
+        {
+            Ok(Ok(list)) => list,
+            Ok(Err(error)) => return Err(FhevmError::CiphertextCompressionError(error)),
+            Err(panic_payload) => {
+                return Err(FhevmError::CiphertextCompressionPanic {
+                    message: panic_payload_to_string(panic_payload),
+                });
+            }
+        };
+        Ok((type_num, safe_serialize(&list)))
     }
 
     #[cfg(feature = "gpu")]
@@ -1009,3 +1041,15 @@ pub type BlockchainProvider = FillProvider<
     >,
     RootProvider,
 >;
+
+#[cfg(test)]
+mod tests {
+    use super::{FhevmError, SupportedFheCiphertexts};
+
+    #[test]
+    fn compress_scalar_returns_error() {
+        let scalar = SupportedFheCiphertexts::Scalar(vec![1, 2, 3]);
+        let compressed = scalar.compress();
+        assert!(matches!(compressed, Err(FhevmError::CannotCompressScalar)));
+    }
+}

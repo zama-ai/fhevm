@@ -187,6 +187,9 @@ pub struct GrpcTracer {
     tracer: BoxedTracer,
 }
 
+type StoredCiphertextRow = (Vec<u8>, i16, Vec<u8>);
+type CompressedCiphertextData = (Vec<u8>, Vec<u8>, i16);
+
 impl GrpcTracer {
     pub fn child_span(&self, name: &'static str) -> BoxedSpan {
         self.tracer.start_with_context(name, &self.ctx)
@@ -516,26 +519,30 @@ impl CoprocessorService {
                 // TODO: simplify compress and hash computation async handling
                 let blob_hash_clone = blob_hash.clone();
                 let server_key_clone = server_key.clone();
-                let (handle, serialized_ct, serialized_type) = spawn_blocking(move || {
-                    tfhe::set_server_key(server_key_clone);
-                    let (serialized_type, serialized_ct) = the_ct.compress();
-                    let mut handle_hash = Keccak256::new();
-                    handle_hash.update(&blob_hash_clone);
-                    handle_hash.update([ct_idx as u8]);
-                    handle_hash.update(acl_contract_address.as_slice());
-                    handle_hash.update(chain_id_be);
-                    let mut handle = handle_hash.finalize().to_vec();
-                    assert_eq!(handle.len(), 32);
-                    // idx cast to u8 must succeed because we don't allow
-                    // more handles than u8 size
-                    handle[29] = ct_idx as u8;
-                    handle[30] = serialized_type as u8;
-                    handle[31] = ciphertext_version as u8;
+                let (handle, serialized_ct, serialized_type) = spawn_blocking(
+                    move || -> std::result::Result<CompressedCiphertextData, FhevmError> {
+                        tfhe::set_server_key(server_key_clone);
+                        let (serialized_type, serialized_ct) = the_ct.compress()?;
+                        let mut handle_hash = Keccak256::new();
+                        handle_hash.update(&blob_hash_clone);
+                        handle_hash.update([ct_idx as u8]);
+                        handle_hash.update(acl_contract_address.as_slice());
+                        handle_hash.update(chain_id_be);
+                        let mut handle = handle_hash.finalize().to_vec();
+                        assert_eq!(handle.len(), 32);
+                        // idx cast to u8 must succeed because we don't allow
+                        // more handles than u8 size
+                        handle[29] = ct_idx as u8;
+                        handle[30] = serialized_type as u8;
+                        handle[31] = ciphertext_version as u8;
 
-                    (handle, serialized_ct, serialized_type)
-                })
+                        Ok((handle, serialized_ct, serialized_type))
+                    },
+                )
                 .await
-                .map_err(|e| tonic::Status::from_error(Box::new(e)))?;
+                .map_err(|join_error| tonic::Status::from_error(Box::new(join_error)))?
+                .map_err(CoprocessorError::FhevmError)
+                .map_err(tonic::Status::from)?;
 
                 let mut span = tracer.child_span("db_insert_ciphertext");
                 span.set_attributes(vec![
@@ -752,27 +759,31 @@ impl CoprocessorService {
         let cloned = req.values.clone();
         let inner_tracer = tracer.clone();
         let mut outer_span = tracer.child_span("blocking_trivial_encrypt");
-        let out_cts = tokio::task::spawn_blocking(move || {
-            let mut span = inner_tracer.child_span("set_sks");
-            tfhe::set_server_key(server_key.clone());
-            span.end();
-
-            // single threaded implementation, we can optimize later
-            let mut res: Vec<(Vec<u8>, i16, Vec<u8>)> = Vec::with_capacity(cloned.len());
-            for v in cloned {
-                let mut span = inner_tracer.child_span("trivial_encrypt");
-                let ct = trivial_encrypt_be_bytes(v.output_type as i16, &v.be_value);
+        let out_cts = tokio::task::spawn_blocking(
+            move || -> std::result::Result<Vec<StoredCiphertextRow>, FhevmError> {
+                let mut span = inner_tracer.child_span("set_sks");
+                tfhe::set_server_key(server_key.clone());
                 span.end();
-                let mut span = inner_tracer.child_span("compress_ciphertext");
-                let (ct_type, ct_bytes) = ct.compress();
-                span.end();
-                res.push((v.handle, ct_type, ct_bytes));
-            }
 
-            res
-        })
+                // single threaded implementation, we can optimize later
+                let mut res: Vec<StoredCiphertextRow> = Vec::with_capacity(cloned.len());
+                for v in cloned {
+                    let mut span = inner_tracer.child_span("trivial_encrypt");
+                    let ct = trivial_encrypt_be_bytes(v.output_type as i16, &v.be_value);
+                    span.end();
+                    let mut span = inner_tracer.child_span("compress_ciphertext");
+                    let (ct_type, ct_bytes) = ct.compress()?;
+                    span.end();
+                    res.push((v.handle, ct_type, ct_bytes));
+                }
+
+                Ok(res)
+            },
+        )
         .await
-        .unwrap();
+        .map_err(|join_error| tonic::Status::from_error(Box::new(join_error)))?
+        .map_err(CoprocessorError::FhevmError)
+        .map_err(tonic::Status::from)?;
         outer_span.end();
 
         let mut tx_span = tracer.child_span("db_transaction_insert_ciphertexts");
