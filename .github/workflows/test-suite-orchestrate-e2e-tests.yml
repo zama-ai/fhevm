@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - release/*
 
 permissions: {}
 
@@ -13,7 +14,8 @@ concurrency:
 
 jobs:
   coprocessor-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
+    if: &build-trigger-condition |
+      startsWith(github.head_ref, 'mergify/merge-queue/') || startsWith(github.base_ref, 'release/')
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
@@ -30,22 +32,22 @@ jobs:
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
   gateway-contracts-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
+    if: *build-trigger-condition
     uses: ./.github/workflows/gateway-contracts-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
   host-contracts-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
+    if: *build-trigger-condition
     uses: ./.github/workflows/host-contracts-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
   kms-connector-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
+    if: *build-trigger-condition
     uses: ./.github/workflows/kms-connector-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
   test-suite-docker-build:
-    if: startsWith(github.head_ref, 'mergify/merge-queue/')
+    if: *build-trigger-condition
     uses: ./.github/workflows/test-suite-docker-build.yml
     permissions: *docker_permissions
     secrets: *docker_secrets
