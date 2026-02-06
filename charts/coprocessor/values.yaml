@@ -135,6 +135,7 @@ hostListener:
     # - --dependence-cache-size=10000
     # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
     # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
+    # - --dependent-ops-max-per-chain=0   # Max weighted dependent ops per chain before slow-lane (0 disables)
 
     ### Catchup parameters (optional)
     # - --catchup-margin
@@ -247,6 +248,7 @@ hostListenerPoller:
     # - --dependence-cache-size=10000
     # - --dependence-by-connexity   # Whether to build connected components or linear chains (default no)
     # - --dependence-cross-block    # Do chains cross L1 block boundaries (default yes)
+    # - --dependent-ops-max-per-chain=0   # Max weighted dependent ops per chain before slow-lane (0 disables)
 
   # Service ports configuration
   ports:
@@ -342,6 +344,7 @@ hostListenerCatchupOnly:
     # - --start-at-block  # To catch up from a specific block
     # - --catchup-margin
     # - --catchup-paging
+    # - --dependent-ops-max-per-chain=0   # Max weighted dependent ops per chain before slow-lane (0 disables)
 
   # Service ports configuration
   ports:
