@@ -24,6 +24,7 @@ pub enum FhevmError {
     CiphertextExpansionError(tfhe::Error),
     ReRandomisationError(tfhe::Error),
     CiphertextCompressionError(tfhe::Error),
+    CiphertextCompressionRequiresEmptyCarries,
     CiphertextCompressionPanic {
         message: String,
     },
@@ -160,6 +161,12 @@ impl std::fmt::Display for FhevmError {
             }
             Self::CiphertextCompressionError(e) => {
                 write!(f, "error compressing ciphertext: {:?}", e)
+            }
+            Self::CiphertextCompressionRequiresEmptyCarries => {
+                write!(
+                    f,
+                    "cannot compress ciphertext because block carries are not empty"
+                )
             }
             Self::CiphertextCompressionPanic { message } => {
                 write!(f, "panic while compressing ciphertext: {}", message)
@@ -343,6 +350,23 @@ fn panic_payload_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
         message.clone()
     } else {
         "unknown panic payload".to_string()
+    }
+}
+
+fn build_compressed_ciphertext_list(
+    builder: CompressedCiphertextListBuilder,
+) -> std::result::Result<tfhe::CompressedCiphertextList, FhevmError> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder.build())) {
+        Ok(Ok(list)) => Ok(list),
+        Ok(Err(error)) => Err(FhevmError::CiphertextCompressionError(error)),
+        Err(panic_payload) => {
+            let message = panic_payload_to_string(panic_payload);
+            if message == "Ciphertexts must have empty carries to be compressed" {
+                return Err(FhevmError::CiphertextCompressionRequiresEmptyCarries);
+            }
+
+            Err(FhevmError::CiphertextCompressionPanic { message })
+        }
     }
 }
 
@@ -547,6 +571,14 @@ impl SupportedFheCiphertexts {
     }
 
     pub fn compress(&self) -> std::result::Result<(i16, Vec<u8>), FhevmError> {
+        if matches!(self, SupportedFheCiphertexts::Scalar(_)) {
+            return Err(FhevmError::CannotCompressScalar);
+        }
+
+        if !self.clone().to_ciphertext64().block_carries_are_empty() {
+            return Err(FhevmError::CiphertextCompressionRequiresEmptyCarries);
+        }
+
         let type_num = self.type_num();
         let mut builder = CompressedCiphertextListBuilder::new();
         match self {
@@ -562,20 +594,9 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheBytes64(c) => builder.push(c.clone()),
             SupportedFheCiphertexts::FheBytes128(c) => builder.push(c.clone()),
             SupportedFheCiphertexts::FheBytes256(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::Scalar(_) => {
-                return Err(FhevmError::CannotCompressScalar);
-            }
+            SupportedFheCiphertexts::Scalar(_) => unreachable!("checked above"),
         };
-        let list = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder.build()))
-        {
-            Ok(Ok(list)) => list,
-            Ok(Err(error)) => return Err(FhevmError::CiphertextCompressionError(error)),
-            Err(panic_payload) => {
-                return Err(FhevmError::CiphertextCompressionPanic {
-                    message: panic_payload_to_string(panic_payload),
-                });
-            }
-        };
+        let list = build_compressed_ciphertext_list(builder)?;
         Ok((type_num, safe_serialize(&list)))
     }
 
