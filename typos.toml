@@ -49,7 +49,6 @@ extend-exclude = [
     "*.rs",
     "*.sol",
     "*.js",
-    "*.sql",
     "*.toml",
     "*.yaml",
     "*.yml",

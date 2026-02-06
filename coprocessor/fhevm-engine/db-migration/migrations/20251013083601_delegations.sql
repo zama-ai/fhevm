@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS delegate_user_decrypt (
     transaction_id BYTEA,
     on_gateway BOOL NOT NULL, -- if it is on gateway chain
     reorg_out BOOL NOT NULL, -- if it was reorged out
-    -- error and rety handling
+    -- error and retry handling
     gateway_nb_attempts BIGINT NOT NULL DEFAULT 0,
     gateway_last_error TEXT,
     UNIQUE(delegator, delegate, contract_address, delegation_counter, old_expiration_date, new_expiration_date, block_number, block_hash, transaction_id)
