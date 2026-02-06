@@ -402,6 +402,32 @@ impl SupportedFheCiphertexts {
         }
     }
 
+    pub fn deserialize(ct_type: i16, bytes: &[u8]) -> Result<Self, FhevmError> {
+        match ct_type {
+            0 => Ok(SupportedFheCiphertexts::FheBool(safe_deserialize(bytes)?)),
+            1 => Ok(SupportedFheCiphertexts::FheUint4(safe_deserialize(bytes)?)),
+            2 => Ok(SupportedFheCiphertexts::FheUint8(safe_deserialize(bytes)?)),
+            3 => Ok(SupportedFheCiphertexts::FheUint16(safe_deserialize(bytes)?)),
+            4 => Ok(SupportedFheCiphertexts::FheUint32(safe_deserialize(bytes)?)),
+            5 => Ok(SupportedFheCiphertexts::FheUint64(safe_deserialize(bytes)?)),
+            6 => Ok(SupportedFheCiphertexts::FheUint128(safe_deserialize(
+                bytes,
+            )?)),
+            7 => Ok(SupportedFheCiphertexts::FheUint160(safe_deserialize(
+                bytes,
+            )?)),
+            8 => Ok(SupportedFheCiphertexts::FheUint256(safe_deserialize(
+                bytes,
+            )?)),
+            9 => Ok(SupportedFheCiphertexts::FheBytes64(safe_deserialize(
+                bytes,
+            )?)),
+            10 => Ok(SupportedFheCiphertexts::FheBytes128(safe_deserialize(bytes)?)),
+            11 => Ok(SupportedFheCiphertexts::FheBytes256(safe_deserialize(bytes)?)),
+            _ => Err(FhevmError::UnknownFheType(ct_type as i32).into()),
+        }
+    }
+
     pub fn to_ciphertext64(self) -> BaseRadixCiphertext<Ciphertext> {
         match self {
             SupportedFheCiphertexts::FheBool(v) => {
