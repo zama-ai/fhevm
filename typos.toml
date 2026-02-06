@@ -50,7 +50,6 @@ extend-exclude = [
     "*.sol",
     "*.ts",
     "*.js",
-    "*.py",
     "*.sql",
     "*.toml",
     "*.yaml",
