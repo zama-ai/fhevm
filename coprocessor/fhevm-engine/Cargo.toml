@@ -84,7 +84,7 @@ tfhe = { version = "=1.5.1", features = [
 ] }
 tfhe-versionable = "=0.6.2"
 tfhe-zk-pok = "=0.8.0"
-time = "0.3.43"
+time = "0.3.47"
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-util = "0.7.15"
 tonic = { version = "0.12.3", features = ["server"] }
