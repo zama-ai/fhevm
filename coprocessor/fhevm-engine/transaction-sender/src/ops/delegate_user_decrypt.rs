@@ -7,6 +7,7 @@ use crate::metrics::{
     DELEGATE_USER_DECRYPT_SUCCESS_COUNTER,
 };
 use crate::nonce_managed_provider::NonceManagedProvider;
+use crate::ops::common::{get_revert_reason, try_decode_coprocessor_config_error, RevertReason};
 
 use alloy::primitives::{Address, FixedBytes};
 use alloy::providers::Provider;
@@ -74,6 +75,7 @@ enum TxResult {
     Success,
     IdemPotentError,
     TransientError,
+    NonRetryableError(String),
     OtherError(String),
 }
 
@@ -147,6 +149,16 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                 );
                 return TxResult::IdemPotentError;
             }
+            Err(error) if try_decode_coprocessor_config_error(&error).is_some() => {
+                let config_error = try_decode_coprocessor_config_error(&error).unwrap();
+                let config_error_str = config_error.to_db_error_string();
+                error!(
+                    error = %config_error,
+                    ?delegation,
+                    "{operation} failed with non-retryable gateway coprocessor config error"
+                );
+                return TxResult::NonRetryableError(config_error_str);
+            }
             Err(error) if is_transient_error(&error) => {
                 warn!(
                     %error,
@@ -181,12 +193,25 @@ impl<P: Provider<Ethereum> + Clone + 'static> DelegateUserDecryptOperation<P> {
                 ?delegation,
                 "{operation} txn failed"
             );
-            TxResult::OtherError(format!(
-                "Transaction {} failed with status {}, Delegation: {:?}",
-                transaction_hash,
-                receipt.status(),
-                delegation,
-            ))
+            match get_revert_reason(
+                &self.gateway_provider,
+                &receipt,
+                Duration::from_secs(self.conf.debug_trace_timeout_secs.into()),
+            )
+            .await
+            {
+                RevertReason::ConfigError(config_error) => {
+                    let config_error_str = config_error.to_db_error_string();
+                    error!(
+                        error = %config_error,
+                        ?delegation,
+                        transaction_hash = %receipt.transaction_hash,
+                        "{operation} terminalized after debug trace matched gateway coprocessor config error"
+                    );
+                    TxResult::NonRetryableError(config_error_str)
+                }
+                RevertReason::Other(reason) => TxResult::OtherError(reason),
+            }
         }
     }
 
@@ -480,6 +505,17 @@ where
                     transient_error = true;
                     update_error_delegation(&mut tx, &delegation, "transient_error").await;
                 }
+                TxResult::NonRetryableError(e) => {
+                    nb_errors += 1;
+                    other_error = true;
+                    mark_delegation_terminal_config_error(
+                        &mut tx,
+                        &delegation,
+                        &e,
+                        self.conf.delegation_max_retry + 1,
+                    )
+                    .await?;
+                }
                 TxResult::OtherError(e) => {
                     nb_errors += 1;
                     update_error_delegation(&mut tx, &delegation, &e.to_string()).await;
@@ -585,6 +621,39 @@ pub async fn update_error_delegation(
             "No rows updated when updating error delegation"
         );
     }
+}
+
+pub async fn mark_delegation_terminal_config_error(
+    tx: &mut DbTransaction<'_>,
+    delegation: &DelegationRow,
+    error: &str,
+    terminal_attempts: u64,
+) -> Result<()> {
+    error!(
+        %error,
+        ?delegation,
+        terminal_attempts,
+        "Updating delegation with terminal gateway config error"
+    );
+    let res = sqlx::query(
+        r#"
+        UPDATE delegate_user_decrypt
+        SET gateway_nb_attempts = $1,
+            gateway_last_error = $2
+        WHERE key = $3
+        "#,
+    )
+    .bind(terminal_attempts as i64)
+    .bind(error)
+    .bind(delegation.key)
+    .execute(tx.deref_mut())
+    .await?;
+    anyhow::ensure!(
+        res.rows_affected() != 0,
+        "No rows updated when marking terminal delegation for key {}",
+        delegation.key
+    );
+    Ok(())
 }
 
 pub async fn update_transmitted_delegation(

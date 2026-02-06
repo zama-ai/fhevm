@@ -1,7 +1,7 @@
 mod common;
 
 use alloy::network::TxSigner;
-use alloy::providers::{ProviderBuilder, WsConnect};
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::signers::local::PrivateKeySigner;
 use common::{CiphertextCommits, TestEnvironment};
 
@@ -9,6 +9,7 @@ use common::SignerType;
 use rand::{random, Rng};
 use rstest::*;
 use serial_test::serial;
+use sqlx::Row;
 use std::time::Duration;
 use test_harness::db_utils::{insert_ciphertext_digest, insert_random_keys_and_host_chain};
 use tokio::time::sleep;
@@ -605,6 +606,141 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
         }
         sleep(Duration::from_millis(500)).await;
     }
+
+    env.cancel_token.cancel();
+    run_handle.await??;
+    Ok(())
+}
+
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[tokio::test]
+#[serial(db)]
+async fn add_ciphertext_terminal_on_gw_config_error(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let conf = ConfigSettings {
+        add_ciphertexts_max_retries: 3,
+        ..Default::default()
+    };
+    let force_per_test_localstack = false;
+    let env =
+        TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
+            .await?;
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
+
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
+    provider_deploy
+        .send_transaction_sync(
+            ciphertext_commits
+                .setConfigErrorMode(1)
+                .into_transaction_request(),
+        )
+        .await?;
+
+    let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
+        PrivateKeySigner::random().address(),
+        *ciphertext_commits.address(),
+        PrivateKeySigner::random().address(),
+        env.signer.clone(),
+        provider.clone(),
+        provider.inner().clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let initial_tx_count = provider
+        .get_transaction_count(TxSigner::address(&env.signer))
+        .await?;
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    let (host_chain_id, key_id) = insert_random_keys_and_host_chain(&env.db_pool).await?;
+    let handle = random::<[u8; 32]>();
+    insert_ciphertext_digest(
+        &env.db_pool,
+        host_chain_id,
+        key_id,
+        &handle,
+        &random::<[u8; 32]>(),
+        &random::<[u8; 32]>(),
+        0,
+    )
+    .await?;
+
+    sqlx::query!(
+        "
+        SELECT pg_notify($1, '')",
+        env.conf.add_ciphertexts_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    for _ in 0..60 {
+        let row = sqlx::query(
+            "SELECT txn_is_sent, txn_limited_retries_count, txn_last_error
+             FROM ciphertext_digest
+             WHERE handle = $1",
+        )
+        .bind(&handle[..])
+        .fetch_one(&env.db_pool)
+        .await?;
+        let txn_is_sent: bool = row.try_get("txn_is_sent")?;
+        let txn_limited_retries_count: i32 = row.try_get("txn_limited_retries_count")?;
+        let txn_last_error: Option<String> = row.try_get("txn_last_error")?;
+        if !txn_is_sent
+            && txn_limited_retries_count == conf.add_ciphertexts_max_retries
+            && txn_last_error
+                .as_deref()
+                .is_some_and(|err| err.starts_with("gw: "))
+        {
+            break;
+        }
+        sleep(Duration::from_millis(250)).await;
+    }
+
+    let row = sqlx::query(
+        "SELECT txn_is_sent, txn_limited_retries_count, txn_last_error
+         FROM ciphertext_digest
+         WHERE handle = $1",
+    )
+    .bind(&handle[..])
+    .fetch_one(&env.db_pool)
+    .await?;
+    let txn_is_sent: bool = row.try_get("txn_is_sent")?;
+    let txn_limited_retries_count: i32 = row.try_get("txn_limited_retries_count")?;
+    let txn_last_error: Option<String> = row.try_get("txn_last_error")?;
+    assert!(!txn_is_sent);
+    assert_eq!(txn_limited_retries_count, conf.add_ciphertexts_max_retries);
+    assert!(
+        txn_last_error
+            .as_deref()
+            .is_some_and(|err| err.starts_with("gw: ")),
+        "Expected gw-prefixed terminal error, got {:?}",
+        txn_last_error
+    );
+
+    let tx_count = provider.get_transaction_count(env.signer.address()).await?;
+    assert_eq!(
+        tx_count, initial_tx_count,
+        "Expected no transaction to be sent for gateway config errors detected before send"
+    );
 
     env.cancel_token.cancel();
     run_handle.await??;

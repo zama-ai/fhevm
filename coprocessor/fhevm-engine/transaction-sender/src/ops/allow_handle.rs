@@ -7,7 +7,9 @@ use std::{
 use crate::{
     metrics::{ALLOW_HANDLE_FAIL_COUNTER, ALLOW_HANDLE_SUCCESS_COUNTER},
     nonce_managed_provider::NonceManagedProvider,
-    ops::common::try_into_array,
+    ops::common::{
+        get_revert_reason, try_decode_coprocessor_config_error, try_into_array, RevertReason,
+    },
     REVIEW,
 };
 
@@ -99,6 +101,19 @@ where
                     .await?;
                 return Ok(());
             }
+            Err(e) if try_decode_coprocessor_config_error(&e).is_some() => {
+                let config_error = try_decode_coprocessor_config_error(&e).unwrap();
+                let config_error_str = config_error.to_db_error_string();
+                ALLOW_HANDLE_FAIL_COUNTER.inc();
+                error!(
+                    error = %config_error,
+                    key = %key,
+                    "Detected non-retryable gateway coprocessor config error while allowing handle"
+                );
+                self.mark_allow_handle_terminal_config_error(key, &config_error_str)
+                    .await?;
+                return Ok(());
+            }
             // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
             // Local usage are included as they might be transient due to external AWS KMS signers.
             Err(e)
@@ -160,19 +175,41 @@ where
                 "allowAccount txn failed"
             );
 
-            self.increment_txn_limited_retries_count(
-                key,
-                "receipt status = false",
-                current_limited_retries_count,
+            match get_revert_reason(
+                &self.provider,
+                &receipt,
+                Duration::from_secs(self.conf.debug_trace_timeout_secs.into()),
             )
-            .await?;
-
-            return Err(anyhow::anyhow!(
-                "Transaction {} failed with status {}, handle: {}",
-                receipt.transaction_hash,
-                receipt.status(),
-                h,
-            ));
+            .await
+            {
+                RevertReason::ConfigError(config_error) => {
+                    let config_error_str = config_error.to_db_error_string();
+                    error!(
+                        error = %config_error,
+                        transaction_hash = %receipt.transaction_hash,
+                        key = %key,
+                        "Terminalizing allow_handle due to gateway coprocessor config error from debug trace"
+                    );
+                    self.mark_allow_handle_terminal_config_error(key, &config_error_str)
+                        .await?;
+                    return Ok(());
+                }
+                RevertReason::Other(reason) => {
+                    self.increment_txn_limited_retries_count(
+                        key,
+                        &reason,
+                        current_limited_retries_count,
+                    )
+                    .await?;
+                    return Err(anyhow::anyhow!(
+                        "Transaction {} failed with status {}, handle: {}, reason: {}",
+                        receipt.transaction_hash,
+                        receipt.status(),
+                        h,
+                        reason,
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -322,6 +359,34 @@ where
         )
         .execute(&self.db_pool)
         .await?;
+        Ok(())
+    }
+
+    async fn mark_allow_handle_terminal_config_error(
+        &self,
+        key: &Key,
+        error: &str,
+    ) -> anyhow::Result<()> {
+        let res = sqlx::query(
+            "UPDATE allowed_handles
+            SET
+                txn_limited_retries_count = $1,
+                txn_last_error = $2,
+                txn_last_error_at = NOW()
+            WHERE handle = $3
+            AND account_address = $4",
+        )
+        .bind(self.conf.allow_handle_max_retries)
+        .bind(error)
+        .bind(&key.handle)
+        .bind(&key.account_addr)
+        .execute(&self.db_pool)
+        .await?;
+        anyhow::ensure!(
+            res.rows_affected() != 0,
+            "No rows updated when marking allow_handle terminal config error for key {}",
+            key
+        );
         Ok(())
     }
 }

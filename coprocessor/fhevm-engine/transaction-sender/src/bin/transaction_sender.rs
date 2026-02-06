@@ -114,6 +114,9 @@ struct Conf {
     #[arg(long, default_value_t = 4, alias = "txn-receipt-timeout-secs")]
     send_txn_sync_timeout_secs: u16,
 
+    #[arg(long, default_value_t = 30)]
+    debug_trace_timeout_secs: u16,
+
     #[deprecated(note = "no longer used and will be removed in future versions")]
     #[arg(long, default_value_t = 0, hide = true)]
     required_txn_confirmations: u16,
@@ -384,6 +387,7 @@ async fn main() -> anyhow::Result<()> {
         allow_handle_batch_limit: conf.allow_handle_batch_limit,
         allow_handle_max_retries: conf.allow_handle_max_retries,
         send_txn_sync_timeout_secs: conf.send_txn_sync_timeout_secs,
+        debug_trace_timeout_secs: conf.debug_trace_timeout_secs,
         review_after_unlimited_retries: conf.review_after_unlimited_retries,
         health_check_port: conf.health_check_port,
         health_check_timeout: conf.health_check_timeout,
