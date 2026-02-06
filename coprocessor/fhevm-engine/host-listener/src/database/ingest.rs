@@ -12,8 +12,8 @@ use crate::cmd::block_history::BlockSummary;
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_dependent_op_weight, tfhe_inputs_handle,
-    tfhe_result_handle, ChainHash, Database, LogTfhe,
+    acl_result_handles, tfhe_inputs_handle, tfhe_result_handle, ChainHash,
+    Database, LogTfhe,
 };
 
 pub struct BlockLogs<T> {
@@ -173,11 +173,10 @@ pub async fn ingest_block_logs(
             && tfhe_log.is_allowed
             && !tfhe_inputs_handle(&tfhe_log.event).is_empty()
         {
-            let weight = u64::from(tfhe_dependent_op_weight(&tfhe_log.event));
             let stats = dependent_ops_by_chain
                 .entry(tfhe_log.dependence_chain)
                 .or_default();
-            stats.total = stats.total.saturating_add(weight);
+            stats.total = stats.total.saturating_add(1);
         }
         if block_logs.catchup && inserted {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
