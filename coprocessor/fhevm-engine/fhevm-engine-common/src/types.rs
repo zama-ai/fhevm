@@ -343,6 +343,8 @@ impl std::fmt::Display for FhevmError {
     }
 }
 
+// TFHE panics with both &str and String payloads depending on call site.
+// Normalize to a stable String so callers can log and map consistently.
 fn panic_payload_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
         (*message).to_string()
@@ -356,6 +358,8 @@ fn panic_payload_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
 fn build_compressed_ciphertext_list(
     builder: CompressedCiphertextListBuilder,
 ) -> std::result::Result<tfhe::CompressedCiphertextList, FhevmError> {
+    // `builder.build()` may panic because TFHE uses internal `assert!` in this path.
+    // Catch it to avoid crashing worker tasks and convert to typed domain errors.
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder.build())) {
         Ok(Ok(list)) => Ok(list),
         Ok(Err(error)) => Err(FhevmError::CiphertextCompressionError(error)),
@@ -571,17 +575,12 @@ impl SupportedFheCiphertexts {
     }
 
     pub fn compress(&self) -> std::result::Result<(i16, Vec<u8>), FhevmError> {
-        if matches!(self, SupportedFheCiphertexts::Scalar(_)) {
-            return Err(FhevmError::CannotCompressScalar);
-        }
-
-        if !self.clone().to_ciphertext64().block_carries_are_empty() {
-            return Err(FhevmError::CiphertextCompressionRequiresEmptyCarries);
-        }
-
         let type_num = self.type_num();
         let mut builder = CompressedCiphertextListBuilder::new();
         match self {
+            SupportedFheCiphertexts::Scalar(_) => {
+                return Err(FhevmError::CannotCompressScalar);
+            }
             SupportedFheCiphertexts::FheBool(c) => builder.push(c.clone()),
             SupportedFheCiphertexts::FheUint4(c) => builder.push(c.clone()),
             SupportedFheCiphertexts::FheUint8(c) => builder.push(c.clone()),
@@ -594,8 +593,10 @@ impl SupportedFheCiphertexts {
             SupportedFheCiphertexts::FheBytes64(c) => builder.push(c.clone()),
             SupportedFheCiphertexts::FheBytes128(c) => builder.push(c.clone()),
             SupportedFheCiphertexts::FheBytes256(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::Scalar(_) => unreachable!("checked above"),
         };
+        if !self.clone().to_ciphertext64().block_carries_are_empty() {
+            return Err(FhevmError::CiphertextCompressionRequiresEmptyCarries);
+        }
         let list = build_compressed_ciphertext_list(builder)?;
         Ok((type_num, safe_serialize(&list)))
     }
