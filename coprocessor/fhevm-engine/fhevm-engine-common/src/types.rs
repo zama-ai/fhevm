@@ -355,25 +355,6 @@ fn panic_payload_to_string(payload: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-fn build_compressed_ciphertext_list(
-    builder: CompressedCiphertextListBuilder,
-) -> std::result::Result<tfhe::CompressedCiphertextList, FhevmError> {
-    // `builder.build()` may panic because TFHE uses internal `assert!` in this path.
-    // Catch it to avoid crashing worker tasks and convert to typed domain errors.
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder.build())) {
-        Ok(Ok(list)) => Ok(list),
-        Ok(Err(error)) => Err(FhevmError::CiphertextCompressionError(error)),
-        Err(panic_payload) => {
-            let message = panic_payload_to_string(panic_payload);
-            if message == "Ciphertexts must have empty carries to be compressed" {
-                return Err(FhevmError::CiphertextCompressionRequiresEmptyCarries);
-            }
-
-            Err(FhevmError::CiphertextCompressionPanic { message })
-        }
-    }
-}
-
 #[derive(Clone)]
 pub enum SupportedFheCiphertexts {
     FheBool(tfhe::FheBool),
@@ -597,7 +578,19 @@ impl SupportedFheCiphertexts {
         if !self.clone().to_ciphertext64().block_carries_are_empty() {
             return Err(FhevmError::CiphertextCompressionRequiresEmptyCarries);
         }
-        let list = build_compressed_ciphertext_list(builder)?;
+        let list = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder.build()))
+        {
+            Ok(Ok(list)) => list,
+            Ok(Err(error)) => return Err(FhevmError::CiphertextCompressionError(error)),
+            Err(panic_payload) => {
+                let message = panic_payload_to_string(panic_payload);
+                if message == "Ciphertexts must have empty carries to be compressed" {
+                    return Err(FhevmError::CiphertextCompressionRequiresEmptyCarries);
+                }
+
+                return Err(FhevmError::CiphertextCompressionPanic { message });
+            }
+        };
         Ok((type_num, safe_serialize(&list)))
     }
 
