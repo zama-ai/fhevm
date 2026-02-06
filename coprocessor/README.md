@@ -72,16 +72,18 @@ $ tfhe_worker --help
 Usage: tfhe_worker [OPTIONS]
 
 Options:
+      --run-server
+          Run the API server
       --run-bg-worker
           Run the background worker
-      --worker-polling-interval-ms <WORKER_POLLING_INTERVAL_MS>
-          Polling interval for the background worker to fetch jobs [default: 1000]
       --generate-fhe-keys
           Generate fhe keys and exit
+      --server-maximum-ciphertexts-to-schedule <SERVER_MAXIMUM_CIPHERTEXTS_TO_SCHEDULE>
+          Server maximum ciphertexts to schedule per batch [default: 5000]
+      --server-maximum-ciphertexts-to-get <SERVER_MAXIMUM_CIPHERTEXTS_TO_GET>
+          Server maximum ciphertexts to serve on get_cihpertexts endpoint [default: 5000]
       --work-items-batch-size <WORK_ITEMS_BATCH_SIZE>
-          Work items batch size [default: 100]
-      --dependence-chains-per-batch <DEPENDENCE_CHAINS_PER_BATCH>
-          Number of dependence chains to fetch per worker [default: 20]
+          Work items batch size [default: 10]
       --tenant-key-cache-size <TENANT_KEY_CACHE_SIZE>
           Tenant key cache size [default: 32]
       --maximum-compact-inputs-upload <MAXIMUM_COMPACT_INPUTS_UPLOAD>
@@ -89,17 +91,33 @@ Options:
       --maximum-handles-per-input <MAXIMUM_HANDLES_PER_INPUT>
           Maximum compact inputs to upload [default: 255]
       --coprocessor-fhe-threads <COPROCESSOR_FHE_THREADS>
-          Coprocessor FHE processing threads [default: 32]
+          Coprocessor FHE processing threads [default: 8]
       --tokio-threads <TOKIO_THREADS>
           Tokio Async IO threads [default: 4]
       --pg-pool-max-connections <PG_POOL_MAX_CONNECTIONS>
           Postgres pool max connections [default: 10]
+      --server-addr <SERVER_ADDR>
+          Server socket address [default: 127.0.0.1:50051]
       --metrics-addr <METRICS_ADDR>
           Prometheus metrics server address [default: 0.0.0.0:9100]
       --database-url <DATABASE_URL>
           Postgres database url. If unspecified DATABASE_URL environment variable is used
-      --service-name <SERVICE_NAME>
-          tfhe-worker service name in OTLP traces [default: tfhe-worker]
+      --coprocessor-private-key <COPROCESSOR_PRIVATE_KEY>
+          Coprocessor private key file path. Private key is in plain text 0x1234.. format [default: ./coprocessor.key]
+```
+
+```bash
+$ cli --help
+Usage: cli <COMMAND>
+
+Commands:
+  insert-tenant  Inserts tenant into specified database
+  smoke-test     Coprocessor smoke test
+  help           Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
 ```
 
 For more details on configuration, please check [Coprocessor Configuration](docs/getting_started/fhevm/coprocessor/configuration.md)
