@@ -17,6 +17,7 @@ use std::{
 };
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub const TXN_ID_ATTR_KEY: &str = "txn_id";
 
@@ -74,6 +75,50 @@ pub fn init_otel(
 
     let (_tracer, trace_provider) = build_tracer_provider(service_name, "otlp-layer")?;
     install_global_tracer_provider(trace_provider.clone());
+    Ok(Some(OtelGuard::new(trace_provider)))
+}
+
+pub fn init_json_subscriber(log_level: tracing::Level) {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::filter::LevelFilter::from_level(
+            log_level,
+        ))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_target(false)
+                .with_current_span(true)
+                .with_span_list(false)
+                .with_level(true),
+        )
+        .init();
+}
+
+pub fn init_json_subscriber_with_optional_otel(
+    log_level: tracing::Level,
+    service_name: &str,
+    tracer_name: &'static str,
+) -> Result<Option<OtelGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let level_filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .json()
+        .with_target(false)
+        .with_current_span(true)
+        .with_span_list(false)
+        .with_level(true);
+    let base = tracing_subscriber::registry()
+        .with(level_filter)
+        .with(fmt_layer);
+
+    if service_name.is_empty() {
+        base.init();
+        return Ok(None);
+    }
+
+    let (tracer, trace_provider) = build_tracer_provider(service_name, tracer_name)?;
+    install_global_tracer_provider(trace_provider.clone());
+    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    base.with(telemetry_layer).init();
     Ok(Some(OtelGuard::new(trace_provider)))
 }
 

@@ -4,7 +4,6 @@ use fhevm_engine_common::telemetry;
 use tokio::signal::unix;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod utils;
 
 fn handle_sigint(token: CancellationToken) {
@@ -69,38 +68,18 @@ async fn main() {
 
     let mut otlp_setup_error: Option<String> = None;
 
-    let (otel_tracer, _otel_guard) =
-        match telemetry::init_otel_tracing(&config.service_name, "otlp-layer") {
-            Ok(Some((tracer, guard))) => (Some(tracer), Some(guard)),
-            Ok(None) => (None, None),
-            Err(err) => {
-                otlp_setup_error = Some(err.to_string());
-                (None, None)
-            }
-        };
-
-    let level_filter = tracing_subscriber::filter::LevelFilter::from_level(config.log_level);
-
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .json()
-        // drop "target" field so the logs are not too verbose. Instead, span names are used.
-        .with_target(false)
-        // keep "span"
-        .with_current_span(true)
-        // drop "spans"
-        .with_span_list(false)
-        .with_level(true);
-
-    let base = tracing_subscriber::registry()
-        .with(level_filter)
-        .with(fmt_layer);
-
-    if let Some(tracer) = otel_tracer {
-        let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-        base.with(otel_layer).init();
-    } else {
-        base.init();
-    }
+    let _otel_guard = match telemetry::init_json_subscriber_with_optional_otel(
+        config.log_level,
+        &config.service_name,
+        "otlp-layer",
+    ) {
+        Ok(guard) => guard,
+        Err(err) => {
+            otlp_setup_error = Some(err.to_string());
+            telemetry::init_json_subscriber(config.log_level);
+            None
+        }
+    };
 
     if let Some(err) = otlp_setup_error {
         error!(error = %err, "Failed to setup OTLP");
