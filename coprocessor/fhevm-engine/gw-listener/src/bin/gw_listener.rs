@@ -108,7 +108,7 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(conf.log_level)
         .init();
 
-    let _otlp_runtime = match telemetry::init_otlp(&conf.service_name) {
+    let _otel_guard = match telemetry::init_otel(&conf.service_name) {
         Ok(runtime) => runtime,
         Err(err) => {
             error!(error = %err, "Failed to setup OTLP");

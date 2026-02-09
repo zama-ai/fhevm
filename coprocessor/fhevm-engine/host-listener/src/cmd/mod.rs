@@ -1024,7 +1024,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         )
     };
 
-    let _otlp_runtime = match telemetry::init_otlp(&args.service_name) {
+    let _otel_guard = match telemetry::init_otel(&args.service_name) {
         Ok(runtime) => runtime,
         Err(err) => {
             error!(error = %err, "Failed to setup OTLP");
