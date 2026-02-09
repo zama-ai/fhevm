@@ -61,7 +61,36 @@ cd test-suite/fhevm
 ./fhevm-cli deploy --build --local
 ```
 
-2. Enable the cap on both listener types
+2. Bootstrap gate (required before any slow-lane test)
+
+The validation is invalid until key bootstrap is healthy.
+
+Check:
+
+```bash
+docker logs --since=20m coprocessor-gw-listener | rg -n 'Received ActivateKey event|ActivateKey event successful'
+docker exec -i coprocessor-and-kms-db psql -U postgres -d coprocessor \
+  -c "SELECT tenant_id, sns_pk FROM tenants;"
+docker logs --since=20m coprocessor-sns-worker | rg -n 'bytes_len|No keys available|Fetched keyset'
+```
+
+Expected:
+
+- `coprocessor-gw-listener` logs include `ActivateKey event successful`.
+- `tenants.sns_pk` is not the bootstrap OID anymore.
+- `coprocessor-sns-worker` shows non-zero `bytes_len` and `Fetched keyset` (no repeated `No keys available` loop).
+
+If gate fails, recover by restarting only gw-listener and re-check:
+
+```bash
+cd test-suite/fhevm
+docker compose -p fhevm \
+  --env-file env/staging/.env.coprocessor.local \
+  -f docker-compose/coprocessor-docker-compose.yml \
+  up -d --no-deps coprocessor-gw-listener
+```
+
+3. Enable the cap on both listener types
 
 Temporarily add `--dependent-ops-max-per-chain=<N>` to both services in
 `test-suite/fhevm/docker-compose/coprocessor-docker-compose.yml`:
@@ -69,32 +98,38 @@ Temporarily add `--dependent-ops-max-per-chain=<N>` to both services in
 - `coprocessor-host-listener` command
 - `coprocessor-host-listener-poller` command
 
-Use a low value for validation (example: `2`) so slow-lane is easy to trigger.
+Use a low value for validation (example: `2`).
 Then restart only these services:
 
 ```bash
 cd test-suite/fhevm
-docker compose \
-  --env-file ../env/staging/.env.coprocessor.local \
+docker compose -p fhevm \
+  --env-file env/staging/.env.coprocessor.local \
   -f docker-compose/coprocessor-docker-compose.yml \
   up -d --force-recreate \
   coprocessor-host-listener \
   coprocessor-host-listener-poller
 ```
 
-3. Generate dependent load
+Important:
 
-Run `stress_generator` with a dependent synthetic chain scenario
-(`ADDChain` or `MULChain`), and run in parallel a lighter/independent scenario.
+- Keep `-p fhevm` when restarting manually. Without it, containers can start on a different compose project/network and fail DNS (`host-node`, `db`).
+
+4. Generate dependent load
+
+Use a real host-contract flow so host-listener ingests real TFHE logs:
 
 ```bash
-cd coprocessor/fhevm-engine/stress-test-generator
-export EVGEN_DB_URL='postgresql://postgres:postgres@127.0.0.1:5432/coprocessor'
-export EVGEN_SCENARIO='data/evgen_scenario.csv'
-cargo run --release --bin stress_generator
+cd test-suite/fhevm
+./fhevm-cli test erc20
 ```
 
-4. Validate acceptance criteria in DB
+If this does not trigger slow-lane in local runs, use forcing mode for validation:
+
+- set `--dependent-ops-max-per-chain=1` temporarily
+- rerun `./fhevm-cli test erc20`
+
+5. Validate acceptance criteria in DB
 
 ```sql
 -- A. heavy dependent chains are marked slow
@@ -118,7 +153,17 @@ Expected:
 - At least one chain with `schedule_priority = 1`.
 - Fast (`0`) chains appear before slow (`1`) chains in acquisition order.
 
-5. Validate off-mode (`N=0`)
+6. Run deterministic integration matrix (recommended)
+
+This validates below/at/above threshold behavior with a realistic cap.
+
+```bash
+cd coprocessor/fhevm-engine
+cargo test -p host-listener --test host_listener_integration_tests \
+  test_slow_lane_threshold_matrix_locally -- --nocapture
+```
+
+7. Validate off-mode (`N=0`)
 
 - Set `--dependent-ops-max-per-chain=0` on both listener types.
 - Restart the same two services.

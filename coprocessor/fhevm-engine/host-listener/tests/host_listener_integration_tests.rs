@@ -345,17 +345,6 @@ async fn ingest_blocks_for_receipts(
     Ok(())
 }
 
-async fn emit_dependent_burst(
-    setup: &Setup,
-    input_handle: Option<FixedBytes<32>>,
-    depth: usize,
-) -> Result<
-    (Vec<alloy::rpc::types::TransactionReceipt>, FixedBytes<32>),
-    anyhow::Error,
-> {
-    emit_dependent_burst_seeded(setup, input_handle, depth, 1_u64).await
-}
-
 async fn ingest_dependent_burst_seeded(
     db: &mut Database,
     setup: &Setup,
@@ -482,7 +471,7 @@ async fn test_bad_chain_id() {
 
 #[tokio::test]
 #[serial(db)]
-async fn test_slow_lane_marks_heavy_chain_locally() -> Result<(), anyhow::Error>
+async fn test_slow_lane_threshold_matrix_locally() -> Result<(), anyhow::Error>
 {
     let setup = setup_with_block_time(None, 3.0).await?;
     let mut db = Database::new(
@@ -492,27 +481,111 @@ async fn test_slow_lane_marks_heavy_chain_locally() -> Result<(), anyhow::Error>
     )
     .await?;
 
-    let (receipts, _) = emit_dependent_burst(&setup, None, 4).await?;
-    ingest_blocks_for_receipts(
-        &mut db,
-        &setup,
-        &receipts,
-        IngestOptions {
-            dependence_by_connexity: false,
-            dependence_cross_block: true,
-            dependent_ops_max_per_chain: 1,
-        },
+    let cases = [
+        ("below_cap", 63_usize, 64_u32, 0_i16, 11_u64),
+        ("at_cap", 64_usize, 64_u32, 0_i16, 12_u64),
+        ("above_cap", 65_usize, 64_u32, 1_i16, 13_u64),
+    ];
+
+    let mut seen_chains = HashSet::new();
+    for (name, depth, cap, expected_priority, seed) in cases {
+        let last_handle = ingest_dependent_burst_seeded(
+            &mut db, &setup, None, depth, seed, cap,
+        )
+        .await?;
+        let dep_chain_id =
+            dep_chain_id_for_output_handle(&setup, last_handle).await?;
+        assert!(
+            seen_chains.insert(dep_chain_id.clone()),
+            "matrix case {name} reused an existing dependence chain"
+        );
+
+        let schedule_priority = sqlx::query_scalar::<_, i16>(
+            "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+        )
+        .bind(&dep_chain_id)
+        .fetch_one(&setup.db_pool)
+        .await?;
+        assert_eq!(
+            schedule_priority, expected_priority,
+            "case={name} depth={depth} cap={cap}"
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let mut db = Database::new(
+        &setup.args.database_url,
+        &setup.args.coprocessor_api_key.unwrap(),
+        setup.args.dependence_cache_size,
     )
     .await?;
 
-    let slow_chain_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM dependence_chain WHERE schedule_priority = 1",
+    let cap = 64_u32;
+    let burst_depth = 8_usize;
+    let rounds = 4_u64;
+
+    let mut current_handle: Option<FixedBytes<32>> = None;
+    let mut seen_block_numbers = HashSet::new();
+
+    for round in 0..rounds {
+        let seed = 101_u64 + round;
+        let (receipts, last_output_handle) = emit_dependent_burst_seeded(
+            &setup,
+            current_handle,
+            burst_depth,
+            seed,
+        )
+        .await?;
+
+        for receipt in &receipts {
+            let block_number =
+                receipt.block_number.expect("receipt has block number");
+            seen_block_numbers.insert(block_number);
+        }
+
+        ingest_blocks_for_receipts(
+            &mut db,
+            &setup,
+            &receipts,
+            IngestOptions {
+                dependence_by_connexity: false,
+                dependence_cross_block: true,
+                dependent_ops_max_per_chain: cap,
+            },
+        )
+        .await?;
+
+        current_handle = Some(last_output_handle);
+        tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+    }
+
+    assert!(
+        seen_block_numbers.len() > 1,
+        "test must span multiple blocks"
+    );
+
+    let dep_chain_id = dep_chain_id_for_output_handle(
+        &setup,
+        current_handle.expect("final output handle exists"),
     )
+    .await?;
+    let schedule_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&dep_chain_id)
     .fetch_one(&setup.db_pool)
     .await?;
-    assert!(
-        slow_chain_count > 0,
-        "heavy dependent chain should be assigned to slow lane"
+
+    assert_eq!(
+        schedule_priority, 0,
+        "current behavior: below-cap batches do not accumulate into slow lane across blocks"
     );
     Ok(())
 }
