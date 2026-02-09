@@ -104,7 +104,7 @@ async fn main() {
     };
 
     let _otel_guard = match telemetry::init_otel(&args.service_name) {
-        Ok(runtime) => runtime,
+        Ok(otel_guard) => otel_guard,
         Err(err) => {
             error!(error = %err, "Failed to setup OTLP");
             None

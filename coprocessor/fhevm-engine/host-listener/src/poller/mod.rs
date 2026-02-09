@@ -91,7 +91,7 @@ pub struct PollerConfig {
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let _otel_guard = match telemetry::init_otel(&config.service_name) {
-        Ok(runtime) => runtime,
+        Ok(otel_guard) => otel_guard,
         Err(err) => {
             warn!(error = %err, "Failed to setup OTLP");
             None

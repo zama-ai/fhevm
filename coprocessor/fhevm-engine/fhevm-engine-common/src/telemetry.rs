@@ -98,25 +98,35 @@ pub fn init_json_subscriber(
         return Ok(None);
     }
 
-    let (tracer, guard) = setup_otel_with_tracer(service_name, tracer_name)?;
+    let (tracer, trace_provider) = match setup_otel_with_tracer(service_name, tracer_name) {
+        Ok(v) => v,
+        Err(err) => {
+            // Keep JSON logs even if OTLP export cannot be initialized.
+            base.try_init()?;
+            return Err(err);
+        }
+    };
+
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     base.with(telemetry_layer).try_init()?;
-    Ok(Some(guard))
+    install_global_tracer_provider(trace_provider.clone());
+    Ok(Some(TracerProviderGuard::new(trace_provider)))
 }
 
 fn setup_otel_guard(
     service_name: &str,
     tracer_name: &'static str,
 ) -> Result<TracerProviderGuard, Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let (_tracer, guard) = setup_otel_with_tracer(service_name, tracer_name)?;
-    Ok(guard)
+    let (_tracer, trace_provider) = setup_otel_with_tracer(service_name, tracer_name)?;
+    install_global_tracer_provider(trace_provider.clone());
+    Ok(TracerProviderGuard::new(trace_provider))
 }
 
 fn setup_otel_with_tracer(
     service_name: &str,
     tracer_name: &'static str,
 ) -> Result<
-    (opentelemetry_sdk::trace::Tracer, TracerProviderGuard),
+    (opentelemetry_sdk::trace::Tracer, SdkTracerProvider),
     Box<dyn std::error::Error + Send + Sync + 'static>,
 > {
     let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
@@ -136,8 +146,7 @@ fn setup_otel_with_tracer(
         .build();
 
     let tracer = trace_provider.tracer(tracer_name);
-    install_global_tracer_provider(trace_provider.clone());
-    Ok((tracer, TracerProviderGuard::new(trace_provider)))
+    Ok((tracer, trace_provider))
 }
 
 fn install_global_tracer_provider(trace_provider: SdkTracerProvider) {
@@ -620,7 +629,7 @@ mod tests {
 
     #[test]
     fn setup_otel_empty_service_name_returns_none() {
-        let runtime = init_otel("").unwrap();
-        assert!(runtime.is_none());
+        let otel_guard = init_otel("").unwrap();
+        assert!(otel_guard.is_none());
     }
 }
