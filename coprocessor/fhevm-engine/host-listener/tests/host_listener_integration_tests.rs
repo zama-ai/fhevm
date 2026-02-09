@@ -356,6 +356,30 @@ async fn emit_dependent_burst(
     emit_dependent_burst_seeded(setup, input_handle, depth, 1_u64).await
 }
 
+async fn ingest_dependent_burst_seeded(
+    db: &mut Database,
+    setup: &Setup,
+    input_handle: Option<FixedBytes<32>>,
+    depth: usize,
+    seed: u64,
+    dependent_ops_max_per_chain: u32,
+) -> Result<FixedBytes<32>, anyhow::Error> {
+    let (receipts, last_output_handle) =
+        emit_dependent_burst_seeded(setup, input_handle, depth, seed).await?;
+    ingest_blocks_for_receipts(
+        db,
+        setup,
+        &receipts,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain,
+        },
+    )
+    .await?;
+    Ok(last_output_handle)
+}
+
 async fn emit_dependent_burst_seeded(
     setup: &Setup,
     input_handle: Option<FixedBytes<32>>,
@@ -419,11 +443,11 @@ async fn emit_dependent_burst_seeded(
     Ok((receipts, current))
 }
 
-async fn chain_id_for_output_handle(
+async fn dep_chain_id_for_output_handle(
     setup: &Setup,
     output_handle: FixedBytes<32>,
 ) -> Result<Vec<u8>, anyhow::Error> {
-    let chain_id = sqlx::query_scalar::<_, Option<Vec<u8>>>(
+    let dep_chain_id = sqlx::query_scalar::<_, Option<Vec<u8>>>(
         r#"
         SELECT dependence_chain_id
         FROM computations
@@ -438,7 +462,7 @@ async fn chain_id_for_output_handle(
     .ok_or_else(|| {
         anyhow::anyhow!("missing dependence_chain_id for output handle")
     })?;
-    Ok(chain_id)
+    Ok(dep_chain_id)
 }
 
 #[tokio::test]
@@ -505,19 +529,9 @@ async fn test_slow_lane_off_mode_promotes_seen_chain_locally(
     )
     .await?;
 
-    let (first_receipts, last_handle) =
-        emit_dependent_burst(&setup, None, 4).await?;
-    ingest_blocks_for_receipts(
-        &mut db,
-        &setup,
-        &first_receipts,
-        IngestOptions {
-            dependence_by_connexity: false,
-            dependence_cross_block: true,
-            dependent_ops_max_per_chain: 1,
-        },
-    )
-    .await?;
+    let last_handle =
+        ingest_dependent_burst_seeded(&mut db, &setup, None, 4, 1_u64, 1)
+            .await?;
     let initially_slow = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM dependence_chain WHERE schedule_priority = 1",
     )
@@ -528,17 +542,13 @@ async fn test_slow_lane_off_mode_promotes_seen_chain_locally(
         "setup phase should create at least one slow chain"
     );
 
-    let (second_receipts, _) =
-        emit_dependent_burst(&setup, Some(last_handle), 1).await?;
-    ingest_blocks_for_receipts(
+    ingest_dependent_burst_seeded(
         &mut db,
         &setup,
-        &second_receipts,
-        IngestOptions {
-            dependence_by_connexity: false,
-            dependence_cross_block: true,
-            dependent_ops_max_per_chain: 0,
-        },
+        Some(last_handle),
+        1,
+        1_u64,
+        0,
     )
     .await?;
 
@@ -566,53 +576,33 @@ async fn test_slow_lane_contention_prefers_fast_chain(
     )
     .await?;
 
-    let (heavy_receipts, heavy_last_handle) =
-        emit_dependent_burst_seeded(&setup, None, 4, 1_u64).await?;
-    ingest_blocks_for_receipts(
-        &mut db,
-        &setup,
-        &heavy_receipts,
-        IngestOptions {
-            dependence_by_connexity: false,
-            dependence_cross_block: true,
-            dependent_ops_max_per_chain: 2,
-        },
-    )
-    .await?;
+    let heavy_last_handle =
+        ingest_dependent_burst_seeded(&mut db, &setup, None, 4, 1_u64, 2)
+            .await?;
 
-    let (fast_receipts, fast_last_handle) =
-        emit_dependent_burst_seeded(&setup, None, 1, 2_u64).await?;
-    ingest_blocks_for_receipts(
-        &mut db,
-        &setup,
-        &fast_receipts,
-        IngestOptions {
-            dependence_by_connexity: false,
-            dependence_cross_block: true,
-            dependent_ops_max_per_chain: 2,
-        },
-    )
-    .await?;
+    let fast_last_handle =
+        ingest_dependent_burst_seeded(&mut db, &setup, None, 1, 2_u64, 2)
+            .await?;
 
-    let heavy_chain_id =
-        chain_id_for_output_handle(&setup, heavy_last_handle).await?;
-    let fast_chain_id =
-        chain_id_for_output_handle(&setup, fast_last_handle).await?;
+    let heavy_dep_chain_id =
+        dep_chain_id_for_output_handle(&setup, heavy_last_handle).await?;
+    let fast_dep_chain_id =
+        dep_chain_id_for_output_handle(&setup, fast_last_handle).await?;
     assert_ne!(
-        heavy_chain_id, fast_chain_id,
+        heavy_dep_chain_id, fast_dep_chain_id,
         "contention test requires two independent chains"
     );
 
     let heavy_priority = sqlx::query_scalar::<_, i16>(
         "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
     )
-    .bind(&heavy_chain_id)
+    .bind(&heavy_dep_chain_id)
     .fetch_one(&setup.db_pool)
     .await?;
     let fast_priority = sqlx::query_scalar::<_, i16>(
         "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
     )
-    .bind(&fast_chain_id)
+    .bind(&fast_dep_chain_id)
     .fetch_one(&setup.db_pool)
     .await?;
     assert_eq!(heavy_priority, 1, "heavy chain must be marked slow");
@@ -633,17 +623,17 @@ async fn test_slow_lane_contention_prefers_fast_chain(
     .await?;
     assert_eq!(ordered.len(), 2, "expected two schedulable chains");
     assert_eq!(
-        ordered[0].0, fast_chain_id,
+        ordered[0].0, fast_dep_chain_id,
         "fast chain should be acquired before slow chain under contention"
     );
     assert_eq!(ordered[0].1, 0);
-    assert_eq!(ordered[1].0, heavy_chain_id);
+    assert_eq!(ordered[1].0, heavy_dep_chain_id);
     assert_eq!(ordered[1].1, 1);
 
     sqlx::query(
         "UPDATE dependence_chain SET status = 'processed' WHERE dependence_chain_id = $1",
     )
-    .bind(&fast_chain_id)
+    .bind(&fast_dep_chain_id)
     .execute(&setup.db_pool)
     .await?;
 
@@ -661,7 +651,7 @@ async fn test_slow_lane_contention_prefers_fast_chain(
     .fetch_one(&setup.db_pool)
     .await?;
     assert_eq!(
-        next.0, heavy_chain_id,
+        next.0, heavy_dep_chain_id,
         "slow chain should still progress once fast lane is empty"
     );
     assert_eq!(next.1, 1);
