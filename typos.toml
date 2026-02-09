@@ -47,7 +47,6 @@ extend-exclude = [
     "*.min.css",
     # Docs-only scope for now: exclude source/config/test files
     "*.rs",
-    "*.sol",
     "*.js",
     "*.sql",
     "*.toml",

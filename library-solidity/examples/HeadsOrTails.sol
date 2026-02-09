@@ -57,12 +57,12 @@ contract HeadsOrTails is ZamaEthereumConfig {
         return games[gameId].encryptedHasHeadWon;
     }
 
-    // This logic was before called through an oracle worklfow after requestDecryption
+    // This logic was before called through an oracle workflow after requestDecryption
     // now used by the enduser directly.
     function checkWinner(
         // pass handles in the right order, or it will fail.
         uint256 gameId,
-        // Thoses two next arguments are provided by calling the endpoint of the relayer or the relayer sdk
+        // Those two next arguments are provided by calling the endpoint of the relayer or the relayer sdk
         // using http public decrypt. There is some changes needed on the relayer sdk returns to fits this
         // new workflow.
         bytes memory clearGameResult,

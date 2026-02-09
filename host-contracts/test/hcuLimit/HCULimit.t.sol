@@ -855,7 +855,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheRem(FheType(resultType), scalarByte, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheAddRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheAddRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -869,7 +869,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheAdd(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheSubRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheSubRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -883,7 +883,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheSub(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheMulRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheMulRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -897,7 +897,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheMul(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheDivRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
+    function test_checkHCUForFheDivRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheDiv));
 
@@ -908,7 +908,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheDiv(FheType(resultType), 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheRemRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
+    function test_checkHCUForFheRemRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRem));
 
@@ -919,7 +919,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheRem(FheType(resultType), 0x01, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheBitAndRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheBitAndRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -933,7 +933,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheBitAnd(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheBitOrRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheBitOrRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -947,7 +947,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheBitOr(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheBitXorRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheBitXorRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -961,7 +961,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheBitXor(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheShlRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheShlRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -975,7 +975,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheShl(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheShrRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheShrRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -989,7 +989,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheShr(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheRotlRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheRotlRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -1003,7 +1003,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheRotl(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheRotrRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheRotrRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -1017,7 +1017,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheRotr(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheGeRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheGeRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -1031,7 +1031,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheGe(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheGtRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheGtRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -1045,7 +1045,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheGt(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheLeRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheLeRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -1059,7 +1059,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheLe(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheLtRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheLtRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -1073,7 +1073,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheLt(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheMinRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheMinRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -1087,7 +1087,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheMin(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheMaxRevertsIfHCUTransationIsAboveHCUTransactionLimit(
+    function test_checkHCUForFheMaxRevertsIfHCUTransactionIsAboveHCUTransactionLimit(
         uint8 resultType,
         bytes1 scalarType
     ) public {
@@ -1101,7 +1101,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheMax(FheType(resultType), scalarType, mockLHS, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheNegRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
+    function test_checkHCUForFheNegRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheNeg));
 
@@ -1112,7 +1112,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheNeg(FheType(resultType), mockLHS, mockResult);
     }
 
-    function test_checkHCUForFheNotRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
+    function test_checkHCUForFheNotRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheNot));
 
@@ -1123,7 +1123,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheNot(FheType(resultType), mockLHS, mockResult);
     }
 
-    function test_checkHCUForCastRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
+    function test_checkHCUForCastRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesInputCast));
 
@@ -1134,7 +1134,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForCast(FheType(resultType), mockLHS, mockResult);
     }
 
-    function test_CheckGasLimitForIfThenElseRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
+    function test_CheckGasLimitForIfThenElseRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheIfThenElse));
 
@@ -1145,7 +1145,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForIfThenElse(FheType(resultType), mockLHS, mockMiddle, mockRHS, mockResult);
     }
 
-    function test_checkHCUForFheRandRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
+    function test_checkHCUForFheRandRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRand));
 
@@ -1156,7 +1156,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheRand(FheType(resultType), mockResult);
     }
 
-    function test_checkHCUForFheRandBoundedRevertsIfHCUTransationIsAboveHCUTransactionLimit(uint8 resultType) public {
+    function test_checkHCUForFheRandBoundedRevertsIfHCUTransactionIsAboveHCUTransactionLimit(uint8 resultType) public {
         vm.assume(resultType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(resultType), supportedTypesFheRandBounded));
 
