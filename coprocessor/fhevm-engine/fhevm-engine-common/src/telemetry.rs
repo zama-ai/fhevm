@@ -23,17 +23,12 @@ pub const TXN_ID_ATTR_KEY: &str = "txn_id";
 /// Calls provider shutdown exactly once when dropped.
 pub struct OtelGuard {
     tracer_provider: Option<SdkTracerProvider>,
-    tracer: Option<opentelemetry_sdk::trace::Tracer>,
 }
 
 impl OtelGuard {
-    fn new(
-        trace_provider: SdkTracerProvider,
-        tracer: Option<opentelemetry_sdk::trace::Tracer>,
-    ) -> Self {
+    fn new(trace_provider: SdkTracerProvider) -> Self {
         Self {
             tracer_provider: Some(trace_provider),
-            tracer,
         }
     }
 
@@ -43,10 +38,6 @@ impl OtelGuard {
                 warn!(error = %err, "Failed to shutdown OTLP tracer provider");
             }
         }
-    }
-
-    pub fn tracer(&self) -> Option<opentelemetry_sdk::trace::Tracer> {
-        self.tracer.clone()
     }
 }
 
@@ -83,20 +74,23 @@ pub fn init_otel(
 
     let (_tracer, trace_provider) = build_tracer_provider(service_name, "otlp-layer")?;
     install_global_tracer_provider(trace_provider.clone());
-    Ok(Some(OtelGuard::new(trace_provider, None)))
+    Ok(Some(OtelGuard::new(trace_provider)))
 }
 
 pub fn init_otel_tracing(
     service_name: &str,
     tracer_name: &'static str,
-) -> Result<Option<OtelGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+) -> Result<
+    Option<(opentelemetry_sdk::trace::Tracer, OtelGuard)>,
+    Box<dyn std::error::Error + Send + Sync + 'static>,
+> {
     if service_name.is_empty() {
         return Ok(None);
     }
 
     let (tracer, trace_provider) = build_tracer_provider(service_name, tracer_name)?;
     install_global_tracer_provider(trace_provider.clone());
-    Ok(Some(OtelGuard::new(trace_provider, Some(tracer))))
+    Ok(Some((tracer, OtelGuard::new(trace_provider))))
 }
 
 fn build_tracer_provider(
@@ -594,7 +588,7 @@ mod tests {
     #[test]
     fn otel_guard_shutdown_once_disarms_provider() {
         let provider = SdkTracerProvider::builder().build();
-        let mut guard = OtelGuard::new(provider, None);
+        let mut guard = OtelGuard::new(provider);
         assert!(guard.tracer_provider.is_some());
 
         guard.shutdown_once();
@@ -606,19 +600,8 @@ mod tests {
     }
 
     #[test]
-    fn otel_guard_keeps_tracer_when_present() {
-        let provider = SdkTracerProvider::builder().build();
-        let tracer = provider.tracer("test-tracer");
-        let runtime = OtelGuard::new(provider, Some(tracer));
-
-        assert!(runtime.tracer().is_some());
-    }
-
-    #[test]
-    fn otel_guard_handles_absent_tracer() {
-        let provider = SdkTracerProvider::builder().build();
-        let runtime = OtelGuard::new(provider, None);
-
-        assert!(runtime.tracer().is_none());
+    fn init_otel_tracing_empty_service_name_returns_none() {
+        let runtime = init_otel_tracing("", "otlp-layer").unwrap();
+        assert!(runtime.is_none());
     }
 }

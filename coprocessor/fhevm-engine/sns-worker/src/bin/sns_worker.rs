@@ -69,13 +69,15 @@ async fn main() {
 
     let mut otlp_setup_error: Option<String> = None;
 
-    let otel_guard = match telemetry::init_otel_tracing(&config.service_name, "otlp-layer") {
-        Ok(runtime) => runtime,
-        Err(err) => {
-            otlp_setup_error = Some(err.to_string());
-            None
-        }
-    };
+    let (otel_tracer, _otel_guard) =
+        match telemetry::init_otel_tracing(&config.service_name, "otlp-layer") {
+            Ok(Some((tracer, guard))) => (Some(tracer), Some(guard)),
+            Ok(None) => (None, None),
+            Err(err) => {
+                otlp_setup_error = Some(err.to_string());
+                (None, None)
+            }
+        };
 
     let level_filter = tracing_subscriber::filter::LevelFilter::from_level(config.log_level);
 
@@ -93,7 +95,7 @@ async fn main() {
         .with(level_filter)
         .with(fmt_layer);
 
-    if let Some(tracer) = otel_guard.as_ref().and_then(|runtime| runtime.tracer()) {
+    if let Some(tracer) = otel_tracer {
         let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         base.with(otel_layer).init();
     } else {
