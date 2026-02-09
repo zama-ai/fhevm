@@ -1,7 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use union_find::{QuickUnionUf, UnionBySize, UnionFind};
 
 use crate::database::tfhe_event_propagate::{
@@ -38,6 +38,15 @@ impl Transaction {
             depth_size: 0,
         }
     }
+}
+
+fn ensure_logs_order(logs: &mut [LogTfhe]) {
+    if logs.iter().any(|log| log.log_index.is_none()) {
+        warn!("Log without index, cannot ensure order, assuming it's ordered");
+        return;
+    }
+    // Note: there is a fast path for already sorted logs
+    logs.sort_by_key(|log| log.log_index.unwrap_or(0));
 }
 
 const AVG_LOGS_PER_TX: usize = 8;
@@ -398,6 +407,7 @@ pub async fn dependence_chains(
     connex: bool,
     across_blocks: bool,
 ) -> OrderedChains {
+    ensure_logs_order(logs);
     let (ordered_hash, mut txs) = scan_transactions(logs);
     let mut used_txs_chains: HashMap<
         TransactionHash,
@@ -480,6 +490,8 @@ mod tests {
         is_allowed: bool,
         tx: TransactionHash,
     ) {
+        static COUNTER: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(0);
         logs.push(LogTfhe {
             event: tfhe_event(e),
             is_allowed,
@@ -488,6 +500,9 @@ mod tests {
             transaction_hash: Some(tx),
             dependence_chain: TransactionHash::ZERO,
             tx_depth_size: 0,
+            log_index: Some(
+                COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+            ),
         })
     }
 
@@ -808,6 +823,26 @@ mod tests {
         let va_2 = input_shared_handle(&mut logs, va_1, tx2);
         let _vb_2 = op2(vb_1, va_2, &mut logs, tx2);
         let chains = dependence_chains(&mut logs, &cache, false, true).await;
+        assert_eq!(chains.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_dependence_chains_dep_with_bad_order() {
+        let cache = ChainCache::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ));
+        let mut logs = vec![];
+        let tx1 = TransactionHash::with_last_byte(1);
+        let tx2 = TransactionHash::with_last_byte(2);
+        let va_1 = input_handle(&mut logs, tx1);
+        let vb_1 = op1(va_1, &mut logs, tx1);
+        let _va_1 = op1(vb_1, &mut logs, tx2);
+        let last = logs.pop().unwrap();
+        logs.insert(0, last);
+        assert!(logs[0].transaction_hash == Some(tx2));
+        let chains = dependence_chains(&mut logs, &cache, false, true).await;
+        // answer is the same as with good order
+        assert!(logs.iter().all(|log| log.dependence_chain == tx1));
         assert_eq!(chains.len(), 1);
     }
 

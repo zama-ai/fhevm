@@ -105,6 +105,8 @@ pub struct LogTfhe {
     pub block_timestamp: PrimitiveDateTime,
     pub tx_depth_size: u64,
     pub dependence_chain: TransactionHash,
+    // global index per block (not by tx)
+    pub log_index: Option<u64>,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
