@@ -2,10 +2,15 @@ use crate::utils::to_hex;
 use bigdecimal::num_traits::ToPrimitive;
 use opentelemetry::{
     global::{BoxedSpan, BoxedTracer, ObjectSafeSpan},
+    propagation::TextMapCompositePropagator,
     trace::{SpanBuilder, Status, TraceContextExt, Tracer, TracerProvider},
     Context, KeyValue,
 };
-use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
+use opentelemetry_sdk::{
+    propagation::{BaggagePropagator, TraceContextPropagator},
+    trace::SdkTracerProvider,
+    Resource,
+};
 use prometheus::{register_histogram, Histogram};
 use sqlx::PgConnection;
 use std::fmt;
@@ -19,6 +24,37 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 pub const TXN_ID_ATTR_KEY: &str = "txn_id";
+
+/// Calls provider shutdown exactly once when dropped.
+pub struct OtlpShutdownGuard {
+    provider: Option<SdkTracerProvider>,
+}
+
+impl OtlpShutdownGuard {
+    fn new(provider: SdkTracerProvider) -> Self {
+        Self {
+            provider: Some(provider),
+        }
+    }
+
+    fn shutdown_if_needed(&mut self) {
+        if let Some(provider) = self.provider.take() {
+            if let Err(err) = provider.shutdown() {
+                warn!(error = %err, "Failed to shutdown OTLP tracer provider");
+            }
+        }
+    }
+
+    pub fn shutdown(mut self) {
+        self.shutdown_if_needed();
+    }
+}
+
+impl Drop for OtlpShutdownGuard {
+    fn drop(&mut self) {
+        self.shutdown_if_needed();
+    }
+}
 
 pub static HOST_TXN_LATENCY_CONFIG: OnceLock<MetricsConfig> = OnceLock::new();
 pub(crate) static HOST_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
@@ -41,7 +77,8 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
 pub fn setup_otlp(
     service_name: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let _ = setup_otlp_tracer(service_name, "otlp-layer")?;
+    let (_tracer, trace_provider) = setup_otlp_tracer_impl(service_name, "otlp-layer")?;
+    set_provider_and_propagator(trace_provider);
     Ok(())
 }
 
@@ -49,6 +86,38 @@ pub fn setup_otlp_tracer(
     service_name: &str,
     tracer_name: &'static str,
 ) -> Result<opentelemetry_sdk::trace::Tracer, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let (tracer, trace_provider) = setup_otlp_tracer_impl(service_name, tracer_name)?;
+    set_provider_and_propagator(trace_provider);
+    Ok(tracer)
+}
+
+pub fn setup_otlp_with_shutdown(
+    service_name: &str,
+) -> Result<OtlpShutdownGuard, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let (_tracer, trace_provider) = setup_otlp_tracer_impl(service_name, "otlp-layer")?;
+    set_provider_and_propagator(trace_provider.clone());
+    Ok(OtlpShutdownGuard::new(trace_provider))
+}
+
+pub fn setup_otlp_tracer_with_shutdown(
+    service_name: &str,
+    tracer_name: &'static str,
+) -> Result<
+    (opentelemetry_sdk::trace::Tracer, OtlpShutdownGuard),
+    Box<dyn std::error::Error + Send + Sync + 'static>,
+> {
+    let (tracer, trace_provider) = setup_otlp_tracer_impl(service_name, tracer_name)?;
+    set_provider_and_propagator(trace_provider.clone());
+    Ok((tracer, OtlpShutdownGuard::new(trace_provider)))
+}
+
+fn setup_otlp_tracer_impl(
+    service_name: &str,
+    tracer_name: &'static str,
+) -> Result<
+    (opentelemetry_sdk::trace::Tracer, SdkTracerProvider),
+    Box<dyn std::error::Error + Send + Sync + 'static>,
+> {
     let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .build()?;
@@ -66,9 +135,16 @@ pub fn setup_otlp_tracer(
         .build();
 
     let tracer = trace_provider.tracer(tracer_name);
-    opentelemetry::global::set_tracer_provider(trace_provider);
 
-    Ok(tracer)
+    Ok((tracer, trace_provider))
+}
+
+fn set_provider_and_propagator(trace_provider: SdkTracerProvider) {
+    opentelemetry::global::set_tracer_provider(trace_provider);
+    opentelemetry::global::set_text_map_propagator(TextMapCompositePropagator::new(vec![
+        Box::new(TraceContextPropagator::new()),
+        Box::new(BaggagePropagator::new()),
+    ]));
 }
 
 #[derive(Clone)]

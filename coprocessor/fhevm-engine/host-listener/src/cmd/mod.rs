@@ -1024,11 +1024,17 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         )
     };
 
-    if !args.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-            error!(error = %err, "Failed to setup OTLP");
+    let _otlp_shutdown_guard = if args.service_name.is_empty() {
+        None
+    } else {
+        match telemetry::setup_otlp_with_shutdown(&args.service_name) {
+            Ok(guard) => Some(guard),
+            Err(err) => {
+                error!(error = %err, "Failed to setup OTLP");
+                None
+            }
         }
-    }
+    };
 
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;

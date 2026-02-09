@@ -108,11 +108,17 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(conf.log_level)
         .init();
 
-    if !conf.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
-            error!(error = %err, "Failed to setup OTLP");
+    let _otlp_shutdown_guard = if conf.service_name.is_empty() {
+        None
+    } else {
+        match telemetry::setup_otlp_with_shutdown(&conf.service_name) {
+            Ok(guard) => Some(guard),
+            Err(err) => {
+                error!(error = %err, "Failed to setup OTLP");
+                None
+            }
         }
-    }
+    };
 
     info!(gateway_url = %conf.gw_url, max_retries = %conf.provider_max_retries,
          retry_interval = ?conf.provider_retry_interval, "Connecting to Gateway");

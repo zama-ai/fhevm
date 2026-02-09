@@ -69,14 +69,14 @@ async fn main() {
 
     let mut otlp_setup_error: Option<String> = None;
 
-    let otel_tracer = if config.service_name.is_empty() {
-        None
+    let (otel_tracer, _otlp_shutdown_guard) = if config.service_name.is_empty() {
+        (None, None)
     } else {
-        match telemetry::setup_otlp_tracer(&config.service_name, "otlp-layer") {
-            Ok(tracer) => Some(tracer),
+        match telemetry::setup_otlp_tracer_with_shutdown(&config.service_name, "otlp-layer") {
+            Ok((tracer, guard)) => (Some(tracer), Some(guard)),
             Err(err) => {
                 otlp_setup_error = Some(err.to_string());
-                None
+                (None, None)
             }
         }
     };

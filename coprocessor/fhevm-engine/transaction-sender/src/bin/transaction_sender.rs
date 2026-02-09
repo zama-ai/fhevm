@@ -308,11 +308,17 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    if !conf.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
-            error!(error = %err, "Failed to setup OTLP");
+    let _otlp_shutdown_guard = if conf.service_name.is_empty() {
+        None
+    } else {
+        match telemetry::setup_otlp_with_shutdown(&conf.service_name) {
+            Ok(guard) => Some(guard),
+            Err(err) => {
+                error!(error = %err, "Failed to setup OTLP");
+                None
+            }
         }
-    }
+    };
 
     let abstract_signer: AbstractSigner;
     match conf.signer_type {

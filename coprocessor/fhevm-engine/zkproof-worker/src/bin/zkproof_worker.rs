@@ -103,11 +103,17 @@ async fn main() {
         pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
     };
 
-    if !args.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-            error!(error = %err, "Failed to setup OTLP");
+    let _otlp_shutdown_guard = if args.service_name.is_empty() {
+        None
+    } else {
+        match telemetry::setup_otlp_with_shutdown(&args.service_name) {
+            Ok(guard) => Some(guard),
+            Err(err) => {
+                error!(error = %err, "Failed to setup OTLP");
+                None
+            }
         }
-    }
+    };
 
     let cancel_token = CancellationToken::new();
     let Some(service) = ZkProofService::create(conf, cancel_token.child_token()).await else {
