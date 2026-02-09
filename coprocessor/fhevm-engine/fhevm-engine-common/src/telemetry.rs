@@ -66,27 +66,19 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
     )
 });
 
+const DEFAULT_OTEL_TRACER_NAME: &str = "otlp-layer";
+
 pub fn init_otel(
     service_name: &str,
 ) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let runtime = setup_otel(service_name, "otlp-layer")?;
+    let runtime = setup_otel(service_name, DEFAULT_OTEL_TRACER_NAME)?;
     Ok(runtime.map(|(_tracer, guard)| guard))
 }
 
 pub fn init_json_subscriber(log_level: tracing::Level) {
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::filter::LevelFilter::from_level(
-            log_level,
-        ))
-        .with(
-            tracing_subscriber::fmt::layer()
-                .json()
-                .with_target(false)
-                .with_current_span(true)
-                .with_span_list(false)
-                .with_level(true),
-        )
-        .init();
+    // Reuse the OTEL-aware setup path with OTEL disabled.
+    init_json_subscriber_with_otel(log_level, "", DEFAULT_OTEL_TRACER_NAME)
+        .expect("subscriber init without OTEL should not fail");
 }
 
 pub fn init_json_subscriber_with_otel(
