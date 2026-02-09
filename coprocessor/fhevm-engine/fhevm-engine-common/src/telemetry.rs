@@ -70,23 +70,6 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
     )
 });
 
-pub fn setup_otlp(
-    service_name: &str,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let (_tracer, trace_provider) = build_otlp_tracer_and_provider(service_name, "otlp-layer")?;
-    install_global_otel(trace_provider);
-    Ok(())
-}
-
-pub fn setup_otlp_tracer(
-    service_name: &str,
-    tracer_name: &'static str,
-) -> Result<opentelemetry_sdk::trace::Tracer, Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let (tracer, trace_provider) = build_otlp_tracer_and_provider(service_name, tracer_name)?;
-    install_global_otel(trace_provider);
-    Ok(tracer)
-}
-
 pub fn setup_otlp_with_shutdown(
     service_name: &str,
 ) -> Result<OtlpShutdownGuard, Box<dyn std::error::Error + Send + Sync + 'static>> {
