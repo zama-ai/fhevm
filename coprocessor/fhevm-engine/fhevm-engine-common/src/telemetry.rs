@@ -21,51 +21,38 @@ use tracing::{debug, info, warn};
 pub const TXN_ID_ATTR_KEY: &str = "txn_id";
 
 /// Calls provider shutdown exactly once when dropped.
-pub struct TracerProviderGuard {
-    provider: Option<SdkTracerProvider>,
+pub struct OtelGuard {
+    tracer_provider: Option<SdkTracerProvider>,
+    tracer: Option<opentelemetry_sdk::trace::Tracer>,
 }
 
-impl TracerProviderGuard {
-    fn new(provider: SdkTracerProvider) -> Self {
+impl OtelGuard {
+    fn new(
+        trace_provider: SdkTracerProvider,
+        tracer: Option<opentelemetry_sdk::trace::Tracer>,
+    ) -> Self {
         Self {
-            provider: Some(provider),
+            tracer_provider: Some(trace_provider),
+            tracer,
         }
     }
 
     fn shutdown_once(&mut self) {
-        if let Some(provider) = self.provider.take() {
+        if let Some(provider) = self.tracer_provider.take() {
             if let Err(err) = provider.shutdown() {
                 warn!(error = %err, "Failed to shutdown OTLP tracer provider");
             }
         }
     }
-}
-
-impl Drop for TracerProviderGuard {
-    fn drop(&mut self) {
-        self.shutdown_once();
-    }
-}
-
-/// Runtime OTLP handles that must stay alive for the process lifetime.
-pub struct OtelGuard {
-    tracer: Option<opentelemetry_sdk::trace::Tracer>,
-    _shutdown_guard: TracerProviderGuard,
-}
-
-impl OtelGuard {
-    fn new(
-        tracer: Option<opentelemetry_sdk::trace::Tracer>,
-        shutdown_guard: TracerProviderGuard,
-    ) -> Self {
-        Self {
-            tracer,
-            _shutdown_guard: shutdown_guard,
-        }
-    }
 
     pub fn tracer(&self) -> Option<opentelemetry_sdk::trace::Tracer> {
         self.tracer.clone()
+    }
+}
+
+impl Drop for OtelGuard {
+    fn drop(&mut self) {
+        self.shutdown_once();
     }
 }
 
@@ -96,10 +83,7 @@ pub fn init_otel(
 
     let (_tracer, trace_provider) = build_tracer_provider(service_name, "otlp-layer")?;
     install_global_tracer_provider(trace_provider.clone());
-    Ok(Some(OtelGuard::new(
-        None,
-        TracerProviderGuard::new(trace_provider),
-    )))
+    Ok(Some(OtelGuard::new(trace_provider, None)))
 }
 
 pub fn init_otel_tracing(
@@ -112,10 +96,7 @@ pub fn init_otel_tracing(
 
     let (tracer, trace_provider) = build_tracer_provider(service_name, tracer_name)?;
     install_global_tracer_provider(trace_provider.clone());
-    Ok(Some(OtelGuard::new(
-        Some(tracer),
-        TracerProviderGuard::new(trace_provider),
-    )))
+    Ok(Some(OtelGuard::new(trace_provider, Some(tracer))))
 }
 
 fn build_tracer_provider(
@@ -611,24 +592,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tracer_provider_guard_shutdown_once_disarms_provider() {
+    fn otel_guard_shutdown_once_disarms_provider() {
         let provider = SdkTracerProvider::builder().build();
-        let mut guard = TracerProviderGuard::new(provider);
-        assert!(guard.provider.is_some());
+        let mut guard = OtelGuard::new(provider, None);
+        assert!(guard.tracer_provider.is_some());
 
         guard.shutdown_once();
-        assert!(guard.provider.is_none());
+        assert!(guard.tracer_provider.is_none());
 
         // A second shutdown is a no-op.
         guard.shutdown_once();
-        assert!(guard.provider.is_none());
+        assert!(guard.tracer_provider.is_none());
     }
 
     #[test]
     fn otel_guard_keeps_tracer_when_present() {
         let provider = SdkTracerProvider::builder().build();
         let tracer = provider.tracer("test-tracer");
-        let runtime = OtelGuard::new(Some(tracer), TracerProviderGuard::new(provider));
+        let runtime = OtelGuard::new(provider, Some(tracer));
 
         assert!(runtime.tracer().is_some());
     }
@@ -636,7 +617,7 @@ mod tests {
     #[test]
     fn otel_guard_handles_absent_tracer() {
         let provider = SdkTracerProvider::builder().build();
-        let runtime = OtelGuard::new(None, TracerProviderGuard::new(provider));
+        let runtime = OtelGuard::new(provider, None);
 
         assert!(runtime.tracer().is_none());
     }
