@@ -2523,8 +2523,6 @@ dependencies = [
  "thiserror 2.0.16",
  "tokio",
  "tokio-util",
- "tower 0.5.2",
- "tower_governor",
  "tracing",
  "tracing-chrome",
  "tracing-subscriber",
@@ -2630,16 +2628,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
-]
-
-[[package]]
-name = "forwarded-header-value"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8835f84f38484cc86f110a805655697908257fb9a7af005234060891557198e9"
-dependencies = [
- "nonempty",
- "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -3106,19 +3094,6 @@ dependencies = [
  "tokio-rustls",
  "tower-service",
  "webpki-roots 1.0.2",
-]
-
-[[package]]
-name = "hyper-timeout"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b90d566bffbce6a75bd8b09a05aa8c2cb1fabb6cb348f8840c9e4c90a0d83b0"
-dependencies = [
- "hyper",
- "hyper-util",
- "pin-project-lite",
- "tokio",
- "tower-service",
 ]
 
 [[package]]
@@ -3810,12 +3785,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nonempty"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9e591e719385e6ebaeb5ce5d3887f7d5676fceca6411d1925ccc95745f3d6f7"
-
-[[package]]
 name = "nonzero_ext"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3858,9 +3827,9 @@ dependencies = [
 
 [[package]]
 name = "num-conv"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
+checksum = "cf97ec579c3c42f953ef76dbf8d55ac91fb219dde70e49aa4a6b7d74e9919050"
 
 [[package]]
 name = "num-integer"
@@ -5813,29 +5782,30 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.43"
+version = "0.3.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83bde6f1ec10e72d583d91623c939f623002284ef622b87de38cfd546cbf2031"
+checksum = "743bd48c283afc0388f9b8827b976905fb217ad9e647fae3a379a9283c4def2c"
 dependencies = [
  "deranged",
+ "itoa",
  "num-conv",
  "powerfmt",
- "serde",
+ "serde_core",
  "time-core",
  "time-macros",
 ]
 
 [[package]]
 name = "time-core"
-version = "0.1.6"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40868e7c1d2f0b8d73e4a8c7f0ff63af4f6d19be117e90bd73eb1d62cf831c6b"
+checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
 
 [[package]]
 name = "time-macros"
-version = "0.2.24"
+version = "0.2.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30cfb0125f12d9c277f35663a0a33f8c30190f4e4574868a330595412d34ebf3"
+checksum = "2e70e4c5a0e0a8a4823ad65dfe1a6930e4f4d756dcd9dd7939022b5e8c501215"
 dependencies = [
  "num-conv",
  "time-core",
@@ -6040,35 +6010,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
-name = "tonic"
-version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb7613188ce9f7df5bfe185db26c5814347d110db17920415cf2fbcad85e7203"
-dependencies = [
- "async-trait",
- "axum",
- "base64 0.22.1",
- "bytes",
- "h2",
- "http 1.3.1",
- "http-body 1.0.1",
- "http-body-util",
- "hyper",
- "hyper-timeout",
- "hyper-util",
- "percent-encoding",
- "pin-project",
- "socket2",
- "sync_wrapper",
- "tokio",
- "tokio-stream",
- "tower 0.5.2",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
 name = "tower"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6091,12 +6032,9 @@ checksum = "d039ad9159c98b70ecfd540b2573b97f7f52c3e8d9f8ad57a24b916a536975f9"
 dependencies = [
  "futures-core",
  "futures-util",
- "indexmap 2.12.1",
  "pin-project-lite",
- "slab",
  "sync_wrapper",
  "tokio",
- "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -6131,23 +6069,6 @@ name = "tower-service"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
-
-[[package]]
-name = "tower_governor"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44de9b94d849d3c46e06a883d72d408c2de6403367b39df2b1c9d9e7b6736fe6"
-dependencies = [
- "axum",
- "forwarded-header-value",
- "governor",
- "http 1.3.1",
- "pin-project",
- "thiserror 2.0.16",
- "tonic",
- "tower 0.5.2",
- "tracing",
-]
 
 [[package]]
 name = "tracing"

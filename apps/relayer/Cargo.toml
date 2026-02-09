@@ -36,9 +36,6 @@ uuid = { version = "1", features = ["serde", "v4", "v7", "std"] }
 reqwest = "0.12.12"
 axum = "0.8.4"
 http = "0.2"
-tower = "0.5.2"
-tower_governor = "0.8.0"
-rand = "0.9.0"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-chrome = { version = "0.7.2", optional = true }
@@ -77,6 +74,6 @@ alloy-provider = { version = "1.0.22", features = ["anvil-node"] }
 aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
 tempfile = "3.10.1"
 ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock" }
-tower = { version = "0.5.2", features = ["util"] }
+rand = "0.9.0"
 rstest = "0.21.0"
 serde_yaml = "0.9"

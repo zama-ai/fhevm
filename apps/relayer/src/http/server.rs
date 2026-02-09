@@ -14,8 +14,8 @@ use crate::http::endpoints::{
     },
     version_handler,
 };
+use crate::http::openapi_middleware;
 use crate::http::retry_after::RetryAfterState;
-use crate::http::{openapi_middleware, with_rate_limiting};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::Repositories;
@@ -183,19 +183,15 @@ where
             get(move || async move { health_handler(orchestrator_for_health.clone()).await }),
         )
         .route("/version", get(version_handler))
-        // Merge handler routers with rate limiting applied to POST endpoints
-        .merge(with_rate_limiting(
-            Router::new()
-                // v1 routes
-                .merge(input_proof_handler_v1.routes())
-                .merge(public_decrypt_handler_v1.routes())
-                .merge(user_decrypt_handler_v1.routes())
-                // v2 routes
-                .merge(input_proof_handler_v2.routes())
-                .merge(public_decrypt_handler_v2.routes())
-                .merge(user_decrypt_handler_v2.routes()),
-            &config.rate_limit_post_endpoints,
-        ))
+        // Merge handler routers
+        // v1 routes
+        .merge(input_proof_handler_v1.routes())
+        .merge(public_decrypt_handler_v1.routes())
+        .merge(user_decrypt_handler_v1.routes())
+        // v2 routes
+        .merge(input_proof_handler_v2.routes())
+        .merge(public_decrypt_handler_v2.routes())
+        .merge(user_decrypt_handler_v2.routes())
         // Add keyurl routes (no rate limiting for GET)
         .merge(keyurl_handler_v1.routes())
         .merge(keyurl_handler_v2.routes())

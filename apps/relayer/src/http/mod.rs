@@ -22,7 +22,7 @@ pub use endpoints::v1::types::{
     UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
 };
 
-pub use middleware::{openapi_middleware, with_rate_limiting};
+pub use middleware::openapi_middleware;
 
 pub use retry_after::{DecryptQueueInfo, ReadinessQueueInfo, RequestQueueInfo, TxQueueInfo};
 

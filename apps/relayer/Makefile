@@ -29,7 +29,6 @@ test-build: ## Build all test binaries
 	@$(CARGO_TEST) --test input_proof_v2_test --no-run
 	@$(CARGO_TEST) --test public_decrypt_v2_test --no-run
 	@$(CARGO_TEST) --test user_decrypt_v2_test --no-run
-	@$(CARGO_TEST) --test http_rate_limiter_test --no-run
 	@$(CARGO_TEST) --test health_tests --no-run
 	@$(CARGO_TEST) --test keyurl_test --no-run
 
@@ -43,7 +42,6 @@ test-run: ## Run pre-built test binaries
 	@$(CARGO_TEST) --test input_proof_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --test public_decrypt_v2_test -- --test-threads=1
 	@$(CARGO_TEST) --test user_decrypt_v2_test -- --test-threads=1
-	@$(CARGO_TEST) --test http_rate_limiter_test -- --test-threads=1
 	@$(CARGO_TEST) --test health_tests -- --test-threads=1
 	@$(CARGO_TEST) --test keyurl_test -- --test-threads=1
 

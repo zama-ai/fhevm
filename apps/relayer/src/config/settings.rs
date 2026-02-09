@@ -334,25 +334,11 @@ pub struct HttpMetricsConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct RateLimitConfig {
-    /// Requests per second allowed (token refill rate)
-    pub requests_per_second: u32,
-    /// Maximum burst size allowed (bucket capacity)
-    pub burst_size: u32,
-    /// Base retry-after time in seconds for rate limited responses
-    pub retry_after_seconds: u64,
-    /// Maximum additional jitter in milliseconds (0 = no jitter)
-    pub jitter_max_ms: u64,
-}
-
-#[derive(Debug, Deserialize, Clone)]
 pub struct HttpConfig {
     /// HTTP endpoint address to bind to (e.g., "0.0.0.0:3000").
     /// Can be None to disable HTTP server (useful for tests or metrics-only mode).
     /// When Some, server will bind to this address and update the field with actual bound address.
     pub endpoint: Option<String>,
-    /// Rate limiting configuration for HTTP endpoints
-    pub rate_limit_post_endpoints: RateLimitConfig,
     /// HTTP metrics configuration
     pub metrics: HttpMetricsConfig,
     /// Default retry-after seconds for queued API responses (V1 fallback)
