@@ -54,6 +54,31 @@ throttling accounting, and promotes seen chains to
 Goal: validate slow-lane behavior with both `host_listener` and
 `host_listener_poller` running concurrently against the same DB.
 
+Recommended (auditable) entrypoint:
+
+```bash
+cd test-suite/fhevm
+./scripts/validate-slow-lane.sh --cap 1 --load-test operators
+```
+
+What this enforces:
+
+- deterministic integration assertions (`threshold matrix`, `cross-block below-cap`, `off-mode promote-on-seen`)
+- bootstrap gate (`ActivateKey` + `Fetched keyset` + non-empty `sns_pk`)
+- local multi-listener stack assertions with SQL pass/fail checks
+  - at least one fast and one slow chain after baseline
+  - schedulable ordering head is fast lane (`schedule_priority=0`)
+
+Useful modes:
+
+```bash
+# deterministic tests only
+./scripts/validate-slow-lane.sh --integration-only
+
+# local stack only (assumes stack already up)
+./scripts/validate-slow-lane.sh --stack-only --cap 1 --load-test operators
+```
+
 1. Start local stack
 
 ```bash
