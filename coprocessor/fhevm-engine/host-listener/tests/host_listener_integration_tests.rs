@@ -1,7 +1,7 @@
 use alloy::network::EthereumWallet;
 use alloy::node_bindings::Anvil;
 use alloy::node_bindings::AnvilInstance;
-use alloy::primitives::U256;
+use alloy::primitives::{keccak256, Address, FixedBytes, U256};
 use alloy::providers::ext::AnvilApi;
 use alloy::providers::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
@@ -11,7 +11,7 @@ use alloy::providers::{
     Provider, ProviderBuilder, RootProvider, WalletProvider, WsConnect,
 };
 use alloy::rpc::types::anvil::{ReorgOptions, TransactionData};
-use alloy::rpc::types::TransactionRequest;
+use alloy::rpc::types::{Filter, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use fhevm_engine_common::chain_id::ChainId;
@@ -28,6 +28,9 @@ use tracing::{info, warn, Level};
 
 use host_listener::cmd::main;
 use host_listener::cmd::Args;
+use host_listener::database::ingest::{
+    ingest_block_logs, BlockLogs, IngestOptions,
+};
 use host_listener::database::tfhe_event_propagate::{Database, ToType};
 
 // contracts are compiled in build.rs/build_contract() using solc
@@ -176,7 +179,10 @@ struct Setup {
     chain_id: ChainId,
 }
 
-async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
+async fn setup_with_block_time(
+    node_chain_id: Option<u64>,
+    block_time_secs: f64,
+) -> Result<Setup, anyhow::Error> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .compact()
@@ -194,7 +200,7 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         .await?;
 
     let anvil = Anvil::new()
-        .block_time_f64(1.0)
+        .block_time_f64(block_time_secs)
         .args(["--accounts", "15"])
         .chain_id(node_chain_id.unwrap_or(12345))
         .spawn();
@@ -251,6 +257,416 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         health_check_url,
         chain_id,
     })
+}
+
+async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
+    setup_with_block_time(node_chain_id, 1.0).await
+}
+
+fn trivial_encrypt_handle(val: U256, to_type: u8) -> FixedBytes<32> {
+    let mut payload = Vec::with_capacity(
+        "trivialEncrypt".len() + std::mem::size_of::<[u8; 32]>() + 1,
+    );
+    payload.extend_from_slice("trivialEncrypt".as_bytes());
+    payload.extend_from_slice(&val.to_be_bytes::<32>());
+    payload.push(to_type);
+    keccak256(payload)
+}
+
+fn fhe_add_handle(
+    lhs: FixedBytes<32>,
+    rhs: FixedBytes<32>,
+    scalar_byte: u8,
+) -> FixedBytes<32> {
+    let mut payload = Vec::with_capacity(
+        "fheAdd".len()
+            + std::mem::size_of::<[u8; 32]>()
+            + std::mem::size_of::<[u8; 32]>()
+            + 1,
+    );
+    payload.extend_from_slice("fheAdd".as_bytes());
+    payload.extend_from_slice(lhs.as_slice());
+    payload.extend_from_slice(rhs.as_slice());
+    payload.push(scalar_byte);
+    keccak256(payload)
+}
+
+async fn ingest_blocks_for_receipts(
+    db: &mut Database,
+    setup: &Setup,
+    receipts: &[alloy::rpc::types::TransactionReceipt],
+    options: IngestOptions,
+) -> Result<(), anyhow::Error> {
+    let mut blocks: Vec<(u64, FixedBytes<32>)> = receipts
+        .iter()
+        .map(|receipt| {
+            (
+                receipt.block_number.expect("receipt has block number"),
+                receipt.block_hash.expect("receipt has block hash"),
+            )
+        })
+        .collect();
+    blocks.sort_by_key(|(number, _)| *number);
+    blocks.dedup_by_key(|(number, _)| *number);
+
+    let acl_address = Some(*setup.acl_contract.address());
+    let tfhe_address = Some(*setup.tfhe_contract.address());
+
+    let provider = ProviderBuilder::new()
+        .wallet(setup.wallets[0].clone())
+        .connect_ws(WsConnect::new(setup.args.url.clone()))
+        .await?;
+
+    for (_, block_hash) in blocks {
+        let filter = Filter::new().at_block_hash(block_hash).address(vec![
+            *setup.acl_contract.address(),
+            *setup.tfhe_contract.address(),
+        ]);
+        let logs = provider.get_logs(&filter).await?;
+        let block = provider
+            .get_block_by_hash(block_hash)
+            .await?
+            .expect("block exists");
+        let block_logs = BlockLogs {
+            logs,
+            summary: block.header.into(),
+            catchup: false,
+        };
+        ingest_block_logs(
+            db.chain_id,
+            db,
+            &block_logs,
+            &acl_address,
+            &tfhe_address,
+            options,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn emit_dependent_burst(
+    setup: &Setup,
+    input_handle: Option<FixedBytes<32>>,
+    depth: usize,
+) -> Result<
+    (Vec<alloy::rpc::types::TransactionReceipt>, FixedBytes<32>),
+    anyhow::Error,
+> {
+    emit_dependent_burst_seeded(setup, input_handle, depth, 1_u64).await
+}
+
+async fn emit_dependent_burst_seeded(
+    setup: &Setup,
+    input_handle: Option<FixedBytes<32>>,
+    depth: usize,
+    seed: u64,
+) -> Result<
+    (Vec<alloy::rpc::types::TransactionReceipt>, FixedBytes<32>),
+    anyhow::Error,
+> {
+    let provider = ProviderBuilder::new()
+        .wallet(setup.wallets[0].clone())
+        .connect_ws(WsConnect::new(setup.args.url.clone()))
+        .await?;
+    let signer_address: Address = provider
+        .signer_addresses()
+        .next()
+        .expect("anvil signer available");
+
+    let mut pending = Vec::new();
+    let mut current = input_handle
+        .unwrap_or_else(|| trivial_encrypt_handle(U256::from(seed), 4_u8));
+
+    if input_handle.is_none() {
+        let trivial_tx = setup
+            .tfhe_contract
+            .trivialEncrypt(U256::from(seed), 4_u8)
+            .into_transaction_request();
+        pending.push(provider.send_transaction(trivial_tx).await?);
+        let allow_trivial_tx = setup
+            .acl_contract
+            .allow(current, signer_address)
+            .into_transaction_request();
+        pending.push(provider.send_transaction(allow_trivial_tx).await?);
+    }
+
+    for _ in 0..depth {
+        let next = fhe_add_handle(current, current, 0_u8);
+        let add_tx = setup
+            .tfhe_contract
+            .fheAdd(current, current, FixedBytes::<1>::from([0_u8]))
+            .into_transaction_request();
+        pending.push(provider.send_transaction(add_tx).await?);
+        let allow_tx = setup
+            .acl_contract
+            .allow(next, signer_address)
+            .into_transaction_request();
+        pending.push(provider.send_transaction(allow_tx).await?);
+        current = next;
+    }
+
+    let receipts = try_join_all(
+        pending
+            .into_iter()
+            .map(|pending_tx| async move { pending_tx.get_receipt().await }),
+    )
+    .await?;
+    assert!(
+        receipts.iter().all(|receipt| receipt.status()),
+        "every burst tx must succeed"
+    );
+    Ok((receipts, current))
+}
+
+async fn chain_id_for_output_handle(
+    setup: &Setup,
+    output_handle: FixedBytes<32>,
+) -> Result<Vec<u8>, anyhow::Error> {
+    let chain_id = sqlx::query_scalar::<_, Option<Vec<u8>>>(
+        r#"
+        SELECT dependence_chain_id
+        FROM computations
+        WHERE output_handle = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(output_handle.as_slice())
+    .fetch_one(&setup.db_pool)
+    .await?
+    .ok_or_else(|| {
+        anyhow::anyhow!("missing dependence_chain_id for output handle")
+    })?;
+    Ok(chain_id)
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_bad_chain_id() {
+    let setup = setup(Some(54321)).await.expect("setup failed");
+    let listener_handle = tokio::spawn(main(setup.args.clone()));
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    assert!(listener_handle.is_finished(), "Listener should have failed");
+    let result = listener_handle.await;
+    if let Ok(Err(e)) = result {
+        assert!(e.to_string().contains("Chain ID mismatch"));
+    } else {
+        panic!("Listener should have failed due to chain ID mismatch");
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_slow_lane_marks_heavy_chain_locally() -> Result<(), anyhow::Error>
+{
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let mut db = Database::new(
+        &setup.args.database_url,
+        &setup.args.coprocessor_api_key.unwrap(),
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let (receipts, _) = emit_dependent_burst(&setup, None, 4).await?;
+    ingest_blocks_for_receipts(
+        &mut db,
+        &setup,
+        &receipts,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 1,
+        },
+    )
+    .await?;
+
+    let slow_chain_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM dependence_chain WHERE schedule_priority = 1",
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert!(
+        slow_chain_count > 0,
+        "heavy dependent chain should be assigned to slow lane"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_slow_lane_off_mode_promotes_seen_chain_locally(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let mut db = Database::new(
+        &setup.args.database_url,
+        &setup.args.coprocessor_api_key.unwrap(),
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let (first_receipts, last_handle) =
+        emit_dependent_burst(&setup, None, 4).await?;
+    ingest_blocks_for_receipts(
+        &mut db,
+        &setup,
+        &first_receipts,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 1,
+        },
+    )
+    .await?;
+    let initially_slow = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM dependence_chain WHERE schedule_priority = 1",
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert!(
+        initially_slow > 0,
+        "setup phase should create at least one slow chain"
+    );
+
+    let (second_receipts, _) =
+        emit_dependent_burst(&setup, Some(last_handle), 1).await?;
+    ingest_blocks_for_receipts(
+        &mut db,
+        &setup,
+        &second_receipts,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 0,
+        },
+    )
+    .await?;
+
+    let remaining_slow = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM dependence_chain WHERE schedule_priority = 1",
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(
+        remaining_slow, 0,
+        "off mode should promote seen slow chains back to fast"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_slow_lane_contention_prefers_fast_chain(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 3.0).await?;
+    let mut db = Database::new(
+        &setup.args.database_url,
+        &setup.args.coprocessor_api_key.unwrap(),
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+
+    let (heavy_receipts, heavy_last_handle) =
+        emit_dependent_burst_seeded(&setup, None, 4, 1_u64).await?;
+    ingest_blocks_for_receipts(
+        &mut db,
+        &setup,
+        &heavy_receipts,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 2,
+        },
+    )
+    .await?;
+
+    let (fast_receipts, fast_last_handle) =
+        emit_dependent_burst_seeded(&setup, None, 1, 2_u64).await?;
+    ingest_blocks_for_receipts(
+        &mut db,
+        &setup,
+        &fast_receipts,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 2,
+        },
+    )
+    .await?;
+
+    let heavy_chain_id =
+        chain_id_for_output_handle(&setup, heavy_last_handle).await?;
+    let fast_chain_id =
+        chain_id_for_output_handle(&setup, fast_last_handle).await?;
+    assert_ne!(
+        heavy_chain_id, fast_chain_id,
+        "contention test requires two independent chains"
+    );
+
+    let heavy_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&heavy_chain_id)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    let fast_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&fast_chain_id)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(heavy_priority, 1, "heavy chain must be marked slow");
+    assert_eq!(fast_priority, 0, "light chain must stay fast");
+
+    let ordered = sqlx::query_as::<_, (Vec<u8>, i16)>(
+        r#"
+        SELECT dependence_chain_id, schedule_priority
+        FROM dependence_chain
+        WHERE status = 'updated'
+          AND worker_id IS NULL
+          AND dependency_count = 0
+        ORDER BY schedule_priority ASC, last_updated_at ASC
+        LIMIT 2
+        "#,
+    )
+    .fetch_all(&setup.db_pool)
+    .await?;
+    assert_eq!(ordered.len(), 2, "expected two schedulable chains");
+    assert_eq!(
+        ordered[0].0, fast_chain_id,
+        "fast chain should be acquired before slow chain under contention"
+    );
+    assert_eq!(ordered[0].1, 0);
+    assert_eq!(ordered[1].0, heavy_chain_id);
+    assert_eq!(ordered[1].1, 1);
+
+    sqlx::query(
+        "UPDATE dependence_chain SET status = 'processed' WHERE dependence_chain_id = $1",
+    )
+    .bind(&fast_chain_id)
+    .execute(&setup.db_pool)
+    .await?;
+
+    let next = sqlx::query_as::<_, (Vec<u8>, i16)>(
+        r#"
+        SELECT dependence_chain_id, schedule_priority
+        FROM dependence_chain
+        WHERE status = 'updated'
+          AND worker_id IS NULL
+          AND dependency_count = 0
+        ORDER BY schedule_priority ASC, last_updated_at ASC
+        LIMIT 1
+        "#,
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(
+        next.0, heavy_chain_id,
+        "slow chain should still progress once fast lane is empty"
+    );
+    assert_eq!(next.1, 1);
+
+    Ok(())
 }
 
 #[tokio::test]

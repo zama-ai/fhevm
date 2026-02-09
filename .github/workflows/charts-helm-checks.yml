@@ -44,6 +44,24 @@ jobs:
         uses: WyriHaximus/github-action-helm3@fc4ba26e75cf5d08182c6ce3b72623c8bfd7272b # v3.1.0
         with:
           exec: helm lint charts/*
+      - name: Assert host-listener cap is shared
+        uses: WyriHaximus/github-action-helm3@fc4ba26e75cf5d08182c6ce3b72623c8bfd7272b # v3.1.0
+        with:
+          exec: |
+            # CI-only sentinel used to verify all HL types render the same cap.
+            # This value is not a recommended runtime setting.
+            cap_sentinel=42
+            rendered="$(helm template test charts/coprocessor \
+              --set hostListener.enabled=true \
+              --set hostListenerPoller.enabled=true \
+              --set hostListenerCatchupOnly.enabled=true \
+              --set dependentOps.maxPerChain=${cap_sentinel})"
+            all_count="$(printf '%s\n' "$rendered" | grep -c -- '--dependent-ops-max-per-chain=' || true)"
+            shared_count="$(printf '%s\n' "$rendered" | grep -c -- "--dependent-ops-max-per-chain=${cap_sentinel}" || true)"
+            if [ "$all_count" -ne 3 ] || [ "$shared_count" -ne 3 ]; then
+              echo "expected 3 shared --dependent-ops-max-per-chain=${cap_sentinel} args, got all=${all_count} shared=${shared_count}"
+              exit 1
+            fi
   test:
     name: charts-helm-checks/test (bpr)
     needs: check-changes

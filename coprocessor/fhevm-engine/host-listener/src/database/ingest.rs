@@ -12,8 +12,8 @@ use crate::cmd::block_history::BlockSummary;
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_inputs_handle, tfhe_result_handle, ChainHash,
-    Database, LogTfhe,
+    acl_result_handles, tfhe_inputs_handle, tfhe_result_handle, Chain,
+    ChainHash, Database, LogTfhe,
 };
 
 pub struct BlockLogs<T> {
@@ -29,9 +29,34 @@ pub struct IngestOptions {
     pub dependent_ops_max_per_chain: u32,
 }
 
-#[derive(Default)]
-struct DependentOpsStats {
-    total: u64,
+fn compute_schedule_priorities(
+    chains: &[Chain],
+    dependent_ops_by_chain: &HashMap<ChainHash, u64>,
+    dependent_ops_max_per_chain: u32,
+) -> (HashMap<ChainHash, SchedulePriority>, u64, u64) {
+    if dependent_ops_max_per_chain == 0 {
+        return (HashMap::new(), 0, 0);
+    }
+
+    let mut schedule_priority_by_chain = HashMap::new();
+    let mut allowed: u64 = 0;
+    let mut throttled: u64 = 0;
+    let max_per_chain = u64::from(dependent_ops_max_per_chain);
+
+    for chain in chains {
+        let Some(total) = dependent_ops_by_chain.get(&chain.hash) else {
+            continue;
+        };
+        if *total > max_per_chain {
+            throttled = throttled.saturating_add(*total);
+            schedule_priority_by_chain
+                .insert(chain.hash, SchedulePriority::SLOW);
+        } else {
+            allowed = allowed.saturating_add(*total);
+        }
+    }
+
+    (schedule_priority_by_chain, allowed, throttled)
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -163,8 +188,7 @@ pub async fn ingest_block_logs(
     } else {
         chains.iter().map(|chain| chain.hash.to_vec()).collect()
     };
-    let mut dependent_ops_by_chain: HashMap<ChainHash, DependentOpsStats> =
-        HashMap::new();
+    let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
         at_least_one_insertion |= inserted;
@@ -173,10 +197,10 @@ pub async fn ingest_block_logs(
             && tfhe_log.is_allowed
             && !tfhe_inputs_handle(&tfhe_log.event).is_empty()
         {
-            let stats = dependent_ops_by_chain
+            let total = dependent_ops_by_chain
                 .entry(tfhe_log.dependence_chain)
                 .or_default();
-            stats.total = stats.total.saturating_add(1);
+            *total = total.saturating_add(1);
         }
         if block_logs.catchup && inserted {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
@@ -186,23 +210,15 @@ pub async fn ingest_block_logs(
         }
     }
 
-    let mut schedule_priority_by_chain: HashMap<ChainHash, SchedulePriority> =
-        HashMap::new();
+    let mut schedule_priority_by_chain = HashMap::new();
     if slow_lane_enabled {
-        let mut allowed: u64 = 0;
-        let mut throttled: u64 = 0;
-        for chain in &chains {
-            let Some(stats) = dependent_ops_by_chain.get(&chain.hash) else {
-                continue;
-            };
-            if stats.total > u64::from(options.dependent_ops_max_per_chain) {
-                throttled += stats.total;
-                schedule_priority_by_chain
-                    .insert(chain.hash, SchedulePriority::SLOW);
-            } else {
-                allowed += stats.total;
-            }
-        }
+        let (schedule_priorities, allowed, throttled) =
+            compute_schedule_priorities(
+                &chains,
+                &dependent_ops_by_chain,
+                options.dependent_ops_max_per_chain,
+            );
+        schedule_priority_by_chain = schedule_priorities;
         db.record_dependent_ops_metrics(allowed, throttled);
     }
 
@@ -240,4 +256,62 @@ pub async fn ingest_block_logs(
         }
     }
     tx.commit().await
+}
+
+#[cfg(test)]
+mod tests {
+    use fhevm_engine_common::types::SchedulePriority;
+
+    use super::compute_schedule_priorities;
+    use crate::database::tfhe_event_propagate::{Chain, ChainHash};
+
+    fn mk_chain(last_byte: u8) -> Chain {
+        Chain {
+            hash: ChainHash::with_last_byte(last_byte),
+            dependencies: vec![],
+            dependents: vec![],
+            size: 0,
+            before_size: 0,
+            allowed_handle: vec![],
+            new_chain: true,
+        }
+    }
+
+    #[test]
+    fn compute_schedule_priorities_cap_zero_disables() {
+        let chains = vec![mk_chain(1)];
+        let mut by_chain = std::collections::HashMap::new();
+        by_chain.insert(chains[0].hash, 10_u64);
+
+        let (priorities, allowed, throttled) =
+            compute_schedule_priorities(&chains, &by_chain, 0);
+
+        assert!(priorities.is_empty());
+        assert_eq!(allowed, 0);
+        assert_eq!(throttled, 0);
+    }
+
+    #[test]
+    fn compute_schedule_priorities_marks_only_over_limit() {
+        let chain_fast = mk_chain(1);
+        let chain_slow = mk_chain(2);
+        let chain_missing = mk_chain(3);
+        let chains =
+            vec![chain_fast.clone(), chain_slow.clone(), chain_missing];
+        let mut by_chain = std::collections::HashMap::new();
+        by_chain.insert(chain_fast.hash, 3_u64);
+        by_chain.insert(chain_slow.hash, 5_u64);
+
+        let (priorities, allowed, throttled) =
+            compute_schedule_priorities(&chains, &by_chain, 4);
+
+        assert_eq!(allowed, 3);
+        assert_eq!(throttled, 5);
+        assert_eq!(
+            priorities.get(&chain_slow.hash),
+            Some(&SchedulePriority::SLOW)
+        );
+        assert!(!priorities.contains_key(&chain_fast.hash));
+        assert_eq!(priorities.len(), 1);
+    }
 }
