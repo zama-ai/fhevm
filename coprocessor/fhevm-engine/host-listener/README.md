@@ -49,6 +49,87 @@ When set to `0`, host-listener disables slow-lane decisions, skips dependent-op
 throttling accounting, and promotes seen chains to
 `schedule_priority = 0` during ingest.
 
+### Local validation runbook (2 host-listener types)
+
+Goal: validate slow-lane behavior with both `host_listener` and
+`host_listener_poller` running concurrently against the same DB.
+
+1. Start local stack
+
+```bash
+cd test-suite/fhevm
+./fhevm-cli deploy --build --local
+```
+
+2. Enable the cap on both listener types
+
+Temporarily add `--dependent-ops-max-per-chain=<N>` to both services in
+`test-suite/fhevm/docker-compose/coprocessor-docker-compose.yml`:
+
+- `coprocessor-host-listener` command
+- `coprocessor-host-listener-poller` command
+
+Use a low value for validation (example: `2`) so slow-lane is easy to trigger.
+Then restart only these services:
+
+```bash
+cd test-suite/fhevm
+docker compose \
+  --env-file ../env/staging/.env.coprocessor.local \
+  -f docker-compose/coprocessor-docker-compose.yml \
+  up -d --force-recreate \
+  coprocessor-host-listener \
+  coprocessor-host-listener-poller
+```
+
+3. Generate dependent load
+
+Run `stress_generator` with a dependent synthetic chain scenario
+(`ADDChain` or `MULChain`), and run in parallel a lighter/independent scenario.
+
+```bash
+cd coprocessor/fhevm-engine/stress-test-generator
+export EVGEN_DB_URL='postgresql://postgres:postgres@127.0.0.1:5432/coprocessor'
+export EVGEN_SCENARIO='data/evgen_scenario.csv'
+cargo run --release --bin stress_generator
+```
+
+4. Validate acceptance criteria in DB
+
+```sql
+-- A. heavy dependent chains are marked slow
+SELECT schedule_priority, COUNT(*)
+FROM dependence_chain
+GROUP BY schedule_priority
+ORDER BY schedule_priority;
+
+-- B. under contention, fast lane is selected first
+SELECT dependence_chain_id, schedule_priority, last_updated_at
+FROM dependence_chain
+WHERE status = 'updated'
+  AND worker_id IS NULL
+  AND dependency_count = 0
+ORDER BY schedule_priority ASC, last_updated_at ASC
+LIMIT 20;
+```
+
+Expected:
+
+- At least one chain with `schedule_priority = 1`.
+- Fast (`0`) chains appear before slow (`1`) chains in acquisition order.
+
+5. Validate off-mode (`N=0`)
+
+- Set `--dependent-ops-max-per-chain=0` on both listener types.
+- Restart the same two services.
+- Generate a small dependent burst.
+- Re-run the SQL above.
+
+Expected:
+
+- No new slow-lane assignments.
+- Seen slow chains are promoted back to fast (`schedule_priority = 0`).
+
 ## Events in FHEVM
 
 ### Blockchain Events
