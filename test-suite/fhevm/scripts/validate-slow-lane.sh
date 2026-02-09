@@ -53,6 +53,7 @@ die() {
 }
 
 compose() {
+  ensure_compose_versions
   docker compose -p "${COMPOSE_PROJECT}" \
     --env-file "${COMPOSE_ENV}" \
     -f "${COMPOSE_FILE}" \
@@ -62,11 +63,42 @@ compose() {
 compose_with_override() {
   local file="$1"
   shift
+  ensure_compose_versions
   docker compose -p "${COMPOSE_PROJECT}" \
     --env-file "${COMPOSE_ENV}" \
     -f "${COMPOSE_FILE}" \
     -f "${file}" \
     "$@"
+}
+
+infer_container_version() {
+  local container="$1"
+  local fallback="$2"
+  local image
+  image="$(docker inspect --format '{{.Config.Image}}' "${container}" 2>/dev/null || true)"
+  if [[ -n "${image}" && "${image}" == *:* ]]; then
+    printf "%s" "${image##*:}"
+    return 0
+  fi
+  printf "%s" "${fallback}"
+}
+
+ensure_compose_versions() {
+  : "${COPROCESSOR_HOST_LISTENER_VERSION:=$(infer_container_version coprocessor-host-listener v0.11.0-1)}"
+  : "${COPROCESSOR_GW_LISTENER_VERSION:=$(infer_container_version coprocessor-gw-listener v0.11.0-1)}"
+  : "${COPROCESSOR_TFHE_WORKER_VERSION:=$(infer_container_version coprocessor-tfhe-worker v0.11.0-1)}"
+  : "${COPROCESSOR_SNS_WORKER_VERSION:=$(infer_container_version coprocessor-sns-worker v0.11.0-1)}"
+  : "${COPROCESSOR_TX_SENDER_VERSION:=$(infer_container_version coprocessor-transaction-sender v0.11.0-1)}"
+  : "${COPROCESSOR_ZKPROOF_WORKER_VERSION:=$(infer_container_version coprocessor-zkproof-worker v0.11.0-1)}"
+  : "${COPROCESSOR_DB_MIGRATION_VERSION:=$(infer_container_version coprocessor-db-migration v0.11.0-1)}"
+
+  export COPROCESSOR_HOST_LISTENER_VERSION
+  export COPROCESSOR_GW_LISTENER_VERSION
+  export COPROCESSOR_TFHE_WORKER_VERSION
+  export COPROCESSOR_SNS_WORKER_VERSION
+  export COPROCESSOR_TX_SENDER_VERSION
+  export COPROCESSOR_ZKPROOF_WORKER_VERSION
+  export COPROCESSOR_DB_MIGRATION_VERSION
 }
 
 db_query() {
@@ -99,7 +131,16 @@ wait_for_bootstrap() {
 
     has_activate_key="$(docker logs --since=20m coprocessor-gw-listener 2>&1 | rg -c "ActivateKey event successful" || true)"
     has_fetched_keyset="$(docker logs --since=20m coprocessor-sns-worker 2>&1 | rg -c "Fetched keyset" || true)"
-    has_key_material="$(db_query "SELECT COALESCE(bool_and(COALESCE(octet_length(lo_get(sns_pk)), 0) > 0), false) FROM tenants;")"
+    has_key_material="$(db_query "
+      SELECT COALESCE(bool_and(key_bytes > 0), false)
+      FROM (
+        SELECT COALESCE(SUM(octet_length(lo.data)), 0) AS key_bytes
+        FROM tenants t
+        LEFT JOIN pg_largeobject lo
+          ON lo.loid = t.sns_pk
+        GROUP BY t.tenant_id
+      ) s;
+    ")"
 
     if [[ "${has_activate_key}" -gt 0 && "${has_fetched_keyset}" -gt 0 && "${has_key_material}" == "t" ]]; then
       log "Bootstrap gate passed (ActivateKey + keyset + non-empty sns_pk)"
