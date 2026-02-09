@@ -69,8 +69,12 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
 pub fn init_otel(
     service_name: &str,
 ) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let runtime = setup_otel(service_name, "otlp-layer")?;
-    Ok(runtime.map(|(_tracer, guard)| guard))
+    if service_name.is_empty() {
+        return Ok(None);
+    }
+
+    let (_tracer, guard) = setup_otel(service_name, "otlp-layer")?;
+    Ok(Some(guard))
 }
 
 pub fn init_json_subscriber(
@@ -94,8 +98,7 @@ pub fn init_json_subscriber(
         return Ok(None);
     }
 
-    let (tracer, guard) = setup_otel(service_name, tracer_name)?
-        .expect("service_name is not empty; setup_otel should return Some");
+    let (tracer, guard) = setup_otel(service_name, tracer_name)?;
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     base.with(telemetry_layer).try_init()?;
     Ok(Some(guard))
@@ -105,16 +108,12 @@ fn setup_otel(
     service_name: &str,
     tracer_name: &'static str,
 ) -> Result<
-    Option<(opentelemetry_sdk::trace::Tracer, TracerProviderGuard)>,
+    (opentelemetry_sdk::trace::Tracer, TracerProviderGuard),
     Box<dyn std::error::Error + Send + Sync + 'static>,
 > {
-    if service_name.is_empty() {
-        return Ok(None);
-    }
-
     let (tracer, trace_provider) = build_tracer_provider(service_name, tracer_name)?;
     install_global_tracer_provider(trace_provider.clone());
-    Ok(Some((tracer, TracerProviderGuard::new(trace_provider))))
+    Ok((tracer, TracerProviderGuard::new(trace_provider)))
 }
 
 fn build_tracer_provider(
@@ -625,7 +624,7 @@ mod tests {
 
     #[test]
     fn setup_otel_empty_service_name_returns_none() {
-        let runtime = setup_otel("", "otlp-layer").unwrap();
+        let runtime = init_otel("").unwrap();
         assert!(runtime.is_none());
     }
 }
