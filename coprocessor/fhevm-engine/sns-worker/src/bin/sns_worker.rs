@@ -68,7 +68,7 @@ async fn main() {
 
     let mut otlp_setup_error: Option<String> = None;
 
-    let _otel_guard = match telemetry::init_json_subscriber_with_optional_otel(
+    let _otel_guard = match telemetry::init_json_subscriber_with_otel(
         config.log_level,
         &config.service_name,
         "otlp-layer",

@@ -22,11 +22,11 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 pub const TXN_ID_ATTR_KEY: &str = "txn_id";
 
 /// Calls provider shutdown exactly once when dropped.
-pub struct OtelGuard {
+pub struct TracerProviderGuard {
     tracer_provider: Option<SdkTracerProvider>,
 }
 
-impl OtelGuard {
+impl TracerProviderGuard {
     fn new(trace_provider: SdkTracerProvider) -> Self {
         Self {
             tracer_provider: Some(trace_provider),
@@ -42,7 +42,7 @@ impl OtelGuard {
     }
 }
 
-impl Drop for OtelGuard {
+impl Drop for TracerProviderGuard {
     fn drop(&mut self) {
         self.shutdown_once();
     }
@@ -68,14 +68,9 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
 
 pub fn init_otel(
     service_name: &str,
-) -> Result<Option<OtelGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-    if service_name.is_empty() {
-        return Ok(None);
-    }
-
-    let (_tracer, trace_provider) = build_tracer_provider(service_name, "otlp-layer")?;
-    install_global_tracer_provider(trace_provider.clone());
-    Ok(Some(OtelGuard::new(trace_provider)))
+) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let runtime = setup_otel(service_name, "otlp-layer")?;
+    Ok(runtime.map(|(_tracer, guard)| guard))
 }
 
 pub fn init_json_subscriber(log_level: tracing::Level) {
@@ -94,11 +89,11 @@ pub fn init_json_subscriber(log_level: tracing::Level) {
         .init();
 }
 
-pub fn init_json_subscriber_with_optional_otel(
+pub fn init_json_subscriber_with_otel(
     log_level: tracing::Level,
     service_name: &str,
     tracer_name: &'static str,
-) -> Result<Option<OtelGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
     let level_filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
     let fmt_layer = tracing_subscriber::fmt::layer()
         .json()
@@ -115,18 +110,18 @@ pub fn init_json_subscriber_with_optional_otel(
         return Ok(None);
     }
 
-    let (tracer, trace_provider) = build_tracer_provider(service_name, tracer_name)?;
-    install_global_tracer_provider(trace_provider.clone());
+    let (tracer, guard) = setup_otel(service_name, tracer_name)?
+        .expect("service_name is not empty; setup_otel should return Some");
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     base.with(telemetry_layer).init();
-    Ok(Some(OtelGuard::new(trace_provider)))
+    Ok(Some(guard))
 }
 
-pub fn init_otel_tracing(
+fn setup_otel(
     service_name: &str,
     tracer_name: &'static str,
 ) -> Result<
-    Option<(opentelemetry_sdk::trace::Tracer, OtelGuard)>,
+    Option<(opentelemetry_sdk::trace::Tracer, TracerProviderGuard)>,
     Box<dyn std::error::Error + Send + Sync + 'static>,
 > {
     if service_name.is_empty() {
@@ -135,7 +130,7 @@ pub fn init_otel_tracing(
 
     let (tracer, trace_provider) = build_tracer_provider(service_name, tracer_name)?;
     install_global_tracer_provider(trace_provider.clone());
-    Ok(Some((tracer, OtelGuard::new(trace_provider))))
+    Ok(Some((tracer, TracerProviderGuard::new(trace_provider))))
 }
 
 fn build_tracer_provider(
@@ -633,7 +628,7 @@ mod tests {
     #[test]
     fn otel_guard_shutdown_once_disarms_provider() {
         let provider = SdkTracerProvider::builder().build();
-        let mut guard = OtelGuard::new(provider);
+        let mut guard = TracerProviderGuard::new(provider);
         assert!(guard.tracer_provider.is_some());
 
         guard.shutdown_once();
@@ -645,8 +640,8 @@ mod tests {
     }
 
     #[test]
-    fn init_otel_tracing_empty_service_name_returns_none() {
-        let runtime = init_otel_tracing("", "otlp-layer").unwrap();
+    fn setup_otel_empty_service_name_returns_none() {
+        let runtime = setup_otel("", "otlp-layer").unwrap();
         assert!(runtime.is_none());
     }
 }
