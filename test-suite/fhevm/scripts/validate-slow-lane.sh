@@ -14,6 +14,7 @@ RUN_INTEGRATION=true
 RUN_STACK=true
 CAP=1
 LOAD_TEST="operators"
+LOAD_GREP="Slow lane deterministic contention"
 BOOTSTRAP_TIMEOUT_SECONDS=180
 
 RED='\033[0;31m'
@@ -33,7 +34,8 @@ Options:
   --integration-only       Run only deterministic Rust integration assertions.
   --stack-only             Run only local-stack multi-listener SQL assertions.
   --cap N                  Slow-lane cap for stack scenario (default: 1).
-  --load-test NAME         fhevm-cli test to generate load (default: operators).
+  --load-grep PATTERN      run-tests grep for deterministic load (default: "Slow lane deterministic contention").
+  --load-test NAME         fhevm-cli test fallback when --load-grep is empty (default: operators).
   --bootstrap-timeout SEC  Timeout for key-bootstrap gate (default: 180).
   -h, --help               Show this help.
 EOF
@@ -128,9 +130,11 @@ wait_for_bootstrap() {
     local has_activate_key
     local has_fetched_keyset
     local has_key_material
+    local sns_waiting_for_keys
 
     has_activate_key="$(docker logs --since=20m coprocessor-gw-listener 2>&1 | rg -c "ActivateKey event successful" || true)"
     has_fetched_keyset="$(docker logs --since=20m coprocessor-sns-worker 2>&1 | rg -c "Fetched keyset" || true)"
+    sns_waiting_for_keys="$(docker logs --since=2m coprocessor-sns-worker 2>&1 | rg -c "No keys available, retrying" || true)"
     has_key_material="$(db_query "
       SELECT COALESCE(bool_and(key_bytes > 0), false)
       FROM (
@@ -146,6 +150,10 @@ wait_for_bootstrap() {
       log "Bootstrap gate passed (ActivateKey + keyset + non-empty sns_pk)"
       return 0
     fi
+    if [[ "${has_key_material}" == "t" && "${sns_waiting_for_keys}" == "0" ]]; then
+      log "Bootstrap gate passed (non-empty sns_pk and sns-worker not waiting for keys)"
+      return 0
+    fi
     sleep 3
   done
 
@@ -155,9 +163,26 @@ wait_for_bootstrap() {
   local retry_deadline=$((SECONDS + BOOTSTRAP_TIMEOUT_SECONDS))
   while (( SECONDS < retry_deadline )); do
     local has_fetched_keyset
+    local has_key_material
+    local sns_waiting_for_keys
     has_fetched_keyset="$(docker logs --since=20m coprocessor-sns-worker 2>&1 | rg -c "Fetched keyset" || true)"
+    sns_waiting_for_keys="$(docker logs --since=2m coprocessor-sns-worker 2>&1 | rg -c "No keys available, retrying" || true)"
+    has_key_material="$(db_query "
+      SELECT COALESCE(bool_and(key_bytes > 0), false)
+      FROM (
+        SELECT COALESCE(SUM(octet_length(lo.data)), 0) AS key_bytes
+        FROM tenants t
+        LEFT JOIN pg_largeobject lo
+          ON lo.loid = t.sns_pk
+        GROUP BY t.tenant_id
+      ) s;
+    ")"
     if [[ "${has_fetched_keyset}" -gt 0 ]]; then
       log "Bootstrap recovered after gw-listener restart"
+      return 0
+    fi
+    if [[ "${has_key_material}" == "t" && "${sns_waiting_for_keys}" == "0" ]]; then
+      log "Bootstrap recovered from persisted key material state"
       return 0
     fi
     sleep 3
@@ -215,7 +240,11 @@ run_integration_assertions() {
 }
 
 run_stack_assertions() {
-  log "Running local-stack assertions (cap=${CAP}, load=${LOAD_TEST})"
+  if [[ -n "${LOAD_GREP}" ]]; then
+    log "Running local-stack assertions (cap=${CAP}, grep=${LOAD_GREP})"
+  else
+    log "Running local-stack assertions (cap=${CAP}, load=${LOAD_TEST})"
+  fi
   wait_for_bootstrap
 
   local before_block_height
@@ -224,10 +253,14 @@ run_stack_assertions() {
 
   apply_listener_cap_override "${CAP}"
 
-  (
-    cd "${FHEVM_DIR}"
-    ./fhevm-cli test "${LOAD_TEST}"
-  )
+  if [[ -n "${LOAD_GREP}" ]]; then
+    docker exec fhevm-test-suite-e2e-debug ./run-tests.sh -n staging -g "${LOAD_GREP}"
+  else
+    (
+      cd "${FHEVM_DIR}"
+      ./fhevm-cli test "${LOAD_TEST}"
+    )
+  fi
 
   local counts
   counts="$(db_query "
@@ -285,6 +318,11 @@ while (( "$#" )); do
     --load-test)
       [[ $# -ge 2 ]] || die "--load-test requires a value"
       LOAD_TEST="$2"
+      shift 2
+      ;;
+    --load-grep)
+      [[ $# -ge 2 ]] || die "--load-grep requires a value"
+      LOAD_GREP="$2"
       shift 2
       ;;
     --bootstrap-timeout)

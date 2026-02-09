@@ -58,7 +58,7 @@ Recommended (auditable) entrypoint:
 
 ```bash
 cd test-suite/fhevm
-./scripts/validate-slow-lane.sh --cap 1 --load-test operators
+./scripts/validate-slow-lane.sh --cap 2
 ```
 
 What this enforces:
@@ -76,7 +76,10 @@ Useful modes:
 ./scripts/validate-slow-lane.sh --integration-only
 
 # local stack only (assumes stack already up)
-./scripts/validate-slow-lane.sh --stack-only --cap 1 --load-test operators
+./scripts/validate-slow-lane.sh --stack-only --cap 2
+
+# optional fallback to fhevm-cli test flows
+./scripts/validate-slow-lane.sh --stack-only --cap 1 --load-grep "" --load-test operators
 ```
 
 1. Start local stack
@@ -140,19 +143,19 @@ Important:
 
 - Keep `-p fhevm` when restarting manually. Without it, containers can start on a different compose project/network and fail DNS (`host-node`, `db`).
 
-4. Generate dependent load
+4. Generate deterministic dependent load
 
-Use a real host-contract flow so host-listener ingests real TFHE logs:
+The validator defaults to a dedicated e2e case (`Slow lane deterministic contention`)
+that emits one heavy dependent chain and one light dependent chain.
+
+Manual equivalent:
 
 ```bash
-cd test-suite/fhevm
-./fhevm-cli test erc20
+docker exec fhevm-test-suite-e2e-debug \
+  ./run-tests.sh -n staging -g "Slow lane deterministic contention"
 ```
 
-If this does not trigger slow-lane in local runs, use forcing mode for validation:
-
-- set `--dependent-ops-max-per-chain=1` temporarily
-- rerun `./fhevm-cli test erc20`
+Recommended cap for this scenario: `2` (heavy chain > cap, light chain <= cap).
 
 5. Validate acceptance criteria in DB
 
