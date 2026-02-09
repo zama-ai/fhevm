@@ -87,6 +87,7 @@ A run is valid only if all 5 steps are reproducible with documented commands.
 
 - Fast feedback loop design: `FAST_FEEDBACK_LOOP.md`
 - 1:1 feature parity matrix: `HOST_LISTENER_PARITY_MATRIX.md`
+- Solana architecture draft: `SOLANA_ARCHITECTURE.md`
 
 ## Comparison Criteria
 

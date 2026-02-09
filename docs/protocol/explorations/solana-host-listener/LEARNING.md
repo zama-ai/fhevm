@@ -84,6 +84,16 @@ Notes:
 
 - Initial PoC boundary is now explicit (handle metadata, op request ingestion, allow ingestion, finality/cursor/idempotency).
 
+### Experiment 2: Solana architecture decomposition
+
+Date: 2026-02-09
+Objective: Make separation boundaries explicit (host programs, adapter/listener, shared core, gateway), including ownership and CPI options.
+Result: Added `SOLANA_ARCHITECTURE.md` with component and sequence diagrams.
+Confidence: Medium-high
+Notes:
+
+- Decided to favor monolithic host program for first loop, while keeping internal module seams compatible with later split (ACL/HCU programs).
+
 ## Decision Log
 
 ### D0
