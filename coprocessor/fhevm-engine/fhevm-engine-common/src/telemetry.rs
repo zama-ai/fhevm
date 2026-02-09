@@ -60,13 +60,12 @@ pub struct OtlpRuntime {
 
 impl OtlpRuntime {
     fn new(
-        trace_provider: SdkTracerProvider,
         tracer: Option<opentelemetry_sdk::trace::Tracer>,
+        shutdown_guard: OtlpShutdownGuard,
     ) -> Self {
-        install_global_otel(trace_provider.clone());
         Self {
             tracer,
-            _shutdown_guard: OtlpShutdownGuard::new(trace_provider),
+            _shutdown_guard: shutdown_guard,
         }
     }
 
@@ -101,7 +100,11 @@ pub fn init_otlp(
     }
 
     let (_tracer, trace_provider) = build_otlp_tracer_and_provider(service_name, "otlp-layer")?;
-    Ok(Some(OtlpRuntime::new(trace_provider, None)))
+    install_global_otel(trace_provider.clone());
+    Ok(Some(OtlpRuntime::new(
+        None,
+        OtlpShutdownGuard::new(trace_provider),
+    )))
 }
 
 pub fn init_otlp_tracing(
@@ -113,7 +116,11 @@ pub fn init_otlp_tracing(
     }
 
     let (tracer, trace_provider) = build_otlp_tracer_and_provider(service_name, tracer_name)?;
-    Ok(Some(OtlpRuntime::new(trace_provider, Some(tracer))))
+    install_global_otel(trace_provider.clone());
+    Ok(Some(OtlpRuntime::new(
+        Some(tracer),
+        OtlpShutdownGuard::new(trace_provider),
+    )))
 }
 
 fn build_otlp_tracer_and_provider(
@@ -606,4 +613,40 @@ pub async fn try_end_zkproof_transaction(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn otlp_shutdown_guard_shutdown_once_disarms_provider() {
+        let provider = SdkTracerProvider::builder().build();
+        let mut guard = OtlpShutdownGuard::new(provider);
+        assert!(guard.provider.is_some());
+
+        guard.shutdown_once();
+        assert!(guard.provider.is_none());
+
+        // A second shutdown is a no-op.
+        guard.shutdown_once();
+        assert!(guard.provider.is_none());
+    }
+
+    #[test]
+    fn otlp_runtime_keeps_tracer_when_present() {
+        let provider = SdkTracerProvider::builder().build();
+        let tracer = provider.tracer("test-tracer");
+        let runtime = OtlpRuntime::new(Some(tracer), OtlpShutdownGuard::new(provider));
+
+        assert!(runtime.tracer().is_some());
+    }
+
+    #[test]
+    fn otlp_runtime_handles_absent_tracer() {
+        let provider = SdkTracerProvider::builder().build();
+        let runtime = OtlpRuntime::new(None, OtlpShutdownGuard::new(provider));
+
+        assert!(runtime.tracer().is_none());
+    }
 }
