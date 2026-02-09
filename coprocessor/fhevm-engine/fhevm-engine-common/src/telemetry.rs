@@ -37,22 +37,18 @@ impl OtlpShutdownGuard {
         }
     }
 
-    fn shutdown_if_needed(&mut self) {
+    fn shutdown_once(&mut self) {
         if let Some(provider) = self.provider.take() {
             if let Err(err) = provider.shutdown() {
                 warn!(error = %err, "Failed to shutdown OTLP tracer provider");
             }
         }
     }
-
-    pub fn shutdown(mut self) {
-        self.shutdown_if_needed();
-    }
 }
 
 impl Drop for OtlpShutdownGuard {
     fn drop(&mut self) {
-        self.shutdown_if_needed();
+        self.shutdown_once();
     }
 }
 
@@ -77,8 +73,8 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
 pub fn setup_otlp(
     service_name: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let (_tracer, trace_provider) = setup_otlp_tracer_impl(service_name, "otlp-layer")?;
-    set_provider_and_propagator(trace_provider);
+    let (_tracer, trace_provider) = build_otlp_tracer_and_provider(service_name, "otlp-layer")?;
+    install_global_otel(trace_provider);
     Ok(())
 }
 
@@ -86,16 +82,16 @@ pub fn setup_otlp_tracer(
     service_name: &str,
     tracer_name: &'static str,
 ) -> Result<opentelemetry_sdk::trace::Tracer, Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let (tracer, trace_provider) = setup_otlp_tracer_impl(service_name, tracer_name)?;
-    set_provider_and_propagator(trace_provider);
+    let (tracer, trace_provider) = build_otlp_tracer_and_provider(service_name, tracer_name)?;
+    install_global_otel(trace_provider);
     Ok(tracer)
 }
 
 pub fn setup_otlp_with_shutdown(
     service_name: &str,
 ) -> Result<OtlpShutdownGuard, Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let (_tracer, trace_provider) = setup_otlp_tracer_impl(service_name, "otlp-layer")?;
-    set_provider_and_propagator(trace_provider.clone());
+    let (_tracer, trace_provider) = build_otlp_tracer_and_provider(service_name, "otlp-layer")?;
+    install_global_otel(trace_provider.clone());
     Ok(OtlpShutdownGuard::new(trace_provider))
 }
 
@@ -106,12 +102,12 @@ pub fn setup_otlp_tracer_with_shutdown(
     (opentelemetry_sdk::trace::Tracer, OtlpShutdownGuard),
     Box<dyn std::error::Error + Send + Sync + 'static>,
 > {
-    let (tracer, trace_provider) = setup_otlp_tracer_impl(service_name, tracer_name)?;
-    set_provider_and_propagator(trace_provider.clone());
+    let (tracer, trace_provider) = build_otlp_tracer_and_provider(service_name, tracer_name)?;
+    install_global_otel(trace_provider.clone());
     Ok((tracer, OtlpShutdownGuard::new(trace_provider)))
 }
 
-fn setup_otlp_tracer_impl(
+fn build_otlp_tracer_and_provider(
     service_name: &str,
     tracer_name: &'static str,
 ) -> Result<
@@ -139,7 +135,7 @@ fn setup_otlp_tracer_impl(
     Ok((tracer, trace_provider))
 }
 
-fn set_provider_and_propagator(trace_provider: SdkTracerProvider) {
+fn install_global_otel(trace_provider: SdkTracerProvider) {
     opentelemetry::global::set_tracer_provider(trace_provider);
     opentelemetry::global::set_text_map_propagator(TextMapCompositePropagator::new(vec![
         Box::new(TraceContextPropagator::new()),
