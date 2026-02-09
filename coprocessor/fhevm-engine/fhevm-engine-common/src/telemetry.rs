@@ -52,6 +52,29 @@ impl Drop for OtlpShutdownGuard {
     }
 }
 
+/// Runtime OTLP handles that must stay alive for the process lifetime.
+pub struct OtlpRuntime {
+    tracer: Option<opentelemetry_sdk::trace::Tracer>,
+    _shutdown_guard: OtlpShutdownGuard,
+}
+
+impl OtlpRuntime {
+    fn new(
+        trace_provider: SdkTracerProvider,
+        tracer: Option<opentelemetry_sdk::trace::Tracer>,
+    ) -> Self {
+        install_global_otel(trace_provider.clone());
+        Self {
+            tracer,
+            _shutdown_guard: OtlpShutdownGuard::new(trace_provider),
+        }
+    }
+
+    pub fn tracer(&self) -> Option<opentelemetry_sdk::trace::Tracer> {
+        self.tracer.clone()
+    }
+}
+
 pub static HOST_TXN_LATENCY_CONFIG: OnceLock<MetricsConfig> = OnceLock::new();
 pub(crate) static HOST_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
     register_histogram(
@@ -70,24 +93,27 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
     )
 });
 
-pub fn setup_otlp_with_shutdown(
+pub fn init_otlp(
     service_name: &str,
-) -> Result<OtlpShutdownGuard, Box<dyn std::error::Error + Send + Sync + 'static>> {
+) -> Result<Option<OtlpRuntime>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    if service_name.is_empty() {
+        return Ok(None);
+    }
+
     let (_tracer, trace_provider) = build_otlp_tracer_and_provider(service_name, "otlp-layer")?;
-    install_global_otel(trace_provider.clone());
-    Ok(OtlpShutdownGuard::new(trace_provider))
+    Ok(Some(OtlpRuntime::new(trace_provider, None)))
 }
 
-pub fn setup_otlp_tracer_with_shutdown(
+pub fn init_otlp_tracing(
     service_name: &str,
     tracer_name: &'static str,
-) -> Result<
-    (opentelemetry_sdk::trace::Tracer, OtlpShutdownGuard),
-    Box<dyn std::error::Error + Send + Sync + 'static>,
-> {
+) -> Result<Option<OtlpRuntime>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    if service_name.is_empty() {
+        return Ok(None);
+    }
+
     let (tracer, trace_provider) = build_otlp_tracer_and_provider(service_name, tracer_name)?;
-    install_global_otel(trace_provider.clone());
-    Ok((tracer, OtlpShutdownGuard::new(trace_provider)))
+    Ok(Some(OtlpRuntime::new(trace_provider, Some(tracer))))
 }
 
 fn build_otlp_tracer_and_provider(

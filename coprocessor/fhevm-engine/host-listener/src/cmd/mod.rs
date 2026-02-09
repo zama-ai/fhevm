@@ -1024,15 +1024,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         )
     };
 
-    let _otlp_shutdown_guard = if args.service_name.is_empty() {
-        None
-    } else {
-        match telemetry::setup_otlp_with_shutdown(&args.service_name) {
-            Ok(guard) => Some(guard),
-            Err(err) => {
-                error!(error = %err, "Failed to setup OTLP");
-                None
-            }
+    let _otlp_runtime = match telemetry::init_otlp(&args.service_name) {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            error!(error = %err, "Failed to setup OTLP");
+            None
         }
     };
 

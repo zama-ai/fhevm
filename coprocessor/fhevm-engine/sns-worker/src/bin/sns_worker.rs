@@ -69,15 +69,11 @@ async fn main() {
 
     let mut otlp_setup_error: Option<String> = None;
 
-    let (otel_tracer, _otlp_shutdown_guard) = if config.service_name.is_empty() {
-        (None, None)
-    } else {
-        match telemetry::setup_otlp_tracer_with_shutdown(&config.service_name, "otlp-layer") {
-            Ok((tracer, guard)) => (Some(tracer), Some(guard)),
-            Err(err) => {
-                otlp_setup_error = Some(err.to_string());
-                (None, None)
-            }
+    let otlp_runtime = match telemetry::init_otlp_tracing(&config.service_name, "otlp-layer") {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            otlp_setup_error = Some(err.to_string());
+            None
         }
     };
 
@@ -97,7 +93,7 @@ async fn main() {
         .with(level_filter)
         .with(fmt_layer);
 
-    if let Some(tracer) = otel_tracer {
+    if let Some(tracer) = otlp_runtime.as_ref().and_then(|runtime| runtime.tracer()) {
         let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         base.with(otel_layer).init();
     } else {

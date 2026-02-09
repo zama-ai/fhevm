@@ -90,15 +90,11 @@ pub struct PollerConfig {
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
-    let _otlp_shutdown_guard = if config.service_name.is_empty() {
-        None
-    } else {
-        match telemetry::setup_otlp_with_shutdown(&config.service_name) {
-            Ok(guard) => Some(guard),
-            Err(err) => {
-                warn!(error = %err, "Failed to setup OTLP");
-                None
-            }
+    let _otlp_runtime = match telemetry::init_otlp(&config.service_name) {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            warn!(error = %err, "Failed to setup OTLP");
+            None
         }
     };
 
