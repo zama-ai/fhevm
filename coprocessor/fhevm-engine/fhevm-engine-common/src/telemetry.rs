@@ -2,15 +2,10 @@ use crate::utils::to_hex;
 use bigdecimal::num_traits::ToPrimitive;
 use opentelemetry::{
     global::{BoxedSpan, BoxedTracer, ObjectSafeSpan},
-    propagation::TextMapCompositePropagator,
     trace::{SpanBuilder, Status, TraceContextExt, Tracer, TracerProvider},
     Context, KeyValue,
 };
-use opentelemetry_sdk::{
-    propagation::{BaggagePropagator, TraceContextPropagator},
-    trace::SdkTracerProvider,
-    Resource,
-};
+use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 use prometheus::{register_histogram, Histogram};
 use sqlx::PgConnection;
 use std::fmt;
@@ -153,10 +148,6 @@ fn build_otlp_tracer_and_provider(
 
 fn install_global_otel(trace_provider: SdkTracerProvider) {
     opentelemetry::global::set_tracer_provider(trace_provider);
-    opentelemetry::global::set_text_map_propagator(TextMapCompositePropagator::new(vec![
-        Box::new(TraceContextPropagator::new()),
-        Box::new(BaggagePropagator::new()),
-    ]));
 }
 
 #[derive(Clone)]
