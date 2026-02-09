@@ -135,8 +135,6 @@ pub fn init_otel_tracing(
 
     let (tracer, trace_provider) = build_tracer_provider(service_name, tracer_name)?;
     install_global_tracer_provider(trace_provider.clone());
-    // TODO(fhevm-internal#935): remove explicit tracer return once all coprocessor
-    // instrumentation is fully migrated to tracing spans and layer-only wiring.
     Ok(Some((tracer, OtelGuard::new(trace_provider))))
 }
 
