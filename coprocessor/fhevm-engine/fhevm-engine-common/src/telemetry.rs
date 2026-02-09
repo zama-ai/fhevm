@@ -73,7 +73,7 @@ pub fn init_otel(
         return Ok(None);
     }
 
-    let (_tracer, guard) = setup_otel(service_name, "otlp-layer")?;
+    let guard = setup_otel_guard(service_name, "otlp-layer")?;
     Ok(Some(guard))
 }
 
@@ -98,13 +98,22 @@ pub fn init_json_subscriber(
         return Ok(None);
     }
 
-    let (tracer, guard) = setup_otel(service_name, tracer_name)?;
+    let (tracer, guard) = setup_otel_with_tracer(service_name, tracer_name)?;
     let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     base.with(telemetry_layer).try_init()?;
     Ok(Some(guard))
 }
 
-fn setup_otel(
+fn setup_otel_guard(
+    service_name: &str,
+    tracer_name: &'static str,
+) -> Result<TracerProviderGuard, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let (_tracer, trace_provider) = build_tracer_provider(service_name, tracer_name)?;
+    install_global_tracer_provider(trace_provider.clone());
+    Ok(TracerProviderGuard::new(trace_provider))
+}
+
+fn setup_otel_with_tracer(
     service_name: &str,
     tracer_name: &'static str,
 ) -> Result<
