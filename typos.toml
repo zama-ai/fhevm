@@ -24,6 +24,13 @@ extend-exclude = [
     # Specific docs with known legacy typos (tracked separately)
     "coprocessor/fhevm-engine/host-listener/README.md",
 
+    # Upgrade-sensitive contracts (exclude from typo edits until infra sign-off)
+    "host-contracts/contracts/ACL.sol",
+    "host-contracts/contracts/FHEVMExecutor.sol",
+    "host-contracts/contracts/InputVerifier.sol",
+    "host-contracts/contracts/KMSVerifier.sol",
+    "host-contracts/contracts/HCULimit.sol",
+
     # Keys and charts (binary/config data)
     "fhevm-keys/",
     "charts/",
