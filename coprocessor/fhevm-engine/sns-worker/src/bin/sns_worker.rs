@@ -68,18 +68,15 @@ async fn main() {
 
     let mut otlp_setup_error: Option<String> = None;
 
-    let _otel_guard = match telemetry::init_json_subscriber_with_otel(
-        config.log_level,
-        &config.service_name,
-        "otlp-layer",
-    ) {
-        Ok(guard) => guard,
-        Err(err) => {
-            otlp_setup_error = Some(err.to_string());
-            telemetry::init_json_subscriber(config.log_level);
-            None
-        }
-    };
+    let _otel_guard =
+        match telemetry::init_json_subscriber(config.log_level, &config.service_name, "otlp-layer")
+        {
+            Ok(guard) => guard,
+            Err(err) => {
+                otlp_setup_error = Some(err.to_string());
+                None
+            }
+        };
 
     if let Some(err) = otlp_setup_error {
         error!(error = %err, "Failed to setup OTLP");
