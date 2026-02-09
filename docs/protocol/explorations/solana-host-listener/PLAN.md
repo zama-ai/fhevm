@@ -9,6 +9,16 @@ Validate whether we can run a minimal end-to-end FHEVM flow with a Solana host c
 
 This is an exploratory PoC. Code can be discarded after each experiment if the learning is captured.
 
+## Visual Overview
+
+```mermaid
+flowchart LR
+  A["Scope lock: add + allow"] --> B["Spec + fixtures (L0/L1)"]
+  B --> C["Local Solana loop (L2)"]
+  C --> D["Compare trigger models: logs vs PDA"]
+  D --> E["Architecture decision for next phase"]
+```
+
 ## Scope
 
 - Investigate integration shape for Solana host events -> coprocessor jobs.

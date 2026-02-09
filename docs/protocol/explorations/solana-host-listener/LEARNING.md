@@ -10,6 +10,15 @@ Status: Active
 - When a hypothesis is invalidated, keep the old entry and mark it as invalidated.
 - Link each decision to evidence from code, logs, or a reproducible run.
 
+## Visual Timeline
+
+```mermaid
+flowchart TD
+  E0["Experiment 0: repo architecture audit"] --> E1["Experiment 1: fast loop + parity scoping"]
+  E1 --> E2["Experiment 2: Solana architecture decomposition"]
+  E2 --> NX["Next checkpoint: first validated L2 host+listener run"]
+```
+
 ## Current Facts (confirmed)
 
 1. Gateway stays on EVM as payment/enforcement layer.
