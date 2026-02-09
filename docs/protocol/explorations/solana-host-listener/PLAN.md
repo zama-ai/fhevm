@@ -83,6 +83,11 @@ A run is valid only if all 5 steps are reproducible with documented commands.
 6. Compare both tracks with explicit criteria.
 7. Decide architecture direction for next phase.
 
+## Fast Loop Artifacts
+
+- Fast feedback loop design: `FAST_FEEDBACK_LOOP.md`
+- 1:1 feature parity matrix: `HOST_LISTENER_PARITY_MATRIX.md`
+
 ## Comparison Criteria
 
 - Determinism and replay safety.

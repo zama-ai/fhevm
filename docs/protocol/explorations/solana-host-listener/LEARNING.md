@@ -17,6 +17,7 @@ Status: Active
 3. Coprocessor compute path downstream is mostly DB-driven.
 4. Handle metadata compatibility with Gateway checks is mandatory.
 5. Fast learning requires a self-contained local e2e loop.
+6. A local hybrid (`logs + PDAs`) Solana host demo exists at `/Users/work/code/zama/solana-symbolic-host-demo` and is useful as a fast-loop reference.
 
 ## Open Questions
 
@@ -72,6 +73,16 @@ Confidence: Medium-high
 Notes:
 
 - Final decision deferred until at least one Solana e2e run exists.
+
+### Experiment 1: Fast feedback loop + parity scoping
+
+Date: 2026-02-09
+Objective: Define a spec-driven host+listener-first loop and enumerate EVM features to replicate.
+Result: Added `FAST_FEEDBACK_LOOP.md` and `HOST_LISTENER_PARITY_MATRIX.md`.
+Confidence: High
+Notes:
+
+- Initial PoC boundary is now explicit (handle metadata, op request ingestion, allow ingestion, finality/cursor/idempotency).
 
 ## Decision Log
 
