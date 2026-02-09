@@ -168,12 +168,12 @@ impl Database {
         }
     }
 
-    pub async fn promote_seen_schedule_priorities_fast(
+    pub async fn promote_seen_dep_chains_to_fast_priority(
         &self,
         tx: &mut Transaction<'_>,
-        seen_chain_ids: &[Vec<u8>],
+        seen_dep_chain_ids: &[Vec<u8>],
     ) -> Result<u64, SqlxError> {
-        if seen_chain_ids.is_empty() {
+        if seen_dep_chain_ids.is_empty() {
             return Ok(0);
         }
 
@@ -185,7 +185,7 @@ impl Database {
               AND dc.dependence_chain_id = ANY($1::bytea[])
             "#,
         )
-        .bind(seen_chain_ids)
+        .bind(seen_dep_chain_ids)
         .execute(tx.deref_mut())
         .await?;
         Ok(rows.rows_affected())
@@ -793,7 +793,7 @@ impl Database {
         schedule_priority_by_chain: &HashMap<ChainHash, SchedulePriority>,
     ) -> Result<(), SqlxError> {
         for chain in chains {
-            let chain_id = chain.hash.to_vec();
+            let dep_chain_id = chain.hash.to_vec();
             let schedule_priority = *schedule_priority_by_chain
                 .get(&chain.hash)
                 .unwrap_or(&SchedulePriority::FAST);
@@ -837,7 +837,7 @@ impl Database {
                         EXCLUDED.schedule_priority
                     )
                 "#,
-                chain_id,
+                dep_chain_id,
                 last_updated_at,
                 chain.dependencies.len() as i64,
                 &dependents,

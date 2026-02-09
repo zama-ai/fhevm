@@ -29,7 +29,7 @@ pub struct IngestOptions {
     pub dependent_ops_max_per_chain: u32,
 }
 
-fn compute_schedule_priorities(
+fn classify_slow_lane_priorities(
     chains: &[Chain],
     dependent_ops_by_chain: &HashMap<ChainHash, u64>,
     dependent_ops_max_per_chain: u32,
@@ -183,7 +183,7 @@ pub async fn ingest_block_logs(
     .await;
 
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
-    let seen_chain_ids = if slow_lane_enabled {
+    let seen_dep_chain_ids = if slow_lane_enabled {
         Vec::new()
     } else {
         chains.iter().map(|chain| chain.hash.to_vec()).collect()
@@ -213,7 +213,7 @@ pub async fn ingest_block_logs(
     let mut schedule_priority_by_chain = HashMap::new();
     if slow_lane_enabled {
         let (schedule_priorities, allowed, throttled) =
-            compute_schedule_priorities(
+            classify_slow_lane_priorities(
                 &chains,
                 &dependent_ops_by_chain,
                 options.dependent_ops_max_per_chain,
@@ -246,7 +246,10 @@ pub async fn ingest_block_logs(
     }
     if !slow_lane_enabled {
         let promoted = db
-            .promote_seen_schedule_priorities_fast(&mut tx, &seen_chain_ids)
+            .promote_seen_dep_chains_to_fast_priority(
+                &mut tx,
+                &seen_dep_chain_ids,
+            )
             .await?;
         if promoted > 0 {
             info!(
@@ -262,10 +265,10 @@ pub async fn ingest_block_logs(
 mod tests {
     use fhevm_engine_common::types::SchedulePriority;
 
-    use super::compute_schedule_priorities;
+    use super::classify_slow_lane_priorities;
     use crate::database::tfhe_event_propagate::{Chain, ChainHash};
 
-    fn mk_chain(last_byte: u8) -> Chain {
+    fn fixture_dep_chain(last_byte: u8) -> Chain {
         Chain {
             hash: ChainHash::with_last_byte(last_byte),
             dependencies: vec![],
@@ -278,13 +281,13 @@ mod tests {
     }
 
     #[test]
-    fn compute_schedule_priorities_cap_zero_disables() {
-        let chains = vec![mk_chain(1)];
+    fn classify_slow_lane_priorities_cap_zero_disables() {
+        let chains = vec![fixture_dep_chain(1)];
         let mut by_chain = std::collections::HashMap::new();
         by_chain.insert(chains[0].hash, 10_u64);
 
         let (priorities, allowed, throttled) =
-            compute_schedule_priorities(&chains, &by_chain, 0);
+            classify_slow_lane_priorities(&chains, &by_chain, 0);
 
         assert!(priorities.is_empty());
         assert_eq!(allowed, 0);
@@ -292,10 +295,10 @@ mod tests {
     }
 
     #[test]
-    fn compute_schedule_priorities_marks_only_over_limit() {
-        let chain_fast = mk_chain(1);
-        let chain_slow = mk_chain(2);
-        let chain_missing = mk_chain(3);
+    fn classify_slow_lane_priorities_marks_only_over_limit() {
+        let chain_fast = fixture_dep_chain(1);
+        let chain_slow = fixture_dep_chain(2);
+        let chain_missing = fixture_dep_chain(3);
         let chains =
             vec![chain_fast.clone(), chain_slow.clone(), chain_missing];
         let mut by_chain = std::collections::HashMap::new();
@@ -303,7 +306,7 @@ mod tests {
         by_chain.insert(chain_slow.hash, 5_u64);
 
         let (priorities, allowed, throttled) =
-            compute_schedule_priorities(&chains, &by_chain, 4);
+            classify_slow_lane_priorities(&chains, &by_chain, 4);
 
         assert_eq!(allowed, 3);
         assert_eq!(throttled, 5);
