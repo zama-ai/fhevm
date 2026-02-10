@@ -65,11 +65,13 @@ pub async fn async_main(
     let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");
 
-    if !args.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
+    let _otel_guard = match telemetry::init_otel(&args.service_name) {
+        Ok(otel_guard) => otel_guard,
+        Err(err) => {
             error!(error = %err, "Failed to setup OTLP");
+            None
         }
-    }
+    };
 
     let database_url = args.database_url.clone().unwrap_or_default();
     let health_check = health_check::HealthCheck::new(database_url);
