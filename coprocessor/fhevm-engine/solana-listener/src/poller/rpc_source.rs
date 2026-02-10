@@ -500,7 +500,7 @@ mod tests {
         payload.extend_from_slice(&[4u8; 32]); // result
         let b64 = STANDARD.encode(payload);
 
-        let logs = vec![
+        let logs = [
             format!("Program {TARGET_PROGRAM} invoke [1]"),
             format!("Program data: {b64}"),
             format!("Program {TARGET_PROGRAM} success"),
@@ -528,7 +528,7 @@ mod tests {
     #[test]
     fn ignores_program_data_when_not_in_target_program_context() {
         let payload = STANDARD.encode([0u8; 40]);
-        let logs = vec![
+        let logs = [
             "Program Another1111111111111111111111111111111111 invoke [1]".to_string(),
             format!("Program data: {payload}"),
             "Program Another1111111111111111111111111111111111 success".to_string(),
