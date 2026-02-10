@@ -62,6 +62,10 @@ pub fn map_envelope_to_actions(
     envelope: &FinalizedEventEnvelope,
     tenant_id: i32,
 ) -> Result<IngestActions> {
+    // Keep this mapper intentionally aligned with host-listener SQL semantics in
+    // `host-listener/src/database/tfhe_event_propagate.rs` (computation insert,
+    // ACL unlock, block_valid, cursor update) so PoC parity stays easy to reason
+    // about across chains.
     envelope.validate()?;
 
     let schedule_order = compute_schedule_order(
@@ -102,7 +106,7 @@ pub fn map_envelope_to_actions(
             actions.allowed_handles.push(AllowedHandleInsert {
                 tenant_id,
                 handle: handle.to_vec(),
-                account_address: hex::encode(account),
+                account_address: hex::encode(account.to_bytes()),
                 event_type: AllowEvents::AllowedAccount as i16,
                 transaction_id: tx_signature.clone(),
             });
@@ -156,6 +160,7 @@ fn pseudo_block_hash_from_slot(slot: u64) -> Vec<u8> {
 mod tests {
     use super::*;
     use crate::contracts::{FinalizedEventEnvelope, ProgramEventV0, INTERFACE_V0_VERSION};
+    use solana_pubkey::Pubkey;
 
     fn fixed_sig() -> Vec<u8> {
         vec![42u8; 64]
@@ -172,7 +177,7 @@ mod tests {
             tx_index: 2,
             op_index: 3,
             event: ProgramEventV0::OpRequestedAddV1 {
-                caller: [1u8; 32],
+                caller: Pubkey::new_from_array([1u8; 32]),
                 lhs: [2u8; 32],
                 rhs: [3u8; 32],
                 is_scalar: true,
@@ -206,9 +211,9 @@ mod tests {
             tx_index: 0,
             op_index: 0,
             event: ProgramEventV0::HandleAllowedV1 {
-                caller: [1u8; 32],
+                caller: Pubkey::new_from_array([1u8; 32]),
                 handle: [7u8; 32],
-                account: [8u8; 32],
+                account: Pubkey::new_from_array([8u8; 32]),
             },
         };
 

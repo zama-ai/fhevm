@@ -3,11 +3,10 @@ use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::Client;
 use serde_json::{json, Value};
+use solana_pubkey::Pubkey;
 use tracing::{debug, warn};
 
-use crate::contracts::{
-    FinalizedEventEnvelope, HandleBytes, ProgramEventV0, SolanaPubkeyBytes, INTERFACE_V0_VERSION,
-};
+use crate::contracts::{FinalizedEventEnvelope, HandleBytes, ProgramEventV0, INTERFACE_V0_VERSION};
 use crate::poller::{Cursor, FinalizedEventSource, SourceBatch};
 
 const OP_REQUESTED_ADD_DISC: [u8; 8] = [0xA2, 0xBA, 0x5F, 0xF4, 0xD7, 0xB8, 0x1C, 0xF8];
@@ -453,7 +452,7 @@ fn decode_op_requested_add(body: &[u8]) -> Option<ProgramEventV0> {
     if body.len() < 32 + 32 + 32 + 1 + 32 {
         return None;
     }
-    let caller: SolanaPubkeyBytes = body[0..32].try_into().ok()?;
+    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
     let lhs: HandleBytes = body[32..64].try_into().ok()?;
     let rhs: HandleBytes = body[64..96].try_into().ok()?;
     let is_scalar = body[96] != 0;
@@ -472,9 +471,9 @@ fn decode_handle_allowed(body: &[u8]) -> Option<ProgramEventV0> {
     if body.len() < 32 + 32 + 32 {
         return None;
     }
-    let caller: SolanaPubkeyBytes = body[0..32].try_into().ok()?;
+    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
     let handle: HandleBytes = body[32..64].try_into().ok()?;
-    let account: SolanaPubkeyBytes = body[64..96].try_into().ok()?;
+    let account = Pubkey::new_from_array(body[64..96].try_into().ok()?);
     Some(ProgramEventV0::HandleAllowedV1 {
         caller,
         handle,

@@ -1,23 +1,23 @@
 use serde::{Deserialize, Serialize};
+use solana_pubkey::Pubkey;
 
 pub const INTERFACE_V0_VERSION: u8 = 1;
 
-pub type SolanaPubkeyBytes = [u8; 32];
 pub type HandleBytes = [u8; 32];
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ProgramEventV0 {
     OpRequestedAddV1 {
-        caller: SolanaPubkeyBytes,
+        caller: Pubkey,
         lhs: HandleBytes,
         rhs: HandleBytes,
         is_scalar: bool,
         result_handle: HandleBytes,
     },
     HandleAllowedV1 {
-        caller: SolanaPubkeyBytes,
+        caller: Pubkey,
         handle: HandleBytes,
-        account: SolanaPubkeyBytes,
+        account: Pubkey,
     },
 }
 

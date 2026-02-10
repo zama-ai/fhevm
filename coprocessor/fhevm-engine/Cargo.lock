@@ -8596,6 +8596,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "solana-client",
+ "solana-pubkey",
  "solana-sdk",
  "sqlx",
  "testcontainers",

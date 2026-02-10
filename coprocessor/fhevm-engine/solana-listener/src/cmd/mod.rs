@@ -13,10 +13,17 @@ pub struct Args {
     #[arg(long, env = "DATABASE_URL")]
     pub database_url: String,
 
-    #[arg(long, env = "TENANT_ID")]
+    /// DB partition key for current coprocessor schema compatibility.
+    #[arg(long, env = "TENANT_ID", help = "DB tenant partition key")]
     pub tenant_id: i32,
 
-    #[arg(long, env = "HOST_CHAIN_ID")]
+    /// Listener-side chain namespace persisted in DB.
+    /// This is configured off-chain and is not read from Solana state.
+    #[arg(
+        long,
+        env = "HOST_CHAIN_ID",
+        help = "Off-chain host chain namespace for DB rows"
+    )]
     pub host_chain_id: i64,
 
     #[arg(long, env = "SOLANA_RPC_URL", default_value = "http://127.0.0.1:8899")]
