@@ -301,7 +301,7 @@ async fn query_for_work<'a>(
                     deps_chain_mngr.acquire_next_lock().await?
                 } else {
                     *no_progress_cycles = 0;
-                    deps_chain_mngr.acquire_early_lock().await?
+                    deps_chain_mngr.acquire_oldest_lock().await?
                 }
             }
         };

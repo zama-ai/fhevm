@@ -282,7 +282,6 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        let dependence_chain_id = log.dependence_chain.to_vec();
         let schedule_order =
             log.block_timestamp
                 .saturating_add(TimeDuration::microseconds(
@@ -310,7 +309,7 @@ impl Database {
             &dependencies,
             fhe_operation as i16,
             is_scalar,
-            dependence_chain_id,
+            log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()),
             log.is_allowed,
             schedule_order,
@@ -777,7 +776,6 @@ impl Database {
         slow_dep_chain_ids: &HashSet<ChainHash>,
     ) -> Result<(), SqlxError> {
         for chain in chains {
-            let dep_chain_id = chain.hash.to_vec();
             let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash)
             {
                 SchedulePriority::SLOW
@@ -824,7 +822,7 @@ impl Database {
                         EXCLUDED.schedule_priority
                     )
                 "#,
-                dep_chain_id,
+                chain.hash.to_vec(),
                 last_updated_at,
                 chain.dependencies.len() as i64,
                 &dependents,

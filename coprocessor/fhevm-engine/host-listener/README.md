@@ -49,159 +49,31 @@ When set to `0`, host-listener disables slow-lane decisions, skips dependent-op
 throttling accounting, and promotes seen chains to
 `schedule_priority = 0` during ingest.
 
-### Local validation runbook (2 host-listener types)
+### Local stack notes
 
-Goal: validate slow-lane behavior with both `host_listener` and
-`host_listener_poller` running concurrently against the same DB.
-
-Recommended (auditable) entrypoint:
-
-```bash
-cd test-suite/fhevm
-./scripts/validate-slow-lane.sh --cap 2
-```
-
-What this enforces:
-
-- deterministic integration assertions (`threshold matrix`, `cross-block below-cap`, `off-mode promote-on-seen`)
-- bootstrap gate (`ActivateKey` + `Fetched keyset` + non-empty `sns_pk`)
-- local multi-listener stack assertions with SQL pass/fail checks
-  - at least one fast and one slow chain after baseline
-  - schedulable ordering head is fast lane (`schedule_priority=0`)
-
-Useful modes:
-
-```bash
-# deterministic tests only
-./scripts/validate-slow-lane.sh --integration-only
-
-# local stack only (assumes stack already up)
-./scripts/validate-slow-lane.sh --stack-only --cap 2
-
-# optional fallback to fhevm-cli test flows
-./scripts/validate-slow-lane.sh --stack-only --cap 1 --load-grep "" --load-test operators
-```
-
-1. Start local stack
-
-```bash
-cd test-suite/fhevm
-./fhevm-cli deploy --build --local
-```
-
-2. Bootstrap gate (required before any slow-lane test)
-
-The validation is invalid until key bootstrap is healthy.
-
-Check:
-
-```bash
-docker logs --since=20m coprocessor-gw-listener | rg -n 'Received ActivateKey event|ActivateKey event successful'
-docker exec -i coprocessor-and-kms-db psql -U postgres -d coprocessor \
-  -c "SELECT tenant_id, sns_pk FROM tenants;"
-docker logs --since=20m coprocessor-sns-worker | rg -n 'bytes_len|No keys available|Fetched keyset'
-```
-
-Expected:
-
-- `coprocessor-gw-listener` logs include `ActivateKey event successful`.
-- `tenants.sns_pk` is not the bootstrap OID anymore.
-- `coprocessor-sns-worker` shows non-zero `bytes_len` and `Fetched keyset` (no repeated `No keys available` loop).
-
-If gate fails, recover by restarting only gw-listener and re-check:
-
-```bash
-cd test-suite/fhevm
-docker compose -p fhevm \
-  --env-file env/staging/.env.coprocessor.local \
-  -f docker-compose/coprocessor-docker-compose.yml \
-  up -d --no-deps coprocessor-gw-listener
-```
-
-3. Enable the cap on both listener types
-
-Temporarily add `--dependent-ops-max-per-chain=<N>` to both services in
-`test-suite/fhevm/docker-compose/coprocessor-docker-compose.yml`:
-
-- `coprocessor-host-listener` command
-- `coprocessor-host-listener-poller` command
-
-Use a low value for validation (example: `2`).
-Then restart only these services:
-
-```bash
-cd test-suite/fhevm
-docker compose -p fhevm \
-  --env-file env/staging/.env.coprocessor.local \
-  -f docker-compose/coprocessor-docker-compose.yml \
-  up -d --force-recreate \
-  coprocessor-host-listener \
-  coprocessor-host-listener-poller
-```
-
-Important:
-
-- Keep `-p fhevm` when restarting manually. Without it, containers can start on a different compose project/network and fail DNS (`host-node`, `db`).
-
-4. Generate deterministic dependent load
-
-The validator defaults to a dedicated e2e case (`Slow lane deterministic contention`)
-that emits one heavy dependent chain and one light dependent chain.
-
-Manual equivalent:
-
-```bash
-docker exec fhevm-test-suite-e2e-debug \
-  ./run-tests.sh -n staging -g "Slow lane deterministic contention"
-```
-
-Recommended cap for this scenario: `2` (heavy chain > cap, light chain <= cap).
-
-5. Validate acceptance criteria in DB
-
-```sql
--- A. heavy dependent chains are marked slow
-SELECT schedule_priority, COUNT(*)
-FROM dependence_chain
-GROUP BY schedule_priority
-ORDER BY schedule_priority;
-
--- B. under contention, fast lane is selected first
-SELECT dependence_chain_id, schedule_priority, last_updated_at
-FROM dependence_chain
-WHERE status = 'updated'
-  AND worker_id IS NULL
-  AND dependency_count = 0
-ORDER BY schedule_priority ASC, last_updated_at ASC
-LIMIT 20;
-```
-
-Expected:
-
-- At least one chain with `schedule_priority = 1`.
-- Fast (`0`) chains appear before slow (`1`) chains in acquisition order.
-
-6. Run deterministic integration matrix (recommended)
-
-This validates below/at/above threshold behavior with a realistic cap.
+Minimal deterministic checks:
 
 ```bash
 cd coprocessor/fhevm-engine
 cargo test -p host-listener --test host_listener_integration_tests \
-  test_slow_lane_threshold_matrix_locally -- --nocapture
+  test_slow_lane_threshold_matrix_locally \
+  test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally \
+  test_slow_lane_off_mode_promotes_seen_chain_locally -- --nocapture
 ```
 
-7. Validate off-mode (`N=0`)
+Before any stack-level slow-lane validation, ensure key bootstrap is healthy:
 
-- Set `--dependent-ops-max-per-chain=0` on both listener types.
-- Restart the same two services.
-- Generate a small dependent burst.
-- Re-run the SQL above.
+```bash
+docker logs --since=20m coprocessor-gw-listener | rg -n 'ActivateKey event successful'
+docker logs --since=20m coprocessor-sns-worker | rg -n 'Fetched keyset|No keys available'
+docker exec -i coprocessor-and-kms-db psql -U postgres -d coprocessor -c "
+SELECT tenant_id, COALESCE(SUM(octet_length(lo.data)), 0) AS sns_pk_bytes
+FROM tenants t
+LEFT JOIN pg_largeobject lo ON lo.loid = t.sns_pk
+GROUP BY tenant_id;"
+```
 
-Expected:
-
-- No new slow-lane assignments.
-- Seen slow chains are promoted back to fast (`schedule_priority = 0`).
+If bootstrap is not complete, restart only `coprocessor-gw-listener` and re-check.
 
 ## Events in FHEVM
 
