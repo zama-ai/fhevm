@@ -47,7 +47,7 @@ static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
             "Number of dependence chains marked slow by host-listener classification",
             &["chain_id"]
         )
-        .unwrap()
+        .expect("host-listener slow-lane metric must register")
     },
 );
 
