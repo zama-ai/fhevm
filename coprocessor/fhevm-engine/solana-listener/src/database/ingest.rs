@@ -62,10 +62,12 @@ pub fn map_envelope_to_actions(
     envelope: &FinalizedEventEnvelope,
     tenant_id: i32,
 ) -> Result<IngestActions> {
-    // Keep this mapper intentionally aligned with host-listener SQL semantics in
-    // `host-listener/src/database/tfhe_event_propagate.rs` (computation insert,
-    // ACL unlock, block_valid, cursor update) so PoC parity stays easy to reason
-    // about across chains.
+    // Intentional PoC duplication with host-listener ingest semantics from
+    // `host-listener/src/database/tfhe_event_propagate.rs`:
+    // 1) computation insert contract (`computations`)
+    // 2) ACL unlock flow (`allowed_handles` + `pbs_computations`)
+    // 3) block/cursor persistence (`host_chain_blocks_valid`, poller state)
+    // Keep these in sync to preserve cross-chain behavior parity.
     envelope.validate()?;
 
     let schedule_order = compute_schedule_order(
