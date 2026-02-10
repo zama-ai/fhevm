@@ -3,7 +3,14 @@
 
 [advisories]
 # The ignored vulnerability RUSTSEC-2024-0388 is due to sqlx-mysql which is not used
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2025-0111"]
+ignore = [
+    "RUSTSEC-2023-0071",
+    "RUSTSEC-2025-0111",
+    # Introduced transitively by Solana client stack used in solana-listener PoC tests.
+    # Track removal when upstream Solana crates move off these versions.
+    "RUSTSEC-2022-0093",
+    "RUSTSEC-2024-0344",
+]
 # RUSTSEC-2025-0111 impacts only testcontainers
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
