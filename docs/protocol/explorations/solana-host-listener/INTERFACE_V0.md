@@ -2,7 +2,7 @@
 
 Date: 2026-02-09
 Last synced: 2026-02-10
-Status: Frozen baseline (`add`, `allow`) + active full-op extension (`all TFHE symbolic ops`)
+Status: Active full-op interface (v0.1)
 
 ## Goal
 
@@ -59,6 +59,7 @@ For PoC Track 1 we allow two emission modes with identical event payload semanti
 
 1. `emit!` (event encoded in program logs / `Program data:` lines)
 2. `emit_cpi!` (event encoded in CPI instruction data)
+3. `msg!` is non-typed debug logging only and not part of canonical ingest contract.
 
 Listener mapping and DB effects must remain strictly identical between both modes.
 

@@ -53,7 +53,7 @@ Current expectation: Path B is lower risk for fast learning.
 
 We implement in this order:
 
-1. Minimal Solana host program surface (`request_add`, `request_sub`, `allow`).
+1. Solana host program interface for full symbolic op surface + `allow` (with `emit!` and `emit_cpi!` variants).
 2. Freeze IDL/event contract consumed by listener.
 3. Build `solana-listener` against that contract.
 4. Validate replay/idempotency with restart tests.
@@ -65,7 +65,7 @@ Reason: the program/IDL is the equivalent of EVM event ABI and defines what list
 ```mermaid
 flowchart LR
   U["PoC client tx"] --> V["solana-test-validator"]
-  V --> H["Solana host program (request_add, request_sub, allow)"]
+  V --> H["Solana host program (full symbolic ops + allow)"]
   H --> L["confirmed logs (optional hints)"]
   H --> P["finalized logs/events (canonical)"]
   L --> S["solana-listener"]
@@ -89,7 +89,7 @@ flowchart LR
 - tests for mapping/replay/idempotency
 
 2. Solana PoC program workspace (Anchor, minimal)
-- instructions: `request_add`, `request_sub`, `allow` (+ `*_cpi` variants)
+- instructions: full symbolic op surface + `allow` (+ `*_cpi` variants)
 - events/log contract for listener reads
 - IDL committed and versioned for listener contract
 
@@ -127,7 +127,7 @@ Question: Can finalized RPC logs/events provide deterministic replay and zero-lo
 
 Validation target:
 
-- Parse/map `request_add` + `allow`.
+- Parse/map full symbolic op surface + `allow`.
 - Persist via canonical DB rows with idempotent replay.
 - Prove one local end-to-end pass.
 
@@ -172,7 +172,7 @@ A run is valid only if all 5 steps are reproducible with documented commands.
 
 ## Execution Plan
 
-1. Freeze v0.1 interface in Anchor (`request_add`, `request_sub`, `allow`) and export IDL.
+1. Freeze v0.1 interface in Anchor (full symbolic op surface + `allow`) and export IDL.
 2. Define canonical listener structs and exact DB mapping (1:1 parity for v0).
 3. Implement `solana-listener` finalized RPC log poller + DB ingest path.
 4. Add hint path (confirmed logs) to reduce latency without changing canonical commit source.

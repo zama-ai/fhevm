@@ -25,7 +25,8 @@ flowchart TD
   E7 --> E8["Experiment 8: reproducible Tier-3 e2e run protocol"]
   E8 --> E9["Experiment 9: first non-ADD op parity (SUB)"]
   E9 --> E10["Experiment 10: full TFHE op-surface listener parity"]
-  E10 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
+  E10 --> E11["Experiment 11: host program simplification (KISS/YAGNI)"]
+  E11 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
 ```
 
 ## Current Facts (confirmed)
@@ -43,6 +44,8 @@ flowchart TD
 11. Tier-3 e2e runs now have a dedicated script entrypoint (`solana-poc-tier3-e2e.sh`) with explicit prerequisites and deterministic case selection.
 12. Operation parity expansion started with `SUB` in Solana listener decode + ingest mapping (same DB contract as `ADD`).
 13. Solana host/listener now supports full TFHE symbolic op surface at interface + decode + ingest mapping layers (`binary`, `unary`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`).
+14. Solana host program layout has been normalized to `/Users/work/.codex/worktrees/66ae/fhevm/solana/host-programs/zama-host` (no `v0` naming in folders/types).
+15. Host program logic is now single-sourced across `emit!` and `emit_cpi!` entrypoints (shared implementation helpers; no behavior split per mode).
 
 ## Open Questions
 
@@ -268,6 +271,18 @@ Notes:
 - Ingest mapping now converts all supported op events into canonical `computations` rows with operation-specific dependency encoding aligned with EVM ingestion semantics.
 - Unit test coverage added for new decoder and ingest mappings; existing Tier-3 `request_add` e2e sanity remains green after extension.
 
+### Experiment 11: Host program simplification (KISS/YAGNI)
+
+Date: 2026-02-10
+Objective: Remove avoidable duplication and naming noise while preserving PoC behavior.
+Result: Completed.
+Confidence: High
+Notes:
+
+- Renamed program workspace/layout and removed version suffixes in Solana naming (`host-programs/zama-host`, event/type names without `V0`/`V1`).
+- Refactored host program to keep one shared implementation per operation and thin emission wrappers for `emit!` vs `emit_cpi!`.
+- No DB contract change and no listener semantic drift; this was maintainability-only cleanup.
+
 ### D3
 
 Date: 2026-02-09
@@ -301,6 +316,13 @@ Status: Superseded by D10 after baseline validation.
 Date: 2026-02-10
 Decision: Extend Solana host/listener interface to full symbolic TFHE op surface using typed generic op events while preserving canonical DB contract and existing `add/sub/allow` compatibility.
 Why: execute the parity expansion track without refactoring shared downstream worker/scheduler path, and keep the event-to-DB boundary explicit.
+Status: Active.
+
+### D11
+
+Date: 2026-02-10
+Decision: Keep both emission modes in PoC surface, but remove duplicated operation logic behind those entrypoints.
+Why: preserves the comparison axis (`emit!` vs `emit_cpi!`) without paying a maintenance penalty in host-program code.
 Status: Active.
 
 ### D7

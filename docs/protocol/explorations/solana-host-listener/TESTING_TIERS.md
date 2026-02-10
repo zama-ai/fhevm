@@ -45,12 +45,13 @@ Command:
 
 ```bash
 cd /Users/work/.codex/worktrees/66ae/fhevm/solana/host-programs
+anchor build
 cargo test -p zama_host --test mollusk_smoke
 ```
 
 Notes:
 
-1. `request_add` smoke test is active and passing.
+1. `request_add` smoke test is active and passing once program ELF exists (`target/deploy/zama_host.so`).
 2. `request_add_cpi` Mollusk case is currently ignored due current harness self-CPI limitation (`UnsupportedProgramId`); `emit_cpi!` is validated in Tier 2 localnet instead.
 
 ## T0: Fast Mapping Loop
