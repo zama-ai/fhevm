@@ -282,6 +282,7 @@ async fn upload_ciphertexts(
                 operation = "ct128_upload_s3",
                 ct_type = "ct128",
                 format = %format_as_str,
+                len = ct128_bytes.len(),
             );
             ct128_upload_span.set_parent(task.otel.context().clone());
 
@@ -354,7 +355,8 @@ async fn upload_ciphertexts(
             let ct64_upload_span = tracing::info_span!(
                 "ct64_upload_s3",
                 operation = "ct64_upload_s3",
-                ct_type = "ct64"
+                ct_type = "ct64",
+                len = ct64_compressed.len(),
             );
             ct64_upload_span.set_parent(task.otel.context().clone());
 

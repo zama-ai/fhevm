@@ -589,6 +589,7 @@ fn compute_task(
         ct_type = %ct_type,
         operation = "squash_noise"
     );
+    squash_span.set_parent(task.otel.context().clone());
     let _squash_enter = squash_span.enter();
 
     match ct.squash_noise_and_serialize(enable_compression) {
@@ -619,6 +620,13 @@ fn compute_task(
                 .try_send(UploadJob::Normal(task.clone()))
                 .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
             {
+                let send_task_span = tracing::error_span!("send_task", operation = "send_task");
+                send_task_span.set_parent(task.otel.context().clone());
+                let _send_task_enter = send_task_span.enter();
+                send_task_span
+                    .context()
+                    .span()
+                    .set_status(Status::error(err.to_string()));
                 // This could happen if either we are experiencing a burst of tasks
                 // or the upload worker cannot recover the connection to AWS S3
                 //
@@ -628,14 +636,7 @@ fn compute_task(
                 // 1. The spawned uploading tasks (size: conf.max_concurrent_uploads)
                 // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
                 // 3. The PostgresDB (size: unlimited)
-
                 error!({ action = "review", error = %err }, "Failed to send task to upload worker");
-                let send_task_span = tracing::error_span!("send_task", operation = "send_task");
-                send_task_span.set_parent(task.otel.context().clone());
-                send_task_span
-                    .context()
-                    .span()
-                    .set_status(Status::error(err.to_string()));
             }
 
             let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -644,6 +645,10 @@ fn compute_task(
             }
         }
         Err(err) => {
+            squash_span
+                .context()
+                .span()
+                .set_status(Status::error(err.to_string()));
             error!({ handle = handle, error = %err }, "Failed to convert ct");
         }
     };
