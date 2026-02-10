@@ -17,8 +17,36 @@ use std::{
 };
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub const TXN_ID_ATTR_KEY: &str = "txn_id";
+
+/// Calls provider shutdown exactly once when dropped.
+pub struct TracerProviderGuard {
+    tracer_provider: Option<SdkTracerProvider>,
+}
+
+impl TracerProviderGuard {
+    fn new(trace_provider: SdkTracerProvider) -> Self {
+        Self {
+            tracer_provider: Some(trace_provider),
+        }
+    }
+
+    fn shutdown_once(&mut self) {
+        if let Some(provider) = self.tracer_provider.take() {
+            if let Err(err) = provider.shutdown() {
+                warn!(error = %err, "Failed to shutdown OTLP tracer provider");
+            }
+        }
+    }
+}
+
+impl Drop for TracerProviderGuard {
+    fn drop(&mut self) {
+        self.shutdown_once();
+    }
+}
 
 pub static HOST_TXN_LATENCY_CONFIG: OnceLock<MetricsConfig> = OnceLock::new();
 pub(crate) static HOST_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
@@ -38,17 +66,61 @@ pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock:
     )
 });
 
-pub fn setup_otlp(
+pub fn init_otel(
     service_name: &str,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let _ = setup_otlp_tracer(service_name, "otlp-layer")?;
-    Ok(())
+) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    if service_name.is_empty() {
+        return Ok(None);
+    }
+
+    let (_tracer, trace_provider) = setup_otel_with_tracer(service_name, "otlp-layer")?;
+    opentelemetry::global::set_tracer_provider(trace_provider.clone());
+    Ok(Some(TracerProviderGuard::new(trace_provider)))
 }
 
-pub fn setup_otlp_tracer(
+pub fn init_json_subscriber(
+    log_level: tracing::Level,
     service_name: &str,
     tracer_name: &'static str,
-) -> Result<opentelemetry_sdk::trace::Tracer, Box<dyn std::error::Error + Send + Sync + 'static>> {
+) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let level_filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .json()
+        .with_target(false)
+        .with_current_span(true)
+        .with_span_list(false)
+        .with_level(true);
+    let base = tracing_subscriber::registry()
+        .with(level_filter)
+        .with(fmt_layer);
+
+    if service_name.is_empty() {
+        base.try_init()?;
+        return Ok(None);
+    }
+
+    let (tracer, trace_provider) = match setup_otel_with_tracer(service_name, tracer_name) {
+        Ok(v) => v,
+        Err(err) => {
+            // Keep JSON logs even if OTLP export cannot be initialized.
+            base.try_init()?;
+            return Err(err);
+        }
+    };
+
+    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    base.with(telemetry_layer).try_init()?;
+    opentelemetry::global::set_tracer_provider(trace_provider.clone());
+    Ok(Some(TracerProviderGuard::new(trace_provider)))
+}
+
+fn setup_otel_with_tracer(
+    service_name: &str,
+    tracer_name: &'static str,
+) -> Result<
+    (opentelemetry_sdk::trace::Tracer, SdkTracerProvider),
+    Box<dyn std::error::Error + Send + Sync + 'static>,
+> {
     let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .build()?;
@@ -66,9 +138,7 @@ pub fn setup_otlp_tracer(
         .build();
 
     let tracer = trace_provider.tracer(tracer_name);
-    opentelemetry::global::set_tracer_provider(trace_provider);
-
-    Ok(tracer)
+    Ok((tracer, trace_provider))
 }
 
 #[derive(Clone)]
@@ -525,4 +595,29 @@ pub async fn try_end_zkproof_transaction(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn otel_guard_shutdown_once_disarms_provider() {
+        let provider = SdkTracerProvider::builder().build();
+        let mut guard = TracerProviderGuard::new(provider);
+        assert!(guard.tracer_provider.is_some());
+
+        guard.shutdown_once();
+        assert!(guard.tracer_provider.is_none());
+
+        // A second shutdown is a no-op.
+        guard.shutdown_once();
+        assert!(guard.tracer_provider.is_none());
+    }
+
+    #[test]
+    fn setup_otel_empty_service_name_returns_none() {
+        let otel_guard = init_otel("").unwrap();
+        assert!(otel_guard.is_none());
+    }
 }
