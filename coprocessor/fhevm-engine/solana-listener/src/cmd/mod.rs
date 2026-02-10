@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
+use solana_pubkey::Pubkey;
 use tracing::Level;
 
 use crate::database::solana_event_propagate::Database;
@@ -29,12 +30,14 @@ pub struct Args {
     #[arg(long, env = "SOLANA_RPC_URL", default_value = "http://127.0.0.1:8899")]
     pub solana_rpc_url: String,
 
+    /// Solana host program id to ingest from. The listener only decodes
+    /// events/CPI payloads emitted by this program.
     #[arg(
         long,
         env = "SOLANA_PROGRAM_ID",
-        default_value = "Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq"
+        help = "Target Solana host program id (base58 pubkey)"
     )]
-    pub solana_program_id: String,
+    pub solana_program_id: Pubkey,
 
     #[arg(long, env = "SOLANA_START_SLOT", default_value_t = 0)]
     pub start_slot: u64,
@@ -64,7 +67,7 @@ pub async fn main(args: Args) -> Result<()> {
 
     let mut source = RpcFinalizedSource::new(
         args.solana_rpc_url.clone(),
-        args.solana_program_id.clone(),
+        args.solana_program_id.to_string(),
         args.host_chain_id,
     );
     let mut cursor = Cursor {
