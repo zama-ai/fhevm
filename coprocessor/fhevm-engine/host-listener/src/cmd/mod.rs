@@ -656,7 +656,7 @@ impl InfiniteLogIter {
         ))
     }
 
-    async fn get_missings_ancestors(
+    async fn get_missing_ancestors(
         &self,
         mut current_block: BlockSummary,
     ) -> Vec<BlockSummary> {
@@ -730,7 +730,7 @@ impl InfiniteLogIter {
         }
 
         let missing_blocks =
-            self.get_missings_ancestors(current_block_summary).await;
+            self.get_missing_ancestors(current_block_summary).await;
         if missing_blocks.is_empty() {
             // we don't add to history from which we have no event
             // e.g. at timeout, because empty blocks are not get_logs
@@ -762,7 +762,7 @@ impl InfiniteLogIter {
         // note subscribing to real-time before reading catchup
         // events to have the minimal gap between the two
         // TODO: but it does not guarantee no gap for now
-        // (implementation dependant)
+        // (implementation dependent)
         // subscribe_logs does not honor from_block and sometime not to_block
         // so we rely on catchup_blocks and end_at_block_reached
         self.stream = Some(provider.subscribe_blocks().await?.into_stream());
@@ -784,7 +784,7 @@ impl InfiniteLogIter {
         };
         let next_opt_event = stream.next();
         // it assume the eventual discard of next_opt_event is handled correctly
-        // by alloy if not the case, the recheck mecanism ensures it's
+        // by alloy if not the case, the recheck mechanism ensures it's
         // only extra latency
         match tokio::time::timeout(
             Duration::from_secs(self.block_time + 2),

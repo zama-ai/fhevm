@@ -22,7 +22,7 @@ pub enum FhevmError {
     UnknownFheType(i32),
     DeserializationError(Box<dyn std::error::Error + Sync + Send>),
     CiphertextExpansionError(tfhe::Error),
-    ReRandomisationError(tfhe::Error),
+    ReRandomizationError(tfhe::Error),
     CiphertextCompressionError(tfhe::Error),
     CiphertextCompressionRequiresEmptyCarries,
     CiphertextCompressionPanic {
@@ -156,8 +156,8 @@ impl std::fmt::Display for FhevmError {
             Self::CiphertextExpansionError(e) => {
                 write!(f, "error expanding compact ciphertext list: {:?}", e)
             }
-            Self::ReRandomisationError(e) => {
-                write!(f, "error re-randomising ciphertext: {:?}", e)
+            Self::ReRandomizationError(e) => {
+                write!(f, "error re-randomizing ciphertext: {:?}", e)
             }
             Self::CiphertextCompressionError(e) => {
                 write!(f, "error compressing ciphertext: {:?}", e)
@@ -611,7 +611,7 @@ impl SupportedFheCiphertexts {
     }
 
     // Decompress without checking if enough GPU memory is available -
-    // used when GPU featre is active, but decompressing on CPU
+    // used when GPU feature is active, but decompressing on CPU
     pub fn decompress_no_memcheck(ct_type: i16, list: &[u8]) -> Result<Self> {
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
         Self::decompress_impl(ct_type, &ctlist)
@@ -780,7 +780,7 @@ impl SupportedFheCiphertexts {
             }
         };
     }
-    pub fn re_randomise(
+    pub fn re_randomize(
         &mut self,
         cpk: &CompactPublicKey,
         seed: ReRandomizationSeed,
@@ -788,51 +788,51 @@ impl SupportedFheCiphertexts {
         match self {
             SupportedFheCiphertexts::FheBool(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::FheUint4(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::FheUint8(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::FheUint16(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::FheUint32(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::FheUint64(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::FheUint128(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::FheUint160(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::FheUint256(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::FheBytes64(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::FheBytes128(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::FheBytes256(c) => {
                 c.re_randomize(cpk, seed)
-                    .map_err(FhevmError::ReRandomisationError)?;
+                    .map_err(FhevmError::ReRandomizationError)?;
             }
             SupportedFheCiphertexts::Scalar(_s) => {
                 // Do nothing
