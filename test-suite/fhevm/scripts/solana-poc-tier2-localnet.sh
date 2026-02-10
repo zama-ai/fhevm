@@ -20,6 +20,7 @@ SOLANA_PROGRAM_DIR="${REPO_ROOT}/solana/host-program-v0"
 LISTENER_DIR="${REPO_ROOT}/coprocessor/fhevm-engine"
 LEDGER_DIR="${REPO_ROOT}/.solana-ledger-poc"
 VALIDATOR_LOG="${REPO_ROOT}/.solana-validator-poc.log"
+SQLX_OFFLINE="${SQLX_OFFLINE:-true}"
 
 EVENT_MODE="emit"
 
@@ -60,7 +61,7 @@ log_info "Tier 2 localnet scaffold start (event mode: $EVENT_MODE)"
 log_info "Step 1/4: run Tier 0 listener mapping tests"
 (
     cd "$LISTENER_DIR"
-    cargo test -p solana-listener database::ingest::tests
+    SQLX_OFFLINE="$SQLX_OFFLINE" cargo test -p solana-listener database::ingest::tests
 )
 
 log_info "Step 2/4: build local Anchor host program"
@@ -83,7 +84,7 @@ log_info "solana-test-validator is running (pid: $VALIDATOR_PID)"
 log_info "Step 4/4: run finalized RPC source parser tests"
 (
     cd "$LISTENER_DIR"
-    cargo test -p solana-listener poller::rpc_source::tests
+    SQLX_OFFLINE="$SQLX_OFFLINE" cargo test -p solana-listener poller::solana_rpc_source::tests
 )
 
 log_info "Scaffold completed successfully."

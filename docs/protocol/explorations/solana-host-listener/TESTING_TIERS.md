@@ -128,7 +128,10 @@ Command:
 
 ```bash
 cd /Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine
-cargo test -p solana-listener --test localnet_harness_integration -- --ignored --nocapture
+SQLX_OFFLINE=true cargo test -p solana-listener \
+  --features solana-e2e \
+  --test localnet_harness_integration \
+  -- --ignored --nocapture --test-threads=1
 ```
 
 Notes:
@@ -156,6 +159,16 @@ Additional tests:
 1. `localnet_solana_request_add_cpi_computes_and_decrypts`
 2. `localnet_acl_gate_blocks_then_allows_compute`
 
+Runner script:
+
+`/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`
+
+Example:
+
+```bash
+/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all
+```
+
 Coverage:
 
 1. Seeds tenant keys in DB.
@@ -164,6 +177,7 @@ Coverage:
 4. Asserts worker completes the queued computation and writes output ciphertext.
 5. Decrypts output handle and asserts expected plaintext value.
 6. ACL gate behavior: without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
+7. This tier is currently non-CI by default (heavy Docker/Anchor/tooling prerequisites); run locally before merge when touching Solana host/listener e2e behavior.
 
 ## Hard Gates
 
