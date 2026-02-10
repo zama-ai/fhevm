@@ -14,8 +14,8 @@ use serial_test::serial;
 use solana_client::rpc_client::RpcClient;
 use solana_listener::database::ingest::map_envelope_to_actions;
 use solana_listener::database::solana_event_propagate::Database;
-use solana_listener::poller::rpc_source::RpcFinalizedSource;
-use solana_listener::poller::{Cursor, FinalizedEventSource};
+use solana_listener::poller::solana_rpc_source::SolanaRpcEventSource;
+use solana_listener::poller::{Cursor, EventSource};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::hash::hash;
 use solana_sdk::instruction::{AccountMeta, Instruction};
@@ -810,7 +810,7 @@ fn send_instruction(
 }
 
 async fn ingest_from_cursor(
-    source: &mut RpcFinalizedSource,
+    source: &mut SolanaRpcEventSource,
     db: &mut Database,
     tenant_id: i32,
     start_cursor: Cursor,
@@ -945,7 +945,7 @@ async fn localnet_source_maps_real_events_into_db() -> anyhow::Result<()> {
         "submitted finalized test transactions"
     );
 
-    let mut source = RpcFinalizedSource::new(
+    let mut source = SolanaRpcEventSource::new(
         localnet.solana.rpc_url.clone(),
         SOLANA_PROGRAM_ID_STR,
         HOST_CHAIN_ID,
@@ -1105,7 +1105,7 @@ async fn localnet_emit_and_emit_cpi_are_equivalent_and_replay_idempotent() -> an
             "submitted mode transactions"
         );
 
-        let mut source = RpcFinalizedSource::new(
+        let mut source = SolanaRpcEventSource::new(
             localnet.solana.rpc_url.clone(),
             SOLANA_PROGRAM_ID_STR,
             HOST_CHAIN_ID,
@@ -1135,7 +1135,7 @@ async fn localnet_emit_and_emit_cpi_are_equivalent_and_replay_idempotent() -> an
             reference_summary = Some(first_pass);
         }
 
-        let mut replay_source = RpcFinalizedSource::new(
+        let mut replay_source = SolanaRpcEventSource::new(
             localnet.solana.rpc_url.clone(),
             SOLANA_PROGRAM_ID_STR,
             HOST_CHAIN_ID,
@@ -1229,7 +1229,7 @@ async fn localnet_solana_request_add_computes_and_decrypts() -> anyhow::Result<(
         ),
     )?;
 
-    let mut source = RpcFinalizedSource::new(
+    let mut source = SolanaRpcEventSource::new(
         harness.localnet.solana.rpc_url.clone(),
         SOLANA_PROGRAM_ID_STR,
         HOST_CHAIN_ID,
@@ -1301,7 +1301,7 @@ async fn localnet_solana_request_add_cpi_computes_and_decrypts() -> anyhow::Resu
         ),
     )?;
 
-    let mut source = RpcFinalizedSource::new(
+    let mut source = SolanaRpcEventSource::new(
         harness.localnet.solana.rpc_url.clone(),
         SOLANA_PROGRAM_ID_STR,
         HOST_CHAIN_ID,
@@ -1362,7 +1362,7 @@ async fn localnet_acl_gate_blocks_then_allows_compute() -> anyhow::Result<()> {
         ),
     )?;
 
-    let mut source = RpcFinalizedSource::new(
+    let mut source = SolanaRpcEventSource::new(
         harness.localnet.solana.rpc_url.clone(),
         SOLANA_PROGRAM_ID_STR,
         HOST_CHAIN_ID,
@@ -1398,7 +1398,7 @@ async fn localnet_acl_gate_blocks_then_allows_compute() -> anyhow::Result<()> {
         ),
     )?;
 
-    let mut replay_source = RpcFinalizedSource::new(
+    let mut replay_source = SolanaRpcEventSource::new(
         harness.localnet.solana.rpc_url.clone(),
         SOLANA_PROGRAM_ID_STR,
         HOST_CHAIN_ID,

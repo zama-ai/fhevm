@@ -29,9 +29,10 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 hex = { workspace = true }
+sha3 = { workspace = true }
 solana-pubkey = { version = "2.3.1", features = ["serde"] }
-solana-client = { version = "2.2.1", optional = true }
-solana-sdk = { version = "2.2.1", optional = true }
+solana-client = { version = "3.1.8", optional = true }
+solana-sdk = { version = "3.0.0", optional = true }
 
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 

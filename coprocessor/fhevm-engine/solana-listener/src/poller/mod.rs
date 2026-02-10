@@ -9,7 +9,7 @@ use crate::contracts::FinalizedEventEnvelope;
 use crate::database::ingest::map_envelope_to_actions;
 use crate::database::solana_event_propagate::Database;
 
-pub mod rpc_source;
+pub mod solana_rpc_source;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Cursor {
@@ -41,7 +41,7 @@ impl SourceBatch {
 }
 
 #[async_trait]
-pub trait FinalizedEventSource {
+pub trait EventSource {
     async fn next_batch(
         &mut self,
         cursor: Cursor,
@@ -54,7 +54,7 @@ fn cursor_is_ahead(a: Cursor, b: Cursor) -> bool {
     (a.slot, a.tx_index, a.op_index) > (b.slot, b.tx_index, b.op_index)
 }
 
-pub async fn run_poller<S: FinalizedEventSource>(
+pub async fn run_poller<S: EventSource>(
     config: &PollerConfig,
     source: &mut S,
     store: &mut Database,

@@ -7,20 +7,23 @@ use solana_pubkey::Pubkey;
 use tracing::{debug, warn};
 
 use crate::contracts::{FinalizedEventEnvelope, HandleBytes, ProgramEventV0, INTERFACE_V0_VERSION};
-use crate::poller::{Cursor, FinalizedEventSource, SourceBatch};
+use crate::poller::{Cursor, EventSource, SourceBatch};
 
 const OP_REQUESTED_ADD_DISC: [u8; 8] = [0xA2, 0xBA, 0x5F, 0xF4, 0xD7, 0xB8, 0x1C, 0xF8];
 const HANDLE_ALLOWED_DISC: [u8; 8] = [0xCA, 0x41, 0x12, 0x1D, 0xF9, 0x39, 0x93, 0xEF];
+// Temporary manual decode table for PoC events.
+// TODO(zama-solana): replace this with IDL-driven decoding/codegen once we
+// freeze the host program event schema.
 
 #[derive(Clone)]
-pub struct RpcFinalizedSource {
+pub struct SolanaRpcEventSource {
     client: Client,
     rpc_url: String,
     program_id: String,
     host_chain_id: i64,
 }
 
-impl RpcFinalizedSource {
+impl SolanaRpcEventSource {
     pub fn new(
         rpc_url: impl Into<String>,
         program_id: impl Into<String>,
@@ -138,7 +141,7 @@ fn should_skip_event(slot: u64, tx_index: u32, op_index: u16, cursor: Cursor) ->
 }
 
 #[async_trait]
-impl FinalizedEventSource for RpcFinalizedSource {
+impl EventSource for SolanaRpcEventSource {
     async fn next_batch(
         &mut self,
         cursor: Cursor,
@@ -161,6 +164,8 @@ impl FinalizedEventSource for RpcFinalizedSource {
         }
 
         let mut events = Vec::new();
+        let mut scanned_transactions = 0usize;
+        let mut candidate_transactions = 0usize;
         let mut next_cursor = cursor;
 
         for slot in from_slot..=safe_tip {
@@ -185,6 +190,7 @@ impl FinalizedEventSource for RpcFinalizedSource {
 
             let mut slot_fully_consumed = true;
             for (tx_index, tx) in transactions.iter().enumerate() {
+                scanned_transactions += 1;
                 let tx_index = tx_index as u32;
                 if events.len() >= max_batch_size {
                     slot_fully_consumed = false;
@@ -201,6 +207,14 @@ impl FinalizedEventSource for RpcFinalizedSource {
                 {
                     continue;
                 }
+                let account_keys = extract_account_keys(tx);
+                if !account_keys
+                    .iter()
+                    .any(|account| account == &self.program_id)
+                {
+                    continue;
+                }
+                candidate_transactions += 1;
 
                 let Some(signature_str) = tx
                     .get("transaction")
@@ -235,6 +249,7 @@ impl FinalizedEventSource for RpcFinalizedSource {
                 decoded_events.extend(decode_program_events_from_inner_instructions(
                     tx,
                     &self.program_id,
+                    &account_keys,
                 ));
 
                 for (op_index, event) in decoded_events.into_iter().enumerate() {
@@ -280,6 +295,8 @@ impl FinalizedEventSource for RpcFinalizedSource {
         debug!(
             from_slot,
             safe_tip,
+            scanned_transactions,
+            candidate_transactions,
             event_count = events.len(),
             next_slot = next_cursor.slot,
             next_tx_index = next_cursor.tx_index,
@@ -334,9 +351,9 @@ fn decode_program_events_from_logs(logs: &[&str], program_id: &str) -> Vec<Progr
 fn decode_program_events_from_inner_instructions(
     tx: &Value,
     program_id: &str,
+    account_keys: &[String],
 ) -> Vec<ProgramEventV0> {
     let mut events = Vec::new();
-    let account_keys = extract_account_keys(tx);
 
     let Some(inner_sets) = tx
         .get("meta")
@@ -352,7 +369,7 @@ fn decode_program_events_from_inner_instructions(
         };
 
         for ix in instructions {
-            let Some(ix_program_id) = extract_instruction_program_id(ix, &account_keys) else {
+            let Some(ix_program_id) = extract_instruction_program_id(ix, account_keys) else {
                 continue;
             };
             if ix_program_id != program_id {
@@ -564,7 +581,9 @@ mod tests {
             }
         });
 
-        let events = decode_program_events_from_inner_instructions(&tx, TARGET_PROGRAM);
+        let account_keys = extract_account_keys(&tx);
+        let events =
+            decode_program_events_from_inner_instructions(&tx, TARGET_PROGRAM, &account_keys);
         assert_eq!(events.len(), 1);
         match &events[0] {
             ProgramEventV0::OpRequestedAddV1 {

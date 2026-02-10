@@ -1,7 +1,6 @@
-use std::cmp::min;
-
 use anyhow::Result;
 use fhevm_engine_common::types::{AllowEvents, SupportedFheOperations};
+use sha3::{Digest, Keccak256};
 use time::{Duration, OffsetDateTime, PrimitiveDateTime};
 
 use crate::contracts::{FinalizedEventEnvelope, ProgramEventV0};
@@ -146,10 +145,9 @@ pub fn compute_schedule_order(
 }
 
 fn dependence_chain_from_signature(tx_signature: &[u8]) -> Vec<u8> {
-    let mut chain = vec![0u8; 32];
-    let limit = min(chain.len(), tx_signature.len());
-    chain[..limit].copy_from_slice(&tx_signature[..limit]);
-    chain
+    // Keep one deterministic chain id per transaction while preserving fixed
+    // 32-byte shape expected by existing DB semantics.
+    Keccak256::digest(tx_signature).to_vec()
 }
 
 fn pseudo_block_hash_from_slot(slot: u64) -> Vec<u8> {
@@ -199,6 +197,11 @@ mod tests {
         assert_eq!(computation.fhe_operation, 0);
         assert!(computation.is_scalar);
         assert_eq!(computation.dependencies.len(), 2);
+        assert_eq!(computation.dependence_chain_id.len(), 32);
+        assert_eq!(
+            computation.dependence_chain_id,
+            Keccak256::digest(fixed_sig()).to_vec()
+        );
         assert!(!computation.is_allowed);
     }
 

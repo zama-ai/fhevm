@@ -6,7 +6,7 @@ use solana_pubkey::Pubkey;
 use tracing::Level;
 
 use crate::database::solana_event_propagate::Database;
-use crate::poller::rpc_source::RpcFinalizedSource;
+use crate::poller::solana_rpc_source::SolanaRpcEventSource;
 use crate::poller::{Cursor, PollerConfig};
 
 #[derive(Parser, Debug, Clone)]
@@ -65,7 +65,7 @@ pub async fn main(args: Args) -> Result<()> {
         finalized_only: args.finalized_only,
     };
 
-    let mut source = RpcFinalizedSource::new(
+    let mut source = SolanaRpcEventSource::new(
         args.solana_rpc_url.clone(),
         args.solana_program_id.to_string(),
         args.host_chain_id,
