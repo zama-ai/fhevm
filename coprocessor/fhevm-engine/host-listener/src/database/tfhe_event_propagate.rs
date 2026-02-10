@@ -11,7 +11,6 @@ use fhevm_engine_common::types::SchedulePriority;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
-use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
@@ -19,7 +18,6 @@ use sqlx::{PgPool, Postgres};
 use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
-use std::sync::LazyLock;
 use std::time::Duration;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
@@ -39,24 +37,6 @@ pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
 pub type ChainHash = TransactionHash;
-
-static DEPENDENT_OPS_ALLOWED: LazyLock<IntCounterVec> = LazyLock::new(|| {
-    register_int_counter_vec!(
-        "host_listener_dependent_ops_allowed",
-        "Number of dependent ops allowed by the limiter",
-        &["chain_id"]
-    )
-    .unwrap()
-});
-
-static DEPENDENT_OPS_THROTTLED: LazyLock<IntCounterVec> = LazyLock::new(|| {
-    register_int_counter_vec!(
-        "host_listener_dependent_ops_throttled",
-        "Number of dependent ops deferred by the limiter",
-        &["chain_id"]
-    )
-    .unwrap()
-});
 
 #[derive(Clone, Debug)]
 pub struct Chain {
@@ -109,7 +89,6 @@ pub struct Database {
     url: DatabaseURL,
     pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
     pub chain_id: ChainId,
-    chain_id_label: String,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
 }
@@ -144,28 +123,10 @@ impl Database {
         Ok(Database {
             url: url.clone(),
             chain_id,
-            chain_id_label: chain_id.to_string(),
             pool: Arc::new(RwLock::new(pool)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
         })
-    }
-
-    pub(crate) fn record_dependent_ops_metrics(
-        &self,
-        allowed: u64,
-        throttled: u64,
-    ) {
-        if allowed > 0 {
-            DEPENDENT_OPS_ALLOWED
-                .with_label_values(&[self.chain_id_label.as_str()])
-                .inc_by(allowed);
-        }
-        if throttled > 0 {
-            DEPENDENT_OPS_THROTTLED
-                .with_label_values(&[self.chain_id_label.as_str()])
-                .inc_by(throttled);
-        }
     }
 
     pub async fn promote_seen_dep_chains_to_fast_priority(
