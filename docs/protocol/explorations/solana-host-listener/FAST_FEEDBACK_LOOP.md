@@ -128,7 +128,7 @@ PoC baseline source:
 
 - canonical: finalized RPC logs/events + durable cursor replay
 - optional fast hints: confirmed websocket logs (wake-up only)
-- event encoding variants to compare: `emit!` vs `emit_cpi!`
+- active event encoding: `emit!`
 
 Rationale:
 
@@ -145,7 +145,7 @@ Every L2 run must output:
 2. derived `handle` (hex/base58 + raw 32 bytes)
 3. ingestion summary (`inserted_computations`, `inserted_allowed`, `inserted_blocks`)
 4. replay summary (`replayed_events`, `new_rows=0`)
-5. event mode summary (`emit` or `emit_cpi`)
+5. event mode summary (`emit`)
 
 If any of these are missing, the run is not considered valid.
 
@@ -155,12 +155,11 @@ If any of these are missing, the run is not considered valid.
 2. Start `solana-test-validator`.
 3. Deploy/start minimal symbolic host program.
 4. Start `solana-listener` in verbose mode.
-5. Submit one request tx (`add` or `sub`) using event mode A (`emit!`).
+5. Submit one request tx (`add` or `sub`) using `emit!`.
 6. Query DB assertions.
-7. Repeat with event mode B (`emit_cpi!`).
-8. Restart listener.
-9. Re-run ingestion/backfill.
-10. Re-check DB for idempotency.
+7. Restart listener.
+8. Re-run ingestion/backfill.
+9. Re-check DB for idempotency.
 
 ## What We Explicitly Defer
 
@@ -181,9 +180,9 @@ If any of these are missing, the run is not considered valid.
 Current checkpoint:
 
 1. finalized RPC ingestion + DB assertions: validated
-2. `emit!` vs `emit_cpi!` DB-contract equivalence: validated
+2. `emit!` DB-contract mapping: validated
 3. replay idempotency (`new_rows=0`): validated
-4. worker e2e compute + decrypt sanity (`emit!` and `emit_cpi!`): validated
+4. worker e2e compute + decrypt sanity (`emit!`): validated
 5. ACL gate behavior (`request_add` blocked until `allow`): validated
 6. first non-ADD op mapping (`request_sub` -> `FheSub`) validated at listener decode+ingest layer
 7. full TFHE op-surface mapping (`binary`, `unary`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`) validated at listener decode+ingest unit-test layer
@@ -196,7 +195,7 @@ Current checkpoint:
 4. Replay/idempotency: restarting listener and reprocessing the same finalized range inserts `0` new canonical rows.
 5. Finality safety: canonical ingestion/cursor advancement only from finalized data; confirmed/log stream is hint-only.
 6. Scope discipline: no required refactor/regression in existing EVM listener path.
-7. Event mode comparison: same payload semantics and DB effects for `emit!` and `emit_cpi!`.
+7. Event mode (current scope): `emit!` with deterministic replay/idempotency.
 
 ## Deferred State-Cost Experiments
 

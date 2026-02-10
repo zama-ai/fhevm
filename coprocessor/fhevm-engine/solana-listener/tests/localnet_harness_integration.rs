@@ -48,12 +48,6 @@ const EQUIVALENCE_TENANT_ID: i32 = 2;
 const OP_ADD: u8 = 0;
 const OP_SUB: u8 = 1;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum EmitMode {
-    Log,
-    Cpi,
-}
-
 #[derive(Default, Debug)]
 struct IngestionSummary {
     processed_events: usize,
@@ -733,70 +727,6 @@ fn anchor_global_discriminator(name: &str) -> [u8; 8] {
     out
 }
 
-fn event_authority(program_id: &Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[b"__event_authority"], program_id).0
-}
-
-fn build_request_add_instruction_for_mode(
-    mode: EmitMode,
-    program_id: Pubkey,
-    signer: Pubkey,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    is_scalar: bool,
-) -> Instruction {
-    match mode {
-        EmitMode::Log => build_request_add_instruction(program_id, signer, lhs, rhs, is_scalar),
-        EmitMode::Cpi => {
-            let mut data = Vec::with_capacity(8 + 32 + 32 + 1);
-            data.extend_from_slice(&anchor_global_discriminator("request_add_cpi"));
-            data.extend_from_slice(&lhs);
-            data.extend_from_slice(&rhs);
-            data.push(u8::from(is_scalar));
-            let event_authority = event_authority(&program_id);
-            Instruction {
-                program_id,
-                accounts: vec![
-                    AccountMeta::new(signer, true),
-                    AccountMeta::new_readonly(event_authority, false),
-                    AccountMeta::new_readonly(program_id, false),
-                ],
-                data,
-            }
-        }
-    }
-}
-
-fn build_request_sub_instruction_for_mode(
-    mode: EmitMode,
-    program_id: Pubkey,
-    signer: Pubkey,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    is_scalar: bool,
-) -> Instruction {
-    match mode {
-        EmitMode::Log => build_request_sub_instruction(program_id, signer, lhs, rhs, is_scalar),
-        EmitMode::Cpi => {
-            let mut data = Vec::with_capacity(8 + 32 + 32 + 1);
-            data.extend_from_slice(&anchor_global_discriminator("request_sub_cpi"));
-            data.extend_from_slice(&lhs);
-            data.extend_from_slice(&rhs);
-            data.push(u8::from(is_scalar));
-            let event_authority = event_authority(&program_id);
-            Instruction {
-                program_id,
-                accounts: vec![
-                    AccountMeta::new(signer, true),
-                    AccountMeta::new_readonly(event_authority, false),
-                    AccountMeta::new_readonly(program_id, false),
-                ],
-                data,
-            }
-        }
-    }
-}
-
 fn build_allow_instruction(
     program_id: Pubkey,
     signer: Pubkey,
@@ -811,34 +741,6 @@ fn build_allow_instruction(
         program_id,
         accounts: vec![AccountMeta::new(signer, true)],
         data,
-    }
-}
-
-fn build_allow_instruction_for_mode(
-    mode: EmitMode,
-    program_id: Pubkey,
-    signer: Pubkey,
-    handle: [u8; 32],
-    account: Pubkey,
-) -> Instruction {
-    match mode {
-        EmitMode::Log => build_allow_instruction(program_id, signer, handle, account),
-        EmitMode::Cpi => {
-            let mut data = Vec::with_capacity(8 + 32 + 32);
-            data.extend_from_slice(&anchor_global_discriminator("allow_cpi"));
-            data.extend_from_slice(&handle);
-            data.extend_from_slice(account.as_ref());
-            let event_authority = event_authority(&program_id);
-            Instruction {
-                program_id,
-                accounts: vec![
-                    AccountMeta::new(signer, true),
-                    AccountMeta::new_readonly(event_authority, false),
-                    AccountMeta::new_readonly(program_id, false),
-                ],
-                data,
-            }
-        }
     }
 }
 
@@ -1148,104 +1050,73 @@ async fn localnet_source_maps_real_events_into_db() -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 #[ignore = "requires Docker daemon, Solana image, and anchor binary"]
-async fn localnet_emit_and_emit_cpi_are_equivalent_and_replay_idempotent() -> anyhow::Result<()> {
+async fn localnet_emit_replay_is_idempotent() -> anyhow::Result<()> {
     let pg = start_postgres_with_migrations().await?;
     let localnet = start_localnet_client_with_program().await?;
     let allowed_account = Pubkey::new_unique();
     let mut db = Database::connect(&pg.db_url, HOST_CHAIN_ID, EQUIVALENCE_TENANT_ID).await?;
+    let lhs = [17u8; 32];
+    let rhs = [31u8; 32];
+    let is_scalar = true;
+    let result_handle = derive_add_result_handle(lhs, rhs, is_scalar);
+    let start_cursor = finalized_cursor(&localnet.rpc_client)?;
 
-    let mut reference_summary: Option<IngestionSummary> = None;
-    for mode in [EmitMode::Log, EmitMode::Cpi] {
-        let lhs = match mode {
-            EmitMode::Log => [17u8; 32],
-            EmitMode::Cpi => [23u8; 32],
-        };
-        let rhs = match mode {
-            EmitMode::Log => [31u8; 32],
-            EmitMode::Cpi => [29u8; 32],
-        };
-        let is_scalar = true;
-        let result_handle = derive_add_result_handle(lhs, rhs, is_scalar);
-        let start_cursor = finalized_cursor(&localnet.rpc_client)?;
+    let request_add_sig = send_instruction(
+        &localnet.rpc_client,
+        &localnet.payer,
+        build_request_add_instruction(
+            localnet.program_id,
+            localnet.payer.pubkey(),
+            lhs,
+            rhs,
+            is_scalar,
+        ),
+    )?;
+    let allow_sig = send_instruction(
+        &localnet.rpc_client,
+        &localnet.payer,
+        build_allow_instruction(
+            localnet.program_id,
+            localnet.payer.pubkey(),
+            result_handle,
+            allowed_account,
+        ),
+    )?;
+    info!(
+        request_add_signature = %request_add_sig,
+        allow_signature = %allow_sig,
+        "submitted transactions"
+    );
 
-        let request_add_sig = send_instruction(
-            &localnet.rpc_client,
-            &localnet.payer,
-            build_request_add_instruction_for_mode(
-                mode,
-                localnet.program_id,
-                localnet.payer.pubkey(),
-                lhs,
-                rhs,
-                is_scalar,
-            ),
-        )?;
-        let allow_sig = send_instruction(
-            &localnet.rpc_client,
-            &localnet.payer,
-            build_allow_instruction_for_mode(
-                mode,
-                localnet.program_id,
-                localnet.payer.pubkey(),
-                result_handle,
-                allowed_account,
-            ),
-        )?;
-        info!(
-            ?mode,
-            request_add_signature = %request_add_sig,
-            allow_signature = %allow_sig,
-            "submitted mode transactions"
-        );
+    let mut source = SolanaRpcEventSource::new(
+        localnet.solana.rpc_url.clone(),
+        SOLANA_PROGRAM_ID_STR,
+        HOST_CHAIN_ID,
+    );
+    let (first_pass, _) =
+        ingest_from_cursor(&mut source, &mut db, EQUIVALENCE_TENANT_ID, start_cursor, 2).await?;
 
-        let mut source = SolanaRpcEventSource::new(
-            localnet.solana.rpc_url.clone(),
-            SOLANA_PROGRAM_ID_STR,
-            HOST_CHAIN_ID,
-        );
-        let (first_pass, _) =
-            ingest_from_cursor(&mut source, &mut db, EQUIVALENCE_TENANT_ID, start_cursor, 2)
-                .await?;
+    assert_eq!(first_pass.inserted_computations, 1);
+    assert_eq!(first_pass.inserted_allowed_handles, 1);
+    assert_eq!(first_pass.inserted_pbs_computations, 1);
 
-        assert_eq!(first_pass.inserted_computations, 1);
-        assert_eq!(first_pass.inserted_allowed_handles, 1);
-        assert_eq!(first_pass.inserted_pbs_computations, 1);
+    let mut replay_source = SolanaRpcEventSource::new(
+        localnet.solana.rpc_url.clone(),
+        SOLANA_PROGRAM_ID_STR,
+        HOST_CHAIN_ID,
+    );
+    let (replay_pass, _) = ingest_from_cursor(
+        &mut replay_source,
+        &mut db,
+        EQUIVALENCE_TENANT_ID,
+        start_cursor,
+        2,
+    )
+    .await?;
 
-        if let Some(reference) = &reference_summary {
-            assert_eq!(
-                first_pass.inserted_computations,
-                reference.inserted_computations
-            );
-            assert_eq!(
-                first_pass.inserted_allowed_handles,
-                reference.inserted_allowed_handles
-            );
-            assert_eq!(
-                first_pass.inserted_pbs_computations,
-                reference.inserted_pbs_computations
-            );
-        } else {
-            reference_summary = Some(first_pass);
-        }
-
-        let mut replay_source = SolanaRpcEventSource::new(
-            localnet.solana.rpc_url.clone(),
-            SOLANA_PROGRAM_ID_STR,
-            HOST_CHAIN_ID,
-        );
-        let (replay_pass, _) = ingest_from_cursor(
-            &mut replay_source,
-            &mut db,
-            EQUIVALENCE_TENANT_ID,
-            start_cursor,
-            2,
-        )
-        .await?;
-
-        assert_eq!(replay_pass.inserted_computations, 0);
-        assert_eq!(replay_pass.inserted_allowed_handles, 0);
-        assert_eq!(replay_pass.inserted_pbs_computations, 0);
-    }
+    assert_eq!(replay_pass.inserted_computations, 0);
+    assert_eq!(replay_pass.inserted_allowed_handles, 0);
+    assert_eq!(replay_pass.inserted_pbs_computations, 0);
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -1271,13 +1142,13 @@ async fn localnet_emit_and_emit_cpi_are_equivalent_and_replay_idempotent() -> an
             .await
             .context("count pbs_computations")?;
 
-    assert_eq!(computations_count, 2);
-    assert_eq!(allowed_count, 2);
-    assert_eq!(pbs_count, 2);
+    assert_eq!(computations_count, 1);
+    assert_eq!(allowed_count, 1);
+    assert_eq!(pbs_count, 1);
 
     let queue = worker_queue_snapshot(&pool, EQUIVALENCE_TENANT_ID).await?;
-    assert_eq!(queue.runnable_rows, 2);
-    assert_eq!(queue.runnable_transactions, 2);
+    assert_eq!(queue.runnable_rows, 1);
+    assert_eq!(queue.runnable_transactions, 1);
     assert_eq!(queue.null_transaction_ids, 0);
 
     Ok(())
@@ -1301,8 +1172,7 @@ async fn localnet_solana_request_add_computes_and_decrypts() -> anyhow::Result<(
     let request_add_sig = send_instruction(
         &harness.localnet.rpc_client,
         &harness.localnet.payer,
-        build_request_add_instruction_for_mode(
-            EmitMode::Log,
+        build_request_add_instruction(
             harness.localnet.program_id,
             harness.localnet.payer.pubkey(),
             lhs,
@@ -1313,80 +1183,7 @@ async fn localnet_solana_request_add_computes_and_decrypts() -> anyhow::Result<(
     let _allow_sig = send_instruction(
         &harness.localnet.rpc_client,
         &harness.localnet.payer,
-        build_allow_instruction_for_mode(
-            EmitMode::Log,
-            harness.localnet.program_id,
-            harness.localnet.payer.pubkey(),
-            result_handle,
-            allowed_account,
-        ),
-    )?;
-
-    let mut source = SolanaRpcEventSource::new(
-        harness.localnet.solana.rpc_url.clone(),
-        SOLANA_PROGRAM_ID_STR,
-        HOST_CHAIN_ID,
-    );
-    let mut db =
-        Database::connect(&harness.postgres.db_url, HOST_CHAIN_ID, harness.tenant_id).await?;
-    let (ingest_summary, _) =
-        ingest_from_cursor(&mut source, &mut db, harness.tenant_id, start_cursor, 2).await?;
-    assert_eq!(ingest_summary.inserted_computations, 1);
-    assert_eq!(ingest_summary.inserted_allowed_handles, 1);
-
-    let tx_signature = request_add_sig.as_ref().to_vec();
-    wait_for_output_completion(
-        &harness.pool,
-        harness.tenant_id,
-        &result_handle,
-        &tx_signature,
-    )
-    .await?;
-
-    let output_exists =
-        output_ciphertext_count(&harness.pool, harness.tenant_id, &result_handle).await?;
-    assert_eq!(output_exists, 1);
-
-    let (decrypted, output_type) =
-        decrypt_handle_value(&harness.pool, harness.tenant_id, &result_handle).await?;
-    assert_eq!(output_type, 4);
-    assert_eq!(decrypted, "247");
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[serial]
-#[ignore = "requires Docker daemon, Solana image, anchor binary, and tfhe-worker runtime"]
-async fn localnet_solana_request_add_cpi_computes_and_decrypts() -> anyhow::Result<()> {
-    let mut harness = setup_compute_harness().await?;
-
-    let lhs = [0x33_u8; 32];
-    let rhs = [0x44_u8; 32];
-    let is_scalar = false;
-    let result_handle = derive_add_result_handle(lhs, rhs, is_scalar);
-    let allowed_account = Pubkey::new_unique();
-
-    seed_trivial_inputs(&mut harness.worker_client, lhs, rhs).await?;
-
-    let start_cursor = finalized_cursor(&harness.localnet.rpc_client)?;
-    let request_add_sig = send_instruction(
-        &harness.localnet.rpc_client,
-        &harness.localnet.payer,
-        build_request_add_instruction_for_mode(
-            EmitMode::Cpi,
-            harness.localnet.program_id,
-            harness.localnet.payer.pubkey(),
-            lhs,
-            rhs,
-            is_scalar,
-        ),
-    )?;
-    let _allow_sig = send_instruction(
-        &harness.localnet.rpc_client,
-        &harness.localnet.payer,
-        build_allow_instruction_for_mode(
-            EmitMode::Cpi,
+        build_allow_instruction(
             harness.localnet.program_id,
             harness.localnet.payer.pubkey(),
             result_handle,
@@ -1445,8 +1242,7 @@ async fn localnet_solana_request_sub_computes_and_decrypts() -> anyhow::Result<(
     let request_sub_sig = send_instruction(
         &harness.localnet.rpc_client,
         &harness.localnet.payer,
-        build_request_sub_instruction_for_mode(
-            EmitMode::Log,
+        build_request_sub_instruction(
             harness.localnet.program_id,
             harness.localnet.payer.pubkey(),
             lhs,
@@ -1457,8 +1253,7 @@ async fn localnet_solana_request_sub_computes_and_decrypts() -> anyhow::Result<(
     let _allow_sig = send_instruction(
         &harness.localnet.rpc_client,
         &harness.localnet.payer,
-        build_allow_instruction_for_mode(
-            EmitMode::Log,
+        build_allow_instruction(
             harness.localnet.program_id,
             harness.localnet.payer.pubkey(),
             result_handle,
@@ -1503,96 +1298,90 @@ async fn localnet_solana_request_sub_computes_and_decrypts() -> anyhow::Result<(
 #[serial]
 #[ignore = "requires Docker daemon, Solana image, anchor binary, and tfhe-worker runtime"]
 async fn localnet_acl_gate_blocks_then_allows_compute() -> anyhow::Result<()> {
-    for mode in [EmitMode::Log, EmitMode::Cpi] {
-        let mut harness = setup_compute_harness().await?;
+    let mut harness = setup_compute_harness().await?;
 
-        let (lhs, rhs) = match mode {
-            EmitMode::Log => ([0x55_u8; 32], [0x66_u8; 32]),
-            EmitMode::Cpi => ([0x77_u8; 32], [0x88_u8; 32]),
-        };
-        let is_scalar = false;
-        let result_handle = derive_add_result_handle(lhs, rhs, is_scalar);
-        let allowed_account = Pubkey::new_unique();
+    let lhs = [0x55_u8; 32];
+    let rhs = [0x66_u8; 32];
+    let is_scalar = false;
+    let result_handle = derive_add_result_handle(lhs, rhs, is_scalar);
+    let allowed_account = Pubkey::new_unique();
 
-        seed_trivial_inputs(&mut harness.worker_client, lhs, rhs).await?;
+    seed_trivial_inputs(&mut harness.worker_client, lhs, rhs).await?;
 
-        let start_cursor = finalized_cursor(&harness.localnet.rpc_client)?;
-        let request_add_sig = send_instruction(
-            &harness.localnet.rpc_client,
-            &harness.localnet.payer,
-            build_request_add_instruction_for_mode(
-                mode,
-                harness.localnet.program_id,
-                harness.localnet.payer.pubkey(),
-                lhs,
-                rhs,
-                is_scalar,
-            ),
-        )?;
+    let start_cursor = finalized_cursor(&harness.localnet.rpc_client)?;
+    let request_add_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_request_add_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            lhs,
+            rhs,
+            is_scalar,
+        ),
+    )?;
 
-        let mut source = SolanaRpcEventSource::new(
-            harness.localnet.solana.rpc_url.clone(),
-            SOLANA_PROGRAM_ID_STR,
-            HOST_CHAIN_ID,
-        );
-        let mut db =
-            Database::connect(&harness.postgres.db_url, HOST_CHAIN_ID, harness.tenant_id).await?;
-        let (_first_ingest, cursor_after_add) =
-            ingest_from_cursor(&mut source, &mut db, harness.tenant_id, start_cursor, 1).await?;
+    let mut source = SolanaRpcEventSource::new(
+        harness.localnet.solana.rpc_url.clone(),
+        SOLANA_PROGRAM_ID_STR,
+        HOST_CHAIN_ID,
+    );
+    let mut db =
+        Database::connect(&harness.postgres.db_url, HOST_CHAIN_ID, harness.tenant_id).await?;
+    let (_first_ingest, cursor_after_add) =
+        ingest_from_cursor(&mut source, &mut db, harness.tenant_id, start_cursor, 1).await?;
 
-        assert!(!computation_is_allowed(&harness.pool, harness.tenant_id, &result_handle).await?);
-        assert_eq!(
-            output_ciphertext_count(&harness.pool, harness.tenant_id, &result_handle).await?,
-            0
-        );
+    assert!(!computation_is_allowed(&harness.pool, harness.tenant_id, &result_handle).await?);
+    assert_eq!(
+        output_ciphertext_count(&harness.pool, harness.tenant_id, &result_handle).await?,
+        0
+    );
 
-        sleep(Duration::from_secs(2)).await;
-        assert_eq!(
-            output_ciphertext_count(&harness.pool, harness.tenant_id, &result_handle).await?,
-            0
-        );
+    sleep(Duration::from_secs(2)).await;
+    assert_eq!(
+        output_ciphertext_count(&harness.pool, harness.tenant_id, &result_handle).await?,
+        0
+    );
 
-        let _allow_sig = send_instruction(
-            &harness.localnet.rpc_client,
-            &harness.localnet.payer,
-            build_allow_instruction_for_mode(
-                mode,
-                harness.localnet.program_id,
-                harness.localnet.payer.pubkey(),
-                result_handle,
-                allowed_account,
-            ),
-        )?;
+    let _allow_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_allow_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            result_handle,
+            allowed_account,
+        ),
+    )?;
 
-        let mut replay_source = SolanaRpcEventSource::new(
-            harness.localnet.solana.rpc_url.clone(),
-            SOLANA_PROGRAM_ID_STR,
-            HOST_CHAIN_ID,
-        );
-        let (_second_ingest, _) = ingest_from_cursor(
-            &mut replay_source,
-            &mut db,
-            harness.tenant_id,
-            cursor_after_add,
-            1,
-        )
-        .await?;
+    let mut replay_source = SolanaRpcEventSource::new(
+        harness.localnet.solana.rpc_url.clone(),
+        SOLANA_PROGRAM_ID_STR,
+        HOST_CHAIN_ID,
+    );
+    let (_second_ingest, _) = ingest_from_cursor(
+        &mut replay_source,
+        &mut db,
+        harness.tenant_id,
+        cursor_after_add,
+        1,
+    )
+    .await?;
 
-        assert!(computation_is_allowed(&harness.pool, harness.tenant_id, &result_handle).await?);
+    assert!(computation_is_allowed(&harness.pool, harness.tenant_id, &result_handle).await?);
 
-        let tx_signature = request_add_sig.as_ref().to_vec();
-        wait_for_output_completion(
-            &harness.pool,
-            harness.tenant_id,
-            &result_handle,
-            &tx_signature,
-        )
-        .await?;
-        assert_eq!(
-            output_ciphertext_count(&harness.pool, harness.tenant_id, &result_handle).await?,
-            1
-        );
-    }
+    let tx_signature = request_add_sig.as_ref().to_vec();
+    wait_for_output_completion(
+        &harness.pool,
+        harness.tenant_id,
+        &result_handle,
+        &tx_signature,
+    )
+    .await?;
+    assert_eq!(
+        output_ciphertext_count(&harness.pool, harness.tenant_id, &result_handle).await?,
+        1
+    );
 
     Ok(())
 }

@@ -17,10 +17,10 @@ cpi = ["no-entrypoint"]
 default = []
 
 [dependencies]
-anchor-lang = { version = "0.32.1", features = ["event-cpi"] }
+anchor-lang = { version = "0.32.1" }
 
 [dev-dependencies]
-mollusk-svm = { version = "0.10.2", features = ["inner-instructions"] }
+mollusk-svm = "0.10.2"
 solana-account = "3.2.0"
 solana-instruction = "3.0.0"
 solana-pubkey = "4.0.0"

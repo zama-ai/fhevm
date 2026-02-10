@@ -20,7 +20,7 @@ flowchart TD
   E2 --> E3["Experiment 3: evidence-backed parity audit"]
   E3 --> E4["Experiment 4: tenant-removal model drift check"]
   E4 --> E5["Experiment 5: finalized RPC source + localnet DB assertions"]
-  E5 --> E6["Experiment 6: emit! vs emit_cpi! + replay idempotency"]
+  E5 --> E6["Experiment 6: emit! + replay idempotency"]
   E6 --> E7["Experiment 7: worker e2e + ACL gate semantics"]
   E7 --> E8["Experiment 8: reproducible Tier-3 e2e run protocol"]
   E8 --> E9["Experiment 9: first non-ADD op parity (SUB)"]
@@ -45,13 +45,13 @@ flowchart TD
 12. Operation parity expansion started with `SUB` in Solana listener decode + ingest mapping (same DB contract as `ADD`).
 13. Solana host/listener now supports full TFHE symbolic op surface at interface + decode + ingest mapping layers (`binary`, `unary`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`).
 14. Solana host program layout has been normalized to `/Users/work/.codex/worktrees/66ae/fhevm/solana/host-programs/zama-host` (no `v0` naming in folders/types).
-15. Host program logic is now single-sourced across `emit!` and `emit_cpi!` entrypoints (shared implementation helpers; no behavior split per mode).
+15. Host program PoC baseline is emit-only (`emit!`) to keep scope lean and testable.
 16. RPC source now fails closed on unavailable finalized blocks (no cursor advance on missing `getBlock` data), preventing silent slot skips.
 17. `SUB` now has Tier-3 runtime validation (`request_sub -> ingest -> compute -> decrypt`), not only decode/ingest unit coverage.
 
 ## Open Questions
 
-1. Which emission mode is more reliable for ingestion/replay in practice: `emit!` logs or `emit_cpi!`?
+1. Is `emit!` log transport sufficient under realistic replay/restart conditions?
 2. Do PDA receipts reduce ambiguity enough to justify additional complexity?
 3. What is the smallest Solana operation model that maps cleanly to current DB schema?
 4. Which parts of the current listener should eventually become chain-agnostic, if any?
@@ -162,7 +162,7 @@ Notes:
 - Added localnet integration harness to build program, run validator + Postgres (testcontainers), submit txs, ingest, and assert DB rows.
 - Observed passing assertions for `computations`, `allowed_handles`, `pbs_computations`, and cursor advancement.
 
-### Experiment 6: `emit!` vs `emit_cpi!` parity + replay idempotency
+### Experiment 6: `emit!` replay idempotency
 
 Date: 2026-02-09
 Objective: Validate event-mode equivalence and prove replay inserts no new rows.
@@ -170,10 +170,9 @@ Result: Completed and passing in Tier 2 localnet harness.
 Confidence: High
 Notes:
 
-- Host program now supports both emission modes (`request_add`/`allow` and `request_add_cpi`/`allow_cpi`).
-- Listener decodes both direct `Program data` logs and CPI-carried event payloads from `innerInstructions`.
-- Localnet test verifies same DB contract for both modes and replay idempotency (`inserted rows = 0` on reprocessing same finalized range).
-- Mollusk fast tier currently validates `request_add`; CPI self-call remains localnet-validated due current Mollusk limitation.
+- Host program emits typed `emit!` events only in current baseline.
+- Listener decodes direct `Program data` logs and enforces replay idempotency (`inserted rows = 0` on reprocessing same finalized range).
+- Mollusk fast tier validates `request_add` contract using Anchor-generated instruction data.
 
 ### Experiment 7: Worker e2e + ACL gate semantics (Solana localnet)
 
@@ -183,9 +182,8 @@ Result: Completed and passing in Tier 3 localnet ignored tests.
 Confidence: High
 Notes:
 
-- Added end-to-end tests for both event modes:
-  - `localnet_solana_request_add_computes_and_decrypts` (`emit!`)
-  - `localnet_solana_request_add_cpi_computes_and_decrypts` (`emit_cpi!`)
+- Added end-to-end tests for emit/log baseline:
+  - `localnet_solana_request_add_computes_and_decrypts`
 - Added ACL gate test:
   - `localnet_acl_gate_blocks_then_allows_compute`
 - Listener semantics now keep `request_add` non-runnable until `allow` is ingested; `allow` unlocks matching queued computations.
@@ -196,7 +194,7 @@ Notes:
 ### What this PoC proves
 
 1. Solana host events can feed the existing DB-driven worker pipeline end-to-end.
-2. Both `emit!` and `emit_cpi!` can drive equivalent compute/decrypt outcomes.
+2. `emit!` transport is enough for local end-to-end compute/decrypt validation.
 3. Replay/idempotency guarantees hold at listener ingest layer.
 4. ACL gate semantics are enforceable in listener DB contract:
    - no `allow` => no execution
@@ -241,7 +239,7 @@ Confidence: High
 Notes:
 
 - Added `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`.
-- Script supports deterministic case selection: `emit`, `emit-cpi`, `sub`, `acl`, `all`.
+- Script supports deterministic case selection: `emit`, `sub`, `acl`, `all`.
 - Updated testing docs and listener README with exact commands and `SQLX_OFFLINE=true` guidance.
 
 ### Experiment 9: First non-ADD op parity (`SUB`)
@@ -252,11 +250,11 @@ Result: Completed for `SUB` decode + ingest mapping and runtime e2e execution.
 Confidence: Medium-high
 Notes:
 
-- Host program emits new `OpRequestedSub` / `request_sub(_cpi)` events.
+- Host program emits new `OpRequestedSub` / `request_sub` events.
 - Listener decodes `OpRequestedSub` and maps to `SupportedFheOperations::FheSub`.
 - Unit coverage added for decoder + ingest mapping.
 - Added Tier-3 runtime test `localnet_solana_request_sub_computes_and_decrypts` with decrypt assertion.
-- ACL gate integration test checks both `emit!` and `emit_cpi!` modes.
+- ACL gate integration test checks emit/log mode.
 
 ### Experiment 10: Full TFHE op-surface listener parity
 
@@ -270,7 +268,7 @@ Notes:
   - binary ops (`opcode 0..19`)
   - unary ops (`20/21`)
   - `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`
-- Listener decoder now parses all corresponding event types from both `emit!` logs and `emit_cpi!` inner instructions.
+- Listener decoder now parses all corresponding event types from `emit!` logs.
 - Ingest mapping now converts all supported op events into canonical `computations` rows with operation-specific dependency encoding aligned with EVM ingestion semantics.
 - Unit test coverage added for new decoder and ingest mappings; existing Tier-3 `request_add` e2e sanity remains green after extension.
 
@@ -283,7 +281,7 @@ Confidence: High
 Notes:
 
 - Renamed program workspace/layout and removed version suffixes in Solana naming (`host-programs/zama-host`, event/type names without `V0`/`V1`).
-- Refactored host program to keep one shared implementation per operation and thin emission wrappers for `emit!` vs `emit_cpi!`.
+- Refactored host program to keep one shared implementation per operation with a single emit/log path.
 - No DB contract change and no listener semantic drift; this was maintainability-only cleanup.
 
 ### D3
@@ -324,15 +322,15 @@ Status: Active.
 ### D11
 
 Date: 2026-02-10
-Decision: Keep both emission modes in PoC surface, but remove duplicated operation logic behind those entrypoints.
-Why: preserves the comparison axis (`emit!` vs `emit_cpi!`) without paying a maintenance penalty in host-program code.
+Decision: Keep current PoC surface emit-only (`emit!`) until there is a concrete need to compare alternate event transports.
+Why: reduces complexity and keeps feedback loop tight while preserving all required DB semantics.
 Status: Active.
 
 ### D7
 
 Date: 2026-02-09
-Decision: Treat event emission mode (`emit!` vs `emit_cpi!`) as an explicit Track 1 comparison axis while keeping one shared listener mapping contract.
-Why: this can materially impact event retrieval reliability without forcing DB contract or architecture changes.
+Decision: Treat event transport comparison as deferred follow-up; current Track 1 scope is finalized RPC + `emit!` only.
+Why: current goal is fast validated parity, not transport benchmarking.
 Status: Active.
 
 ### D8
@@ -345,8 +343,8 @@ Status: Active.
 ### D9
 
 Date: 2026-02-09
-Decision: Keep `emit_cpi!` in active comparison scope, but treat Tier 2 localnet integration as canonical validation path for CPI semantics.
-Why: current Mollusk harness path does not reliably support this self-CPI setup (`UnsupportedProgramId`) while localnet validation is stable.
+Decision: Remove CPI-mode from active scope in this PR/branch; revisit in dedicated follow-up if needed.
+Why: keeps code/doc/test surface minimal and aligned with current validated path.
 Status: Active.
 
 ## Next Update Triggers

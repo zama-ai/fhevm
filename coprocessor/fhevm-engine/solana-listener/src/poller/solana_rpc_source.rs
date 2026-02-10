@@ -244,13 +244,7 @@ impl EventSource for SolanaRpcEventSource {
                 let log_lines: Vec<&str> = log_messages
                     .map(|lines| lines.iter().filter_map(Value::as_str).collect())
                     .unwrap_or_default();
-                let mut decoded_events =
-                    decode_program_events_from_logs(&log_lines, &self.program_id);
-                decoded_events.extend(decode_program_events_from_inner_instructions(
-                    tx,
-                    &self.program_id,
-                    &account_keys,
-                ));
+                let decoded_events = decode_program_events_from_logs(&log_lines, &self.program_id);
 
                 for (op_index, event) in decoded_events.into_iter().enumerate() {
                     let op_index = op_index as u16;
@@ -348,60 +342,6 @@ fn decode_program_events_from_logs(logs: &[&str], program_id: &str) -> Vec<Progr
     events
 }
 
-fn decode_program_events_from_inner_instructions(
-    tx: &Value,
-    program_id: &str,
-    account_keys: &[String],
-) -> Vec<ProgramEvent> {
-    let mut events = Vec::new();
-
-    let Some(inner_sets) = tx
-        .get("meta")
-        .and_then(|meta| meta.get("innerInstructions"))
-        .and_then(Value::as_array)
-    else {
-        return events;
-    };
-
-    for inner_set in inner_sets {
-        let Some(instructions) = inner_set.get("instructions").and_then(Value::as_array) else {
-            continue;
-        };
-
-        for ix in instructions {
-            let Some(ix_program_id) = extract_instruction_program_id(ix, account_keys) else {
-                continue;
-            };
-            if ix_program_id != program_id {
-                continue;
-            }
-
-            let Some(data_b58) = ix.get("data").and_then(Value::as_str) else {
-                continue;
-            };
-            let payload = match bs58::decode(data_b58).into_vec() {
-                Ok(decoded) => decoded,
-                Err(err) => {
-                    warn!(?err, "failed to decode inner instruction data");
-                    continue;
-                }
-            };
-
-            if let Some(event) = decode_anchor_event(&payload) {
-                events.push(event);
-                continue;
-            }
-            if payload.len() > 8 {
-                if let Some(event) = decode_anchor_event(&payload[8..]) {
-                    events.push(event);
-                }
-            }
-        }
-    }
-
-    events
-}
-
 fn extract_account_keys(tx: &Value) -> Vec<String> {
     let Some(keys) = tx
         .get("transaction")
@@ -422,14 +362,6 @@ fn extract_account_keys(tx: &Value) -> Vec<String> {
             })
         })
         .collect()
-}
-
-fn extract_instruction_program_id(ix: &Value, account_keys: &[String]) -> Option<String> {
-    if let Some(program_id) = ix.get("programId").and_then(Value::as_str) {
-        return Some(program_id.to_string());
-    }
-    let index = ix.get("programIdIndex").and_then(Value::as_u64)? as usize;
-    account_keys.get(index).cloned()
 }
 
 fn parse_program_invoke(line: &str) -> Option<&str> {
@@ -653,7 +585,6 @@ fn decode_handle_allowed(body: &[u8]) -> Option<ProgramEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     const TARGET_PROGRAM: &str = "Fg6PaFpoGXkYsidMpWxTWqkZ4FK6s7vY8J3xA5rJQbSq";
 
@@ -704,54 +635,6 @@ mod tests {
         let refs: Vec<&str> = logs.iter().map(String::as_str).collect();
         let events = decode_program_events_from_logs(&refs, TARGET_PROGRAM);
         assert!(events.is_empty());
-    }
-
-    #[test]
-    fn decodes_event_from_cpi_inner_instruction_payload() {
-        let mut payload = vec![0xFF; 8];
-        payload.extend_from_slice(&OP_REQUESTED_ADD_DISC);
-        payload.extend_from_slice(&[1u8; 32]); // caller
-        payload.extend_from_slice(&[2u8; 32]); // lhs
-        payload.extend_from_slice(&[3u8; 32]); // rhs
-        payload.push(0u8); // is_scalar
-        payload.extend_from_slice(&[4u8; 32]); // result
-
-        let tx = json!({
-            "transaction": {
-                "message": {
-                    "accountKeys": [TARGET_PROGRAM]
-                }
-            },
-            "meta": {
-                "innerInstructions": [{
-                    "index": 0,
-                    "instructions": [{
-                        "programIdIndex": 0,
-                        "data": bs58::encode(payload).into_string()
-                    }]
-                }]
-            }
-        });
-
-        let account_keys = extract_account_keys(&tx);
-        let events =
-            decode_program_events_from_inner_instructions(&tx, TARGET_PROGRAM, &account_keys);
-        assert_eq!(events.len(), 1);
-        match &events[0] {
-            ProgramEvent::OpRequestedAdd {
-                lhs,
-                rhs,
-                is_scalar,
-                result_handle,
-                ..
-            } => {
-                assert_eq!(*lhs, [2u8; 32]);
-                assert_eq!(*rhs, [3u8; 32]);
-                assert!(!*is_scalar);
-                assert_eq!(*result_handle, [4u8; 32]);
-            }
-            _ => panic!("expected OpRequestedAdd"),
-        }
     }
 
     #[test]

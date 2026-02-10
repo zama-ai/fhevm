@@ -95,7 +95,7 @@ Deferred stateful track:
 - One host program owns:
   - symbolic op request entrypoints
   - event emission contract for listener ingest
-- CPIs are optional and currently used only for event transport comparison (`emit_cpi!`).
+- CPI event transport is deferred from the active PoC baseline.
 
 Pros:
 - fastest iteration, fewer moving parts.
@@ -136,7 +136,7 @@ sequenceDiagram
   participant Wkr as "Scheduler + Worker"
 
   App->>Host: "request_* / allow"
-  Host-->>Lis: "emit! and/or emit_cpi! event payloads"
+  Host-->>Lis: "emit! event payloads"
 
   Lis->>DB: "insert canonical computation + block cursor"
   DB->>Wkr: "dequeue runnable rows"

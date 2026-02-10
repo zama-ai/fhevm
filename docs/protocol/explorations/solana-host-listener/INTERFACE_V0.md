@@ -27,16 +27,6 @@ Baseline source strategy: finalized RPC logs/events as canonical input, with opt
 | `request_rand` | `rand_type: u8`, `seed: [u8;32]` | Maps to `FheRand`. |
 | `request_rand_bounded` | `upper_bound: [u8;32]`, `rand_type: u8`, `seed: [u8;32]` | Maps to `FheRandBounded`. |
 | `allow` | `handle: [u8;32]`, `account: Pubkey` | Persistent allow signal equivalent to EVM `Allowed`. |
-| `request_add_cpi` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool` | Same payload contract, emitted via `emit_cpi!`. |
-| `request_sub_cpi` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool` | Same payload contract, emitted via `emit_cpi!`. |
-| `request_binary_op_cpi` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool`, `opcode: u8` | CPI mode for binary-op surface. |
-| `request_unary_op_cpi` | `input: [u8;32]`, `opcode: u8` | CPI mode for unary-op surface. |
-| `request_if_then_else_cpi` | `control: [u8;32]`, `if_true: [u8;32]`, `if_false: [u8;32]` | CPI mode for ternary op. |
-| `request_cast_cpi` | `input: [u8;32]`, `to_type: u8` | CPI mode for cast. |
-| `request_trivial_encrypt_cpi` | `pt: [u8;32]`, `to_type: u8` | CPI mode for trivial encrypt. |
-| `request_rand_cpi` | `rand_type: u8`, `seed: [u8;32]` | CPI mode for rand. |
-| `request_rand_bounded_cpi` | `upper_bound: [u8;32]`, `rand_type: u8`, `seed: [u8;32]` | CPI mode for bounded rand. |
-| `allow_cpi` | `handle: [u8;32]`, `account: Pubkey` | Same payload contract, emitted via `emit_cpi!`. |
 
 ## Emitted Events (v0)
 
@@ -53,15 +43,12 @@ Baseline source strategy: finalized RPC logs/events as canonical input, with opt
 | `OpRequestedRandBounded` | `caller`, `upper_bound`, `rand_type`, `seed`, `result_handle` | Equivalent to `FheRandBounded`. |
 | `HandleAllowed` | `caller: Pubkey`, `handle: [u8;32]`, `account: Pubkey` | Equivalent to ACL `Allowed(handle, account)`. |
 
-## Event Transport Modes (same payload contract)
-
-For PoC Track 1 we allow two emission modes with identical event payload semantics:
+## Event Transport Mode (active baseline)
 
 1. `emit!` (event encoded in program logs / `Program data:` lines)
-2. `emit_cpi!` (event encoded in CPI instruction data)
-3. `msg!` is non-typed debug logging only and not part of canonical ingest contract.
+2. `msg!` is non-typed debug logging only and not part of canonical ingest contract.
 
-Listener mapping and DB effects must remain strictly identical between both modes.
+CPI-mode transport is intentionally deferred to a separate follow-up experiment.
 
 ## Listener Enrichment Fields (off-chain)
 

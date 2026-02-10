@@ -52,7 +52,7 @@ cargo test -p zama_host --test mollusk_smoke
 Notes:
 
 1. `request_add` smoke test is active and passing once program ELF exists (`target/deploy/zama_host.so`).
-2. `request_add_cpi` Mollusk case is currently ignored due current harness self-CPI limitation (`UnsupportedProgramId`); `emit_cpi!` is validated in Tier 2 localnet instead.
+2. Test uses Anchor-generated instruction data (no hardcoded discriminators).
 
 ## T0: Fast Mapping Loop
 
@@ -142,7 +142,7 @@ Notes:
 1. Starts Postgres and Solana validator in Docker via Rust `testcontainers`.
 2. Runs DB migrations and validates finalized RPC readiness.
 3. Builds and mounts host program, submits `request_add` + `allow`, ingests via real finalized RPC source, and asserts DB rows + cursor advancement.
-4. Includes event-mode equivalence check (`emit!` and `emit_cpi!`) with replay idempotency assertion (`new rows = 0`).
+4. Includes replay idempotency assertion (`new rows = 0`) on emit-only flow.
 5. Includes worker-queue readiness assertion on ingested rows (`is_allowed=true`, `is_completed=false`, non-null `transaction_id`) so data is consumable by `tfhe-worker` dequeue query.
 
 ## T3: Full E2E Loop
@@ -159,9 +159,8 @@ Primary test:
 
 Additional tests:
 
-1. `localnet_solana_request_add_cpi_computes_and_decrypts`
-2. `localnet_solana_request_sub_computes_and_decrypts`
-3. `localnet_acl_gate_blocks_then_allows_compute`
+1. `localnet_solana_request_sub_computes_and_decrypts`
+2. `localnet_acl_gate_blocks_then_allows_compute`
 
 Runner script:
 
@@ -177,10 +176,10 @@ Coverage:
 
 1. Seeds tenant keys in DB.
 2. Seeds `lhs` and `rhs` ciphertext handles via worker `trivial_encrypt` gRPC.
-3. Emits Solana `request_add` / `request_sub` (plus `emit_cpi!` variant for `add`) and ingests via finalized RPC source.
+3. Emits Solana `request_add` / `request_sub` and ingests via finalized RPC source.
 4. Asserts worker completes the queued computation and writes output ciphertext.
 5. Decrypts output handle and asserts expected plaintext value.
-6. ACL gate behavior for both `emit!` and `emit_cpi!`: without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
+6. ACL gate behavior (`emit!`): without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
 7. This tier is currently non-CI by default (heavy Docker/Anchor/tooling prerequisites); run locally before merge when touching Solana host/listener e2e behavior.
 
 ## Canonical v0 Sanity Acceptance (single flow)
@@ -216,4 +215,4 @@ For any tier >= T1:
 1. `missed_ops = 0`
 2. `duplicate_effects = 0`
 3. deterministic ordering
-4. same DB contract for `emit!` and `emit_cpi!`
+4. same DB contract for `emit!`

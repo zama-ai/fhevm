@@ -1586,7 +1586,6 @@ dependencies = [
  "solana-sysvar-id 3.1.0",
  "solana-transaction-context",
  "solana-transaction-error",
- "solana-transaction-status-client-types",
 ]
 
 [[package]]
@@ -1607,12 +1606,10 @@ checksum = "1f8d6eed91da5466c7562209acf23c3d1d361709466a5d8d8b20256576692bbf"
 dependencies = [
  "solana-account",
  "solana-instruction 3.1.0",
- "solana-message",
  "solana-program-error 3.0.0",
  "solana-pubkey 4.0.0",
  "solana-rent 3.1.0",
  "solana-transaction-error",
- "solana-transaction-status-client-types",
 ]
 
 [[package]]
@@ -2021,15 +2018,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde-big-array"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11fc7cc2c76d73e0f27ee52abbd64eec84d46f370c88371120433196934e4b7f"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "serde_bytes"
 version = "0.11.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2174,20 +2162,6 @@ dependencies = [
  "solana-pubkey 4.0.0",
  "solana-sdk-ids 3.1.0",
  "solana-sysvar 3.1.1",
-]
-
-[[package]]
-name = "solana-account-decoder-client-types"
-version = "3.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bcf86e96f5e986687edc572033df43723b885c668fa1a3280753232dc8f3656"
-dependencies = [
- "base64 0.22.1",
- "bs58",
- "serde",
- "serde_json",
- "solana-account",
- "solana-pubkey 3.0.0",
 ]
 
 [[package]]
@@ -2361,12 +2335,6 @@ dependencies = [
  "solana-sdk-macro 3.0.0",
  "solana-sysvar-id 3.1.0",
 ]
-
-[[package]]
-name = "solana-commitment-config"
-version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e41a3917076a8b5375809078ae3a6fb76a53e364b596ef8c4265e7f410876f3"
 
 [[package]]
 name = "solana-compute-budget"
@@ -2782,14 +2750,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0448b1fd891c5f46491e5dc7d9986385ba3c852c340db2911dd29faa01d2b08d"
 dependencies = [
  "lazy_static",
- "serde",
- "serde_derive",
  "solana-address 2.1.0",
  "solana-hash 4.1.0",
  "solana-instruction 3.1.0",
  "solana-sanitize 3.0.1",
  "solana-sdk-ids 3.1.0",
- "solana-short-vec",
  "solana-transaction-error",
 ]
 
@@ -3062,16 +3027,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-reward-info"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82be7946105c2ee6be9f9ee7bd18a068b558389221d29efa92b906476102bfcc"
-dependencies = [
- "serde",
- "serde_derive",
-]
-
-[[package]]
 name = "solana-sanitize"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3198,24 +3153,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-short-vec"
-version = "3.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de3bd991c2cc415291c86bb0b6b4d53e93d13bb40344e4c5a2884e0e4f5fa93f"
-dependencies = [
- "serde_core",
-]
-
-[[package]]
 name = "solana-signature"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4028aeedd443d80f1dccbf64872593a80e6a9676ee9007f6eccb63b65983ebd"
 dependencies = [
  "five8 1.0.0",
- "serde",
- "serde-big-array",
- "serde_derive",
  "solana-sanitize 3.0.1",
 ]
 
@@ -3546,8 +3489,6 @@ version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96697cff5075a028265324255efed226099f6d761ca67342b230d09f72cc48d2"
 dependencies = [
- "serde",
- "serde_derive",
  "solana-address 2.1.0",
  "solana-hash 4.1.0",
  "solana-instruction 3.1.0",
@@ -3555,7 +3496,6 @@ dependencies = [
  "solana-message",
  "solana-sanitize 3.0.1",
  "solana-sdk-ids 3.1.0",
- "solana-short-vec",
  "solana-signature",
  "solana-transaction-error",
 ]
@@ -3584,34 +3524,8 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4222065402340d7e6aec9dc3e54d22992ddcf923d91edcd815443c2bfca3144a"
 dependencies = [
- "serde",
- "serde_derive",
  "solana-instruction-error",
  "solana-sanitize 3.0.1",
-]
-
-[[package]]
-name = "solana-transaction-status-client-types"
-version = "3.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1341840c0ba1028b918b03c9ba9900019f739ee23946baf76574ec0a5dab8231"
-dependencies = [
- "base64 0.22.1",
- "bincode",
- "bs58",
- "serde",
- "serde_json",
- "solana-account-decoder-client-types",
- "solana-commitment-config",
- "solana-instruction 3.1.0",
- "solana-message",
- "solana-pubkey 3.0.0",
- "solana-reward-info",
- "solana-signature",
- "solana-transaction",
- "solana-transaction-context",
- "solana-transaction-error",
- "thiserror 2.0.18",
 ]
 
 [[package]]

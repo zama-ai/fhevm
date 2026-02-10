@@ -15,7 +15,7 @@ This is an exploratory PoC. Code can be discarded after each experiment if the l
 ```mermaid
 flowchart LR
   A["Scope lock: full TFHE symbolic ops + allow"] --> B["Anchor interface + event mode freeze"]
-  B --> C["RPC baseline: emit! vs emit_cpi!"]
+  B --> C["RPC baseline: emit!"]
   C --> D["Replay/idempotency validation loop"]
   D --> E["Compare alternatives: Geyser/Helius + PDA/journal"]
   E --> F["Architecture decision for next phase"]
@@ -53,7 +53,7 @@ Current expectation: Path B is lower risk for fast learning.
 
 We implement in this order:
 
-1. Solana host program interface for full symbolic op surface + `allow` (with `emit!` and `emit_cpi!` variants).
+1. Solana host program interface for full symbolic op surface + `allow` (emit! baseline).
 2. Freeze IDL/event contract consumed by listener.
 3. Build `solana-listener` against that contract.
 4. Validate replay/idempotency with restart tests.
@@ -89,7 +89,7 @@ flowchart LR
 - tests for mapping/replay/idempotency
 
 2. Solana PoC program workspace (Anchor, minimal)
-- instructions: full symbolic op surface + `allow` (+ `*_cpi` variants)
+- instructions: full symbolic op surface + `allow`
 - events/log contract for listener reads
 - IDL committed and versioned for listener contract
 
@@ -131,12 +131,11 @@ Validation target:
 - Persist via canonical DB rows with idempotent replay.
 - Prove one local end-to-end pass.
 
-Track 1 variants:
+Track 1 baseline:
 
 1. `emit!` events in program logs (`Program data:`).
-2. `emit_cpi!` events in CPI instruction data.
 
-Both variants must be tested with the same listener mapping contract and the same replay/idempotency gates.
+CPI-mode transport is deferred to a separate experiment after the emit-only baseline is stable.
 
 ### Track 2: Managed/indexed streams
 
@@ -178,10 +177,9 @@ A run is valid only if all 5 steps are reproducible with documented commands.
 4. Add hint path (confirmed logs) to reduce latency without changing canonical commit source.
 5. Build L1 tests (fixture replay -> DB assertions).
 6. Build L2 smoke run for `emit!` (local validator -> listener -> DB).
-7. Build L2 smoke run for `emit_cpi!` (same assertions and workload).
-8. Run restart/replay test and assert `new_rows=0`.
-9. Compare raw RPC vs managed stream source with same workload/fault matrix.
-10. Record recommendation for next phase (keep/discard/adjust).
+7. Run restart/replay test and assert `new_rows=0`.
+8. Compare raw RPC vs managed stream source with same workload/fault matrix.
+9. Record recommendation for next phase (keep/discard/adjust).
 
 ## Decision Matrix and Scorecard
 
@@ -192,15 +190,14 @@ Evaluate each option on the same scorecard:
 3. replay catch-up time from persisted cursor
 4. p50/p95 ingest latency
 5. operational complexity (dependencies, moving parts, failure modes)
-6. event extraction reliability across RPC providers (`emit!` vs `emit_cpi!`)
+6. event extraction reliability across RPC providers (`emit!`)
 7. state/rent footprint (if on-chain state option)
 
 Current option set:
 
 1. finalized RPC events via `emit!`
-2. finalized RPC events via `emit_cpi!`
-3. managed stream/indexer source (Geyser/Helius style)
-4. per-dapp journal/PDA designs (only if needed)
+2. managed stream/indexer source (Geyser/Helius style)
+3. per-dapp journal/PDA designs (only if needed)
 
 ## Test Plan (TDD-like feedback loop)
 
