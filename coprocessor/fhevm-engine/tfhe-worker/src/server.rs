@@ -518,7 +518,8 @@ impl CoprocessorService {
                 let server_key_clone = server_key.clone();
                 let (handle, serialized_ct, serialized_type) = spawn_blocking(move || {
                     tfhe::set_server_key(server_key_clone);
-                    let (serialized_type, serialized_ct) = the_ct.compress();
+                    let serialized_type = the_ct.type_num();
+                    let serialized_ct = the_ct.compress().unwrap();
                     let mut handle_hash = Keccak256::new();
                     handle_hash.update(&blob_hash_clone);
                     handle_hash.update([ct_idx as u8]);
@@ -764,7 +765,8 @@ impl CoprocessorService {
                 let ct = trivial_encrypt_be_bytes(v.output_type as i16, &v.be_value);
                 span.end();
                 let mut span = inner_tracer.child_span("compress_ciphertext");
-                let (ct_type, ct_bytes) = ct.compress();
+                let ct_type = ct.type_num();
+                let ct_bytes = ct.compress().unwrap();
                 span.end();
                 res.push((v.handle, ct_type, ct_bytes));
             }
