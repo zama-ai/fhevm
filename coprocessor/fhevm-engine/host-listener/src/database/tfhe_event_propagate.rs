@@ -15,7 +15,7 @@ use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
-use sqlx::{PgPool, Postgres};
+use sqlx::{PgPool, Postgres, Row};
 use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -173,6 +173,41 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
         Ok(rows.rows_affected())
+    }
+
+    pub async fn find_slow_dep_chain_ids(
+        &self,
+        tx: &mut Transaction<'_>,
+        dep_chain_ids: &[Vec<u8>],
+    ) -> Result<HashSet<ChainHash>, SqlxError> {
+        if dep_chain_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT dependence_chain_id
+            FROM dependence_chain
+            WHERE schedule_priority = $1
+              AND dependence_chain_id = ANY($2::bytea[])
+            "#,
+        )
+        .bind(i16::from(SchedulePriority::SLOW))
+        .bind(dep_chain_ids)
+        .fetch_all(tx.deref_mut())
+        .await?;
+
+        let mut slow_dep_chain_ids =
+            HashSet::with_capacity(rows.len() + dep_chain_ids.len());
+        for row in rows {
+            let dep_chain_id: Vec<u8> = row.try_get("dependence_chain_id")?;
+            if let Ok(dep_chain_bytes) =
+                <[u8; 32]>::try_from(dep_chain_id.as_slice())
+            {
+                slow_dep_chain_ids.insert(ChainHash::from(dep_chain_bytes));
+            }
+        }
+        Ok(slow_dep_chain_ids)
     }
 
     async fn new_pool(url: &DatabaseURL) -> PgPool {
