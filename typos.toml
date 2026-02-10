@@ -99,6 +99,14 @@ authorised = "authorised"
 decentralised = "decentralised"
 artefacts = "artefacts"
 misbehaviour = "misbehaviour"
+randomise = "randomise"
+randomised = "randomised"
+randomising = "randomising"
+randomisation = "randomisation"
+rerandomise = "rerandomise"
+rerandomised = "rerandomised"
+rerandomising = "rerandomising"
+rerandomisation = "rerandomisation"
 
 # FHE/TFHE terminology - these are valid domain-specific terms
 euint = "euint"           # encrypted unsigned integer type prefix

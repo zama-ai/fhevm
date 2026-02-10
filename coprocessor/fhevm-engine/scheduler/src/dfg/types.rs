@@ -63,7 +63,7 @@ pub enum SchedulerError {
     DataflowGraphError,
     MissingInputs,
     DecompressionError,
-    ReRandomizationError,
+    ReRandomisationError,
     SchedulerError,
 }
 
@@ -84,8 +84,8 @@ impl std::fmt::Display for SchedulerError {
             Self::DecompressionError => {
                 write!(f, "Decompression error")
             }
-            Self::ReRandomizationError => {
-                write!(f, "Re-randomization error")
+            Self::ReRandomisationError => {
+                write!(f, "Re-randomisation error")
             }
             Self::SchedulerError => {
                 write!(f, "Generic scheduler error")
