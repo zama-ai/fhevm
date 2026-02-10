@@ -10,6 +10,7 @@ use crate::contracts::{FinalizedEventEnvelope, HandleBytes, ProgramEventV0, INTE
 use crate::poller::{Cursor, EventSource, SourceBatch};
 
 const OP_REQUESTED_ADD_DISC: [u8; 8] = [0xA2, 0xBA, 0x5F, 0xF4, 0xD7, 0xB8, 0x1C, 0xF8];
+const OP_REQUESTED_SUB_DISC: [u8; 8] = [0xF5, 0x9C, 0x43, 0x1D, 0x6E, 0x3F, 0x96, 0x79];
 const HANDLE_ALLOWED_DISC: [u8; 8] = [0xCA, 0x41, 0x12, 0x1D, 0xF9, 0x39, 0x93, 0xEF];
 // Temporary manual decode table for PoC events.
 // TODO(zama-solana): replace this with IDL-driven decoding/codegen once we
@@ -458,6 +459,8 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEventV0> {
 
     if discriminator == OP_REQUESTED_ADD_DISC {
         decode_op_requested_add(body)
+    } else if discriminator == OP_REQUESTED_SUB_DISC {
+        decode_op_requested_sub(body)
     } else if discriminator == HANDLE_ALLOWED_DISC {
         decode_handle_allowed(body)
     } else {
@@ -476,6 +479,25 @@ fn decode_op_requested_add(body: &[u8]) -> Option<ProgramEventV0> {
     let result_handle: HandleBytes = body[97..129].try_into().ok()?;
 
     Some(ProgramEventV0::OpRequestedAddV1 {
+        caller,
+        lhs,
+        rhs,
+        is_scalar,
+        result_handle,
+    })
+}
+
+fn decode_op_requested_sub(body: &[u8]) -> Option<ProgramEventV0> {
+    if body.len() < 32 + 32 + 32 + 1 + 32 {
+        return None;
+    }
+    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
+    let lhs: HandleBytes = body[32..64].try_into().ok()?;
+    let rhs: HandleBytes = body[64..96].try_into().ok()?;
+    let is_scalar = body[96] != 0;
+    let result_handle: HandleBytes = body[97..129].try_into().ok()?;
+
+    Some(ProgramEventV0::OpRequestedSubV1 {
         caller,
         lhs,
         rhs,
@@ -599,6 +621,42 @@ mod tests {
                 assert_eq!(*result_handle, [4u8; 32]);
             }
             _ => panic!("expected OpRequestedAddV1"),
+        }
+    }
+
+    #[test]
+    fn decodes_op_requested_sub_from_program_data_line() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&OP_REQUESTED_SUB_DISC);
+        payload.extend_from_slice(&[1u8; 32]); // caller
+        payload.extend_from_slice(&[5u8; 32]); // lhs
+        payload.extend_from_slice(&[6u8; 32]); // rhs
+        payload.push(1u8); // is_scalar
+        payload.extend_from_slice(&[7u8; 32]); // result
+        let b64 = STANDARD.encode(payload);
+
+        let logs = [
+            format!("Program {TARGET_PROGRAM} invoke [1]"),
+            format!("Program data: {b64}"),
+            format!("Program {TARGET_PROGRAM} success"),
+        ];
+        let refs: Vec<&str> = logs.iter().map(String::as_str).collect();
+        let events = decode_program_events_from_logs(&refs, TARGET_PROGRAM);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ProgramEventV0::OpRequestedSubV1 {
+                lhs,
+                rhs,
+                is_scalar,
+                result_handle,
+                ..
+            } => {
+                assert_eq!(*lhs, [5u8; 32]);
+                assert_eq!(*rhs, [6u8; 32]);
+                assert!(*is_scalar);
+                assert_eq!(*result_handle, [7u8; 32]);
+            }
+            _ => panic!("expected OpRequestedSubV1"),
         }
     }
 

@@ -77,6 +77,26 @@ pub fn map_envelope_to_actions(
     let tx_signature = Some(envelope.tx_signature.clone());
 
     let mut actions = IngestActions::default();
+    let mut push_binary = |lhs: &[_; 32],
+                           rhs: &[_; 32],
+                           is_scalar: bool,
+                           result_handle: &[_; 32],
+                           fhe_operation: SupportedFheOperations| {
+        actions.computations.push(ComputationInsert {
+            tenant_id,
+            output_handle: result_handle.to_vec(),
+            dependencies: vec![lhs.to_vec(), rhs.to_vec()],
+            fhe_operation: fhe_operation as i16,
+            is_scalar,
+            dependence_chain_id: dependence_chain_from_signature(&envelope.tx_signature),
+            transaction_id: tx_signature.clone(),
+            // Keep ACL semantics explicit: requested operations are queued but
+            // not runnable until a matching allow event unlocks the handle.
+            is_allowed: false,
+            schedule_order,
+            is_completed: false,
+        });
+    };
 
     match &envelope.event {
         ProgramEventV0::OpRequestedAddV1 {
@@ -85,22 +105,26 @@ pub fn map_envelope_to_actions(
             is_scalar,
             result_handle,
             ..
-        } => {
-            actions.computations.push(ComputationInsert {
-                tenant_id,
-                output_handle: result_handle.to_vec(),
-                dependencies: vec![lhs.to_vec(), rhs.to_vec()],
-                fhe_operation: SupportedFheOperations::FheAdd as i16,
-                is_scalar: *is_scalar,
-                dependence_chain_id: dependence_chain_from_signature(&envelope.tx_signature),
-                transaction_id: tx_signature,
-                // Keep ACL semantics explicit: request_add is queued but not runnable
-                // until a matching allow event unlocks the handle.
-                is_allowed: false,
-                schedule_order,
-                is_completed: false,
-            });
-        }
+        } => push_binary(
+            lhs,
+            rhs,
+            *is_scalar,
+            result_handle,
+            SupportedFheOperations::FheAdd,
+        ),
+        ProgramEventV0::OpRequestedSubV1 {
+            lhs,
+            rhs,
+            is_scalar,
+            result_handle,
+            ..
+        } => push_binary(
+            lhs,
+            rhs,
+            *is_scalar,
+            result_handle,
+            SupportedFheOperations::FheSub,
+        ),
         ProgramEventV0::HandleAllowedV1 {
             handle, account, ..
         } => {
@@ -230,5 +254,35 @@ mod tests {
             actions.allowed_handles[0].event_type,
             AllowEvents::AllowedAccount as i16
         );
+    }
+
+    #[test]
+    fn map_sub_event_to_computation() {
+        let envelope = FinalizedEventEnvelope {
+            version: INTERFACE_V0_VERSION,
+            host_chain_id: 4242,
+            slot: 122,
+            block_time_unix: 1_700_000_200,
+            tx_signature: fixed_sig(),
+            tx_index: 1,
+            op_index: 0,
+            event: ProgramEventV0::OpRequestedSubV1 {
+                caller: Pubkey::new_from_array([1u8; 32]),
+                lhs: [9u8; 32],
+                rhs: [10u8; 32],
+                is_scalar: false,
+                result_handle: [11u8; 32],
+            },
+        };
+
+        let actions = map_envelope_to_actions(&envelope, 10).expect("mapping should work");
+        assert_eq!(actions.computations.len(), 1);
+        assert_eq!(
+            actions.computations[0].fhe_operation,
+            SupportedFheOperations::FheSub as i16
+        );
+        assert!(!actions.computations[0].is_scalar);
+        assert_eq!(actions.computations[0].dependencies[0], vec![9u8; 32]);
+        assert_eq!(actions.computations[0].dependencies[1], vec![10u8; 32]);
     }
 }

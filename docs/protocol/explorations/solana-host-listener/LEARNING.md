@@ -20,7 +20,10 @@ flowchart TD
   E3 --> E4["Experiment 4: tenant-removal model drift check"]
   E4 --> E5["Experiment 5: finalized RPC source + localnet DB assertions"]
   E5 --> E6["Experiment 6: emit! vs emit_cpi! + replay idempotency"]
-  E6 --> NX["Next checkpoint: managed source comparison + broader op surface"]
+  E6 --> E7["Experiment 7: worker e2e + ACL gate semantics"]
+  E7 --> E8["Experiment 8: reproducible Tier-3 e2e run protocol"]
+  E8 --> E9["Experiment 9: first non-ADD op parity (SUB)"]
+  E9 --> NX["Next checkpoint: managed source comparison + broader op surface"]
 ```
 
 ## Current Facts (confirmed)
@@ -35,6 +38,8 @@ flowchart TD
 8. The highest-coupling surfaces are chain transport/indexing and EVM ABI decode, not downstream scheduler/worker ingestion contracts.
 9. Upstream PR `zama-ai/fhevm#1856` removes tenant-centric DB/runtime model in favor of `keys`, `crs`, and `host_chains`; Solana discovery should target `host_chain_id` compatibility, not `tenant_id`.
 10. Local Solana rent estimates (2026-02-09) show per-tx receipt PDA cost can become prohibitive with long TTL at moderate/high TPS; this is now an explicit design gate.
+11. Tier-3 e2e runs now have a dedicated script entrypoint (`solana-poc-tier3-e2e.sh`) with explicit prerequisites and deterministic case selection.
+12. Operation parity expansion started with `SUB` in Solana listener decode + ingest mapping (same DB contract as `ADD`).
 
 ## Open Questions
 
@@ -218,6 +223,31 @@ Date: 2026-02-09
 Decision: Use listener-canonical structs with explicit `version` and `host_chain_id`; keep canonical ingest finalized-only and use confirmed logs as hint-only.
 Why: Preserves explicitness at the listener boundary without forcing extra on-chain payload fields; aligns with replay safety target.
 Status: Active.
+
+### Experiment 8: Reproducible Tier-3 run protocol
+
+Date: 2026-02-10
+Objective: Make Tier-3 e2e execution reproducible and explicit (not tribal command knowledge).
+Result: Completed.
+Confidence: High
+Notes:
+
+- Added `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`.
+- Script supports deterministic case selection: `emit`, `emit-cpi`, `acl`, `all`.
+- Updated testing docs and listener README with exact commands and `SQLX_OFFLINE=true` guidance.
+
+### Experiment 9: First non-ADD op parity (`SUB`)
+
+Date: 2026-02-10
+Objective: Validate that Solana listener operation mapping can extend beyond `ADD` while preserving DB semantics.
+Result: Completed for `SUB` decode + ingest mapping.
+Confidence: Medium-high
+Notes:
+
+- Host program emits new `OpRequestedSubV1` / `request_sub(_cpi)` events.
+- Listener decodes `OpRequestedSubV1` and maps to `SupportedFheOperations::FheSub`.
+- Unit coverage added for decoder + ingest mapping.
+- ACL gate integration test now checks both `emit!` and `emit_cpi!` modes.
 
 ### D3
 

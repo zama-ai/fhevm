@@ -14,6 +14,13 @@ pub enum ProgramEventV0 {
         is_scalar: bool,
         result_handle: HandleBytes,
     },
+    OpRequestedSubV1 {
+        caller: Pubkey,
+        lhs: HandleBytes,
+        rhs: HandleBytes,
+        is_scalar: bool,
+        result_handle: HandleBytes,
+    },
     HandleAllowedV1 {
         caller: Pubkey,
         handle: HandleBytes,

@@ -176,7 +176,7 @@ Coverage:
 3. Emits Solana `request_add` (both `emit!` and `emit_cpi!`) and ingests via finalized RPC source.
 4. Asserts worker completes the queued computation and writes output ciphertext.
 5. Decrypts output handle and asserts expected plaintext value.
-6. ACL gate behavior: without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
+6. ACL gate behavior for both `emit!` and `emit_cpi!`: without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
 7. This tier is currently non-CI by default (heavy Docker/Anchor/tooling prerequisites); run locally before merge when touching Solana host/listener e2e behavior.
 
 ## Hard Gates

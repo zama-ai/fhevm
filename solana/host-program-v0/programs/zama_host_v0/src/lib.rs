@@ -27,6 +27,25 @@ pub mod zama_host_v0 {
         Ok(())
     }
 
+    pub fn request_sub(
+        ctx: Context<RequestAdd>,
+        lhs: [u8; 32],
+        rhs: [u8; 32],
+        is_scalar: bool,
+    ) -> Result<()> {
+        let result_handle = derive_result_handle_for_sub(lhs, rhs, is_scalar);
+
+        emit!(OpRequestedSubV1 {
+            caller: ctx.accounts.caller.key(),
+            lhs,
+            rhs,
+            is_scalar,
+            result_handle,
+        });
+
+        Ok(())
+    }
+
     pub fn allow(ctx: Context<AllowHandle>, handle: [u8; 32], account: Pubkey) -> Result<()> {
         emit!(HandleAllowedV1 {
             caller: ctx.accounts.caller.key(),
@@ -46,6 +65,25 @@ pub mod zama_host_v0 {
         let result_handle = derive_result_handle(lhs, rhs, is_scalar);
 
         emit_cpi!(OpRequestedAddV1 {
+            caller: ctx.accounts.caller.key(),
+            lhs,
+            rhs,
+            is_scalar,
+            result_handle,
+        });
+
+        Ok(())
+    }
+
+    pub fn request_sub_cpi(
+        ctx: Context<RequestAddCpi>,
+        lhs: [u8; 32],
+        rhs: [u8; 32],
+        is_scalar: bool,
+    ) -> Result<()> {
+        let result_handle = derive_result_handle_for_sub(lhs, rhs, is_scalar);
+
+        emit_cpi!(OpRequestedSubV1 {
             caller: ctx.accounts.caller.key(),
             lhs,
             rhs,
@@ -107,6 +145,15 @@ pub struct OpRequestedAddV1 {
 }
 
 #[event]
+pub struct OpRequestedSubV1 {
+    pub caller: Pubkey,
+    pub lhs: [u8; 32],
+    pub rhs: [u8; 32],
+    pub is_scalar: bool,
+    pub result_handle: [u8; 32],
+}
+
+#[event]
 pub struct HandleAllowedV1 {
     pub caller: Pubkey,
     pub handle: [u8; 32],
@@ -121,5 +168,12 @@ fn derive_result_handle(lhs: [u8; 32], rhs: [u8; 32], is_scalar: bool) -> [u8; 3
     if is_scalar {
         output[31] ^= 0x01;
     }
+    output
+}
+
+fn derive_result_handle_for_sub(lhs: [u8; 32], rhs: [u8; 32], is_scalar: bool) -> [u8; 32] {
+    let mut output = derive_result_handle(lhs, rhs, is_scalar);
+    // Keep deterministic placeholder derivation while avoiding collisions with add.
+    output[29] ^= 0x53; // 'S'
     output
 }
