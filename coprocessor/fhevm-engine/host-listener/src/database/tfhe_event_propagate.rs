@@ -11,10 +11,7 @@ use fhevm_engine_common::types::SchedulePriority;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
-use prometheus::{
-    register_gauge_vec, register_int_counter_vec, register_int_gauge_vec,
-    GaugeVec, IntCounterVec, IntGaugeVec,
-};
+use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
@@ -53,25 +50,6 @@ static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
         .unwrap()
     },
 );
-
-static DEPENDENCE_CHAIN_PENDING: LazyLock<IntGaugeVec> = LazyLock::new(|| {
-    register_int_gauge_vec!(
-        "host_listener_dependence_chain_pending",
-        "Number of schedulable pending dependence chains by lane",
-        &["chain_id", "lane"]
-    )
-    .unwrap()
-});
-
-static DEPENDENCE_CHAIN_OLDEST_PENDING_SECONDS: LazyLock<GaugeVec> =
-    LazyLock::new(|| {
-        register_gauge_vec!(
-            "host_listener_dependence_chain_oldest_pending_seconds",
-            "Age in seconds of oldest schedulable pending dependence chain by lane",
-            &["chain_id", "lane"]
-        )
-        .unwrap()
-    });
 
 #[derive(Clone, Debug)]
 pub struct Chain {
@@ -172,54 +150,6 @@ impl Database {
                 .with_label_values(&[self.chain_id_label.as_str()])
                 .inc_by(count);
         }
-    }
-
-    pub(crate) async fn update_dependence_chain_queue_metrics(
-        &self,
-        tx: &mut Transaction<'_>,
-    ) -> Result<(), SqlxError> {
-        let (
-            fast_pending,
-            slow_pending,
-            fast_oldest_seconds,
-            slow_oldest_seconds,
-        ) = sqlx::query_as::<_, (i64, i64, Option<f64>, Option<f64>)>(
-            r#"
-            SELECT
-                COUNT(*) FILTER (WHERE schedule_priority = 0) AS fast_pending,
-                COUNT(*) FILTER (WHERE schedule_priority > 0) AS slow_pending,
-                EXTRACT(EPOCH FROM (
-                    timezone('UTC', now()) -
-                    MIN(last_updated_at) FILTER (WHERE schedule_priority = 0)
-                ))::double precision AS fast_oldest_seconds,
-                EXTRACT(EPOCH FROM (
-                    timezone('UTC', now()) -
-                    MIN(last_updated_at) FILTER (WHERE schedule_priority > 0)
-                ))::double precision AS slow_oldest_seconds
-            FROM dependence_chain
-            WHERE status = 'updated'
-              AND worker_id IS NULL
-              AND dependency_count = 0
-            "#,
-        )
-        .fetch_one(tx.deref_mut())
-        .await?;
-
-        DEPENDENCE_CHAIN_PENDING
-            .with_label_values(&[self.chain_id_label.as_str(), "fast"])
-            .set(fast_pending);
-        DEPENDENCE_CHAIN_PENDING
-            .with_label_values(&[self.chain_id_label.as_str(), "slow"])
-            .set(slow_pending);
-
-        DEPENDENCE_CHAIN_OLDEST_PENDING_SECONDS
-            .with_label_values(&[self.chain_id_label.as_str(), "fast"])
-            .set(fast_oldest_seconds.unwrap_or(0.0));
-        DEPENDENCE_CHAIN_OLDEST_PENDING_SECONDS
-            .with_label_values(&[self.chain_id_label.as_str(), "slow"])
-            .set(slow_oldest_seconds.unwrap_or(0.0));
-
-        Ok(())
     }
 
     pub async fn promote_seen_dep_chains_to_fast_priority(

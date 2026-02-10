@@ -220,9 +220,8 @@ pub async fn ingest_block_logs(
         )
         .await?;
     }
-    let mut promoted = 0_u64;
     if !slow_lane_enabled {
-        promoted = db
+        let promoted = db
             .promote_seen_dep_chains_to_fast_priority(
                 &mut tx,
                 &seen_dep_chain_ids,
@@ -234,9 +233,6 @@ pub async fn ingest_block_logs(
                 "Slow-lane disabled: promoted seen chains to fast"
             );
         }
-    }
-    if at_least_one_insertion || promoted > 0 {
-        db.update_dependence_chain_queue_metrics(&mut tx).await?;
     }
     tx.commit().await
 }
