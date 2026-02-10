@@ -22,10 +22,15 @@ pub mod zama_host {
         rhs: [u8; 32],
         is_scalar: bool,
     ) -> Result<()> {
-        request_add_impl(ctx.accounts.caller.key(), lhs, rhs, is_scalar, |event| {
-            emit!(event);
-            Ok(())
-        })
+        let result_handle = derive_binary_result_handle(lhs, rhs, is_scalar, OP_ADD);
+        emit!(OpRequestedAdd {
+            caller: ctx.accounts.caller.key(),
+            lhs,
+            rhs,
+            is_scalar,
+            result_handle,
+        });
+        Ok(())
     }
 
     pub fn request_sub(
@@ -34,10 +39,15 @@ pub mod zama_host {
         rhs: [u8; 32],
         is_scalar: bool,
     ) -> Result<()> {
-        request_sub_impl(ctx.accounts.caller.key(), lhs, rhs, is_scalar, |event| {
-            emit!(event);
-            Ok(())
-        })
+        let result_handle = derive_binary_result_handle(lhs, rhs, is_scalar, OP_SUB);
+        emit!(OpRequestedSub {
+            caller: ctx.accounts.caller.key(),
+            lhs,
+            rhs,
+            is_scalar,
+            result_handle,
+        });
+        Ok(())
     }
 
     pub fn request_binary_op(
@@ -47,24 +57,29 @@ pub mod zama_host {
         is_scalar: bool,
         opcode: u8,
     ) -> Result<()> {
-        request_binary_op_impl(
-            ctx.accounts.caller.key(),
+        validate_binary_opcode(opcode)?;
+        let result_handle = derive_binary_result_handle(lhs, rhs, is_scalar, opcode);
+        emit!(OpRequestedBinary {
+            caller: ctx.accounts.caller.key(),
             lhs,
             rhs,
             is_scalar,
+            result_handle,
             opcode,
-            |event| {
-                emit!(event);
-                Ok(())
-            },
-        )
+        });
+        Ok(())
     }
 
     pub fn request_unary_op(ctx: Context<RequestOp>, input: [u8; 32], opcode: u8) -> Result<()> {
-        request_unary_op_impl(ctx.accounts.caller.key(), input, opcode, |event| {
-            emit!(event);
-            Ok(())
-        })
+        validate_unary_opcode(opcode)?;
+        let result_handle = derive_unary_result_handle(input, opcode);
+        emit!(OpRequestedUnary {
+            caller: ctx.accounts.caller.key(),
+            input,
+            result_handle,
+            opcode,
+        });
+        Ok(())
     }
 
     pub fn request_if_then_else(
@@ -73,23 +88,27 @@ pub mod zama_host {
         if_true: [u8; 32],
         if_false: [u8; 32],
     ) -> Result<()> {
-        request_if_then_else_impl(
-            ctx.accounts.caller.key(),
+        let result_handle =
+            derive_ternary_result_handle(control, if_true, if_false, OP_IF_THEN_ELSE);
+        emit!(OpRequestedIfThenElse {
+            caller: ctx.accounts.caller.key(),
             control,
             if_true,
             if_false,
-            |event| {
-                emit!(event);
-                Ok(())
-            },
-        )
+            result_handle,
+        });
+        Ok(())
     }
 
     pub fn request_cast(ctx: Context<RequestOp>, input: [u8; 32], to_type: u8) -> Result<()> {
-        request_cast_impl(ctx.accounts.caller.key(), input, to_type, |event| {
-            emit!(event);
-            Ok(())
-        })
+        let result_handle = derive_unary_result_handle(input, OP_CAST ^ to_type);
+        emit!(OpRequestedCast {
+            caller: ctx.accounts.caller.key(),
+            input,
+            to_type,
+            result_handle,
+        });
+        Ok(())
     }
 
     pub fn request_trivial_encrypt(
@@ -97,17 +116,25 @@ pub mod zama_host {
         pt: [u8; 32],
         to_type: u8,
     ) -> Result<()> {
-        request_trivial_encrypt_impl(ctx.accounts.caller.key(), pt, to_type, |event| {
-            emit!(event);
-            Ok(())
-        })
+        let result_handle = derive_unary_result_handle(pt, OP_TRIVIAL_ENCRYPT ^ to_type);
+        emit!(OpRequestedTrivialEncrypt {
+            caller: ctx.accounts.caller.key(),
+            pt,
+            to_type,
+            result_handle,
+        });
+        Ok(())
     }
 
     pub fn request_rand(ctx: Context<RequestOp>, rand_type: u8, seed: [u8; 32]) -> Result<()> {
-        request_rand_impl(ctx.accounts.caller.key(), rand_type, seed, |event| {
-            emit!(event);
-            Ok(())
-        })
+        let result_handle = derive_unary_result_handle(seed, OP_RAND ^ rand_type);
+        emit!(OpRequestedRand {
+            caller: ctx.accounts.caller.key(),
+            rand_type,
+            seed,
+            result_handle,
+        });
+        Ok(())
     }
 
     pub fn request_rand_bounded(
@@ -116,23 +143,25 @@ pub mod zama_host {
         rand_type: u8,
         seed: [u8; 32],
     ) -> Result<()> {
-        request_rand_bounded_impl(
-            ctx.accounts.caller.key(),
+        let result_handle =
+            derive_ternary_result_handle(upper_bound, seed, [rand_type; 32], OP_RAND_BOUNDED);
+        emit!(OpRequestedRandBounded {
+            caller: ctx.accounts.caller.key(),
             upper_bound,
             rand_type,
             seed,
-            |event| {
-                emit!(event);
-                Ok(())
-            },
-        )
+            result_handle,
+        });
+        Ok(())
     }
 
     pub fn allow(ctx: Context<AllowHandle>, handle: [u8; 32], account: Pubkey) -> Result<()> {
-        allow_impl(ctx.accounts.caller.key(), handle, account, |event| {
-            emit!(event);
-            Ok(())
-        })
+        emit!(HandleAllowed {
+            caller: ctx.accounts.caller.key(),
+            handle,
+            account,
+        });
+        Ok(())
     }
 }
 
@@ -251,184 +280,6 @@ fn validate_unary_opcode(opcode: u8) -> Result<()> {
         opcode == OP_NEG || opcode == OP_NOT,
         HostError::InvalidUnaryOpcode
     );
-    Ok(())
-}
-
-fn request_add_impl<F>(
-    caller: Pubkey,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    is_scalar: bool,
-    emit: F,
-) -> Result<()>
-where
-    F: FnOnce(OpRequestedAdd) -> Result<()>,
-{
-    let result_handle = derive_binary_result_handle(lhs, rhs, is_scalar, OP_ADD);
-    emit(OpRequestedAdd {
-        caller,
-        lhs,
-        rhs,
-        is_scalar,
-        result_handle,
-    })?;
-    Ok(())
-}
-
-fn request_sub_impl<F>(
-    caller: Pubkey,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    is_scalar: bool,
-    emit: F,
-) -> Result<()>
-where
-    F: FnOnce(OpRequestedSub) -> Result<()>,
-{
-    let result_handle = derive_binary_result_handle(lhs, rhs, is_scalar, OP_SUB);
-    emit(OpRequestedSub {
-        caller,
-        lhs,
-        rhs,
-        is_scalar,
-        result_handle,
-    })?;
-    Ok(())
-}
-
-fn request_binary_op_impl<F>(
-    caller: Pubkey,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    is_scalar: bool,
-    opcode: u8,
-    emit: F,
-) -> Result<()>
-where
-    F: FnOnce(OpRequestedBinary) -> Result<()>,
-{
-    validate_binary_opcode(opcode)?;
-    let result_handle = derive_binary_result_handle(lhs, rhs, is_scalar, opcode);
-    emit(OpRequestedBinary {
-        caller,
-        lhs,
-        rhs,
-        is_scalar,
-        result_handle,
-        opcode,
-    })?;
-    Ok(())
-}
-
-fn request_unary_op_impl<F>(caller: Pubkey, input: [u8; 32], opcode: u8, emit: F) -> Result<()>
-where
-    F: FnOnce(OpRequestedUnary) -> Result<()>,
-{
-    validate_unary_opcode(opcode)?;
-    let result_handle = derive_unary_result_handle(input, opcode);
-    emit(OpRequestedUnary {
-        caller,
-        input,
-        result_handle,
-        opcode,
-    })?;
-    Ok(())
-}
-
-fn request_if_then_else_impl<F>(
-    caller: Pubkey,
-    control: [u8; 32],
-    if_true: [u8; 32],
-    if_false: [u8; 32],
-    emit: F,
-) -> Result<()>
-where
-    F: FnOnce(OpRequestedIfThenElse) -> Result<()>,
-{
-    let result_handle = derive_ternary_result_handle(control, if_true, if_false, OP_IF_THEN_ELSE);
-    emit(OpRequestedIfThenElse {
-        caller,
-        control,
-        if_true,
-        if_false,
-        result_handle,
-    })?;
-    Ok(())
-}
-
-fn request_cast_impl<F>(caller: Pubkey, input: [u8; 32], to_type: u8, emit: F) -> Result<()>
-where
-    F: FnOnce(OpRequestedCast) -> Result<()>,
-{
-    let result_handle = derive_unary_result_handle(input, OP_CAST ^ to_type);
-    emit(OpRequestedCast {
-        caller,
-        input,
-        to_type,
-        result_handle,
-    })?;
-    Ok(())
-}
-
-fn request_trivial_encrypt_impl<F>(caller: Pubkey, pt: [u8; 32], to_type: u8, emit: F) -> Result<()>
-where
-    F: FnOnce(OpRequestedTrivialEncrypt) -> Result<()>,
-{
-    let result_handle = derive_unary_result_handle(pt, OP_TRIVIAL_ENCRYPT ^ to_type);
-    emit(OpRequestedTrivialEncrypt {
-        caller,
-        pt,
-        to_type,
-        result_handle,
-    })?;
-    Ok(())
-}
-
-fn request_rand_impl<F>(caller: Pubkey, rand_type: u8, seed: [u8; 32], emit: F) -> Result<()>
-where
-    F: FnOnce(OpRequestedRand) -> Result<()>,
-{
-    let result_handle = derive_unary_result_handle(seed, OP_RAND ^ rand_type);
-    emit(OpRequestedRand {
-        caller,
-        rand_type,
-        seed,
-        result_handle,
-    })?;
-    Ok(())
-}
-
-fn request_rand_bounded_impl<F>(
-    caller: Pubkey,
-    upper_bound: [u8; 32],
-    rand_type: u8,
-    seed: [u8; 32],
-    emit: F,
-) -> Result<()>
-where
-    F: FnOnce(OpRequestedRandBounded) -> Result<()>,
-{
-    let result_handle =
-        derive_ternary_result_handle(upper_bound, seed, [rand_type; 32], OP_RAND_BOUNDED);
-    emit(OpRequestedRandBounded {
-        caller,
-        upper_bound,
-        rand_type,
-        seed,
-        result_handle,
-    })?;
-    Ok(())
-}
-
-fn allow_impl<F>(caller: Pubkey, handle: [u8; 32], account: Pubkey, emit: F) -> Result<()>
-where
-    F: FnOnce(HandleAllowed) -> Result<()>,
-{
-    emit(HandleAllowed {
-        caller,
-        handle,
-        account,
-    })?;
     Ok(())
 }
 
