@@ -160,7 +160,9 @@ Primary test:
 Additional tests:
 
 1. `localnet_solana_request_sub_computes_and_decrypts`
-2. `localnet_acl_gate_blocks_then_allows_compute`
+2. `localnet_solana_request_if_then_else_computes_and_decrypts`
+3. `localnet_solana_request_cast_computes_and_decrypts`
+4. `localnet_acl_gate_blocks_then_allows_compute`
 
 Runner script:
 
@@ -172,15 +174,18 @@ Example:
 /Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh --case all
 ```
 
+Supported `--case` values: `emit | sub | ite | cast | acl | all`.
+
 Coverage:
 
 1. Seeds tenant keys in DB.
-2. Seeds `lhs` and `rhs` ciphertext handles via worker `trivial_encrypt` gRPC.
-3. Emits Solana `request_add` / `request_sub` and ingests via finalized RPC source.
+2. Seeds required ciphertext handles via worker `trivial_encrypt` gRPC (binary/unary/ternary inputs depending on op).
+3. Emits Solana `request_add` / `request_sub` / `request_if_then_else` / `request_cast` and ingests via finalized RPC source.
 4. Asserts worker completes the queued computation and writes output ciphertext.
 5. Decrypts output handle and asserts expected plaintext value.
-6. ACL gate behavior (`emit!`): without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
-7. This tier is currently non-CI by default (heavy Docker/Anchor/tooling prerequisites); run locally before merge when touching Solana host/listener e2e behavior.
+6. Asserts DB contract shape for new op tests (`fhe_operation`, `is_scalar`, `dependencies`) before worker completion.
+7. ACL gate behavior (`emit!`): without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
+8. This tier is currently non-CI by default (heavy Docker/Anchor/tooling prerequisites); run locally before merge when touching Solana host/listener e2e behavior.
 
 ## Canonical v0 Sanity Acceptance (single flow)
 

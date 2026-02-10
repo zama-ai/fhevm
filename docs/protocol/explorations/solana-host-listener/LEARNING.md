@@ -27,7 +27,8 @@ flowchart TD
   E9 --> E10["Experiment 10: full TFHE op-surface listener parity"]
   E10 --> E11["Experiment 11: host program simplification (KISS/YAGNI)"]
   E11 --> E12["Experiment 12: inline host handlers (remove impl indirection)"]
-  E12 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
+  E12 --> E13["Experiment 13: Tier-3 runtime parity expansion (if_then_else + cast)"]
+  E13 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
 ```
 
 ## Current Facts (confirmed)
@@ -50,6 +51,7 @@ flowchart TD
 16. RPC source now fails closed on unavailable finalized blocks (no cursor advance on missing `getBlock` data), preventing silent slot skips.
 17. `SUB` now has Tier-3 runtime validation (`request_sub -> ingest -> compute -> decrypt`), not only decode/ingest unit coverage.
 18. Host program handlers are now direct/inline (no `request_*_impl` helper layer), with unchanged event payload semantics.
+19. Tier-3 runtime validation now includes `request_if_then_else` and `request_cast` with DB contract assertions (`fhe_operation`, `dependencies`, `is_scalar`) and decrypt checks.
 
 ## Open Questions
 
@@ -241,7 +243,7 @@ Confidence: High
 Notes:
 
 - Added `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`.
-- Script supports deterministic case selection: `emit`, `sub`, `acl`, `all`.
+- Script supports deterministic case selection: `emit`, `sub`, `ite`, `cast`, `acl`, `all`.
 - Updated testing docs and listener README with exact commands and `SQLX_OFFLINE=true` guidance.
 
 ### Experiment 9: First non-ADD op parity (`SUB`)
@@ -297,6 +299,23 @@ Notes:
 - Removed `request_*_impl` helper functions and inlined logic in Anchor instruction handlers.
 - Preserved handle derivation and emitted event payloads (no listener/DB contract changes).
 - Kept fast host smoke test green (`mollusk_smoke`).
+
+### Experiment 13: Tier-3 runtime parity expansion (`if_then_else`, `cast`)
+
+Date: 2026-02-10
+Objective: Extend runtime/decrypt parity beyond `ADD/SUB` with higher-value non-binary ops.
+Result: Completed and runtime-validated in localnet ignored tests.
+Confidence: Medium-high
+Notes:
+
+- Added ignored Tier-3 tests:
+  - `localnet_solana_request_if_then_else_computes_and_decrypts`
+  - `localnet_solana_request_cast_computes_and_decrypts`
+- Added helper builders/derivation logic for `request_if_then_else` and `request_cast`.
+- Added DB contract assertion helper to verify mapped row semantics before worker completion.
+- Validated both runtime tests:
+  - `localnet_solana_request_if_then_else_computes_and_decrypts`
+  - `localnet_solana_request_cast_computes_and_decrypts`
 
 ### D3
 

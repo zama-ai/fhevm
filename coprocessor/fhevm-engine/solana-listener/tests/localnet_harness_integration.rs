@@ -7,6 +7,7 @@ use std::time::Duration;
 use anyhow::Context;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
+use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::{safe_deserialize, safe_deserialize_key, DatabaseURL};
 use reqwest::Client;
 use serde_json::json;
@@ -47,6 +48,8 @@ const TENANT_ID: i32 = 1;
 const EQUIVALENCE_TENANT_ID: i32 = 2;
 const OP_ADD: u8 = 0;
 const OP_SUB: u8 = 1;
+const OP_CAST: u8 = 23;
+const OP_IF_THEN_ELSE: u8 = 25;
 
 #[derive(Default, Debug)]
 struct IngestionSummary {
@@ -503,8 +506,9 @@ async fn seed_trivial_inputs_with_values(
     lhs_value: u8,
     rhs_value: u8,
 ) -> anyhow::Result<()> {
-    let mut encrypt_request = tonic::Request::new(TrivialEncryptBatch {
-        values: vec![
+    seed_trivial_ciphertexts(
+        worker_client,
+        vec![
             TrivialEncryptRequestSingle {
                 handle: lhs.to_vec(),
                 be_value: vec![lhs_value],
@@ -516,7 +520,15 @@ async fn seed_trivial_inputs_with_values(
                 output_type: 4,
             },
         ],
-    });
+    )
+    .await
+}
+
+async fn seed_trivial_ciphertexts(
+    worker_client: &mut FhevmCoprocessorClient<Channel>,
+    values: Vec<TrivialEncryptRequestSingle>,
+) -> anyhow::Result<()> {
+    let mut encrypt_request = tonic::Request::new(TrivialEncryptBatch { values });
     encrypt_request.metadata_mut().append(
         "authorization",
         MetadataValue::from_str(&format!("bearer {DEFAULT_API_KEY}"))
@@ -719,6 +731,42 @@ fn build_request_sub_instruction(
     }
 }
 
+fn build_request_if_then_else_instruction(
+    program_id: Pubkey,
+    signer: Pubkey,
+    control: [u8; 32],
+    if_true: [u8; 32],
+    if_false: [u8; 32],
+) -> Instruction {
+    let mut data = Vec::with_capacity(8 + 32 * 3);
+    data.extend_from_slice(&anchor_global_discriminator("request_if_then_else"));
+    data.extend_from_slice(&control);
+    data.extend_from_slice(&if_true);
+    data.extend_from_slice(&if_false);
+    Instruction {
+        program_id,
+        accounts: vec![AccountMeta::new(signer, true)],
+        data,
+    }
+}
+
+fn build_request_cast_instruction(
+    program_id: Pubkey,
+    signer: Pubkey,
+    input: [u8; 32],
+    to_type: u8,
+) -> Instruction {
+    let mut data = Vec::with_capacity(8 + 32 + 1);
+    data.extend_from_slice(&anchor_global_discriminator("request_cast"));
+    data.extend_from_slice(&input);
+    data.push(to_type);
+    Instruction {
+        program_id,
+        accounts: vec![AccountMeta::new(signer, true)],
+        data,
+    }
+}
+
 fn anchor_global_discriminator(name: &str) -> [u8; 8] {
     let preimage = format!("global:{name}");
     let digest = hash(preimage.as_bytes()).to_bytes();
@@ -767,6 +815,38 @@ fn derive_add_result_handle(lhs: [u8; 32], rhs: [u8; 32], is_scalar: bool) -> [u
 
 fn derive_sub_result_handle(lhs: [u8; 32], rhs: [u8; 32], is_scalar: bool) -> [u8; 32] {
     derive_result_handle_with_tag(lhs, rhs, is_scalar, OP_SUB)
+}
+
+fn derive_unary_result_handle(input: [u8; 32], tag: u8) -> [u8; 32] {
+    let mut output = input;
+    output[30] ^= tag;
+    output
+}
+
+fn derive_ternary_result_handle(
+    first: [u8; 32],
+    second: [u8; 32],
+    third: [u8; 32],
+    tag: u8,
+) -> [u8; 32] {
+    let mut output = [0u8; 32];
+    for i in 0..32 {
+        output[i] = first[i] ^ second[i] ^ third[i];
+    }
+    output[28] ^= tag;
+    output
+}
+
+fn derive_if_then_else_result_handle(
+    control: [u8; 32],
+    if_true: [u8; 32],
+    if_false: [u8; 32],
+) -> [u8; 32] {
+    derive_ternary_result_handle(control, if_true, if_false, OP_IF_THEN_ELSE)
+}
+
+fn derive_cast_result_handle(input: [u8; 32], to_type: u8) -> [u8; 32] {
+    derive_unary_result_handle(input, OP_CAST ^ to_type)
 }
 
 fn send_instruction(
@@ -897,6 +977,35 @@ async fn worker_queue_snapshot(
         runnable_transactions,
         null_transaction_ids,
     })
+}
+
+async fn assert_computation_contract(
+    pool: &sqlx::PgPool,
+    tenant_id: i32,
+    output_handle: &[u8],
+    expected_operation: SupportedFheOperations,
+    expected_is_scalar: bool,
+    expected_dependencies: &[Vec<u8>],
+) -> anyhow::Result<()> {
+    let (fhe_operation, is_scalar, dependencies): (i16, bool, Vec<Vec<u8>>) = sqlx::query_as(
+        "
+        SELECT fhe_operation, is_scalar, dependencies
+        FROM computations
+        WHERE tenant_id = $1
+          AND output_handle = $2
+        LIMIT 1
+        ",
+    )
+    .bind(tenant_id)
+    .bind(output_handle)
+    .fetch_one(pool)
+    .await
+    .context("fetch computation contract row")?;
+
+    assert_eq!(fhe_operation, expected_operation as i16);
+    assert_eq!(is_scalar, expected_is_scalar);
+    assert_eq!(dependencies, expected_dependencies);
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1290,6 +1399,192 @@ async fn localnet_solana_request_sub_computes_and_decrypts() -> anyhow::Result<(
         decrypt_handle_value(&harness.pool, harness.tenant_id, &result_handle).await?;
     assert_eq!(output_type, 4);
     assert_eq!(decrypted, "1");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+#[ignore = "requires Docker daemon, Solana image, anchor binary, and tfhe-worker runtime"]
+async fn localnet_solana_request_if_then_else_computes_and_decrypts() -> anyhow::Result<()> {
+    let mut harness = setup_compute_harness().await?;
+
+    let control = [0x13_u8; 32];
+    let if_true = [0x24_u8; 32];
+    let if_false = [0x35_u8; 32];
+    let result_handle = derive_if_then_else_result_handle(control, if_true, if_false);
+    let allowed_account = Pubkey::new_unique();
+
+    seed_trivial_ciphertexts(
+        &mut harness.worker_client,
+        vec![
+            TrivialEncryptRequestSingle {
+                handle: control.to_vec(),
+                be_value: vec![1],
+                output_type: 0,
+            },
+            TrivialEncryptRequestSingle {
+                handle: if_true.to_vec(),
+                be_value: vec![200],
+                output_type: 4,
+            },
+            TrivialEncryptRequestSingle {
+                handle: if_false.to_vec(),
+                be_value: vec![7],
+                output_type: 4,
+            },
+        ],
+    )
+    .await?;
+
+    let start_cursor = finalized_cursor(&harness.localnet.rpc_client)?;
+    let request_if_then_else_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_request_if_then_else_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            control,
+            if_true,
+            if_false,
+        ),
+    )?;
+    let _allow_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_allow_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            result_handle,
+            allowed_account,
+        ),
+    )?;
+
+    let mut source = SolanaRpcEventSource::new(
+        harness.localnet.solana.rpc_url.clone(),
+        SOLANA_PROGRAM_ID_STR,
+        HOST_CHAIN_ID,
+    );
+    let mut db =
+        Database::connect(&harness.postgres.db_url, HOST_CHAIN_ID, harness.tenant_id).await?;
+    let (ingest_summary, _) =
+        ingest_from_cursor(&mut source, &mut db, harness.tenant_id, start_cursor, 2).await?;
+    assert_eq!(ingest_summary.inserted_computations, 1);
+    assert_eq!(ingest_summary.inserted_allowed_handles, 1);
+
+    assert_computation_contract(
+        &harness.pool,
+        harness.tenant_id,
+        &result_handle,
+        SupportedFheOperations::FheIfThenElse,
+        false,
+        &[control.to_vec(), if_true.to_vec(), if_false.to_vec()],
+    )
+    .await?;
+
+    let tx_signature = request_if_then_else_sig.as_ref().to_vec();
+    wait_for_output_completion(
+        &harness.pool,
+        harness.tenant_id,
+        &result_handle,
+        &tx_signature,
+    )
+    .await?;
+
+    let output_exists =
+        output_ciphertext_count(&harness.pool, harness.tenant_id, &result_handle).await?;
+    assert_eq!(output_exists, 1);
+
+    let (decrypted, output_type) =
+        decrypt_handle_value(&harness.pool, harness.tenant_id, &result_handle).await?;
+    assert_eq!(output_type, 4);
+    assert_eq!(decrypted, "200");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+#[ignore = "requires Docker daemon, Solana image, anchor binary, and tfhe-worker runtime"]
+async fn localnet_solana_request_cast_computes_and_decrypts() -> anyhow::Result<()> {
+    let mut harness = setup_compute_harness().await?;
+
+    let input = [0x46_u8; 32];
+    let to_type: u8 = 3;
+    let result_handle = derive_cast_result_handle(input, to_type);
+    let allowed_account = Pubkey::new_unique();
+
+    seed_trivial_ciphertexts(
+        &mut harness.worker_client,
+        vec![TrivialEncryptRequestSingle {
+            handle: input.to_vec(),
+            be_value: vec![200],
+            output_type: 4,
+        }],
+    )
+    .await?;
+
+    let start_cursor = finalized_cursor(&harness.localnet.rpc_client)?;
+    let request_cast_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_request_cast_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            input,
+            to_type,
+        ),
+    )?;
+    let _allow_sig = send_instruction(
+        &harness.localnet.rpc_client,
+        &harness.localnet.payer,
+        build_allow_instruction(
+            harness.localnet.program_id,
+            harness.localnet.payer.pubkey(),
+            result_handle,
+            allowed_account,
+        ),
+    )?;
+
+    let mut source = SolanaRpcEventSource::new(
+        harness.localnet.solana.rpc_url.clone(),
+        SOLANA_PROGRAM_ID_STR,
+        HOST_CHAIN_ID,
+    );
+    let mut db =
+        Database::connect(&harness.postgres.db_url, HOST_CHAIN_ID, harness.tenant_id).await?;
+    let (ingest_summary, _) =
+        ingest_from_cursor(&mut source, &mut db, harness.tenant_id, start_cursor, 2).await?;
+    assert_eq!(ingest_summary.inserted_computations, 1);
+    assert_eq!(ingest_summary.inserted_allowed_handles, 1);
+
+    assert_computation_contract(
+        &harness.pool,
+        harness.tenant_id,
+        &result_handle,
+        SupportedFheOperations::FheCast,
+        true,
+        &[input.to_vec(), vec![to_type]],
+    )
+    .await?;
+
+    let tx_signature = request_cast_sig.as_ref().to_vec();
+    wait_for_output_completion(
+        &harness.pool,
+        harness.tenant_id,
+        &result_handle,
+        &tx_signature,
+    )
+    .await?;
+
+    let output_exists =
+        output_ciphertext_count(&harness.pool, harness.tenant_id, &result_handle).await?;
+    assert_eq!(output_exists, 1);
+
+    let (decrypted, output_type) =
+        decrypt_handle_value(&harness.pool, harness.tenant_id, &result_handle).await?;
+    assert_eq!(output_type, i16::from(to_type));
+    assert_eq!(decrypted, "200");
 
     Ok(())
 }

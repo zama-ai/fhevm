@@ -33,8 +33,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ "$CASE" != "emit" && "$CASE" != "sub" && "$CASE" != "acl" && "$CASE" != "all" ]]; then
-    log_error "Invalid --case value: $CASE (allowed: emit | sub | acl | all)"
+if [[ "$CASE" != "emit" && "$CASE" != "sub" && "$CASE" != "ite" && "$CASE" != "cast" && "$CASE" != "acl" && "$CASE" != "all" ]]; then
+    log_error "Invalid --case value: $CASE (allowed: emit | sub | ite | cast | acl | all)"
     exit 1
 fi
 
@@ -70,6 +70,14 @@ fi
 
 if [[ "$CASE" == "sub" || "$CASE" == "all" ]]; then
     run_test_case "localnet_solana_request_sub_computes_and_decrypts"
+fi
+
+if [[ "$CASE" == "ite" || "$CASE" == "all" ]]; then
+    run_test_case "localnet_solana_request_if_then_else_computes_and_decrypts"
+fi
+
+if [[ "$CASE" == "cast" || "$CASE" == "all" ]]; then
+    run_test_case "localnet_solana_request_cast_computes_and_decrypts"
 fi
 
 if [[ "$CASE" == "acl" || "$CASE" == "all" ]]; then
