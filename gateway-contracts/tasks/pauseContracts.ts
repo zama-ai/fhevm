@@ -105,7 +105,6 @@ task("task:unpauseDecryption")
 // The following contracts are pausable but don't have pausable functions yet, so they are
 // not paused by the `pauseAllGatewayContracts()` function for now:
 // - CiphertextCommits
-// - MultichainACL
 // - GatewayConfig
 // In addition, the `KMSGeneration` contract is not used yet, so we don't need to pause it for now.
 // See https://github.com/zama-ai/fhevm-internal/issues/180
