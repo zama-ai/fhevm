@@ -517,6 +517,85 @@ async fn test_slow_lane_threshold_matrix_locally() -> Result<(), anyhow::Error>
 
 #[tokio::test]
 #[serial(db)]
+async fn test_schedule_priority_migration_contract() -> Result<(), anyhow::Error>
+{
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("valid db instance");
+
+    let db_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(test_instance.db_url())
+        .await?;
+
+    let column_row = sqlx::query_as::<_, (String, String, Option<String>)>(
+        r#"
+        SELECT data_type, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'dependence_chain'
+          AND column_name = 'schedule_priority'
+        "#,
+    )
+    .fetch_one(&db_pool)
+    .await?;
+
+    assert_eq!(column_row.0, "smallint");
+    assert_eq!(column_row.1, "NO");
+    let default_expr = column_row
+        .2
+        .expect("schedule_priority column default must exist");
+    assert!(
+        default_expr.contains('0'),
+        "unexpected schedule_priority default: {default_expr}"
+    );
+
+    let index_def = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT pg_get_indexdef(i.indexrelid)
+        FROM pg_index i
+        JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname = 'idx_pending_dependence_chain'
+        "#,
+    )
+    .fetch_one(&db_pool)
+    .await?;
+
+    let lowered = index_def.to_lowercase();
+    let pos_schedule = lowered
+        .find("schedule_priority")
+        .expect("index must include schedule_priority");
+    let pos_updated = lowered
+        .find("last_updated_at")
+        .expect("index must include last_updated_at");
+    let pos_dep_chain = lowered
+        .find("dependence_chain_id")
+        .expect("index must include dependence_chain_id");
+    assert!(
+        pos_schedule < pos_updated && pos_updated < pos_dep_chain,
+        "index key order must be schedule_priority, last_updated_at, dependence_chain_id: {index_def}"
+    );
+    for token in [
+        "where",
+        "status",
+        "updated",
+        "worker_id",
+        "is null",
+        "dependency_count",
+        "= 0",
+    ] {
+        assert!(
+            lowered.contains(token),
+            "index predicate missing `{token}` in: {index_def}"
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
 ) -> Result<(), anyhow::Error> {
     let setup = setup_with_block_time(None, 3.0).await?;
