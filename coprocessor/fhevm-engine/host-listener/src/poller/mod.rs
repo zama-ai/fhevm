@@ -90,11 +90,13 @@ pub struct PollerConfig {
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
-    if !config.service_name.is_empty() {
-        if let Err(err) = telemetry::setup_otlp(&config.service_name) {
-            warn!(error = %err, "Failed to setup OTLP");
+    let _otel_guard = match telemetry::init_otel(&config.service_name) {
+        Ok(otel_guard) => otel_guard,
+        Err(err) => {
+            error!(error = %err, "Failed to setup OTLP");
+            None
         }
-    }
+    };
 
     let acl_address = config.acl_address;
     let tfhe_address = config.tfhe_address;

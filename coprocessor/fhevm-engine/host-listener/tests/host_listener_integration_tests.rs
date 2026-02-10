@@ -316,7 +316,11 @@ async fn test_listener_no_event_loss(
     reorg: bool,
 ) -> Result<(), anyhow::Error> {
     let setup = setup(None).await?;
-    let args = setup.args.clone();
+    let mut args = setup.args.clone();
+    // This test intentionally aborts/restarts the listener many times.
+    // Keep telemetry disabled here to avoid coupling event-loss assertions
+    // with exporter/shutdown timing.
+    args.service_name.clear();
 
     // Start listener in background task
     let listener_handle = tokio::spawn(main(args.clone()));
