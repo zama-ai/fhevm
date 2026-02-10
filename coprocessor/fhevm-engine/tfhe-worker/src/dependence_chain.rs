@@ -220,7 +220,7 @@ impl LockMngr {
     }
 
     /// Acquire the earliest dependence-chain entry for processing
-    /// sorted by last_updated_at (FIFO). Here we ignore
+    /// sorted by schedule_priority and then last_updated_at. Here we ignore
     /// dependency_count as reorgs can lead to incorrect counts and
     /// set of dependents until we add block hashes to transaction
     /// hashes to uniquely identify transactions.
@@ -243,7 +243,7 @@ impl LockMngr {
                     status = 'updated'      -- Marked as updated by host-listener
                     AND
                     worker_id IS NULL       -- Ensure no other workers own it
-                ORDER BY last_updated_at ASC        -- FIFO
+                ORDER BY schedule_priority ASC, last_updated_at ASC -- highest priority first
                 FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
                 LIMIT 1
             )
