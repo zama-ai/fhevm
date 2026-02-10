@@ -71,7 +71,8 @@ Pass gates:
 
 1. `request_add` maps to one `computations` action.
 2. `allow` maps to one `allowed_handles` and one `pbs_computations` action.
-3. `schedule_order` remains deterministic.
+3. Generic opcode events map to expected TFHE operations (`binary`, `unary`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`).
+4. `schedule_order` remains deterministic.
 
 ## T1: DB Assertion Loop
 

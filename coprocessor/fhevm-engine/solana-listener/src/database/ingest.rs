@@ -77,25 +77,37 @@ pub fn map_envelope_to_actions(
     let tx_signature = Some(envelope.tx_signature.clone());
 
     let mut actions = IngestActions::default();
+    let mut push_computation =
+        |output_handle: &[_; 32],
+         dependencies: Vec<Vec<u8>>,
+         is_scalar: bool,
+         fhe_operation: SupportedFheOperations| {
+            actions.computations.push(ComputationInsert {
+                tenant_id,
+                output_handle: output_handle.to_vec(),
+                dependencies,
+                fhe_operation: fhe_operation as i16,
+                is_scalar,
+                dependence_chain_id: dependence_chain_from_signature(&envelope.tx_signature),
+                transaction_id: tx_signature.clone(),
+                // Keep ACL semantics explicit: requested operations are queued but
+                // not runnable until a matching allow event unlocks the handle.
+                is_allowed: false,
+                schedule_order,
+                is_completed: false,
+            });
+        };
     let mut push_binary = |lhs: &[_; 32],
                            rhs: &[_; 32],
                            is_scalar: bool,
                            result_handle: &[_; 32],
                            fhe_operation: SupportedFheOperations| {
-        actions.computations.push(ComputationInsert {
-            tenant_id,
-            output_handle: result_handle.to_vec(),
-            dependencies: vec![lhs.to_vec(), rhs.to_vec()],
-            fhe_operation: fhe_operation as i16,
+        push_computation(
+            result_handle,
+            vec![lhs.to_vec(), rhs.to_vec()],
             is_scalar,
-            dependence_chain_id: dependence_chain_from_signature(&envelope.tx_signature),
-            transaction_id: tx_signature.clone(),
-            // Keep ACL semantics explicit: requested operations are queued but
-            // not runnable until a matching allow event unlocks the handle.
-            is_allowed: false,
-            schedule_order,
-            is_completed: false,
-        });
+            fhe_operation,
+        );
     };
 
     match &envelope.event {
@@ -124,6 +136,88 @@ pub fn map_envelope_to_actions(
             *is_scalar,
             result_handle,
             SupportedFheOperations::FheSub,
+        ),
+        ProgramEventV0::OpRequestedBinaryV1 {
+            lhs,
+            rhs,
+            is_scalar,
+            result_handle,
+            opcode,
+            ..
+        } => push_binary(
+            lhs,
+            rhs,
+            *is_scalar,
+            result_handle,
+            binary_opcode_to_operation(*opcode)?,
+        ),
+        ProgramEventV0::OpRequestedUnaryV1 {
+            input,
+            result_handle,
+            opcode,
+            ..
+        } => push_computation(
+            result_handle,
+            vec![input.to_vec()],
+            false,
+            unary_opcode_to_operation(*opcode)?,
+        ),
+        ProgramEventV0::OpRequestedIfThenElseV1 {
+            control,
+            if_true,
+            if_false,
+            result_handle,
+            ..
+        } => push_computation(
+            result_handle,
+            vec![control.to_vec(), if_true.to_vec(), if_false.to_vec()],
+            false,
+            SupportedFheOperations::FheIfThenElse,
+        ),
+        ProgramEventV0::OpRequestedCastV1 {
+            input,
+            to_type,
+            result_handle,
+            ..
+        } => push_computation(
+            result_handle,
+            vec![input.to_vec(), vec![*to_type]],
+            true,
+            SupportedFheOperations::FheCast,
+        ),
+        ProgramEventV0::OpRequestedTrivialEncryptV1 {
+            pt,
+            to_type,
+            result_handle,
+            ..
+        } => push_computation(
+            result_handle,
+            vec![pt.to_vec(), vec![*to_type]],
+            true,
+            SupportedFheOperations::FheTrivialEncrypt,
+        ),
+        ProgramEventV0::OpRequestedRandV1 {
+            rand_type,
+            seed,
+            result_handle,
+            ..
+        } => push_computation(
+            result_handle,
+            vec![seed.to_vec(), vec![*rand_type]],
+            true,
+            SupportedFheOperations::FheRand,
+        ),
+        ProgramEventV0::OpRequestedRandBoundedV1 {
+            upper_bound,
+            rand_type,
+            seed,
+            result_handle,
+            ..
+        } => push_computation(
+            result_handle,
+            vec![seed.to_vec(), upper_bound.to_vec(), vec![*rand_type]],
+            true,
+            SupportedFheOperations::FheRandBounded,
         ),
         ProgramEventV0::HandleAllowedV1 {
             handle, account, ..
@@ -155,6 +249,42 @@ pub fn map_envelope_to_actions(
     });
 
     Ok(actions)
+}
+
+fn binary_opcode_to_operation(opcode: u8) -> Result<SupportedFheOperations> {
+    let op = match opcode {
+        0 => SupportedFheOperations::FheAdd,
+        1 => SupportedFheOperations::FheSub,
+        2 => SupportedFheOperations::FheMul,
+        3 => SupportedFheOperations::FheDiv,
+        4 => SupportedFheOperations::FheRem,
+        5 => SupportedFheOperations::FheBitAnd,
+        6 => SupportedFheOperations::FheBitOr,
+        7 => SupportedFheOperations::FheBitXor,
+        8 => SupportedFheOperations::FheShl,
+        9 => SupportedFheOperations::FheShr,
+        10 => SupportedFheOperations::FheRotl,
+        11 => SupportedFheOperations::FheRotr,
+        12 => SupportedFheOperations::FheEq,
+        13 => SupportedFheOperations::FheNe,
+        14 => SupportedFheOperations::FheGe,
+        15 => SupportedFheOperations::FheGt,
+        16 => SupportedFheOperations::FheLe,
+        17 => SupportedFheOperations::FheLt,
+        18 => SupportedFheOperations::FheMin,
+        19 => SupportedFheOperations::FheMax,
+        _ => anyhow::bail!("unsupported binary opcode: {opcode}"),
+    };
+    Ok(op)
+}
+
+fn unary_opcode_to_operation(opcode: u8) -> Result<SupportedFheOperations> {
+    let op = match opcode {
+        20 => SupportedFheOperations::FheNeg,
+        21 => SupportedFheOperations::FheNot,
+        _ => anyhow::bail!("unsupported unary opcode: {opcode}"),
+    };
+    Ok(op)
 }
 
 pub fn compute_schedule_order(
@@ -284,5 +414,151 @@ mod tests {
         assert!(!actions.computations[0].is_scalar);
         assert_eq!(actions.computations[0].dependencies[0], vec![9u8; 32]);
         assert_eq!(actions.computations[0].dependencies[1], vec![10u8; 32]);
+    }
+
+    #[test]
+    fn map_binary_opcode_event_to_computation() {
+        let envelope = FinalizedEventEnvelope {
+            version: INTERFACE_V0_VERSION,
+            host_chain_id: 4242,
+            slot: 123,
+            block_time_unix: 1_700_000_300,
+            tx_signature: fixed_sig(),
+            tx_index: 1,
+            op_index: 1,
+            event: ProgramEventV0::OpRequestedBinaryV1 {
+                caller: Pubkey::new_from_array([1u8; 32]),
+                lhs: [12u8; 32],
+                rhs: [13u8; 32],
+                is_scalar: true,
+                result_handle: [14u8; 32],
+                opcode: 2,
+            },
+        };
+
+        let actions = map_envelope_to_actions(&envelope, 11).expect("mapping should work");
+        assert_eq!(
+            actions.computations[0].fhe_operation,
+            SupportedFheOperations::FheMul as i16
+        );
+        assert!(actions.computations[0].is_scalar);
+    }
+
+    #[test]
+    fn map_unary_opcode_event_to_computation() {
+        let envelope = FinalizedEventEnvelope {
+            version: INTERFACE_V0_VERSION,
+            host_chain_id: 4242,
+            slot: 124,
+            block_time_unix: 1_700_000_400,
+            tx_signature: fixed_sig(),
+            tx_index: 1,
+            op_index: 2,
+            event: ProgramEventV0::OpRequestedUnaryV1 {
+                caller: Pubkey::new_from_array([1u8; 32]),
+                input: [15u8; 32],
+                result_handle: [16u8; 32],
+                opcode: 20,
+            },
+        };
+
+        let actions = map_envelope_to_actions(&envelope, 12).expect("mapping should work");
+        assert_eq!(
+            actions.computations[0].fhe_operation,
+            SupportedFheOperations::FheNeg as i16
+        );
+        assert_eq!(actions.computations[0].dependencies, vec![vec![15u8; 32]]);
+    }
+
+    #[test]
+    fn map_other_tfhe_events_to_computation() {
+        let base = FinalizedEventEnvelope {
+            version: INTERFACE_V0_VERSION,
+            host_chain_id: 4242,
+            slot: 125,
+            block_time_unix: 1_700_000_500,
+            tx_signature: fixed_sig(),
+            tx_index: 0,
+            op_index: 0,
+            event: ProgramEventV0::OpRequestedIfThenElseV1 {
+                caller: Pubkey::new_from_array([1u8; 32]),
+                control: [1u8; 32],
+                if_true: [2u8; 32],
+                if_false: [3u8; 32],
+                result_handle: [4u8; 32],
+            },
+        };
+        let if_then_else_actions = map_envelope_to_actions(&base, 13).expect("if-then-else");
+        assert_eq!(
+            if_then_else_actions.computations[0].fhe_operation,
+            SupportedFheOperations::FheIfThenElse as i16
+        );
+
+        let cast = FinalizedEventEnvelope {
+            event: ProgramEventV0::OpRequestedCastV1 {
+                caller: Pubkey::new_from_array([1u8; 32]),
+                input: [5u8; 32],
+                to_type: 4,
+                result_handle: [6u8; 32],
+            },
+            ..base.clone()
+        };
+        let cast_actions = map_envelope_to_actions(&cast, 13).expect("cast");
+        assert_eq!(
+            cast_actions.computations[0].fhe_operation,
+            SupportedFheOperations::FheCast as i16
+        );
+        assert_eq!(
+            cast_actions.computations[0].dependencies,
+            vec![vec![5u8; 32], vec![4u8]]
+        );
+
+        let trivial_encrypt = FinalizedEventEnvelope {
+            event: ProgramEventV0::OpRequestedTrivialEncryptV1 {
+                caller: Pubkey::new_from_array([1u8; 32]),
+                pt: [7u8; 32],
+                to_type: 3,
+                result_handle: [8u8; 32],
+            },
+            ..base.clone()
+        };
+        let trivial_actions =
+            map_envelope_to_actions(&trivial_encrypt, 13).expect("trivial_encrypt");
+        assert_eq!(
+            trivial_actions.computations[0].fhe_operation,
+            SupportedFheOperations::FheTrivialEncrypt as i16
+        );
+
+        let rand = FinalizedEventEnvelope {
+            event: ProgramEventV0::OpRequestedRandV1 {
+                caller: Pubkey::new_from_array([1u8; 32]),
+                rand_type: 2,
+                seed: [9u8; 32],
+                result_handle: [10u8; 32],
+            },
+            ..base.clone()
+        };
+        let rand_actions = map_envelope_to_actions(&rand, 13).expect("rand");
+        assert_eq!(
+            rand_actions.computations[0].fhe_operation,
+            SupportedFheOperations::FheRand as i16
+        );
+
+        let rand_bounded = FinalizedEventEnvelope {
+            event: ProgramEventV0::OpRequestedRandBoundedV1 {
+                caller: Pubkey::new_from_array([1u8; 32]),
+                upper_bound: [11u8; 32],
+                rand_type: 2,
+                seed: [12u8; 32],
+                result_handle: [13u8; 32],
+            },
+            ..base
+        };
+        let rand_bounded_actions =
+            map_envelope_to_actions(&rand_bounded, 13).expect("rand_bounded");
+        assert_eq!(
+            rand_bounded_actions.computations[0].fhe_operation,
+            SupportedFheOperations::FheRandBounded as i16
+        );
     }
 }

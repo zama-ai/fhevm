@@ -14,7 +14,7 @@ This is an exploratory PoC. Code can be discarded after each experiment if the l
 
 ```mermaid
 flowchart LR
-  A["Scope lock: add + sub + allow"] --> B["Anchor interface + event mode freeze"]
+  A["Scope lock: full TFHE symbolic ops + allow"] --> B["Anchor interface + event mode freeze"]
   B --> C["RPC baseline: emit! vs emit_cpi!"]
   C --> D["Replay/idempotency validation loop"]
   D --> E["Compare alternatives: Geyser/Helius + PDA/journal"]

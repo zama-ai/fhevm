@@ -2,13 +2,13 @@
 
 Date: 2026-02-09
 Last synced: 2026-02-10
-Status: Frozen baseline (`add`, `allow`) + active incremental extension (`sub`)
+Status: Frozen baseline (`add`, `allow`) + active full-op extension (`all TFHE symbolic ops`)
 
 ## Goal
 
 Define the minimal Solana host contract that maps 1:1 to current EVM listener semantics for:
 
-1. symbolic add/sub request ingestion
+1. symbolic TFHE request ingestion (full operation surface)
 2. persistent allow ingestion
 
 Baseline source strategy: finalized RPC logs/events as canonical input, with optional confirmed logs as hint-only.
@@ -19,9 +19,23 @@ Baseline source strategy: finalized RPC logs/events as canonical input, with opt
 |---|---|---|
 | `request_add` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool` | Symbolic request only; no FHE compute on-chain. |
 | `request_sub` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool` | Same contract as add, mapped to `FheSub`. |
+| `request_binary_op` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool`, `opcode: u8` | Covers binary/comparison/bitwise/shift/rotate/min/max (`FheAdd..FheMax`, opcodes `0..19`). |
+| `request_unary_op` | `input: [u8;32]`, `opcode: u8` | Covers unary ops (`FheNeg`, `FheNot`, opcodes `20/21`). |
+| `request_if_then_else` | `control: [u8;32]`, `if_true: [u8;32]`, `if_false: [u8;32]` | Maps to `FheIfThenElse`. |
+| `request_cast` | `input: [u8;32]`, `to_type: u8` | Maps to `FheCast`. |
+| `request_trivial_encrypt` | `pt: [u8;32]`, `to_type: u8` | Maps to `FheTrivialEncrypt`. |
+| `request_rand` | `rand_type: u8`, `seed: [u8;32]` | Maps to `FheRand`. |
+| `request_rand_bounded` | `upper_bound: [u8;32]`, `rand_type: u8`, `seed: [u8;32]` | Maps to `FheRandBounded`. |
 | `allow` | `handle: [u8;32]`, `account: Pubkey` | Persistent allow signal equivalent to EVM `Allowed`. |
 | `request_add_cpi` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool` | Same payload contract, emitted via `emit_cpi!`. |
 | `request_sub_cpi` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool` | Same payload contract, emitted via `emit_cpi!`. |
+| `request_binary_op_cpi` | `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool`, `opcode: u8` | CPI mode for binary-op surface. |
+| `request_unary_op_cpi` | `input: [u8;32]`, `opcode: u8` | CPI mode for unary-op surface. |
+| `request_if_then_else_cpi` | `control: [u8;32]`, `if_true: [u8;32]`, `if_false: [u8;32]` | CPI mode for ternary op. |
+| `request_cast_cpi` | `input: [u8;32]`, `to_type: u8` | CPI mode for cast. |
+| `request_trivial_encrypt_cpi` | `pt: [u8;32]`, `to_type: u8` | CPI mode for trivial encrypt. |
+| `request_rand_cpi` | `rand_type: u8`, `seed: [u8;32]` | CPI mode for rand. |
+| `request_rand_bounded_cpi` | `upper_bound: [u8;32]`, `rand_type: u8`, `seed: [u8;32]` | CPI mode for bounded rand. |
 | `allow_cpi` | `handle: [u8;32]`, `account: Pubkey` | Same payload contract, emitted via `emit_cpi!`. |
 
 ## Emitted Events (v0)
@@ -30,6 +44,13 @@ Baseline source strategy: finalized RPC logs/events as canonical input, with opt
 |---|---|---|
 | `OpRequestedAddV1` | `caller: Pubkey`, `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool`, `result_handle: [u8;32]` | Equivalent to `FheAdd(caller, lhs, rhs, scalarByte, result)` with `is_scalar <-> scalarByte != 0`. |
 | `OpRequestedSubV1` | `caller: Pubkey`, `lhs: [u8;32]`, `rhs: [u8;32]`, `is_scalar: bool`, `result_handle: [u8;32]` | Equivalent to `FheSub(caller, lhs, rhs, scalarByte, result)` with `is_scalar <-> scalarByte != 0`. |
+| `OpRequestedBinaryV1` | `caller`, `lhs`, `rhs`, `is_scalar`, `result_handle`, `opcode` | Generic binary-event contract for opcodes `0..19` (`FheAdd..FheMax`). |
+| `OpRequestedUnaryV1` | `caller`, `input`, `result_handle`, `opcode` | Generic unary-event contract for `FheNeg`/`FheNot` (`20/21`). |
+| `OpRequestedIfThenElseV1` | `caller`, `control`, `if_true`, `if_false`, `result_handle` | Equivalent to `FheIfThenElse`. |
+| `OpRequestedCastV1` | `caller`, `input`, `to_type`, `result_handle` | Equivalent to `Cast`. |
+| `OpRequestedTrivialEncryptV1` | `caller`, `pt`, `to_type`, `result_handle` | Equivalent to `TrivialEncrypt`. |
+| `OpRequestedRandV1` | `caller`, `rand_type`, `seed`, `result_handle` | Equivalent to `FheRand`. |
+| `OpRequestedRandBoundedV1` | `caller`, `upper_bound`, `rand_type`, `seed`, `result_handle` | Equivalent to `FheRandBounded`. |
 | `HandleAllowedV1` | `caller: Pubkey`, `handle: [u8;32]`, `account: Pubkey` | Equivalent to ACL `Allowed(handle, account)`. |
 
 ## Event Transport Modes (same payload contract)
@@ -55,25 +76,63 @@ Not emitted by program; injected from finalized RPC context:
 
 ## Canonical Mapping to Existing DB Contracts
 
-### `OpRequestedAddV1` -> `computations`
+### `OpRequestedAddV1` / `OpRequestedSubV1` -> `computations`
 
 1. `output_handle` = `result_handle`
 2. `dependencies` = `[lhs, rhs]`
-3. `fhe_operation` = `FheAdd`
+3. `fhe_operation` = `FheAdd` or `FheSub`
 4. `is_scalar` = event `is_scalar`
 5. `transaction_id` = `tx_signature`
 6. `schedule_order` = `slot_time + tx_index + op_index`
 7. idempotency semantics must match current host-listener (`ON CONFLICT ... DO NOTHING` behavior)
 
-### `OpRequestedSubV1` -> `computations`
+### `OpRequestedBinaryV1` -> `computations`
 
 1. `output_handle` = `result_handle`
 2. `dependencies` = `[lhs, rhs]`
-3. `fhe_operation` = `FheSub`
+3. `fhe_operation` = opcode mapping (`0..19`) to `FheAdd..FheMax`
 4. `is_scalar` = event `is_scalar`
 5. `transaction_id` = `tx_signature`
 6. `schedule_order` = `slot_time + tx_index + op_index`
 7. idempotency semantics must match current host-listener (`ON CONFLICT ... DO NOTHING` behavior)
+
+### `OpRequestedUnaryV1` -> `computations`
+
+1. `output_handle` = `result_handle`
+2. `dependencies` = `[input]`
+3. `fhe_operation` = opcode mapping (`20/21`) to `FheNeg`/`FheNot`
+4. `is_scalar` = `false`
+5. `transaction_id` = `tx_signature`
+
+### `OpRequestedIfThenElseV1` -> `computations`
+
+1. `dependencies` = `[control, if_true, if_false]`
+2. `fhe_operation` = `FheIfThenElse`
+3. `is_scalar` = `false`
+
+### `OpRequestedCastV1` -> `computations`
+
+1. `dependencies` = `[input, [to_type]]`
+2. `fhe_operation` = `FheCast`
+3. `is_scalar` = `true`
+
+### `OpRequestedTrivialEncryptV1` -> `computations`
+
+1. `dependencies` = `[pt, [to_type]]`
+2. `fhe_operation` = `FheTrivialEncrypt`
+3. `is_scalar` = `true`
+
+### `OpRequestedRandV1` -> `computations`
+
+1. `dependencies` = `[seed, [rand_type]]`
+2. `fhe_operation` = `FheRand`
+3. `is_scalar` = `true`
+
+### `OpRequestedRandBoundedV1` -> `computations`
+
+1. `dependencies` = `[seed, upper_bound, [rand_type]]`
+2. `fhe_operation` = `FheRandBounded`
+3. `is_scalar` = `true`
 
 ### `HandleAllowedV1` -> `allowed_handles` and `pbs_computations`
 

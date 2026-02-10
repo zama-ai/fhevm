@@ -24,7 +24,8 @@ flowchart TD
   E6 --> E7["Experiment 7: worker e2e + ACL gate semantics"]
   E7 --> E8["Experiment 8: reproducible Tier-3 e2e run protocol"]
   E8 --> E9["Experiment 9: first non-ADD op parity (SUB)"]
-  E9 --> NX["Next checkpoint: managed source comparison + broader op surface"]
+  E9 --> E10["Experiment 10: full TFHE op-surface listener parity"]
+  E10 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
 ```
 
 ## Current Facts (confirmed)
@@ -41,6 +42,7 @@ flowchart TD
 10. Local Solana rent estimates (2026-02-09) show per-tx receipt PDA cost can become prohibitive with long TTL at moderate/high TPS; this is now an explicit design gate.
 11. Tier-3 e2e runs now have a dedicated script entrypoint (`solana-poc-tier3-e2e.sh`) with explicit prerequisites and deterministic case selection.
 12. Operation parity expansion started with `SUB` in Solana listener decode + ingest mapping (same DB contract as `ADD`).
+13. Solana host/listener now supports full TFHE symbolic op surface at interface + decode + ingest mapping layers (`binary`, `unary`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`).
 
 ## Open Questions
 
@@ -199,7 +201,7 @@ Notes:
 
 1. Production indexer reliability under high throughput/long reorg windows.
 2. Cost/perf envelope at scale (TPS/load/rent economics).
-3. Full op-surface parity beyond the current minimal `request_add` + `allow` slice.
+3. Full-op e2e execution coverage across all newly supported operations (today e2e runtime is still validated on representative slices, not every op).
 4. Final architecture choice between long-lived adapter abstraction vs standalone listener service.
 
 ## Decision Log
@@ -250,6 +252,22 @@ Notes:
 - Unit coverage added for decoder + ingest mapping.
 - ACL gate integration test now checks both `emit!` and `emit_cpi!` modes.
 
+### Experiment 10: Full TFHE op-surface listener parity
+
+Date: 2026-02-10
+Objective: Expand PoC operation surface from `ADD/SUB` to full symbolic TFHE op ingestion parity.
+Result: Completed at interface + decode + ingest mapping layers.
+Confidence: Medium-high
+Notes:
+
+- Host program extended with generic symbolic instructions/events for:
+  - binary ops (`opcode 0..19`)
+  - unary ops (`20/21`)
+  - `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`
+- Listener decoder now parses all corresponding event types from both `emit!` logs and `emit_cpi!` inner instructions.
+- Ingest mapping now converts all supported op events into canonical `computations` rows with operation-specific dependency encoding aligned with EVM ingestion semantics.
+- Unit test coverage added for new decoder and ingest mappings; existing Tier-3 `request_add` e2e sanity remains green after extension.
+
 ### D3
 
 Date: 2026-02-09
@@ -276,6 +294,13 @@ Status: Active.
 Date: 2026-02-09
 Decision: Freeze minimal v0 Solana host interface with two instructions (`request_add`, `allow`) and two emitted events (`OpRequestedAddV1`, `HandleAllowedV1`) mapped 1:1 to current DB ingestion semantics.
 Why: establish an unambiguous contract before implementing listener internals; reduce churn and improve test explainability.
+Status: Superseded by D10 after baseline validation.
+
+### D10
+
+Date: 2026-02-10
+Decision: Extend Solana host/listener interface to full symbolic TFHE op surface using typed generic op events while preserving canonical DB contract and existing `add/sub/allow` compatibility.
+Why: execute the parity expansion track without refactoring shared downstream worker/scheduler path, and keep the event-to-DB boundary explicit.
 Status: Active.
 
 ### D7

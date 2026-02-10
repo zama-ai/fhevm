@@ -36,7 +36,10 @@ fn request_add_smoke_succeeds() {
         accounts: vec![AccountMeta::new(caller, true)],
         data,
     };
-    let accounts = vec![(caller, Account::new(1_000_000_000, 0, &system_program::id()))];
+    let accounts = vec![(
+        caller,
+        Account::new(1_000_000_000, 0, &system_program::id()),
+    )];
 
     let mollusk = Mollusk::new(&program_id, PROGRAM_ELF_NAME);
     mollusk.process_and_validate_instruction(&instruction, &accounts, &[Check::success()]);
@@ -70,9 +73,18 @@ fn request_add_cpi_emits_one_inner_instruction() {
         data,
     };
     let accounts = vec![
-        (caller, Account::new(1_000_000_000, 0, &system_program::id())),
-        (event_authority, Account::new(1_000_000_000, 0, &system_program::id())),
-        (program_id, Account::new(1_000_000_000, 0, &system_program::id())),
+        (
+            caller,
+            Account::new(1_000_000_000, 0, &system_program::id()),
+        ),
+        (
+            event_authority,
+            Account::new(1_000_000_000, 0, &system_program::id()),
+        ),
+        (
+            program_id,
+            Account::new(1_000_000_000, 0, &system_program::id()),
+        ),
     ];
 
     let mut mollusk = Mollusk::new(&program_id, PROGRAM_ELF_NAME);

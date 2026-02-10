@@ -11,6 +11,13 @@ use crate::poller::{Cursor, EventSource, SourceBatch};
 
 const OP_REQUESTED_ADD_DISC: [u8; 8] = [0xA2, 0xBA, 0x5F, 0xF4, 0xD7, 0xB8, 0x1C, 0xF8];
 const OP_REQUESTED_SUB_DISC: [u8; 8] = [0xF5, 0x9C, 0x43, 0x1D, 0x6E, 0x3F, 0x96, 0x79];
+const OP_REQUESTED_BINARY_DISC: [u8; 8] = [0x9E, 0x8F, 0x42, 0xF3, 0xA3, 0xD5, 0xFB, 0x74];
+const OP_REQUESTED_UNARY_DISC: [u8; 8] = [0x51, 0x69, 0xCE, 0xE2, 0xE1, 0x05, 0x32, 0x71];
+const OP_REQUESTED_IF_THEN_ELSE_DISC: [u8; 8] = [0x2B, 0xF2, 0xEF, 0x3C, 0x40, 0xD4, 0x76, 0x5B];
+const OP_REQUESTED_CAST_DISC: [u8; 8] = [0x88, 0x97, 0xD1, 0xE0, 0x8C, 0x2C, 0xD2, 0x64];
+const OP_REQUESTED_TRIVIAL_ENCRYPT_DISC: [u8; 8] = [0xF4, 0x9C, 0x24, 0xA9, 0x43, 0xAF, 0x2B, 0x4E];
+const OP_REQUESTED_RAND_DISC: [u8; 8] = [0x1E, 0xA6, 0x89, 0x6A, 0xC1, 0x45, 0x05, 0xA0];
+const OP_REQUESTED_RAND_BOUNDED_DISC: [u8; 8] = [0x87, 0x0E, 0xB8, 0x8B, 0xAE, 0x62, 0x8D, 0x03];
 const HANDLE_ALLOWED_DISC: [u8; 8] = [0xCA, 0x41, 0x12, 0x1D, 0xF9, 0x39, 0x93, 0xEF];
 // Temporary manual decode table for PoC events.
 // TODO(zama-solana): replace this with IDL-driven decoding/codegen once we
@@ -461,6 +468,20 @@ fn decode_anchor_event(payload: &[u8]) -> Option<ProgramEventV0> {
         decode_op_requested_add(body)
     } else if discriminator == OP_REQUESTED_SUB_DISC {
         decode_op_requested_sub(body)
+    } else if discriminator == OP_REQUESTED_BINARY_DISC {
+        decode_op_requested_binary(body)
+    } else if discriminator == OP_REQUESTED_UNARY_DISC {
+        decode_op_requested_unary(body)
+    } else if discriminator == OP_REQUESTED_IF_THEN_ELSE_DISC {
+        decode_op_requested_if_then_else(body)
+    } else if discriminator == OP_REQUESTED_CAST_DISC {
+        decode_op_requested_cast(body)
+    } else if discriminator == OP_REQUESTED_TRIVIAL_ENCRYPT_DISC {
+        decode_op_requested_trivial_encrypt(body)
+    } else if discriminator == OP_REQUESTED_RAND_DISC {
+        decode_op_requested_rand(body)
+    } else if discriminator == OP_REQUESTED_RAND_BOUNDED_DISC {
+        decode_op_requested_rand_bounded(body)
     } else if discriminator == HANDLE_ALLOWED_DISC {
         decode_handle_allowed(body)
     } else {
@@ -502,6 +523,133 @@ fn decode_op_requested_sub(body: &[u8]) -> Option<ProgramEventV0> {
         lhs,
         rhs,
         is_scalar,
+        result_handle,
+    })
+}
+
+fn decode_op_requested_binary(body: &[u8]) -> Option<ProgramEventV0> {
+    if body.len() < 32 + 32 + 32 + 1 + 32 + 1 {
+        return None;
+    }
+    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
+    let lhs: HandleBytes = body[32..64].try_into().ok()?;
+    let rhs: HandleBytes = body[64..96].try_into().ok()?;
+    let is_scalar = body[96] != 0;
+    let result_handle: HandleBytes = body[97..129].try_into().ok()?;
+    let opcode = body[129];
+
+    Some(ProgramEventV0::OpRequestedBinaryV1 {
+        caller,
+        lhs,
+        rhs,
+        is_scalar,
+        result_handle,
+        opcode,
+    })
+}
+
+fn decode_op_requested_unary(body: &[u8]) -> Option<ProgramEventV0> {
+    if body.len() < 32 + 32 + 32 + 1 {
+        return None;
+    }
+    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
+    let input: HandleBytes = body[32..64].try_into().ok()?;
+    let result_handle: HandleBytes = body[64..96].try_into().ok()?;
+    let opcode = body[96];
+
+    Some(ProgramEventV0::OpRequestedUnaryV1 {
+        caller,
+        input,
+        result_handle,
+        opcode,
+    })
+}
+
+fn decode_op_requested_if_then_else(body: &[u8]) -> Option<ProgramEventV0> {
+    if body.len() < 32 + 32 + 32 + 32 + 32 {
+        return None;
+    }
+    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
+    let control: HandleBytes = body[32..64].try_into().ok()?;
+    let if_true: HandleBytes = body[64..96].try_into().ok()?;
+    let if_false: HandleBytes = body[96..128].try_into().ok()?;
+    let result_handle: HandleBytes = body[128..160].try_into().ok()?;
+
+    Some(ProgramEventV0::OpRequestedIfThenElseV1 {
+        caller,
+        control,
+        if_true,
+        if_false,
+        result_handle,
+    })
+}
+
+fn decode_op_requested_cast(body: &[u8]) -> Option<ProgramEventV0> {
+    if body.len() < 32 + 32 + 1 + 32 {
+        return None;
+    }
+    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
+    let input: HandleBytes = body[32..64].try_into().ok()?;
+    let to_type = body[64];
+    let result_handle: HandleBytes = body[65..97].try_into().ok()?;
+
+    Some(ProgramEventV0::OpRequestedCastV1 {
+        caller,
+        input,
+        to_type,
+        result_handle,
+    })
+}
+
+fn decode_op_requested_trivial_encrypt(body: &[u8]) -> Option<ProgramEventV0> {
+    if body.len() < 32 + 32 + 1 + 32 {
+        return None;
+    }
+    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
+    let pt: HandleBytes = body[32..64].try_into().ok()?;
+    let to_type = body[64];
+    let result_handle: HandleBytes = body[65..97].try_into().ok()?;
+
+    Some(ProgramEventV0::OpRequestedTrivialEncryptV1 {
+        caller,
+        pt,
+        to_type,
+        result_handle,
+    })
+}
+
+fn decode_op_requested_rand(body: &[u8]) -> Option<ProgramEventV0> {
+    if body.len() < 32 + 1 + 32 + 32 {
+        return None;
+    }
+    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
+    let rand_type = body[32];
+    let seed: HandleBytes = body[33..65].try_into().ok()?;
+    let result_handle: HandleBytes = body[65..97].try_into().ok()?;
+
+    Some(ProgramEventV0::OpRequestedRandV1 {
+        caller,
+        rand_type,
+        seed,
+        result_handle,
+    })
+}
+
+fn decode_op_requested_rand_bounded(body: &[u8]) -> Option<ProgramEventV0> {
+    if body.len() < 32 + 32 + 1 + 32 + 32 {
+        return None;
+    }
+    let caller = Pubkey::new_from_array(body[0..32].try_into().ok()?);
+    let upper_bound: HandleBytes = body[32..64].try_into().ok()?;
+    let rand_type = body[64];
+    let seed: HandleBytes = body[65..97].try_into().ok()?;
+    let result_handle: HandleBytes = body[97..129].try_into().ok()?;
+
+    Some(ProgramEventV0::OpRequestedRandBoundedV1 {
+        caller,
+        upper_bound,
+        rand_type,
+        seed,
         result_handle,
     })
 }
@@ -657,6 +805,78 @@ mod tests {
                 assert_eq!(*result_handle, [7u8; 32]);
             }
             _ => panic!("expected OpRequestedSubV1"),
+        }
+    }
+
+    #[test]
+    fn decodes_op_requested_binary_from_program_data_line() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&OP_REQUESTED_BINARY_DISC);
+        payload.extend_from_slice(&[1u8; 32]); // caller
+        payload.extend_from_slice(&[8u8; 32]); // lhs
+        payload.extend_from_slice(&[9u8; 32]); // rhs
+        payload.push(0u8); // is_scalar
+        payload.extend_from_slice(&[10u8; 32]); // result
+        payload.push(2u8); // mul opcode
+        let b64 = STANDARD.encode(payload);
+
+        let logs = [
+            format!("Program {TARGET_PROGRAM} invoke [1]"),
+            format!("Program data: {b64}"),
+            format!("Program {TARGET_PROGRAM} success"),
+        ];
+        let refs: Vec<&str> = logs.iter().map(String::as_str).collect();
+        let events = decode_program_events_from_logs(&refs, TARGET_PROGRAM);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ProgramEventV0::OpRequestedBinaryV1 {
+                lhs,
+                rhs,
+                is_scalar,
+                result_handle,
+                opcode,
+                ..
+            } => {
+                assert_eq!(*lhs, [8u8; 32]);
+                assert_eq!(*rhs, [9u8; 32]);
+                assert!(!*is_scalar);
+                assert_eq!(*result_handle, [10u8; 32]);
+                assert_eq!(*opcode, 2u8);
+            }
+            _ => panic!("expected OpRequestedBinaryV1"),
+        }
+    }
+
+    #[test]
+    fn decodes_op_requested_unary_from_program_data_line() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&OP_REQUESTED_UNARY_DISC);
+        payload.extend_from_slice(&[1u8; 32]); // caller
+        payload.extend_from_slice(&[11u8; 32]); // input
+        payload.extend_from_slice(&[12u8; 32]); // result
+        payload.push(20u8); // neg opcode
+        let b64 = STANDARD.encode(payload);
+
+        let logs = [
+            format!("Program {TARGET_PROGRAM} invoke [1]"),
+            format!("Program data: {b64}"),
+            format!("Program {TARGET_PROGRAM} success"),
+        ];
+        let refs: Vec<&str> = logs.iter().map(String::as_str).collect();
+        let events = decode_program_events_from_logs(&refs, TARGET_PROGRAM);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ProgramEventV0::OpRequestedUnaryV1 {
+                input,
+                result_handle,
+                opcode,
+                ..
+            } => {
+                assert_eq!(*input, [11u8; 32]);
+                assert_eq!(*result_handle, [12u8; 32]);
+                assert_eq!(*opcode, 20u8);
+            }
+            _ => panic!("expected OpRequestedUnaryV1"),
         }
     }
 

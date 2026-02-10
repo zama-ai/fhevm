@@ -186,6 +186,7 @@ Current checkpoint:
 4. worker e2e compute + decrypt sanity (`emit!` and `emit_cpi!`): validated
 5. ACL gate behavior (`request_add` blocked until `allow`): validated
 6. first non-ADD op mapping (`request_sub` -> `FheSub`) validated at listener decode+ingest layer
+7. full TFHE op-surface mapping (`binary`, `unary`, `if_then_else`, `cast`, `trivial_encrypt`, `rand`, `rand_bounded`) validated at listener decode+ingest unit-test layer
 
 ## v0 Binary Acceptance Checklist (Agreed)
 
