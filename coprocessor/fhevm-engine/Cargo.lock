@@ -8279,6 +8279,7 @@ dependencies = [
  "serial_test",
  "sha3",
  "solana-client",
+ "solana-commitment-config",
  "solana-pubkey 2.4.0",
  "solana-sdk",
  "sqlx",

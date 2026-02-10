@@ -6,7 +6,11 @@ license.workspace = true
 
 [features]
 default = []
-solana-e2e = ["dep:solana-client", "dep:solana-sdk"]
+solana-e2e = [
+    "dep:solana-client",
+    "dep:solana-sdk",
+    "dep:solana-commitment-config",
+]
 
 [[bin]]
 path = "src/bin/main.rs"
@@ -33,6 +37,7 @@ sha3 = { workspace = true }
 solana-pubkey = { version = "2.3.1", features = ["serde"] }
 solana-client = { version = "3.1.8", optional = true }
 solana-sdk = { version = "3.0.0", optional = true }
+solana-commitment-config = { version = "3.1.0", optional = true }
 
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 

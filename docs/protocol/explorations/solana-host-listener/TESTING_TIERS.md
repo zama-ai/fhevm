@@ -180,6 +180,32 @@ Coverage:
 6. ACL gate behavior for both `emit!` and `emit_cpi!`: without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.
 7. This tier is currently non-CI by default (heavy Docker/Anchor/tooling prerequisites); run locally before merge when touching Solana host/listener e2e behavior.
 
+## Canonical v0 Sanity Acceptance (single flow)
+
+Flow:
+
+1. `request_add -> ingest -> compute -> allow -> decrypt`.
+
+Pass conditions:
+
+1. exactly one `computations` row is inserted for the requested output handle.
+2. row ordering is deterministic (`schedule_order = slot_time + tx_index + op_index`).
+3. exactly one `allowed_handles` row and one `pbs_computations` row are inserted after `allow`.
+4. replaying the same finalized range inserts `0` new rows.
+5. worker completes the output handle (`is_completed=true`, `is_error=false`).
+6. decrypted output plaintext matches expected arithmetic result.
+
+Reference command:
+
+```bash
+cd /Users/work/.codex/worktrees/66ae/fhevm/coprocessor/fhevm-engine
+SQLX_OFFLINE=true cargo test -p solana-listener \
+  --features solana-e2e \
+  --test localnet_harness_integration \
+  localnet_solana_request_add_computes_and_decrypts \
+  -- --ignored --nocapture --test-threads=1
+```
+
 ## Hard Gates
 
 For any tier >= T1:

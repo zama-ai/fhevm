@@ -12,11 +12,11 @@ use reqwest::Client;
 use serde_json::json;
 use serial_test::serial;
 use solana_client::rpc_client::RpcClient;
+use solana_commitment_config::CommitmentConfig;
 use solana_listener::database::ingest::map_envelope_to_actions;
 use solana_listener::database::solana_event_propagate::Database;
 use solana_listener::poller::solana_rpc_source::SolanaRpcEventSource;
 use solana_listener::poller::{Cursor, EventSource};
-use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::hash::hash;
 use solana_sdk::instruction::{AccountMeta, Instruction};
 use solana_sdk::pubkey::Pubkey;
@@ -640,12 +640,10 @@ async fn computation_is_allowed(
 ) -> anyhow::Result<bool> {
     sqlx::query_scalar::<_, bool>(
         "
-        SELECT is_allowed
+        SELECT COALESCE(bool_or(is_allowed), FALSE)
         FROM computations
         WHERE tenant_id = $1
           AND output_handle = $2
-        ORDER BY id DESC
-        LIMIT 1
         ",
     )
     .bind(tenant_id)
