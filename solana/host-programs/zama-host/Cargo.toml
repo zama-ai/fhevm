@@ -1,7 +1,7 @@
 [package]
 name = "zama_host"
 version = "0.1.0"
-description = "Minimal Solana host program v0 scaffold for Zama listener PoC"
+description = "Minimal Solana host program scaffold for Zama listener PoC"
 edition = "2021"
 
 [lib]

@@ -26,7 +26,8 @@ flowchart TD
   E8 --> E9["Experiment 9: first non-ADD op parity (SUB)"]
   E9 --> E10["Experiment 10: full TFHE op-surface listener parity"]
   E10 --> E11["Experiment 11: host program simplification (KISS/YAGNI)"]
-  E11 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
+  E11 --> E12["Experiment 12: inline host handlers (remove impl indirection)"]
+  E12 --> NX["Next checkpoint: managed source comparison + full-op e2e expansion"]
 ```
 
 ## Current Facts (confirmed)
@@ -48,6 +49,7 @@ flowchart TD
 15. Host program PoC baseline is emit-only (`emit!`) to keep scope lean and testable.
 16. RPC source now fails closed on unavailable finalized blocks (no cursor advance on missing `getBlock` data), preventing silent slot skips.
 17. `SUB` now has Tier-3 runtime validation (`request_sub -> ingest -> compute -> decrypt`), not only decode/ingest unit coverage.
+18. Host program handlers are now direct/inline (no `request_*_impl` helper layer), with unchanged event payload semantics.
 
 ## Open Questions
 
@@ -281,8 +283,20 @@ Confidence: High
 Notes:
 
 - Renamed program workspace/layout and removed version suffixes in Solana naming (`host-programs/zama-host`, event/type names without `V0`/`V1`).
-- Refactored host program to keep one shared implementation per operation with a single emit/log path.
+- Consolidated host program on a single emit/log path.
 - No DB contract change and no listener semantic drift; this was maintainability-only cleanup.
+
+### Experiment 12: Inline host handlers (remove impl indirection)
+
+Date: 2026-02-10
+Objective: Simplify host-program readability after moving to emit-only scope.
+Result: Completed.
+Confidence: High
+Notes:
+
+- Removed `request_*_impl` helper functions and inlined logic in Anchor instruction handlers.
+- Preserved handle derivation and emitted event payloads (no listener/DB contract changes).
+- Kept fast host smoke test green (`mollusk_smoke`).
 
 ### D3
 
