@@ -1,7 +1,8 @@
 # Host Listener Parity Matrix (Discovery)
 
 Date: 2026-02-09
-Status: Final draft for Discovery issue #1028
+Last synced: 2026-02-10
+Status: Active reference (discovery complete, parity expansion in progress)
 
 ## Outcome
 
@@ -9,6 +10,12 @@ Recommended direction for PoC speed and low blast radius:
 - Build a separate `solana-listener`.
 - Preserve existing canonical DB contracts (`computations`, `allowed_handles`, `pbs_computations`).
 - Keep Gateway unchanged by preserving handle metadata semantics.
+
+## Checkpoint Update (2026-02-10)
+
+1. Discovery scope from #1028 is complete and closed.
+2. Parity expansion is active under #1031/#1032.
+3. First non-ADD op (`SUB`) is now implemented in Solana listener decode + DB mapping.
 
 ## Core Findings
 
@@ -27,7 +34,7 @@ Recommended direction for PoC speed and low blast radius:
 
 Must implement now:
 1. Handle metadata compatibility for Gateway checks.
-2. One symbolic op (`add`) -> canonical `computations` insertion.
+2. Minimal symbolic ops (`add`, `sub`) -> canonical `computations` insertion.
 3. Persistent `allow` -> canonical `allowed_handles` + `pbs_computations` insertion.
 4. Finality gating + persisted cursor + idempotent replay.
 

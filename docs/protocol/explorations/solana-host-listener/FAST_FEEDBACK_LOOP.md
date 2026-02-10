@@ -1,6 +1,7 @@
 # Fast Feedback Loop (Host + Listener First)
 
 Date: 2026-02-09
+Last synced: 2026-02-10
 Status: Active (v0 baseline validated)
 
 ## Objective
@@ -110,10 +111,11 @@ Not required for initial feasibility.
 
 ## Canonical First Slice
 
-Start with one operation and one ACL flow:
+Start with minimal op slice and one ACL flow:
 
 1. `FheAdd` equivalent request -> `computations` insertion
-2. `allow` equivalent -> `allowed_handles` + `pbs_computations`
+2. `FheSub` equivalent request -> `computations` insertion
+3. `allow` equivalent -> `allowed_handles` + `pbs_computations`
 
 Why:
 
@@ -153,7 +155,7 @@ If any of these are missing, the run is not considered valid.
 2. Start `solana-test-validator`.
 3. Deploy/start minimal symbolic host program.
 4. Start `solana-listener` in verbose mode.
-5. Submit one request tx (`add`) using event mode A (`emit!`).
+5. Submit one request tx (`add` or `sub`) using event mode A (`emit!`).
 6. Query DB assertions.
 7. Repeat with event mode B (`emit_cpi!`).
 8. Restart listener.
@@ -174,6 +176,7 @@ If any of these are missing, the run is not considered valid.
 - We can run L2 locally end-to-end in under 10 minutes.
 - We can run L1 from fixtures in under 3 minutes.
 - We can detect regressions by failing assertions, not manual log reading.
+- We keep docs/issues freshness on every checkpoint (see `DOC_FRESHNESS.md`).
 
 Current checkpoint:
 
@@ -182,6 +185,7 @@ Current checkpoint:
 3. replay idempotency (`new_rows=0`): validated
 4. worker e2e compute + decrypt sanity (`emit!` and `emit_cpi!`): validated
 5. ACL gate behavior (`request_add` blocked until `allow`): validated
+6. first non-ADD op mapping (`request_sub` -> `FheSub`) validated at listener decode+ingest layer
 
 ## v0 Binary Acceptance Checklist (Agreed)
 

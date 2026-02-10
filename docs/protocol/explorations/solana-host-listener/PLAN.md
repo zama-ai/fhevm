@@ -1,6 +1,7 @@
 # Solana Host Listener PoC Plan
 
 Date: 2026-02-09
+Last synced: 2026-02-10
 Branch: `codex/solana-host-listener-discovery`
 
 ## Goal
@@ -13,7 +14,7 @@ This is an exploratory PoC. Code can be discarded after each experiment if the l
 
 ```mermaid
 flowchart LR
-  A["Scope lock: add + allow"] --> B["Anchor interface + event mode freeze"]
+  A["Scope lock: add + sub + allow"] --> B["Anchor interface + event mode freeze"]
   B --> C["RPC baseline: emit! vs emit_cpi!"]
   C --> D["Replay/idempotency validation loop"]
   D --> E["Compare alternatives: Geyser/Helius + PDA/journal"]
@@ -52,7 +53,7 @@ Current expectation: Path B is lower risk for fast learning.
 
 We implement in this order:
 
-1. Minimal Solana host program surface (`request_add`, `allow`).
+1. Minimal Solana host program surface (`request_add`, `request_sub`, `allow`).
 2. Freeze IDL/event contract consumed by listener.
 3. Build `solana-listener` against that contract.
 4. Validate replay/idempotency with restart tests.
@@ -64,7 +65,7 @@ Reason: the program/IDL is the equivalent of EVM event ABI and defines what list
 ```mermaid
 flowchart LR
   U["PoC client tx"] --> V["solana-test-validator"]
-  V --> H["Solana host program (request_add, allow)"]
+  V --> H["Solana host program (request_add, request_sub, allow)"]
   H --> L["confirmed logs (optional hints)"]
   H --> P["finalized logs/events (canonical)"]
   L --> S["solana-listener"]
@@ -88,13 +89,13 @@ flowchart LR
 - tests for mapping/replay/idempotency
 
 2. Solana PoC program workspace (Anchor, minimal)
-- instructions: `request_add`, `allow`
+- instructions: `request_add`, `request_sub`, `allow` (+ `*_cpi` variants)
 - events/log contract for listener reads
 - IDL committed and versioned for listener contract
 
 3. PoC local run scripts
 - one script to start validator + listener + required DB services
-- one script to submit `request_add` and `allow`
+- one script to submit `request_add` / `request_sub` and `allow`
 - one script to assert DB rows + replay invariants
 
 ### Modify
@@ -171,7 +172,7 @@ A run is valid only if all 5 steps are reproducible with documented commands.
 
 ## Execution Plan
 
-1. Freeze v0 interface in Anchor (`request_add`, `allow`) and export IDL.
+1. Freeze v0.1 interface in Anchor (`request_add`, `request_sub`, `allow`) and export IDL.
 2. Define canonical listener structs and exact DB mapping (1:1 parity for v0).
 3. Implement `solana-listener` finalized RPC log poller + DB ingest path.
 4. Add hint path (confirmed logs) to reduce latency without changing canonical commit source.
@@ -207,6 +208,7 @@ Current option set:
 
 1. Canonical mapping tests:
 - `request_add` -> expected computation payload
+- `request_sub` -> expected computation payload
 - `allow` -> expected `allowed_handles` + `pbs_computations` payload
 2. Ordering tests:
 - deterministic `schedule_order = slot_time + tx_index + op_index`
@@ -220,7 +222,7 @@ Current option set:
 ### L2 Localnet (3-10 min)
 
 1. Start DB + migrations + Solana validator + solana-listener.
-2. Submit one `request_add` tx and one `allow` tx.
+2. Submit one `request_add`/`request_sub` tx and one `allow` tx.
 3. Assert DB writes.
 4. Restart listener and replay same finalized range.
 5. Assert no duplicates and no missing rows.
@@ -249,6 +251,7 @@ Any design with unacceptable locked capital or cleanup burden is rejected before
 - 1:1 feature parity matrix: `HOST_LISTENER_PARITY_MATRIX.md`
 - Solana architecture draft: `SOLANA_ARCHITECTURE.md`
 - v0 interface freeze: `INTERFACE_V0.md`
+- freshness protocol: `DOC_FRESHNESS.md`
 
 ## Comparison Criteria
 
