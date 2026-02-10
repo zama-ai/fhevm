@@ -25,7 +25,7 @@ use tracing::{error, info, warn};
 
 use super::{DFComponentGraph, DFGraph, OpNode};
 
-const TRANSACTION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
+const OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
 
 pub enum PartitionStrategy {
@@ -261,53 +261,23 @@ fn decompress_transaction_inputs(
     Ok(count)
 }
 
-fn re_randomise_transaction_inputs(
-    inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
-    transaction_id: &Handle,
-    component_id: usize,
-    cpk: tfhe::CompactPublicKey,
+fn re_randomise_operation_inputs(
+    cts: &mut [SupportedFheCiphertexts],
+    opcode: i32,
+    cpk: &tfhe::CompactPublicKey,
 ) -> Result<()> {
     let mut re_rand_context = ReRandomizationContext::new(
-        TRANSACTION_RERANDOMISATION_DOMAIN_SEPARATOR,
-        [transaction_id.as_slice(), &component_id.to_be_bytes()],
+        OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR,
+        [opcode.to_be_bytes().as_slice()],
         COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
     );
-    for txinput in inputs.values_mut() {
-        match txinput {
-            Some(DFGTxInput::Value((val, true))) => {
-                val.add_to_re_randomization_context(&mut re_rand_context);
-            }
-            Some(DFGTxInput::Value((_, false))) => {}
-            Some(DFGTxInput::Compressed(_)) => {
-                // Should not happen - decompression must be done before re-randomization
-                error!(target: "scheduler", { transaction_id = ?hex::encode(transaction_id) },
-		       "Compressed input found during re-randomization - should have been decompressed");
-                return Err(SchedulerError::MissingInputs.into());
-            }
-            None => {
-                error!(target: "scheduler", { transaction_id = ?hex::encode(transaction_id) },
-		       "Missing transaction input while trying to re-randomise");
-                return Err(SchedulerError::MissingInputs.into());
-            }
-        }
+    for ct in cts.iter() {
+        ct.add_to_re_randomization_context(&mut re_rand_context);
     }
     let mut seed_gen = re_rand_context.finalize();
-    for txinput in inputs.values_mut() {
-        match txinput {
-            Some(DFGTxInput::Value((ref mut val, true))) => {
-                val.re_randomise(&cpk, seed_gen.next_seed()?)?;
-            }
-            Some(DFGTxInput::Value((_, false))) => {}
-            Some(DFGTxInput::Compressed(_)) => {
-                error!(target: "scheduler", { transaction_id = ?hex::encode(transaction_id) },
-		       "Failed to re-randomise inputs for transaction");
-                return Err(SchedulerError::ReRandomisationError.into());
-            }
-            None => {
-                error!(target: "scheduler", { transaction_id = ?hex::encode(transaction_id) },
-		       "Failed to re-randomise inputs for transaction");
-                return Err(SchedulerError::ReRandomisationError.into());
-            }
+    for ct in cts.iter_mut() {
+        if !matches!(ct, SupportedFheCiphertexts::Scalar(_)) {
+            ct.re_randomise(cpk, seed_gen.next_seed()?)?;
         }
     }
     Ok(())
@@ -328,7 +298,7 @@ fn execute_partition(
     let tracer = opentelemetry::global::tracer("tfhe_worker");
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
-    'tx: for (ref mut dfg, ref mut tx_inputs, tid, cid) in transactions {
+    'tx: for (ref mut dfg, ref mut tx_inputs, tid, _cid) in transactions {
         // Update the transaction inputs based on allowed handles so
         // far. If any input is still missing, and we cannot fill it
         // (e.g., error in the producer transaction) we cannot execute
@@ -390,35 +360,6 @@ fn execute_partition(
             }
         }
 
-        // Re-randomise inputs of the transaction
-        {
-            let mut s = tracer.start_with_context("rerandomise_inputs", &loop_ctx);
-            telemetry::set_txn_id(&mut s, &tid);
-            let started_at = std::time::Instant::now();
-
-            if let Err(e) = re_randomise_transaction_inputs(tx_inputs, &tid, cid, cpk.clone()) {
-                error!(target: "scheduler", {transaction_id = ?hex::encode(tid), error = ?e },
-		       "Error while re-randomising inputs");
-                for nidx in dfg.graph.node_identifiers() {
-                    let Some(node) = dfg.graph.node_weight_mut(nidx) else {
-                        error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
-                        continue;
-                    };
-                    if node.is_allowed {
-                        res.insert(
-                            node.result_handle.clone(),
-                            Err(SchedulerError::ReRandomisationError.into()),
-                        );
-                    }
-                }
-                continue 'tx;
-            }
-
-            let elapsed = started_at.elapsed();
-            RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
-            drop(s);
-        }
-
         // Prime the scheduler with ready ops from the transaction's subgraph
         let mut s = tracer.start_with_context("execute_transaction", &loop_ctx);
         telemetry::set_txn_id(&mut s, &tid);
@@ -454,6 +395,7 @@ fn execute_partition(
                 tx_inputs,
                 gpu_idx,
                 &tid,
+                &cpk,
                 &tracer,
                 &exec_ctx,
             );
@@ -496,12 +438,14 @@ fn execute_partition(
     (res, task_id)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn try_execute_node(
     node: &mut OpNode,
     node_index: usize,
     tx_inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
     gpu_idx: usize,
     transaction_id: &Handle,
+    cpk: &tfhe::CompactPublicKey,
     tracer: &opentelemetry::global::BoxedTracer,
     ctx: &opentelemetry::Context,
 ) -> Result<(usize, OpResult)> {
@@ -518,7 +462,23 @@ fn try_execute_node(
             return Err(SchedulerError::MissingInputs.into());
         }
     }
-
+    // Re-randomize inputs for this operation
+    {
+        let mut rerand_span = tracer.start_with_context("rerandomise_op_inputs", ctx);
+        let started_at = std::time::Instant::now();
+        if let Err(e) = re_randomise_operation_inputs(&mut cts, node.opcode, cpk) {
+            error!(target: "scheduler", { handle = ?hex::encode(&node.result_handle), error = ?e },
+                   "Error while re-randomising operation inputs");
+            rerand_span.set_status(Status::Error {
+                description: e.to_string().into(),
+            });
+            rerand_span.end();
+            return Err(SchedulerError::ReRandomisationError.into());
+        }
+        let elapsed = started_at.elapsed();
+        RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
+        rerand_span.end();
+    }
     let opcode = node.opcode;
     let is_allowed = node.is_allowed;
     Ok(run_computation(
