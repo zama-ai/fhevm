@@ -184,14 +184,18 @@ pub async fn ingest_block_logs(
     let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
     if slow_lane_enabled {
         let max_per_chain = u64::from(options.dependent_ops_max_per_chain);
+        let mut slow_marked_chains = 0_u64;
         for chain in &chains {
             if let Some(chain_dep_ops) = dependent_ops_by_chain.get(&chain.hash)
             {
-                if *chain_dep_ops > max_per_chain {
-                    slow_dep_chain_ids.insert(chain.hash);
+                if *chain_dep_ops > max_per_chain
+                    && slow_dep_chain_ids.insert(chain.hash)
+                {
+                    slow_marked_chains = slow_marked_chains.saturating_add(1);
                 }
             }
         }
+        db.record_slow_lane_marked_chains(slow_marked_chains);
     }
 
     if catchup_insertion > 0 {
@@ -216,8 +220,9 @@ pub async fn ingest_block_logs(
         )
         .await?;
     }
+    let mut promoted = 0_u64;
     if !slow_lane_enabled {
-        let promoted = db
+        promoted = db
             .promote_seen_dep_chains_to_fast_priority(
                 &mut tx,
                 &seen_dep_chain_ids,
@@ -229,6 +234,9 @@ pub async fn ingest_block_logs(
                 "Slow-lane disabled: promoted seen chains to fast"
             );
         }
+    }
+    if at_least_one_insertion || promoted > 0 {
+        db.update_dependence_chain_queue_metrics(&mut tx).await?;
     }
     tx.commit().await
 }
