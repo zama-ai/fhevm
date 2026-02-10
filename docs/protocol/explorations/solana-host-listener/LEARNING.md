@@ -47,6 +47,7 @@ flowchart TD
 14. Solana host program layout has been normalized to `/Users/work/.codex/worktrees/66ae/fhevm/solana/host-programs/zama-host` (no `v0` naming in folders/types).
 15. Host program logic is now single-sourced across `emit!` and `emit_cpi!` entrypoints (shared implementation helpers; no behavior split per mode).
 16. RPC source now fails closed on unavailable finalized blocks (no cursor advance on missing `getBlock` data), preventing silent slot skips.
+17. `SUB` now has Tier-3 runtime validation (`request_sub -> ingest -> compute -> decrypt`), not only decode/ingest unit coverage.
 
 ## Open Questions
 
@@ -240,21 +241,22 @@ Confidence: High
 Notes:
 
 - Added `/Users/work/.codex/worktrees/66ae/fhevm/test-suite/fhevm/scripts/solana-poc-tier3-e2e.sh`.
-- Script supports deterministic case selection: `emit`, `emit-cpi`, `acl`, `all`.
+- Script supports deterministic case selection: `emit`, `emit-cpi`, `sub`, `acl`, `all`.
 - Updated testing docs and listener README with exact commands and `SQLX_OFFLINE=true` guidance.
 
 ### Experiment 9: First non-ADD op parity (`SUB`)
 
 Date: 2026-02-10
 Objective: Validate that Solana listener operation mapping can extend beyond `ADD` while preserving DB semantics.
-Result: Completed for `SUB` decode + ingest mapping.
+Result: Completed for `SUB` decode + ingest mapping and runtime e2e execution.
 Confidence: Medium-high
 Notes:
 
 - Host program emits new `OpRequestedSub` / `request_sub(_cpi)` events.
 - Listener decodes `OpRequestedSub` and maps to `SupportedFheOperations::FheSub`.
 - Unit coverage added for decoder + ingest mapping.
-- ACL gate integration test now checks both `emit!` and `emit_cpi!` modes.
+- Added Tier-3 runtime test `localnet_solana_request_sub_computes_and_decrypts` with decrypt assertion.
+- ACL gate integration test checks both `emit!` and `emit_cpi!` modes.
 
 ### Experiment 10: Full TFHE op-surface listener parity
 

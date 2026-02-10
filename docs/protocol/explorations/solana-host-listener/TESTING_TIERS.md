@@ -160,7 +160,8 @@ Primary test:
 Additional tests:
 
 1. `localnet_solana_request_add_cpi_computes_and_decrypts`
-2. `localnet_acl_gate_blocks_then_allows_compute`
+2. `localnet_solana_request_sub_computes_and_decrypts`
+3. `localnet_acl_gate_blocks_then_allows_compute`
 
 Runner script:
 
@@ -176,7 +177,7 @@ Coverage:
 
 1. Seeds tenant keys in DB.
 2. Seeds `lhs` and `rhs` ciphertext handles via worker `trivial_encrypt` gRPC.
-3. Emits Solana `request_add` (both `emit!` and `emit_cpi!`) and ingests via finalized RPC source.
+3. Emits Solana `request_add` / `request_sub` (plus `emit_cpi!` variant for `add`) and ingests via finalized RPC source.
 4. Asserts worker completes the queued computation and writes output ciphertext.
 5. Decrypts output handle and asserts expected plaintext value.
 6. ACL gate behavior for both `emit!` and `emit_cpi!`: without `allow`, computation stays non-runnable; after `allow`, computation becomes runnable and completes.

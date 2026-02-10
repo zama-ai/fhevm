@@ -33,8 +33,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ "$CASE" != "emit" && "$CASE" != "emit-cpi" && "$CASE" != "acl" && "$CASE" != "all" ]]; then
-    log_error "Invalid --case value: $CASE (allowed: emit | emit-cpi | acl | all)"
+if [[ "$CASE" != "emit" && "$CASE" != "emit-cpi" && "$CASE" != "sub" && "$CASE" != "acl" && "$CASE" != "all" ]]; then
+    log_error "Invalid --case value: $CASE (allowed: emit | emit-cpi | sub | acl | all)"
     exit 1
 fi
 
@@ -70,6 +70,10 @@ fi
 
 if [[ "$CASE" == "emit-cpi" || "$CASE" == "all" ]]; then
     run_test_case "localnet_solana_request_add_cpi_computes_and_decrypts"
+fi
+
+if [[ "$CASE" == "sub" || "$CASE" == "all" ]]; then
+    run_test_case "localnet_solana_request_sub_computes_and_decrypts"
 fi
 
 if [[ "$CASE" == "acl" || "$CASE" == "all" ]]; then
